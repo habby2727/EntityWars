@@ -5,6 +5,8 @@ class_name WorldGate
 @export var panel_path: NodePath
 @export var back_button_path: NodePath
 @export var tabs_path: NodePath
+@export var top_info_label_path: NodePath
+@export var top_session_label_path: NodePath
 
 @export var zone_list_path: NodePath
 @export var zone_refresh_path: NodePath
@@ -16,6 +18,7 @@ class_name WorldGate
 @export var drops_label_path: NodePath
 @export var claim_button_path: NodePath
 @export var zone_error_label_path: NodePath
+@export var session_panel_path: NodePath
 
 @export var boss_portrait_path: NodePath
 @export var boss_hp_bar_path: NodePath
@@ -37,6 +40,8 @@ var _backend: BackendClient = null
 var _panel: Panel = null
 var _back_button: Button = null
 var _tabs: TabContainer = null
+var _top_info_label: Label = null
+var _top_session_label: Label = null
 
 var _zone_list: VBoxContainer = null
 var _zone_refresh: Button = null
@@ -48,6 +53,7 @@ var _farm_progress_label: Label = null
 var _drops_label: Label = null
 var _claim_button: Button = null
 var _zone_error_label: Label = null
+var _session_panel: Control = null
 
 var _boss_portrait: TextureRect = null
 var _boss_hp_bar: ProgressBar = null
@@ -63,6 +69,7 @@ var _boss_error_label: Label = null
 
 var _catalog := AssetCatalog.new()
 var _db := StaticDB.new()
+var _debug := DebugFlags.new()
 var _ui_scale := 1.0
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
@@ -92,6 +99,7 @@ var _server_time_offset_ms: float = 0.0
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
+	_debug.reload()
 	_resolve_nodes()
 	_apply_panel_background()
 	_connect_backend()
@@ -111,6 +119,8 @@ func _resolve_nodes() -> void:
 	_panel = get_node_or_null(panel_path) as Panel
 	_back_button = get_node_or_null(back_button_path) as Button
 	_tabs = get_node_or_null(tabs_path) as TabContainer
+	_top_info_label = get_node_or_null(top_info_label_path) as Label
+	_top_session_label = get_node_or_null(top_session_label_path) as Label
 
 	_zone_list = get_node_or_null(zone_list_path) as VBoxContainer
 	_zone_refresh = get_node_or_null(zone_refresh_path) as Button
@@ -122,6 +132,7 @@ func _resolve_nodes() -> void:
 	_drops_label = get_node_or_null(drops_label_path) as Label
 	_claim_button = get_node_or_null(claim_button_path) as Button
 	_zone_error_label = get_node_or_null(zone_error_label_path) as Label
+	_session_panel = get_node_or_null(session_panel_path) as Control
 
 	_boss_portrait = get_node_or_null(boss_portrait_path) as TextureRect
 	_boss_hp_bar = get_node_or_null(boss_hp_bar_path) as ProgressBar
@@ -200,44 +211,51 @@ func _build_zone_cards() -> void:
 		var card := PanelContainer.new()
 		card.custom_minimum_size = Vector2(0, 120) * _ui_scale
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.mouse_filter = Control.MOUSE_FILTER_PASS
 		var margin := MarginContainer.new()
 		margin.add_theme_constant_override("margin_left", 12)
 		margin.add_theme_constant_override("margin_top", 12)
 		margin.add_theme_constant_override("margin_right", 12)
 		margin.add_theme_constant_override("margin_bottom", 12)
+		margin.mouse_filter = Control.MOUSE_FILTER_PASS
 		card.add_child(margin)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 12)
 		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.mouse_filter = Control.MOUSE_FILTER_PASS
 		margin.add_child(row)
 		var preview := TextureRect.new()
 		preview.custom_minimum_size = Vector2(180, 100) * _ui_scale
 		preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(preview)
 		var text_col := VBoxContainer.new()
 		text_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		text_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		text_col.clip_contents = true
 		row.add_child(text_col)
 		var name_label := Label.new()
 		name_label.text = str(entry.get("display_name", entry.get("name", zone_id)))
 		name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
+		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_label.clip_text = true
 		text_col.add_child(name_label)
 		var mod_label := Label.new()
 		mod_label.text = "Modifiers: -"
 		mod_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		mod_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mod_label.clip_text = true
 		text_col.add_child(mod_label)
-		var stats_label := Label.new()
-		stats_label.text = "Heat: 0 | Rep: 0"
-		text_col.add_child(stats_label)
 		var enter_btn := Button.new()
 		enter_btn.text = "Enter"
+		enter_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
 		enter_btn.pressed.connect(_on_enter_pressed.bind(zone_id))
 		row.add_child(enter_btn)
 		_zone_list.add_child(card)
 		_zone_rows[zone_id] = {
 			"preview": preview,
 			"mod": mod_label,
-			"stats": stats_label,
 			"enter": enter_btn,
 			"name": name_label
 		}
@@ -257,14 +275,12 @@ func _on_enter_pressed(zone_id: String) -> void:
 	if zone_id == "":
 		return
 	_selected_zone_id = zone_id
-	var body = {
-		"client_action_id": _make_client_id(),
-		"zone_id": zone_id
-	}
-	_send_api_request("POST", "/world/enter", body, "world_enter", true, {"zone_id": zone_id})
+	SceneRouter.go_to_world_zone(zone_id)
 
 func _on_farm_pressed() -> void:
 	_clear_zone_error()
+	if not _ensure_auth():
+		return
 	if _active_session_id == "":
 		_set_zone_error("No active session.")
 		return
@@ -273,6 +289,8 @@ func _on_farm_pressed() -> void:
 
 func _on_claim_pressed() -> void:
 	_clear_zone_error()
+	if not _ensure_auth():
+		return
 	if _active_session_id == "":
 		_set_zone_error("No active session.")
 		return
@@ -284,6 +302,8 @@ func _on_claim_pressed() -> void:
 
 func _on_boss_attack_pressed() -> void:
 	_clear_boss_error()
+	if not _ensure_auth():
+		return
 	var boss = _get_active_boss()
 	if boss.is_empty():
 		return
@@ -295,6 +315,8 @@ func _on_boss_attack_pressed() -> void:
 
 func _on_boss_claim_pressed() -> void:
 	_clear_boss_error()
+	if not _ensure_auth():
+		return
 	var boss = _get_active_boss()
 	if boss.is_empty():
 		return
@@ -439,6 +461,7 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 		_active_zone_id = str(data.get("zone_id", info.get("zone_id", "")))
 		_selected_zone_id = _active_zone_id
 		_request_world_state()
+		SceneRouter.go_to_world_zone(_active_zone_id)
 	elif kind == "farm":
 		_farm_backoff_ms = 0.25
 		_update_farm_progress()
@@ -533,7 +556,7 @@ func _update_zone_cards() -> void:
 	if _zone_rows.is_empty():
 		return
 	var zone_map: Dictionary = _get_zone_map()
-	var progress_map = _player_world.get("zone_progress", {})
+	var _progress_map = _player_world.get("zone_progress", {})
 	for zone_id in _zone_rows.keys():
 		var row = _zone_rows[zone_id]
 		if typeof(row) != TYPE_DICTIONARY:
@@ -548,23 +571,14 @@ func _update_zone_cards() -> void:
 		var mod_label: Label = row.get("mod", null)
 		if mod_label != null:
 			mod_label.text = mod_text
-		var heat := 0
-		var rep := 0
-		if typeof(progress_map) == TYPE_DICTIONARY and progress_map.has(zone_id):
-			var entry = progress_map[zone_id]
-			if typeof(entry) == TYPE_DICTIONARY:
-				heat = int(entry.get("heat", 0))
-				rep = int(entry.get("reputation", 0))
-		var stats_label: Label = row.get("stats", null)
-		if stats_label != null:
-			stats_label.text = "Heat: %s | Rep: %s" % [heat, rep]
 		var enter_btn: Button = row.get("enter", null)
 		if enter_btn != null:
-			enter_btn.disabled = _busy
+			enter_btn.disabled = false
 
 func _update_session_panel() -> void:
 	if _session_zone_label == null or _session_stats_label == null:
 		return
+	_hide_session_panel()
 	var zone_id := _selected_zone_id
 	if zone_id == "" and _active_zone_id != "":
 		zone_id = _active_zone_id
@@ -587,6 +601,18 @@ func _update_session_panel() -> void:
 	if zone_map.has(zone_id):
 		mods = zone_map[zone_id].get("modifier_ids", [])
 	_session_stats_label.text = "Modifiers: %s | Heat: %s | Rep: %s" % [_format_list(mods), heat, rep]
+	if _top_info_label != null:
+		_top_info_label.text = "%s | Heat %s | Rep %s | Mods: %s" % [display_name, heat, rep, _format_list(mods)]
+	if _top_session_label != null:
+		var min_drop = int(_db.get_balance("world_drop_min", 1))
+		var max_drop = int(_db.get_balance("world_drop_max", 3))
+		var queue_count = _count_farm_queue()
+		var active_label = display_name if _active_session_id != "" else "None"
+		_top_session_label.text = "Active Session: %s | Queue: %s | Expected per block: %s-%s" % [active_label, queue_count, min_drop, max_drop]
+	if _session_zone_label != null:
+		_session_zone_label.visible = false
+	if _session_stats_label != null:
+		_session_stats_label.visible = false
 	if _drops_label != null:
 		var min_drop = int(_db.get_balance("world_drop_min", 1))
 		var max_drop = int(_db.get_balance("world_drop_max", 3))
@@ -716,6 +742,17 @@ func _update_farm_progress() -> void:
 	var count = _count_farm_queue()
 	var text = "Queue: %s" % count
 	_farm_progress_label.text = text
+	if _top_session_label != null:
+		var min_drop = int(_db.get_balance("world_drop_min", 1))
+		var max_drop = int(_db.get_balance("world_drop_max", 3))
+		var zone_id = _selected_zone_id if _selected_zone_id != "" else _active_zone_id
+		var display_name = zone_id
+		if _db.zones.has(zone_id):
+			var entry = _db.zones[zone_id]
+			if typeof(entry) == TYPE_DICTIONARY:
+				display_name = str(entry.get("display_name", entry.get("name", zone_id)))
+		var active_label = display_name if _active_session_id != "" else "None"
+		_top_session_label.text = "Active Session: %s | Queue: %s | Expected per block: %s-%s" % [active_label, count, min_drop, max_drop]
 
 func _get_farm_count() -> int:
 	if _farm_count_option == null:
@@ -798,6 +835,31 @@ func _clear_container(container: Control) -> void:
 	for child in container.get_children():
 		child.queue_free()
 
+func _ensure_auth() -> bool:
+	if _backend == null:
+		_set_zone_error("Backend unavailable.")
+		return false
+	if _backend.token != "":
+		return true
+	_backend.ensure_dev_login()
+	_set_zone_error("Logging in...")
+	return false
+
+func _has_world_unlock() -> bool:
+	_debug.reload()
+	if _debug.unlock_all_buildings or _debug.force_all_clickable:
+		return true
+	var lab = _state.get("lab", {})
+	if typeof(lab) != TYPE_DICTIONARY:
+		return false
+	var buildings = lab.get("buildings", {})
+	if typeof(buildings) != TYPE_DICTIONARY:
+		return false
+	var entry = buildings.get("world_gate", {})
+	if typeof(entry) != TYPE_DICTIONARY:
+		return false
+	return int(entry.get("level", 0)) > 0
+
 func _schedule_poll() -> void:
 	if _poll_timer != null:
 		return
@@ -812,6 +874,25 @@ func _on_poll_timeout() -> void:
 	_request_world_state()
 	_request_boss_state()
 	_schedule_poll()
+	_hide_session_panel()
+
+func _hide_session_panel() -> void:
+	if _session_panel != null:
+		_session_panel.visible = false
+	if _session_zone_label != null:
+		_session_zone_label.visible = false
+	if _session_stats_label != null:
+		_session_stats_label.visible = false
+	if _farm_count_option != null:
+		_farm_count_option.visible = false
+	if _farm_button != null:
+		_farm_button.visible = false
+	if _farm_progress_label != null:
+		_farm_progress_label.visible = false
+	if _drops_label != null:
+		_drops_label.visible = false
+	if _claim_button != null:
+		_claim_button.visible = false
 
 func _count_farm_queue() -> int:
 	var count := 0

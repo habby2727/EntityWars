@@ -7,11 +7,16 @@ const SCENE_LAB_STRUCTURES := "res://scenes/ui/LabStructures.tscn"
 const SCENE_INVENTORY := "res://scenes/ui/Inventory.tscn"
 const SCENE_TRADE_HALL := "res://scenes/ui/TradeHall.tscn"
 const SCENE_WORLD_GATE := "res://scenes/ui/WorldGate.tscn"
+const SCENE_WORLD_ZONE := "res://scenes/ui/WorldZone.tscn"
+const SCENE_WORLD_ZONE_CORRUPTED := "res://scenes/ui/WorldZoneCorrupted.tscn"
+const SCENE_WORLD_ZONE_CRYSTAL := "res://scenes/ui/WorldZoneCrystal.tscn"
+const SCENE_WORLD_ZONE_CHAOS := "res://scenes/ui/WorldZoneChaos.tscn"
 const SCENE_COMBAT := "res://scenes/Combat.tscn"
 const SCENE_LOADOUT := "res://scenes/LoadoutGrid.tscn"
 
 static var _next_lab_focus_id: String = ""
 static var _next_inventory_tab: String = ""
+static var _next_world_zone_id: String = ""
 
 static func go_to_main_menu() -> void:
 	_go_to(SCENE_MAIN_MENU, "MainMenu")
@@ -45,6 +50,23 @@ static func go_to_trade_hall() -> void:
 
 static func go_to_world_gate() -> void:
 	_go_to(SCENE_WORLD_GATE, "WorldGate")
+
+static func go_to_world_zone(zone_id: String = "") -> void:
+	_next_world_zone_id = zone_id
+	match zone_id:
+		"zone_corrupted":
+			_go_to(SCENE_WORLD_ZONE_CORRUPTED, "WorldZoneCorrupted")
+		"zone_crystal":
+			_go_to(SCENE_WORLD_ZONE_CRYSTAL, "WorldZoneCrystal")
+		"zone_chaos":
+			_go_to(SCENE_WORLD_ZONE_CHAOS, "WorldZoneChaos")
+		_:
+			_go_to(SCENE_WORLD_ZONE, "WorldZone")
+
+static func consume_world_zone_id() -> String:
+	var zone_id := _next_world_zone_id
+	_next_world_zone_id = ""
+	return zone_id
 
 static func go_to_combat() -> void:
 	_go_to(SCENE_COMBAT, "Combat")

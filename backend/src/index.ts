@@ -263,6 +263,10 @@ const EXPERIMENT_SECRET = Bun.env.EXPERIMENT_SECRET || "dev_experiment_secret";
 const TRADE_SECRET = Bun.env.TRADE_SECRET || "dev_trade_secret";
 const WORLD_SECRET = Bun.env.WORLD_SECRET || "dev_world_secret";
 const TOKEN_SIGNING_SECRET = Bun.env.TOKEN_SIGNING_SECRET || "";
+const DEBUG_BYPASS =
+	Bun.env.DEBUG_BYPASS == "1" ||
+	((Bun.env.NODE_ENV || Bun.env.BUN_ENV || "").toLowerCase() != "production" &&
+		Bun.env.DEBUG_BYPASS != "0");
 
 // TODO: world module
 // TODO: sync module
@@ -348,6 +352,14 @@ function getRequestId(req: Request): string {
 		return existing;
 	}
 	return crypto.randomUUID();
+}
+
+function isDebugBypass(req: Request): boolean {
+	const header = req.headers.get("x-debug-bypass");
+	if (!header) {
+		return false;
+	}
+	return header == "1" || header.toLowerCase() == "true";
 }
 
 function isOriginAllowed(origin: string): boolean {
@@ -713,7 +725,8 @@ function applyAction(
 	state: PlayerState,
 	actionType: string,
 	payload: any,
-	clientActionId = ""
+	clientActionId = "",
+	debugBypass = false
 ): { state: PlayerState; error?: string } {
 	const now = Date.now();
 	const next: PlayerState = {
@@ -730,7 +743,7 @@ function applyAction(
 	cleanupLabRuntime(runtime, now);
 	autoCompleteResearch(next, now);
 	if (actionType == "UPGRADE_BUILDING") {
-		return applyUpgrade(next, payload);
+		return applyUpgrade(next, payload, debugBypass);
 	}
 	if (actionType == "SET_BUILDING_ROUTE") {
 		return applyRouteChange(next, payload);
@@ -955,7 +968,8 @@ async function startServer(): Promise<void> {
 						return stateResponse(state);
 					}
 					const state = ensurePlayerState(playerId);
-					const updated = applyAction(state, actionType, payload, clientActionId);
+					const debugBypass = isDebugBypass(req);
+					const updated = applyAction(state, actionType, payload, clientActionId, debugBypass);
 					if (updated.error) {
 						console.warn("Action: rejected", actionType, updated.error);
 						throw new HttpError(400, updated.error);
@@ -1525,7 +1539,8 @@ async function startServer(): Promise<void> {
 						console.warn("World: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
-					const result = enterWorldSession(playerId, clientActionId, body);
+					const debugBypass = isDebugBypass(req);
+					const result = enterWorldSession(playerId, clientActionId, body, debugBypass);
 					if (result.error || !result.state) {
 						throw new HttpError(400, result.error || "Failed to enter world zone.");
 					}
@@ -2933,7 +2948,11 @@ const EXPERIMENTS: Record<string, ExperimentDef> = {
 	}
 };
 
-function applyUpgrade(state: PlayerState, payload: any): { state: PlayerState; error?: string } {
+function applyUpgrade(
+	state: PlayerState,
+	payload: any,
+	debugBypass = false
+): { state: PlayerState; error?: string } {
 	const buildingId = typeof payload?.building_id == "string" ? payload.building_id.trim() : "";
 	if (!buildingId || buildingId.length > 64) {
 		return { state, error: "Invalid building_id." };
@@ -2942,27 +2961,33 @@ function applyUpgrade(state: PlayerState, payload: any): { state: PlayerState; e
 		return { state, error: "Unknown building_id." };
 	}
 	const current = ensureBuildingState(state, buildingId);
-	if (!canUpgrade(buildingId, current.level, state.lab.hqLevel)) {
+	if (!debugBypass && !canUpgrade(buildingId, current.level, state.lab.hqLevel)) {
+		return { state, error: "Upgrade cap reached." };
+	}
+	const rule = HQ_RULES[buildingId] ?? { unlock: 1, max: 10, cap_per_hq: 1 };
+	if (current.level >= rule.max) {
 		return { state, error: "Upgrade cap reached." };
 	}
 	const targetLevel = current.level + 1;
-	const cost = resolveUpgradeCost(buildingId, targetLevel, state.lab.hqPath);
-	if (!cost.ok) {
-		return { state, error: cost.error || "Missing cost data." };
-	}
-	const wallet = state.wallet;
-	for (const [resId, amount] of Object.entries(cost.cost)) {
-		if (!staticData.resources.has(resId)) {
-			return { state, error: "Unknown resource id in cost." };
+	if (!debugBypass) {
+		const cost = resolveUpgradeCost(buildingId, targetLevel, state.lab.hqPath);
+		if (!cost.ok) {
+			return { state, error: cost.error || "Missing cost data." };
 		}
-		if ((wallet[resId] ?? 0) < amount) {
-			return { state, error: "Insufficient resources." };
+		const wallet = state.wallet;
+		for (const [resId, amount] of Object.entries(cost.cost)) {
+			if (!staticData.resources.has(resId)) {
+				return { state, error: "Unknown resource id in cost." };
+			}
+			if ((wallet[resId] ?? 0) < amount) {
+				return { state, error: "Insufficient resources." };
+			}
 		}
-	}
-	for (const [resId, amount] of Object.entries(cost.cost)) {
-		wallet[resId] = (wallet[resId] ?? 0) - amount;
-		if (wallet[resId] < 0) {
-			wallet[resId] = 0;
+		for (const [resId, amount] of Object.entries(cost.cost)) {
+			wallet[resId] = (wallet[resId] ?? 0) - amount;
+			if (wallet[resId] < 0) {
+				wallet[resId] = 0;
+			}
 		}
 	}
 	current.level = targetLevel;
@@ -4449,7 +4474,8 @@ function claimTradeRun(
 function enterWorldSession(
 	playerId: string,
 	clientActionId: string,
-	body: any
+	body: any,
+	debugBypass = false
 ): { state?: PlayerState; sessionId?: string; zoneId?: string; modifiers?: string[]; error?: string } {
 	const zoneId = typeof body?.zone_id == "string" ? body.zone_id.trim() : "";
 	if (!zoneId) {
@@ -4485,19 +4511,22 @@ function enterWorldSession(
 		const beforeWallet = cloneWallet(state.wallet);
 		const world = ensurePlayerWorld(state, now);
 		refreshWorldPlayer(world, now);
-		if (!state.research_flags["unlock_world_zones"]) {
-			throw new HttpError(400, "World Zones locked.");
-		}
-		const dailyLimit = getWorldDailyEntryLimit();
-		if (world.daily_entries >= dailyLimit) {
-			throw new HttpError(400, "Daily entry limit reached.");
-		}
-		if (entryFee > 0) {
-			const essence = clampAmount(state.wallet.essence ?? 0);
-			if (essence < entryFee) {
-				throw new HttpError(400, "Insufficient Essence for entry fee.");
+		if (!debugBypass) {
+			const gate = ensureBuildingState(state, "world_gate");
+			if (gate.level <= 0) {
+				throw new HttpError(400, "World Gate locked.");
 			}
-			state.wallet.essence = essence - entryFee;
+			const dailyLimit = getWorldDailyEntryLimit();
+			if (world.daily_entries >= dailyLimit) {
+				throw new HttpError(400, "Daily entry limit reached.");
+			}
+			if (entryFee > 0) {
+				const essence = clampAmount(state.wallet.essence ?? 0);
+				if (essence < entryFee) {
+					throw new HttpError(400, "Insufficient Essence for entry fee.");
+				}
+				state.wallet.essence = essence - entryFee;
+			}
 		}
 		if (!world.sessions[sessionId]) {
 			world.sessions[sessionId] = {

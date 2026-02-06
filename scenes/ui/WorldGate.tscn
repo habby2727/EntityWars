@@ -15,6 +15,8 @@ backend_path = NodePath("BackendClient")
 panel_path = NodePath("Background")
 back_button_path = NodePath("Background/Margin/RootVBox/Header/BackButton")
 tabs_path = NodePath("Background/Margin/RootVBox/Tabs")
+top_info_label_path = NodePath("Background/TopInfoLabel")
+top_session_label_path = NodePath("Background/TopSessionLabel")
 zone_list_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZoneList")
 zone_refresh_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZonesHeaderRow/RefreshZonesButton")
 session_zone_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/SessionZoneLabel")
@@ -25,6 +27,7 @@ farm_progress_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scrol
 drops_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/DropsLabel")
 claim_button_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/ClaimButton")
 zone_error_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/ZoneErrorLabel")
+session_panel_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel")
 boss_portrait_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossPortrait")
 boss_hp_bar_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossHpBar")
 boss_window_label_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossWindowLabel")
@@ -47,6 +50,24 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="TopInfoLabel" type="Label" parent="Background"]
+layout_mode = 1
+anchor_right = 1.0
+offset_top = 30.0
+offset_bottom = 60.0
+text = "Zone: -"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TopSessionLabel" type="Label" parent="Background"]
+layout_mode = 1
+anchor_right = 1.0
+offset_top = 60.0
+offset_bottom = 90.0
+text = "Active Session: -"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="Margin" type="MarginContainer" parent="Background"]
 layout_mode = 1
@@ -128,6 +149,7 @@ theme_override_constants/separation = 10
 [node name="SessionPanel" type="Panel" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox"]
 layout_mode = 2
 size_flags_horizontal = 3
+visible = false
 
 [node name="SessionMargin" type="MarginContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel"]
 layout_mode = 1
