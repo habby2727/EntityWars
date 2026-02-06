@@ -1,4 +1,4 @@
-# Entity Wars — Beta Offline Pack (Godot 4.x)
+# Entity Wars — Alpha Deployment Phase (Godot 4.6) - V Alpha-0.1
 
 This pack gives you a **fully offline** MVP skeleton:
 - **Bo3 combat** with HP (deterministic simulation)
@@ -6,17 +6,17 @@ This pack gives you a **fully offline** MVP skeleton:
 - 8 Build Items (2 equipped + 2 sideboard)
 - 8 Homunculi (1 equipped; invoked each round)
 - 3 Attack Techniques + 3 Defense Techniques (pre-game selection)
-- **Winner-only swap**: after each won round, you may swap **one** equipped item with one from sideboard
-- **Surrender** button (counts as a loss; applies costs/point loss)
+- LabHub implemented
+- Many things in development
 
 ## How to use
 1. Create a Godot 4 project in your repo.
 2. Copy the folders from this pack into your project:
-   - `data/`, `scripts/`, `scenes/`
-3. Open `scenes/Main.tscn` and run it.
+   - `data/`, `scripts/`, `scenes/` and so on
+3. Open `scenes/MainMenu.tscn` and run it (f6). Debug mode may be hard-code activated depending on the code phase.
 
 ## Notes
-- Economy/ranked are **offline stubs** intended for the closed beta.
+- Economy/ranked/resources are being coded with Bun.js backend, using PostgresSQL and Redis.
 - Timers for upgrades are stubbed (data structures + placeholders). We'll wire real timers/server later.
 
 ## File map
