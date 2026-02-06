@@ -1,3 +1,13 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Backend
+backend/node_modules/
+backend/.env
+backend/data/*.sqlite
+backend/data/*.sqlite-shm
+backend/data/*.sqlite-wal
+backend/dev_stdout.log
+backend/dev_stderr.log
+backend/.server.pid

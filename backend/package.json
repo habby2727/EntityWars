@@ -6,6 +6,13 @@
     "dev": "bun --hot src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun dist/index.js",
-    "test:all": "bun run src/tests/run_all.ts"
+    "test:all": "bun run src/tests/run_all.ts",
+    "migrate": "bun run src/migrate.ts",
+    "worker": "bun run src/worker.ts",
+    "smoke": "bun run src/tests/smoke.ts"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.2",
+    "postgres": "^3.4.4"
   }
 }

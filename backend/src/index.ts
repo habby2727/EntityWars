@@ -1,10 +1,25 @@
-import { Database } from "bun:sqlite";
+﻿import { Database } from "bun:sqlite";
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import defaultConfig from "./config/default";
 import devConfig from "./config/dev.local";
 import prodConfig from "./config/prod";
+import {
+    getAccessToken,
+    issueAccessToken,
+    issueTokenPair,
+    revokeAccessToken,
+    revokeRefreshToken,
+    rotateRefreshToken
+} from "./auth/tokens";
+import { isUserDisabled, pingPostgres, postgresExample, upsertUser } from "./db/postgres";
+import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
+import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
+import { rateLimit } from "./middleware/rateLimit";
+import { enqueueJob, getJobQueueSize } from "./jobs/queue";
+import { logError, logInfo, logWarn } from "./observability/logger";
+import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
 
 type RateLimitConfig = {
 	windowMs: number;
@@ -139,11 +154,6 @@ type PlayerState = {
 	updated_at: number;
 };
 
-type TokenEntry = {
-	playerId: string;
-	expiresAt: number;
-};
-
 class HttpError extends Error {
 	status: number;
 	constructor(status: number, message: string) {
@@ -152,99 +162,25 @@ class HttpError extends Error {
 	}
 }
 
+type RequestContext = {
+	requestId: string;
+	rateLimitBypass: boolean;
+	startAt: number;
+	ip: string;
+	path: string;
+	userId?: string | null;
+};
+
 const config = loadConfig();
 const staticData = loadStaticData();
+const ACCESS_TTL_MS = getEnvNumber("ACCESS_TTL_SECONDS", 15 * 60) * 1000;
+const REFRESH_TTL_MS = getEnvNumber("REFRESH_TTL_SECONDS", 7 * 24 * 60 * 60) * 1000;
+const EXPENSIVE_RATE_WINDOW = getEnvNumber("EXPENSIVE_RATE_LIMIT_WINDOW_SECONDS", 60);
+const EXPENSIVE_RATE_MAX = getEnvNumber("EXPENSIVE_RATE_LIMIT_MAX", 60);
+const CORS_ORIGINS = parseCorsOrigins();
 const dbFilePath = ensureDbPath(config.dbPath);
 const db = new Database(dbFilePath);
 db.exec("PRAGMA journal_mode = WAL;");
-db.exec(`
-	CREATE TABLE IF NOT EXISTS players (
-		player_id TEXT PRIMARY KEY,
-		display_name TEXT NOT NULL,
-		state_json TEXT NOT NULL,
-		updated_at INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS action_log (
-		player_id TEXT NOT NULL,
-		client_action_id TEXT NOT NULL,
-		action_type TEXT NOT NULL,
-		payload_json TEXT NOT NULL,
-		result_state_json TEXT,
-		created_at INTEGER NOT NULL,
-		UNIQUE(player_id, client_action_id)
-	);
-	CREATE TABLE IF NOT EXISTS market_orders (
-		order_id TEXT PRIMARY KEY,
-		seller_id TEXT NOT NULL,
-		type TEXT NOT NULL,
-		resource_id TEXT NOT NULL,
-		amount INTEGER NOT NULL,
-		price_resource_id TEXT NOT NULL,
-		price_amount INTEGER NOT NULL,
-		fee_bps INTEGER NOT NULL,
-		status TEXT NOT NULL,
-		created_at INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS market_fills (
-		fill_id TEXT PRIMARY KEY,
-		order_id TEXT NOT NULL,
-		buyer_id TEXT NOT NULL,
-		amount INTEGER NOT NULL,
-		total_price INTEGER NOT NULL,
-		fee INTEGER NOT NULL,
-		created_at INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS escrow (
-		player_id TEXT NOT NULL,
-		resource_id TEXT NOT NULL,
-		amount INTEGER NOT NULL,
-		PRIMARY KEY(player_id, resource_id)
-	);
-	CREATE TABLE IF NOT EXISTS trade_jobs (
-		job_id TEXT PRIMARY KEY,
-		provider_id TEXT NOT NULL,
-		input_resource_id TEXT NOT NULL,
-		input_amount INTEGER NOT NULL,
-		output_resource_id TEXT NOT NULL,
-		output_min INTEGER NOT NULL,
-		output_max INTEGER NOT NULL,
-		duration_sec INTEGER NOT NULL,
-		commission_resource_id TEXT NOT NULL,
-		commission_amount INTEGER NOT NULL,
-		queue_limit INTEGER NOT NULL,
-		status TEXT NOT NULL,
-		created_at INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS trade_job_runs (
-		run_id TEXT PRIMARY KEY,
-		job_id TEXT NOT NULL,
-		customer_id TEXT NOT NULL,
-		submitted_at INTEGER NOT NULL,
-		completes_at INTEGER NOT NULL,
-		input_locked INTEGER NOT NULL,
-		status TEXT NOT NULL,
-		output_amount INTEGER NOT NULL,
-		rng_seed TEXT NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS audit_wallet (
-		audit_id TEXT PRIMARY KEY,
-		player_id TEXT NOT NULL,
-		delta_wallet TEXT NOT NULL,
-		reason TEXT NOT NULL,
-		related_id TEXT,
-		created_at INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS world (
-		state_json TEXT NOT NULL,
-		updated_at INTEGER NOT NULL
-	);
-`);
-try {
-	db.exec("ALTER TABLE action_log ADD COLUMN result_state_json TEXT");
-} catch {
-	// Column already exists; ignore.
-}
-
 const getPlayerByIdStmt = db.prepare(
 	"SELECT player_id, display_name, state_json, updated_at FROM players WHERE player_id = ?"
 );
@@ -321,13 +257,12 @@ const getWorldStmt = db.prepare("SELECT state_json, updated_at FROM world LIMIT 
 const insertWorldStmt = db.prepare("INSERT INTO world (state_json, updated_at) VALUES (?, ?)");
 const updateWorldStmt = db.prepare("UPDATE world SET state_json = ?, updated_at = ?");
 
-const tokens = new Map<string, TokenEntry>();
 const bossIpWindow = new Map<string, { windowEnd: number; count: number }>();
-const rateLimits = new Map<string, { count: number; resetAt: number }>();
 const sockets = new Set<WebSocket>();
 const EXPERIMENT_SECRET = Bun.env.EXPERIMENT_SECRET || "dev_experiment_secret";
 const TRADE_SECRET = Bun.env.TRADE_SECRET || "dev_trade_secret";
 const WORLD_SECRET = Bun.env.WORLD_SECRET || "dev_world_secret";
+const TOKEN_SIGNING_SECRET = Bun.env.TOKEN_SIGNING_SECRET || "";
 
 // TODO: world module
 // TODO: sync module
@@ -342,12 +277,36 @@ function loadConfig(): Config {
 	} else {
 		merged = mergeConfig(merged, devConfig);
 	}
+	const maxBody = getEnvNumber("MAX_BODY_BYTES", merged.maxBodyBytes);
+	const tokenSeconds = getEnvNumber("SESSION_TTL_SECONDS", merged.tokenTtlMs / 1000);
+	merged.maxBodyBytes = Math.max(1024, maxBody);
+	merged.tokenTtlMs = Math.max(1000, tokenSeconds * 1000);
 	return merged;
 }
 
 function mergeConfig(base: Config, override: Partial<Config>): Config {
 	const rateLimit = { ...base.rateLimit, ...(override.rateLimit || {}) };
 	return { ...base, ...override, rateLimit };
+}
+
+function getEnvNumber(name: string, fallback: number): number {
+	const raw = Bun.env[name];
+	if (raw == null || raw == "") {
+		return fallback;
+	}
+	const parsed = Number(raw);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseCorsOrigins(): string[] {
+	const raw = Bun.env.CORS_ORIGINS;
+	if (!raw) {
+		return [];
+	}
+	return raw
+		.split(",")
+		.map((value) => value.trim())
+		.filter((value) => value.length > 0);
 }
 
 function ensureDbPath(path: string): string {
@@ -359,18 +318,16 @@ function ensureDbPath(path: string): string {
 	return resolved;
 }
 
-function enforceRateLimit(req: Request): void {
-	const ip = getClientIp(req);
-	const now = Date.now();
-	const entry = rateLimits.get(ip);
-	if (!entry || now >= entry.resetAt) {
-		rateLimits.set(ip, { count: 1, resetAt: now + config.rateLimit.windowMs });
-		return;
+function normalizeLoginEmail(name: string): string {
+	const trimmed = name.trim();
+	if (trimmed.includes("@")) {
+		return trimmed.toLowerCase();
 	}
-	if (entry.count >= config.rateLimit.maxPostsPerWindow) {
-		throw new HttpError(429, "Rate limit exceeded.");
-	}
-	entry.count += 1;
+	const slug = trimmed
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, ".")
+		.replace(/^\.+|\.+$/g, "");
+	return `${slug || "dev"}@dev.local`;
 }
 
 function getClientIp(req: Request): string {
@@ -383,6 +340,82 @@ function getClientIp(req: Request): string {
 		return real.trim();
 	}
 	return "unknown";
+}
+
+function getRequestId(req: Request): string {
+	const existing = req.headers.get("x-request-id");
+	if (existing && existing.length > 0) {
+		return existing;
+	}
+	return crypto.randomUUID();
+}
+
+function isOriginAllowed(origin: string): boolean {
+	if (CORS_ORIGINS.length == 0) {
+		const env = (Bun.env.NODE_ENV || Bun.env.BUN_ENV || "").toLowerCase();
+		if (env == "production" || env == "prod") {
+			return false;
+		}
+		return origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1");
+	}
+	if (CORS_ORIGINS.includes("*")) {
+		return true;
+	}
+	return CORS_ORIGINS.includes(origin);
+}
+
+function buildCorsHeaders(req: Request): Record<string, string> {
+	const origin = req.headers.get("origin");
+	if (!origin) {
+		return {};
+	}
+	if (!isOriginAllowed(origin)) {
+		return {};
+	}
+	return {
+		"Access-Control-Allow-Origin": origin,
+		"Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+		"Access-Control-Allow-Headers": "Content-Type,Authorization,X-Dev-Token,X-Request-Id",
+		"Access-Control-Max-Age": "600",
+		Vary: "Origin"
+	};
+}
+
+function applyResponseHeaders(res: Response, ctx: RequestContext, corsHeaders: Record<string, string>): Response {
+	const headers = new Headers(res.headers);
+	headers.set("X-Request-Id", ctx.requestId);
+	if (ctx.rateLimitBypass) {
+		headers.set("X-RateLimit-Bypass", "1");
+	}
+	headers.set("X-Content-Type-Options", "nosniff");
+	headers.set("X-Frame-Options", "DENY");
+	headers.set("Referrer-Policy", "no-referrer");
+	for (const [key, value] of Object.entries(corsHeaders)) {
+		headers.set(key, value);
+	}
+	return new Response(res.body, { status: res.status, headers });
+}
+
+async function applyRateLimit(
+	ctx: RequestContext,
+	options: Omit<Parameters<typeof rateLimit>[0], "ip" | "route"> & { route?: string }
+): Promise<void> {
+	const result = await rateLimit({
+		...options,
+		ip: ctx.ip,
+		route: options.route ?? ctx.path
+	});
+	if (result.bypass) {
+		ctx.rateLimitBypass = true;
+	}
+	if (!result.allowed) {
+		logWarn("rate limit exceeded", {
+			ip: ctx.ip,
+			path: ctx.path,
+			key: options.keyPrefix
+		});
+		throw new HttpError(429, result.message || "Rate limit exceeded.");
+	}
 }
 
 async function readJson(req: Request, maxBytes: number): Promise<any> {
@@ -404,6 +437,79 @@ function jsonResponse(data: unknown, status = 200): Response {
 	return new Response(JSON.stringify(data), {
 		status,
 		headers: { "Content-Type": "application/json" }
+	});
+}
+
+function getSchemaVersion(): string | null {
+	try {
+		const row = db.query("SELECT id FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").get() as
+			| { id: string }
+			| undefined;
+		return row?.id ?? null;
+	} catch {
+		return null;
+	}
+}
+
+async function staticVersionResponse(): Promise<Response> {
+	const cacheKey = "cache:static:version";
+	const schemaVersion = getSchemaVersion();
+	const staticVersion = staticData.balance?.static_version ?? null;
+	const payload = {
+		ok: true,
+		api_version: config.apiVersion,
+		env: config.env,
+		server_time_unix_ms: Date.now(),
+		schema_version: schemaVersion,
+		static_version: staticVersion
+	};
+	let redisHealthy = true;
+	try {
+		const redis = getRedis();
+		if (!(await ensureRedisReady())) {
+			throw new Error("Redis unavailable");
+		}
+		const cached = await redis.get(cacheKey);
+		if (cached) {
+			return jsonResponse(JSON.parse(cached));
+		}
+	} catch (err) {
+		console.warn("[cache] static/version redis read failed", err);
+		redisHealthy = false;
+	}
+	if (redisHealthy) {
+		try {
+			const redis = getRedis();
+			await redis.set(cacheKey, JSON.stringify(payload), "EX", 60);
+		} catch (err) {
+			console.warn("[cache] static/version redis write failed", err);
+		}
+	}
+	return jsonResponse(payload);
+}
+
+async function healthResponse(): Promise<Response> {
+	const [pgOk, redisOk] = await Promise.all([pingPostgres(), pingRedis()]);
+	return jsonResponse({
+		ok: true,
+		postgres: pgOk ? "up" : "down",
+		redis: redisOk ? "up" : "down",
+		version: config.apiVersion
+	});
+}
+
+async function metricsResponse(): Promise<Response> {
+	const [pgOk, redisOk, queueSize] = await Promise.all([
+		pingPostgres(),
+		pingRedis(),
+		getJobQueueSize()
+	]);
+	return jsonResponse({
+		ok: true,
+		...snapshotMetrics(),
+		postgres: pgOk ? "up" : "down",
+		redis: redisOk ? "up" : "down",
+		job_queue_size: queueSize
 	});
 }
 
@@ -437,6 +543,17 @@ function loginResponse(playerId: string, token: string): Response {
 	});
 }
 
+function tokenPairResponse(accessToken: string, refreshToken: string): Response {
+	return jsonResponse({
+		ok: true,
+		server_time_unix_ms: Date.now(),
+		access_token: accessToken,
+		refresh_token: refreshToken,
+		access_expires_in: Math.floor(ACCESS_TTL_MS / 1000),
+		refresh_expires_in: Math.floor(REFRESH_TTL_MS / 1000)
+	});
+}
+
 function errorResponse(message: string, status: number): Response {
 	return jsonResponse(
 		{
@@ -448,55 +565,56 @@ function errorResponse(message: string, status: number): Response {
 	);
 }
 
-function issueToken(playerId: string): string {
-	const token = crypto.randomUUID();
-	tokens.set(token, { playerId, expiresAt: Date.now() + config.tokenTtlMs });
-	return token;
+function getSessionTtlMs(): number {
+	const envSeconds = Number(Bun.env.SESSION_TTL_SECONDS || 0);
+	if (Number.isFinite(envSeconds) && envSeconds > 0) {
+		return Math.floor(envSeconds * 1000);
+	}
+	return config.tokenTtlMs;
 }
 
-function requireAuth(req: Request): string {
-	const token =
-		getBearerToken(req.headers.get("authorization")) ?? req.headers.get("x-dev-token");
+async function issueToken(playerId: string): Promise<string> {
+	return issueSession(playerId, getSessionTtlMs());
+}
+
+async function requireAuth(req: Request, ctx?: RequestContext): Promise<string> {
+	const token = extractToken(req);
 	if (!token) {
 		throw new HttpError(401, "Missing auth token.");
 	}
-	const entry = tokens.get(token);
+	const access = await getAccessToken(token);
+	const legacy = access ? null : await getLegacySession(token);
+	const entry = access ?? legacy;
 	if (!entry) {
 		throw new HttpError(401, "Invalid token.");
 	}
-	if (entry.expiresAt < Date.now()) {
-		tokens.delete(token);
-		throw new HttpError(401, "Token expired.");
+	if (await isUserDisabled(entry.userId)) {
+		throw new HttpError(403, "User disabled.");
 	}
-	return entry.playerId;
+	if (ctx) {
+		ctx.userId = entry.userId;
+	}
+	return entry.userId;
 }
 
-function tryAuth(req: Request): string | null {
-	const token =
-		getBearerToken(req.headers.get("authorization")) ?? req.headers.get("x-dev-token");
+async function tryAuth(req: Request, ctx?: RequestContext): Promise<string | null> {
+	const token = extractToken(req);
 	if (!token) {
 		return null;
 	}
-	const entry = tokens.get(token);
+	const access = await getAccessToken(token);
+	const legacy = access ? null : await getLegacySession(token);
+	const entry = access ?? legacy;
 	if (!entry) {
 		return null;
 	}
-	if (entry.expiresAt <= Date.now()) {
-		tokens.delete(token);
+	if (await isUserDisabled(entry.userId)) {
 		return null;
 	}
-	return entry.playerId;
-}
-
-function getBearerToken(header: string | null): string | null {
-	if (!header) {
-		return null;
+	if (ctx) {
+		ctx.userId = entry.userId;
 	}
-	const parts = header.split(" ");
-	if (parts.length == 2 && parts[0].toLowerCase() == "bearer") {
-		return parts[1];
-	}
-	return null;
+	return entry.userId;
 }
 
 function findOrCreatePlayer(name: string): { player_id: string; display_name: string } {
@@ -639,13 +757,40 @@ function broadcast(message: unknown): void {
 	}
 }
 
-function startServer(): void {
+async function maybeRunExternalExamples(): Promise<void> {
+	const runPostgres = Bun.env.PG_EXAMPLE == "1" || Bun.env.POSTGRES_EXAMPLE == "1";
+	const runRedis = Bun.env.REDIS_EXAMPLE == "1";
+	if (runPostgres) {
+		await postgresExample();
+	}
+	if (runRedis) {
+		await redisExample();
+	}
+}
+
+async function startServer(): Promise<void> {
+	void maybeRunExternalExamples();
 	const server = Bun.serve({
 		hostname: config.host,
 		port: config.port,
 		fetch: async (req, server) => {
+			const ctx: RequestContext = {
+				requestId: getRequestId(req),
+				rateLimitBypass: false,
+				startAt: Date.now(),
+				ip: getClientIp(req),
+				path: new URL(req.url).pathname
+			};
+			const corsHeaders = buildCorsHeaders(req);
+			if (req.method == "OPTIONS") {
+				const res = new Response(null, { status: 204 });
+				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
+				recordRequest(finalRes.status, Date.now() - ctx.startAt);
+				return finalRes;
+			}
 			try {
-				const url = new URL(req.url);
+				const res = await (async () => {
+					const url = new URL(req.url);
 				if (url.pathname == "/ws") {
 					const upgraded = server.upgrade(req, { data: { ip: getClientIp(req) } });
 					if (upgraded) {
@@ -654,24 +799,107 @@ function startServer(): void {
 					return jsonResponse({ error: "Upgrade required" }, 426);
 				}
 
-				if (req.method == "POST") {
-					enforceRateLimit(req);
-				}
-
 				if (req.method == "POST" && url.pathname == "/auth/dev_login") {
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:login",
+						windowSeconds: getEnvNumber("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 600),
+						max: getEnvNumber("LOGIN_RATE_LIMIT_MAX", 10),
+						keyBy: "ip"
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const name = typeof body?.name == "string" ? body.name.trim() : "";
 					if (!name || name.length > 64) {
-						console.warn("Auth: invalid dev_login name", body?.name);
+						logWarn("Auth invalid dev_login name", { name: body?.name });
 						throw new HttpError(400, "Missing or invalid name.");
 					}
 					const player = findOrCreatePlayer(name);
-					const token = issueToken(player.player_id);
+					const token = await issueToken(player.player_id);
+					const email = normalizeLoginEmail(name);
+					await upsertUser({ id: player.player_id, email, displayName: name });
 					return loginResponse(player.player_id, token);
 				}
 
+				if (req.method == "POST" && url.pathname == "/v1/auth/login") {
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:login",
+						windowSeconds: getEnvNumber("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 600),
+						max: getEnvNumber("LOGIN_RATE_LIMIT_MAX", 10),
+						keyBy: "ip"
+					});
+					const body = await readJson(req, config.maxBodyBytes);
+					const emailRaw = typeof body?.email == "string" ? body.email.trim() : "";
+					const nameRaw = typeof body?.name == "string" ? body.name.trim() : "";
+					const displayName = nameRaw || (emailRaw ? emailRaw.split("@")[0] : "");
+					if (!displayName) {
+						throw new HttpError(400, "Missing email or name.");
+					}
+					const player = findOrCreatePlayer(displayName);
+					const email = emailRaw ? emailRaw.toLowerCase() : normalizeLoginEmail(displayName);
+					await upsertUser({ id: player.player_id, email, displayName });
+					if (await isUserDisabled(player.player_id)) {
+						throw new HttpError(403, "User disabled.");
+					}
+					const fingerprint = typeof body?.fingerprint == "string" ? body.fingerprint : undefined;
+					const pair = await issueTokenPair(
+						player.player_id,
+						ACCESS_TTL_MS,
+						REFRESH_TTL_MS,
+						fingerprint
+					);
+					return tokenPairResponse(pair.accessToken, pair.refreshToken);
+				}
+
+				if (req.method == "POST" && url.pathname == "/v1/auth/refresh") {
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:refresh",
+						windowSeconds: getEnvNumber("REFRESH_RATE_LIMIT_WINDOW_SECONDS", 600),
+						max: getEnvNumber("REFRESH_RATE_LIMIT_MAX", 20),
+						keyBy: "ip"
+					});
+					const body = await readJson(req, config.maxBodyBytes);
+					const refreshToken =
+						typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
+					if (!refreshToken) {
+						throw new HttpError(400, "Missing refresh_token.");
+					}
+					const fingerprint = typeof body?.fingerprint == "string" ? body.fingerprint : undefined;
+					const rotated = await rotateRefreshToken(refreshToken, REFRESH_TTL_MS, fingerprint);
+					if (!rotated) {
+						throw new HttpError(401, "Invalid refresh token.");
+					}
+					if (await isUserDisabled(rotated.record.userId)) {
+						throw new HttpError(403, "User disabled.");
+					}
+					const accessToken = await issueAccessToken(rotated.record.userId, ACCESS_TTL_MS);
+					return tokenPairResponse(accessToken, rotated.refreshToken);
+				}
+
+				if (req.method == "POST" && url.pathname == "/v1/auth/logout") {
+					const body = await readJson(req, config.maxBodyBytes);
+					const refreshToken =
+						typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
+					if (refreshToken) {
+						await revokeRefreshToken(refreshToken);
+					}
+					const accessToken = extractToken(req);
+					if (accessToken) {
+						await revokeAccessToken(accessToken);
+					}
+					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
+				}
+
+				if (req.method == "POST" && url.pathname == "/auth/logout") {
+					const token = extractToken(req);
+					if (!token) {
+						throw new HttpError(401, "Missing auth token.");
+					}
+					await revokeSession(token);
+					await revokeAccessToken(token);
+					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
+				}
+
 				if (url.pathname == "/player/state") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
 					const state = ensurePlayerState(playerId);
 					const now = Date.now();
 					const runtime = ensureLabRuntime(state);
@@ -684,7 +912,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/player/action") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:action",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -746,6 +981,11 @@ function startServer(): void {
 						);
 						auditWalletMutation(playerId, walletDelta, actionType, clientActionId, now);
 					})();
+					void enqueueJob("audit_snapshot", {
+						player_id: playerId,
+						action_type: actionType,
+						at: now
+					});
 					broadcast({ type: "player_action", player_id: playerId, action_type: actionType });
 					return stateResponse(updated.state);
 				}
@@ -807,7 +1047,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/market/order") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:market",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -907,7 +1154,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/market/cancel") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:market",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -970,7 +1224,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/market/buy") {
-					const buyerId = requireAuth(req);
+					const buyerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:market",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: buyerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1145,7 +1406,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/trade/jobs") {
-					const providerId = requireAuth(req);
+					const providerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:trade",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: providerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1166,7 +1434,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/trade/submit") {
-					const customerId = requireAuth(req);
+					const customerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:trade",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: customerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1185,7 +1460,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/trade/claim") {
-					const customerId = requireAuth(req);
+					const customerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:trade",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: customerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1205,7 +1487,7 @@ function startServer(): void {
 				if (req.method == "GET" && url.pathname == "/world/state") {
 					const now = Date.now();
 					const worldState = ensureWorldState(now);
-					const playerId = tryAuth(req);
+					const playerId = await tryAuth(req, ctx);
 					if (playerId) {
 						const state = ensurePlayerState(playerId);
 						const world = ensurePlayerWorld(state, now);
@@ -1228,7 +1510,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/world/enter") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:world",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1248,7 +1537,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/world/farm") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:world",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1269,7 +1565,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/world/claim") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:world",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1298,7 +1601,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/boss/attack") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:boss",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1322,7 +1632,14 @@ function startServer(): void {
 				}
 
 				if (req.method == "POST" && url.pathname == "/boss/claim_rewards") {
-					const playerId = requireAuth(req);
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, {
+						keyPrefix: "rl:boss",
+						windowSeconds: EXPENSIVE_RATE_WINDOW,
+						max: EXPENSIVE_RATE_MAX,
+						keyBy: "user",
+						userId: playerId
+					});
 					const body = await readJson(req, config.maxBodyBytes);
 					const clientActionId =
 						typeof body?.client_action_id == "string" ? body.client_action_id.trim() : "";
@@ -1341,21 +1658,44 @@ function startServer(): void {
 				}
 
 				if (req.method == "GET" && url.pathname == "/static/version") {
-					return jsonResponse({
-						ok: true,
-						api_version: config.apiVersion,
-						env: config.env,
-						server_time_unix_ms: Date.now()
-					});
+					return await staticVersionResponse();
+				}
+
+				if (req.method == "GET" && url.pathname == "/health") {
+					return await healthResponse();
+				}
+
+				if (req.method == "GET" && url.pathname == "/metrics") {
+					return await metricsResponse();
 				}
 
 				return jsonResponse({ error: "Not found" }, 404);
+				})();
+				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
+				recordRequest(finalRes.status, Date.now() - ctx.startAt);
+				logInfo("request", {
+					req_id: ctx.requestId,
+					method: req.method,
+					path: ctx.path,
+					status: finalRes.status,
+					latency_ms: Date.now() - ctx.startAt
+				});
+				return finalRes;
 			} catch (err) {
-				if (err instanceof HttpError) {
-					return errorResponse(err.message, err.status);
-				}
-				console.error("Unhandled error:", err);
-				return errorResponse("Internal server error", 500);
+				recordError();
+				const message = err instanceof HttpError ? err.message : "Internal server error";
+				const status = err instanceof HttpError ? err.status : 500;
+				const res = errorResponse(message, status);
+				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
+				recordRequest(finalRes.status, Date.now() - ctx.startAt);
+				logError("request error", {
+					req_id: ctx.requestId,
+					method: req.method,
+					path: ctx.path,
+					status,
+					error: String(err)
+				});
+				return finalRes;
 			}
 		},
 		websocket: {
@@ -5192,5 +5532,10 @@ if (Bun.env.RUN_BACKEND_TESTS == "1") {
 	runBackendTests();
 	process.exit(0);
 } else {
-	startServer();
+	void startServer();
 }
+
+
+
+
+

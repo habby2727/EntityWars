@@ -206,10 +206,7 @@ function seedPlayerState(db: Database, playerId: string, seed: SeedOptions): voi
 			next.lab.hqPath = seed.hqPath;
 		}
 		next.lab.buildings = { ...(next.lab.buildings ?? {}) };
-		next.lab.runtime = { ...(next.lab.runtime ?? {}) };
-		next.lab.runtime.cooldowns = { ...(next.lab.runtime.cooldowns ?? {}) };
-		next.lab.runtime.boosts = { ...(next.lab.runtime.boosts ?? {}) };
-		next.lab.runtime.research = { ...(next.lab.runtime.research ?? {}) };
+		next.lab.runtime = { cooldowns: {}, boosts: {}, research: {} };
 		if (seed.lab_runtime?.cooldowns) {
 			next.lab.runtime.cooldowns = {
 				...next.lab.runtime.cooldowns,
@@ -245,7 +242,7 @@ function seedPlayerState(db: Database, playerId: string, seed: SeedOptions): voi
 			route: hqPath,
 			runtime: { ...(labHq.runtime ?? {}) }
 		};
-		next.research_flags = { ...(state.research_flags ?? {}) };
+		next.research_flags = {};
 		if (seed.research_flags) {
 			for (const [key, value] of Object.entries(seed.research_flags)) {
 				if (value) {
@@ -270,8 +267,36 @@ function makeAction(actionType: string, payload: any, clientActionId?: string): 
 	};
 }
 
+type PlayerSlot = "a" | "b" | "c";
+
+const RUN_ID = crypto.randomUUID().slice(0, 8);
+const playerSlots: Record<PlayerSlot, { playerId: string; token: string } | null> = {
+	a: null,
+	b: null,
+	c: null
+};
+
+function slotForLabel(label: string): PlayerSlot {
+	const lower = label.toLowerCase();
+	if (lower.includes("buyer2")) {
+		return "c";
+	}
+	if (lower.includes("buyer") || lower.includes("customer") || lower.includes("boss")) {
+		return "b";
+	}
+	if (lower.includes("seller") || lower.includes("provider") || lower.includes("world")) {
+		return "a";
+	}
+	return "a";
+}
+
 async function createPlayer(ctx: TestContext, label: string): Promise<{ playerId: string; token: string }> {
-	const name = `test_${label}_${crypto.randomUUID().slice(0, 8)}`;
+	const slot = slotForLabel(label);
+	const cached = playerSlots[slot];
+	if (cached) {
+		return cached;
+	}
+	const name = `test_${slot}_${RUN_ID}`;
 	const login = await ctx.client.dev_login(name);
 	if (login.status !== 200 || login.data?.ok !== true) {
 		console.error("dev_login failure", { status: login.status, data: login.data });
@@ -282,7 +307,9 @@ async function createPlayer(ctx: TestContext, label: string): Promise<{ playerId
 	const token = login.data.token as string;
 	assertTrue(Boolean(playerId), `dev_login missing player_id (${label})`);
 	assertTrue(Boolean(token), `dev_login missing token (${label})`);
-	return { playerId, token };
+	const entry = { playerId, token };
+	playerSlots[slot] = entry;
+	return entry;
 }
 
 async function createSeededPlayer(
