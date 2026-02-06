@@ -1,0 +1,150 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/lab_hub.gd" id="1_lab_hub"]
+[ext_resource type="Script" path="res://scripts/net/backend_client.gd" id="2_backend_client"]
+[ext_resource type="Script" path="res://scripts/ui/back_button.gd" id="3_back_button"]
+
+[node name="LabHub" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_lab_hub")
+backend_path = NodePath("BackendClient")
+canvas_path = NodePath("Aspect/Canvas")
+background_path = NodePath("Aspect/Canvas/Background")
+icon_layer_path = NodePath("Aspect/Canvas/IconLayer")
+placeholder_popup_path = NodePath("PlaceholderPopup")
+resource_bar_panel_path = NodePath("Aspect/Canvas/TopOverlay/ResourceBarPanel")
+resource_bar_path = NodePath("Aspect/Canvas/TopOverlay/ResourceBarPanel/BarMargin/ResourceBar")
+structures_button_path = NodePath("Aspect/Canvas/TopOverlay/StructuresButton")
+
+[node name="BackendClient" type="Node" parent="."]
+script = ExtResource("2_backend_client")
+
+[node name="Aspect" type="AspectRatioContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+ratio = 1.7777778
+stretch_mode = 2
+
+[node name="Canvas" type="Control" parent="Aspect"]
+layout_mode = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="TextureRect" parent="Aspect/Canvas"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="IconLayer" type="Control" parent="Aspect/Canvas"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopOverlay" type="Control" parent="Aspect/Canvas"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+z_index = 80
+z_as_relative = true
+
+[node name="BackButton" type="Button" parent="Aspect/Canvas/TopOverlay"]
+layout_mode = 1
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 84.0
+offset_bottom = 38.0
+text = "Back"
+focus_mode = 0
+theme_override_font_sizes/font_size = 14
+script = ExtResource("3_back_button")
+target = "main_menu"
+z_index = 50
+z_as_relative = true
+
+[node name="StructuresButton" type="Button" parent="Aspect/Canvas/TopOverlay"]
+layout_mode = 1
+anchors_preset = 2
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = -132.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = 38.0
+text = "Structures"
+focus_mode = 0
+theme_override_font_sizes/font_size = 14
+script = ExtResource("3_back_button")
+target = "lab_structures"
+z_index = 50
+z_as_relative = true
+
+[node name="ResourceBarPanel" type="PanelContainer" parent="Aspect/Canvas/TopOverlay"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = 96.0
+offset_top = 12.0
+offset_right = -144.0
+offset_bottom = 38.0
+size_flags_horizontal = 3
+clip_contents = true
+z_index = 40
+z_as_relative = true
+
+[node name="BarMargin" type="MarginContainer" parent="Aspect/Canvas/TopOverlay/ResourceBarPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 4
+
+[node name="ResourceBar" type="HBoxContainer" parent="Aspect/Canvas/TopOverlay/ResourceBarPanel/BarMargin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PlaceholderPopup" type="PopupPanel" parent="."]
+visible = false
+
+[node name="PopupPanel" type="PanelContainer" parent="PlaceholderPopup"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PopupLabel" type="Label" parent="PlaceholderPopup/PopupPanel"]
+layout_mode = 2
+text = "Coming soon..."
+horizontal_alignment = 1
+vertical_alignment = 1

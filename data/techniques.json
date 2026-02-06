@@ -1,0 +1,56 @@
+{
+  "attack": [
+    {
+      "id": "assault_sigil",
+      "name": "Assault Sigil",
+      "desc": "Round 1 burst: +Power, but lower Guard overall.",
+      "effects": {
+        "r1_power_flat": 4,
+        "guard_mult": 0.95
+      }
+    },
+    {
+      "id": "piercing_rune",
+      "name": "Piercing Rune",
+      "desc": "Ignores part of Guard each round.",
+      "effects": {
+        "ignore_guard_pct": 0.18
+      }
+    },
+    {
+      "id": "tempo_feint",
+      "name": "Tempo Feint",
+      "desc": "If you lose a round, gain Tempo next round.",
+      "effects": {
+        "tempo_on_lose": 3
+      }
+    }
+  ],
+  "defense": [
+    {
+      "id": "bulwark_rite",
+      "name": "Bulwark Rite",
+      "desc": "+Guard each round, but slightly lower Power.",
+      "effects": {
+        "guard_flat": 3,
+        "power_mult": 0.96
+      }
+    },
+    {
+      "id": "null_veil",
+      "name": "Null Veil",
+      "desc": "Reduce type multipliers toward neutral.",
+      "effects": {
+        "type_neutralize": 0.12
+      }
+    },
+    {
+      "id": "reversal_mark",
+      "name": "Reversal Mark",
+      "desc": "If you win a round, reduce incoming damage next round.",
+      "effects": {
+        "incoming_mult_on_win": 0.95
+      }
+    }
+  ]
+}

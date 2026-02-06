@@ -1,0 +1,116 @@
+{
+  "balance": {
+    "tick_seconds": 1,
+    "offline_cap_hours": 12,
+    "reactor_base_rate": 1.0,
+    "reactor_rate_per_level": 0.2,
+    "reactor_route_output_mult": {
+      "stable": 0.8,
+      "volatile": 1.35,
+      "mutagenic": 0.65
+    },
+    "storage_route_output_mult": {
+      "reactive": 1.05
+    },
+    "route_multipliers": {
+      "Scientific": 1.0,
+      "Chaotic": 1.1,
+      "Industrial": 1.05
+    },
+    "hq_output_mult": {
+      "scientific": 1.05,
+      "chaotic": 1.0,
+      "industrial": 0.95
+    },
+    "storage_base_capacity": 1000,
+    "storage_capacity_per_level": 250,
+    "storage_route_capacity_mult": {
+      "compact": 1.0,
+      "reactive": 1.1,
+      "sealed": 0.9
+    },
+    "hq_capacity_mult": {
+      "scientific": 1.05,
+      "chaotic": 1.0,
+      "industrial": 1.1
+    },
+    "hq_cost_mult": {
+      "scientific": 0.95,
+      "chaotic": 1.05,
+      "industrial": 1.0
+    },
+    "volatile_loss_chance": 0.25,
+    "volatile_loss_pct": 0.3,
+    "compact_loss_mult": 0.5,
+    "sealed_rare_mult": 1.25,
+    "mutagenic_rare_base_chance": 0.08,
+    "mutagenic_rare_cap": 0.25,
+    "hq_rare_mult": {
+      "scientific": 0.9,
+      "chaotic": 1.1,
+      "industrial": 0.85
+    },
+    "hq_risk_mult": {
+      "scientific": 0.9,
+      "chaotic": 1.1,
+      "industrial": 0.85
+    },
+    "overclock_output_mult": 1.25,
+    "overclock_loss_mult": 1.25,
+    "mutagen_rare_mult": 1.5,
+    "mutagen_failure_mult": 1.2,
+    "world_gate_cooldown_seconds": 3600,
+    "trade_hall_fee_pct": 0.05,
+    "market_fee_bps": 200,
+    "world_rotation_hours": 24,
+    "world_daily_entries": 10,
+    "world_daily_reset_hours": 24,
+    "world_max_stamina": 12,
+    "world_stamina_recharge_seconds": 300,
+    "world_max_blocks_per_action": 4,
+    "world_drop_min": 1,
+    "world_drop_max": 4,
+    "world_rare_amount": 1,
+    "world_rare_base_chance": 0.05,
+    "world_heat_rare_bonus": 0.002,
+    "world_hazard_base_chance": 0.02,
+    "world_heat_hazard_bonus": 0.003,
+    "world_hazard_loss_mult": 0.6,
+    "world_heat_gain": 2,
+    "world_heat_max": 100,
+    "world_heat_decay_per_hour": 1,
+    "world_modifiers_per_zone": 1,
+    "world_entry_fee_essence": 5,
+    "boss_interval_minutes": 120,
+    "boss_window_minutes": 15,
+    "boss_base_hp": 80000,
+    "boss_hp_mult": {
+      "boss_common": 0.8,
+      "boss_colossus": 1.3,
+      "boss_leviathan": 1.1,
+      "boss_temporal": 1.5
+    },
+    "boss_phase_thresholds": [0.66, 0.33],
+    "boss_modifiers_per_window": 1,
+    "boss_modifier_pool": ["feral_rage", "arcane_flux", "void_surge"],
+    "boss_ticket_max": 5,
+    "boss_ticket_recharge_minutes": 30,
+    "boss_attack_fee_essence": 3,
+    "boss_power_hq_mult": 10,
+    "boss_power_building_mult": 2,
+    "boss_damage_variance": 0.15,
+    "boss_damage_cap": 100000,
+    "boss_token_divisor": 1000,
+    "boss_reward_phase_bonus": 0.1,
+    "boss_ip_limit_per_window": 200,
+    "wallet_max_per_resource": 1000000000,
+    "wallet_suspicious_threshold": 5000000,
+    "wallet_caps": {},
+    "boss_rewards": {
+      "t1": { "arcane_shard": 5, "time_crystal": 2, "primordial_sigil": 1 },
+      "t2": { "arcane_shard": 3, "time_crystal": 1 },
+      "t3": { "arcane_shard": 2 },
+      "t4": { "arcane_shard": 1 }
+    }
+  }
+}

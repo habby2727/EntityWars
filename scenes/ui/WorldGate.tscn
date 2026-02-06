@@ -1,0 +1,266 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/world_gate.gd" id="1_world_gate"]
+[ext_resource type="Script" path="res://scripts/net/backend_client.gd" id="2_backend_client"]
+
+[node name="WorldGate" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_world_gate")
+backend_path = NodePath("BackendClient")
+panel_path = NodePath("Background")
+back_button_path = NodePath("Background/Margin/RootVBox/Header/BackButton")
+tabs_path = NodePath("Background/Margin/RootVBox/Tabs")
+zone_list_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZoneList")
+zone_refresh_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZonesHeaderRow/RefreshZonesButton")
+session_zone_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/SessionZoneLabel")
+session_stats_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/SessionStatsLabel")
+farm_count_option_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow/FarmCountOption")
+farm_button_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow/FarmButton")
+farm_progress_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow/FarmProgressLabel")
+drops_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/DropsLabel")
+claim_button_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/ClaimButton")
+zone_error_label_path = NodePath("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/ZoneErrorLabel")
+boss_portrait_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossPortrait")
+boss_hp_bar_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossHpBar")
+boss_window_label_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossWindowLabel")
+boss_modifiers_label_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossModifiersLabel")
+boss_tickets_label_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossTicketsLabel")
+boss_contribution_label_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossContributionLabel")
+boss_reward_label_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossRewardLabel")
+boss_refresh_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossHeaderRow/RefreshBossButton")
+boss_attack_button_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossButtons/BossAttackButton")
+boss_claim_button_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossButtons/BossClaimButton")
+boss_error_label_path = NodePath("Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossErrorLabel")
+
+[node name="BackendClient" type="Node" parent="."]
+script = ExtResource("2_backend_client")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Background"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 100
+theme_override_constants/margin_top = 120
+theme_override_constants/margin_right = 100
+theme_override_constants/margin_bottom = 120
+
+[node name="RootVBox" type="VBoxContainer" parent="Background/Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Background/Margin/RootVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+text = "WORLD GATE"
+theme_override_font_sizes/font_size = 28
+
+[node name="Spacer" type="Control" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BackButton" type="Button" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+text = "BACK"
+
+[node name="Tabs" type="TabContainer" parent="Background/Margin/RootVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Zones" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/Zones"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ZoneVBox" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="ZonesHeaderRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ZonesHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZonesHeaderRow"]
+layout_mode = 2
+text = "Zones"
+size_flags_horizontal = 3
+
+[node name="RefreshZonesButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZonesHeaderRow"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="ZoneList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="SessionPanel" type="Panel" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SessionMargin" type="MarginContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="SessionVBox" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="SessionHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
+layout_mode = 2
+text = "Active Session"
+
+[node name="SessionZoneLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
+layout_mode = 2
+text = "Active Zone: -"
+
+[node name="SessionStatsLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
+layout_mode = 2
+text = "Modifiers: - | Heat: 0 | Rep: 0"
+
+[node name="FarmRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="FarmCountLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
+layout_mode = 2
+text = "Queue"
+
+[node name="FarmCountOption" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(80, 0)
+
+[node name="FarmButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
+layout_mode = 2
+text = "Spend 1 Time Block"
+
+[node name="FarmProgressLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
+layout_mode = 2
+text = "Queue: 0"
+size_flags_horizontal = 3
+
+[node name="DropsLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
+layout_mode = 2
+text = "Expected per block: 0-0 items"
+
+[node name="ClaimButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
+layout_mode = 2
+text = "Claim Drops"
+
+[node name="ZoneErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
+layout_mode = 2
+text = ""
+modulate = Color(1, 0.35, 0.35, 1)
+
+[node name="Boss" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="BossVBox" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Boss"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="BossHeaderRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BossHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossHeaderRow"]
+layout_mode = 2
+text = "World Boss"
+size_flags_horizontal = 3
+
+[node name="RefreshBossButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossHeaderRow"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="BossPortrait" type="TextureRect" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+custom_minimum_size = Vector2(240, 240)
+expand_mode = 1
+stretch_mode = 5
+
+[node name="BossHpBar" type="ProgressBar" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0
+max_value = 100
+value = 100
+
+[node name="BossWindowLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+text = "Window starts in -"
+
+[node name="BossModifiersLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+text = "Modifiers: -"
+
+[node name="BossTicketsLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+text = "Tickets: 0"
+
+[node name="BossContributionLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+text = "Contribution: 0"
+
+[node name="BossRewardLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+text = "Reward Tier: -"
+
+[node name="BossButtons" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BossAttackButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossButtons"]
+layout_mode = 2
+text = "Attack"
+
+[node name="BossClaimButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossButtons"]
+layout_mode = 2
+text = "Claim Rewards"
+
+[node name="BossErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
+layout_mode = 2
+text = ""
+modulate = Color(1, 0.35, 0.35, 1)

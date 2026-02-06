@@ -1,0 +1,5 @@
+{
+    "godotTools.editorPath.godot4": "c:\\Users\\JavierEguren\\Desktop\\Godot_v4.6.exe",
+    // Disable the Code Spell Checker in this workspace (GDScript and .tscn files produce many false positives)
+    "cSpell.enabled": false
+}

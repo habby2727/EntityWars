@@ -1,0 +1,11 @@
+{
+  "name": "entity-wars-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "start": "bun dist/index.js",
+    "test:all": "bun run src/tests/run_all.ts"
+  }
+}

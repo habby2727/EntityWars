@@ -1,0 +1,164 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/inventory_screen.gd" id="1_inventory_screen"]
+
+[node name="Inventory" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_inventory_screen")
+panel_path = NodePath("Background")
+back_button_path = NodePath("Background/Margin/RootVBox/Header/BackButton")
+loadout_button_path = NodePath("Background/Margin/RootVBox/Header/LoadoutButton")
+tabs_path = NodePath("Background/Margin/RootVBox/Tabs")
+entities_list_path = NodePath("Background/Margin/RootVBox/Tabs/Entities/Scroll/EntitiesList")
+builds_list_path = NodePath("Background/Margin/RootVBox/Tabs/Builds/Scroll/BuildsList")
+homunculi_list_path = NodePath("Background/Margin/RootVBox/Tabs/Homunculi/Scroll/HomunculiList")
+ultrahit_list_path = NodePath("Background/Margin/RootVBox/Tabs/Ultrahit/Scroll/UltrahitList")
+techs_list_path = NodePath("Background/Margin/RootVBox/Tabs/Techs/Scroll/TechsList")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Background"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 100
+theme_override_constants/margin_top = 120
+theme_override_constants/margin_right = 100
+theme_override_constants/margin_bottom = 120
+
+[node name="RootVBox" type="VBoxContainer" parent="Background/Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Background/Margin/RootVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+text = "INVENTORY"
+theme_override_font_sizes/font_size = 28
+
+[node name="Spacer" type="Control" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LoadoutButton" type="Button" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+text = "OPEN LOADOUT"
+
+[node name="BackButton" type="Button" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+text = "BACK"
+
+[node name="Tabs" type="TabContainer" parent="Background/Margin/RootVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Entities" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/Entities"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="EntitiesList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Entities/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Builds" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/Builds"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="BuildsList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Builds/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Homunculi" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/Homunculi"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HomunculiList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Homunculi/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Ultrahit" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/Ultrahit"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="UltrahitList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Ultrahit/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Techs" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/Techs"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TechsList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Techs/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8

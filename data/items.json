@@ -1,0 +1,93 @@
+{
+  "items": [
+    {
+      "id": "bismuth_talisman",
+      "name": "Talisman of Bismuth",
+      "rarity": "basic",
+      "slot": "build",
+      "desc": "Bismuth lattice sharpens blows, adding a sliver of true damage.",
+      "effects": {
+        "power_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
+        "true_on_hit": [1]
+      }
+    },
+    {
+      "id": "wind_amulet",
+      "name": "Amulet of Wind",
+      "rarity": "basic",
+      "slot": "build",
+      "desc": "Wind currents grant tempo and a slight chance to evade a strike.",
+      "effects": {
+        "tempo_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
+        "evasion_pct": [0.08]
+      }
+    },
+    {
+      "id": "saltstone_charm",
+      "name": "Saltstone Charm",
+      "rarity": "basic",
+      "slot": "build",
+      "desc": "Salt wards harden armor and raise a brief protective ward.",
+      "effects": {
+        "guard_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
+        "ward_pct": [0.12]
+      }
+    },
+    {
+      "id": "mirror_sigel",
+      "name": "Mirror Sigil",
+      "rarity": "advanced",
+      "slot": "build",
+      "desc": "Mirror glyph returns a portion of damage and raises a faint ward.",
+      "effects": {
+        "reflect_pct": [0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12],
+        "ward_pct": [0.08]
+      }
+    },
+    {
+      "id": "vitriol_vial",
+      "name": "Vitriol Vial",
+      "rarity": "advanced",
+      "slot": "build",
+      "desc": "Etching acid corrodes for true damage and leaves targets exposed.",
+      "effects": {
+        "dot_true": [1, 2, 2, 3, 3, 4, 4, 5, 6, 7],
+        "vuln_on_hit": [0.1]
+      }
+    },
+    {
+      "id": "gilded_scale",
+      "name": "Gilded Scale",
+      "rarity": "advanced",
+      "slot": "build",
+      "desc": "Gilded balance softens bad matchups and grants a light ward.",
+      "effects": {
+        "disadvantage_reduction": [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.15],
+        "ward_pct": [0.06]
+      }
+    },
+    {
+      "id": "mercury_lens",
+      "name": "Mercury Lens",
+      "rarity": "advanced",
+      "slot": "build",
+      "desc": "Mercury refines initiative; victory grants extra tempo next round.",
+      "effects": {
+        "tempo_on_win": [1, 1, 2, 2, 3, 3, 4, 4, 5, 6],
+        "evasion_pct": [0.04]
+      }
+    },
+    {
+      "id": "aether_knot",
+      "name": "Aether Knot",
+      "rarity": "advanced",
+      "slot": "build",
+      "desc": "Aether knot unravels mirrors and steadies a faint ward.",
+      "effects": {
+        "ignore_reflect_chance": [0.15, 0.18, 0.21, 0.24, 0.27, 0.3, 0.33, 0.36, 0.4, 0.45],
+        "ward_pct": [0.06]
+      }
+    }
+  ],
+  "max_level": 10
+}

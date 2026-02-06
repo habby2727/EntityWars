@@ -1,0 +1,59 @@
+{
+  "zones": [
+    {
+      "id": "zone_corrupted",
+      "name": "Corrupted Zone",
+      "drops": {
+        "essence": 70,
+        "chaos_cell": 20,
+        "arcane_shard": 10
+      },
+      "rare_drops": {
+        "primordial_sigil": 5,
+        "time_crystal": 5
+      },
+      "modifiers": [
+        "corrupt_fog",
+        "unstable_flux",
+        "spiteful_echoes"
+      ]
+    },
+    {
+      "id": "zone_crystal",
+      "name": "Crystal Zone",
+      "drops": {
+        "essence": 60,
+        "core": 25,
+        "time_crystal": 15
+      },
+      "rare_drops": {
+        "primordial_sigil": 4,
+        "arcane_shard": 6
+      },
+      "modifiers": [
+        "resonant_growth",
+        "shard_bloom",
+        "prismatic_shift"
+      ]
+    },
+    {
+      "id": "zone_chaos",
+      "name": "Chaos Zone",
+      "drops": {
+        "essence": 50,
+        "arcane_shard": 25,
+        "chaos_cell": 15,
+        "core": 10
+      },
+      "rare_drops": {
+        "primordial_sigil": 7,
+        "time_crystal": 3
+      },
+      "modifiers": [
+        "entropy_surge",
+        "wild_flux",
+        "rift_winds"
+      ]
+    }
+  ]
+}

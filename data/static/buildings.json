@@ -1,0 +1,168 @@
+{
+  "hq_paths": [
+    "Scientific",
+    "Chaotic",
+    "Industrial"
+  ],
+  "buildings": [
+    {
+      "id": "lab_th",
+      "name": "Lab HQ",
+      "display_name": "Lab HQ",
+      "unlock_hq": 1,
+      "routes": [
+        "Scientific",
+        "Chaotic",
+        "Industrial"
+      ],
+      "costs": {
+        "1": {
+          "essence": 50,
+          "core": 10
+        }
+      }
+    },
+    {
+      "id": "essence_reactor",
+      "name": "Essence Reactor",
+      "display_name": "Essence Reactor",
+      "unlock_hq": 1,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 20,
+          "core": 5
+        }
+      }
+    },
+    {
+      "id": "storage_vault",
+      "name": "Storage Vault",
+      "display_name": "Storage Vault",
+      "unlock_hq": 1,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 30,
+          "core": 5
+        }
+      }
+    },
+    {
+      "id": "build_forge",
+      "name": "Build Forge",
+      "display_name": "Build Forge",
+      "unlock_hq": 1,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 25
+        }
+      }
+    },
+    {
+      "id": "homunculus_vat",
+      "name": "Homunculus Vat",
+      "display_name": "Homunculus Vat",
+      "unlock_hq": 2,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 40,
+          "living_catalyst": 2
+        }
+      }
+    },
+    {
+      "id": "ultrahit_tower",
+      "name": "Ultrahit Tower",
+      "display_name": "Ultrahit Tower",
+      "unlock_hq": 2,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 35,
+          "arcane_shard": 1
+        }
+      }
+    },
+    {
+      "id": "experiment_chamber",
+      "name": "Experiment Chamber",
+      "display_name": "Experiment Chamber",
+      "unlock_hq": 3,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 45,
+          "chaos_cell": 1
+        }
+      }
+    },
+    {
+      "id": "arcane_archives",
+      "name": "Arcane Archives",
+      "display_name": "Arcane Archives",
+      "unlock_hq": 3,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 50,
+          "arcane_shard": 2
+        }
+      }
+    },
+    {
+      "id": "sync_nexus",
+      "name": "Sync Nexus",
+      "display_name": "Sync Nexus",
+      "unlock_hq": 4,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 60,
+          "time_crystal": 1
+        }
+      }
+    },
+    {
+      "id": "anomaly_containment",
+      "name": "Anomaly Containment",
+      "display_name": "Anomaly Containment",
+      "unlock_hq": 5,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 70,
+          "chaos_cell": 2
+        }
+      }
+    },
+    {
+      "id": "trade_hall",
+      "name": "Trade Hall",
+      "display_name": "Trade Hall",
+      "unlock_hq": 2,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 55,
+          "core": 3
+        }
+      }
+    },
+    {
+      "id": "world_gate",
+      "name": "World Gate",
+      "display_name": "World Gate",
+      "unlock_hq": 6,
+      "routes": [],
+      "costs": {
+        "1": {
+          "essence": 100,
+          "primordial_sigil": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,242 @@
+{
+  "homunculi": [
+    {
+      "id": "cinder",
+      "name": "Cinder",
+      "rarity": "basic",
+      "desc": "Sulfur-leaning familiar. Adds a burst of Power.",
+      "buff_atk": 2,
+      "buff_def": 0,
+      "buff_hp": 0,
+      "per_type": {
+        "sulfur": {
+          "power_flat": 3
+        },
+        "mercury": {
+          "tempo_flat": 1
+        },
+        "sodium": {
+          "guard_flat": 1
+        },
+        "aether": {
+          "power_flat": 2
+        },
+        "vitriol": {
+          "power_flat": 1,
+          "dot_true": 1
+        },
+        "gold": {
+          "power_flat": 1,
+          "reflect_pct": 0.02
+        }
+      }
+    },
+    {
+      "id": "silphide",
+      "name": "Silphide",
+      "rarity": "basic",
+      "desc": "Mercury familiar. Adds Tempo and slight evasion (reduces incoming).",
+      "buff_atk": 0,
+      "buff_def": 1,
+      "buff_hp": 1,
+      "per_type": {
+        "mercury": {
+          "tempo_flat": 3,
+          "incoming_mult": 0.96
+        },
+        "sulfur": {
+          "tempo_flat": 1
+        },
+        "sodium": {
+          "incoming_mult": 0.98
+        },
+        "aether": {
+          "tempo_flat": 2
+        },
+        "vitriol": {
+          "tempo_flat": 1,
+          "incoming_mult": 0.98
+        },
+        "gold": {
+          "tempo_flat": 1
+        }
+      }
+    },
+    {
+      "id": "sodium",
+      "name": "Sodi",
+      "rarity": "basic",
+      "desc": "Sodium familiar. Adds Guard and stabilizes extremes.",
+      "buff_atk": 0,
+      "buff_def": 2,
+      "buff_hp": 2,
+      "per_type": {
+        "sodium": {
+          "guard_flat": 3
+        },
+        "sulfur": {
+          "guard_flat": 1
+        },
+        "mercury": {
+          "guard_flat": 1
+        },
+        "aether": {
+          "guard_flat": 2
+        },
+        "vitriol": {
+          "guard_flat": 1
+        },
+        "gold": {
+          "guard_flat": 1,
+          "reflect_pct": 0.01
+        }
+      }
+    },
+    {
+      "id": "drakon",
+      "name": "Drakon",
+      "rarity": "advanced",
+      "desc": "Aether familiar. Tweaks rules: raises type advantage slightly for you.",
+      "buff_atk": 2,
+      "buff_def": 1,
+      "buff_hp": 0,
+      "per_type": {
+        "aether": {
+          "type_adv_bonus": 0.1
+        },
+        "sulfur": {
+          "type_adv_bonus": 0.05
+        },
+        "mercury": {
+          "type_adv_bonus": 0.05
+        },
+        "sodium": {
+          "type_adv_bonus": 0.05
+        },
+        "vitriol": {
+          "type_adv_bonus": 0.05
+        },
+        "gold": {
+          "type_adv_bonus": 0.05
+        }
+      }
+    },
+    {
+      "id": "pyritc",
+      "name": "Pyro",
+      "rarity": "advanced",
+      "desc": "Vitriol familiar. Adds corrosion each round.",
+      "buff_atk": 1,
+      "buff_def": 0,
+      "buff_hp": 2,
+      "per_type": {
+        "vitriol": {
+          "dot_true": 3
+        },
+        "sulfur": {
+          "dot_true": 1
+        },
+        "mercury": {
+          "dot_true": 1
+        },
+        "sodium": {
+          "dot_true": 1
+        },
+        "aether": {
+          "dot_true": 2
+        },
+        "gold": {
+          "dot_true": 1
+        }
+      }
+    },
+    {
+      "id": "chimera",
+      "name": "Chimera",
+      "rarity": "advanced",
+      "desc": "Gold familiar. Adds reflect and discipline.",
+      "buff_atk": 1,
+      "buff_def": 2,
+      "buff_hp": 0,
+      "per_type": {
+        "gold": {
+          "reflect_pct": 0.06
+        },
+        "sulfur": {
+          "reflect_pct": 0.02
+        },
+        "mercury": {
+          "reflect_pct": 0.02
+        },
+        "sodium": {
+          "reflect_pct": 0.03
+        },
+        "aether": {
+          "reflect_pct": 0.02
+        },
+        "vitriol": {
+          "reflect_pct": 0.02
+        }
+      }
+    },
+    {
+      "id": "nighty",
+      "name": "Nighty",
+      "rarity": "advanced",
+      "desc": "Build-oriented familiar. Improves item effects slightly.",
+      "buff_atk": 0,
+      "buff_def": 1,
+      "buff_hp": 3,
+      "per_type": {
+        "sulfur": {
+          "item_effect_mult": 1.05
+        },
+        "mercury": {
+          "item_effect_mult": 1.05
+        },
+        "sodium": {
+          "item_effect_mult": 1.05
+        },
+        "aether": {
+          "item_effect_mult": 1.05
+        },
+        "vitriol": {
+          "item_effect_mult": 1.05
+        },
+        "gold": {
+          "item_effect_mult": 1.05
+        }
+      }
+    },
+    {
+      "id": "mothy",
+      "name": "Mothy",
+      "rarity": "advanced",
+      "desc": "Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).",
+      "buff_atk": 2,
+      "buff_def": 0,
+      "buff_hp": 1,
+      "per_type": {
+        "sulfur": {
+          "type_neutralize": 0.1
+        },
+        "mercury": {
+          "type_neutralize": 0.1
+        },
+        "sodium": {
+          "type_neutralize": 0.1
+        },
+        "aether": {
+          "type_neutralize": 0.1
+        },
+        "vitriol": {
+          "type_neutralize": 0.1
+        },
+        "gold": {
+          "type_neutralize": 0.1
+        }
+      }
+    }
+  ],
+  "max_level": 10
+}

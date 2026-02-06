@@ -1,0 +1,83 @@
+[gd_resource type="Theme" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/defaultbutton.png" id="1_btn_default"]
+[ext_resource type="FontFile" path="res://assets/fonts/UncialAntiqua-Regular.ttf" id="2_font"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_btn"]
+texture = ExtResource("1_btn_default")
+texture_margin_left = 40.0
+texture_margin_top = 20.0
+texture_margin_right = 40.0
+texture_margin_bottom = 20.0
+expand_margin_left = 0.0
+expand_margin_top = 0.0
+expand_margin_right = 0.0
+expand_margin_bottom = 0.0
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_clear"]
+
+[resource]
+default_font = ExtResource("2_font")
+default_font_size = 18
+
+Button/styles/normal = SubResource("StyleBoxTexture_btn")
+Button/styles/focus = SubResource("StyleBoxTexture_btn")
+Button/styles/hover = SubResource("StyleBoxTexture_btn")
+Button/styles/pressed = SubResource("StyleBoxTexture_btn")
+Button/fonts/font = ExtResource("2_font")
+Button/font_sizes/font_size = 18
+Button/colors/font_color = Color(0.9, 1, 0.9, 1)
+Button/colors/font_color_pressed = Color(0.9, 1, 0.9, 1)
+Button/colors/font_color_hover = Color(0.9, 1, 0.9, 1)
+Button/colors/font_color_focus = Color(0.9, 1, 0.9, 1)
+Button/colors/font_outline_color = Color(0, 0, 0, 1)
+Button/constants/outline_size = 2
+
+OptionButton/styles/normal = SubResource("StyleBoxTexture_btn")
+OptionButton/styles/hover = SubResource("StyleBoxTexture_btn")
+OptionButton/styles/pressed = SubResource("StyleBoxTexture_btn")
+OptionButton/fonts/font = ExtResource("2_font")
+OptionButton/font_sizes/font_size = 18
+OptionButton/colors/font_color = Color(0.9, 1, 0.9, 1)
+OptionButton/colors/font_color_hover = Color(0.9, 1, 0.9, 1)
+OptionButton/colors/font_color_pressed = Color(0.9, 1, 0.9, 1)
+OptionButton/colors/font_outline_color = Color(0, 0, 0, 1)
+OptionButton/constants/outline_size = 2
+
+TabContainer/fonts/font = ExtResource("2_font")
+TabContainer/font_sizes/font_size = 18
+TabContainer/colors/font_selected = Color(1, 1, 1, 1)
+TabContainer/colors/font_unselected = Color(1, 1, 1, 1)
+TabContainer/colors/font_hovered = Color(1, 1, 1, 1)
+TabContainer/colors/font_outline_color = Color(0, 0, 0, 1)
+TabContainer/constants/outline_size = 2
+
+Label/fonts/font = ExtResource("2_font")
+Label/font_sizes/font_size = 18
+Label/colors/font_color = Color(0.08, 0.06, 0.04, 1)
+Label/colors/font_outline_color = Color(0, 0, 0, 1)
+Label/constants/outline_size = 2
+
+RichTextLabel/fonts/normal_font = ExtResource("2_font")
+RichTextLabel/font_sizes/normal_font_size = 18
+RichTextLabel/colors/default_color = Color(0.08, 0.06, 0.04, 1)
+RichTextLabel/colors/font_outline_color = Color(0, 0, 0, 1)
+RichTextLabel/constants/outline_size = 2
+
+ItemList/fonts/font = ExtResource("2_font")
+ItemList/font_sizes/font_size = 18
+ItemList/colors/font_color = Color(0.08, 0.06, 0.04, 1)
+ItemList/colors/font_outline_color = Color(0, 0, 0, 1)
+ItemList/constants/outline_size = 2
+
+PanelContainer/styles/panel = SubResource("StyleBoxEmpty_clear")
+ScrollContainer/styles/panel = SubResource("StyleBoxEmpty_clear")
+TabContainer/styles/tab_hovered = SubResource("StyleBoxEmpty_clear")
+TabContainer/styles/tab_selected = SubResource("StyleBoxEmpty_clear")
+TabContainer/styles/tab_unselected = SubResource("StyleBoxEmpty_clear")
+PopupMenu/styles/panel = SubResource("StyleBoxEmpty_clear")
+PopupMenu/styles/hover = SubResource("StyleBoxEmpty_clear")
+PopupMenu/styles/pressed = SubResource("StyleBoxEmpty_clear")
+PopupMenu/styles/separator = SubResource("StyleBoxEmpty_clear")
+PopupMenu/styles/labeled_separator = SubResource("StyleBoxEmpty_clear")
+TabBar/constants/hseparation = 16

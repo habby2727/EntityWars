@@ -1,0 +1,84 @@
+{
+  "research": [
+    {
+      "id": "archive_basics",
+      "name": "Archive Basics",
+      "flag_id": "archive_basics",
+      "cost": { "essence": 30 },
+      "time_sec": 30,
+      "requires": []
+    },
+    {
+      "id": "trade_jobs",
+      "name": "Trade Jobs",
+      "flag_id": "unlock_trade_jobs",
+      "cost": { "essence": 80, "core": 5 },
+      "time_sec": 120,
+      "requires": ["archive_basics"]
+    },
+    {
+      "id": "world_zones",
+      "name": "World Zones",
+      "flag_id": "unlock_world_zones",
+      "cost": { "essence": 120, "arcane_shard": 2 },
+      "time_sec": 180,
+      "requires": ["archive_basics"]
+    },
+    {
+      "id": "sync_theory",
+      "name": "Sync Theory",
+      "flag_id": "unlock_sync",
+      "cost": { "essence": 150, "core": 10 },
+      "time_sec": 240,
+      "requires": ["unlock_world_zones"]
+    },
+    {
+      "id": "anomaly_theory",
+      "name": "Anomaly Theory",
+      "flag_id": "unlock_anomalies",
+      "cost": { "essence": 200, "chaos_cell": 2 },
+      "time_sec": 300,
+      "requires": ["unlock_sync"]
+    },
+    {
+      "id": "experiment_cooldown",
+      "name": "Experiment Cooldown",
+      "flag_id": "reduce_experiment_cooldown",
+      "cost": { "essence": 100, "arcane_shard": 2 },
+      "time_sec": 180,
+      "requires": ["archive_basics"]
+    },
+    {
+      "id": "storage_protocols",
+      "name": "Storage Protocols",
+      "flag_id": "increase_storage_capacity",
+      "cost": { "essence": 110, "core": 4 },
+      "time_sec": 180,
+      "requires": ["archive_basics"]
+    },
+    {
+      "id": "reactor_notes",
+      "name": "Reactor Notes",
+      "flag_id": "reactor_efficiency",
+      "cost": { "essence": 90, "core": 3 },
+      "time_sec": 150,
+      "requires": ["archive_basics"]
+    },
+    {
+      "id": "arcane_catalog",
+      "name": "Arcane Catalog",
+      "flag_id": "unlock_arcane_catalog",
+      "cost": { "essence": 130, "arcane_shard": 3 },
+      "time_sec": 200,
+      "requires": ["reactor_efficiency"]
+    },
+    {
+      "id": "gateway_studies",
+      "name": "Gateway Studies",
+      "flag_id": "unlock_gateway_studies",
+      "cost": { "essence": 160, "time_crystal": 1 },
+      "time_sec": 220,
+      "requires": ["unlock_world_zones"]
+    }
+  ]
+}

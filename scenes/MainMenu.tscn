@@ -1,0 +1,96 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_main_menu"]
+[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/menu_bg.png" id="2_menu_bg"]
+[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/menubutton1.png" id="3_default_btn"]
+[ext_resource type="FontFile" path="res://assets/fonts/UncialAntiqua-Regular.ttf" id="4_arcana"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_btn"]
+texture = ExtResource("3_default_btn")
+texture_margin_left = 20.0
+texture_margin_top = 14.0
+texture_margin_right = 20.0
+texture_margin_bottom = 14.0
+expand_margin_left = 0.0
+expand_margin_top = 0.0
+expand_margin_right = 0.0
+expand_margin_bottom = 0.0
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main_menu")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_menu_bg")
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="LowerButtons" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -210.0
+offset_top = -231.0
+offset_right = 210.0
+offset_bottom = 231.0
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="CombatButton" type="Button" parent="LowerButtons"]
+layout_mode = 2
+custom_minimum_size = Vector2(420, 105)
+text = "COMBAT"
+theme_override_font_sizes/font_size = 28
+theme_override_fonts/font = ExtResource("4_arcana")
+theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
+theme_override_styles/hover = SubResource("StyleBoxTexture_btn")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_btn")
+theme_override_styles/focus = SubResource("StyleBoxTexture_btn")
+
+[node name="InventoryButton" type="Button" parent="LowerButtons"]
+layout_mode = 2
+custom_minimum_size = Vector2(420, 105)
+text = "INVENTORY"
+theme_override_font_sizes/font_size = 24
+theme_override_fonts/font = ExtResource("4_arcana")
+theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
+theme_override_styles/hover = SubResource("StyleBoxTexture_btn")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_btn")
+theme_override_styles/focus = SubResource("StyleBoxTexture_btn")
+
+[node name="LaboratoryButton" type="Button" parent="LowerButtons"]
+layout_mode = 2
+custom_minimum_size = Vector2(420, 105)
+text = "LABORATORY"
+theme_override_font_sizes/font_size = 24
+theme_override_fonts/font = ExtResource("4_arcana")
+theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
+theme_override_styles/hover = SubResource("StyleBoxTexture_btn")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_btn")
+theme_override_styles/focus = SubResource("StyleBoxTexture_btn")
+
+[node name="SettingsButton" type="Button" parent="LowerButtons"]
+layout_mode = 2
+custom_minimum_size = Vector2(420, 105)
+text = "SETTINGS"
+theme_override_font_sizes/font_size = 24
+theme_override_fonts/font = ExtResource("4_arcana")
+theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
+theme_override_styles/hover = SubResource("StyleBoxTexture_btn")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_btn")
+theme_override_styles/focus = SubResource("StyleBoxTexture_btn")

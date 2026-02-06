@@ -1,0 +1,285 @@
+[gd_scene format=3 uid="uid://ej8ai0suanlw"]
+
+[ext_resource type="Theme" uid="uid://ctvm52ql8gnb1" path="res://assets/ui/alchemy_kit/theme_alchemy.tres" id="1_5fm06"]
+[ext_resource type="Script" uid="uid://dxap8uerubsts" path="res://scripts/loadout_ui.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/ui/back_button.gd" id="5_back_button"]
+
+[node name="Loadout" type="Control" unique_id=532101707]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("1_5fm06")
+script = ExtResource("4")
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 156.0
+offset_bottom = 64.0
+text = "Back"
+focus_mode = 0
+theme_override_font_sizes/font_size = 14
+z_index = 20
+z_as_relative = true
+script = ExtResource("5_back_button")
+target = "main_menu"
+
+[node name="BG" type="TextureRect" parent="." unique_id=214603833]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Scroll" type="ScrollContainer" parent="." unique_id=967094907]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Root" type="VBoxContainer" parent="Scroll" unique_id=820699868]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="Scroll/Root" unique_id=782003278]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "LOADOUT — Entity / Homunculus / Build"
+
+[node name="Body" type="HBoxContainer" parent="Scroll/Root" unique_id=2117488264]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 18
+
+[node name="LeftPanel" type="PanelContainer" parent="Scroll/Root/Body" unique_id=1110362486]
+custom_minimum_size = Vector2(560, 780)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 3
+
+[node name="LeftPanelBG" type="TextureRect" parent="Scroll/Root/Body/LeftPanel" unique_id=2019740149]
+layout_mode = 2
+mouse_filter = 0
+expand_mode = 1
+stretch_mode = 6
+
+[node name="LeftMargin" type="MarginContainer" parent="Scroll/Root/Body/LeftPanel" unique_id=8694318]
+layout_mode = 2
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 22
+
+[node name="Left" type="VBoxContainer" parent="Scroll/Root/Body/LeftPanel/LeftMargin" unique_id=1938531920]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="EntitiesHdr" type="Label" parent="Scroll/Root/Body/LeftPanel/LeftMargin/Left" unique_id=121536874]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Entities (owned)"
+
+[node name="EntityGrid" type="ItemList" parent="Scroll/Root/Body/LeftPanel/LeftMargin/Left" unique_id=870465325]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(510, 470)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HomHdr" type="Label" parent="Scroll/Root/Body/LeftPanel/LeftMargin/Left" unique_id=168057727]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Homunculi (owned)"
+
+[node name="HomunculusList" type="ItemList" parent="Scroll/Root/Body/LeftPanel/LeftMargin/Left" unique_id=1830595892]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(510, 180)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RightPanel" type="PanelContainer" parent="Scroll/Root/Body" unique_id=2035133661]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="RightPanelBG" type="TextureRect" parent="Scroll/Root/Body/RightPanel" unique_id=1569502303]
+layout_mode = 2
+mouse_filter = 0
+expand_mode = 1
+stretch_mode = 6
+
+[node name="RightMargin" type="MarginContainer" parent="Scroll/Root/Body/RightPanel" unique_id=1802956600]
+layout_mode = 2
+theme_override_constants/margin_left = 26
+theme_override_constants/margin_top = 26
+theme_override_constants/margin_right = 26
+theme_override_constants/margin_bottom = 26
+
+[node name="Right" type="VBoxContainer" parent="Scroll/Root/Body/RightPanel/RightMargin" unique_id=1910537773]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="EntityRow" type="HBoxContainer" parent="Scroll/Root/Body/RightPanel/RightMargin/Right" unique_id=106311508]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="EntityFrame" type="TextureRect" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/EntityRow" unique_id=1483599858]
+custom_minimum_size = Vector2(256, 256)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="EntityPreview" type="TextureRect" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/EntityRow/EntityFrame" unique_id=1048620263]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="EntityInfo" type="VBoxContainer" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/EntityRow" unique_id=1812641495]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="EntityName" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/EntityRow/EntityInfo" unique_id=1723842507]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "-"
+
+[node name="EntityDesc" type="RichTextLabel" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/EntityRow/EntityInfo" unique_id=2056620646]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(560, 210)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+
+[node name="PreviewDebug" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right" unique_id=154644624]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+
+[node name="HomInfo" type="VBoxContainer" parent="Scroll/Root/Body/RightPanel/RightMargin/Right" unique_id=956882247]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="HomunculusName" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/HomInfo" unique_id=98188701]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "-"
+
+[node name="HomunculusDesc" type="RichTextLabel" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/HomInfo" unique_id=250422134]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(560, 90)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+
+[node name="BuildHdr" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right" unique_id=991399599]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Build (2 equipped + 2 sideboard) & Techniques"
+
+[node name="Grid" type="GridContainer" parent="Scroll/Root/Body/RightPanel/RightMargin/Right" unique_id=2114380008]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 2
+
+[node name="Equip1Label" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=30855041]
+layout_mode = 2
+text = "Equip Slot 1"
+
+[node name="Equip1" type="OptionButton" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=317017573]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Equip2Label" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=811459519]
+layout_mode = 2
+text = "Equip Slot 2"
+
+[node name="Equip2" type="OptionButton" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=2117373275]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Side1Label" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=1795262463]
+layout_mode = 2
+text = "Sideboard 1"
+
+[node name="Side1" type="OptionButton" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=560120147]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Side2Label" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=1458377731]
+layout_mode = 2
+text = "Sideboard 2"
+
+[node name="Side2" type="OptionButton" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=1529550551]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AtkLabel" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=172807386]
+layout_mode = 2
+text = "Attack Technique"
+
+[node name="AtkTech" type="OptionButton" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=1500518097]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DefLabel" type="Label" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=1648684596]
+layout_mode = 2
+text = "Defense Technique"
+
+[node name="DefTech" type="OptionButton" parent="Scroll/Root/Body/RightPanel/RightMargin/Right/Grid" unique_id=261435378]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Bottom" type="HBoxContainer" parent="Scroll/Root" unique_id=2133155482]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="SaveBtn" type="Button" parent="Scroll/Root/Bottom" unique_id=452852022]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Save Loadout"
+
+[node name="ResetBtn" type="Button" parent="Scroll/Root/Bottom" unique_id=1258402671]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Reset Defaults"
+
+[node name="Status" type="Label" parent="Scroll/Root/Bottom" unique_id=898539389]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3

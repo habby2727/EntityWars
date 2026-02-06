@@ -1,0 +1,84 @@
+{
+  "types": [
+    {
+      "id": "sulfur",
+      "name": "Sulfur",
+      "color": "#D9B300"
+    },
+    {
+      "id": "mercury",
+      "name": "Mercury",
+      "color": "#A7B0BD"
+    },
+    {
+      "id": "sodium",
+      "name": "Sodium",
+      "color": "#D8D8D8"
+    },
+    {
+      "id": "aether",
+      "name": "Aether",
+      "color": "#7A5CFF"
+    },
+    {
+      "id": "vitriol",
+      "name": "Vitriol",
+      "color": "#39C34A"
+    },
+    {
+      "id": "gold",
+      "name": "Gold",
+      "color": "#D4AF37"
+    }
+  ],
+  "effectiveness": {
+    "sulfur": {
+      "vitriol": 2.0,
+      "sodium": 0.5,
+      "mercury": 1.0,
+      "aether": 1.0,
+      "gold": 1.0,
+      "sulfur": 1.0
+    },
+    "vitriol": {
+      "sodium": 2.0,
+      "sulfur": 0.5,
+      "mercury": 1.0,
+      "aether": 1.0,
+      "gold": 1.0,
+      "vitriol": 1.0
+    },
+    "sodium": {
+      "mercury": 2.0,
+      "vitriol": 0.5,
+      "aether": 1.0,
+      "gold": 1.0,
+      "sulfur": 1.0,
+      "sodium": 1.0
+    },
+    "mercury": {
+      "gold": 2.0,
+      "sodium": 0.5,
+      "aether": 1.0,
+      "vitriol": 1.0,
+      "sulfur": 1.0,
+      "mercury": 1.0
+    },
+    "gold": {
+      "aether": 2.0,
+      "mercury": 0.5,
+      "sodium": 1.0,
+      "vitriol": 1.0,
+      "sulfur": 1.0,
+      "gold": 1.0
+    },
+    "aether": {
+      "sulfur": 2.0,
+      "gold": 0.5,
+      "mercury": 1.0,
+      "sodium": 1.0,
+      "vitriol": 1.0,
+      "aether": 1.0
+    }
+  }
+}

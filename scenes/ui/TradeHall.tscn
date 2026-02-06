@@ -1,0 +1,339 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/trade_hall.gd" id="1_trade_hall"]
+[ext_resource type="Script" path="res://scripts/net/backend_client.gd" id="2_backend_client"]
+
+[node name="TradeHall" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_trade_hall")
+backend_path = NodePath("BackendClient")
+panel_path = NodePath("Background")
+back_button_path = NodePath("Background/Margin/RootVBox/Header/BackButton")
+tabs_path = NodePath("Background/Margin/RootVBox/Tabs")
+market_filter_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow/MarketFilter")
+market_refresh_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow/RefreshButton")
+market_orders_list_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/OrdersList")
+sell_resource_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource/SellResource")
+sell_amount_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount/SellAmount")
+sell_price_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice/SellPrice")
+sell_create_button_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/CreateSellButton")
+sell_error_label_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/SellErrorLabel")
+my_orders_list_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/MyOrdersList")
+jobs_list_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/JobsList")
+runs_list_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/RunsList")
+job_input_option_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput/JobInput")
+job_input_amount_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput/JobInputAmount")
+job_output_option_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput/JobOutput")
+job_output_min_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput/JobOutputMin")
+job_output_max_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput/JobOutputMax")
+job_duration_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowDuration/JobDuration")
+job_commission_option_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission/JobCommission")
+job_commission_amount_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission/JobCommissionAmount")
+job_queue_limit_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowQueue/JobQueueLimit")
+job_create_button_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/CreateJobButton")
+job_error_label_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/JobErrorLabel")
+trade_refresh_path = NodePath("Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/JobsHeaderRow/RefreshJobsButton")
+
+[node name="BackendClient" type="Node" parent="."]
+script = ExtResource("2_backend_client")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Background"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 100
+theme_override_constants/margin_top = 120
+theme_override_constants/margin_right = 100
+theme_override_constants/margin_bottom = 120
+
+[node name="RootVBox" type="VBoxContainer" parent="Background/Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Background/Margin/RootVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+text = "TRADE HALL"
+theme_override_font_sizes/font_size = 28
+
+[node name="Spacer" type="Control" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BackButton" type="Button" parent="Background/Margin/RootVBox/Header"]
+layout_mode = 2
+text = "BACK"
+
+[node name="Tabs" type="TabContainer" parent="Background/Margin/RootVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Market" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/Market"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarketVBox" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="OrdersHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
+layout_mode = 2
+text = "Open Orders"
+
+[node name="FilterRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="FilterLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow"]
+layout_mode = 2
+text = "Filter"
+
+[node name="MarketFilter" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RefreshButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="OrdersList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CreateHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
+layout_mode = 2
+text = "Create Sell Order"
+
+[node name="CreateSell" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RowResource" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ResourceLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource"]
+layout_mode = 2
+text = "Resource"
+
+[node name="SellResource" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RowAmount" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="AmountLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount"]
+layout_mode = 2
+text = "Amount"
+
+[node name="SellAmount" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "e.g., 10"
+
+[node name="RowPrice" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PriceLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice"]
+layout_mode = 2
+text = "Price (Essence)"
+
+[node name="SellPrice" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "e.g., 5"
+
+[node name="CreateSellButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
+layout_mode = 2
+text = "Create Sell Order"
+
+[node name="SellErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
+layout_mode = 2
+text = ""
+modulate = Color(1, 0.35, 0.35, 1)
+
+[node name="MyOrdersHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
+layout_mode = 2
+text = "My Orders"
+
+[node name="MyOrdersList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TradeJobs" type="Control" parent="Background/Margin/RootVBox/Tabs"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TradeVBox" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="JobsHeaderRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="JobsHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/JobsHeaderRow"]
+layout_mode = 2
+text = "Available Jobs"
+size_flags_horizontal = 3
+
+[node name="RefreshJobsButton" type="Button" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/JobsHeaderRow"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="JobsList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RunsHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
+layout_mode = 2
+text = "My Runs"
+
+[node name="RunsList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CreateJobHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
+layout_mode = 2
+text = "Create Job"
+
+[node name="CreateJob" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RowInput" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="InputLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
+layout_mode = 2
+text = "Input"
+
+[node name="JobInput" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="JobInputAmount" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
+layout_mode = 2
+custom_minimum_size = Vector2(80, 0)
+placeholder_text = "Amount"
+
+[node name="RowOutput" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="OutputLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
+layout_mode = 2
+text = "Output"
+
+[node name="JobOutput" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="JobOutputMin" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 0)
+placeholder_text = "Min"
+
+[node name="JobOutputMax" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 0)
+placeholder_text = "Max"
+
+[node name="RowDuration" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DurationLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowDuration"]
+layout_mode = 2
+text = "Duration (sec)"
+
+[node name="JobDuration" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowDuration"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "e.g., 60"
+
+[node name="RowCommission" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CommissionLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission"]
+layout_mode = 2
+text = "Commission"
+
+[node name="JobCommission" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="JobCommissionAmount" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission"]
+layout_mode = 2
+custom_minimum_size = Vector2(80, 0)
+placeholder_text = "Amount"
+
+[node name="RowQueue" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="QueueLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowQueue"]
+layout_mode = 2
+text = "Queue Limit"
+
+[node name="JobQueueLimit" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowQueue"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "e.g., 2"
+
+[node name="CreateJobButton" type="Button" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
+layout_mode = 2
+text = "Create Job"
+
+[node name="JobErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
+layout_mode = 2
+text = ""
+modulate = Color(1, 0.35, 0.35, 1)

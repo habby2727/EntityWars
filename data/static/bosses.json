@@ -1,0 +1,20 @@
+{
+  "bosses": [
+    {
+      "id": "boss_common",
+      "name": "Common Boss"
+    },
+    {
+      "id": "boss_colossus",
+      "name": "Giant Arcane Colossus"
+    },
+    {
+      "id": "boss_leviathan",
+      "name": "Corrupted Energy Leviathan"
+    },
+    {
+      "id": "boss_temporal",
+      "name": "Temporal Warden Titan"
+    }
+  ]
+}

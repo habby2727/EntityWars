@@ -1,0 +1,16 @@
+{
+  "client": {
+    "min_version": "0.1.0",
+    "motd": "Beta offline config defaults."
+  },
+  "economy": {
+    "battle_cost": {
+      "silver": 5,
+      "copper": 5
+    },
+    "competitive_cost": {
+      "silver": 3
+    },
+    "first_win_daily_bonus_mult": 2.0
+  }
+}

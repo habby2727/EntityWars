@@ -1,0 +1,553 @@
+[gd_scene format=3 uid="uid://bo8hp12284p3j"]
+
+[ext_resource type="Theme" path="res://assets/ui/alchemy_kit/theme_alchemy.tres" id="1_xm1o7"]
+[ext_resource type="Script" uid="uid://bc06x74vqkqjh" path="res://scripts/loadout_grid.gd" id="2_xm1o7"]
+[ext_resource type="Script" path="res://scripts/ui/back_button.gd" id="3_back_button"]
+[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/attackseal.png" id="4_atk_seal"]
+[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/defenseseal.png" id="5_def_seal"]
+[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/togglebutton.webp" id="6_toggle_btn"]
+[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/hudbackground.png" id="7_hud_bg"]
+[ext_resource type="FontFile" path="res://assets/fonts/liberation-serif/LiberationSerif-Regular.ttf" id="8_libserif"]
+[ext_resource type="FontFile" path="res://assets/fonts/liberation-serif/LiberationSerif-Bold.ttf" id="9_libserif_bold"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_clear"]
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_toggle"]
+texture = ExtResource("6_toggle_btn")
+texture_margin_left = 20.0
+texture_margin_top = 14.0
+texture_margin_right = 20.0
+texture_margin_bottom = 14.0
+expand_margin_left = 0.0
+expand_margin_top = 0.0
+expand_margin_right = 0.0
+expand_margin_bottom = 0.0
+
+[node name="LoadoutGrid" type="Control" unique_id=1932154444]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("1_xm1o7")
+script = ExtResource("2_xm1o7")
+
+[node name="HUDBackground" type="TextureRect" parent="." unique_id=1982401121]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("7_hud_bg")
+expand_mode = 1
+stretch_mode = 0
+mouse_filter = 2
+
+[node name="RootMargin" type="MarginContainer" parent="." unique_id=1232816167]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 18.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="MainHSplit" type="HSplitContainer" parent="RootMargin" unique_id=378019799]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+split_offsets = PackedInt32Array(346)
+split_offset = 346
+dragging_enabled = false
+splitter_visibility = 2
+
+[node name="LeftPanel" type="VBoxContainer" parent="RootMargin/MainHSplit" unique_id=1982810175]
+layout_mode = 2
+custom_minimum_size = Vector2(346, 0)
+size_flags_horizontal = 0
+size_flags_vertical = 3
+theme_override_constants/separation = 18
+theme_override_constants/margin_left = 0
+theme_override_constants/margin_right = 0
+
+[node name="Title" type="Label" parent="RootMargin/MainHSplit/LeftPanel" unique_id=465534816]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "LOADOUT"
+autowrap_mode = 3
+
+[node name="ModeRow" type="HBoxContainer" parent="RootMargin/MainHSplit/LeftPanel" unique_id=1869084492]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="TabButtons" type="HBoxContainer" parent="RootMargin/MainHSplit/LeftPanel" unique_id=324168222]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 0
+theme_override_constants/side_margin = 0
+
+[node name="BtnEntities" type="Button" parent="RootMargin/MainHSplit/LeftPanel/TabButtons" unique_id=328682702]
+custom_minimum_size = Vector2(170, 60)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "ENTITIES"
+toggle_mode = true
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxTexture_toggle")
+theme_override_styles/hover = SubResource("StyleBoxTexture_toggle")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_toggle")
+theme_override_styles/focus = SubResource("StyleBoxTexture_toggle")
+
+[node name="BtnHomunculi" type="Button" parent="RootMargin/MainHSplit/LeftPanel/TabButtons" unique_id=902620345]
+custom_minimum_size = Vector2(170, 60)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "HOMUNCULI"
+toggle_mode = true
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxTexture_toggle")
+theme_override_styles/hover = SubResource("StyleBoxTexture_toggle")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_toggle")
+theme_override_styles/focus = SubResource("StyleBoxTexture_toggle")
+
+[node name="AttackCol" type="VBoxContainer" parent="RootMargin/MainHSplit/LeftPanel/ModeRow" unique_id=1132778963]
+layout_mode = 2
+size_flags_vertical = 0
+alignment = 0
+
+[node name="AttackBtn" type="TextureButton" parent="RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol" unique_id=566086023]
+custom_minimum_size = Vector2(115, 115)
+layout_mode = 2
+texture_normal = ExtResource("4_atk_seal")
+texture_pressed = ExtResource("4_atk_seal")
+texture_hover = ExtResource("4_atk_seal")
+ignore_texture_size = true
+stretch_mode = 5
+toggle_mode = true
+focus_mode = 0
+
+[node name="AttackLabel" type="Label" parent="RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol" unique_id=657652755]
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+layout_mode = 2
+text = "SEAL: ATTACK"
+horizontal_alignment = 0
+theme_override_colors/font_color = Color(0.9, 1, 0.9, 1)
+
+[node name="DefenseCol" type="VBoxContainer" parent="RootMargin/MainHSplit/LeftPanel/ModeRow" unique_id=559203142]
+layout_mode = 2
+size_flags_vertical = 0
+alignment = 0
+
+[node name="DefenseBtn" type="TextureButton" parent="RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol" unique_id=955189523]
+custom_minimum_size = Vector2(115, 115)
+layout_mode = 2
+texture_normal = ExtResource("5_def_seal")
+texture_pressed = ExtResource("5_def_seal")
+texture_hover = ExtResource("5_def_seal")
+ignore_texture_size = true
+stretch_mode = 5
+toggle_mode = true
+focus_mode = 0
+
+[node name="DefenseLabel" type="Label" parent="RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol" unique_id=436684504]
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+layout_mode = 2
+text = "SEAL: DEFENSE"
+horizontal_alignment = 0
+theme_override_colors/font_color = Color(0.9, 1, 0.9, 1)
+
+[node name="Tabs" type="TabContainer" parent="RootMargin/MainHSplit/LeftPanel" unique_id=1480318108]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+theme_override_constants/h_separation = 16
+theme_override_constants/tab_overlap = 0
+tab_alignment = 0
+tabs_visible = false
+
+[node name="Entities" type="VBoxContainer" parent="RootMargin/MainHSplit/LeftPanel/Tabs" unique_id=1824666153]
+layout_mode = 2
+size_flags_vertical = 3
+metadata/_tab_index = 0
+
+[node name="EntitiesScroll" type="ScrollContainer" parent="RootMargin/MainHSplit/LeftPanel/Tabs/Entities" unique_id=1751131158]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
+theme_override_constants/scrollbar_margin_right = -56
+
+[node name="EntitiesGrid" type="GridContainer" parent="RootMargin/MainHSplit/LeftPanel/Tabs/Entities/EntitiesScroll" unique_id=444795935]
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="Homunculi" type="VBoxContainer" parent="RootMargin/MainHSplit/LeftPanel/Tabs" unique_id=1783775964]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+metadata/_tab_index = 1
+
+[node name="HomunculiScroll" type="ScrollContainer" parent="RootMargin/MainHSplit/LeftPanel/Tabs/Homunculi" unique_id=1382514247]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
+theme_override_constants/scrollbar_margin_right = -56
+
+[node name="HomunculiGrid" type="GridContainer" parent="RootMargin/MainHSplit/LeftPanel/Tabs/Homunculi/HomunculiScroll" unique_id=1856871120]
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="RightPanel" type="VBoxContainer" parent="RootMargin/MainHSplit" unique_id=123814925]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+clip_contents = false
+
+[node name="ItemTooltip" type="PanelContainer" parent="RootMargin/MainHSplit/RightPanel" unique_id=900120311]
+visible = false
+layout_mode = 2
+custom_minimum_size = Vector2(240, 0)
+mouse_filter = 2
+
+[node name="TooltipVBox" type="VBoxContainer" parent="RootMargin/MainHSplit/RightPanel/ItemTooltip" unique_id=900120312]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TooltipIcon" type="TextureRect" parent="RootMargin/MainHSplit/RightPanel/ItemTooltip/TooltipVBox" unique_id=900120313]
+layout_mode = 2
+custom_minimum_size = Vector2(48, 48)
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="TooltipText" type="Label" parent="RootMargin/MainHSplit/RightPanel/ItemTooltip/TooltipVBox" unique_id=900120314]
+layout_mode = 2
+text = ""
+autowrap_mode = 1
+mouse_filter = 2
+
+[node name="Card" type="PanelContainer" parent="RootMargin/MainHSplit/RightPanel" unique_id=17749362]
+layout_mode = 2
+size_flags_vertical = 1
+theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
+clip_contents = false
+
+[node name="CardMargin" type="MarginContainer" parent="RootMargin/MainHSplit/RightPanel/Card" unique_id=1864250845]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 18
+clip_contents = false
+
+[node name="CardVBox" type="VBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin" unique_id=176835846]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+clip_contents = false
+
+[node name="SelectedRow" type="HBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox" unique_id=1455661178]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PreviewFrame" type="PanelContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow" unique_id=400273665]
+custom_minimum_size = Vector2(340, 340)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
+
+[node name="Preview" type="TextureRect" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/PreviewFrame" unique_id=1398768578]
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+
+[node name="HomPreviewFrame" type="PanelContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow" unique_id=275463377]
+custom_minimum_size = Vector2(340, 340)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
+
+[node name="HomPreview" type="TextureRect" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/HomPreviewFrame" unique_id=970304248]
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+
+[node name="InfoVBox" type="VBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow" unique_id=2054116707]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InfoSpacer" type="Control" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=1967043115]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+
+[node name="Name" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=1475531618]
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "(Select an entity)"
+autowrap_mode = 3
+
+[node name="HomunculusName" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=1054208040]
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "Homunculus: ?"
+
+
+[node name="Mode" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=1216334913]
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "Mode: ATTACK"
+
+
+[node name="Types" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=160314942]
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "Types: —"
+
+[node name="Stats" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=932759096]
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "Base: HP ? | ATK ? | DEF ?"
+
+[node name="Desc" type="RichTextLabel" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=1263292863]
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+layout_mode = 2
+text = "Desc: —"
+fit_content = true
+scroll_active = false
+
+[node name="BuildCenter" type="HBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox" unique_id=1962200916]
+layout_mode = 2
+alignment = 0
+theme_override_constants/separation = 0
+size_flags_horizontal = 3
+
+[node name="BuildBlock" type="VBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter" unique_id=1962200917]
+layout_mode = 2
+custom_minimum_size = Vector2(700, 0)
+theme_override_constants/separation = 6
+
+[node name="BuildCenterSpacer" type="Control" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter" unique_id=1962200920]
+layout_mode = 2
+size_flags_horizontal = 3
+
+
+[node name="BuildHeader" type="HBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock" unique_id=1962200910]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+alignment = 0
+
+[node name="BuildHeaderSpacer" type="Control" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildHeader" unique_id=1962200911]
+custom_minimum_size = Vector2(0, 0)
+layout_mode = 2
+
+[node name="BuildHeaderBox" type="VBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildHeader" unique_id=1962200912]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="BuildTitle" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildHeader/BuildHeaderBox" unique_id=1640843532]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+text = "Build"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+
+[node name="BuildSubtitle" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildHeader/BuildHeaderBox" unique_id=1962200903]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("9_libserif_bold")
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "2 EQUIPPED & 2 SIDEBOARD"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 3
+
+[node name="BuildGrid" type="GridContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock" unique_id=1598641970]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="Equip1" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=1494022192]
+layout_mode = 2
+text = "Equip Slot 1"
+focus_mode = 0
+custom_minimum_size = Vector2(428, 96)
+
+[node name="Equip2" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=98548784]
+layout_mode = 2
+text = "Equip Slot 2"
+focus_mode = 0
+custom_minimum_size = Vector2(428, 96)
+
+[node name="Side1" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=101044448]
+layout_mode = 2
+text = "Sideboard 1"
+focus_mode = 0
+custom_minimum_size = Vector2(428, 96)
+
+[node name="Side2" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=353973127]
+layout_mode = 2
+text = "Sideboard 2"
+focus_mode = 0
+custom_minimum_size = Vector2(428, 96)
+
+[node name="BuildError" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 20)
+text = ""
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.85, 0.2, 0.2, 1)
+
+[node name="TechCenter" type="HBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox" unique_id=1962200918]
+layout_mode = 2
+alignment = 0
+theme_override_constants/separation = 0
+size_flags_horizontal = 3
+
+[node name="TechBlock" type="VBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter" unique_id=1962200919]
+layout_mode = 2
+custom_minimum_size = Vector2(700, 0)
+theme_override_constants/separation = 6
+
+[node name="TechCenterSpacer" type="Control" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter" unique_id=1962200921]
+layout_mode = 2
+size_flags_horizontal = 3
+
+
+[node name="TechHeader" type="HBoxContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock" unique_id=1962200913]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+alignment = 0
+
+[node name="TechHeaderSpacer" type="Control" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock/TechHeader" unique_id=1962200914]
+custom_minimum_size = Vector2(0, 0)
+layout_mode = 2
+
+[node name="TechTitle" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock/TechHeader" unique_id=1962200902]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Techniques"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+
+[node name="TechGrid" type="GridContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock" unique_id=491538122]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="TechAtkLabel" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock/TechGrid" unique_id=1962200922]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("9_libserif_bold")
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "ATTACK"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+
+[node name="TechDefLabel" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock/TechGrid" unique_id=1962200923]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("9_libserif_bold")
+theme_override_fonts/font = ExtResource("8_libserif")
+text = "DEFENSE"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+
+[node name="AtkTech" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock/TechGrid" unique_id=44559454]
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(428, 96)
+
+[node name="DefTech" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter/TechBlock/TechGrid" unique_id=1264808580]
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(428, 96)
+
+[node name="BottomRow" type="HBoxContainer" parent="RootMargin/MainHSplit/RightPanel" unique_id=763774771]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Save" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=1529519569]
+layout_mode = 2
+text = "Save Seal"
+focus_mode = 0
+custom_minimum_size = Vector2(479, 106)
+
+[node name="Play" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=2093744421]
+layout_mode = 2
+text = "READY (Start Bo3)"
+focus_mode = 0
+custom_minimum_size = Vector2(580, 116)
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = -168.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = 64.0
+text = "Back"
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+z_index = 40
+z_as_relative = true
+script = ExtResource("3_back_button")
+target = "main_menu"
+

@@ -1,0 +1,775 @@
+extends Control
+class_name TradeHall
+
+@export var backend_path: NodePath
+@export var panel_path: NodePath
+@export var back_button_path: NodePath
+@export var tabs_path: NodePath
+
+@export var market_filter_path: NodePath
+@export var market_refresh_path: NodePath
+@export var market_orders_list_path: NodePath
+@export var sell_resource_path: NodePath
+@export var sell_amount_path: NodePath
+@export var sell_price_path: NodePath
+@export var sell_create_button_path: NodePath
+@export var sell_error_label_path: NodePath
+@export var my_orders_list_path: NodePath
+
+@export var jobs_list_path: NodePath
+@export var runs_list_path: NodePath
+@export var trade_refresh_path: NodePath
+@export var job_input_option_path: NodePath
+@export var job_input_amount_path: NodePath
+@export var job_output_option_path: NodePath
+@export var job_output_min_path: NodePath
+@export var job_output_max_path: NodePath
+@export var job_duration_path: NodePath
+@export var job_commission_option_path: NodePath
+@export var job_commission_amount_path: NodePath
+@export var job_queue_limit_path: NodePath
+@export var job_create_button_path: NodePath
+@export var job_error_label_path: NodePath
+
+const RUNS_PATH := "user://trade_runs.json"
+
+var _backend: BackendClient = null
+var _panel: Panel = null
+var _back_button: Button = null
+var _tabs: TabContainer = null
+
+var _market_filter: OptionButton = null
+var _market_refresh: Button = null
+var _market_orders_list: VBoxContainer = null
+var _sell_resource: OptionButton = null
+var _sell_amount: LineEdit = null
+var _sell_price: LineEdit = null
+var _sell_create_button: Button = null
+var _sell_error_label: Label = null
+var _my_orders_list: VBoxContainer = null
+
+var _jobs_list: VBoxContainer = null
+var _runs_list: VBoxContainer = null
+var _trade_refresh: Button = null
+var _job_input_option: OptionButton = null
+var _job_input_amount: LineEdit = null
+var _job_output_option: OptionButton = null
+var _job_output_min: LineEdit = null
+var _job_output_max: LineEdit = null
+var _job_duration: LineEdit = null
+var _job_commission_option: OptionButton = null
+var _job_commission_amount: LineEdit = null
+var _job_queue_limit: LineEdit = null
+var _job_create_button: Button = null
+var _job_error_label: Label = null
+
+var _catalog := AssetCatalog.new()
+var _db := StaticDB.new()
+var _state: Dictionary = {}
+var _player_id: String = ""
+var _ui_scale := 1.0
+
+const CONTENT_BASE_SIZE := Vector2(1400, 660)
+
+var _requests: Dictionary = {}
+var _busy := false
+var _api_queue: Array = []
+
+var _orders: Array = []
+var _my_orders: Array = []
+var _jobs: Array = []
+var _runs: Dictionary = {}
+var _run_rows: Dictionary = {}
+
+func _ready() -> void:
+	_ui_scale = _compute_panel_scale()
+	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
+	_resolve_nodes()
+	_apply_panel_background()
+	_connect_backend()
+	_connect_buttons()
+	_build_resource_options()
+	_load_state()
+	_load_runs()
+	_request_market_orders()
+	_request_my_orders()
+	_request_trade_jobs()
+	_refresh_runs()
+
+func _process(_delta: float) -> void:
+	_update_run_countdowns()
+
+func _resolve_nodes() -> void:
+	_backend = get_node_or_null(backend_path) as BackendClient
+	_panel = get_node_or_null(panel_path) as Panel
+	_back_button = get_node_or_null(back_button_path) as Button
+	_tabs = get_node_or_null(tabs_path) as TabContainer
+
+	_market_filter = get_node_or_null(market_filter_path) as OptionButton
+	_market_refresh = get_node_or_null(market_refresh_path) as Button
+	_market_orders_list = get_node_or_null(market_orders_list_path) as VBoxContainer
+	_sell_resource = get_node_or_null(sell_resource_path) as OptionButton
+	_sell_amount = get_node_or_null(sell_amount_path) as LineEdit
+	_sell_price = get_node_or_null(sell_price_path) as LineEdit
+	_sell_create_button = get_node_or_null(sell_create_button_path) as Button
+	_sell_error_label = get_node_or_null(sell_error_label_path) as Label
+	_my_orders_list = get_node_or_null(my_orders_list_path) as VBoxContainer
+
+	_jobs_list = get_node_or_null(jobs_list_path) as VBoxContainer
+	_runs_list = get_node_or_null(runs_list_path) as VBoxContainer
+	_trade_refresh = get_node_or_null(trade_refresh_path) as Button
+	_job_input_option = get_node_or_null(job_input_option_path) as OptionButton
+	_job_input_amount = get_node_or_null(job_input_amount_path) as LineEdit
+	_job_output_option = get_node_or_null(job_output_option_path) as OptionButton
+	_job_output_min = get_node_or_null(job_output_min_path) as LineEdit
+	_job_output_max = get_node_or_null(job_output_max_path) as LineEdit
+	_job_duration = get_node_or_null(job_duration_path) as LineEdit
+	_job_commission_option = get_node_or_null(job_commission_option_path) as OptionButton
+	_job_commission_amount = get_node_or_null(job_commission_amount_path) as LineEdit
+	_job_queue_limit = get_node_or_null(job_queue_limit_path) as LineEdit
+	_job_create_button = get_node_or_null(job_create_button_path) as Button
+	_job_error_label = get_node_or_null(job_error_label_path) as Label
+	_apply_input_scaling()
+
+func _apply_input_scaling() -> void:
+	var small = int(round(70.0 * _ui_scale))
+	var medium = int(round(80.0 * _ui_scale))
+	if _job_input_amount != null:
+		_job_input_amount.custom_minimum_size = Vector2(medium, 0)
+	if _job_output_min != null:
+		_job_output_min.custom_minimum_size = Vector2(small, 0)
+	if _job_output_max != null:
+		_job_output_max.custom_minimum_size = Vector2(small, 0)
+	if _job_commission_amount != null:
+		_job_commission_amount.custom_minimum_size = Vector2(medium, 0)
+
+func _apply_panel_background() -> void:
+	if _panel == null:
+		return
+	var tex: Texture2D = _catalog.get_tex("ui_panel")
+	if tex == null:
+		return
+	var sb := StyleBoxTexture.new()
+	sb.texture = tex
+	UIThemeFactory._configure_stylebox(sb)
+	_panel.add_theme_stylebox_override("panel", sb)
+
+func _connect_backend() -> void:
+	if _backend == null:
+		return
+	_backend.api_completed.connect(_on_api_completed)
+	_backend.state_updated.connect(_on_state_updated)
+
+func _connect_buttons() -> void:
+	if _back_button != null:
+		_back_button.pressed.connect(_on_back_pressed)
+	if _market_refresh != null:
+		_market_refresh.pressed.connect(_on_refresh_market_pressed)
+	if _sell_create_button != null:
+		_sell_create_button.pressed.connect(_on_create_sell_pressed)
+	if _job_create_button != null:
+		_job_create_button.pressed.connect(_on_create_job_pressed)
+	if _trade_refresh != null:
+		_trade_refresh.pressed.connect(_on_refresh_trade_pressed)
+	if _market_filter != null:
+		_market_filter.item_selected.connect(_on_market_filter_changed)
+
+func _load_state() -> void:
+	_state = {}
+	if _backend != null:
+		_state = _backend.load_cached_state()
+	if typeof(_state) != TYPE_DICTIONARY:
+		_state = {}
+	_player_id = str(_state.get("player_id", ""))
+
+func _build_resource_options() -> void:
+	var resources = _get_resource_entries()
+	_setup_option(_market_filter, resources, true)
+	_setup_option(_sell_resource, resources, false)
+	_setup_option(_job_input_option, resources, false)
+	_setup_option(_job_output_option, resources, false)
+	_setup_option(_job_commission_option, resources, false)
+
+func _setup_option(option: OptionButton, resources: Array, include_all: bool) -> void:
+	if option == null:
+		return
+	option.clear()
+	var idx := 0
+	if include_all:
+		option.add_item("All")
+		option.set_item_metadata(idx, "")
+		idx += 1
+	for entry in resources:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var display_name = str(entry.get("name", entry.get("id", "")))
+		var id = str(entry.get("id", ""))
+		if id == "":
+			continue
+		option.add_item(display_name)
+		option.set_item_metadata(idx, id)
+		idx += 1
+	option.select(0)
+
+func _get_resource_entries() -> Array:
+	var out: Array = []
+	if typeof(_db.resources) == TYPE_DICTIONARY:
+		for id in _db.resources.keys():
+			var entry = _db.resources[id]
+			if typeof(entry) != TYPE_DICTIONARY:
+				entry = {"id": id, "name": str(id)}
+			var display_name = str(entry.get("display_name", entry.get("name", id)))
+			out.append({"id": id, "name": display_name})
+	out.sort_custom(Callable(self, "_sort_by_name"))
+	return out
+
+func _sort_by_name(a: Variant, b: Variant) -> bool:
+	return str(a.get("name", "")).to_lower() < str(b.get("name", "")).to_lower()
+
+func _on_back_pressed() -> void:
+	if _back_button != null:
+		_back_button.disabled = true
+	SceneRouter.go_to_lab()
+
+func _on_refresh_market_pressed() -> void:
+	_request_market_orders()
+
+func _on_refresh_trade_pressed() -> void:
+	_request_trade_jobs()
+
+func _on_market_filter_changed(_idx: int) -> void:
+	_request_market_orders()
+
+func _request_market_orders() -> void:
+	if _backend == null:
+		return
+	var resource_id := _get_option_id(_market_filter)
+	var path := "/market/orders?status=OPEN"
+	if resource_id != "":
+		path += "&resource_id=%s" % resource_id
+	_send_api_request("GET", path, null, "market_orders", false)
+
+func _request_my_orders() -> void:
+	if _backend == null:
+		return
+	if _player_id == "":
+		return
+	var path := "/market/orders?status=OPEN&seller_id=%s" % _player_id
+	_send_api_request("GET", path, null, "market_my_orders", false)
+
+func _request_trade_jobs() -> void:
+	if _backend == null:
+		return
+	var path := "/trade/jobs?status=OPEN"
+	_send_api_request("GET", path, null, "trade_jobs", false)
+
+func _send_api_request(method: String, path: String, body: Variant, kind: String, expect_state: bool, extra: Dictionary = {}) -> void:
+	if _backend == null:
+		return
+	if _busy:
+		_api_queue.append({
+			"method": method,
+			"path": path,
+			"body": body,
+			"kind": kind,
+			"expect_state": expect_state,
+			"extra": extra
+		})
+		return
+	var request_id = _backend.request_api(method, path, body, expect_state)
+	if request_id == "":
+		_set_error(kind, "Request busy or offline.")
+		return
+	var info = {"kind": kind}
+	for key in extra.keys():
+		info[key] = extra[key]
+	_requests[request_id] = info
+	_set_busy(true)
+
+func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	var info = _requests.get(request_id, {})
+	_requests.erase(request_id)
+	_set_busy(false)
+	_flush_api_queue()
+	if not ok:
+		var msg = str(data.get("error", "Request failed"))
+		_set_error(str(info.get("kind", "")), msg)
+		return
+	var kind = str(info.get("kind", ""))
+	if kind == "market_orders":
+		_orders = data.get("orders", [])
+		_refresh_orders()
+	elif kind == "market_my_orders":
+		_my_orders = data.get("orders", [])
+		_refresh_my_orders()
+	elif kind == "market_order_create" or kind == "market_order_cancel" or kind == "market_buy":
+		_orders = data.get("orders", _orders)
+		_request_market_orders()
+		_request_my_orders()
+	elif kind == "trade_jobs":
+		_jobs = data.get("jobs", [])
+		_refresh_jobs()
+	elif kind == "trade_job_create" or kind == "trade_submit" or kind == "trade_claim":
+		if kind == "trade_submit":
+			_on_trade_submit_success(data, info)
+		if kind == "trade_claim":
+			_on_trade_claim_success(data, info)
+		_request_trade_jobs()
+		_refresh_runs()
+
+func _set_busy(value: bool) -> void:
+	_busy = value
+	_apply_busy_to_buttons()
+
+func _flush_api_queue() -> void:
+	if _busy:
+		return
+	if _api_queue.is_empty():
+		return
+	var next = _api_queue.pop_front()
+	if typeof(next) != TYPE_DICTIONARY:
+		return
+	_send_api_request(
+		str(next.get("method", "GET")),
+		str(next.get("path", "")),
+		next.get("body", null),
+		str(next.get("kind", "")),
+		bool(next.get("expect_state", false)),
+		next.get("extra", {})
+	)
+
+func _apply_busy_to_buttons() -> void:
+	if _market_refresh != null:
+		_market_refresh.disabled = _busy
+	if _trade_refresh != null:
+		_trade_refresh.disabled = _busy
+	if _sell_create_button != null:
+		_sell_create_button.disabled = _busy
+	if _job_create_button != null:
+		_job_create_button.disabled = _busy
+	_update_dynamic_buttons()
+
+func _update_dynamic_buttons() -> void:
+	# Dynamic buttons are rebuilt in refresh methods using current busy flag.
+	_refresh_orders()
+	_refresh_jobs()
+	_refresh_runs()
+
+func _on_create_sell_pressed() -> void:
+	_clear_error("market")
+	if _backend == null:
+		return
+	var resource_id := _get_option_id(_sell_resource)
+	if resource_id == "":
+		_set_error("market", "Choose a resource.")
+		return
+	var amount = _parse_int(_sell_amount, 1, 1_000_000)
+	if amount <= 0:
+		_set_error("market", "Invalid amount.")
+		return
+	var price = _parse_int(_sell_price, 1, 1_000_000_000)
+	if price <= 0:
+		_set_error("market", "Invalid price.")
+		return
+	var body = {
+		"client_action_id": _make_client_id(),
+		"type": "SELL",
+		"resource_id": resource_id,
+		"amount": amount,
+		"price_resource_id": "essence",
+		"price_amount": price
+	}
+	_send_api_request("POST", "/market/order", body, "market_order_create", true)
+
+func _on_create_job_pressed() -> void:
+	_clear_error("trade")
+	if _backend == null:
+		return
+	var input_id := _get_option_id(_job_input_option)
+	var output_id := _get_option_id(_job_output_option)
+	var commission_id := _get_option_id(_job_commission_option)
+	if input_id == "" or output_id == "" or commission_id == "":
+		_set_error("trade", "Select resources.")
+		return
+	var input_amount = _parse_int(_job_input_amount, 1, 1_000_000)
+	var output_min = _parse_int(_job_output_min, 1, 1_000_000)
+	var output_max = _parse_int(_job_output_max, 1, 1_000_000)
+	var duration = _parse_int(_job_duration, 0, 604800)
+	var commission_amount = _parse_int(_job_commission_amount, 0, 1_000_000)
+	var queue_limit = _parse_int(_job_queue_limit, 1, 100)
+	if input_amount <= 0:
+		_set_error("trade", "Invalid input amount.")
+		return
+	if output_min <= 0 or output_max <= 0 or output_min > output_max:
+		_set_error("trade", "Invalid output range.")
+		return
+	if queue_limit <= 0:
+		_set_error("trade", "Invalid queue limit.")
+		return
+	var body = {
+		"client_action_id": _make_client_id(),
+		"input_resource_id": input_id,
+		"input_amount": input_amount,
+		"output_resource_id": output_id,
+		"output_min": output_min,
+		"output_max": output_max,
+		"duration_sec": duration,
+		"commission_resource_id": commission_id,
+		"commission_amount": commission_amount,
+		"queue_limit": queue_limit
+	}
+	_send_api_request("POST", "/trade/jobs", body, "trade_job_create", true)
+
+func _refresh_orders() -> void:
+	if _market_orders_list == null:
+		return
+	_clear_container(_market_orders_list)
+	var orders = _orders if typeof(_orders) == TYPE_ARRAY else []
+	for entry in orders:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var slot := UIThemeFactory.make_icon_slot()
+		var slot_size = int(round(26.0 * _ui_scale))
+		slot.custom_minimum_size = Vector2(slot_size, slot_size)
+		var icon = slot.get_node_or_null("Icon")
+		var res_id = str(entry.get("resource_id", ""))
+		if icon is TextureRect and res_id != "":
+			icon.texture = _catalog.get_tex(res_id)
+		var amount = int(entry.get("remaining", entry.get("amount", 0)))
+		var price = int(entry.get("price_amount", 0))
+		var price_res = str(entry.get("price_resource_id", "essence"))
+		var info := Label.new()
+		info.text = "%s x%s @ %s %s" % [res_id, amount, price, price_res]
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var qty := LineEdit.new()
+		qty.custom_minimum_size = Vector2(int(round(60.0 * _ui_scale)), 0)
+		qty.placeholder_text = "Qty"
+		var buy_btn := Button.new()
+		buy_btn.text = "Buy"
+		buy_btn.disabled = _busy
+		buy_btn.pressed.connect(_on_buy_pressed.bind(entry, qty))
+		row.add_child(slot)
+		row.add_child(info)
+		row.add_child(qty)
+		row.add_child(buy_btn)
+		_market_orders_list.add_child(row)
+	_refresh_my_orders()
+
+func _refresh_my_orders() -> void:
+	if _my_orders_list == null:
+		return
+	_clear_container(_my_orders_list)
+	if _player_id == "":
+		return
+	var source = _my_orders if typeof(_my_orders) == TYPE_ARRAY and _my_orders.size() > 0 else _orders
+	for entry in source:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if str(entry.get("seller_id", "")) != _player_id:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var label := Label.new()
+		label.text = "%s x%s @ %s" % [
+			str(entry.get("resource_id", "")),
+			str(entry.get("remaining", entry.get("amount", 0))),
+			str(entry.get("price_amount", 0))
+		]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var cancel_btn := Button.new()
+		cancel_btn.text = "Cancel"
+		cancel_btn.disabled = _busy
+		cancel_btn.pressed.connect(_on_cancel_order_pressed.bind(entry))
+		row.add_child(label)
+		row.add_child(cancel_btn)
+		_my_orders_list.add_child(row)
+
+func _refresh_jobs() -> void:
+	if _jobs_list == null:
+		return
+	_clear_container(_jobs_list)
+	for entry in _jobs:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var out_res = str(entry.get("output_resource_id", ""))
+		var out_min = int(entry.get("output_min", 0))
+		var out_max = int(entry.get("output_max", 0))
+		var duration = int(entry.get("duration_sec", 0))
+		var commission = int(entry.get("commission_amount", 0))
+		var commission_res = str(entry.get("commission_resource_id", "essence"))
+		var label := Label.new()
+		label.text = "%s %s-%s | %ss | Fee %s %s" % [out_res, out_min, out_max, duration, commission, commission_res]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var submit_btn := Button.new()
+		submit_btn.text = "Submit"
+		submit_btn.disabled = _busy or not _can_submit_job(entry)
+		submit_btn.pressed.connect(_on_submit_job_pressed.bind(entry))
+		row.add_child(label)
+		row.add_child(submit_btn)
+		_jobs_list.add_child(row)
+
+func _refresh_runs() -> void:
+	if _runs_list == null:
+		return
+	_clear_container(_runs_list)
+	_run_rows.clear()
+	for run_id in _runs.keys():
+		var entry = _runs[run_id]
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var label := Label.new()
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(label)
+		var claim_btn := Button.new()
+		claim_btn.text = "Claim"
+		claim_btn.disabled = _busy
+		claim_btn.pressed.connect(_on_claim_run_pressed.bind(run_id))
+		row.add_child(claim_btn)
+		_runs_list.add_child(row)
+		_run_rows[run_id] = {"label": label, "button": claim_btn}
+	_update_run_countdowns()
+
+func _update_run_countdowns() -> void:
+	var now = Time.get_unix_time_from_system() * 1000
+	for run_id in _run_rows.keys():
+		var row = _run_rows[run_id]
+		if typeof(row) != TYPE_DICTIONARY:
+			continue
+		var label: Label = row.get("label", null)
+		var button: Button = row.get("button", null)
+		var entry = _runs.get(run_id, {})
+		var completes_at = int(entry.get("completes_at", 0))
+		var remaining = max(0, completes_at - now)
+		var output_res = str(entry.get("output_resource_id", ""))
+		var title = output_res if output_res != "" else run_id
+		if label != null:
+			if remaining > 0:
+				label.text = "%s | Ready in %s" % [title, _format_seconds(remaining)]
+			else:
+				label.text = "%s | Ready" % title
+		if button != null:
+			button.disabled = _busy or remaining > 0
+
+func _on_buy_pressed(order: Dictionary, qty_input: LineEdit) -> void:
+	_clear_error("market")
+	if _backend == null:
+		return
+	var order_id = str(order.get("order_id", ""))
+	if order_id == "":
+		_set_error("market", "Invalid order.")
+		return
+	var remaining = int(order.get("remaining", order.get("amount", 0)))
+	var qty = _parse_int(qty_input, 1, remaining)
+	if qty <= 0:
+		_set_error("market", "Invalid quantity.")
+		return
+	var body = {
+		"client_action_id": _make_client_id(),
+		"order_id": order_id,
+		"amount": qty
+	}
+	_send_api_request("POST", "/market/buy", body, "market_buy", true)
+
+func _on_cancel_order_pressed(order: Dictionary) -> void:
+	_clear_error("market")
+	if _backend == null:
+		return
+	var order_id = str(order.get("order_id", ""))
+	if order_id == "":
+		_set_error("market", "Invalid order.")
+		return
+	var body = {
+		"client_action_id": _make_client_id(),
+		"order_id": order_id
+	}
+	_send_api_request("POST", "/market/cancel", body, "market_order_cancel", true)
+
+func _on_submit_job_pressed(job: Dictionary) -> void:
+	_clear_error("trade")
+	if _backend == null:
+		return
+	var job_id = str(job.get("job_id", ""))
+	if job_id == "":
+		_set_error("trade", "Invalid job.")
+		return
+	var body = {
+		"client_action_id": _make_client_id(),
+		"job_id": job_id
+	}
+	_send_api_request("POST", "/trade/submit", body, "trade_submit", true, {"job_id": job_id})
+
+func _on_claim_run_pressed(run_id: String) -> void:
+	_clear_error("trade")
+	if _backend == null:
+		return
+	if run_id == "":
+		return
+	var body = {
+		"client_action_id": _make_client_id(),
+		"run_id": run_id
+	}
+	_send_api_request("POST", "/trade/claim", body, "trade_claim", true, {"run_id": run_id})
+
+func _on_trade_submit_success(data: Dictionary, info: Dictionary) -> void:
+	var run_id = str(data.get("run_id", ""))
+	if run_id == "":
+		return
+	var completes_at = int(data.get("completes_at", 0))
+	var job_id := str(info.get("job_id", ""))
+	if job_id == "":
+		job_id = _last_job_id()
+	var job_info := _find_job(job_id)
+	var output_res := ""
+	if typeof(job_info) == TYPE_DICTIONARY:
+		output_res = str(job_info.get("output_resource_id", ""))
+	_runs[run_id] = {
+		"job_id": job_id,
+		"completes_at": completes_at,
+		"output_resource_id": output_res
+	}
+	_save_runs()
+
+func _on_trade_claim_success(_data: Dictionary, info: Dictionary) -> void:
+	var run_id = str(info.get("run_id", ""))
+	if run_id == "":
+		return
+	if _runs.has(run_id):
+		_runs.erase(run_id)
+		_save_runs()
+
+func _last_job_id() -> String:
+	if _jobs.size() == 0:
+		return ""
+	var last = _jobs[_jobs.size() - 1]
+	if typeof(last) == TYPE_DICTIONARY:
+		return str(last.get("job_id", ""))
+	return ""
+
+func _find_job(job_id: String) -> Dictionary:
+	for entry in _jobs:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if str(entry.get("job_id", "")) == job_id:
+			return entry
+	return {}
+
+func _load_runs() -> void:
+	_runs.clear()
+	if not FileAccess.file_exists(RUNS_PATH):
+		return
+	var f = FileAccess.open(RUNS_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(parsed) != TYPE_ARRAY:
+		return
+	for entry in parsed:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var run_id = str(entry.get("run_id", ""))
+		if run_id == "":
+			continue
+		_runs[run_id] = entry
+
+func _save_runs() -> void:
+	var list: Array = []
+	for run_id in _runs.keys():
+		var entry = _runs[run_id]
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var data = entry.duplicate(true)
+		data["run_id"] = run_id
+		list.append(data)
+	var f = FileAccess.open(RUNS_PATH, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(JSON.stringify(list))
+	f.close()
+
+func _can_submit_job(job: Dictionary) -> bool:
+	if typeof(job) != TYPE_DICTIONARY:
+		return false
+	var wallet = _state.get("wallet", {})
+	if typeof(wallet) != TYPE_DICTIONARY:
+		return true
+	var input_id = str(job.get("input_resource_id", ""))
+	var input_amount = int(job.get("input_amount", 0))
+	var commission_id = str(job.get("commission_resource_id", ""))
+	var commission_amount = int(job.get("commission_amount", 0))
+	if input_id != "" and int(wallet.get(input_id, 0)) < input_amount:
+		return false
+	if commission_amount > 0 and commission_id != "" and int(wallet.get(commission_id, 0)) < commission_amount:
+		return false
+	return true
+
+func _on_state_updated(state: Dictionary) -> void:
+	_state = state
+	_player_id = str(state.get("player_id", ""))
+	_refresh_jobs()
+	_refresh_orders()
+	_request_my_orders()
+
+func _get_option_id(option: OptionButton) -> String:
+	if option == null or option.item_count == 0:
+		return ""
+	return str(option.get_item_metadata(option.selected))
+
+func _parse_int(line_edit: LineEdit, min_value: int, max_value: int) -> int:
+	if line_edit == null:
+		return 0
+	var raw = str(line_edit.text).strip_edges()
+	if raw == "":
+		return 0
+	if not raw.is_valid_int():
+		return 0
+	var value = int(raw)
+	value = clamp(value, min_value, max_value)
+	return value
+
+func _make_client_id() -> String:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	return "%08x" % rng.randi()
+
+func _set_error(kind: String, message: String) -> void:
+	if kind.begins_with("market"):
+		if _sell_error_label != null:
+			_sell_error_label.text = message
+	elif kind.begins_with("trade"):
+		if _job_error_label != null:
+			_job_error_label.text = message
+
+func _clear_error(kind: String) -> void:
+	if kind == "market" and _sell_error_label != null:
+		_sell_error_label.text = ""
+	if kind == "trade" and _job_error_label != null:
+		_job_error_label.text = ""
+
+func _clear_container(container: Control) -> void:
+	if container == null:
+		return
+	for child in container.get_children():
+		child.queue_free()
+
+func _format_seconds(ms: float) -> String:
+	var total = int(ceil(ms / 1000.0))
+	if total < 0:
+		total = 0
+	var minutes = int(total / 60.0)
+	var seconds = total % 60
+	if minutes > 0:
+		return "%dm %02ds" % [minutes, seconds]
+	return "%ds" % total
+
+func _compute_panel_scale() -> float:
+	var view = get_viewport_rect().size
+	var content = Vector2(max(1.0, view.x - 200.0), max(1.0, view.y - 240.0))
+	var ui_scale = min(content.x / CONTENT_BASE_SIZE.x, content.y / CONTENT_BASE_SIZE.y)
+	return clamp(ui_scale, 0.9, 1.35)

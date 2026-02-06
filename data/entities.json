@@ -1,0 +1,92 @@
+{
+  "entities": [
+    {
+      "id": "sulfur_01",
+      "name": "(TEMP) Igniter",
+      "type": "sulfur",
+      "role": "brawler",
+      "base_stats": {
+        "hp": 104,
+        "power": 21,
+        "guard": 11,
+        "tempo": 12
+      }
+    },
+    {
+      "id": "mercury_01",
+      "name": "(TEMP) Quicksprite",
+      "type": "mercury",
+      "role": "trickster",
+      "base_stats": {
+        "hp": 96,
+        "power": 18,
+        "guard": 10,
+        "tempo": 16
+      }
+    },
+    {
+      "id": "sodium_01",
+      "name": "(TEMP) Bastion",
+      "type": "sodium",
+      "role": "tank",
+      "base_stats": {
+        "hp": 112,
+        "power": 16,
+        "guard": 16,
+        "tempo": 10
+      }
+    },
+    {
+      "id": "aether_01",
+      "name": "(TEMP) Anomaly",
+      "type": "aether",
+      "role": "rulebreaker",
+      "base_stats": {
+        "hp": 102,
+        "power": 20,
+        "guard": 12,
+        "tempo": 13
+      }
+    },
+    {
+      "id": "vitriol_01",
+      "name": "(TEMP) Corroder",
+      "type": "vitriol",
+      "role": "dot",
+      "base_stats": {
+        "hp": 104,
+        "power": 19,
+        "guard": 12,
+        "tempo": 12
+      }
+    },
+    {
+      "id": "gold_01",
+      "name": "(TEMP) Arbiter",
+      "type": "gold",
+      "role": "counter",
+      "base_stats": {
+        "hp": 104,
+        "power": 18,
+        "guard": 14,
+        "tempo": 12
+      }
+    }
+  ],
+  "mastery_levels": {
+    "max_level": 10,
+    "fragments_per_level": 4,
+    "upgrade_times_days": [
+      0,
+      1,
+      2,
+      5,
+      10,
+      20,
+      35,
+      55,
+      80,
+      110
+    ]
+  }
+}

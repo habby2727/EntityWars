@@ -1,0 +1,285 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/lab_screen.gd" id="1_lab_screen"]
+[ext_resource type="Script" path="res://scripts/net/backend_client.gd" id="2_backend_client"]
+[ext_resource type="Script" path="res://scripts/ui/back_button.gd" id="3_back_button"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_no_bg"]
+
+[node name="LabStructures" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_lab_screen")
+backend_path = NodePath("BackendClient")
+grid_path = NodePath("Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/Scroll/BuildingGrid")
+background_panel_path = NodePath("Background")
+resource_bar_panel_path = NodePath("Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/ResourceBarPanel")
+resource_bar_path = NodePath("Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/ResourceBarPanel/BarMargin/ResourceBar")
+left_panel_path = NodePath("Background/ContentMargin/RootHBox/LeftPanel")
+right_panel_path = NodePath("Background/ContentMargin/RootHBox/RightPanel")
+detail_icon_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Header/DetailIcon")
+detail_name_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Header/Text/Name")
+detail_desc_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Description")
+detail_level_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Header/Text/Level")
+route_option_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/RouteRow/RouteOption")
+cost_list_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/CostList")
+upgrade_button_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons/UpgradeButton")
+route_button_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons/RouteButton")
+claim_button_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons/ClaimButton")
+open_button_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons/OpenButton")
+locked_label_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/LockedLabel")
+pending_label_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/PendingLabel")
+placeholder_popup_path = NodePath("PlaceholderPopup")
+experiment_section_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ExperimentSection")
+experiment_list_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ExperimentSection/ExperimentList")
+research_section_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ResearchSection")
+research_list_path = NodePath("Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ResearchSection/ResearchList")
+
+[node name="BackendClient" type="Node" parent="."]
+script = ExtResource("2_backend_client")
+
+[node name="Background" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ContentMargin" type="MarginContainer" parent="Background"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 100
+theme_override_constants/margin_top = 120
+theme_override_constants/margin_right = 100
+theme_override_constants/margin_bottom = 120
+
+[node name="RootHBox" type="HBoxContainer" parent="Background/ContentMargin"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="LeftPanel" type="Panel" parent="Background/ContentMargin/RootHBox"]
+custom_minimum_size = Vector2(360, 0)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_no_bg")
+
+[node name="Margin" type="MarginContainer" parent="Background/ContentMargin/RootHBox/LeftPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="LeftVBox" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="TopRow" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="BackButton" type="Button" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 32)
+text = "Back"
+focus_mode = 0
+mouse_filter = 0
+theme_override_font_sizes/font_size = 14
+script = ExtResource("3_back_button")
+target = "lab_hub"
+
+[node name="ResourceBarPanel" type="PanelContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BarMargin" type="MarginContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/ResourceBarPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 4
+
+[node name="ResourceBar" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/ResourceBarPanel/BarMargin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Scroll" type="ScrollContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="BuildingGrid" type="GridContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 2
+theme_override_constants/v_separation = 8
+theme_override_constants/h_separation = 8
+
+[node name="RightPanel" type="Panel" parent="Background/ContentMargin/RootHBox"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_no_bg")
+
+[node name="Margin" type="MarginContainer" parent="Background/ContentMargin/RootHBox/RightPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 18
+
+[node name="DetailVBox" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Header" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DetailIcon" type="TextureRect" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Header"]
+custom_minimum_size = Vector2(96, 96)
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Text" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Name" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Header/Text"]
+layout_mode = 2
+text = "Building"
+theme_override_font_sizes/font_size = 24
+
+[node name="Level" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Header/Text"]
+layout_mode = 2
+text = "Level 0"
+
+[node name="Description" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+text = ""
+autowrap_mode = 2
+
+[node name="LockedLabel" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+text = "Unlock at HQ Lv 1"
+modulate = Color(1, 0.35, 0.35, 1)
+visible = false
+
+[node name="PendingLabel" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+text = "PENDING"
+modulate = Color(1, 0.82, 0.3, 1)
+visible = false
+
+[node name="RouteRow" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RouteLabel" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/RouteRow"]
+layout_mode = 2
+text = "Route"
+
+[node name="RouteOption" type="OptionButton" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/RouteRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CostHeader" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+text = "Upgrade Cost"
+
+[node name="CostList" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Buttons" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="UpgradeButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
+layout_mode = 2
+text = "Upgrade"
+
+[node name="RouteButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
+layout_mode = 2
+text = "Set Route"
+
+[node name="ClaimButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
+layout_mode = 2
+text = "Claim"
+
+[node name="OpenButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
+layout_mode = 2
+text = "Open"
+
+[node name="ExperimentSection" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+visible = false
+theme_override_constants/separation = 6
+
+[node name="ExperimentHeader" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ExperimentSection"]
+layout_mode = 2
+text = "Experiments"
+
+[node name="ExperimentList" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ExperimentSection"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ResearchSection" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
+layout_mode = 2
+visible = false
+theme_override_constants/separation = 6
+
+[node name="ResearchHeader" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ResearchSection"]
+layout_mode = 2
+text = "Research"
+
+[node name="ResearchList" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ResearchSection"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PlaceholderPopup" type="PopupPanel" parent="."]
+visible = false
+
+[node name="PopupPanel" type="PanelContainer" parent="PlaceholderPopup"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PopupLabel" type="Label" parent="PlaceholderPopup/PopupPanel"]
+layout_mode = 2
+text = "Coming soon..."
+horizontal_alignment = 1
+vertical_alignment = 1
