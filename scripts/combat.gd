@@ -35,7 +35,7 @@ const HOM_PREVIEW_MAP := {
 	"nighty": "nighty",
 	"mothy": "mothy",
 }
-const LOG_STEP_SECONDS := 3.0
+const LOG_STEP_SECONDS := 1.0
 const ULTRAS := {
 	"sulfur": [
 		{"name": "Ember", "effects": [{"kind": "heal", "value": 14}]},
@@ -73,6 +73,10 @@ var enemy := {}
 
 var _turn: int = 0
 var _round: int = 1
+var _battle_index: int = 1
+var _player_wins: int = 0
+var _enemy_wins: int = 0
+var _sudden_death: bool = false
 var _player_turn: bool = true
 var _swap_pending: bool = false
 var _battle_over: bool = false
@@ -81,6 +85,9 @@ var _ultra_used_player: bool = false
 var _ultra_used_enemy: bool = false
 var _step_queue: Array = []
 var _processing_steps: bool = false
+var _hp_fill_green: StyleBoxFlat = null
+var _hp_fill_yellow: StyleBoxFlat = null
+var _hp_fill_red: StyleBoxFlat = null
 
 @onready var player_name: Label = $PlayerPanel/PlayerName
 @onready var player_entity_name: Label = $PlayerPanel/PlayerEntityNameRow/PlayerEntityName
@@ -129,6 +136,7 @@ func _ready() -> void:
 	_load_registry_safe()
 	_load_player_from_seal()
 	_setup_enemy()
+	_setup_hp_styles()
 	_update_ui()
 	_configure_tooltip_text()
 	next_turn_btn.pressed.connect(_on_next_turn)
@@ -146,7 +154,7 @@ func _ready() -> void:
 		confirm_stay.pressed.connect(_on_confirm_stay)
 	if confirm_leave:
 		confirm_leave.pressed.connect(_on_confirm_leave)
-	_log_immediate("Battle start.")
+	_log_immediate("Battle 1 begins.")
 
 func _on_back_pressed() -> void:
 	if confirm_popup == null:
@@ -207,7 +215,7 @@ func _load_player_from_seal() -> void:
 
 func _setup_enemy() -> void:
 	var pick := _pick_enemy_entity(player.get("type", ""))
-	var hom_id := _pick_enemy_homunculus()
+	var hom_id := _pick_enemy_homunculus_balanced(pick)
 	var used: Array[String] = []
 	var e1 := _pick_item_id_unique(used)
 	if e1 != "":
@@ -269,7 +277,8 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 	}
 
 func _update_ui() -> void:
-	turn_label.text = "Turn %d" % _display_turn()
+	var header = "Sudden Death" if _sudden_death else "Battle %d" % _battle_index
+	turn_label.text = "%s\nTurn %d" % [header, _display_turn()]
 	player_name.text = "Player"
 	player_entity_name.text = str(player.get("name", ""))
 	player_hom_name.text = str(player.get("hom_name", ""))
@@ -288,6 +297,34 @@ func _update_ui() -> void:
 	_set_item_icon(player_item2, player.get("equip_2", {}))
 	_set_item_icon(enemy_item1, enemy.get("equip_1", {}))
 	_set_item_icon(enemy_item2, enemy.get("equip_2", {}))
+	_apply_hp_colors()
+
+func _setup_hp_styles() -> void:
+	_hp_fill_green = StyleBoxFlat.new()
+	_hp_fill_green.bg_color = Color(0.2, 0.85, 0.35, 1.0)
+	_hp_fill_yellow = StyleBoxFlat.new()
+	_hp_fill_yellow.bg_color = Color(0.95, 0.8, 0.2, 1.0)
+	_hp_fill_red = StyleBoxFlat.new()
+	_hp_fill_red.bg_color = Color(0.9, 0.2, 0.2, 1.0)
+
+func _apply_hp_colors() -> void:
+	_apply_hp_color(player_hp, player)
+	_apply_hp_color(enemy_hp, enemy)
+
+func _apply_hp_color(bar: ProgressBar, f: Dictionary) -> void:
+	if bar == null:
+		return
+	var max_hp := float(f.get("max_hp", 1))
+	if max_hp <= 0.0:
+		max_hp = 1.0
+	var cur_hp := float(f.get("hp", 0))
+	var pct := cur_hp / max_hp
+	var fill: StyleBoxFlat = _hp_fill_green
+	if pct < 0.25:
+		fill = _hp_fill_red
+	elif pct < 0.5:
+		fill = _hp_fill_yellow
+	bar.add_theme_stylebox_override("fill", fill)
 
 func _on_next_turn() -> void:
 	if _processing_steps:
@@ -359,6 +396,9 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary) -> void:
 		var ev_item := _item_with_effect([defender.equip_1, defender.equip_2], "evasion_pct")
 		_log_step("%s evades the strike via %s." % [defender.name, _item_label(ev_item)], Callable())
 		return
+	if not _roll_hit(attacker, defender, 0.9):
+		_log_step("%s's attack misses %s." % [attacker.name, defender.name], Callable())
+		return
 
 	var mult: float = _type_multiplier(attacker, defender)
 	var base_atk: int = int(attacker.atk)
@@ -421,6 +461,9 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary) -> void:
 		return
 	if defender.status.hom_stun > 0:
 		_log_step("%s's homunculus is nullified this turn." % defender.name, func(): defender.status.hom_stun -= 1)
+		return
+	if not _roll_hit(attacker, defender, 0.95):
+		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], Callable())
 		return
 	var hom_dmg: int = max(1, int(round(attacker.atk * 0.4)))
 	_log_step("%s's homunculus strikes %s for %d." % [attacker.name, defender.name, hom_dmg], func(): defender.hp = max(0, defender.hp - hom_dmg))
@@ -603,28 +646,102 @@ func _apply_mods(f: Dictionary) -> void:
 	f.item_fx = _collect_item_effects([f.equip_1, f.equip_2])
 
 func _check_end() -> void:
-	if player.hp <= 0:
-		_log_immediate("You lose.")
+	if player.hp <= 0 or enemy.hp <= 0:
+		_handle_battle_end()
+
+func _handle_battle_end() -> void:
+	if _battle_over:
+		return
+	var player_dead: bool = int(player.get("hp", 0)) <= 0
+	var enemy_dead: bool = int(enemy.get("hp", 0)) <= 0
+	if player_dead and enemy_dead:
+		_log_immediate("Battle %d ends in a draw." % _battle_index)
+	elif player_dead:
+		_enemy_wins += 1
+		_log_immediate("You lose battle %d." % _battle_index)
+	else:
+		_player_wins += 1
+		_log_immediate("You win battle %d." % _battle_index)
+
+	_log_immediate("Score: %d-%d" % [_player_wins, _enemy_wins])
+
+	if _player_wins >= 2 or _enemy_wins >= 2:
+		if _player_wins > _enemy_wins:
+			_log_immediate("Match win.")
+		elif _enemy_wins > _player_wins:
+			_log_immediate("Match loss.")
+		else:
+			_log_immediate("Match draw.")
 		_battle_over = true
 		next_turn_btn.text = "Return"
 		next_turn_btn.disabled = false
-	if enemy.hp <= 0:
-		_log_immediate("You win.")
+		return
+	if _battle_index >= 3:
+		if _player_wins == _enemy_wins and not _sudden_death:
+			_sudden_death = true
+			_battle_index += 1
+			_reset_battle_state()
+			_log_immediate("Sudden Death begins.")
+			_update_ui()
+			next_turn_btn.disabled = false
+			return
+		if _player_wins == _enemy_wins:
+			_log_immediate("Match draw.")
+		elif _player_wins > _enemy_wins:
+			_log_immediate("Match win.")
+		else:
+			_log_immediate("Match loss.")
 		_battle_over = true
 		next_turn_btn.text = "Return"
 		next_turn_btn.disabled = false
+		return
+
+	_battle_index += 1
+	_reset_battle_state()
+	_log_immediate("Battle %d begins." % _battle_index)
+	_update_ui()
+	next_turn_btn.disabled = false
+
+func _reset_battle_state() -> void:
+	_turn = 0
+	_round = 1
+	_player_turn = true
+	_swap_pending = false
+	_ultra_pending = false
+	_ultra_used_player = false
+	_ultra_used_enemy = false
+	_processing_steps = false
+	_step_queue.clear()
+	swap_panel.visible = false
+	ultra_panel.visible = false
+	_reset_fighter(player)
+	_reset_fighter(enemy)
+
+func _reset_fighter(f: Dictionary) -> void:
+	f.hp = f.max_hp
+	f.status = {
+		"poison": 0,
+		"stun": 0,
+		"shield_pct": 0.0,
+		"atk_boost": 0.0,
+		"vuln_pct": 0.0,
+		"atk_down": 0.0,
+		"hom_stun": 0,
+		"reflect_pct": 0.0,
+		"tempo_bonus": 0.0
+	}
 
 func _type_multiplier(attacker: Dictionary, defender: Dictionary) -> float:
 	var adv = _type_advantage(attacker.type)
 	var defender_type: String = str(defender.type)
 	if adv == defender_type:
-		return 1.2
+		return 1.12
 	if _type_advantage(defender_type) == attacker.type:
 		var red: float = float(attacker.item_fx.get("disadvantage_reduction", 0.0))
 		if red > 0.0:
 			var d_item := _item_with_effect([attacker.equip_1, attacker.equip_2], "disadvantage_reduction")
 			_log("%s steadies the disadvantage via %s." % [attacker.name, _item_label(d_item)])
-		return min(0.85 + red, 1.0)
+		return min(0.92 + red, 1.0)
 	return 1.0
 
 func _type_advantage(t: String) -> String:
@@ -711,6 +828,20 @@ func _try_ignore_reflect(attacker: Dictionary) -> bool:
 		return false
 	return randf() < chance
 
+func _roll_hit(attacker: Dictionary, defender: Dictionary, base_accuracy: float) -> bool:
+	var acc := base_accuracy
+	var atk := float(attacker.get("atk", 0))
+	var def := float(defender.get("def", 0))
+	if atk > def * 1.6:
+		acc -= 0.08
+	var max_hp := float(attacker.get("max_hp", 0))
+	var def_hp := float(defender.get("max_hp", 0))
+	if max_hp > def_hp and max_hp > 0.0:
+		var diff_ratio := (max_hp - def_hp) / max_hp
+		acc -= clamp(diff_ratio * 0.2, 0.0, 0.15)
+	acc = clamp(acc, 0.6, 0.98)
+	return randf() <= acc
+
 func _true_on_hit(attacker: Dictionary) -> int:
 	return int(attacker.item_fx.get("true_on_hit", 0))
 
@@ -762,21 +893,63 @@ func _item_initiative(item: Dictionary) -> float:
 func _pick_enemy_entity(player_type: String) -> String:
 	if _entities.is_empty():
 		return ""
-	var target := ""
 	var wanted := _type_advantage(player_type)
+	var adv_list: Array = []
+	var other_list: Array = []
 	for e in _entities:
 		var t = str(e.get("type", ""))
 		if t == wanted:
-			target = str(e.get("id", ""))
-			break
-	if target == "":
-		target = str(_entities[0].get("id", ""))
-	return target
+			adv_list.append(e)
+		else:
+			other_list.append(e)
+	var pool: Array = _entities
+	if not adv_list.is_empty() and randf() < 0.6:
+		pool = adv_list
+	var player_id: String = str(player.get("id", ""))
+	if pool.size() > 1 and randf() < 0.85:
+		var filtered: Array = []
+		for e in pool:
+			if str(e.get("id", "")) != player_id:
+				filtered.append(e)
+		if not filtered.is_empty():
+			pool = filtered
+	return str(pool[randi() % pool.size()].get("id", ""))
 
 func _pick_enemy_homunculus() -> String:
 	if _homunculi.is_empty():
 		return ""
 	return str(_homunculi[randi() % _homunculi.size()].get("id", ""))
+
+func _pick_enemy_homunculus_balanced(entity_id: String) -> String:
+	if _homunculi.is_empty():
+		return ""
+	var ent := _find_by_id(_entities, entity_id)
+	var stats := _get_base_stats(ent)
+	var player_power := _combat_power(player)
+	var scored: Array = []
+	for h in _homunculi:
+		var buffs := _get_homunculus_buffs(h)
+		var atk := int(stats.atk + buffs.atk)
+		var def := int(stats.def + buffs.def)
+		var hp := int(stats.hp + buffs.hp)
+		var power := _combat_power({"atk": atk, "def": def, "max_hp": hp})
+		var delta: float = abs(power - player_power)
+		scored.append({"id": str(h.get("id", "")), "delta": delta})
+	scored.sort_custom(Callable(self, "_sort_delta"))
+	var pick_count: int = int(min(3, scored.size()))
+	var pick_index: int = 0
+	if pick_count > 1:
+		pick_index = randi() % pick_count
+	return str(scored[pick_index].get("id", ""))
+
+func _sort_delta(a: Dictionary, b: Dictionary) -> bool:
+	return float(a.get("delta", 0.0)) < float(b.get("delta", 0.0))
+
+func _combat_power(f: Dictionary) -> float:
+	var atk := float(f.get("atk", 0))
+	var def := float(f.get("def", 0))
+	var hp := float(f.get("max_hp", f.get("hp", 0)))
+	return atk * 1.15 + def * 1.0 + hp * 0.45
 
 func _pick_item_id(_random: bool) -> String:
 	if _items.is_empty():
