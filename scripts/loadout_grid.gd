@@ -4,12 +4,13 @@ extends Control
 ## Nodes are resolved by explicit scene paths to avoid %UniqueName shorthand.
 
 const REG_PATH := "res://scripts/data_registry.gd"
+const SpellLoadout := preload("res://scripts/domain/spell_loadout.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
 const ITEM_ICON_MAP := {
 	"bismuth_talisman": "talisman_bismuth.png",
-	"wind_amulet": "amulet_of _wind.png",
+	"wind_amulet": "wind_amulet.png",
 	"saltstone_charm": "saltstone_charm.png",
 	"mirror_sigel": "mirror.png",
 	"vitriol_vial": "vitriol.png",
@@ -30,6 +31,7 @@ const HOM_PREVIEW_MAP := {
 }
 
 @export var use_attack_dark_defense_light: bool = true
+@export var spell_backend_url := "http://127.0.0.1:8787"
 
 var tab_entities: Control = null
 var tab_homunculi: Control = null
@@ -79,6 +81,18 @@ var _current_homunculus_id: String = ""
 
 var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
+var _spell_debug := DebugFlags.new()
+var _spell_backend: BackendClient
+var _spell_state := {}
+var _spell_synced := false
+var _spell_pending_id := ""
+var _spell_pending_mode := ""
+var _spell_pending_entity := ""
+var _spell_button: Button
+var _spell_dialog: ConfirmationDialog
+var _spell_slots: Array[OptionButton] = []
+var _spell_description: Label
+var _spell_draft: Array = []
 
 func _resolve_nodes() -> void:
 	# Bind to concrete paths in LoadoutGrid.tscn
@@ -186,6 +200,8 @@ func _ready() -> void:
 		tooltip_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_tune_tabs()
 	_load_registry_safe()
+	_setup_spell_state()
+	_build_spell_dialog()
 	_wire_buttons()
 	_wire_build_tooltips()
 	_populate_dropdowns()
@@ -241,6 +257,183 @@ func _load_registry_safe() -> void:
 		_def_techs = _as_array(_reg.get("defense_techniques"))
 	else:
 		_def_techs = []
+
+func _setup_spell_state() -> void:
+	_spell_debug.reload()
+	if _spell_debug.unlock_all_buildings:
+		_spell_state = _spell_debug.load_lab_state()
+		_spell_synced = true
+		return
+	_spell_backend = BackendClient.new()
+	_spell_backend.base_url = spell_backend_url
+	_spell_backend.state_updated.connect(_on_spell_state_updated)
+	_spell_backend.auth_changed.connect(_on_spell_auth_changed)
+	_spell_backend.action_confirmed.connect(_on_spell_action_confirmed)
+	_spell_backend.action_failed.connect(_on_spell_action_failed)
+	add_child(_spell_backend)
+	_spell_state = _spell_backend.load_cached_state() if _spell_backend.token != "" else {}
+	if _spell_backend.token != "":
+		_spell_backend.request_api("GET", "/player/state", null, true)
+
+func _on_spell_auth_changed(token: String) -> void:
+	_spell_synced = false
+	_spell_state = {}
+	_refresh_spell_button()
+	if token != "" and _spell_backend != null:
+		_spell_backend.request_api("GET", "/player/state", null, true)
+
+func _on_spell_state_updated(state: Dictionary) -> void:
+	if _spell_debug.unlock_all_buildings:
+		return
+	_spell_state = state.duplicate(true)
+	_spell_synced = true
+	_refresh_spell_button()
+
+func _read_seal_data(mode: String) -> Dictionary:
+	var path := "user://seal_%s.json" % mode
+	if not FileAccess.file_exists(path):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return parsed if parsed is Dictionary else {}
+
+func _equipped_spells(mode: String, entity_id: String) -> Array:
+	if _reg == null:
+		return []
+	return SpellLoadout.saved_ids(_reg, _spell_state, mode, entity_id, _read_seal_data(mode), not _spell_debug.unlock_all_buildings)
+
+func _refresh_spell_button() -> void:
+	if _spell_button == null or _reg == null:
+		return
+	var available := SpellLoadout.available_ids(_reg, _current_entity_id, _spell_state.get("spell_progress", {}))
+	_spell_button.visible = available.size() > 4
+	_spell_button.disabled = _spell_pending_id != ""
+
+func _build_spell_dialog() -> void:
+	_spell_button = get_node_or_null("SpellConfig") as Button
+	if _spell_button == null:
+		return
+	_spell_button.pressed.connect(_open_spell_dialog)
+	_spell_dialog = ConfirmationDialog.new()
+	_spell_dialog.title = "Configure Spells"
+	_spell_dialog.dialog_text = ""
+	_spell_dialog.min_size = Vector2i(640, 390)
+	add_child(_spell_dialog)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 8)
+	_spell_dialog.add_child(content)
+	for i in 4:
+		var row := HBoxContainer.new()
+		var label := Label.new()
+		label.text = "Slot %d" % (i + 1)
+		label.custom_minimum_size.x = 60
+		row.add_child(label)
+		var option := OptionButton.new()
+		option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		option.item_selected.connect(_on_spell_slot_selected.bind(i))
+		row.add_child(option)
+		content.add_child(row)
+		_spell_slots.append(option)
+	_spell_description = Label.new()
+	_spell_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_spell_description.custom_minimum_size.y = 75
+	content.add_child(_spell_description)
+	_spell_dialog.confirmed.connect(_confirm_spell_dialog)
+
+func _open_spell_dialog() -> void:
+	if _spell_pending_id != "" or _reg == null:
+		return
+	_spell_draft = _equipped_spells(_mode, _current_entity_id).duplicate()
+	var available := SpellLoadout.available_ids(_reg, _current_entity_id, _spell_state.get("spell_progress", {}))
+	for slot_index in 4:
+		var option: OptionButton = _spell_slots[slot_index]
+		option.clear()
+		for group in ["Original", "Hybrid", "Universal"]:
+			option.add_separator(group)
+			for id in available:
+				var spell: Dictionary = _reg.get_spell_by_id(id)
+				var kind := str(spell.get("type", ""))
+				var spell_group := "Hybrid" if kind == "hybrid" else ("Universal" if kind == "universal" else "Original")
+				if spell_group != group:
+					continue
+				var power := "Support" if float(spell.power_mult) == 0 else "x%.2f" % float(spell.power_mult)
+				option.add_item("%s | %s | %d%% | CD %d" % [spell.name, power, int(round(float(spell.accuracy) * 100)), int(spell.cooldown_turns)])
+				var item_index := option.item_count - 1
+				option.set_item_metadata(item_index, id)
+				if slot_index < _spell_draft.size() and id == _spell_draft[slot_index]:
+					option.select(item_index)
+	_refresh_spell_draft(0)
+	_spell_dialog.popup_centered_ratio(0.65)
+
+func _on_spell_slot_selected(index: int, slot_index: int) -> void:
+	var id = _spell_slots[slot_index].get_item_metadata(index)
+	if id is String and slot_index < _spell_draft.size():
+		_spell_draft[slot_index] = id
+	_refresh_spell_draft(slot_index)
+
+func _refresh_spell_draft(slot_index: int) -> void:
+	var valid := SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft)
+	_spell_dialog.get_ok_button().disabled = not valid or _spell_pending_id != "" or (not _spell_debug.unlock_all_buildings and not _spell_synced)
+	var spell: Dictionary = _reg.get_spell_by_id(str(_spell_draft[slot_index])) if slot_index < _spell_draft.size() else {}
+	var types := str(spell.get("type", "")).capitalize()
+	if spell.get("type") == "hybrid":
+		types = "%s / %s" % [str(spell.get("primary_type", "")).capitalize(), str(spell.get("secondary_type", "")).capitalize()]
+	_spell_description.text = "Editing slot %d: %s\n%s\n%s" % [slot_index + 1, spell.get("name", ""), types, spell.get("desc", "")]
+	if not valid:
+		_spell_description.text += "\nEach slot must contain a different available spell."
+	elif not _spell_debug.unlock_all_buildings and not _spell_synced:
+		_spell_description.text += "\nWaiting for an authenticated server state."
+
+func _confirm_spell_dialog() -> void:
+	if not SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft):
+		return
+	if _spell_debug.unlock_all_buildings:
+		var next := _spell_debug.load_lab_state()
+		var progress: Dictionary = next.get("spell_progress", {})
+		var equipped: Dictionary = progress.get("equipped_by_mode", {})
+		var mode_entries: Dictionary = equipped.get(_mode, {})
+		mode_entries[_current_entity_id] = _spell_draft.duplicate()
+		equipped[_mode] = mode_entries
+		progress["equipped_by_mode"] = equipped
+		next["spell_progress"] = progress
+		if not _spell_debug.save_lab_state(next):
+			_set_build_error("Could not save the debug spell loadout.")
+			return
+		_spell_state = next
+		_save_seal(_mode)
+		_set_build_error("Debug spell loadout saved.")
+		return
+	if _spell_backend == null or not _spell_synced or _spell_pending_id != "":
+		_set_build_error("Server state is unavailable.")
+		return
+	_spell_pending_mode = _mode
+	_spell_pending_entity = _current_entity_id
+	_spell_pending_id = _spell_backend.send_action({"action_type": "SET_SPELL_LOADOUT", "payload": {"mode": _mode, "entity_id": _current_entity_id, "spell_ids": _spell_draft.duplicate()}})
+	if _spell_pending_id == "":
+		_spell_synced = false
+	_set_build_error("Waiting for server confirmation." if _spell_pending_id != "" else "Could not send spell loadout.")
+	_refresh_spell_button()
+
+func _on_spell_action_confirmed(action_id: String) -> void:
+	if action_id != _spell_pending_id or action_id == "":
+		return
+	_spell_pending_id = ""
+	if _mode == _spell_pending_mode and _current_entity_id == _spell_pending_entity:
+		_save_seal(_mode)
+	_set_build_error("Spell loadout confirmed by server.")
+	_refresh_spell_button()
+
+func _on_spell_action_failed(action_id: String, error: String) -> void:
+	if action_id != _spell_pending_id or action_id == "":
+		return
+	_spell_pending_id = ""
+	if error in ["network_error", "bad_json", "bad_state"]:
+		_set_build_error("Server unavailable; spell loadout was not confirmed.")
+		_spell_synced = false
+		if _spell_backend != null and _spell_backend.token != "":
+			_spell_backend.request_api("GET", "/player/state", null, true)
+	else:
+		_set_build_error("Spell loadout rejected: " + error)
+	_refresh_spell_button()
 
 func _wire_buttons() -> void:
 	if btn_seal_attack:
@@ -472,7 +665,9 @@ func _refresh_details() -> void:
 		if lbl_mode: lbl_mode.text = "Mode: " + _mode.to_upper()
 		if lbl_homunculus: lbl_homunculus.text = "Homunculus: —"
 		if preview: preview.texture = null
+		if _spell_button: _spell_button.hide()
 		return
+	_refresh_spell_button()
 
 	if lbl_name: lbl_name.text = str(ent.get("name", _current_entity_id))
 	if lbl_mode: lbl_mode.text = "Mode: " + _mode.to_upper()
@@ -761,6 +956,7 @@ func _lore_for_entity(ent: Dictionary) -> String:
 	return "An unknown force watches from the edges of the seal."
 
 func _on_seal_attack() -> void:
+	var changed := _mode != "attack"
 	_mode = "attack"
 	# Visual feedback
 	if btn_seal_attack:
@@ -770,10 +966,13 @@ func _on_seal_attack() -> void:
 		btn_seal_defense.button_pressed = false
 	if lbl_mode:
 		lbl_mode.text = "Mode: ATTACK"
-	_save_seal("attack")
+	if changed:
+		_load_seal("attack")
+		_refresh_details()
 	_update_save_button_label()
 
 func _on_seal_defense() -> void:
+	var changed := _mode != "defense"
 	_mode = "defense"
 	# Visual feedback
 	if btn_seal_attack:
@@ -783,7 +982,9 @@ func _on_seal_defense() -> void:
 		_pulse_button(btn_seal_defense)
 	if lbl_mode:
 		lbl_mode.text = "Mode: DEFENSE"
-	_save_seal("defense")
+	if changed:
+		_load_seal("defense")
+		_refresh_details()
 	_update_save_button_label()
 
 func _pulse_button(btn: BaseButton) -> void:
@@ -828,11 +1029,18 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	if _spell_pending_id != "":
+		_set_build_error("Wait for spell loadout confirmation.")
+		return
+	if not _spell_debug.unlock_all_buildings and _spell_backend != null and _spell_backend.token != "" and not _spell_synced:
+		_set_build_error("Waiting for server spell loadouts.")
+		return
 	if _has_duplicate_build_items():
 		_set_build_error("You can't choose the same item twice")
 		return
 	_set_build_error("")
 	_save_seal(_mode)
+	SceneRouter.set_combat_seal_mode(_mode)
 	if ResourceLoader.exists("res://scenes/Combat.tscn"):
 		get_tree().change_scene_to_file("res://scenes/Combat.tscn")
 	else:
@@ -861,6 +1069,7 @@ func _save_seal(which: String) -> void:
 		"side_2": _idx_to_id(_items, dd_side2),
 		"attack_tech": _idx_to_id(_atk_techs, dd_atktech),
 		"defense_tech": _idx_to_id(_def_techs, dd_deftech),
+		"spell_ids": _equipped_spells(_mode, _current_entity_id),
 	}
 	var path := "user://seal_%s.json" % which
 	var f := FileAccess.open(path, FileAccess.WRITE)

@@ -9,7 +9,7 @@ const DESCRIPTIONS := {
 	"storage_vault": "Increases resource storage capacity.",
 	"build_forge": "Manage your builds and equipment.",
 	"homunculus_vat": "Manage your homunculi.",
-	"ultrahit_tower": "Manage your Ultrahit selections.",
+	"ultrahit_tower": "Research spells for your entities.",
 	"experiment_chamber": "Run laboratory experiments.",
 	"arcane_archives": "Research new laboratory knowledge.",
 	"sync_nexus": "Synchronizes laboratory networks.",
@@ -160,8 +160,30 @@ func _refresh() -> void:
 		wallet = {}
 	_name_label.text = str(data.get("display_name", data.get("name", _building_id)))
 	_description.text = str(DESCRIPTIONS.get(_building_id, ""))
+	if _building_id in ["sync_nexus", "anomaly_containment"]:
+		_description.text += "\nSpecialized functions: Coming Soon."
+	if _building_id == "essence_reactor" and level < max_level:
+		var reactor: Dictionary = buildings.get("essence_reactor", {})
+		var storage: Dictionary = buildings.get("storage_vault", {})
+		var route := str(reactor.get("route", "stable"))
+		if route.is_empty():
+			route = "stable"
+		var engine := ProductionEngine.new()
+		var balance := ProductionEngine.balance_for_server(_db.balance)
+		var hq_path := str(lab.get("hqPath", "Scientific"))
+		var storage_route := str(storage.get("route", ""))
+		var current_rate := 0.0 if level <= 0 else engine._compute_output_rate(level, route, storage_route, hq_path, balance) * 3600.0
+		var next_rate: float = engine._compute_output_rate(level + 1, route, storage_route, hq_path, balance) * 3600.0
+		_description.text += "\nEstimated base: %.0f → %.0f Essence/h (excludes boosts)." % [current_rate, next_rate]
+	elif _building_id == "storage_vault" and level < max_level:
+		var storage: Dictionary = buildings.get("storage_vault", {})
+		var route := str(storage.get("route", ""))
+		var hq_path := str(lab.get("hqPath", "Scientific"))
+		var current_capacity := Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
+		var next_capacity := Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance)
+		_description.text += "\nCapacity: %d → %d." % [current_capacity, next_capacity]
 	_icon.texture = _catalog.get_tex(_building_id) if _catalog.has(_building_id) else null
-	_level.text = "Level %s / %s" % [level, max_level]
+	_level.text = "Level %s / %s%s" % [level, max_level, ("  →  %s" % (level + 1)) if level < max_level else ""]
 	_requirement.text = ""
 	if not unlocked:
 		_requirement.text = "Unlocks at HQ level %s" % HqRules.get_unlock_level(_building_id)
@@ -206,6 +228,9 @@ func _refresh() -> void:
 		_status.text = "Offline or awaiting server state. Actions unavailable."
 	elif pending and _status.text == "":
 		_status.text = "Action pending server confirmation."
+	if _building_id == "essence_reactor" and level > 0:
+		var stored = buildings.get("essence_reactor", {}).get("runtime", {}).get("stored_output", 0)
+		_status.text += "\nStored at last update: %.1f Essence." % float(stored)
 
 func _on_upgrade() -> void:
 	if not _upgrade.disabled:
@@ -245,17 +270,18 @@ func _send_local_debug(action_type: String) -> void:
 		if current >= HqRules.get_max_level(_building_id):
 			return
 		entry["level"] = current + 1
+		if _building_id == "essence_reactor" and not entry.has("runtime"):
+			entry["runtime"] = {"stored_output": 0.0, "last_tick": int(Time.get_unix_time_from_system() * 1000)}
 		buildings[_building_id] = entry
 		lab["buildings"] = buildings
 		if _building_id == "lab_th":
 			lab["hqLevel"] = current + 1
 		next["lab"] = lab
 	elif action_type == "CLAIM_PRODUCTION" and _building_id == "essence_reactor":
-		var wallet = next.get("wallet", {})
-		if not wallet is Dictionary:
-			wallet = {}
-		wallet["essence"] = int(wallet.get("essence", 0)) + 100
-		next["wallet"] = wallet
+		if _debug.claim_lab_production(next, _db).is_empty():
+			_message = "Reactor must be built before collection."
+			_refresh()
+			return
 	else:
 		return
 	_debug.start_lab_cooldown(next, _building_id)

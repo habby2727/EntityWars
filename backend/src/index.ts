@@ -20,6 +20,7 @@ import { rateLimit } from "./middleware/rateLimit";
 import { enqueueJob, getJobQueueSize } from "./jobs/queue";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
+import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 
 type RateLimitConfig = {
 	windowMs: number;
@@ -151,6 +152,7 @@ type PlayerState = {
 	lab: LabState;
 	world: PlayerWorldState;
 	research_flags: Record<string, boolean>;
+	spell_progress: SpellProgress;
 	updated_at: number;
 };
 
@@ -703,6 +705,7 @@ function safeParseState(
 		lab,
 		world,
 		research_flags: researchFlags,
+		spell_progress: normalizeSpellProgress(parsed.spell_progress),
 		updated_at: Number(parsed.updated_at ?? Date.now())
 	};
 	} catch {
@@ -721,6 +724,7 @@ function createDefaultState(playerId: string, displayName: string, now: number, 
 		lab,
 		world,
 		research_flags: {},
+		spell_progress: normalizeSpellProgress(null),
 		updated_at: now
 	};
 }
@@ -737,6 +741,7 @@ function applyAction(
 		...state,
 		wallet: { ...state.wallet },
 		research_flags: { ...state.research_flags },
+		spell_progress: normalizeSpellProgress(state.spell_progress),
 		lab: {
 			...state.lab,
 			buildings: { ...state.lab.buildings },
@@ -760,6 +765,18 @@ function applyAction(
 	}
 	if (actionType == "START_RESEARCH") {
 		return applyStartResearch(next, payload, now);
+	}
+	if (actionType == "START_SPELL_RESEARCH") {
+		const error = startSpellResearch(next, payload, now, staticData.resources);
+		return error ? { state: next, error } : { state: next };
+	}
+	if (actionType == "SET_SPELL_LOADOUT") {
+		const error = setSpellLoadout(next, payload);
+		return error ? { state: next, error } : { state: next };
+	}
+	if (actionType == "CLAIM_SPELL_RESEARCH") {
+		const error = claimSpellResearch(next, payload, now);
+		return error ? { state: next, error } : { state: next };
 	}
 	if (actionType == "CLAIM_RESEARCH" || actionType == "COMPLETE_RESEARCH") {
 		return applyClaimResearch(next, payload, now);

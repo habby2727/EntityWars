@@ -266,7 +266,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="PreviewFrame" type="PanelContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow" unique_id=400273665]
-custom_minimum_size = Vector2(340, 340)
+custom_minimum_size = Vector2(240, 240)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
 
@@ -277,7 +277,7 @@ stretch_mode = 5
 
 
 [node name="HomPreviewFrame" type="PanelContainer" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow" unique_id=275463377]
-custom_minimum_size = Vector2(340, 340)
+custom_minimum_size = Vector2(240, 240)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
 
@@ -531,6 +531,19 @@ layout_mode = 2
 text = "READY (Start Bo3)"
 focus_mode = 0
 custom_minimum_size = Vector2(580, 116)
+
+[node name="SpellConfig" type="Button" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 2
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -205.0
+offset_top = 60.0
+offset_right = -20.0
+offset_bottom = 96.0
+text = "Spells · 4/4"
+tooltip_text = "Configure spells for the selected entity"
 
 [node name="BackButton" type="Button" parent="."]
 layout_mode = 1

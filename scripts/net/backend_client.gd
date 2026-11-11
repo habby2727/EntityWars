@@ -95,17 +95,24 @@ func send_action(action_dict: Dictionary) -> String:
 	if action.is_empty():
 		return ""
 	var action_id: String = action.get("client_action_id", "")
+	var online_only := str(action.get("action_type", "")) == "SET_SPELL_LOADOUT"
 	var key := _make_action_key(action)
 	if key != "" and _pending_keys.has(key):
 		return str(_pending_keys[key])
 	if _in_flight.size() > 0:
+		if online_only:
+			return ""
 		_enqueue_action(action, key, "busy")
 		return action_id
 	if token == "":
+		if online_only:
+			return ""
 		_enqueue_action(action, key, "no_token")
 		return action_id
 	var err = _send_request("POST", "/player/action", action, {"kind": "action", "action": action, "action_key": key})
 	if err != OK:
+		if online_only:
+			return ""
 		_enqueue_action(action, key, "offline")
 		return action_id
 	_in_flight = {"kind": "action", "action": action, "action_key": key}
@@ -236,6 +243,8 @@ func _build_pending_keys() -> void:
 
 func _send_request(method: String, path: String, body: Variant, meta: Dictionary) -> int:
 	_ensure_http()
+	var action: Dictionary = meta.get("action", {})
+	_http.timeout = 8.0 if str(action.get("action_type", "")) == "SET_SPELL_LOADOUT" else 0.0
 	_load_debug_flags()
 	var url = base_url + path
 	var headers: PackedStringArray = ["Content-Type: application/json"]
@@ -377,6 +386,11 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 
 func _handle_request_failure(kind: String, action: Dictionary, action_key: String, reason: String, was_queued: bool) -> void:
 	if kind == "action":
+		if str(action.get("action_type", "")) == "SET_SPELL_LOADOUT" and not was_queued:
+			emit_signal("action_failed", str(action.get("client_action_id", "")), reason)
+			if action_key != "":
+				_pending_keys.erase(action_key)
+			return
 		if reason.begins_with("http_4") or reason.begins_with("server_reject") or reason in ["server_error", "bad_state"]:
 			emit_signal("action_failed", str(action.get("client_action_id", "")), reason)
 			if action_key != "":

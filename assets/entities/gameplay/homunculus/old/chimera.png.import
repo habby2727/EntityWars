@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bw3fgakbcy01i"
-path="res://.godot/imported/amulet_of _wind.png-54f311bddf55a3793758445d5a4cc93c.ctex"
+uid="uid://c6j7snj2lpoxf"
+path="res://.godot/imported/chimera.png-45ce7d3c0da37119fe4e1a2571f3bdf3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/entities/builds/amulet_of _wind.png"
-dest_files=["res://.godot/imported/amulet_of _wind.png-54f311bddf55a3793758445d5a4cc93c.ctex"]
+source_file="res://assets/entities/gameplay/homunculus/old/chimera.png"
+dest_files=["res://.godot/imported/chimera.png-45ce7d3c0da37119fe4e1a2571f3bdf3.ctex"]
 
 [params]
 

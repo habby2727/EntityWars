@@ -28,8 +28,7 @@ const BUILDING_IDS := [
 
 const INVENTORY_TABS := {
 	"build_forge": "Builds",
-	"homunculus_vat": "Homunculi",
-	"ultrahit_tower": "Ultrahit"
+	"homunculus_vat": "Homunculi"
 }
 
 const LAYOUT_POS := {
@@ -365,19 +364,16 @@ func _get_reactor_rate_per_hour() -> float:
 	var level = _get_building_level("essence_reactor")
 	if level <= 0:
 		return 0.0
-	var base = float(_db.get_balance("reactor_base_rate", 1.0))
-	var per_level = float(_db.get_balance("reactor_rate_per_level", 0.2))
-	var rate = base + per_level * float(level)
-	var route_mults = _db.get_balance("reactor_route_output_mult", {})
-	rate *= _get_mult(route_mults, _get_building_route("essence_reactor"), 1.0)
-	var storage_mults = _db.get_balance("storage_route_output_mult", {})
-	rate *= _get_mult(storage_mults, _get_building_route("storage_vault"), 1.0)
+	var route := _get_building_route("essence_reactor")
+	if route.is_empty():
+		route = "stable"
 	var hq_path = str(_state.get("lab", {}).get("hqPath", "Scientific"))
-	var route_multipliers = _db.get_balance("route_multipliers", {})
-	var hq_output_mult = _db.get_balance("hq_output_mult", {})
-	var hq_mult = _get_mult(route_multipliers, hq_path, _get_mult(hq_output_mult, hq_path, 1.0))
-	rate *= hq_mult
-	return max(0.0, rate * 3600.0)
+	var engine := ProductionEngine.new()
+	var rate: float = engine._compute_output_rate(level, route, _get_building_route("storage_vault"), hq_path, ProductionEngine.balance_for_server(_db.balance))
+	var overclock = _state.get("lab", {}).get("runtime", {}).get("boosts", {}).get("volatile_overclock", {})
+	if int(overclock.get("expires_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
+		rate *= float(_db.get_balance("overclock_output_mult", 1.25))
+	return rate * 3600.0
 
 func _get_mult(map: Variant, key: String, default_value: float) -> float:
 	if typeof(map) != TYPE_DICTIONARY:

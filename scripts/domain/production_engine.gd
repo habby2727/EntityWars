@@ -37,6 +37,15 @@ const DEFAULT_HQ_RISK_MULT := {
 
 var buildings: Dictionary = {}
 
+static func balance_for_server(balance: Dictionary) -> Dictionary:
+	var adjusted := balance.duplicate(true)
+	var hq_mults: Dictionary = balance.get("route_multipliers", balance.get("hq_output_mult", {}))
+	var normalized := {}
+	for key in ["scientific", "chaotic", "industrial"]:
+		normalized[key] = float(hq_mults.get(key, 1.0))
+	adjusted["route_multipliers"] = normalized
+	return adjusted
+
 func _init(state: Dictionary = {}) -> void:
 	buildings = state.duplicate(true)
 

@@ -39,6 +39,51 @@ func start_lab_cooldown(state: Dictionary, building_id: String) -> void:
 	cooldowns[building_id] = Time.get_unix_time_from_system() + 1.0
 	state["debug_cooldowns"] = cooldowns
 
+func claim_lab_production(state: Dictionary, db: StaticDB) -> Dictionary:
+	if not unlock_all_buildings:
+		return {}
+	var lab: Dictionary = state.get("lab", {})
+	var buildings: Dictionary = lab.get("buildings", {})
+	var reactor: Dictionary = buildings.get("essence_reactor", {})
+	var level := int(reactor.get("level", 0))
+	if level <= 0:
+		return {}
+	var storage: Dictionary = buildings.get("storage_vault", {})
+	var reactor_route := str(reactor.get("route", "stable"))
+	if reactor_route.is_empty():
+		reactor_route = "stable"
+	var storage_route := str(storage.get("route", ""))
+	var hq_path := str(lab.get("hqPath", "Scientific"))
+	var now := int(Time.get_unix_time_from_system() * 1000.0)
+	var runtime: Dictionary = reactor.get("runtime", {})
+	var engine := ProductionEngine.new()
+	engine.set_building_state("essence_reactor", float(runtime.get("stored_output", 0)), int(runtime.get("last_tick", now)))
+	var balance := ProductionEngine.balance_for_server(db.balance)
+	var boosts: Dictionary = lab.get("runtime", {}).get("boosts", {})
+	var overclock := int(boosts.get("volatile_overclock", {}).get("expires_at", 0)) > now
+	var mutagen := int(boosts.get("mutagen_surge", {}).get("expires_at", 0)) > now
+	if overclock:
+		var output_mult := float(db.get_balance("overclock_output_mult", 1.25))
+		balance["reactor_base_rate"] = float(db.get_balance("reactor_base_rate", 1.0)) * output_mult
+		balance["reactor_rate_per_level"] = float(db.get_balance("reactor_rate_per_level", 0.2)) * output_mult
+	if overclock or mutagen:
+		var loss_mult := (float(db.get_balance("overclock_loss_mult", 1.25)) if overclock else 1.0) * (float(db.get_balance("mutagen_failure_mult", 1.2)) if mutagen else 1.0)
+		balance["volatile_loss_chance"] = float(db.get_balance("volatile_loss_chance", 0.25)) * loss_mult
+	if mutagen:
+		balance["mutagenic_rare_base_chance"] = float(db.get_balance("mutagenic_rare_base_chance", 0.08)) * float(db.get_balance("mutagen_rare_mult", 1.5))
+	engine.accumulate("essence_reactor", now, level, reactor_route, storage_route, hq_path, balance, now)
+	var capacity := Capacity.compute_total_capacity(int(storage.get("level", 0)), storage_route, hq_path, balance)
+	var result := engine.claim("essence_reactor", capacity, reactor_route, storage_route, hq_path, balance)
+	reactor["runtime"] = engine.get_building_state("essence_reactor")
+	buildings["essence_reactor"] = reactor
+	lab["buildings"] = buildings
+	state["lab"] = lab
+	var wallet: Dictionary = state.get("wallet", {})
+	for resource in result.get("grants", {}):
+		wallet[resource] = int(wallet.get(resource, 0)) + int(floor(float(result.grants[resource])))
+	state["wallet"] = wallet
+	return result
+
 func _init() -> void:
 	_load_flags()
 

@@ -5,6 +5,7 @@ var entities := {}
 var homunculi := {}
 var items := {}
 var techniques := {}
+var spells := {}
 
 func _init() -> void:
 	# Initialize defaults immediately so this script works when instantiated
@@ -20,6 +21,101 @@ func load_all() -> void:
 	_load_json_file(base + "homunculi.json", "homunculi")
 	_load_json_file(base + "items.json", "items")
 	_load_json_file(base + "techniques.json", "techniques")
+	_load_spells(base + "spells.json")
+
+func _load_spells(path: String) -> void:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		push_warning("DataRegistry: Cannot read spells: %s" % path)
+		return
+	var parser := JSON.new()
+	if parser.parse(file.get_as_text()) != OK or not parser.data is Dictionary:
+		push_warning("DataRegistry: Invalid spells JSON: %s" % path)
+		return
+	var records: Variant = parser.data.get("spells")
+	if not records is Array or records.size() != 64:
+		push_warning("DataRegistry: Expected 64 spells")
+		return
+	var counts := {"sulfur": 0, "mercury": 0, "sodium": 0, "aether": 0, "vitriol": 0, "gold": 0}
+	var loaded := {}
+	var universals := 0
+	var pairs := {}
+	for spell in records:
+		if not spell is Dictionary:
+			push_warning("DataRegistry: Invalid spell")
+			return
+		var id: Variant = spell.get("id")
+		var spell_type: Variant = spell.get("type")
+		var power: Variant = spell.get("power_mult")
+		var accuracy: Variant = spell.get("accuracy")
+		var cooldown: Variant = spell.get("cooldown_turns")
+		if not id is String or id.is_empty() or loaded.has(id) or not spell_type is String or (not counts.has(spell_type) and spell_type not in ["universal", "hybrid"]) or not spell.get("name") is String or spell.name.is_empty() or not spell.get("desc") is String or spell.desc.is_empty():
+			push_warning("DataRegistry: Invalid spell identity")
+			return
+		if spell.get("category") not in ["attack", "support"] or not (power is int or power is float) or power < 0 or not (accuracy is int or accuracy is float) or accuracy < 0 or accuracy > 1 or not (cooldown is int or cooldown is float) or cooldown < 0 or cooldown != floor(cooldown) or not spell.get("effects") is Array:
+			push_warning("DataRegistry: Invalid spell statistics: %s" % id)
+			return
+		for effect in spell.effects:
+			if not effect is Dictionary or effect.get("kind") not in ["vuln", "atk_boost", "atk_down", "shield", "hom_stun", "heal", "reflect", "type_neutralize", "poison", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "shield_by_order", "ward_dispel", "poison_on_reflect"] or effect.get("target") not in ["self", "enemy"] or not (effect.get("value") is int or effect.get("value") is float) or (effect.value < 0 and effect.kind != "tempo_shift"):
+				push_warning("DataRegistry: Invalid spell effect: %s" % id)
+				return
+		if counts.has(spell_type):
+			counts[spell_type] += 1
+		else:
+			var eligible: Variant = spell.get("eligible_types")
+			var level: Variant = spell.get("tower_level_required")
+			if not eligible is Array or not (level is int or level is float) or level < 1 or level > 10 or level != floor(level) or not spell.get("research_cost") is Dictionary or int(spell.get("research_time_sec", 0)) <= 0:
+				push_warning("DataRegistry: Invalid spell research data: %s" % id)
+				return
+			var unique := {}
+			for eligible_type in eligible:
+				if not eligible_type is String or not counts.has(eligible_type) or unique.has(eligible_type):
+					push_warning("DataRegistry: Invalid spell eligibility: %s" % id)
+					return
+				unique[eligible_type] = true
+			if spell_type == "universal":
+				if unique.size() != 6:
+					return
+				universals += 1
+			else:
+				var primary: String = str(spell.get("primary_type", ""))
+				var secondary: String = str(spell.get("secondary_type", ""))
+				if unique.size() != 2 or primary == secondary or not unique.has(primary) or not unique.has(secondary):
+					return
+				var pair := [primary, secondary]
+				pair.sort()
+				var pair_key := ":".join(pair)
+				pairs[pair_key] = int(pairs.get(pair_key, 0)) + 1
+		loaded[id] = spell.duplicate(true)
+	for spell_type in counts:
+		if counts[spell_type] != 4:
+			push_warning("DataRegistry: Expected four spells for %s" % spell_type)
+			return
+	if universals != 10 or pairs.size() != 15:
+		push_warning("DataRegistry: Invalid universal or hybrid spell count")
+		return
+	for pair in pairs:
+		if pairs[pair] != 2:
+			push_warning("DataRegistry: Expected two spells per hybrid pair")
+			return
+	spells = loaded
+
+func get_spells_for_type(spell_type: String) -> Array:
+	var result := []
+	for spell in spells.values():
+		if spell.type == spell_type:
+			result.append(spell.duplicate(true))
+	return result
+
+func get_researchable_spells_for_type(spell_type: String) -> Array:
+	var result := []
+	for spell in spells.values():
+		if spell.type == spell_type or spell_type in spell.get("eligible_types", []):
+			result.append(spell.duplicate(true))
+	return result
+
+func get_spell_by_id(id: String) -> Dictionary:
+	return spells.get(id, {}).duplicate(true)
 
 func _load_json_file(path: String, key: String) -> void:
 	if not FileAccess.file_exists(path):

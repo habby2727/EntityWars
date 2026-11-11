@@ -246,8 +246,8 @@
     },
     {
       "id": "ultrahit_tower",
-      "name": "Ultrahit Tower",
-      "display_name": "Ultrahit Tower",
+      "name": "Spell Tower",
+      "display_name": "Spell Tower",
       "unlock_hq": 2,
       "routes": [],
       "costs": {

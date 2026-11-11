@@ -47,10 +47,18 @@ const REACTOR_ROUTES := ["Stable", "Volatile", "Mutagenic"]
 const STORAGE_ROUTES := ["Compact", "Reactive", "Sealed"]
 const HQ_PATHS := ["Scientific", "Chaotic", "Industrial"]
 const GATE_BUILDINGS := ["sync_nexus", "anomaly_containment", "trade_hall", "world_gate"]
+const RESEARCH_FLAG_ONLY := ["unlock_sync", "unlock_anomalies", "reduce_experiment_cooldown", "increase_storage_capacity", "reactor_efficiency", "unlock_arcane_catalog", "unlock_gateway_studies"]
 
 var _backend: BackendClient = null
 var _catalog := AssetCatalog.new()
 var _db := StaticDB.new()
+var _spell_registry := DataRegistry.new()
+var _spell_section: VBoxContainer
+var _spell_entity_selector: OptionButton
+var _spell_list: VBoxContainer
+var _spell_rows := {}
+var _spell_server_offset_ms := 0
+var _spell_state_synced := false
 
 var _grid: GridContainer = null
 var _background_panel: PanelContainer = null
@@ -87,6 +95,9 @@ var _research_rows: Dictionary = {}
 var _resource_rows: Dictionary = {}
 var _debug := DebugFlags.new()
 var _ui_scale := 1.0
+var _status_refresh_elapsed := 0.0
+var _action_message := ""
+var _action_message_building := ""
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
 
@@ -109,8 +120,17 @@ func _ready() -> void:
 	_build_resource_bar()
 	_build_experiments()
 	_build_research()
+	_build_spell_section()
 	_load_state()
 	_select_default()
+
+func _process(delta: float) -> void:
+	_status_refresh_elapsed += delta
+	if _status_refresh_elapsed >= 1.0:
+		_status_refresh_elapsed = 0.0
+		_update_experiments()
+		_update_research()
+		_update_spell_section()
 
 func _resolve_nodes() -> void:
 	_backend = get_node_or_null(backend_path) as BackendClient
@@ -190,7 +210,10 @@ func _connect_backend() -> void:
 	_backend.action_confirmed.connect(_on_action_confirmed)
 	_backend.action_failed.connect(_on_action_failed)
 	_backend.state_updated.connect(_on_state_updated)
+	_backend.auth_changed.connect(_on_spell_auth_changed)
 	_rebuild_pending_from_queue()
+	if _backend.token != "":
+		_backend.refresh_state()
 
 func _load_state() -> void:
 	_state = {}
@@ -312,6 +335,8 @@ func _build_experiments() -> void:
 
 		var desc_label := Label.new()
 		desc_label.text = str(entry.get("desc", ""))
+		if str(entry.get("kind", "")) == "convert":
+			desc_label.text += " | Success: %d%% | Reward: %s" % [int(round(float(entry.get("success_chance", 1.0)) * 100)), str(entry.get("grants", {}))]
 		desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 		var cost_row := HBoxContainer.new()
@@ -377,6 +402,12 @@ func _build_research() -> void:
 		buttons.add_child(claim_btn)
 
 		row.add_child(header)
+		var info := Label.new()
+		info.text = "Time: %ss | Requires: %s | Flag: %s" % [int(entry.get("time_sec", 0)), _format_requirements(entry.get("requires", [])), str(entry.get("flag_id", research_id))]
+		if str(entry.get("flag_id", research_id)) in RESEARCH_FLAG_ONLY:
+			info.text += " | Additional effect: Coming Soon"
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(info)
 		row.add_child(cost_row)
 		row.add_child(buttons)
 		_research_list.add_child(row)
@@ -387,6 +418,152 @@ func _build_research() -> void:
 			"status": status_label,
 			"data": entry
 		}
+
+func _build_spell_section() -> void:
+	if _right_panel == null:
+		return
+	var detail := _right_panel.get_node_or_null("Margin/DetailVBox") as VBoxContainer
+	if detail == null:
+		return
+	_spell_section = VBoxContainer.new()
+	_spell_section.name = "SpellSection"
+	_spell_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_spell_section.add_theme_constant_override("separation", 6)
+	var heading := Label.new()
+	heading.text = "Spell Research"
+	_spell_section.add_child(heading)
+	_spell_entity_selector = OptionButton.new()
+	var entity_ids := _spell_registry.entities.keys()
+	entity_ids.sort()
+	for entity_id in entity_ids:
+		var entity: Dictionary = _spell_registry.entities[entity_id]
+		_spell_entity_selector.add_item("%s (%s)" % [entity.get("name", entity_id), str(entity.get("type", "")).capitalize()])
+		_spell_entity_selector.set_item_metadata(_spell_entity_selector.item_count - 1, entity_id)
+	_spell_entity_selector.item_selected.connect(_on_spell_entity_selected)
+	_spell_section.add_child(_spell_entity_selector)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, 180)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_spell_list = VBoxContainer.new()
+	_spell_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spell_list.add_theme_constant_override("separation", 8)
+	scroll.add_child(_spell_list)
+	_spell_section.add_child(scroll)
+	detail.add_child(_spell_section)
+	_build_spell_rows()
+
+func _spell_entity_id() -> String:
+	if _spell_entity_selector == null or _spell_entity_selector.selected < 0:
+		return ""
+	return str(_spell_entity_selector.get_item_metadata(_spell_entity_selector.selected))
+
+func _on_spell_entity_selected(_index: int) -> void:
+	_build_spell_rows()
+	_update_spell_section()
+
+func _build_spell_rows() -> void:
+	if _spell_list == null:
+		return
+	for child in _spell_list.get_children():
+		_spell_list.remove_child(child)
+		child.queue_free()
+	_spell_rows.clear()
+	var entity_id := _spell_entity_id()
+	var entity: Dictionary = _spell_registry.entities.get(entity_id, {})
+	var entity_type := str(entity.get("type", ""))
+	var current_group := ""
+	for spell in _spell_registry.get_researchable_spells_for_type(entity_type):
+		var kind := str(spell.get("type", ""))
+		var group := "Initial Spells" if kind == entity_type else ("Universal" if kind == "universal" else "Hybrid")
+		if current_group != group:
+			current_group = group
+			var group_label := Label.new()
+			group_label.text = group
+			_spell_list.add_child(group_label)
+		var row := VBoxContainer.new()
+		var name_label := Label.new()
+		var types := kind.capitalize()
+		if kind == "hybrid":
+			types = "%s / %s" % [str(spell.get("primary_type", "")).capitalize(), str(spell.get("secondary_type", "")).capitalize()]
+		name_label.text = "%s  |  %s" % [spell.name, types]
+		row.add_child(name_label)
+		var details := Label.new()
+		var power := "Support" if float(spell.power_mult) == 0 else "x%.2f" % float(spell.power_mult)
+		details.text = "%s | %s | Accuracy %d%% | Cooldown %d\n%s" % [str(spell.category).capitalize(), power, int(round(float(spell.accuracy) * 100)), int(spell.cooldown_turns), spell.desc]
+		if kind in ["universal", "hybrid"]:
+			details.text += "\nTower Lv %d | Cost %s | Time %s" % [int(spell.tower_level_required), str(spell.research_cost), _format_seconds(float(spell.research_time_sec) * 1000.0)]
+		details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(details)
+		var actions := HBoxContainer.new()
+		var status := Label.new()
+		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		actions.add_child(status)
+		var button := Button.new()
+		button.text = "Research"
+		button.pressed.connect(_on_spell_research_pressed.bind(str(spell.id)))
+		actions.add_child(button)
+		row.add_child(actions)
+		_spell_list.add_child(row)
+		_spell_rows[str(spell.id)] = {"spell": spell, "status": status, "button": button}
+
+func _update_spell_section() -> void:
+	if _spell_section == null:
+		return
+	_spell_section.visible = _selected_id == "ultrahit_tower"
+	if not _spell_section.visible:
+		return
+	var entity_id := _spell_entity_id()
+	var progress: Dictionary = _state.get("spell_progress", {})
+	var learned: Array = progress.get("learned_by_entity", {}).get(entity_id, [])
+	var active: Variant = progress.get("active_research")
+	if not active is Dictionary:
+		active = {}
+	var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
+	var pending := _is_pending_building("ultrahit_tower")
+	for id in _spell_rows:
+		var row: Dictionary = _spell_rows[id]
+		var spell: Dictionary = row.spell
+		var status: Label = row.status
+		var button: Button = row.button
+		button.text = "Research"
+		button.disabled = true
+		if spell.get("type", "") not in ["universal", "hybrid"]:
+			status.text = "Available (initial)"
+		elif id in learned:
+			status.text = "Learned"
+		elif not active.is_empty():
+			if active.get("entity_id") == entity_id and active.get("spell_id") == id:
+				var remaining := maxi(0, int(active.get("completes_at", 0)) - now)
+				status.text = "Researching: %s" % _format_seconds(remaining) if remaining > 0 else "Ready to claim"
+				button.text = "Claim"
+				button.disabled = pending or remaining > 0
+			else:
+				status.text = "Locked: another spell is being researched"
+		elif not _debug.unlock_all_buildings and _get_building_level("ultrahit_tower") < int(spell.tower_level_required):
+			status.text = "Locked: Spell Tower level %d required" % int(spell.tower_level_required)
+		elif not _can_afford(spell.research_cost):
+			status.text = "Locked: insufficient resources"
+		else:
+			status.text = "Researchable" if not _debug.unlock_all_buildings else "Researchable (local debug: 1s)"
+			button.disabled = pending
+		if not _debug.unlock_all_buildings and (_backend == null or _backend.token == ""):
+			if not button.disabled:
+				status.text = "Locked: backend sign-in required"
+			button.disabled = true
+		elif not _debug.unlock_all_buildings and not _spell_state_synced:
+			if not button.disabled:
+				status.text = "Locked: awaiting server state"
+			button.disabled = true
+
+func _on_spell_research_pressed(spell_id: String) -> void:
+	if not _spell_rows.has(spell_id) or _spell_rows[spell_id].button.disabled:
+		return
+	var entity_id := _spell_entity_id()
+	var active: Variant = _state.get("spell_progress", {}).get("active_research")
+	var action_type := "CLAIM_SPELL_RESEARCH" if active is Dictionary and active.get("entity_id") == entity_id and active.get("spell_id") == spell_id else "START_SPELL_RESEARCH"
+	_send_action({"action_type": action_type, "payload": {"building_id": "ultrahit_tower", "entity_id": entity_id, "spell_id": spell_id}}, "ultrahit_tower")
 
 func _select_default() -> void:
 	var focus_id := SceneRouter.consume_lab_focus_id()
@@ -470,12 +647,15 @@ func _update_detail() -> void:
 		_locked_label.visible = locked
 		_locked_label.text = "Unlock at HQ Lv %s" % unlock_level
 	if _pending_label != null:
-		_pending_label.visible = _is_pending_building(_selected_id)
+		var is_pending := _is_pending_building(_selected_id)
+		_pending_label.visible = is_pending or (_action_message_building == _selected_id and _action_message != "")
+		_pending_label.text = "Action pending server confirmation." if is_pending else _action_message
 	_update_routes()
 	_update_costs()
 	_update_buttons()
 	_update_experiments()
 	_update_research()
+	_update_spell_section()
 
 func _update_routes() -> void:
 	if _route_option == null:
@@ -559,11 +739,14 @@ func _update_buttons() -> void:
 	if _debug.unlock_all_buildings:
 		locked = false
 	var pending = _is_pending_building(_selected_id)
-	var cost_ok = not _get_upgrade_cost(_selected_id).is_empty()
+	var cost = _get_upgrade_cost(_selected_id)
+	var cost_ok = not cost.is_empty() and _can_afford(cost)
+	var can_upgrade = HqRules.can_upgrade(_selected_id, _get_building_level(_selected_id), _get_hq_level())
 	if _debug.unlock_all_buildings:
 		cost_ok = true
+		can_upgrade = _get_building_level(_selected_id) < HqRules.get_max_level(_selected_id)
 	if _upgrade_btn != null:
-		_upgrade_btn.disabled = locked or pending or not cost_ok
+		_upgrade_btn.disabled = locked or pending or not cost_ok or not can_upgrade
 	if _route_btn != null:
 		_route_btn.disabled = locked or pending or _route_option == null or _route_option.item_count == 0
 	if _claim_btn != null:
@@ -607,6 +790,12 @@ func _update_experiments() -> void:
 			var boost_remaining = max(0, boost_end - now_ms)
 			if boost_remaining > 0:
 				text += " | Boost: %s" % _format_seconds(boost_remaining)
+		if _debug.unlock_all_buildings:
+			var last_result = runtime.get("debug_results", {}).get(str(exp_id), "")
+			if last_result == "Boost active" and boost_id != "" and _get_time_value(boosts, boost_id) <= now_ms:
+				last_result = "Boost expired"
+			if last_result != "":
+				text += " | " + str(last_result)
 		if label != null:
 			label.text = text
 		if button != null:
@@ -648,7 +837,7 @@ func _update_research() -> void:
 		if locked:
 			text = "Unlock at HQ Lv %s" % unlock_level
 			can_start = false
-		elif flags.has(flag_id):
+		elif bool(flags.get(flag_id, false)):
 			text = "Completed"
 			can_start = false
 		elif active_id != "":
@@ -777,7 +966,34 @@ func _simulate_debug_action(action: Dictionary) -> void:
 		"SET_BUILDING_ROUTE":
 			_debug_set_route(building_id, str(payload.get("route", "")))
 		"CLAIM_PRODUCTION":
-			_debug_claim_production(building_id)
+			if building_id != "essence_reactor" or _debug.claim_lab_production(_state, _db).is_empty():
+				return
+		"START_SPELL_RESEARCH", "CLAIM_SPELL_RESEARCH":
+			var entity_id := str(payload.get("entity_id", ""))
+			var spell_id := str(payload.get("spell_id", ""))
+			var entity: Dictionary = _spell_registry.entities.get(entity_id, {})
+			var spell := _spell_registry.get_spell_by_id(spell_id)
+			if entity.is_empty() or spell.is_empty() or spell.get("type", "") not in ["universal", "hybrid"] or str(entity.get("type", "")) not in spell.get("eligible_types", []):
+				return
+			var progress: Dictionary = _state.get("spell_progress", {})
+			var learned: Dictionary = progress.get("learned_by_entity", {})
+			var owned: Array = learned.get(entity_id, [])
+			var active: Variant = progress.get("active_research")
+			if action_type == "START_SPELL_RESEARCH":
+				if spell_id in owned or owned.size() >= 20 or (active is Dictionary and not active.is_empty()):
+					return
+				var now := int(Time.get_unix_time_from_system() * 1000)
+				progress["active_research"] = {"entity_id": entity_id, "spell_id": spell_id, "started_at": now, "completes_at": now + 1000}
+			else:
+				if spell_id in owned:
+					return
+				if not active is Dictionary or active.get("entity_id") != entity_id or active.get("spell_id") != spell_id or int(active.get("completes_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
+					return
+				owned.append(spell_id)
+				learned[entity_id] = owned
+				progress["learned_by_entity"] = learned
+				progress["active_research"] = null
+			_state["spell_progress"] = progress
 		"START_EXPERIMENT", "START_RESEARCH", "CLAIM_RESEARCH":
 			var lab = _state.get("lab", {})
 			var runtime = lab.get("runtime", {})
@@ -787,23 +1003,33 @@ func _simulate_debug_action(action: Dictionary) -> void:
 				if experiment.is_empty():
 					return
 				var cooldowns = runtime.get("cooldowns", {})
+				if int(cooldowns.get(experiment_id, 0)) > int(Time.get_unix_time_from_system() * 1000):
+					return
 				cooldowns[experiment_id] = int(Time.get_unix_time_from_system() * 1000) + 1000
 				runtime["cooldowns"] = cooldowns
+				var results: Dictionary = runtime.get("debug_results", {})
 				if str(experiment.get("kind", "")) == "boost":
 					var boosts = runtime.get("boosts", {})
 					boosts[str(experiment.get("boost_id", ""))] = {"expires_at": int(Time.get_unix_time_from_system() * 1000) + int(experiment.get("boost_duration_s", 0)) * 1000}
 					runtime["boosts"] = boosts
+					results[experiment_id] = "Boost active"
 				elif randf() < float(experiment.get("success_chance", 1.0)):
 					var wallet = _state.get("wallet", {})
 					for resource in experiment.get("grants", {}):
 						wallet[resource] = int(wallet.get(resource, 0)) + int(experiment.grants[resource])
 					_state["wallet"] = wallet
+					results[experiment_id] = "Reward: %s" % str(experiment.get("grants", {}))
+				else:
+					results[experiment_id] = "Experiment failed; no reward"
+				runtime["debug_results"] = results
 			else:
 				var research_id = str(payload.get("research_id", ""))
 				var research = _db.get_research(research_id)
 				if research.is_empty():
 					return
 				if action_type == "START_RESEARCH":
+					if bool(_state.get("research_flags", {}).get(str(research.get("flag_id", research_id)), false)) or not runtime.get("research", {}).get("active_id", "").is_empty():
+						return
 					var now = int(Time.get_unix_time_from_system() * 1000)
 					runtime["research"] = {"active_id": research_id, "started_at": now, "completes_at": now + 1000}
 				else:
@@ -819,8 +1045,12 @@ func _simulate_debug_action(action: Dictionary) -> void:
 		_:
 			return
 	_debug.start_lab_cooldown(_state, building_id)
+	_action_message_building = building_id
 	if not _debug.save_lab_state(_state):
 		_state = previous
+		_action_message = "Could not save local debug state."
+	else:
+		_action_message = "Local debug action saved."
 	_refresh_from_state()
 	get_tree().create_timer(1.0).timeout.connect(_refresh_from_state, CONNECT_ONE_SHOT)
 
@@ -841,6 +1071,8 @@ func _debug_upgrade_building(building_id: String) -> void:
 	if typeof(entry) != TYPE_DICTIONARY:
 		entry = {}
 	entry["level"] = int(entry.get("level", 0)) + 1
+	if building_id == "essence_reactor" and not entry.has("runtime"):
+		entry["runtime"] = {"stored_output": 0.0, "last_tick": int(Time.get_unix_time_from_system() * 1000)}
 	buildings[building_id] = entry
 	lab["buildings"] = buildings
 	_state["lab"] = lab
@@ -864,15 +1096,6 @@ func _debug_set_route(building_id: String, route: String) -> void:
 	buildings[building_id] = entry
 	lab["buildings"] = buildings
 	_state["lab"] = lab
-
-func _debug_claim_production(building_id: String) -> void:
-	if building_id != "essence_reactor":
-		return
-	var wallet = _state.get("wallet", {})
-	if typeof(wallet) != TYPE_DICTIONARY:
-		wallet = {}
-	wallet["essence"] = int(wallet.get("essence", 0)) + 100
-	_state["wallet"] = wallet
 
 func _mark_pending(building_id: String, action_id: String) -> void:
 	if building_id == "" or action_id == "":
@@ -903,16 +1126,31 @@ func _on_action_queued(action_id: String, action_key: String, _reason: String) -
 		_mark_pending(building_id, action_id)
 
 func _on_action_confirmed(action_id: String) -> void:
+	if _pending_action_to_building.has(action_id):
+		_action_message_building = str(_pending_action_to_building[action_id])
+		_action_message = "Action confirmed by server; check updated resources and state."
 	_clear_pending(action_id)
 
-func _on_action_failed(action_id: String, _error: String) -> void:
+func _on_action_failed(action_id: String, error: String) -> void:
+	if _pending_action_to_building.has(action_id):
+		_action_message_building = str(_pending_action_to_building[action_id])
+		_action_message = "Action rejected: " + error
 	_clear_pending(action_id)
 
 func _on_state_updated(state: Dictionary) -> void:
 	if _debug.unlock_all_buildings:
 		return
+	if _backend != null and _backend.get_server_time_unix_ms() >= 0:
+		_spell_server_offset_ms = _backend.get_server_time_unix_ms() - int(Time.get_unix_time_from_system() * 1000)
+		_spell_state_synced = true
 	_state = state
 	_refresh_from_state()
+
+func _on_spell_auth_changed(token: String) -> void:
+	_spell_state_synced = false
+	if token != "" and _backend != null:
+		_backend.request_api("GET", "/player/state", null, true)
+	_update_spell_section()
 
 func _rebuild_pending_from_queue() -> void:
 	if _backend == null:
@@ -1006,7 +1244,7 @@ func _requirements_met(requires: Variant, flags: Dictionary) -> bool:
 	for req in requires:
 		if typeof(req) != TYPE_STRING:
 			continue
-		if not flags.has(req):
+		if not bool(flags.get(req, false)):
 			return false
 	return true
 
@@ -1071,7 +1309,7 @@ func _get_building_desc(building_id: String) -> String:
 		"homunculus_vat":
 			return "Grows homunculi for specialized tasks."
 		"ultrahit_tower":
-			return "Offensive tower for lab defense."
+			return "View the spells available to your entities."
 		"experiment_chamber":
 			return "Enables advanced experiments."
 		"arcane_archives":
@@ -1117,19 +1355,16 @@ func _get_reactor_rate_per_hour() -> float:
 	var level = _get_building_level("essence_reactor")
 	if level <= 0:
 		return 0.0
-	var base = float(_db.get_balance("reactor_base_rate", 1.0))
-	var per_level = float(_db.get_balance("reactor_rate_per_level", 0.2))
-	var rate = base + per_level * float(level)
-	var route_mults = _db.get_balance("reactor_route_output_mult", {})
-	rate *= _get_mult(route_mults, _get_building_route("essence_reactor"), 1.0)
-	var storage_mults = _db.get_balance("storage_route_output_mult", {})
-	rate *= _get_mult(storage_mults, _get_building_route("storage_vault"), 1.0)
+	var route := _get_building_route("essence_reactor")
+	if route.is_empty():
+		route = "stable"
 	var hq_path = str(_state.get("lab", {}).get("hqPath", "Scientific"))
-	var route_multipliers = _db.get_balance("route_multipliers", {})
-	var hq_output_mult = _db.get_balance("hq_output_mult", {})
-	var hq_mult = _get_mult(route_multipliers, hq_path, _get_mult(hq_output_mult, hq_path, 1.0))
-	rate *= hq_mult
-	return max(0.0, rate * 3600.0)
+	var engine := ProductionEngine.new()
+	var rate: float = engine._compute_output_rate(level, route, _get_building_route("storage_vault"), hq_path, ProductionEngine.balance_for_server(_db.balance))
+	var overclock = _state.get("lab", {}).get("runtime", {}).get("boosts", {}).get("volatile_overclock", {})
+	if int(overclock.get("expires_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
+		rate *= float(_db.get_balance("overclock_output_mult", 1.25))
+	return rate * 3600.0
 
 func _get_mult(map: Variant, key: String, default_value: float) -> float:
 	if typeof(map) != TYPE_DICTIONARY:

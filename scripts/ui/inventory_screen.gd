@@ -1,33 +1,6 @@
 extends Control
 class_name InventoryScreen
 
-const ULTRA_MAP := {
-	"sulfur": [
-		{"name": "Ember", "effects": [{"kind": "heal", "value": 14}]},
-		{"name": "Crucible", "effects": [{"kind": "atk_boost", "value": 0.35, "penalty": 0.15}]}
-	],
-	"mercury": [
-		{"name": "Quicksilver", "effects": [{"kind": "hom_stun", "value": 1}]},
-		{"name": "Slipstream", "effects": [{"kind": "shield", "value": 0.15}, {"kind": "atk_down", "value": 0.1}]}
-	],
-	"sodium": [
-		{"name": "Bulwark", "effects": [{"kind": "shield", "value": 0.22}, {"kind": "atk_down", "value": 0.1}]},
-		{"name": "Tonic", "effects": [{"kind": "heal", "value": 16}, {"kind": "vuln", "value": 0.1}]}
-	],
-	"aether": [
-		{"name": "Null", "effects": [{"kind": "hom_stun", "value": 1}, {"kind": "vuln", "value": 0.1}]},
-		{"name": "Flux", "effects": [{"kind": "atk_boost", "value": 0.25, "penalty": 0.1}]}
-	],
-	"vitriol": [
-		{"name": "Corrode", "effects": [{"kind": "poison", "value": 3}]},
-		{"name": "Miasma", "effects": [{"kind": "atk_down", "value": 0.15}, {"kind": "vuln", "value": 0.1}]}
-	],
-	"gold": [
-		{"name": "Edict", "effects": [{"kind": "shield", "value": 0.18}, {"kind": "atk_down", "value": 0.1}]},
-		{"name": "Mirror", "effects": [{"kind": "reflect", "value": 0.2}]}
-	]
-}
-
 const PREVIEW_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
@@ -82,7 +55,7 @@ func _apply_tab_titles() -> void:
 			continue
 		var tab_name = str(child.name)
 		if tab_name == "Ultrahit":
-			_tabs.set_tab_title(i, "UltraHit")
+			_tabs.set_tab_title(i, "Spells")
 		if tab_name == "Techs":
 			_tabs.set_tab_title(i, "Techs")
 
@@ -142,7 +115,7 @@ func _populate_lists() -> void:
 	_populate_entities()
 	_populate_builds()
 	_populate_homunculi()
-	_populate_ultrahit()
+	_populate_spells()
 	_populate_techs()
 
 func _populate_entities() -> void:
@@ -202,16 +175,22 @@ func _populate_homunculi() -> void:
 	for entry in list:
 		_homunculi_list.add_child(_make_entry_row(entry))
 
-func _populate_ultrahit() -> void:
+func _populate_spells() -> void:
 	if _ultrahit_list == null:
 		return
 	_clear_container(_ultrahit_list)
-	var entries = _build_ultrahit_entries()
+	var entries = _build_spell_entries()
 	if entries.is_empty():
 		_add_placeholder(_ultrahit_list)
 		return
+	var current_type := ""
 	for entry in entries:
-		_ultrahit_list.add_child(_make_entry_row(entry, false, true))
+		if entry.type != current_type:
+			current_type = entry.type
+			var heading := Label.new()
+			heading.text = current_type.capitalize()
+			_ultrahit_list.add_child(heading)
+		_ultrahit_list.add_child(_make_entry_row(entry))
 
 func _populate_techs() -> void:
 	if _techs_list == null:
@@ -235,7 +214,7 @@ func _populate_techs() -> void:
 	for entry in entries:
 		_techs_list.add_child(_make_entry_row(entry))
 
-func _build_ultrahit_entries() -> Array:
+func _build_spell_entries() -> Array:
 	var out: Array = []
 	if _registry == null:
 		return out
@@ -244,57 +223,41 @@ func _build_ultrahit_entries() -> Array:
 		entities = _registry.get_entities()
 	if typeof(entities) != TYPE_DICTIONARY:
 		return out
-	for key in entities.keys():
+	var keys := entities.keys()
+	keys.sort()
+	for key in keys:
 		var ent = entities[key]
 		if typeof(ent) != TYPE_DICTIONARY:
 			continue
 		var ent_id = str(ent.get("id", key))
-		var ent_name = str(ent.get("name", ent_id))
 		var ent_type = str(ent.get("type", "")).to_lower()
-		if not ULTRA_MAP.has(ent_type):
-			continue
-		var ultras: Array = ULTRA_MAP[ent_type]
-		for ultra in ultras:
-			var ultra_name = str(ultra.get("name", "Ultra"))
-			var entry = {
-				"id": "%s_%s" % [ent_type, ultra_name],
-				"name": "%s - %s" % [ent_name, ultra_name],
-				"desc": _ultra_desc(ultra),
-				"kind": "ultra",
-				"type": ent_type,
-				"preview_id": ent_id
-			}
+		for spell in _registry.get_spells_for_type(ent_type):
+			var entry: Dictionary = spell.duplicate(true)
+			entry["kind"] = "spell"
+			entry["preview_id"] = ent_id
 			out.append(entry)
-	out.sort_custom(Callable(self, "_sort_by_name"))
 	return out
 
-func _ultra_desc(ultra: Dictionary) -> String:
-	var effects: Array = ultra.get("effects", [])
-	var parts: Array = []
+func _spell_effects(effects: Array) -> String:
+	var parts: Array[String] = []
 	for effect in effects:
-		if typeof(effect) != TYPE_DICTIONARY:
-			continue
 		var kind: String = str(effect.get("kind", ""))
+		var value := float(effect.get("value", 0))
+		var pct := int(round(value * 100.0))
+		var target := "propio" if effect.get("target") == "self" else "enemigo"
 		match kind:
-			"heal":
-				parts.append("Heal %d" % int(effect.get("value", 0)))
-			"shield":
-				parts.append("Ward %d%%" % int(float(effect.get("value", 0.0)) * 100))
-			"atk_boost":
-				parts.append("+%d%% atk" % int(float(effect.get("value", 0.0)) * 100))
-				if float(effect.get("penalty", 0.0)) > 0.0:
-					parts.append("+%d%% damage taken" % int(float(effect.get("penalty", 0.0)) * 100))
-			"hom_stun":
-				parts.append("Seal homunculus")
-			"atk_down":
-				parts.append("-%d%% atk" % int(float(effect.get("value", 0.0)) * 100))
-			"poison":
-				parts.append("Poison: %d" % int(effect.get("value", 0)))
-			"reflect":
-				parts.append("Reflect %d%%" % int(float(effect.get("value", 0.0)) * 100))
-			"vuln":
-				parts.append("+%d%% dmg taken" % int(float(effect.get("value", 0.0)) * 100))
-	return ", ".join(parts)
+			"heal": parts.append("Cura %d HP (%s)" % [int(value), target])
+			"shield": parts.append("Escudo %d %% (%s)" % [pct, target])
+			"atk_boost": parts.append("Ataque +%d %% (%s)" % [pct, target])
+			"atk_down": parts.append("Ataque -%d %% (%s)" % [pct, target])
+			"hom_stun": parts.append("Bloquea homúnculo %d turno(s)" % int(value))
+			"poison": parts.append("Veneno %d turno(s) (%s)" % [int(value), target])
+			"reflect": parts.append("Refleja %d %% de daño (%s)" % [pct, target])
+			"vuln": parts.append("Vulnerabilidad %d %% (%s)" % [pct, target])
+			"type_neutralize": parts.append("Reduce %d %% la ventaja o desventaja de tipo en el próximo intercambio" % pct)
+			"bonus_if_poisoned": parts.append("Potencia +%d %% si el enemigo ya está envenenado" % pct)
+			"bonus_if_hit_last_exchange": parts.append("Potencia +%d %% si recibió daño en el intercambio anterior" % pct)
+	return "; ".join(parts) if not parts.is_empty() else "Sin efecto adicional"
 
 func _apply_initial_tab() -> void:
 	if _tabs == null:
@@ -308,13 +271,15 @@ func _apply_initial_tab() -> void:
 
 func _find_tab_index(tab_label: String) -> int:
 	var needle = tab_label.to_lower()
+	if needle == "ultrahit":
+		needle = "spells"
 	for i in range(_tabs.get_tab_count()):
 		var title = _tabs.get_tab_title(i).to_lower()
 		if title.find(needle) != -1:
 			return i
 	return -1
 
-func _make_entry_row(entry: Variant, include_costs: bool = false, _is_ultra: bool = false) -> Control:
+func _make_entry_row(entry: Variant, include_costs: bool = false) -> Control:
 	var row := VBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	var header := HBoxContainer.new()
@@ -397,8 +362,10 @@ func _entry_details(entry: Variant) -> String:
 		var effects = entry.get("effects", {})
 		if effects is Dictionary and not effects.is_empty():
 			lines.append("Effects by level: %s" % _format_effects(effects))
-	elif kind == "ultra":
-		lines.append("Type: %s" % str(entry.get("type", "Unknown")).capitalize())
+	elif kind == "spell":
+		lines.append("Type: %s  |  %s" % [str(entry.get("type", "Unknown")).capitalize(), str(entry.get("category", "")).capitalize()])
+		lines.append("Power: x%.2f  |  Accuracy: %d%%  |  Cooldown: %d" % [float(entry.get("power_mult", 0)), int(round(float(entry.get("accuracy", 0)) * 100)), int(entry.get("cooldown_turns", 0))])
+		lines.append("Efectos: %s" % _spell_effects(entry.get("effects", [])))
 	var description = str(entry.get("desc", ""))
 	if description != "":
 		lines.append(description)
@@ -458,7 +425,7 @@ func _extract_preview_texture(entry: Variant) -> Texture2D:
 		return load(preview_path)
 	var kind = str(entry.get("kind", ""))
 	var pid = str(entry.get("id", entry.get("preview_id", "")))
-	if kind == "ultra":
+	if kind == "spell":
 		pid = str(entry.get("preview_id", pid))
 		kind = "entity"
 	if pid == "":
@@ -483,6 +450,16 @@ func _load_preview_from_dir(base: String, pid: String) -> Texture2D:
 	return null
 
 func _load_build_preview(pid: String, entry: Dictionary) -> Texture2D:
+	var mapped_files := {
+		"bismuth_talisman": "talisman_bismuth.png",
+		"wind_amulet": "wind_amulet.png",
+		"mirror_sigel": "mirror.png",
+		"vitriol_vial": "vitriol.png",
+	}
+	if mapped_files.has(pid):
+		var mapped_path: String = BUILD_DIR + mapped_files[pid]
+		if ResourceLoader.exists(mapped_path):
+			return load(mapped_path)
 	var p0 = "%s%s.png" % [BUILD_DIR, pid]
 	var p1 = "%s%s_01.png" % [BUILD_DIR, pid]
 	if ResourceLoader.exists(p1):

@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/combat.gd" id="1"]
 [ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/combat_bg.png" id="2"]
+[ext_resource type="Script" path="res://scripts/ui/combat_status_icons.gd" id="3_status"]
 
 [node name="Combat" type="Control"]
 layout_mode = 3
@@ -71,15 +72,31 @@ theme_override_constants/separation = 0
 alignment = 1
 custom_minimum_size = Vector2(576, 384)
 
-[node name="PlayerHom" type="TextureRect" parent="PlayerPanel/PlayerSprites"]
+[node name="PlayerHomFrame" type="Control" parent="PlayerPanel/PlayerSprites"]
 layout_mode = 2
 custom_minimum_size = Vector2(192, 192)
+
+[node name="PlayerHom" type="TextureRect" parent="PlayerPanel/PlayerSprites/PlayerHomFrame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 expand_mode = 1
 stretch_mode = 5
 
-[node name="PlayerEntity" type="TextureRect" parent="PlayerPanel/PlayerSprites"]
+[node name="PlayerEntityFrame" type="Control" parent="PlayerPanel/PlayerSprites"]
 layout_mode = 2
 custom_minimum_size = Vector2(384, 384)
+
+[node name="PlayerEntity" type="TextureRect" parent="PlayerPanel/PlayerSprites/PlayerEntityFrame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 expand_mode = 1
 stretch_mode = 5
 
@@ -127,6 +144,14 @@ custom_minimum_size = Vector2(200, 16)
 size_flags_horizontal = 0
 value = 100
 max_value = 100
+
+[node name="Indicators" type="Control" parent="PlayerPanel/PlayerHPRow/PlayerHP"]
+layout_mode = 0
+offset_top = 18.0
+offset_right = 192.0
+offset_bottom = 48.0
+mouse_filter = 1
+script = ExtResource("3_status")
 
 [node name="PlayerHPSpacerRight" type="Control" parent="PlayerPanel/PlayerHPRow"]
 layout_mode = 2
@@ -198,15 +223,31 @@ theme_override_constants/separation = 0
 alignment = 1
 custom_minimum_size = Vector2(576, 384)
 
-[node name="EnemyEntity" type="TextureRect" parent="EnemyPanel/EnemySprites"]
+[node name="EnemyEntityFrame" type="Control" parent="EnemyPanel/EnemySprites"]
 layout_mode = 2
 custom_minimum_size = Vector2(384, 384)
+
+[node name="EnemyEntity" type="TextureRect" parent="EnemyPanel/EnemySprites/EnemyEntityFrame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 expand_mode = 1
 stretch_mode = 5
 
-[node name="EnemyHom" type="TextureRect" parent="EnemyPanel/EnemySprites"]
+[node name="EnemyHomFrame" type="Control" parent="EnemyPanel/EnemySprites"]
 layout_mode = 2
 custom_minimum_size = Vector2(192, 192)
+
+[node name="EnemyHom" type="TextureRect" parent="EnemyPanel/EnemySprites/EnemyHomFrame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 expand_mode = 1
 stretch_mode = 5
 
@@ -244,6 +285,14 @@ custom_minimum_size = Vector2(200, 16)
 size_flags_horizontal = 0
 value = 100
 max_value = 100
+
+[node name="Indicators" type="Control" parent="EnemyPanel/EnemyHPRow/EnemyHP"]
+layout_mode = 0
+offset_top = 18.0
+offset_right = 192.0
+offset_bottom = 48.0
+mouse_filter = 1
+script = ExtResource("3_status")
 
 [node name="EnemyHPSpacerRight" type="Control" parent="EnemyPanel/EnemyHPRow"]
 layout_mode = 2
@@ -310,6 +359,7 @@ scroll_following = true
 bg_color = Color(0, 0, 0, 0)
 
 [node name="NextTurn" type="Button" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 13
 anchor_left = 0.5
@@ -321,6 +371,42 @@ offset_top = -50.0
 offset_right = 80.0
 offset_bottom = -10.0
 text = "Next Turn"
+
+[node name="SpellPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -250.0
+offset_top = 56.0
+offset_right = 250.0
+offset_bottom = 200.0
+
+[node name="SpellGrid" type="GridContainer" parent="SpellPanel"]
+layout_mode = 2
+columns = 2
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+
+[node name="Spell1" type="Button" parent="SpellPanel/SpellGrid"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Spell2" type="Button" parent="SpellPanel/SpellGrid"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Spell3" type="Button" parent="SpellPanel/SpellGrid"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Spell4" type="Button" parent="SpellPanel/SpellGrid"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="SwapPanel" type="PanelContainer" parent="."]
 visible = false
@@ -385,69 +471,6 @@ stretch_mode = 5
 [node name="SwapCancel" type="Button" parent="SwapPanel/SwapVBox"]
 layout_mode = 2
 text = "Cancel Swap"
-
-[node name="UltraPanel" type="PanelContainer" parent="."]
-visible = false
-layout_mode = 1
-anchors_preset = 5
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -200.0
-offset_top = -80.0
-offset_right = 200.0
-offset_bottom = 80.0
-
-[node name="UltraVBox" type="VBoxContainer" parent="UltraPanel"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="UltraLabel" type="Label" parent="UltraPanel/UltraVBox"]
-layout_mode = 2
-text = "Choose UltraHit (turn 3)"
-horizontal_alignment = 1
-
-[node name="UltraButtons" type="HBoxContainer" parent="UltraPanel/UltraVBox"]
-layout_mode = 2
-theme_override_constants/separation = 8
-alignment = 1
-
-[node name="UltraChoice1" type="VBoxContainer" parent="UltraPanel/UltraVBox/UltraButtons"]
-layout_mode = 2
-theme_override_constants/separation = 4
-size_flags_horizontal = 3
-
-[node name="UltraBtn1" type="Button" parent="UltraPanel/UltraVBox/UltraButtons/UltraChoice1"]
-layout_mode = 2
-custom_minimum_size = Vector2(160, 0)
-size_flags_horizontal = 3
-text = "Ultra A"
-
-[node name="UltraDesc1" type="Label" parent="UltraPanel/UltraVBox/UltraButtons/UltraChoice1"]
-layout_mode = 2
-text = ""
-horizontal_alignment = 1
-autowrap_mode = 1
-theme_override_font_sizes/font_size = 11
-
-[node name="UltraChoice2" type="VBoxContainer" parent="UltraPanel/UltraVBox/UltraButtons"]
-layout_mode = 2
-theme_override_constants/separation = 4
-size_flags_horizontal = 3
-
-[node name="UltraBtn2" type="Button" parent="UltraPanel/UltraVBox/UltraButtons/UltraChoice2"]
-layout_mode = 2
-custom_minimum_size = Vector2(160, 0)
-size_flags_horizontal = 3
-text = "Ultra B"
-
-[node name="UltraDesc2" type="Label" parent="UltraPanel/UltraVBox/UltraButtons/UltraChoice2"]
-layout_mode = 2
-text = ""
-horizontal_alignment = 1
-autowrap_mode = 1
-theme_override_font_sizes/font_size = 11
 
 [node name="ItemTooltip" type="PanelContainer" parent="."]
 visible = false

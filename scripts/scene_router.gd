@@ -18,6 +18,15 @@ static var _next_lab_focus_id: String = ""
 static var _next_inventory_tab: String = ""
 static var _inventory_return_to_lab := false
 static var _next_world_zone_id: String = ""
+static var _combat_seal_mode := "attack"
+
+static func set_combat_seal_mode(mode: String) -> void:
+	_combat_seal_mode = "defense" if mode == "defense" else "attack"
+
+static func consume_combat_seal_mode() -> String:
+	var mode := _combat_seal_mode
+	_combat_seal_mode = "attack"
+	return mode
 
 static func go_to_main_menu() -> void:
 	_go_to(SCENE_MAIN_MENU, "MainMenu")
