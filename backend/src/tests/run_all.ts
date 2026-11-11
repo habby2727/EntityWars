@@ -3,6 +3,8 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import { assertApprox, assertEqual, assertNotNull, assertTrue, fail } from "./assert";
 import { createClient } from "./test_client";
+import { rateLimit } from "../middleware/rateLimit";
+import { getRedis } from "../db/redis";
 
 type StaticData = {
 	resources: string[];
@@ -1187,7 +1189,90 @@ async function testBoss(ctx: TestContext): Promise<void> {
 	}
 }
 
+async function testNewAccountProgression(ctx: TestContext): Promise<void> {
+	const source = loadJson(resolve(import.meta.dir, "..", "..", "..", "data", "static", "buildings.json"));
+	assertEqual(source.buildings.length, 12, "12 building definitions");
+	for (const building of source.buildings) {
+		for (let level = 1; level <= 10; level++) {
+			const cost = building.costs[String(level)];
+			assertTrue(cost != null && Object.keys(cost).length > 0, `${building.id} level ${level} cost exists`);
+			for (const [resource, amount] of Object.entries(cost)) {
+				assertTrue(ctx.staticData.resources.includes(resource), `${building.id} cost resource exists`);
+				assertTrue(Number.isInteger(amount) && Number(amount) > 0, `${building.id} cost is a positive integer`);
+			}
+		}
+	}
+	const name = `progress_${RUN_ID}`;
+	const login = await ctx.client.dev_login(name);
+	assertEqual(login.status, 200, "new account login");
+	const player = { playerId: login.data.player_id as string, token: login.data.token as string };
+	let state = (await ctx.client.get_player_state(player.token)).data.updated_player_state;
+	assertEqual(state.wallet.essence, 120, "new account essence");
+	assertEqual(state.wallet.core, 5, "new account core");
+	const blocked = await ctx.client.world_enter(player.token, { client_action_id: crypto.randomUUID(), zone_id: ctx.staticData.zones[0].id });
+	assertEqual(blocked.status, 400, "world gate required before entering");
+	let result = await ctx.client.post_action(player.token, makeAction("UPGRADE_BUILDING", { building_id: "essence_reactor" }));
+	assertEqual(result.status, 200, "build reactor without debug");
+	state = result.data.updated_player_state;
+	assertEqual(state.wallet.essence, 101, "reactor essence cost with Scientific path");
+	assertEqual(state.wallet.core, 1, "reactor core cost with Scientific path");
+	result = await ctx.client.post_action(player.token, makeAction("UPGRADE_BUILDING", { building_id: "world_gate" }));
+	assertEqual(result.status, 200, "build world gate at HQ 1");
+	state = result.data.updated_player_state;
+	assertEqual(state.wallet.essence, 63, "world gate essence cost with Scientific path");
+	assertEqual(state.wallet.core, 1, "world gate does not cost core");
+	const again = await ctx.client.dev_login(name);
+	assertEqual(again.data.player_id, player.playerId, "existing account is reused");
+	const existing = await ctx.client.get_player_state(again.data.token);
+	assertEqual(existing.data.updated_player_state.wallet.essence, 63, "existing account wallet is not reset");
+	const enter = await ctx.client.world_enter(player.token, { client_action_id: crypto.randomUUID(), zone_id: ctx.staticData.zones[0].id });
+	assertEqual(enter.status, 200, "enter first zone with constructed gate");
+	result = await ctx.client.post_action(player.token, makeAction("UPGRADE_BUILDING", { building_id: "lab_th" }));
+	assertEqual(result.status, 400, "HQ upgrade rejected without core");
+	seedPlayerState(ctx.db, player.playerId, { wallet: { essence: 1000, core: 100 } });
+	result = await ctx.client.post_action(player.token, makeAction("UPGRADE_BUILDING", { building_id: "lab_th" }));
+	assertEqual(result.status, 200, "HQ level 1 to 2");
+	state = result.data.updated_player_state;
+	assertEqual(state.wallet.essence, 931, "HQ level 2 essence cost");
+	assertEqual(state.wallet.core, 86, "HQ level 2 core cost");
+	result = await ctx.client.post_action(player.token, makeAction("UPGRADE_BUILDING", { building_id: "essence_reactor" }));
+	assertEqual(result.status, 200, "reactor level 1 to 2");
+	state = result.data.updated_player_state;
+	assertEqual(state.wallet.essence, 904, "reactor level 2 essence cost");
+	assertEqual(state.wallet.core, 79, "reactor level 2 core cost");
+	for (const path of ["Chaotic", "Industrial"]) {
+		seedPlayerState(ctx.db, player.playerId, { wallet: { essence: 1000, core: 100 }, hqLevel: 2, hqPath: path, buildings: { storage_vault: { level: 0 } } });
+		result = await ctx.client.post_action(player.token, makeAction("UPGRADE_BUILDING", { building_id: "storage_vault" }));
+		assertEqual(result.status, 200, `storage upgrade ${path}`);
+		const mult = ctx.staticData.balance.hq_cost_mult[path.toLowerCase()];
+		assertEqual(result.data.updated_player_state.wallet.essence, 1000 - Math.floor(30 * mult), `${path} essence cost`);
+		assertEqual(result.data.updated_player_state.wallet.core, 100 - Math.floor(5 * mult), `${path} core cost`);
+	}
+}
+
 async function testSecurity(ctx: TestContext): Promise<void> {
+	const noFunds = await createSeededPlayer(ctx, "security_bypass", {
+		wallet: { essence: 0, core: 0 },
+		hqLevel: 1,
+		hqPath: "Scientific",
+		buildings: { essence_reactor: { level: 0 } }
+	});
+	const bypassAttempt = await fetch(`${ctx.baseUrl}/player/action`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			"X-Debug-Bypass": "1",
+			Authorization: `Bearer ${noFunds.token}`
+		},
+		body: JSON.stringify(makeAction("UPGRADE_BUILDING", { building_id: "essence_reactor" }))
+	});
+	assertEqual(bypassAttempt.status, 400, "bypass header alone cannot skip upgrade cost");
+	assertEqual(
+		getPlayerStateFromDb(ctx.db, noFunds.playerId).lab.buildings.essence_reactor.level,
+		0,
+		"rejected bypass leaves building unchanged"
+	);
+
 	const player = await createSeededPlayer(ctx, "security", {
 		wallet: { essence: 1000, core: 100 }
 	});
@@ -1234,19 +1319,28 @@ async function testSecurity(ctx: TestContext): Promise<void> {
 	});
 	assertEqual(unknownRes.status, 400, "unknown resource rejected");
 
-	// Rate limit smoke check (burst without client limiter)
-	const burstUrl = `${ctx.baseUrl}/player/action`;
-	const burstHeaders: Record<string, string> = {
-		"Content-Type": "application/json",
-		Authorization: `Bearer ${player.token}`
-	};
-	const burstBody = JSON.stringify({ action_type: "UPGRADE_BUILDING" });
+	// Refresh is limited before it touches auth or external services.
+	const burstUrl = `${ctx.baseUrl}/v1/auth/refresh`;
+	const burstHeaders: Record<string, string> = { "Content-Type": "application/json" };
+	const burstBody = "{}";
 	const burstRequests = Array.from({ length: 70 }, () =>
 		fetch(burstUrl, { method: "POST", headers: burstHeaders, body: burstBody })
 	);
 	const burstResponses = await Promise.all(burstRequests);
 	const got429 = burstResponses.some((res) => res.status == 429);
 	assertTrue(got429, "rate limit enforced under burst");
+
+	const expiryOptions = {
+		keyPrefix: `rl:test_expiry:${RUN_ID}`,
+		windowSeconds: 1,
+		max: 2,
+		ip: "127.0.0.1"
+	};
+	assertTrue((await rateLimit(expiryOptions)).allowed, "first request within short window");
+	assertTrue((await rateLimit(expiryOptions)).allowed, "second request within short window");
+	assertTrue(!(await rateLimit(expiryOptions)).allowed, "short window rejects excess request");
+	await Bun.sleep(1100);
+	assertTrue((await rateLimit(expiryOptions)).allowed, "short window recovers after expiry");
 }
 
 function architectureChecks(ctx: TestContext): void {
@@ -1353,13 +1447,15 @@ async function run(): Promise<void> {
 		{ name: "H) Trade Jobs", run: testTradeJobs },
 		{ name: "I) World", run: testWorld },
 		{ name: "J) Bosses", run: testBoss },
-		{ name: "K) Security & Hardening", run: testSecurity }
+		{ name: "K) Security & Hardening", run: testSecurity },
+		{ name: "L) New Account Progression", run: testNewAccountProgression }
 	];
 
 	let passed = 0;
 	let failed = 0;
 
 	for (const test of tests) {
+		if (Bun.env.TEST_GROUP && !test.name.startsWith(Bun.env.TEST_GROUP)) continue;
 		try {
 			console.log(`\nRUN: ${test.name}`);
 			await test.run(ctx);
@@ -1377,9 +1473,9 @@ async function run(): Promise<void> {
 	console.log("\nTEST SUMMARY");
 	console.log(`PASS: ${passed}`);
 	console.log(`FAIL: ${failed}`);
-	if (failed > 0) {
-		process.exitCode = 1;
-	}
+	db.close();
+	getRedis().disconnect();
+	process.exit(failed > 0 ? 1 : 0);
 }
 
 run().catch((err) => {

@@ -22,29 +22,35 @@ func load_all() -> void:
 	_load_json_file(base + "techniques.json", "techniques")
 
 func _load_json_file(path: String, key: String) -> void:
+	if not FileAccess.file_exists(path):
+		push_warning("DataRegistry: Missing data file: %s" % path)
+		return
 	var f = FileAccess.open(path, FileAccess.ModeFlags.READ as FileAccess.ModeFlags)
 	if f == null:
+		push_warning("DataRegistry: Cannot read data file: %s" % path)
 		return
 	var text = f.get_as_text()
 	f.close()
-	var parsed = JSON.parse_string(text)
-	# JSON.parse_string may return a JSONParseResult object or a Dictionary
-	# depending on environment; handle both safely.
-	var parse_error_code: int = OK
-	var parsed_result = null
-	if typeof(parsed) == TYPE_DICTIONARY:
-		if parsed.has("error"):
-			parse_error_code = int(parsed.get("error", ERR_PARSE_ERROR))
-		else:
-			parse_error_code = OK
-		parsed_result = parsed.get("result", parsed)
-	else:
-		# Assume JSONParseResult-like with .error and .result
-		parse_error_code = int(parsed.error)
-		parsed_result = parsed.result
-	if parse_error_code != OK:
+	var parser := JSON.new()
+	if parser.parse(text) != OK:
+		push_warning("DataRegistry: Invalid JSON in %s at line %s: %s" % [path, parser.get_error_line(), parser.get_error_message()])
 		return
-	var data = parsed_result
+	var data = parser.data
+	if not data is Dictionary:
+		push_warning("DataRegistry: Expected an object in %s" % path)
+		return
+	var fields = ["attack", "defense"] if key == "techniques" else [key]
+	for field in fields:
+		var records = data.get(field)
+		if not records is Array:
+			push_warning("DataRegistry: Missing or invalid %s array in %s" % [field, path])
+			return
+		var ids := {}
+		for record in records:
+			if not record is Dictionary or not record.get("id") is String or record.id == "" or ids.has(record.id):
+				push_warning("DataRegistry: Invalid or duplicate ID in %s (%s)" % [path, field])
+				return
+			ids[record.id] = true
 	match key:
 		"entities":
 			entities = {}

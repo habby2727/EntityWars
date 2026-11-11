@@ -90,6 +90,13 @@ var _ui_scale := 1.0
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
 
+func _enter_tree() -> void:
+	if _debug.unlock_all_buildings:
+		var client = get_node_or_null(backend_path) as BackendClient
+		if client != null:
+			client.auto_dev_login = false
+			client.auto_flush = false
+
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
@@ -176,7 +183,7 @@ func _apply_panel_textures() -> void:
 		_right_panel.add_theme_stylebox_override("panel", _make_panel_style(panel_tex))
 
 func _connect_backend() -> void:
-	if _backend == null:
+	if _backend == null or _debug.unlock_all_buildings:
 		return
 	_backend.action_sent.connect(_on_action_sent)
 	_backend.action_queued.connect(_on_action_queued)
@@ -187,7 +194,9 @@ func _connect_backend() -> void:
 
 func _load_state() -> void:
 	_state = {}
-	if _backend != null:
+	if _debug.unlock_all_buildings:
+		_state = _debug.load_lab_state()
+	elif _backend != null:
 		_state = _backend.load_cached_state()
 	if typeof(_state) != TYPE_DICTIONARY or _state.is_empty():
 		_state = _default_state()
@@ -654,7 +663,7 @@ func _update_research() -> void:
 				text = "Research in progress"
 				can_start = false
 		else:
-			if not _requirements_met(requirements, flags):
+			if not _debug.unlock_all_buildings and not _requirements_met(requirements, flags):
 				text = "Requires: %s" % _format_requirements(requirements)
 				can_start = false
 			elif not _can_afford(data.get("cost", {})):
@@ -740,13 +749,11 @@ func _on_open_pressed() -> void:
 		_placeholder_popup.popup_centered()
 
 func _send_action(action: Dictionary, building_id: String) -> void:
-	if _backend == null:
-		if _debug.unlock_all_buildings:
+	if _debug.unlock_all_buildings:
+		if not _debug.lab_cooldown_active(_state, building_id):
 			_simulate_debug_action(action)
-			return
 		return
-	if _debug.unlock_all_buildings and _backend.get_server_time_unix_ms() < 0:
-		_simulate_debug_action(action)
+	if _backend == null:
 		return
 	var action_id = _backend.send_action(action)
 	if action_id == "":
@@ -760,17 +767,62 @@ func _simulate_debug_action(action: Dictionary) -> void:
 	var payload = action.get("payload", {})
 	if typeof(payload) != TYPE_DICTIONARY:
 		payload = {}
+	var building_id = str(payload.get("building_id", ""))
+	var previous = _state.duplicate(true)
 	match action_type:
 		"UPGRADE_BUILDING":
-			_debug_upgrade_building(str(payload.get("building_id", "")))
+			if building_id == "" or _get_building_level(building_id) >= HqRules.get_max_level(building_id):
+				return
+			_debug_upgrade_building(building_id)
 		"SET_BUILDING_ROUTE":
-			_debug_set_route(str(payload.get("building_id", "")), str(payload.get("route", "")))
+			_debug_set_route(building_id, str(payload.get("route", "")))
 		"CLAIM_PRODUCTION":
-			_debug_claim_production(str(payload.get("building_id", "")))
+			_debug_claim_production(building_id)
 		"START_EXPERIMENT", "START_RESEARCH", "CLAIM_RESEARCH":
-			# No-op in debug offline mode.
-			pass
+			var lab = _state.get("lab", {})
+			var runtime = lab.get("runtime", {})
+			if action_type == "START_EXPERIMENT":
+				var experiment_id = str(payload.get("experiment_id", ""))
+				var experiment = ExperimentCatalog.get_by_id(experiment_id)
+				if experiment.is_empty():
+					return
+				var cooldowns = runtime.get("cooldowns", {})
+				cooldowns[experiment_id] = int(Time.get_unix_time_from_system() * 1000) + 1000
+				runtime["cooldowns"] = cooldowns
+				if str(experiment.get("kind", "")) == "boost":
+					var boosts = runtime.get("boosts", {})
+					boosts[str(experiment.get("boost_id", ""))] = {"expires_at": int(Time.get_unix_time_from_system() * 1000) + int(experiment.get("boost_duration_s", 0)) * 1000}
+					runtime["boosts"] = boosts
+				elif randf() < float(experiment.get("success_chance", 1.0)):
+					var wallet = _state.get("wallet", {})
+					for resource in experiment.get("grants", {}):
+						wallet[resource] = int(wallet.get(resource, 0)) + int(experiment.grants[resource])
+					_state["wallet"] = wallet
+			else:
+				var research_id = str(payload.get("research_id", ""))
+				var research = _db.get_research(research_id)
+				if research.is_empty():
+					return
+				if action_type == "START_RESEARCH":
+					var now = int(Time.get_unix_time_from_system() * 1000)
+					runtime["research"] = {"active_id": research_id, "started_at": now, "completes_at": now + 1000}
+				else:
+					var active = runtime.get("research", {})
+					if str(active.get("active_id", "")) != research_id or int(active.get("completes_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
+						return
+					var flags = _state.get("research_flags", {})
+					flags[str(research.get("flag_id", research_id))] = true
+					_state["research_flags"] = flags
+					runtime["research"] = {}
+			lab["runtime"] = runtime
+			_state["lab"] = lab
+		_:
+			return
+	_debug.start_lab_cooldown(_state, building_id)
+	if not _debug.save_lab_state(_state):
+		_state = previous
 	_refresh_from_state()
+	get_tree().create_timer(1.0).timeout.connect(_refresh_from_state, CONNECT_ONE_SHOT)
 
 func _debug_upgrade_building(building_id: String) -> void:
 	if building_id == "":
@@ -857,6 +909,8 @@ func _on_action_failed(action_id: String, _error: String) -> void:
 	_clear_pending(action_id)
 
 func _on_state_updated(state: Dictionary) -> void:
+	if _debug.unlock_all_buildings:
+		return
 	_state = state
 	_refresh_from_state()
 
@@ -967,7 +1021,7 @@ func _format_requirements(requires: Variant) -> String:
 
 func _is_pending_building(building_id: String) -> bool:
 	if _debug.unlock_all_buildings:
-		return false
+		return _debug.lab_cooldown_active(_state, building_id)
 	return _pending_by_id.has(building_id)
 
 func _get_building_level(building_id: String) -> int:
@@ -1099,14 +1153,11 @@ func _get_upgrade_cost(building_id: String) -> Dictionary:
 	var data = _db.get_building(building_id)
 	if typeof(data) != TYPE_DICTIONARY:
 		return {}
-	var costs = data.get("costs", {})
-	if typeof(costs) != TYPE_DICTIONARY:
-		return {}
-	var next_level = _get_building_level(building_id) + 1
-	var entry = costs.get(str(next_level), {})
-	if typeof(entry) == TYPE_DICTIONARY:
-		return entry
-	return {}
+	var buildings := {building_id: data}
+	var balance := {"hq_cost_mult": _db.get_balance("hq_cost_mult", CostResolver.DEFAULT_HQ_COST_MULT)}
+	var resolver := CostResolver.new(buildings, balance)
+	var result = resolver.resolve_upgrade_cost(building_id, _get_building_level(building_id), _get_hq_level(), _get_building_route("lab_th"))
+	return result.get("cost", {})
 
 func _get_building_icon(building_id: String) -> Texture2D:
 	var icon_id = building_id

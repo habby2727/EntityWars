@@ -15,10 +15,43 @@ export type RateLimitOptions = {
 export type RateLimitResult = {
 	allowed: boolean;
 	bypass: boolean;
+	status?: number;
 	remaining?: number;
 	resetSeconds?: number;
 	message?: string;
 };
+
+const memoryLimits = new Map<string, { count: number; expiresAt: number }>();
+
+function limitWithoutRedis(key: string, options: RateLimitOptions): RateLimitResult {
+	const isProduction = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some(
+		(value) => value?.toLowerCase() == "production" || value?.toLowerCase() == "prod"
+	);
+	if (isProduction) {
+		return { allowed: false, bypass: false, status: 503, message: "Rate limit unavailable." };
+	}
+	const now = Date.now();
+	for (const [storedKey, entry] of memoryLimits) {
+		if (entry.expiresAt <= now) memoryLimits.delete(storedKey);
+	}
+	const windowMs = Math.max(1, Math.floor(options.windowSeconds * 1000));
+	const max = Math.max(1, Math.floor(options.max));
+	let entry = memoryLimits.get(key);
+	if (!entry) {
+		entry = { count: 0, expiresAt: now + windowMs };
+		memoryLimits.set(key, entry);
+	}
+	entry.count += 1;
+	const remaining = Math.max(0, max - entry.count);
+	const resetSeconds = Math.max(1, Math.ceil((entry.expiresAt - now) / 1000));
+	return {
+		allowed: entry.count <= max,
+		bypass: false,
+		remaining,
+		resetSeconds,
+		...(entry.count > max ? { message: "Rate limit exceeded." } : {})
+	};
+}
 
 function buildKey(options: RateLimitOptions): string {
 	const keyBy = options.keyBy ?? "ip";
@@ -40,7 +73,7 @@ export async function rateLimit(options: RateLimitOptions): Promise<RateLimitRes
 	try {
 		const redis = getRedis();
 		if (!(await ensureRedisReady())) {
-			return { allowed: true, bypass: true };
+			return limitWithoutRedis(key, options);
 		}
 		const count = await redis.incr(key);
 		if (count == 1) {
@@ -59,7 +92,7 @@ export async function rateLimit(options: RateLimitOptions): Promise<RateLimitRes
 		return { allowed: true, bypass: false, remaining, resetSeconds: options.windowSeconds };
 	} catch (err) {
 		console.warn("[rate-limit] redis unavailable", err);
-		return { allowed: true, bypass: true };
+		return limitWithoutRedis(key, options);
 	}
 }
 

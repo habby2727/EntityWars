@@ -263,10 +263,10 @@ const EXPERIMENT_SECRET = Bun.env.EXPERIMENT_SECRET || "dev_experiment_secret";
 const TRADE_SECRET = Bun.env.TRADE_SECRET || "dev_trade_secret";
 const WORLD_SECRET = Bun.env.WORLD_SECRET || "dev_world_secret";
 const TOKEN_SIGNING_SECRET = Bun.env.TOKEN_SIGNING_SECRET || "";
-const DEBUG_BYPASS =
-	Bun.env.DEBUG_BYPASS == "1" ||
-	((Bun.env.NODE_ENV || Bun.env.BUN_ENV || "").toLowerCase() != "production" &&
-		Bun.env.DEBUG_BYPASS != "0");
+const IS_PRODUCTION = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some(
+	(value) => value?.toLowerCase() == "production" || value?.toLowerCase() == "prod"
+);
+const DEBUG_BYPASS = !IS_PRODUCTION && Bun.env.DEBUG_BYPASS == "1";
 
 // TODO: world module
 // TODO: sync module
@@ -281,6 +281,7 @@ function loadConfig(): Config {
 	} else {
 		merged = mergeConfig(merged, devConfig);
 	}
+	merged.dbPath = Bun.env.DB_PATH || merged.dbPath;
 	const maxBody = getEnvNumber("MAX_BODY_BYTES", merged.maxBodyBytes);
 	const tokenSeconds = getEnvNumber("SESSION_TTL_SECONDS", merged.tokenTtlMs / 1000);
 	merged.maxBodyBytes = Math.max(1024, maxBody);
@@ -355,6 +356,9 @@ function getRequestId(req: Request): string {
 }
 
 function isDebugBypass(req: Request): boolean {
+	if (!DEBUG_BYPASS) {
+		return false;
+	}
 	const header = req.headers.get("x-debug-bypass");
 	if (!header) {
 		return false;
@@ -421,12 +425,12 @@ async function applyRateLimit(
 		ctx.rateLimitBypass = true;
 	}
 	if (!result.allowed) {
-		logWarn("rate limit exceeded", {
+		logWarn(result.status == 503 ? "rate limit unavailable" : "rate limit exceeded", {
 			ip: ctx.ip,
 			path: ctx.path,
 			key: options.keyPrefix
 		});
-		throw new HttpError(429, result.message || "Rate limit exceeded.");
+		throw new HttpError(result.status ?? 429, result.message || "Rate limit exceeded.");
 	}
 }
 
@@ -638,7 +642,7 @@ function findOrCreatePlayer(name: string): { player_id: string; display_name: st
 	}
 	const playerId = crypto.randomUUID();
 	const now = Date.now();
-	const state = createDefaultState(playerId, name, now);
+	const state = createDefaultState(playerId, name, now, true);
 	insertPlayerStmt.run(playerId, name, JSON.stringify(state), now);
 	return { player_id: playerId, display_name: name };
 }
@@ -706,8 +710,8 @@ function safeParseState(
 	}
 }
 
-function createDefaultState(playerId: string, displayName: string, now: number): PlayerState {
-	const wallet = normalizeWallet({});
+function createDefaultState(playerId: string, displayName: string, now: number, newAccount = false): PlayerState {
+	const wallet = normalizeWallet(newAccount ? { essence: 120, core: 5 } : {});
 	const lab = normalizeLab({});
 	const world = normalizeWorld({}, now);
 	return {
@@ -805,6 +809,10 @@ async function startServer(): Promise<void> {
 				const res = await (async () => {
 					const url = new URL(req.url);
 				if (url.pathname == "/ws") {
+						const address = server.requestIP(req)?.address;
+						if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
+							return jsonResponse({ error: "WebSocket unavailable." }, 403);
+						}
 					const upgraded = server.upgrade(req, { data: { ip: getClientIp(req) } });
 					if (upgraded) {
 						return;
@@ -813,6 +821,10 @@ async function startServer(): Promise<void> {
 				}
 
 				if (req.method == "POST" && url.pathname == "/auth/dev_login") {
+						const address = server.requestIP(req)?.address;
+						if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
+							throw new HttpError(403, "Development login unavailable.");
+						}
 					await applyRateLimit(ctx, {
 						keyPrefix: "rl:login",
 						windowSeconds: getEnvNumber("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 600),
@@ -833,6 +845,10 @@ async function startServer(): Promise<void> {
 				}
 
 				if (req.method == "POST" && url.pathname == "/v1/auth/login") {
+						const address = server.requestIP(req)?.address;
+						if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
+							throw new HttpError(403, "Development login unavailable.");
+						}
 					await applyRateLimit(ctx, {
 						keyPrefix: "rl:login",
 						windowSeconds: getEnvNumber("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 600),
@@ -2867,7 +2883,7 @@ const HQ_RULES: Record<string, { unlock: number; max: number; cap_per_hq: number
 	sync_nexus: { unlock: 4, max: 10, cap_per_hq: 1 },
 	anomaly_containment: { unlock: 5, max: 10, cap_per_hq: 1 },
 	trade_hall: { unlock: 2, max: 10, cap_per_hq: 1 },
-	world_gate: { unlock: 6, max: 10, cap_per_hq: 1 }
+	world_gate: { unlock: 1, max: 10, cap_per_hq: 1 }
 };
 
 type ExperimentDef = {

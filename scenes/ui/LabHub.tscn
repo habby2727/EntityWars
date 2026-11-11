@@ -1,8 +1,9 @@
-[gd_scene format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/lab_hub.gd" id="1_lab_hub"]
 [ext_resource type="Script" path="res://scripts/net/backend_client.gd" id="2_backend_client"]
 [ext_resource type="Script" path="res://scripts/ui/back_button.gd" id="3_back_button"]
+[ext_resource type="PackedScene" path="res://scenes/ui/BuildingQuickPanel.tscn" id="4_quick_panel"]
 
 [node name="LabHub" type="Control"]
 layout_mode = 3
@@ -148,3 +149,17 @@ layout_mode = 2
 text = "Coming soon..."
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="QuickPanelBlocker" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+z_index = 150
+
+[node name="BuildingQuickPanel" parent="." instance=ExtResource("4_quick_panel")]
+z_index = 200

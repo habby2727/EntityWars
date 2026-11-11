@@ -19,6 +19,42 @@
         "1": {
           "essence": 50,
           "core": 10
+        },
+        "2": {
+          "essence": 73,
+          "core": 15
+        },
+        "3": {
+          "essence": 106,
+          "core": 22
+        },
+        "4": {
+          "essence": 153,
+          "core": 31
+        },
+        "5": {
+          "essence": 222,
+          "core": 45
+        },
+        "6": {
+          "essence": 321,
+          "core": 65
+        },
+        "7": {
+          "essence": 465,
+          "core": 93
+        },
+        "8": {
+          "essence": 674,
+          "core": 135
+        },
+        "9": {
+          "essence": 978,
+          "core": 196
+        },
+        "10": {
+          "essence": 1417,
+          "core": 284
         }
       }
     },
@@ -32,6 +68,42 @@
         "1": {
           "essence": 20,
           "core": 5
+        },
+        "2": {
+          "essence": 29,
+          "core": 8
+        },
+        "3": {
+          "essence": 43,
+          "core": 11
+        },
+        "4": {
+          "essence": 61,
+          "core": 16
+        },
+        "5": {
+          "essence": 89,
+          "core": 23
+        },
+        "6": {
+          "essence": 129,
+          "core": 33
+        },
+        "7": {
+          "essence": 186,
+          "core": 47
+        },
+        "8": {
+          "essence": 270,
+          "core": 68
+        },
+        "9": {
+          "essence": 391,
+          "core": 98
+        },
+        "10": {
+          "essence": 567,
+          "core": 142
         }
       }
     },
@@ -45,6 +117,42 @@
         "1": {
           "essence": 30,
           "core": 5
+        },
+        "2": {
+          "essence": 44,
+          "core": 8
+        },
+        "3": {
+          "essence": 64,
+          "core": 11
+        },
+        "4": {
+          "essence": 92,
+          "core": 16
+        },
+        "5": {
+          "essence": 133,
+          "core": 23
+        },
+        "6": {
+          "essence": 193,
+          "core": 33
+        },
+        "7": {
+          "essence": 279,
+          "core": 47
+        },
+        "8": {
+          "essence": 405,
+          "core": 68
+        },
+        "9": {
+          "essence": 587,
+          "core": 98
+        },
+        "10": {
+          "essence": 851,
+          "core": 142
         }
       }
     },
@@ -57,6 +165,33 @@
       "costs": {
         "1": {
           "essence": 25
+        },
+        "2": {
+          "essence": 37
+        },
+        "3": {
+          "essence": 53
+        },
+        "4": {
+          "essence": 77
+        },
+        "5": {
+          "essence": 111
+        },
+        "6": {
+          "essence": 161
+        },
+        "7": {
+          "essence": 233
+        },
+        "8": {
+          "essence": 337
+        },
+        "9": {
+          "essence": 489
+        },
+        "10": {
+          "essence": 709
         }
       }
     },
@@ -70,6 +205,42 @@
         "1": {
           "essence": 40,
           "living_catalyst": 2
+        },
+        "2": {
+          "essence": 58,
+          "living_catalyst": 3
+        },
+        "3": {
+          "essence": 85,
+          "living_catalyst": 5
+        },
+        "4": {
+          "essence": 122,
+          "living_catalyst": 7
+        },
+        "5": {
+          "essence": 177,
+          "living_catalyst": 9
+        },
+        "6": {
+          "essence": 257,
+          "living_catalyst": 13
+        },
+        "7": {
+          "essence": 372,
+          "living_catalyst": 19
+        },
+        "8": {
+          "essence": 540,
+          "living_catalyst": 27
+        },
+        "9": {
+          "essence": 782,
+          "living_catalyst": 40
+        },
+        "10": {
+          "essence": 1134,
+          "living_catalyst": 57
         }
       }
     },
@@ -83,6 +254,42 @@
         "1": {
           "essence": 35,
           "arcane_shard": 1
+        },
+        "2": {
+          "essence": 51,
+          "arcane_shard": 2
+        },
+        "3": {
+          "essence": 74,
+          "arcane_shard": 3
+        },
+        "4": {
+          "essence": 107,
+          "arcane_shard": 4
+        },
+        "5": {
+          "essence": 155,
+          "arcane_shard": 5
+        },
+        "6": {
+          "essence": 225,
+          "arcane_shard": 7
+        },
+        "7": {
+          "essence": 326,
+          "arcane_shard": 10
+        },
+        "8": {
+          "essence": 472,
+          "arcane_shard": 14
+        },
+        "9": {
+          "essence": 684,
+          "arcane_shard": 20
+        },
+        "10": {
+          "essence": 992,
+          "arcane_shard": 29
         }
       }
     },
@@ -96,6 +303,42 @@
         "1": {
           "essence": 45,
           "chaos_cell": 1
+        },
+        "2": {
+          "essence": 66,
+          "chaos_cell": 2
+        },
+        "3": {
+          "essence": 95,
+          "chaos_cell": 3
+        },
+        "4": {
+          "essence": 138,
+          "chaos_cell": 4
+        },
+        "5": {
+          "essence": 199,
+          "chaos_cell": 5
+        },
+        "6": {
+          "essence": 289,
+          "chaos_cell": 7
+        },
+        "7": {
+          "essence": 419,
+          "chaos_cell": 10
+        },
+        "8": {
+          "essence": 607,
+          "chaos_cell": 14
+        },
+        "9": {
+          "essence": 880,
+          "chaos_cell": 20
+        },
+        "10": {
+          "essence": 1276,
+          "chaos_cell": 29
         }
       }
     },
@@ -109,6 +352,42 @@
         "1": {
           "essence": 50,
           "arcane_shard": 2
+        },
+        "2": {
+          "essence": 73,
+          "arcane_shard": 3
+        },
+        "3": {
+          "essence": 106,
+          "arcane_shard": 5
+        },
+        "4": {
+          "essence": 153,
+          "arcane_shard": 7
+        },
+        "5": {
+          "essence": 222,
+          "arcane_shard": 9
+        },
+        "6": {
+          "essence": 321,
+          "arcane_shard": 13
+        },
+        "7": {
+          "essence": 465,
+          "arcane_shard": 19
+        },
+        "8": {
+          "essence": 674,
+          "arcane_shard": 27
+        },
+        "9": {
+          "essence": 978,
+          "arcane_shard": 40
+        },
+        "10": {
+          "essence": 1417,
+          "arcane_shard": 57
         }
       }
     },
@@ -122,6 +401,42 @@
         "1": {
           "essence": 60,
           "time_crystal": 1
+        },
+        "2": {
+          "essence": 87,
+          "time_crystal": 2
+        },
+        "3": {
+          "essence": 127,
+          "time_crystal": 3
+        },
+        "4": {
+          "essence": 183,
+          "time_crystal": 4
+        },
+        "5": {
+          "essence": 266,
+          "time_crystal": 5
+        },
+        "6": {
+          "essence": 385,
+          "time_crystal": 7
+        },
+        "7": {
+          "essence": 558,
+          "time_crystal": 10
+        },
+        "8": {
+          "essence": 809,
+          "time_crystal": 14
+        },
+        "9": {
+          "essence": 1173,
+          "time_crystal": 20
+        },
+        "10": {
+          "essence": 1701,
+          "time_crystal": 29
         }
       }
     },
@@ -135,6 +450,42 @@
         "1": {
           "essence": 70,
           "chaos_cell": 2
+        },
+        "2": {
+          "essence": 102,
+          "chaos_cell": 3
+        },
+        "3": {
+          "essence": 148,
+          "chaos_cell": 5
+        },
+        "4": {
+          "essence": 214,
+          "chaos_cell": 7
+        },
+        "5": {
+          "essence": 310,
+          "chaos_cell": 9
+        },
+        "6": {
+          "essence": 449,
+          "chaos_cell": 13
+        },
+        "7": {
+          "essence": 651,
+          "chaos_cell": 19
+        },
+        "8": {
+          "essence": 944,
+          "chaos_cell": 27
+        },
+        "9": {
+          "essence": 1368,
+          "chaos_cell": 40
+        },
+        "10": {
+          "essence": 1984,
+          "chaos_cell": 57
         }
       }
     },
@@ -148,6 +499,42 @@
         "1": {
           "essence": 55,
           "core": 3
+        },
+        "2": {
+          "essence": 80,
+          "core": 5
+        },
+        "3": {
+          "essence": 116,
+          "core": 7
+        },
+        "4": {
+          "essence": 168,
+          "core": 10
+        },
+        "5": {
+          "essence": 244,
+          "core": 14
+        },
+        "6": {
+          "essence": 353,
+          "core": 20
+        },
+        "7": {
+          "essence": 512,
+          "core": 28
+        },
+        "8": {
+          "essence": 742,
+          "core": 41
+        },
+        "9": {
+          "essence": 1075,
+          "core": 59
+        },
+        "10": {
+          "essence": 1559,
+          "core": 86
         }
       }
     },
@@ -155,12 +542,38 @@
       "id": "world_gate",
       "name": "World Gate",
       "display_name": "World Gate",
-      "unlock_hq": 6,
+      "unlock_hq": 1,
       "routes": [],
       "costs": {
         "1": {
-          "essence": 100,
-          "primordial_sigil": 1
+          "essence": 40
+        },
+        "2": {
+          "essence": 58
+        },
+        "3": {
+          "essence": 85
+        },
+        "4": {
+          "essence": 122
+        },
+        "5": {
+          "essence": 177
+        },
+        "6": {
+          "essence": 257
+        },
+        "7": {
+          "essence": 372
+        },
+        "8": {
+          "essence": 540
+        },
+        "9": {
+          "essence": 782
+        },
+        "10": {
+          "essence": 1134
         }
       }
     }

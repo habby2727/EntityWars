@@ -55,6 +55,8 @@ var _techs_list: VBoxContainer = null
 var _catalog := AssetCatalog.new()
 var _registry: DataRegistry = null
 var _ui_scale := 1.0
+var _return_to_lab := false
+var _entry_group := ButtonGroup.new()
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
 
@@ -65,6 +67,8 @@ func _ready() -> void:
 	_apply_tab_titles()
 	_apply_panel_background()
 	_connect_buttons()
+	_return_to_lab = SceneRouter.consume_inventory_return_to_lab()
+	_entry_group.allow_unpress = true
 	_load_registry()
 	_populate_lists()
 	_apply_initial_tab()
@@ -113,7 +117,10 @@ func _connect_buttons() -> void:
 func _on_back_pressed() -> void:
 	if _back_button != null:
 		_back_button.disabled = true
-	SceneRouter.go_to_main_menu()
+	if _return_to_lab:
+		SceneRouter.go_to_lab_hub()
+	else:
+		SceneRouter.go_to_main_menu()
 
 func _on_loadout_pressed() -> void:
 	if _loadout_button != null:
@@ -254,6 +261,7 @@ func _build_ultrahit_entries() -> Array:
 				"name": "%s - %s" % [ent_name, ultra_name],
 				"desc": _ultra_desc(ultra),
 				"kind": "ultra",
+				"type": ent_type,
 				"preview_id": ent_id
 			}
 			out.append(entry)
@@ -274,12 +282,14 @@ func _ultra_desc(ultra: Dictionary) -> String:
 				parts.append("Ward %d%%" % int(float(effect.get("value", 0.0)) * 100))
 			"atk_boost":
 				parts.append("+%d%% atk" % int(float(effect.get("value", 0.0)) * 100))
+				if float(effect.get("penalty", 0.0)) > 0.0:
+					parts.append("+%d%% damage taken" % int(float(effect.get("penalty", 0.0)) * 100))
 			"hom_stun":
 				parts.append("Seal homunculus")
 			"atk_down":
 				parts.append("-%d%% atk" % int(float(effect.get("value", 0.0)) * 100))
 			"poison":
-				parts.append("Poison")
+				parts.append("Poison: %d" % int(effect.get("value", 0)))
 			"reflect":
 				parts.append("Reflect %d%%" % int(float(effect.get("value", 0.0)) * 100))
 			"vuln":
@@ -304,7 +314,7 @@ func _find_tab_index(tab_label: String) -> int:
 			return i
 	return -1
 
-func _make_entry_row(entry: Variant, include_costs: bool = false, is_ultra: bool = false) -> Control:
+func _make_entry_row(entry: Variant, include_costs: bool = false, _is_ultra: bool = false) -> Control:
 	var row := VBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	var header := HBoxContainer.new()
@@ -324,18 +334,90 @@ func _make_entry_row(entry: Variant, include_costs: bool = false, is_ultra: bool
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	header.add_child(icon_slot)
-	var name_label := Label.new()
-	name_label.text = _extract_name(entry)
-	name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
-	header.add_child(name_label)
+	var select := Button.new()
+	select.text = _extract_name(entry)
+	select.toggle_mode = true
+	select.button_group = _entry_group
+	select.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	select.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	select.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
+	if _catalog.has("button_base"):
+		var style := StyleBoxTexture.new()
+		style.texture = _catalog.get_tex("button_base")
+		style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+		style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+		style.content_margin_top = 16.0 * _ui_scale
+		style.content_margin_bottom = 16.0 * _ui_scale
+		for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+			select.add_theme_stylebox_override(state, style)
+		select.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		select.resized.connect(func():
+			var margin = max(24.0, select.size.x * 0.2)
+			style.content_margin_left = margin
+			style.content_margin_right = margin
+		)
+	header.add_child(select)
 	row.add_child(header)
-	if is_ultra and typeof(entry) == TYPE_DICTIONARY:
-		row.tooltip_text = str(entry.get("desc", ""))
+	var details := Label.new()
+	details.text = _entry_details(entry)
+	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	details.add_theme_font_size_override("font_size", int(round(14.0 * _ui_scale)))
+	details.visible = false
+	row.add_child(details)
+	select.toggled.connect(func(pressed: bool): details.visible = pressed)
 	if include_costs:
 		var cost = _extract_cost(entry)
 		if not cost.is_empty():
 			row.add_child(_make_cost_row(cost))
 	return row
+
+func _entry_details(entry: Variant) -> String:
+	if not entry is Dictionary:
+		return "No details available."
+	var lines: Array[String] = []
+	var kind = str(entry.get("kind", ""))
+	if kind == "entity":
+		lines.append("Type: %s  |  Role: %s" % [str(entry.get("type", "Unknown")).capitalize(), str(entry.get("role", "Unknown")).capitalize()])
+		var stats = entry.get("base_stats", {})
+		if stats is Dictionary:
+			lines.append("HP: %s    ATK: %s    GUARD: %s    TEMPO: %s" % [stats.get("hp", "-"), stats.get("power", "-"), stats.get("guard", "-"), stats.get("tempo", "-")])
+	elif kind == "homunculus":
+		lines.append("Rarity: %s" % str(entry.get("rarity", "Unknown")).capitalize())
+		lines.append("Bonuses  |  ATK: %+d    GUARD: %+d    HP: %+d" % [int(entry.get("buff_atk", 0)), int(entry.get("buff_def", 0)), int(entry.get("buff_hp", 0))])
+		var per_type = entry.get("per_type", {})
+		if per_type is Dictionary and not per_type.is_empty():
+			lines.append("Synergies:")
+			for entity_type in per_type:
+				if per_type[entity_type] is Dictionary:
+					lines.append("  %s: %s" % [str(entity_type).capitalize(), _format_effects(per_type[entity_type])])
+	elif kind == "build":
+		lines.append("Rarity: %s" % str(entry.get("rarity", "Unknown")).capitalize())
+		var effects = entry.get("effects", {})
+		if effects is Dictionary and not effects.is_empty():
+			lines.append("Effects by level: %s" % _format_effects(effects))
+	elif kind == "ultra":
+		lines.append("Type: %s" % str(entry.get("type", "Unknown")).capitalize())
+	var description = str(entry.get("desc", ""))
+	if description != "":
+		lines.append(description)
+	return "\n".join(lines) if not lines.is_empty() else "No details available."
+
+func _format_effects(effects: Dictionary) -> String:
+	var parts: Array[String] = []
+	for key in effects:
+		var value = effects[key]
+		var label = str(key).replace("_", " ").capitalize()
+		if value is Array:
+			var values: Array[String] = []
+			for number in value:
+				values.append(str(number))
+			var levels = " (levels 1-%s)" % value.size() if value.size() > 1 else ""
+			parts.append("%s%s: %s" % [label, levels, ", ".join(values)])
+		else:
+			parts.append("%s: %s" % [label, value])
+	return "; ".join(parts)
 
 func _make_cost_row(cost: Dictionary) -> Control:
 	var row := HBoxContainer.new()
@@ -456,5 +538,5 @@ func _clear_container(container: Control) -> void:
 
 func _add_placeholder(container: Control) -> void:
 	var label := Label.new()
-	label.text = "Coming soon"
+	label.text = "No data available"
 	container.add_child(label)

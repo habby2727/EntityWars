@@ -342,7 +342,7 @@ func _on_request_completed(result: int, response_code: int, _headers: PackedStri
 			emit_signal("queue_drained")
 
 func _on_api_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	var meta = _api_http.get_meta("request_meta") if _api_http.has_meta("request_meta") else {}
+	var meta = _api_http.get_meta("request_meta").duplicate() if _api_http.has_meta("request_meta") else {}
 	_api_http.remove_meta("request_meta")
 	_api_in_flight.clear()
 	var request_id = str(meta.get("request_id", ""))

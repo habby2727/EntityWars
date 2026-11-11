@@ -13,7 +13,7 @@ const DEFAULT_RULES := {
 	"sync_nexus": {"unlock": 4, "max": 10, "cap_per_hq": 1},
 	"anomaly_containment": {"unlock": 5, "max": 10, "cap_per_hq": 1},
 	"trade_hall": {"unlock": 2, "max": 10, "cap_per_hq": 1},
-	"world_gate": {"unlock": 6, "max": 10, "cap_per_hq": 1}
+	"world_gate": {"unlock": 1, "max": 10, "cap_per_hq": 1}
 }
 
 static func is_unlocked(building_id: String, hq_level: int, rules: Dictionary = DEFAULT_RULES) -> bool:

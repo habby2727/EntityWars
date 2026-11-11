@@ -16,6 +16,7 @@ const SCENE_LOADOUT := "res://scenes/LoadoutGrid.tscn"
 
 static var _next_lab_focus_id: String = ""
 static var _next_inventory_tab: String = ""
+static var _inventory_return_to_lab := false
 static var _next_world_zone_id: String = ""
 
 static func go_to_main_menu() -> void:
@@ -36,9 +37,15 @@ static func consume_lab_focus_id() -> String:
 	_next_lab_focus_id = ""
 	return focus_id
 
-static func go_to_inventory(tab: String = "") -> void:
+static func go_to_inventory(tab: String = "", return_to_lab: bool = false) -> void:
 	_next_inventory_tab = tab
+	_inventory_return_to_lab = return_to_lab
 	_go_to(SCENE_INVENTORY, "Inventory")
+
+static func consume_inventory_return_to_lab() -> bool:
+	var result := _inventory_return_to_lab
+	_inventory_return_to_lab = false
+	return result
 
 static func consume_inventory_tab() -> String:
 	var tab := _next_inventory_tab

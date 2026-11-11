@@ -68,6 +68,14 @@ var _structures_button: Button = null
 var _buttons: Dictionary = {}
 var _state: Dictionary = {}
 var _resource_rows: Dictionary = {}
+@onready var _quick_panel = $BuildingQuickPanel
+
+func _enter_tree() -> void:
+	if _debug.unlock_all_buildings:
+		var client = get_node_or_null(backend_path) as BackendClient
+		if client != null:
+			client.auto_dev_login = false
+			client.auto_flush = false
 
 func _ready() -> void:
 	UIThemeFactory.apply_theme_to(self)
@@ -78,6 +86,9 @@ func _ready() -> void:
 	_build_icons()
 	_build_resource_bar()
 	_load_state()
+	_quick_panel.setup(_backend, _db, _catalog, _state, _debug)
+	_quick_panel.manage_requested.connect(_manage_building)
+	_quick_panel.debug_state_changed.connect(_on_debug_state_changed)
 	_update_lock_states()
 	_update_resource_bar()
 	_layout_icons()
@@ -114,7 +125,7 @@ func _setup_background() -> void:
 	_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 
 func _connect_backend() -> void:
-	if _backend == null:
+	if _backend == null or _debug.unlock_all_buildings:
 		return
 	_backend.state_updated.connect(_on_state_updated)
 
@@ -154,7 +165,9 @@ func _build_icons() -> void:
 
 func _load_state() -> void:
 	_state = {}
-	if _backend != null:
+	if _debug.unlock_all_buildings:
+		_state = _debug.load_lab_state()
+	elif _backend != null:
 		_state = _backend.load_cached_state()
 	if typeof(_state) != TYPE_DICTIONARY or _state.is_empty():
 		_state = {
@@ -172,7 +185,7 @@ func _update_lock_states() -> void:
 			locked = false
 		if _debug.unlock_all_buildings or _debug.force_all_clickable:
 			locked = false
-		button.disabled = locked
+		button.disabled = false
 		var display_name = _get_building_display_name(building_id)
 		if locked:
 			button.modulate = Color(1, 1, 1, 0.4)
@@ -262,14 +275,21 @@ func _notification(what: int) -> void:
 		_layout_icons()
 
 func _on_state_updated(state: Dictionary) -> void:
+	if _debug.unlock_all_buildings:
+		return
+	_state = state
+	_update_lock_states()
+	_update_resource_bar()
+
+func _on_debug_state_changed(state: Dictionary) -> void:
 	_state = state
 	_update_lock_states()
 	_update_resource_bar()
 
 func _on_building_pressed(building_id: String) -> void:
-	if building_id == "lab_th":
-		SceneRouter.go_to_lab_structures("")
-		return
+	_quick_panel.show_building(building_id)
+
+func _manage_building(building_id: String) -> void:
 	if building_id == "trade_hall":
 		SceneRouter.go_to_trade_hall()
 		return
@@ -277,11 +297,7 @@ func _on_building_pressed(building_id: String) -> void:
 		SceneRouter.go_to_world_gate()
 		return
 	if INVENTORY_TABS.has(building_id):
-		SceneRouter.go_to_inventory(str(INVENTORY_TABS[building_id]))
-		return
-	if building_id == "sync_nexus" or building_id == "anomaly_containment":
-		if _placeholder_popup != null:
-			_placeholder_popup.popup_centered()
+		SceneRouter.go_to_inventory(str(INVENTORY_TABS[building_id]), true)
 		return
 	SceneRouter.go_to_lab_structures(building_id)
 
