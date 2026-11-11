@@ -95,7 +95,7 @@ func send_action(action_dict: Dictionary) -> String:
 	if action.is_empty():
 		return ""
 	var action_id: String = action.get("client_action_id", "")
-	var online_only := str(action.get("action_type", "")) == "SET_SPELL_LOADOUT"
+	var online_only := str(action.get("action_type", "")) in ["SET_SPELL_LOADOUT", "FORGE_UPGRADE"]
 	var key := _make_action_key(action)
 	if key != "" and _pending_keys.has(key):
 		return str(_pending_keys[key])
@@ -386,7 +386,7 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 
 func _handle_request_failure(kind: String, action: Dictionary, action_key: String, reason: String, was_queued: bool) -> void:
 	if kind == "action":
-		if str(action.get("action_type", "")) == "SET_SPELL_LOADOUT" and not was_queued:
+		if str(action.get("action_type", "")) in ["SET_SPELL_LOADOUT", "FORGE_UPGRADE"] and not was_queued:
 			emit_signal("action_failed", str(action.get("client_action_id", "")), reason)
 			if action_key != "":
 				_pending_keys.erase(action_key)

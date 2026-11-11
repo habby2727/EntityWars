@@ -1,6 +1,9 @@
 extends Control
 class_name LabScreen
 
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const SpecializedPanel := preload("res://scripts/ui/lab_specialized_panel.gd")
 @export var backend_path: NodePath
 @export var grid_path: NodePath
 @export var background_panel_path: NodePath
@@ -59,6 +62,11 @@ var _spell_list: VBoxContainer
 var _spell_rows := {}
 var _spell_server_offset_ms := 0
 var _spell_state_synced := false
+var _spell_filter := "All"
+var _spell_info: Control
+var _spell_info_title: Label
+var _spell_info_text: Label
+var _specialized_panel
 
 var _grid: GridContainer = null
 var _background_panel: PanelContainer = null
@@ -113,6 +121,8 @@ func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
 	_debug.reload()
 	_resolve_nodes()
+	_setup_compact_navigation()
+	_setup_section_scrolls()
 	_apply_ui_scale()
 	_apply_panel_textures()
 	_connect_backend()
@@ -121,8 +131,55 @@ func _ready() -> void:
 	_build_experiments()
 	_build_research()
 	_build_spell_section()
+	_build_specialized_panel()
 	_load_state()
 	_select_default()
+
+func _setup_section_scrolls() -> void:
+	for section in [_experiment_section, _research_section]:
+		if section == null:
+			continue
+		var list: VBoxContainer = _experiment_list if section == _experiment_section else _research_list
+		if list == null:
+			continue
+		section.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size.y = 120
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		section.add_child(scroll)
+		list.reparent(scroll)
+		list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+func _build_specialized_panel() -> void:
+	var detail := _right_panel.get_node_or_null("Margin/DetailVBox") as VBoxContainer
+	if detail == null:
+		return
+	_specialized_panel = SpecializedPanel.new()
+	_specialized_panel.setup(_spell_registry, _backend, _debug.unlock_all_buildings, int(_db.get_balance("forge_upgrade_essence_base", 20)), int(_db.get_balance("forge_upgrade_essence_per_level", 10)))
+	detail.add_child(_specialized_panel)
+
+func _setup_compact_navigation() -> void:
+	if _left_panel == null or _right_panel == null or _grid == null:
+		return
+	_left_panel.custom_minimum_size.x = 96
+	_left_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_grid.columns = 1
+	var overlay := _background_panel.get_node_or_null("ContentMargin/TopOverlay") as Control
+	if overlay != null and _resource_bar_panel != null:
+		_resource_bar_panel.reparent(overlay)
+		_resource_bar_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		_resource_bar_panel.position = Vector2(110, -42)
+		_resource_bar_panel.custom_minimum_size = Vector2(500, 34)
+	var background := StyleBoxFlat.new()
+	background.bg_color = Color(0.02, 0.07, 0.08, 0.9)
+	background.border_color = Color(0.47, 0.4, 0.25, 0.8)
+	background.set_border_width_all(1)
+	_right_panel.add_theme_stylebox_override("panel", background)
+	for button in [_upgrade_btn, _route_btn, _claim_btn, _open_btn]:
+		if button:
+			button.custom_minimum_size = Vector2(100, 42)
+			MenuArt.button(button)
 
 func _process(delta: float) -> void:
 	_status_refresh_elapsed += delta
@@ -191,11 +248,15 @@ func _compute_panel_scale() -> float:
 	return clamp(ui_scale, 0.9, 1.35)
 
 func _apply_panel_textures() -> void:
-	var panel_tex: Texture2D = _catalog.get_tex("ui_panel")
+	var panel_tex: Texture2D = load("res://assets/ui/new-elements/fondo-menus-edificios-laboratorio.png")
 	if panel_tex == null:
 		return
 	if _background_panel != null:
-		_background_panel.add_theme_stylebox_override("panel", _make_panel_style(panel_tex))
+		var background := StyleBoxTexture.new()
+		background.texture = panel_tex
+		background.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+		background.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+		_background_panel.add_theme_stylebox_override("panel", background)
 		return
 	if _left_panel != null:
 		_left_panel.add_theme_stylebox_override("panel", _make_panel_style(panel_tex))
@@ -254,10 +315,21 @@ func _build_grid() -> void:
 func _apply_card_scale(card: BuildingCard) -> void:
 	if card == null:
 		return
-	card.custom_minimum_size = Vector2(260, 86) * _ui_scale
+	MenuArt.button(card)
+	card.custom_minimum_size = Vector2(64, 64) * _ui_scale
+	card.toggle_mode = true
+	var content := card.get_node_or_null("HBox") as HBoxContainer
+	if content:
+		content.offset_left = 4
+		content.offset_right = -4
+		content.offset_top = 4
+		content.offset_bottom = -4
+		var labels := content.get_node_or_null("Text") as Control
+		if labels:
+			labels.hide()
 	var icon_frame := card.get_node_or_null("HBox/IconFrame") as TextureRect
 	if icon_frame != null:
-		icon_frame.custom_minimum_size = Vector2(64, 64) * _ui_scale
+		icon_frame.custom_minimum_size = Vector2(52, 52) * _ui_scale
 	var name_label := card.get_node_or_null("HBox/Text/Name") as Label
 	if name_label != null:
 		name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
@@ -441,6 +513,24 @@ func _build_spell_section() -> void:
 		_spell_entity_selector.set_item_metadata(_spell_entity_selector.item_count - 1, entity_id)
 	_spell_entity_selector.item_selected.connect(_on_spell_entity_selected)
 	_spell_section.add_child(_spell_entity_selector)
+	var filters := HBoxContainer.new()
+	var group := ButtonGroup.new()
+	for kind in ["All", "Initial", "Hybrid", "Universal"]:
+		var filter := Button.new()
+		filter.text = kind
+		filter.custom_minimum_size = Vector2(90, 32)
+		filter.toggle_mode = true
+		filter.button_group = group
+		for state in ["normal", "hover", "pressed", "hover_pressed"]:
+			var style := StyleBoxFlat.new()
+			style.bg_color = Color(0.05, 0.24, 0.21, 0.95) if state in ["pressed", "hover_pressed"] else Color(0.03, 0.1, 0.1, 0.95)
+			style.border_color = Color(0.77, 0.62, 0.31) if state in ["pressed", "hover_pressed"] else Color(0.27, 0.44, 0.4)
+			style.set_border_width_all(1)
+			filter.add_theme_stylebox_override(state, style)
+		filter.button_pressed = kind == "All"
+		filter.pressed.connect(_set_spell_filter.bind(kind))
+		filters.add_child(filter)
+	_spell_section.add_child(filters)
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(0, 180)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -451,7 +541,63 @@ func _build_spell_section() -> void:
 	scroll.add_child(_spell_list)
 	_spell_section.add_child(scroll)
 	detail.add_child(_spell_section)
+	_build_spell_info()
 	_build_spell_rows()
+
+func _set_spell_filter(kind: String) -> void:
+	_spell_filter = kind
+	_build_spell_rows()
+	_update_spell_section()
+
+func _build_spell_info() -> void:
+	_spell_info = Control.new()
+	_spell_info.name = "SpellInfoOverlay"
+	_spell_info.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_spell_info.mouse_filter = Control.MOUSE_FILTER_STOP
+	_spell_info.z_index = 100
+	_spell_info.hide()
+	add_child(_spell_info)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.75)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_spell_info.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_spell_info.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(650, 400)
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
+	center.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 12)
+	panel.add_child(content)
+	var header := HBoxContainer.new()
+	content.add_child(header)
+	_spell_info_title = Label.new()
+	_spell_info_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spell_info_title.add_theme_font_size_override("font_size", 22)
+	header.add_child(_spell_info_title)
+	var close := Button.new()
+	close.text = "X"
+	close.tooltip_text = "Close"
+	close.custom_minimum_size = Vector2(45, 40)
+	MenuArt.button(close)
+	close.pressed.connect(_spell_info.hide)
+	header.add_child(close)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	content.add_child(scroll)
+	_spell_info_text = Label.new()
+	_spell_info_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spell_info_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	scroll.add_child(_spell_info_text)
+
+func _show_spell_info(spell: Dictionary) -> void:
+	_spell_info_title.text = str(spell.get("name", ""))
+	_spell_info_text.text = SpellView.detail(spell, "Research")
+	_spell_info.show()
 
 func _spell_entity_id() -> String:
 	if _spell_entity_selector == null or _spell_entity_selector.selected < 0:
@@ -475,6 +621,8 @@ func _build_spell_rows() -> void:
 	var current_group := ""
 	for spell in _spell_registry.get_researchable_spells_for_type(entity_type):
 		var kind := str(spell.get("type", ""))
+		if _spell_filter != "All" and SpellView.group(spell) != _spell_filter:
+			continue
 		var group := "Initial Spells" if kind == entity_type else ("Universal" if kind == "universal" else "Hybrid")
 		if current_group != group:
 			current_group = group
@@ -487,21 +635,24 @@ func _build_spell_rows() -> void:
 		if kind == "hybrid":
 			types = "%s / %s" % [str(spell.get("primary_type", "")).capitalize(), str(spell.get("secondary_type", "")).capitalize()]
 		name_label.text = "%s  |  %s" % [spell.name, types]
+		name_label.add_theme_font_size_override("font_size", 18)
 		row.add_child(name_label)
-		var details := Label.new()
-		var power := "Support" if float(spell.power_mult) == 0 else "x%.2f" % float(spell.power_mult)
-		details.text = "%s | %s | Accuracy %d%% | Cooldown %d\n%s" % [str(spell.category).capitalize(), power, int(round(float(spell.accuracy) * 100)), int(spell.cooldown_turns), spell.desc]
-		if kind in ["universal", "hybrid"]:
-			details.text += "\nTower Lv %d | Cost %s | Time %s" % [int(spell.tower_level_required), str(spell.research_cost), _format_seconds(float(spell.research_time_sec) * 1000.0)]
-		details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		row.add_child(details)
 		var actions := HBoxContainer.new()
 		var status := Label.new()
 		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		actions.add_child(status)
+		var info := Button.new()
+		info.text = "i"
+		info.tooltip_text = "Spell details"
+		info.custom_minimum_size = Vector2(38, 34)
+		MenuArt.button(info)
+		info.pressed.connect(_show_spell_info.bind(spell))
+		actions.add_child(info)
 		var button := Button.new()
 		button.text = "Research"
+		button.custom_minimum_size = Vector2(110, 34)
+		MenuArt.button(button)
 		button.pressed.connect(_on_spell_research_pressed.bind(str(spell.id)))
 		actions.add_child(button)
 		row.add_child(actions)
@@ -575,6 +726,8 @@ func _select_default() -> void:
 
 func _select_building(building_id: String) -> void:
 	_selected_id = building_id
+	for id in _cards:
+		_cards[id].button_pressed = id == building_id
 	_update_detail()
 
 func _refresh_from_state() -> void:
@@ -590,10 +743,11 @@ func _update_cards() -> void:
 		var display_name = _get_building_name(id)
 		var level = _get_building_level(id)
 		var icon = _get_building_icon(id)
-		card.set_icon_frame(_catalog.get_tex("icon_slot_frame"))
+		card.set_icon_frame(load(MenuArt.DIR + "marco-slot-small.png"))
 		card.set_icon(icon)
 		card.set_title(display_name)
 		card.set_level(level)
+		card.tooltip_text = "%s - Lv %d" % [display_name, level]
 		var unlock_level = _get_unlock_level(id)
 		var locked = _get_hq_level() < unlock_level
 		if _debug.unlock_all_buildings:
@@ -656,6 +810,21 @@ func _update_detail() -> void:
 	_update_experiments()
 	_update_research()
 	_update_spell_section()
+	if _specialized_panel != null:
+		var names := {}
+		for id in BUILDING_ORDER:
+			names[id] = _get_building_name(id)
+		var metrics := {}
+		if _selected_id == "essence_reactor":
+			metrics["rate"] = _get_reactor_rate_per_hour()
+			metrics["stored"] = _state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("runtime", {}).get("stored_output", 0)
+		elif _selected_id == "storage_vault":
+			var level := _get_building_level("storage_vault")
+			var route := _get_building_route("storage_vault")
+			var hq_path := _get_building_route("lab_th")
+			metrics["capacity"] = Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
+			metrics["next_capacity"] = Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance) if level < HqRules.get_max_level("storage_vault") else "MAX"
+		_specialized_panel.show_building(_selected_id, _state, names, metrics, _spell_state_synced)
 
 func _update_routes() -> void:
 	if _route_option == null:
@@ -668,6 +837,8 @@ func _update_routes() -> void:
 		options = REACTOR_ROUTES
 	elif _selected_id == "storage_vault":
 		options = STORAGE_ROUTES
+	if _route_option.get_parent() is Control:
+		_route_option.get_parent().visible = not options.is_empty()
 	if options.is_empty():
 		_route_option.disabled = true
 		return
@@ -748,10 +919,15 @@ func _update_buttons() -> void:
 	if _upgrade_btn != null:
 		_upgrade_btn.disabled = locked or pending or not cost_ok or not can_upgrade
 	if _route_btn != null:
+		_route_btn.visible = _selected_id in ["lab_th", "essence_reactor", "storage_vault"]
 		_route_btn.disabled = locked or pending or _route_option == null or _route_option.item_count == 0
 	if _claim_btn != null:
+		_claim_btn.visible = _selected_id == "essence_reactor"
+		_claim_btn.text = "Collect"
 		_claim_btn.disabled = pending or _selected_id != "essence_reactor"
 	if _open_btn != null:
+		_open_btn.visible = GATE_BUILDINGS.has(_selected_id)
+		_open_btn.text = "Enter World Gate" if _selected_id == "world_gate" else ("Open Trade Hall" if _selected_id == "trade_hall" else "Open")
 		_open_btn.disabled = pending or not GATE_BUILDINGS.has(_selected_id)
 
 func _update_experiments() -> void:

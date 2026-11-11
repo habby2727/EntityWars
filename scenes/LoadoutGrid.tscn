@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/attackseal.png" id="4_atk_seal"]
 [ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/defenseseal.png" id="5_def_seal"]
 [ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/togglebutton.webp" id="6_toggle_btn"]
-[ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/hudbackground.png" id="7_hud_bg"]
+[ext_resource type="Texture2D" path="res://assets/ui/new-elements/fondo-menus-edificios-laboratorio.png" id="7_hud_bg"]
 [ext_resource type="FontFile" path="res://assets/fonts/liberation-serif/LiberationSerif-Regular.ttf" id="8_libserif"]
 [ext_resource type="FontFile" path="res://assets/fonts/liberation-serif/LiberationSerif-Bold.ttf" id="9_libserif_bold"]
 
@@ -41,7 +41,7 @@ grow_horizontal = 2
 grow_vertical = 2
 texture = ExtResource("7_hud_bg")
 expand_mode = 1
-stretch_mode = 0
+stretch_mode = 6
 mouse_filter = 2
 
 [node name="RootMargin" type="MarginContainer" parent="." unique_id=1232816167]
@@ -522,15 +522,17 @@ theme_override_constants/separation = 12
 
 [node name="Save" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=1529519569]
 layout_mode = 2
+size_flags_horizontal = 3
 text = "Save Seal"
 focus_mode = 0
-custom_minimum_size = Vector2(479, 106)
+custom_minimum_size = Vector2(200, 72)
 
 [node name="Play" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=2093744421]
 layout_mode = 2
+size_flags_horizontal = 3
 text = "READY (Start Bo3)"
 focus_mode = 0
-custom_minimum_size = Vector2(580, 116)
+custom_minimum_size = Vector2(220, 72)
 
 [node name="SpellConfig" type="Button" parent="."]
 visible = false

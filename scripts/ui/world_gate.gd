@@ -78,6 +78,7 @@ var _state: Dictionary = {}
 var _player_world: Dictionary = {}
 var _world_state: Dictionary = {}
 var _bosses: Array = []
+var _requested_boss_id := ""
 var _zone_rows: Dictionary = {}
 var _player_id := ""
 var _selected_zone_id := ""
@@ -101,6 +102,12 @@ func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
 	_debug.reload()
 	_resolve_nodes()
+	_requested_boss_id = SceneRouter.consume_world_boss_id()
+	if _requested_boss_id != "" and _tabs != null:
+		for i in _tabs.get_tab_count():
+			if _tabs.get_child(i).name == "Boss":
+				_tabs.current_tab = i
+				break
 	_apply_panel_background()
 	_connect_backend()
 	_connect_buttons()
@@ -152,7 +159,11 @@ func _resolve_nodes() -> void:
 func _apply_panel_background() -> void:
 	if _panel == null:
 		return
-	_catalog.apply_panel(_panel, "ui_panel")
+	var style := StyleBoxTexture.new()
+	style.texture = load("res://assets/ui/new-elements/fondo-menu-seleccion-worldgate.png")
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	_panel.add_theme_stylebox_override("panel", style)
 
 func _connect_backend() -> void:
 	if _backend == null:
@@ -209,6 +220,11 @@ func _build_zone_cards() -> void:
 		if typeof(entry) != TYPE_DICTIONARY:
 			entry = {"id": zone_id, "name": zone_id}
 		var card := PanelContainer.new()
+		var card_style := StyleBoxFlat.new()
+		card_style.bg_color = Color(0.02, 0.07, 0.08, 0.88)
+		card_style.border_color = Color(0.55, 0.47, 0.27, 0.85)
+		card_style.set_border_width_all(1)
+		card.add_theme_stylebox_override("panel", card_style)
 		card.custom_minimum_size = Vector2(0, 120) * _ui_scale
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -627,10 +643,17 @@ func _update_session_panel() -> void:
 func _update_boss_panel() -> void:
 	var boss = _get_active_boss()
 	if boss.is_empty():
+		if _boss_attack_button != null:
+			_boss_attack_button.disabled = true
+		if _boss_claim_button != null:
+			_boss_claim_button.disabled = true
 		return
 	var boss_id = str(boss.get("boss_id", ""))
 	if _boss_portrait != null:
-		_boss_portrait.texture = _catalog.get_tex(boss_id)
+		_boss_portrait.texture = _catalog.get_tex(boss_id) if _catalog.has(boss_id) else null
+		var heading := _boss_portrait.get_parent().get_node_or_null("BossHeaderRow/BossHeader") as Label
+		if heading != null:
+			heading.text = str(_db.bosses.get(boss_id, {}).get("name", boss_id))
 	if _boss_hp_bar != null:
 		_boss_hp_bar.max_value = float(boss.get("max_hp", 1))
 		_boss_hp_bar.value = float(boss.get("hp", 0))
@@ -693,6 +716,10 @@ func _get_zone_map() -> Dictionary:
 	return map
 
 func _get_active_boss() -> Dictionary:
+	if _requested_boss_id != "":
+		for boss in _bosses:
+			if boss is Dictionary and str(boss.get("boss_id", "")) == _requested_boss_id:
+				return boss
 	if typeof(_bosses) == TYPE_ARRAY and _bosses.size() > 0:
 		var entry = _bosses[0]
 		if typeof(entry) == TYPE_DICTIONARY:

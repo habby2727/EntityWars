@@ -4,6 +4,9 @@ class_name InventoryScreen
 const PREVIEW_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 
 @export var panel_path: NodePath
 @export var back_button_path: NodePath
@@ -30,6 +33,20 @@ var _registry: DataRegistry = null
 var _ui_scale := 1.0
 var _return_to_lab := false
 var _entry_group := ButtonGroup.new()
+var _detail_panel: PanelContainer
+var _detail_title: Label
+var _detail_icon: TextureRect
+var _detail_text: Label
+var _tab_layouts: Array[HBoxContainer] = []
+var _spell_filter := "All"
+var _spell_entity := ""
+var _spell_progress := {}
+var _spell_progress_known := false
+var _spell_backend: BackendClient
+var _spell_entity_option: OptionButton
+var _spell_filter_buttons: Array[Button] = []
+var _item_progress: Dictionary = {}
+var _item_progress_known := false
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
 
@@ -39,12 +56,214 @@ func _ready() -> void:
 	_resolve_nodes()
 	_apply_tab_titles()
 	_apply_panel_background()
+	_setup_inventory_layout()
 	_connect_buttons()
 	_return_to_lab = SceneRouter.consume_inventory_return_to_lab()
-	_entry_group.allow_unpress = true
+	_entry_group.allow_unpress = false
 	_load_registry()
+	_setup_spell_progress()
 	_populate_lists()
 	_apply_initial_tab()
+	_tabs.tab_changed.connect(_on_inventory_tab_changed)
+	_on_inventory_tab_changed(_tabs.current_tab)
+
+func _setup_inventory_layout() -> void:
+	for button in [_back_button, _loadout_button]:
+		if button:
+			button.custom_minimum_size = Vector2(140, 44)
+			MenuArt.button(button)
+	for tab in _tabs.get_children():
+		var scroll := tab.get_node_or_null("Scroll") as ScrollContainer
+		if scroll == null:
+			continue
+		var layout := HBoxContainer.new()
+		if tab.name == "Ultrahit":
+			var column := VBoxContainer.new()
+			column.set_anchors_preset(Control.PRESET_FULL_RECT)
+			column.add_theme_constant_override("separation", 8)
+			tab.add_child(column)
+			var filters := HBoxContainer.new()
+			filters.add_theme_constant_override("separation", 6)
+			column.add_child(filters)
+			var group := ButtonGroup.new()
+			for filter_name in ["All", "Initial", "Hybrid", "Universal"]:
+				var filter_button := Button.new()
+				filter_button.text = filter_name
+				filter_button.toggle_mode = true
+				filter_button.button_group = group
+				filter_button.custom_minimum_size = Vector2(74, 32)
+				for state in ["normal", "hover", "pressed", "hover_pressed"]:
+					var style := StyleBoxFlat.new()
+					style.bg_color = Color(0.07, 0.24, 0.22, 0.95) if state in ["pressed", "hover_pressed"] else Color(0.03, 0.09, 0.1, 0.95)
+					style.border_color = Color(0.8, 0.67, 0.35) if state in ["pressed", "hover_pressed"] else Color(0.3, 0.45, 0.42)
+					style.set_border_width_all(1)
+					filter_button.add_theme_stylebox_override(state, style)
+				filter_button.button_pressed = filter_name == "All"
+				filter_button.pressed.connect(_on_spell_filter_changed.bind(filter_name))
+				filters.add_child(filter_button)
+				_spell_filter_buttons.append(filter_button)
+			_spell_entity_option = OptionButton.new()
+			_spell_entity_option.custom_minimum_size.x = 160
+			_spell_entity_option.item_selected.connect(_on_spell_entity_changed)
+			filters.add_child(_spell_entity_option)
+			layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			column.add_child(layout)
+		else:
+			layout.set_anchors_preset(Control.PRESET_FULL_RECT)
+			tab.add_child(layout)
+		layout.add_theme_constant_override("separation", 18)
+		scroll.reparent(layout)
+		scroll.custom_minimum_size.x = 350
+		scroll.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_tab_layouts.append(layout)
+	_detail_panel = PanelContainer.new()
+	_detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-informativo-small.png", Vector4(95, 105, 80, 60)))
+	_tab_layouts[0].add_child(_detail_panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 12)
+	_detail_panel.add_child(content)
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 18)
+	content.add_child(header)
+	var icon_frame := UIThemeFactory.make_icon_slot() as TextureRect
+	icon_frame.texture = load(MenuArt.DIR + "marco-slot-small.png")
+	icon_frame.custom_minimum_size = Vector2(112, 112)
+	header.add_child(icon_frame)
+	_detail_icon = icon_frame.get_node("Icon") as TextureRect
+	_detail_title = Label.new()
+	_detail_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_title.add_theme_font_size_override("font_size", 24)
+	header.add_child(_detail_title)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	content.add_child(scroll)
+	_detail_text = Label.new()
+	_detail_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_text.add_theme_font_size_override("font_size", 17)
+	scroll.add_child(_detail_text)
+
+func _setup_spell_progress() -> void:
+	if _registry == null:
+		return
+	var ids: Array = _registry.entities.keys()
+	ids.sort()
+	for id in ids:
+		var entity: Dictionary = _registry.entities[id]
+		_spell_entity_option.add_item(str(entity.get("name", id)))
+		_spell_entity_option.set_item_metadata(_spell_entity_option.item_count - 1, str(id))
+	if _spell_entity_option.item_count > 0:
+		_spell_entity = str(_spell_entity_option.get_item_metadata(0))
+	var debug := DebugFlags.new()
+	debug.reload()
+	if debug.unlock_all_buildings:
+		_spell_progress = debug.load_lab_state().get("spell_progress", {})
+		_spell_progress_known = true
+		return
+	_spell_backend = BackendClient.new()
+	_spell_backend.auto_dev_login = false
+	_spell_backend.auto_flush = false
+	_spell_backend.state_updated.connect(_on_spell_progress_updated)
+	_spell_backend.auth_changed.connect(_on_spell_auth_changed)
+	add_child(_spell_backend)
+	if _spell_backend.token != "":
+		_spell_backend.request_api("GET", "/player/state", null, true)
+
+func _on_spell_progress_updated(state: Dictionary) -> void:
+	_spell_progress = state.get("spell_progress", {})
+	_spell_progress_known = true
+	_item_progress = state.get("item_progress", {})
+	_item_progress_known = true
+	_refresh_build_levels()
+	_refresh_spell_catalog()
+
+func _on_spell_auth_changed(_token: String) -> void:
+	_spell_progress = {}
+	_spell_progress_known = false
+	_item_progress = {}
+	_item_progress_known = false
+	_refresh_build_levels()
+	_refresh_spell_catalog()
+	if _token != "":
+		_spell_backend.request_api("GET", "/player/state", null, true)
+
+func _on_spell_filter_changed(value: String) -> void:
+	_spell_filter = value
+	_refresh_spell_catalog()
+
+func _on_spell_entity_changed(index: int) -> void:
+	_spell_entity = str(_spell_entity_option.get_item_metadata(index))
+	_refresh_spell_catalog()
+
+func _refresh_spell_catalog() -> void:
+	if _registry == null or _ultrahit_list == null:
+		return
+	var selected_id := ""
+	var old_button := _entry_group.get_pressed_button()
+	if old_button != null and old_button.has_meta("entry"):
+		var old_entry: Variant = old_button.get_meta("entry")
+		if old_entry is Dictionary and old_entry.get("kind") == "spell":
+			selected_id = str(old_entry.get("id", ""))
+	var scroll := _ultrahit_list.get_parent() as ScrollContainer
+	var old_scroll := scroll.scroll_vertical if scroll else 0
+	_populate_spells()
+	if _tabs.current_tab == 3:
+		for child in _ultrahit_list.get_children():
+			if child is Button and str(child.get_meta("entry").get("id", "")) == selected_id:
+				child.button_pressed = true
+				_show_entry(child.get_meta("entry"))
+				if scroll: scroll.set_deferred("scroll_vertical", old_scroll)
+				return
+		_on_inventory_tab_changed(3)
+
+func _on_inventory_tab_changed(index: int) -> void:
+	if index < 0 or index >= _tab_layouts.size():
+		return
+	if _detail_panel.get_parent() != _tab_layouts[index]:
+		_detail_panel.reparent(_tab_layouts[index])
+	var lists := [_entities_list, _builds_list, _homunculi_list, _ultrahit_list, _techs_list]
+	for child in lists[index].get_children():
+		if child is Button:
+			child.button_pressed = true
+			_show_entry(child.get_meta("entry"))
+			return
+	_detail_title.text = ""
+	_detail_text.text = "No entries available."
+	_detail_icon.texture = null
+
+func _show_entry(entry: Variant) -> void:
+	_detail_title.text = _extract_name(entry)
+	_detail_text.text = SpellView.detail(entry, str(entry.get("spell_status", "Unknown"))) if entry is Dictionary and entry.get("kind") == "spell" else _entry_details(entry)
+	var cost := _extract_cost(entry)
+	if not cost.is_empty():
+		var parts: Array[String] = []
+		for key in cost:
+			parts.append("%s: %s" % [str(key).capitalize(), cost[key]])
+		_detail_text.text += "\n\nCost: " + ", ".join(parts)
+	_detail_icon.texture = _extract_preview_texture(entry)
+	var icon_id := _extract_icon_id(entry)
+	if _detail_icon.texture == null and icon_id != "":
+		_detail_icon.texture = _catalog.get_tex(icon_id)
+
+func _refresh_build_levels() -> void:
+	if _builds_list == null:
+		return
+	for child in _builds_list.get_children():
+		if child is Button and child.has_meta("entry"):
+			var subtitle := child.get_node_or_null("EntryRow/EntryText/ItemLevel") as Label
+			if subtitle != null:
+				var id := str(child.get_meta("entry").get("id", ""))
+				subtitle.text = "Level %d / 10" % int(_item_progress.get(id, {}).get("level", 0)) if _item_progress_known else "Level unavailable"
+	var selected := _entry_group.get_pressed_button()
+	if selected != null and selected.has_meta("entry") and selected.get_meta("entry").get("kind") == "build":
+		_show_entry(selected.get_meta("entry"))
 
 func _apply_tab_titles() -> void:
 	if _tabs == null:
@@ -73,12 +292,13 @@ func _resolve_nodes() -> void:
 func _apply_panel_background() -> void:
 	if _panel == null:
 		return
-	var tex: Texture2D = _catalog.get_tex("ui_panel")
+	var tex: Texture2D = load("res://assets/ui/new-elements/fondo-inventario.png")
 	if tex == null:
 		return
 	var sb := StyleBoxTexture.new()
 	sb.texture = tex
-	UIThemeFactory._configure_stylebox(sb)
+	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
 	_panel.add_theme_stylebox_override("panel", sb)
 
 func _connect_buttons() -> void:
@@ -183,13 +403,7 @@ func _populate_spells() -> void:
 	if entries.is_empty():
 		_add_placeholder(_ultrahit_list)
 		return
-	var current_type := ""
 	for entry in entries:
-		if entry.type != current_type:
-			current_type = entry.type
-			var heading := Label.new()
-			heading.text = current_type.capitalize()
-			_ultrahit_list.add_child(heading)
 		_ultrahit_list.add_child(_make_entry_row(entry))
 
 func _populate_techs() -> void:
@@ -203,11 +417,21 @@ func _populate_techs() -> void:
 	if _registry.has_method("get_attack_techniques"):
 		var attack = _registry.get_attack_techniques()
 		if typeof(attack) == TYPE_ARRAY:
-			entries.append_array(attack)
+			for technique in attack:
+				if technique is Dictionary:
+					var entry: Dictionary = technique.duplicate(true)
+					if _extract_icon_id(entry) == "" and _catalog.has("rune_offensive"):
+						entry["icon_id"] = "rune_offensive"
+					entries.append(entry)
 	if _registry.has_method("get_defense_techniques"):
 		var defense = _registry.get_defense_techniques()
 		if typeof(defense) == TYPE_ARRAY:
-			entries.append_array(defense)
+			for technique in defense:
+				if technique is Dictionary:
+					var entry: Dictionary = technique.duplicate(true)
+					if _extract_icon_id(entry) == "" and _catalog.has("rune_defense"):
+						entry["icon_id"] = "rune_defense"
+					entries.append(entry)
 	if entries.is_empty():
 		_add_placeholder(_techs_list)
 		return
@@ -218,24 +442,21 @@ func _build_spell_entries() -> Array:
 	var out: Array = []
 	if _registry == null:
 		return out
-	var entities = {}
-	if _registry.has_method("get_entities"):
-		entities = _registry.get_entities()
-	if typeof(entities) != TYPE_DICTIONARY:
-		return out
-	var keys := entities.keys()
-	keys.sort()
-	for key in keys:
-		var ent = entities[key]
-		if typeof(ent) != TYPE_DICTIONARY:
+	var ent_type := str(_registry.entities.get(_spell_entity, {}).get("type", ""))
+	for spell in _registry.spells.values():
+		if _spell_filter != "All" and SpellView.group(spell) != _spell_filter:
 			continue
-		var ent_id = str(ent.get("id", key))
-		var ent_type = str(ent.get("type", "")).to_lower()
-		for spell in _registry.get_spells_for_type(ent_type):
-			var entry: Dictionary = spell.duplicate(true)
-			entry["kind"] = "spell"
-			entry["preview_id"] = ent_id
-			out.append(entry)
+		var entry: Dictionary = spell.duplicate(true)
+		entry["kind"] = "spell"
+		var preview_type := str(entry.get("primary_type", entry.get("type", "")))
+		entry["preview_id"] = _spell_entity
+		for entity_id in _registry.entities:
+			if str(_registry.entities[entity_id].get("type", "")) == preview_type:
+				entry["preview_id"] = str(entity_id)
+				break
+		entry["spell_status"] = SpellView.status(entry, _spell_entity, ent_type, _spell_progress, _spell_progress_known)
+		out.append(entry)
+	out.sort_custom(func(a, b): return str(a.name).naturalnocasecmp_to(str(b.name)) < 0)
 	return out
 
 func _spell_effects(effects: Array) -> String:
@@ -279,64 +500,80 @@ func _find_tab_index(tab_label: String) -> int:
 			return i
 	return -1
 
-func _make_entry_row(entry: Variant, include_costs: bool = false) -> Control:
-	var row := VBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 8)
-	var icon_slot := UIThemeFactory.make_icon_slot()
-	var icon_size = int(round(96.0 * _ui_scale))
-	icon_slot.custom_minimum_size = Vector2(icon_size, icon_size)
-	var icon = icon_slot.get_node_or_null("Icon")
-	if icon is TextureRect:
-		var preview = _extract_preview_texture(entry)
-		if preview != null:
-			icon.texture = preview
-		else:
-			var icon_id = _extract_icon_id(entry)
-			if icon_id != "":
-				icon.texture = _catalog.get_tex(icon_id)
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	header.add_child(icon_slot)
+func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	var select := Button.new()
-	select.text = _extract_name(entry)
+	select.custom_minimum_size = Vector2(0, 72)
+	select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	select.toggle_mode = true
 	select.button_group = _entry_group
-	select.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	select.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	select.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
-	if _catalog.has("button_base"):
-		var style := StyleBoxTexture.new()
-		style.texture = _catalog.get_tex("button_base")
-		style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-		style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-		style.content_margin_top = 16.0 * _ui_scale
-		style.content_margin_bottom = 16.0 * _ui_scale
-		for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
-			select.add_theme_stylebox_override(state, style)
-		select.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		select.resized.connect(func():
-			var margin = max(24.0, select.size.x * 0.2)
-			style.content_margin_left = margin
-			style.content_margin_right = margin
-		)
-	header.add_child(select)
-	row.add_child(header)
-	var details := Label.new()
-	details.text = _entry_details(entry)
-	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	details.add_theme_font_size_override("font_size", int(round(14.0 * _ui_scale)))
-	details.visible = false
-	row.add_child(details)
-	select.toggled.connect(func(pressed: bool): details.visible = pressed)
-	if include_costs:
-		var cost = _extract_cost(entry)
-		if not cost.is_empty():
-			row.add_child(_make_cost_row(cost))
-	return row
+	select.set_meta("entry", entry)
+	for state in ["normal", "hover", "pressed", "hover_pressed"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.04, 0.16, 0.16, 0.96) if state in ["pressed", "hover_pressed"] else Color(0.02, 0.07, 0.08, 0.9)
+		if state == "hover":
+			style.bg_color = Color(0.07, 0.2, 0.2, 0.95)
+		style.border_color = Color(0.74, 0.6, 0.29) if state in ["pressed", "hover_pressed"] else Color(0.28, 0.42, 0.39)
+		style.set_border_width_all(1)
+		select.add_theme_stylebox_override(state, style)
+	select.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var row := HBoxContainer.new()
+	row.name = "EntryRow"
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 8
+	row.offset_right = -8
+	row.offset_top = 4
+	row.offset_bottom = -4
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	select.add_child(row)
+	var icon_slot := UIThemeFactory.make_icon_slot() as TextureRect
+	icon_slot.texture = load(MenuArt.DIR + "marco-slot-small.png")
+	icon_slot.custom_minimum_size = Vector2(58, 58)
+	icon_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon := icon_slot.get_node("Icon") as TextureRect
+	icon.texture = _extract_preview_texture(entry)
+	var icon_id := _extract_icon_id(entry)
+	if icon.texture == null and icon_id != "":
+		icon.texture = _catalog.get_tex(icon_id)
+	row.add_child(icon_slot)
+	var text_column := VBoxContainer.new()
+	text_column.name = "EntryText"
+	text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_column.alignment = BoxContainer.ALIGNMENT_CENTER
+	text_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(text_column)
+	var title := Label.new()
+	title.text = _extract_name(entry)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_column.add_child(title)
+	if entry is Dictionary and entry.get("kind") == "build":
+		var item_level := Label.new()
+		item_level.name = "ItemLevel"
+		item_level.add_theme_font_size_override("font_size", 12)
+		item_level.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		item_level.text = "Level %d / 10" % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else "Level unavailable"
+		text_column.add_child(item_level)
+	if entry is Dictionary and entry.get("kind") == "spell":
+		var status := str(entry.get("spell_status", "Unknown"))
+		var subtitle := Label.new()
+		subtitle.text = "%s  |  %s" % [SpellView.affinity(entry), status]
+		subtitle.add_theme_font_size_override("font_size", 12)
+		subtitle.modulate = Color(0.73, 0.79, 0.76)
+		subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		text_column.add_child(subtitle)
+		if status == "Locked":
+			var lock := LockIndicator.new()
+			lock.custom_minimum_size = Vector2(22, 22)
+			lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			row.add_child(lock)
+			icon_slot.modulate = Color(0.65, 0.65, 0.65)
+	select.toggled.connect(func(pressed: bool):
+		if pressed: _show_entry(entry)
+	)
+	return select
 
 func _entry_details(entry: Variant) -> String:
 	if not entry is Dictionary:
@@ -358,6 +595,7 @@ func _entry_details(entry: Variant) -> String:
 				if per_type[entity_type] is Dictionary:
 					lines.append("  %s: %s" % [str(entity_type).capitalize(), _format_effects(per_type[entity_type])])
 	elif kind == "build":
+		lines.append("Level: %d / 10" % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else "Level: unavailable")
 		lines.append("Rarity: %s" % str(entry.get("rarity", "Unknown")).capitalize())
 		var effects = entry.get("effects", {})
 		if effects is Dictionary and not effects.is_empty():
@@ -511,6 +749,7 @@ func _sort_by_name(a: Variant, b: Variant) -> bool:
 
 func _clear_container(container: Control) -> void:
 	for child in container.get_children():
+		container.remove_child(child)
 		child.queue_free()
 
 func _add_placeholder(container: Control) -> void:

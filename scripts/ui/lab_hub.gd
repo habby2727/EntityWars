@@ -295,9 +295,6 @@ func _manage_building(building_id: String) -> void:
 	if building_id == "world_gate":
 		SceneRouter.go_to_world_gate()
 		return
-	if INVENTORY_TABS.has(building_id):
-		SceneRouter.go_to_inventory(str(INVENTORY_TABS[building_id]), true)
-		return
 	SceneRouter.go_to_lab_structures(building_id)
 
 func _get_hq_level() -> int:

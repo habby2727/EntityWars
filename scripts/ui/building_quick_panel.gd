@@ -1,5 +1,6 @@
 extends PanelContainer
 
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
 signal manage_requested(building_id: String)
 signal debug_state_changed(state: Dictionary)
 
@@ -50,6 +51,16 @@ var _refresh_id := ""
 var _message := ""
 
 func _ready() -> void:
+	var margin := $Margin as MarginContainer
+	var scroll := $Margin/Scroll as ScrollContainer
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 4)
+	margin.add_child(layout)
+	scroll.reparent(layout)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for action in [_upgrade, _collect, _manage]:
+		action.reparent(layout)
+		action.custom_minimum_size.y = 36
 	_close.pressed.connect(_close_panel)
 	visibility_changed.connect(_sync_blocker)
 	_upgrade.pressed.connect(_on_upgrade)
@@ -103,29 +114,31 @@ func show_building(building_id: String) -> void:
 
 func _layout_panel() -> void:
 	var canvas_transform = get_parent().get_global_transform().affine_inverse() * _lab_canvas.get_global_transform()
-	var origin: Vector2 = canvas_transform * Vector2.ZERO
-	var available: Vector2 = canvas_transform * _lab_canvas.size - origin
+	var content_rect := Rect2(Vector2.ZERO, _lab_canvas.size)
+	var background := _lab_canvas.get_node_or_null("Background") as TextureRect
+	if background != null and background.texture != null:
+		var texture_size := background.texture.get_size()
+		var factor := minf(_lab_canvas.size.x / texture_size.x, _lab_canvas.size.y / texture_size.y)
+		content_rect.size = texture_size * factor
+		content_rect.position = (_lab_canvas.size - content_rect.size) * 0.5
+		# The existing lab background includes side margins around the map artwork.
+		var side_margin := content_rect.size.x * 0.08
+		content_rect.position.x += side_margin
+		content_rect.size.x -= side_margin * 2.0
+	var origin: Vector2 = canvas_transform * content_rect.position
+	var available: Vector2 = canvas_transform * content_rect.end - origin
 	if available.x <= 0 or available.y <= 0:
 		return
-	var panel_width = min(390.0, max(0.0, available.x - 24.0))
+	var panel_width = min(460.0, max(0.0, available.x - 24.0))
 	var panel_height = min(650.0, max(0.0, available.y - 24.0))
 	position = origin + Vector2(available.x - panel_width - 12.0, (available.y - panel_height) * 0.5)
 	size = Vector2(panel_width, panel_height)
 
 func _apply_art() -> void:
-	if _catalog.has("ui_panel"):
-		add_theme_stylebox_override("panel", _stretch_art(_catalog.get_tex("ui_panel")))
-	if _catalog.has("icon_slot_frame"):
-		_frame.texture = _catalog.get_tex("icon_slot_frame")
+	add_theme_stylebox_override("panel", _stretch_art(load("res://assets/ui/new-elements/marco-horizontal-popup-grande.png")))
+	_frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
 	for button in [_close, _upgrade, _collect, _manage]:
-		if _catalog.has("button_base"):
-			button.add_theme_stylebox_override("normal", _stretch_art(_catalog.get_tex("button_base")))
-		if _catalog.has("button_hover"):
-			button.add_theme_stylebox_override("hover", _stretch_art(_catalog.get_tex("button_hover")))
-			button.add_theme_stylebox_override("pressed", _stretch_art(_catalog.get_tex("button_hover")))
-		var disabled := StyleBoxFlat.new()
-		disabled.bg_color = Color(0.12, 0.13, 0.15, 0.8)
-		button.add_theme_stylebox_override("disabled", disabled)
+		MenuArt.button(button)
 
 func _stretch_art(texture: Texture2D) -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()

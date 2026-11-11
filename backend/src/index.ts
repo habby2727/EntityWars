@@ -153,8 +153,29 @@ type PlayerState = {
 	world: PlayerWorldState;
 	research_flags: Record<string, boolean>;
 	spell_progress: SpellProgress;
+	item_progress: Record<string, ItemProgress>;
 	updated_at: number;
 };
+
+type ItemProgress = {
+	level: number;
+	[key: string]: unknown;
+};
+
+function normalizeItemProgress(value: unknown): Record<string, ItemProgress> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const result: Record<string, ItemProgress> = {};
+	for (const [id, raw] of Object.entries(value)) {
+		if (!/^[a-z][a-z0-9_]{0,63}$/.test(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+		const item = raw as Record<string, unknown>;
+		const level = Number(item.level);
+		result[id] = {
+			...item,
+			level: Number.isInteger(level) ? Math.max(0, Math.min(10, level)) : 0,
+		};
+	}
+	return result;
+}
 
 class HttpError extends Error {
 	status: number;
@@ -699,6 +720,7 @@ function safeParseState(
 	const world = normalizeWorld(parsed.world, Date.now());
 	const researchFlags = normalizeResearchFlags(parsed.research_flags);
 	return {
+		...parsed,
 		player_id: playerId,
 		display_name: resolvedName,
 		wallet,
@@ -706,6 +728,7 @@ function safeParseState(
 		world,
 		research_flags: researchFlags,
 		spell_progress: normalizeSpellProgress(parsed.spell_progress),
+		item_progress: normalizeItemProgress(parsed.item_progress),
 		updated_at: Number(parsed.updated_at ?? Date.now())
 	};
 	} catch {
@@ -725,6 +748,7 @@ function createDefaultState(playerId: string, displayName: string, now: number, 
 		world,
 		research_flags: {},
 		spell_progress: normalizeSpellProgress(null),
+		item_progress: {},
 		updated_at: now
 	};
 }
@@ -742,6 +766,7 @@ function applyAction(
 		wallet: { ...state.wallet },
 		research_flags: { ...state.research_flags },
 		spell_progress: normalizeSpellProgress(state.spell_progress),
+		item_progress: normalizeItemProgress(state.item_progress),
 		lab: {
 			...state.lab,
 			buildings: { ...state.lab.buildings },
@@ -753,6 +778,18 @@ function applyAction(
 	autoCompleteResearch(next, now);
 	if (actionType == "UPGRADE_BUILDING") {
 		return applyUpgrade(next, payload, debugBypass);
+	}
+	if (actionType == "FORGE_UPGRADE") {
+		const id = typeof payload?.item_id === "string" ? payload.item_id : "";
+		if (!staticData.itemIds.has(id)) return { state: next, error: "Unknown item_id." };
+		if ((next.lab.buildings.build_forge?.level ?? 0) < 1) return { state: next, error: "Build Forge is not constructed." };
+		const current = next.item_progress[id] ?? { level: 0 };
+		if (current.level >= 10) return { state: next, error: "Item level cap reached." };
+		const cost = Math.max(0, Math.trunc(getBalanceNumber("forge_upgrade_essence_base", 20) + current.level * getBalanceNumber("forge_upgrade_essence_per_level", 10)));
+		if ((next.wallet.essence ?? 0) < cost) return { state: next, error: "Insufficient essence." };
+		next.wallet.essence -= cost;
+		next.item_progress[id] = { ...current, level: current.level + 1 };
+		return { state: next };
 	}
 	if (actionType == "SET_BUILDING_ROUTE") {
 		return applyRouteChange(next, payload);
@@ -1767,6 +1804,7 @@ async function startServer(): Promise<void> {
 }
 
 type StaticData = {
+	itemIds: Set<string>;
 	resources: Set<string>;
 	buildings: Record<string, any>;
 	hqPaths: string[];
@@ -1779,6 +1817,8 @@ type StaticData = {
 
 function loadStaticData(): StaticData {
 	const staticDir = resolve(import.meta.dir, "..", "..", "data", "static");
+	const itemsRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "items.json"), "utf8"));
+	const itemIds = new Set<string>((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).map((item: any) => item.id).filter((id: unknown): id is string => typeof id === "string"));
 	const resources = loadResourceIds(resolve(staticDir, "resources.json"));
 	const buildingsData = loadBuildings(resolve(staticDir, "buildings.json"));
 	const balance = loadBalance(resolve(staticDir, "balance.json"));
@@ -1786,6 +1826,7 @@ function loadStaticData(): StaticData {
 	const zones = loadZones(resolve(staticDir, "zones.json"));
 	const bosses = loadBosses(resolve(staticDir, "bosses.json"));
 	return {
+		itemIds,
 		resources: resources.ids,
 		buildings: buildingsData.buildings,
 		hqPaths: buildingsData.hqPaths,

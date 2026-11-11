@@ -1,5 +1,7 @@
 {
   "balance": {
+    "forge_upgrade_essence_base": 20,
+    "forge_upgrade_essence_per_level": 10,
     "tick_seconds": 1,
     "offline_cap_hours": 12,
     "reactor_base_rate": 1.0,

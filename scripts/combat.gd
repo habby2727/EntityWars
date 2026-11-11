@@ -539,13 +539,13 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) -
 	for key in cooldowns.keys():
 		cooldowns[key] = max(0, int(cooldowns[key]) - 1)
 	cooldowns[id] = int(spell.get("cooldown_turns", 0))
-	var owner := "player" if is_same(caster, player) else "enemy"
+	var mark_owner := "player" if is_same(caster, player) else "enemy"
 	var mark: Dictionary = target.status.get("hybrid_mark", {})
-	var marked := str(mark.get("owner", "")) == owner and int(mark.get("remaining", 0)) > 0
+	var marked := str(mark.get("owner", "")) == mark_owner and int(mark.get("remaining", 0)) > 0
 	if marked:
 		_log_step("%s's mark approaches expiry." % caster.name, func():
 			var current: Dictionary = target.status.get("hybrid_mark", {})
-			if current.get("owner", "") == owner:
+			if current.get("owner", "") == mark_owner:
 				current["remaining"] = int(current.get("remaining", 0)) - 1
 				if current.remaining <= 0:
 					target.status.erase("hybrid_mark")
@@ -637,7 +637,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) -
 				if poisoned_before:
 					_log_step("%s consumes poison." % caster.name, func(): recipient.status.poison = maxi(0, int(recipient.status.poison) - int(value)))
 			"hybrid_mark":
-				_log_step("%s marks %s." % [caster.name, recipient.name], func(): recipient.status.hybrid_mark = {"owner": owner, "remaining": int(value)})
+				_log_step("%s marks %s." % [caster.name, recipient.name], func(): recipient.status.hybrid_mark = {"owner": mark_owner, "remaining": int(value)})
 			"shield_by_order":
 				var shield_value := float(effect.get("second_value", value)) if _spell_acts_second else value
 				_log_step("%s gains a shield." % recipient.name, func(): recipient.status.shield_pct = maxf(float(recipient.status.shield_pct), shield_value))

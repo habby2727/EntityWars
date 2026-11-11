@@ -15,7 +15,7 @@ class_name WorldZone
 @export var back_button_path: NodePath
 @export var zone_id_override: String = ""
 
-const FARM_COUNTS := [1, 5, 10, 25]
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
 
 var _backend: BackendClient = null
 var _background: TextureRect = null
@@ -38,16 +38,25 @@ var _zone_id := ""
 var _session_id := ""
 var _world_state: Dictionary = {}
 var _player_world: Dictionary = {}
+var _bosses: Array = []
+var _boss_picker: OptionButton
+var _boss_portrait: TextureRect
+var _boss_status: Label
+var _boss_hp: ProgressBar
+var _boss_open: Button
+var _loot_label: Label
+var _auto_enter_attempted := false
+var _auth_refresh_needed := false
 
 func _ready() -> void:
 	_debug.reload()
 	_resolve_nodes()
 	_apply_background()
+	_setup_zone_view()
 	_setup_buttons()
 	_setup_farm_options()
 	_load_state()
 	_request_world_state()
-	call_deferred("_auto_enter")
 
 func _resolve_nodes() -> void:
 	_backend = get_node_or_null(backend_path) as BackendClient
@@ -65,6 +74,148 @@ func _resolve_nodes() -> void:
 	if _backend != null:
 		_backend.api_completed.connect(_on_api_completed)
 		_backend.state_updated.connect(_on_state_updated)
+		_backend.auth_changed.connect(_on_auth_changed)
+
+func _setup_zone_view() -> void:
+	var backdrop := ColorRect.new()
+	backdrop.color = Color(0.015, 0.02, 0.025)
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(backdrop)
+	move_child(backdrop, 0)
+	var overlay := get_node_or_null("Overlay") as PanelContainer
+	if overlay != null:
+		overlay.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	var root := get_node_or_null("Overlay/Margin/RootVBox") as VBoxContainer
+	if root != null:
+		for node in root.find_children("*", "Label", true, false):
+			var label := node as Label
+			label.add_theme_color_override("font_color", Color.WHITE)
+			label.add_theme_color_override("font_outline_color", Color.BLACK)
+			label.add_theme_constant_override("outline_size", 5)
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if _header_label != null:
+			_header_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		_loot_label = Label.new()
+		_loot_label.add_theme_color_override("font_color", Color.WHITE)
+		_loot_label.add_theme_color_override("font_outline_color", Color.BLACK)
+		_loot_label.add_theme_constant_override("outline_size", 5)
+		_loot_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		root.add_child(_loot_label)
+		root.move_child(_loot_label, 4)
+	if _back_button != null:
+		_back_button.set("target", "world_gate")
+		_back_button.reparent(self)
+		_back_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		_back_button.offset_left = -170
+		_back_button.offset_right = -30
+		_back_button.offset_top = 28
+		_back_button.offset_bottom = 70
+		_back_button.z_index = 5
+		MenuArt.button(_back_button)
+	if _enter_button != null:
+		_enter_button.text = "Enter zone"
+	if _farm_button != null:
+		_farm_button.text = "Explore"
+	if _claim_button != null:
+		_claim_button.text = "Claim loot"
+	for button in [_enter_button, _farm_button, _claim_button]:
+		if button != null:
+			button.custom_minimum_size = Vector2(130, 42)
+			MenuArt.button(button)
+	var panel := PanelContainer.new()
+	panel.name = "WorldBossPanel"
+	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	panel.offset_left = -390
+	panel.offset_right = -30
+	panel.offset_top = 125
+	panel.offset_bottom = 660
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.02, 0.06, 0.07, 0.9)
+	style.border_color = Color(0.58, 0.5, 0.3, 0.9)
+	style.set_border_width_all(1)
+	style.set_content_margin_all(18)
+	panel.add_theme_stylebox_override("panel", style)
+	add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	panel.add_child(content)
+	var title := Label.new()
+	title.text = "WORLD BOSSES"
+	title.add_theme_font_size_override("font_size", 20)
+	content.add_child(title)
+	_boss_picker = OptionButton.new()
+	_boss_picker.disabled = true
+	_boss_picker.item_selected.connect(_on_boss_selected)
+	content.add_child(_boss_picker)
+	_boss_portrait = TextureRect.new()
+	_boss_portrait.custom_minimum_size = Vector2(0, 180)
+	_boss_portrait.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_boss_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_boss_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_boss_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(_boss_portrait)
+	_boss_status = Label.new()
+	_boss_status.text = "Waiting for server data."
+	_boss_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(_boss_status)
+	_boss_hp = ProgressBar.new()
+	_boss_hp.show_percentage = false
+	_boss_hp.visible = false
+	content.add_child(_boss_hp)
+	_boss_open = Button.new()
+	_boss_open.text = "Open boss encounter"
+	_boss_open.disabled = true
+	_boss_open.custom_minimum_size.y = 42
+	MenuArt.button(_boss_open)
+	_boss_open.pressed.connect(_open_boss)
+	content.add_child(_boss_open)
+
+func _refresh_bosses() -> void:
+	if _boss_picker == null:
+		return
+	_boss_picker.clear()
+	for boss in _bosses:
+		if not boss is Dictionary:
+			continue
+		var id := str(boss.get("boss_id", ""))
+		if id == "":
+			continue
+		_boss_picker.add_item(str(_db.bosses.get(id, {}).get("name", id)))
+		_boss_picker.set_item_metadata(_boss_picker.item_count - 1, boss)
+	_boss_picker.disabled = _boss_picker.item_count == 0
+	_boss_open.disabled = _boss_picker.disabled
+	if _boss_picker.disabled:
+		_boss_portrait.texture = null
+		_boss_hp.visible = false
+		_boss_status.text = "No world boss reported by the server."
+		return
+	_boss_picker.select(0)
+	_on_boss_selected(0)
+
+func _on_boss_selected(index: int) -> void:
+	if index < 0 or index >= _boss_picker.item_count:
+		return
+	var boss: Dictionary = _boss_picker.get_item_metadata(index)
+	var id := str(boss.get("boss_id", ""))
+	_boss_portrait.texture = _catalog.get_tex(id) if _catalog.has(id) else null
+	var hp := float(boss.get("hp", 0))
+	var max_hp := maxf(1, float(boss.get("max_hp", 1)))
+	_boss_hp.max_value = max_hp
+	_boss_hp.value = hp
+	_boss_hp.visible = true
+	_boss_status.text = "Global encounter  |  HP: %s / %s" % [int(hp), int(max_hp)]
+
+func _open_boss() -> void:
+	if _boss_picker.selected < 0:
+		return
+	var boss: Dictionary = _boss_picker.get_item_metadata(_boss_picker.selected)
+	SceneRouter.go_to_world_gate_boss(str(boss.get("boss_id", "")))
+
+func _on_auth_changed(token: String) -> void:
+	if token != "":
+		_auth_refresh_needed = true
+		_request_world_state()
 
 func _apply_background() -> void:
 	if _background == null:
@@ -93,7 +244,8 @@ func _setup_farm_options() -> void:
 	if _farm_count == null:
 		return
 	_farm_count.clear()
-	for count in FARM_COUNTS:
+	var max_blocks := clampi(int(_db.get_balance("world_max_blocks_per_action", 4)), 1, 100)
+	for count in range(1, max_blocks + 1):
 		_farm_count.add_item("x%s" % count)
 		_farm_count.set_item_metadata(_farm_count.item_count - 1, count)
 	_farm_count.select(0)
@@ -111,14 +263,15 @@ func _update_from_state(state: Dictionary) -> void:
 func _request_world_state() -> void:
 	if _backend == null:
 		return
+	var request_id := _backend.request_api("GET", "/world/state", null, false)
+	if request_id != "" and _backend.token != "":
+		_auth_refresh_needed = false
 	if _backend.token == "":
 		_backend.ensure_dev_login()
 		_set_error("Logging in...")
-		return
-	_backend.request_api("GET", "/world/state", null, false)
 
 func _auto_enter() -> void:
-	if _session_id != "":
+	if _auto_enter_attempted or _session_id != "":
 		return
 	if not _ensure_auth():
 		return
@@ -129,19 +282,32 @@ func _auto_enter() -> void:
 		return
 	var body = {"client_action_id": _make_client_id(), "zone_id": zone_id}
 	if _backend != null:
-		_backend.request_api("POST", "/world/enter", body, true)
+		_auto_enter_attempted = true
+		if _backend.request_api("POST", "/world/enter", body, true) == "":
+			_auto_enter_attempted = false
+			_set_error("Could not start the zone session. Try Enter zone.")
 
 func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 	if not ok:
 		_set_error(str(data.get("error", "Request failed.")))
+		if _boss_status != null and _bosses.is_empty():
+			_boss_status.text = "Boss data unavailable. Check the server connection."
 		return
 	if data.has("world_state"):
 		_world_state = data.get("world_state", {})
+		var bosses: Variant = _world_state.get("bosses", [])
+		_bosses = bosses if bosses is Array else []
+		_refresh_bosses()
 		var pw = data.get("player_world", null)
 		if typeof(pw) == TYPE_DICTIONARY:
 			_player_world = pw
 		_sync_session()
 		_update_labels()
+		if _auth_refresh_needed:
+			call_deferred("_request_world_state")
+		elif pw is Dictionary:
+			_clear_error()
+			call_deferred("_auto_enter")
 		return
 	# world_enter response
 	if data.has("session_id"):
@@ -163,7 +329,8 @@ func _on_enter_pressed() -> void:
 		return
 	var body = {"client_action_id": _make_client_id(), "zone_id": zone_id}
 	if _backend != null:
-		_backend.request_api("POST", "/world/enter", body, true)
+		if _backend.request_api("POST", "/world/enter", body, true) == "":
+			_set_error("Request in progress. Try again shortly.")
 
 func _on_farm_pressed() -> void:
 	_clear_error()
@@ -175,7 +342,8 @@ func _on_farm_pressed() -> void:
 	var count = _get_farm_count()
 	var body = {"client_action_id": _make_client_id(), "session_id": _session_id, "blocks": count}
 	if _backend != null:
-		_backend.request_api("POST", "/world/farm", body, true)
+		if _backend.request_api("POST", "/world/farm", body, true) == "":
+			_set_error("Request in progress. Try again shortly.")
 
 func _on_claim_pressed() -> void:
 	_clear_error()
@@ -186,7 +354,8 @@ func _on_claim_pressed() -> void:
 		return
 	var body = {"client_action_id": _make_client_id(), "session_id": _session_id}
 	if _backend != null:
-		_backend.request_api("POST", "/world/claim", body, true)
+		if _backend.request_api("POST", "/world/claim", body, true) == "":
+			_set_error("Request in progress. Try again shortly.")
 
 func _get_zone_id() -> String:
 	if zone_id_override != "":
@@ -223,7 +392,7 @@ func _sync_session() -> void:
 func _update_labels() -> void:
 	var zone_id = _get_zone_id()
 	if _session_label != null:
-		_session_label.text = "Session: %s" % (_session_id if _session_id != "" else "-")
+		_session_label.text = "Zone session active" if _session_id != "" else "No active zone session"
 	if _modifier_label != null:
 		var mods := []
 		var zone_map = _world_state.get("zones", [])
@@ -243,6 +412,15 @@ func _update_labels() -> void:
 				heat = int(entry2.get("heat", 0))
 				rep = int(entry2.get("reputation", 0))
 		_heat_label.text = "Heat: %s | Rep: %s" % [heat, rep]
+	if _loot_label != null:
+		var sessions: Variant = _player_world.get("sessions", {})
+		var session: Dictionary = sessions.get(_session_id, {}) if sessions is Dictionary else {}
+		var loot: Variant = session.get("pending_loot", {})
+		var parts: Array[String] = []
+		if loot is Dictionary:
+			for key in loot:
+				parts.append("%s: %s" % [str(key).replace("_", " ").capitalize(), loot[key]])
+		_loot_label.text = "Stamina: %s  |  Unclaimed loot: %s" % [_player_world.get("stamina", "-"), ", ".join(parts) if not parts.is_empty() else "None"]
 	if _enter_button != null:
 		_enter_button.disabled = _session_id != ""
 	if _farm_button != null:

@@ -5,6 +5,9 @@ extends Control
 
 const REG_PATH := "res://scripts/data_registry.gd"
 const SpellLoadout := preload("res://scripts/domain/spell_loadout.gd")
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
@@ -89,10 +92,15 @@ var _spell_pending_id := ""
 var _spell_pending_mode := ""
 var _spell_pending_entity := ""
 var _spell_button: Button
-var _spell_dialog: ConfirmationDialog
-var _spell_slots: Array[OptionButton] = []
+var _spell_dialog: Control
+var _spell_slots: Array[Button] = []
 var _spell_description: Label
 var _spell_draft: Array = []
+var _spell_confirm: Button
+var _spell_catalog: VBoxContainer
+var _spell_heading: Label
+var _spell_filter := "All"
+var _spell_selected_slot := 0
 
 func _resolve_nodes() -> void:
 	# Bind to concrete paths in LoadoutGrid.tscn
@@ -199,6 +207,7 @@ func _ready() -> void:
 		tooltip_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tooltip_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_tune_tabs()
+	_setup_build_dialog()
 	_load_registry_safe()
 	_setup_spell_state()
 	_build_spell_dialog()
@@ -208,6 +217,74 @@ func _ready() -> void:
 	_build_cards()
 	_refresh_details()
 	_update_save_button_label()
+
+func _setup_build_dialog() -> void:
+	var card: VBoxContainer = $RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox
+	var center: HBoxContainer = card.get_node("BuildCenter")
+	var block: VBoxContainer = center.get_node("BuildBlock")
+	var overlay := Control.new()
+	overlay.name = "BuildOverlay"
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.z_index = 50
+	overlay.hide()
+	add_child(overlay)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(dim)
+	var center_popup := CenterContainer.new()
+	center_popup.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center_popup.mouse_filter = Control.MOUSE_FILTER_PASS
+	overlay.add_child(center_popup)
+	var dialog := PanelContainer.new()
+	dialog.custom_minimum_size = Vector2(720, 430)
+	dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+	center_popup.add_child(dialog)
+	if lbl_build_error:
+		lbl_build_error.reparent(card)
+	block.reparent(dialog)
+	block.custom_minimum_size = Vector2.ZERO
+	block.alignment = BoxContainer.ALIGNMENT_CENTER
+	var grid := block.get_node("BuildGrid") as GridContainer
+	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	for slot in [dd_item1, dd_item2, dd_side1, dd_side2]:
+		if slot is Button:
+			slot.custom_minimum_size = Vector2(275, 70)
+			MenuArt.button(slot)
+	var close := Button.new()
+	close.text = "Done"
+	close.custom_minimum_size = Vector2(160, 46)
+	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	MenuArt.button(close)
+	close.pressed.connect(overlay.hide)
+	block.add_child(close)
+	var button := Button.new()
+	button.text = "Build"
+	button.custom_minimum_size = Vector2(160, 48)
+	MenuArt.button(button)
+	center.alignment = BoxContainer.ALIGNMENT_CENTER
+	center.get_node("BuildCenterSpacer").hide()
+	center.add_child(button)
+	button.pressed.connect(overlay.show)
+	for action_path in ["RootMargin/MainHSplit/RightPanel/BottomRow/Save", "RootMargin/MainHSplit/RightPanel/BottomRow/Play"]:
+		var action := get_node_or_null(action_path) as Button
+		if action:
+			MenuArt.button(action)
+	for path in ["SelectedRow/PreviewFrame", "SelectedRow/HomPreviewFrame"]:
+		var portrait := card.get_node_or_null(path) as PanelContainer
+		if portrait:
+			portrait.add_theme_stylebox_override("panel", MenuArt.frame("marco-forma-carta-vertical.png", Vector4(16, 22, 16, 18)))
+	var row := card.get_node("SelectedRow") as HBoxContainer
+	var info := row.get_node("InfoVBox") as VBoxContainer
+	var info_panel := PanelContainer.new()
+	info_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_panel.custom_minimum_size.y = 275
+	info_panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-informativo-small.png", Vector4(48, 42, 48, 42)))
+	row.add_child(info_panel)
+	info.reparent(info_panel)
+	info.get_node("InfoSpacer").custom_minimum_size.y = 0
 
 func _load_registry_safe() -> void:
 	if ResourceLoader.exists(REG_PATH):
@@ -313,71 +390,189 @@ func _build_spell_dialog() -> void:
 	if _spell_button == null:
 		return
 	_spell_button.pressed.connect(_open_spell_dialog)
-	_spell_dialog = ConfirmationDialog.new()
-	_spell_dialog.title = "Configure Spells"
-	_spell_dialog.dialog_text = ""
-	_spell_dialog.min_size = Vector2i(640, 390)
+	_spell_dialog = Control.new()
+	_spell_dialog.name = "SpellOverlay"
+	_spell_dialog.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_spell_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
+	_spell_dialog.z_index = 50
+	_spell_dialog.hide()
 	add_child(_spell_dialog)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.75)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_spell_dialog.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_spell_dialog.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(1020, 620)
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(65, 75, 65, 55)))
+	center.add_child(panel)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 8)
-	_spell_dialog.add_child(content)
+	panel.add_child(content)
+	var header := HBoxContainer.new()
+	content.add_child(header)
+	_spell_heading = Label.new()
+	_spell_heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spell_heading.add_theme_font_size_override("font_size", 20)
+	_spell_heading.add_theme_color_override("font_color", Color(0.95, 0.92, 0.8))
+	header.add_child(_spell_heading)
+	var close := Button.new()
+	close.text = "X"
+	close.tooltip_text = "Close"
+	close.custom_minimum_size = Vector2(44, 36)
+	MenuArt.button(close)
+	close.pressed.connect(_spell_dialog.hide)
+	header.add_child(close)
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 16)
+	content.add_child(body)
+	var slots := VBoxContainer.new()
+	slots.custom_minimum_size.x = 230
+	slots.add_theme_constant_override("separation", 8)
+	body.add_child(slots)
 	for i in 4:
-		var row := HBoxContainer.new()
-		var label := Label.new()
-		label.text = "Slot %d" % (i + 1)
-		label.custom_minimum_size.x = 60
-		row.add_child(label)
-		var option := OptionButton.new()
-		option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		option.item_selected.connect(_on_spell_slot_selected.bind(i))
-		row.add_child(option)
-		content.add_child(row)
-		_spell_slots.append(option)
+		var slot := Button.new()
+		slot.custom_minimum_size.y = 58
+		slot.toggle_mode = true
+		_style_spell_button(slot)
+		slot.pressed.connect(_select_spell_slot.bind(i))
+		slots.add_child(slot)
+		_spell_slots.append(slot)
+	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.add_theme_constant_override("separation", 6)
+	body.add_child(right)
+	var filters := HBoxContainer.new()
+	right.add_child(filters)
+	var filter_group := ButtonGroup.new()
+	for group_name in ["All", "Initial", "Hybrid", "Universal"]:
+		var filter := Button.new()
+		filter.text = group_name
+		filter.toggle_mode = true
+		filter.button_group = filter_group
+		_style_spell_button(filter)
+		filter.button_pressed = group_name == "All"
+		filter.pressed.connect(_filter_spell_catalog.bind(group_name))
+		filters.add_child(filter)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(scroll)
+	_spell_catalog = VBoxContainer.new()
+	_spell_catalog.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_spell_catalog)
 	_spell_description = Label.new()
 	_spell_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_spell_description.custom_minimum_size.y = 75
-	content.add_child(_spell_description)
-	_spell_dialog.confirmed.connect(_confirm_spell_dialog)
+	_spell_description.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spell_description.add_theme_font_size_override("font_size", 13)
+	_spell_description.add_theme_color_override("font_color", Color(0.93, 0.94, 0.88))
+	var details_scroll := ScrollContainer.new()
+	details_scroll.custom_minimum_size.y = 125
+	details_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(details_scroll)
+	details_scroll.add_child(_spell_description)
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	content.add_child(actions)
+	var cancel := Button.new()
+	cancel.text = "Cancel"
+	cancel.custom_minimum_size = Vector2(150, 42)
+	MenuArt.button(cancel)
+	cancel.pressed.connect(_spell_dialog.hide)
+	actions.add_child(cancel)
+	_spell_confirm = Button.new()
+	_spell_confirm.text = "Confirm"
+	_spell_confirm.custom_minimum_size = Vector2(150, 42)
+	MenuArt.button(_spell_confirm)
+	_spell_confirm.pressed.connect(func():
+		_confirm_spell_dialog()
+		_spell_dialog.hide()
+	)
+	actions.add_child(_spell_confirm)
 
 func _open_spell_dialog() -> void:
 	if _spell_pending_id != "" or _reg == null:
 		return
 	_spell_draft = _equipped_spells(_mode, _current_entity_id).duplicate()
-	var available := SpellLoadout.available_ids(_reg, _current_entity_id, _spell_state.get("spell_progress", {}))
-	for slot_index in 4:
-		var option: OptionButton = _spell_slots[slot_index]
-		option.clear()
-		for group in ["Original", "Hybrid", "Universal"]:
-			option.add_separator(group)
-			for id in available:
-				var spell: Dictionary = _reg.get_spell_by_id(id)
-				var kind := str(spell.get("type", ""))
-				var spell_group := "Hybrid" if kind == "hybrid" else ("Universal" if kind == "universal" else "Original")
-				if spell_group != group:
-					continue
-				var power := "Support" if float(spell.power_mult) == 0 else "x%.2f" % float(spell.power_mult)
-				option.add_item("%s | %s | %d%% | CD %d" % [spell.name, power, int(round(float(spell.accuracy) * 100)), int(spell.cooldown_turns)])
-				var item_index := option.item_count - 1
-				option.set_item_metadata(item_index, id)
-				if slot_index < _spell_draft.size() and id == _spell_draft[slot_index]:
-					option.select(item_index)
+	_spell_selected_slot = 0
+	var entity: Dictionary = _reg.entities.get(_current_entity_id, {})
+	_spell_heading.text = "Configure Spells   |   %s - %s   |   4/4 Equipped" % [entity.get("name", ""), str(entity.get("type", "")).capitalize()]
+	_rebuild_spell_catalog()
 	_refresh_spell_draft(0)
-	_spell_dialog.popup_centered_ratio(0.65)
+	_spell_dialog.show()
 
-func _on_spell_slot_selected(index: int, slot_index: int) -> void:
-	var id = _spell_slots[slot_index].get_item_metadata(index)
-	if id is String and slot_index < _spell_draft.size():
-		_spell_draft[slot_index] = id
-	_refresh_spell_draft(slot_index)
+func _select_spell_slot(index: int) -> void:
+	_spell_selected_slot = index
+	_refresh_spell_draft(index)
+
+func _filter_spell_catalog(value: String) -> void:
+	_spell_filter = value
+	_rebuild_spell_catalog()
+
+func _rebuild_spell_catalog() -> void:
+	for child in _spell_catalog.get_children():
+		_spell_catalog.remove_child(child)
+		child.queue_free()
+	var entity: Dictionary = _reg.entities.get(_current_entity_id, {})
+	var entity_type := str(entity.get("type", ""))
+	for spell in _reg.get_researchable_spells_for_type(entity_type):
+		if _spell_filter != "All" and SpellView.group(spell) != _spell_filter:
+			continue
+		var status := SpellView.status(spell, _current_entity_id, entity_type, _spell_state.get("spell_progress", {}), _spell_synced or _spell_debug.unlock_all_buildings)
+		var row := Button.new()
+		row.text = "%s   |   %s   |   %s" % [spell.name, SpellView.affinity(spell), status]
+		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		row.custom_minimum_size.y = 32
+		if status == "Locked":
+			row.modulate = Color(0.7, 0.7, 0.7)
+			var lock := LockIndicator.new()
+			lock.position = Vector2(4, 6)
+			lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			row.add_child(lock)
+			row.text = "     " + row.text
+		row.pressed.connect(_choose_catalog_spell.bind(spell, status))
+		_spell_catalog.add_child(row)
+		_style_spell_button(row)
+
+func _style_spell_button(button: Button) -> void:
+	for state in ["normal", "hover", "pressed", "hover_pressed"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.05, 0.2, 0.2, 0.95) if state in ["hover", "pressed", "hover_pressed"] else Color(0.02, 0.07, 0.08, 0.92)
+		style.border_color = Color(0.8, 0.67, 0.35) if state in ["pressed", "hover_pressed"] else Color(0.22, 0.43, 0.4)
+		style.set_border_width_all(1)
+		style.content_margin_left = 8
+		style.content_margin_right = 8
+		style.content_margin_top = 5
+		style.content_margin_bottom = 5
+		button.add_theme_stylebox_override(state, style)
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		button.add_theme_color_override(state, Color(0.95, 0.95, 0.89))
+	button.add_theme_font_size_override("font_size", 14)
+
+func _choose_catalog_spell(spell: Dictionary, status: String) -> void:
+	_spell_description.text = "%s\n%s" % [spell.name, SpellView.detail(spell, status)]
+	if status not in ["Initial", "Learned"]:
+		return
+	var id := str(spell.id)
+	if id in _spell_draft and _spell_draft[_spell_selected_slot] != id:
+		_spell_description.text += "\nAlready equipped in another slot."
+		return
+	_spell_draft[_spell_selected_slot] = id
+	_refresh_spell_draft(_spell_selected_slot)
 
 func _refresh_spell_draft(slot_index: int) -> void:
 	var valid := SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft)
-	_spell_dialog.get_ok_button().disabled = not valid or _spell_pending_id != "" or (not _spell_debug.unlock_all_buildings and not _spell_synced)
+	_spell_confirm.disabled = not valid or _spell_pending_id != "" or (not _spell_debug.unlock_all_buildings and not _spell_synced)
+	for i in _spell_slots.size():
+		var selected_spell: Dictionary = _reg.get_spell_by_id(str(_spell_draft[i])) if i < _spell_draft.size() else {}
+		_spell_slots[i].text = "%d. %s\n%s | CD %d" % [i + 1, selected_spell.get("name", "-"), SpellView.affinity(selected_spell), int(selected_spell.get("cooldown_turns", 0))]
+		_spell_slots[i].button_pressed = i == _spell_selected_slot
 	var spell: Dictionary = _reg.get_spell_by_id(str(_spell_draft[slot_index])) if slot_index < _spell_draft.size() else {}
-	var types := str(spell.get("type", "")).capitalize()
-	if spell.get("type") == "hybrid":
-		types = "%s / %s" % [str(spell.get("primary_type", "")).capitalize(), str(spell.get("secondary_type", "")).capitalize()]
-	_spell_description.text = "Editing slot %d: %s\n%s\n%s" % [slot_index + 1, spell.get("name", ""), types, spell.get("desc", "")]
+	_spell_description.text = "%s\n%s" % [spell.get("name", ""), SpellView.detail(spell, "Equipped")]
 	if not valid:
 		_spell_description.text += "\nEach slot must contain a different available spell."
 	elif not _spell_debug.unlock_all_buildings and not _spell_synced:
@@ -514,6 +709,7 @@ func _populate_control_with_list(control: Node, items: Array) -> void:
 		var label = _label_for_item(items[0], "None") if items.size() > 0 else "None"
 		control.text = label
 		var btn := control as Button
+		_refresh_build_slot_icon(btn)
 		var cb_equip := Callable(self, "_on_equip_button_pressed").bind(btn)
 		if not btn.pressed.is_connected(cb_equip):
 			btn.pressed.connect(cb_equip)
@@ -531,6 +727,7 @@ func _on_equip_button_pressed(btn: Button) -> void:
 	sidx = (sidx + 1) % items.size()
 	btn.set_meta("selected_idx", sidx)
 	btn.text = _label_for_item(items[sidx], "None")
+	_refresh_build_slot_icon(btn)
 	if tooltip_panel and tooltip_panel.visible:
 		var mouse_pos := get_viewport().get_mouse_position()
 		if btn.get_global_rect().has_point(mouse_pos):
@@ -583,10 +780,19 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	b.text = ""
 	b.focus_mode = Control.FOCUS_NONE
-	b.flat = true
+	b.flat = false
+	var card_style := MenuArt.frame("marco-forma-carta-vertical.png", Vector4(12, 12, 12, 12))
+	for state in ["normal", "hover", "pressed"]:
+		b.add_theme_stylebox_override(state, card_style)
 	b.pressed.connect(func(): _on_card_picked(p_kind, p_id))
 
 	var v := VBoxContainer.new()
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.offset_left = 18
+	v.offset_right = -18
+	v.offset_top = 24
+	v.offset_bottom = -20
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -594,10 +800,9 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.add_child(v)
 
 	var tex_rect := TextureRect.new()
-	if p_kind == "homunculus":
-		tex_rect.custom_minimum_size = Vector2(150, 150)
-	else:
-		tex_rect.custom_minimum_size = Vector2(128, 128)
+	tex_rect.custom_minimum_size = Vector2(118, 118)
+	tex_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tex_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -617,7 +822,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	lbl.z_index = 2
 	lbl.custom_minimum_size = Vector2(0, 28)
 	lbl.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_font_size_override("font_size", 16)
 	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
 	lbl.add_theme_constant_override("outline_size", 2)
 	v.add_child(lbl)
@@ -1126,6 +1331,15 @@ func _set_button_selection(btn: Button, items: Array, desired) -> void:
 	btn.set_meta("items", items)
 	btn.set_meta("selected_idx", idx)
 	btn.text = _label_for_item(items[idx], "None")
+	_refresh_build_slot_icon(btn)
+
+func _refresh_build_slot_icon(btn: Button) -> void:
+	if btn not in [dd_item1, dd_item2, dd_side1, dd_side2]:
+		return
+	var item := _get_selected_item_from_button(btn)
+	btn.icon = _load_item_icon(item) if not item.is_empty() else null
+	btn.expand_icon = true
+	btn.add_theme_constant_override("icon_max_width", 40)
 
 func _wire_build_tooltips() -> void:
 	var build_buttons := [dd_item1, dd_item2, dd_side1, dd_side2]
