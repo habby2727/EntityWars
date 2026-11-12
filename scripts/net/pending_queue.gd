@@ -4,14 +4,28 @@ class_name PendingQueue
 const FILE_PATH := "user://pending_actions.json"
 
 var _actions: Array = []
+var _file_path := ""
+
+func set_identity(player_id: String) -> bool:
+	if player_id.is_empty() or player_id.length() > 128:
+		return false
+	_file_path = "user://pending_actions_%s.json" % player_id.sha256_text()
+	self.load()
+	return true
+
+func clear_identity() -> void:
+	_actions.clear()
+	_file_path = ""
 
 func load() -> void:
 	_actions.clear()
-	if not FileAccess.file_exists(FILE_PATH):
+	if _file_path.is_empty():
 		return
-	var f = FileAccess.open(FILE_PATH, FileAccess.READ)
+	if not FileAccess.file_exists(_file_path):
+		return
+	var f = FileAccess.open(_file_path, FileAccess.READ)
 	if f == null:
-		push_error("PendingQueue: Failed to open %s" % FILE_PATH)
+		push_error("PendingQueue: Failed to open %s" % _file_path)
 		return
 	var text = f.get_as_text()
 	f.close()
@@ -41,14 +55,25 @@ func _unwrap_parse(parsed: Variant) -> Variant:
 		return parsed.result
 	return parsed
 
-func save() -> void:
-	var f = FileAccess.open(FILE_PATH, FileAccess.WRITE)
+func save() -> bool:
+	if _file_path.is_empty():
+		return false
+	var temp_path := _file_path + ".tmp"
+	var f = FileAccess.open(temp_path, FileAccess.WRITE)
 	if f == null:
-		push_error("PendingQueue: Failed to write %s" % FILE_PATH)
-		return
+		push_error("PendingQueue: Failed to write %s" % _file_path)
+		return false
 	var payload = {"actions": _actions}
 	f.store_string(JSON.stringify(payload))
+	var error := f.get_error()
 	f.close()
+	if error != OK:
+		return false
+	var rename_error := DirAccess.rename_absolute(ProjectSettings.globalize_path(temp_path), ProjectSettings.globalize_path(_file_path))
+	if rename_error != OK:
+		push_error("PendingQueue: Failed to replace queue (%s)" % rename_error)
+		return false
+	return true
 
 func size() -> int:
 	return _actions.size()
@@ -69,6 +94,12 @@ func peek() -> Dictionary:
 	if _actions.is_empty():
 		return {}
 	return _actions[0]
+
+func find_by_id(action_id: String) -> Dictionary:
+	for action in _actions:
+		if str(action.get("client_action_id", "")) == action_id:
+			return action
+	return {}
 
 func pop_next() -> Dictionary:
 	if _actions.is_empty():

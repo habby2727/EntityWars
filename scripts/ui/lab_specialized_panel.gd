@@ -1,5 +1,7 @@
 extends VBoxContainer
 
+signal debug_forge_updated(state: Dictionary)
+
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const ITEM_FILES := {"bismuth_talisman": "talisman_bismuth", "mirror_sigel": "mirror", "vitriol_vial": "vitriol"}
 
@@ -11,6 +13,7 @@ var _forge_item := ""
 var _forge_pending := ""
 var _forge_button: Button
 var _forge_status: Label
+var _forge_info: Label
 var _forge_confirm: ConfirmationDialog
 var _forge_debug := false
 var _forge_synced := false
@@ -26,12 +29,15 @@ func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cos
 	if _backend != null:
 		_backend.action_confirmed.connect(_forge_confirmed)
 		_backend.action_failed.connect(_forge_failed)
+		_backend.action_uncertain.connect(_forge_uncertain)
 		_backend.auth_changed.connect(func(_token): _update_forge_button())
 	custom_minimum_size.y = 210
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_theme_constant_override("separation", 8)
 
 func show_building(building_id: String, state: Dictionary, building_names: Dictionary, metrics: Dictionary = {}, synced: bool = false) -> void:
+	if state.is_empty():
+		_forge_pending = ""
 	_forge_state = state
 	_forge_synced = synced
 	if building_id == _current_id and building_id in ["build_forge", "homunculus_vat", "sync_nexus", "anomaly_containment"]:
@@ -40,6 +46,7 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_current_id = building_id
 	_forge_button = null
 	_forge_status = null
+	_forge_info = null
 	_forge_confirm = null
 	for child in get_children():
 		remove_child(child)
@@ -136,6 +143,8 @@ func _catalog(homunculi: bool) -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	details.add_child(scroll)
 	var info := Label.new()
+	if not homunculi:
+		_forge_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	scroll.add_child(info)
@@ -180,7 +189,7 @@ func _catalog(homunculi: bool) -> void:
 		if homunculi:
 			info.text = "%s\nBase bonuses: ATK %+d, GUARD %+d, HP %+d\nSynergies:\n%s\nEvolution and mutations: not implemented." % [entry.get("desc", ""), int(entry.get("buff_atk", 0)), int(entry.get("buff_def", 0)), int(entry.get("buff_hp", 0)), _format_values(entry.get("per_type", {}))]
 		else:
-			info.text = "%s\nBase effects by level:\n%s\nItem level, upgrade and reroll: not implemented." % [entry.get("desc", ""), _format_values(entry.get("effects", {}))]
+			_update_forge_button()
 		var file: String = str(ITEM_FILES.get(id, id))
 		var path := ("res://assets/entities/previews_256/homunculus/" if homunculi else "res://assets/entities/builds/") + file + ".png"
 		preview.texture = load(path) if ResourceLoader.exists(path) else null
@@ -194,15 +203,32 @@ func _update_forge_button() -> void:
 		return
 	var progress: Dictionary = _forge_state.get("item_progress", {})
 	var level := int(progress.get(_forge_item, {}).get("level", 0))
+	if is_instance_valid(_forge_info) and _registry != null:
+		var item: Dictionary = _registry.get_items().get(_forge_item, {})
+		var helper = preload("res://scripts/domain/item_progress.gd")
+		var current: Dictionary = helper.effective_item(item, progress)
+		var next: Dictionary = helper.effective_item(item, {_forge_item: {"level": mini(10, level + 1)}})
+		_forge_info.text = "%s\nCurrent: %s\nNext: %s" % [item.get("desc", ""), _format_values(current.get("effects", {})), _format_values(next.get("effects", {}))]
 	var forge_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("build_forge", {}).get("level", 0))
 	var cost := maxi(0, _forge_base_cost + level * _forge_cost_per_level)
 	var essence := int(_forge_state.get("wallet", {}).get("essence", 0))
-	_forge_button.disabled = _forge_item == "" or _forge_pending != "" or _forge_debug or _backend == null or _backend.token == "" or not _forge_synced or forge_level < 1 or level >= 10 or essence < cost
+	var online_ready := _backend != null and _backend.token != "" and _forge_synced
+	var outstanding := ""
+	if not _forge_debug and _backend != null:
+		for action in _backend.get_pending_actions():
+			if str(action.get("action_type", "")) == "FORGE_UPGRADE":
+				outstanding = str(action.get("client_action_id", ""))
+				break
+		if _backend._verified_player_id.is_empty():
+			_forge_pending = ""
+		elif _forge_pending.is_empty() and not outstanding.is_empty():
+			_forge_pending = outstanding
+	_forge_button.disabled = _forge_item == "" or _forge_pending != "" or outstanding != "" or (not _forge_debug and not online_ready) or forge_level < 1 or level >= 10 or essence < cost
 	_forge_status.text = "Level %d / 10 | Next: %s | Essence: %d / %d" % [level, str(level + 1) if level < 10 else "MAX", essence, cost]
-	if _forge_pending != "":
-		_forge_status.text += " | Waiting for server"
+	if _forge_pending != "" or outstanding != "":
+		_forge_status.text += " | Waiting for confirmation / Reconnecting"
 	elif _forge_debug:
-		_forge_status.text += " | Forge upgrade requires an online account"
+		_forge_status.text += " | Local debug"
 	elif _backend == null or _backend.token == "":
 		_forge_status.text += " | Sign in to upgrade"
 	elif not _forge_synced:
@@ -220,7 +246,42 @@ func _request_forge_confirmation() -> void:
 	_forge_confirm.popup_centered()
 
 func _send_forge_upgrade() -> void:
-	if _forge_button == null or _forge_button.disabled or _backend == null:
+	if _forge_button == null or _forge_button.disabled:
+		return
+	if _forge_debug:
+		var debug := DebugFlags.new()
+		debug.reload()
+		if not debug.unlock_all_buildings:
+			_forge_status.text = "Debug mode is no longer active."
+			debug.free()
+			return
+		var next := debug.load_lab_state()
+		var progress: Dictionary = next.get("item_progress", {})
+		var item: Dictionary = progress.get(_forge_item, {})
+		var level := int(item.get("level", 0))
+		var cost := maxi(0, _forge_base_cost + level * _forge_cost_per_level)
+		var wallet: Dictionary = next.get("wallet", {})
+		var forge: Dictionary = next.get("lab", {}).get("buildings", {}).get("build_forge", {})
+		if level >= 10 or int(forge.get("level", 0)) < 1 or int(wallet.get("essence", 0)) < cost:
+			_forge_status.text = "Upgrade requirements are not met."
+			debug.free()
+			return
+		wallet["essence"] = int(wallet.get("essence", 0)) - cost
+		item["level"] = level + 1
+		progress[_forge_item] = item
+		next["wallet"] = wallet
+		next["item_progress"] = progress
+		if not debug.save_lab_state(next):
+			_forge_status.text = "Could not save local debug state."
+			debug.free()
+			return
+		debug.free()
+		_forge_state = next
+		debug_forge_updated.emit(next)
+		_update_forge_button()
+		_forge_status.text += " | Upgrade saved"
+		return
+	if _backend == null:
 		return
 	_forge_pending = _backend.send_action({"action_type": "FORGE_UPGRADE", "payload": {"item_id": _forge_item}})
 	_update_forge_button()
@@ -236,12 +297,17 @@ func _forge_confirmed(action_id: String) -> void:
 		_forge_status.text += " | Upgrade confirmed"
 
 func _forge_failed(action_id: String, error: String) -> void:
-	if action_id != _forge_pending or action_id == "":
+	if action_id == "" or action_id != _forge_pending:
 		return
 	_forge_pending = ""
 	_update_forge_button()
 	if is_instance_valid(_forge_status):
 		_forge_status.text = "Upgrade failed: " + error
+
+func _forge_uncertain(action_id: String, _reason: String) -> void:
+	if action_id == _forge_pending:
+		_forge_pending = action_id
+		_update_forge_button()
 
 func _format_values(values: Dictionary) -> String:
 	var lines: Array[String] = []

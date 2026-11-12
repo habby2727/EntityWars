@@ -45,8 +45,13 @@ var _boss_status: Label
 var _boss_hp: ProgressBar
 var _boss_open: Button
 var _loot_label: Label
-var _auto_enter_attempted := false
+var _enter_confirm: ConfirmationDialog
 var _auth_refresh_needed := false
+
+func _exit_tree() -> void:
+	_catalog.free()
+	_db.free()
+	_debug.free()
 
 func _ready() -> void:
 	_debug.reload()
@@ -54,6 +59,10 @@ func _ready() -> void:
 	_apply_background()
 	_setup_zone_view()
 	_setup_buttons()
+	_enter_confirm = ConfirmationDialog.new()
+	_enter_confirm.title = "Enter zone"
+	_enter_confirm.confirmed.connect(_confirm_zone_entry)
+	add_child(_enter_confirm)
 	_setup_farm_options()
 	_load_state()
 	_request_world_state()
@@ -270,23 +279,6 @@ func _request_world_state() -> void:
 		_backend.ensure_dev_login()
 		_set_error("Logging in...")
 
-func _auto_enter() -> void:
-	if _auto_enter_attempted or _session_id != "":
-		return
-	if not _ensure_auth():
-		return
-	if not _has_world_unlock():
-		return
-	var zone_id = _get_zone_id()
-	if zone_id == "":
-		return
-	var body = {"client_action_id": _make_client_id(), "zone_id": zone_id}
-	if _backend != null:
-		_auto_enter_attempted = true
-		if _backend.request_api("POST", "/world/enter", body, true) == "":
-			_auto_enter_attempted = false
-			_set_error("Could not start the zone session. Try Enter zone.")
-
 func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 	if not ok:
 		_set_error(str(data.get("error", "Request failed.")))
@@ -307,7 +299,6 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			call_deferred("_request_world_state")
 		elif pw is Dictionary:
 			_clear_error()
-			call_deferred("_auto_enter")
 		return
 	# world_enter response
 	if data.has("session_id"):
@@ -323,6 +314,17 @@ func _on_enter_pressed() -> void:
 		return
 	if not _has_world_unlock():
 		_set_error("World Gate locked. Build the World Gate to enter zones.")
+		return
+	if _session_id != "":
+		return
+	var fee := int(_db.get_balance("world_entry_fee_essence", 0))
+	var balance := int(_backend.load_cached_state().get("wallet", {}).get("essence", 0))
+	var daily_limit := int(_db.get_balance("world_daily_entries", 10))
+	_enter_confirm.dialog_text = "Enter %s?\nCost: %d Essence (available: %d).\nDaily entries: %d / %d.\nRequires a constructed World Gate." % [_get_zone_name(_get_zone_id()), fee, balance, int(_player_world.get("daily_entries", 0)), daily_limit]
+	_enter_confirm.popup_centered()
+
+func _confirm_zone_entry() -> void:
+	if _session_id != "" or not _ensure_auth() or not _has_world_unlock():
 		return
 	var zone_id = _get_zone_id()
 	if zone_id == "":

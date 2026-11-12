@@ -1357,7 +1357,10 @@ func _on_build_hover_entered(btn: Button) -> void:
 	var item := _get_selected_item_from_button(btn)
 	if item == null or item.is_empty():
 		return
-	tooltip_label.text = "%s\n%s" % [_label_for_item(item, "None"), _item_desc(item)]
+	var helper = preload("res://scripts/domain/item_progress.gd")
+	var level: int = helper.level_for(str(item.get("id", "")), _spell_state.get("item_progress", {}))
+	var effective: Dictionary = helper.effective_item(item, _spell_state.get("item_progress", {}))
+	tooltip_label.text = "%s  |  Level %d\n%s\n%s" % [_label_for_item(item, "None"), level, _item_desc(item), str(effective.get("effects", {}))]
 	tooltip_icon.texture = _load_item_icon(item)
 	tooltip_panel.visible = true
 	tooltip_panel.custom_minimum_size = Vector2.ZERO

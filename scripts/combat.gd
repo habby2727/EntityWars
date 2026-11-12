@@ -37,12 +37,18 @@ const HOM_PREVIEW_MAP := {
 	"mothy": "mothy",
 }
 const LOG_STEP_SECONDS := 1.0
+@export var backend_url := "http://127.0.0.1:8787"
 
 var _reg: Object = null
 var _entities: Array = []
 var _homunculi: Array = []
 var _items: Array = []
 var _combat_spell_state := {}
+var _combat_backend: BackendClient
+var _combat_started := false
+var _combat_session_invalid := false
+var _combat_identity := ""
+var _combat_wait_timer: Timer
 var _type_effectiveness := {}
 var _spell_exchange_active := false
 var _resolving_exchange := false
@@ -110,10 +116,7 @@ var _hp_fill_red: StyleBoxFlat = null
 
 func _ready() -> void:
 	_load_registry_safe()
-	_load_player_from_seal()
-	_setup_enemy()
 	_setup_hp_styles()
-	_update_ui()
 	_configure_tooltip_text()
 	next_turn_btn.pressed.connect(_on_next_turn)
 	swap_side1.pressed.connect(func(): _on_swap_chosen("side_1"))
@@ -126,13 +129,78 @@ func _ready() -> void:
 		spell_buttons[i].pressed.connect(_on_spell_chosen.bind(i))
 	_style_spell_buttons()
 	next_turn_btn.hide()
-	_refresh_spell_buttons()
+	spell_panel.hide()
 	if back_button:
 		back_button.pressed.connect(_on_back_pressed)
 	if confirm_stay:
 		confirm_stay.pressed.connect(_on_confirm_stay)
 	if confirm_leave:
 		confirm_leave.pressed.connect(_on_confirm_leave)
+	_begin_combat_initialization()
+
+func _begin_combat_initialization() -> void:
+	var debug := DebugFlags.new()
+	if debug.unlock_all_buildings:
+		_combat_spell_state = debug.load_lab_state()
+		debug.free()
+		_start_combat()
+		return
+	debug.free()
+	_combat_backend = BackendClient.new()
+	_combat_backend.base_url = backend_url
+	_combat_backend.auto_dev_login = false
+	_combat_backend.state_updated.connect(_on_combat_state_updated)
+	add_child(_combat_backend)
+	if _combat_backend.token.is_empty():
+		_log_immediate("Offline battle: no online progression loaded.")
+		_start_combat()
+		return
+	_log_immediate("Loading authenticated player state...")
+	_wait_for_combat_state()
+
+func _wait_for_combat_state() -> void:
+	if _combat_wait_timer == null:
+		_combat_wait_timer = Timer.new()
+		_combat_wait_timer.one_shot = true
+		_combat_wait_timer.timeout.connect(_on_combat_state_timeout)
+		add_child(_combat_wait_timer)
+	_combat_wait_timer.start(10.0)
+	_combat_backend.refresh_state()
+
+func _on_combat_state_timeout() -> void:
+	if not _combat_started:
+		_log_immediate("Player state unavailable. Press Retry or leave combat.")
+		next_turn_btn.text = "Retry"
+		next_turn_btn.show()
+
+func _on_combat_state_updated(state: Dictionary) -> void:
+	if _combat_started:
+		if _combat_identity != "" and (state.is_empty() or str(state.get("player_id", "")) != _combat_identity):
+			_combat_session_invalid = true
+			_battle_over = true
+			spell_panel.hide()
+			swap_panel.hide()
+			next_turn_btn.text = "Return"
+			next_turn_btn.show()
+			_log_immediate("Session changed. Leave combat and authenticate again.")
+		return
+	if state.is_empty() or _combat_backend._verified_player_id.is_empty():
+		return
+	if str(state.get("player_id", "")) != _combat_backend._verified_player_id:
+		return
+	_combat_identity = _combat_backend._verified_player_id
+	_combat_spell_state = state.duplicate(true)
+	_start_combat()
+
+func _start_combat() -> void:
+	if _combat_wait_timer != null:
+		_combat_wait_timer.stop()
+	_combat_started = true
+	next_turn_btn.hide()
+	_load_player_from_seal()
+	_setup_enemy()
+	_update_ui()
+	_refresh_spell_buttons()
 	_log_immediate("Battle 1 begins.")
 
 func _on_back_pressed() -> void:
@@ -194,7 +262,6 @@ func _load_player_from_seal() -> void:
 		data["side_2"] = ""
 	var debug := DebugFlags.new()
 	var debug_enabled := debug.unlock_all_buildings
-	_combat_spell_state = debug.load_lab_state() if debug_enabled else Reconcile.new().get_state()
 	debug.free()
 	data["spell_ids"] = SpellLoadout.saved_ids(_reg, _combat_spell_state, mode, str(data.get("entity_id", "")), data, not debug_enabled)
 	player = _build_fighter(data, true)
@@ -245,12 +312,18 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 	var equip2 = _find_by_id(_items, str(data.get("equip_2", "")))
 	var side1 = _find_by_id(_items, str(data.get("side_1", "")))
 	var side2 = _find_by_id(_items, str(data.get("side_2", "")))
+	if _is_player:
+		var progress_items: Dictionary = _combat_spell_state.get("item_progress", {})
+		var helper = preload("res://scripts/domain/item_progress.gd")
+		equip1 = helper.effective_item(equip1, progress_items)
+		equip2 = helper.effective_item(equip2, progress_items)
+		side1 = helper.effective_item(side1, progress_items)
+		side2 = helper.effective_item(side2, progress_items)
 
 	var mods = _item_mods([equip1, equip2])
 	var fx = _collect_item_effects([equip1, equip2])
-	atk = int(round(atk * (1.0 + mods.atk_mul)))
-	def = int(round(def * (1.0 + mods.def_mul)))
-	hp = int(round(hp * (1.0 + mods.hp_mul)))
+	atk += mods.atk_flat
+	def += mods.def_flat
 
 	return {
 		"id": str(ent.get("id", "")),
@@ -327,6 +400,11 @@ func _apply_hp_color(bar: ProgressBar, f: Dictionary) -> void:
 	bar.add_theme_stylebox_override("fill", fill)
 
 func _on_next_turn() -> void:
+	if not _combat_started and _combat_backend != null:
+		next_turn_btn.hide()
+		_log_immediate("Retrying player state...")
+		_wait_for_combat_state()
+		return
 	if _battle_over and not _processing_steps and ResourceLoader.exists("res://scenes/LoadoutGrid.tscn"):
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
@@ -360,9 +438,13 @@ func _resolve_spell_exchange(chosen: Dictionary, npc_spell: Dictionary) -> void:
 	var second_spell: Dictionary = npc_spell if player_init >= enemy_init else chosen
 	_spell_acts_second = false
 	await _resolve_spell_action(first, second, first_spell)
+	if _combat_session_invalid:
+		return
 	if first.hp > 0 and second.hp > 0:
 		_spell_acts_second = true
 		await _resolve_spell_action(second, first, second_spell)
+		if _combat_session_invalid:
+			return
 	if player.hp > 0 and enemy.hp > 0:
 		_apply_spell_poison(player)
 		_apply_spell_poison(enemy)
@@ -384,6 +466,8 @@ func _resolve_spell_exchange(chosen: Dictionary, npc_spell: Dictionary) -> void:
 func _resolve_spell_action(caster: Dictionary, target: Dictionary, spell: Dictionary) -> void:
 	_execute_spell(caster, target, spell)
 	await _flush_steps()
+	if _combat_session_invalid:
+		return
 	if caster.hp <= 0 or target.hp <= 0:
 		spell_panel.hide()
 	if caster.hp > 0 and target.hp > 0:
@@ -864,7 +948,7 @@ func _npc_swap() -> void:
 	var s2 = enemy.side_2
 	var m1 = _item_mods([s1])
 	var m2 = _item_mods([s2])
-	var pick = s1 if m1.atk_mul + m1.def_mul + m1.hp_mul >= m2.atk_mul + m2.def_mul + m2.hp_mul else s2
+	var pick = s1 if m1.atk_flat + m1.def_flat >= m2.atk_flat + m2.def_flat else s2
 	if _is_duplicate_swap(enemy, pick):
 		pick = s2 if pick == s1 else s1
 	enemy.equip_1 = pick
@@ -882,9 +966,9 @@ func _apply_mods(f: Dictionary) -> void:
 	var def = stats.def + buffs.def
 	var hp = stats.hp + buffs.hp
 	var mods = f.mods
-	f.atk = int(round(atk * (1.0 + mods.atk_mul)))
-	f.def = int(round(def * (1.0 + mods.def_mul)))
-	f.max_hp = int(round(hp * (1.0 + mods.hp_mul)))
+	f.atk = atk + mods.atk_flat
+	f.def = def + mods.def_flat
+	f.max_hp = hp
 	f.hp = min(f.hp, f.max_hp)
 	f.item_fx = _collect_item_effects([f.equip_1, f.equip_2])
 
@@ -1034,19 +1118,12 @@ func _type_advantage(t: String) -> String:
 		_: return ""
 
 func _item_mods(items: Array) -> Dictionary:
-	var mods := {"atk_mul": 0.0, "def_mul": 0.0, "hp_mul": 0.0}
+	var mods := {"atk_flat": 0, "def_flat": 0}
 	for it in items:
 		if it == null or it.is_empty():
 			continue
-		var rarity = str(it.get("rarity", "basic"))
-		var inc = 0.1 if rarity == "basic" else 0.2
-		var effects = it.get("effects", {})
-		if effects.has("power_flat"):
-			mods.atk_mul += inc
-		if effects.has("guard_flat"):
-			mods.def_mul += inc
-		if effects.has("tempo_flat"):
-			mods.hp_mul += inc
+		mods.atk_flat += int(_item_effect_value(it, "power_flat", 0))
+		mods.def_flat += int(_item_effect_value(it, "guard_flat", 0))
 	return mods
 
 func _collect_item_effects(items: Array) -> Dictionary:
@@ -1176,15 +1253,7 @@ func _initiative(f: Dictionary) -> float:
 func _item_initiative(item: Dictionary) -> float:
 	if item == null or item.is_empty():
 		return 0.0
-	var effects = item.get("effects", {})
-	var score: float = 0.0
-	if effects.has("tempo_flat"):
-		score += 2.0
-	if effects.has("power_flat"):
-		score += 1.0
-	if effects.has("guard_flat"):
-		score += 0.5
-	return score
+	return float(_item_effect_value(item, "tempo_flat", 0))
 
 func _pick_enemy_entity(player_type: String) -> String:
 	if _entities.is_empty():
@@ -1494,6 +1563,9 @@ func _reset_animations() -> void:
 
 func _exit_tree() -> void:
 	_reset_animations()
+	if is_instance_valid(_reg):
+		_reg.free()
+		_reg = null
 
 func _animate_lunge(node: Control, distance: float, scale_up: bool) -> void:
 	var tween := _begin_animation(node)
@@ -1539,6 +1611,8 @@ func _flush_steps() -> void:
 		return
 	_processing_steps = true
 	for step in _step_queue:
+		if _combat_session_invalid:
+			break
 		var msg := str(step.get("msg", ""))
 		if msg != "":
 			log_box.append_text("T%d: %s\n" % [_display_turn(), msg])

@@ -9,6 +9,9 @@ export type TokenRecord = {
 
 const accessMemory = new Map<string, TokenRecord>();
 const refreshMemory = new Map<string, TokenRecord>();
+const revokedAccess = new Set<string>();
+const revokedRefresh = new Set<string>();
+const production = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some((v) => ["production", "prod"].includes((v ?? "").toLowerCase()));
 
 function accessKey(token: string): string {
 	return `access:${token}`;
@@ -70,9 +73,10 @@ export async function issueTokenPair(
 }
 
 export async function getAccessToken(token: string): Promise<TokenRecord | null> {
+	if (revokedAccess.has(token)) return null;
 	const now = Date.now();
 	const cached = accessMemory.get(token);
-	if (cached && !isExpired(cached, now)) {
+	if (cached && !isExpired(cached, now) && !production) {
 		return cached;
 	}
 	if (cached && isExpired(cached, now)) {
@@ -81,17 +85,17 @@ export async function getAccessToken(token: string): Promise<TokenRecord | null>
 	try {
 		const redis = getRedis();
 		if (!(await ensureRedisReady())) {
-			return cached ?? null;
+			return null;
 		}
 		const raw = await redis.get(accessKey(token));
 		if (!raw) {
 			return null;
 		}
 		const parsed = JSON.parse(raw) as TokenRecord;
-		if (!parsed || typeof parsed.userId != "string") {
+		if (!parsed || typeof parsed.userId != "string" || !Number.isFinite(parsed.expiresAt)) {
 			return null;
 		}
-		if (isExpired(parsed, now)) {
+		if (isExpired(parsed, Date.now())) {
 			await redis.del(accessKey(token));
 			return null;
 		}
@@ -99,14 +103,15 @@ export async function getAccessToken(token: string): Promise<TokenRecord | null>
 		return parsed;
 	} catch (err) {
 		console.warn("[auth] access token read failed", err);
-		return cached ?? null;
+		return null;
 	}
 }
 
 export async function getRefreshToken(token: string): Promise<TokenRecord | null> {
+	if (revokedRefresh.has(token)) return null;
 	const now = Date.now();
 	const cached = refreshMemory.get(token);
-	if (cached && !isExpired(cached, now)) {
+	if (cached && !isExpired(cached, now) && !production) {
 		return cached;
 	}
 	if (cached && isExpired(cached, now)) {
@@ -115,17 +120,17 @@ export async function getRefreshToken(token: string): Promise<TokenRecord | null
 	try {
 		const redis = getRedis();
 		if (!(await ensureRedisReady())) {
-			return cached ?? null;
+			return null;
 		}
 		const raw = await redis.get(refreshKey(token));
 		if (!raw) {
 			return null;
 		}
 		const parsed = JSON.parse(raw) as TokenRecord;
-		if (!parsed || typeof parsed.userId != "string") {
+		if (!parsed || typeof parsed.userId != "string" || !Number.isFinite(parsed.expiresAt)) {
 			return null;
 		}
-		if (isExpired(parsed, now)) {
+		if (isExpired(parsed, Date.now())) {
 			await redis.del(refreshKey(token));
 			return null;
 		}
@@ -133,11 +138,12 @@ export async function getRefreshToken(token: string): Promise<TokenRecord | null
 		return parsed;
 	} catch (err) {
 		console.warn("[auth] refresh token read failed", err);
-		return cached ?? null;
+		return null;
 	}
 }
 
 export async function revokeAccessToken(token: string): Promise<void> {
+	revokedAccess.add(token);
 	accessMemory.delete(token);
 	try {
 		const redis = getRedis();
@@ -150,6 +156,7 @@ export async function revokeAccessToken(token: string): Promise<void> {
 }
 
 export async function revokeRefreshToken(token: string): Promise<void> {
+	revokedRefresh.add(token);
 	refreshMemory.delete(token);
 	try {
 		const redis = getRedis();

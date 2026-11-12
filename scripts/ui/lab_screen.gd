@@ -157,7 +157,12 @@ func _build_specialized_panel() -> void:
 		return
 	_specialized_panel = SpecializedPanel.new()
 	_specialized_panel.setup(_spell_registry, _backend, _debug.unlock_all_buildings, int(_db.get_balance("forge_upgrade_essence_base", 20)), int(_db.get_balance("forge_upgrade_essence_per_level", 10)))
+	_specialized_panel.debug_forge_updated.connect(_on_debug_forge_updated)
 	detail.add_child(_specialized_panel)
+
+func _on_debug_forge_updated(state: Dictionary) -> void:
+	_state = state
+	_refresh_from_state()
 
 func _setup_compact_navigation() -> void:
 	if _left_panel == null or _right_panel == null or _grid == null:

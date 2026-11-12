@@ -1,0 +1,22 @@
+extends SceneTree
+
+func _initialize() -> void:
+	var root_dir := OS.get_environment("ACCOUNT_TEST_ROOT").replace("\\", "/").to_lower()
+	assert(not root_dir.is_empty() and OS.get_user_data_dir().replace("\\", "/").to_lower().begins_with(root_dir + "/"))
+	var queue := PendingQueue.new()
+	var reconcile := Reconcile.new(queue)
+	assert(reconcile.set_identity("account-a"))
+	assert(reconcile.apply_server_state({"player_id": "account-a", "state_revision": 3, "wallet": {"essence": 30}}))
+	queue.enqueue({"client_action_id": "a-action"})
+	queue.save()
+	assert(reconcile.set_identity("account-b"))
+	assert(reconcile.get_state().is_empty() and queue.size() == 0)
+	assert(not reconcile.apply_server_state({"player_id": "account-a", "state_revision": 4}))
+	assert(reconcile.apply_server_state({"player_id": "account-b", "state_revision": 1, "wallet": {"essence": 9}}))
+	assert(reconcile.set_identity("account-a"))
+	assert(reconcile.get_state().wallet.essence == 30 and queue.contains_id("a-action"))
+	var second := Reconcile.new(PendingQueue.new())
+	assert(second.set_identity("account-b"))
+	assert(second.get_state().wallet.essence == 9)
+	print("ACCOUNT_STORAGE_PASS")
+	quit()

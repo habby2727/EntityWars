@@ -99,6 +99,7 @@ func _load_flags() -> void:
 func _apply_from_balance() -> void:
 	var db := StaticDB.new()
 	var section = db.get_balance("debug", {})
+	db.free()
 	if typeof(section) != TYPE_DICTIONARY:
 		return
 	_apply_dict(section)

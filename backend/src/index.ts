@@ -13,7 +13,7 @@ import {
     revokeRefreshToken,
     rotateRefreshToken
 } from "./auth/tokens";
-import { isUserDisabled, pingPostgres, postgresExample, upsertUser } from "./db/postgres";
+import { AccountStatusUnavailableError, isUserDisabled, pingPostgres, postgresExample, upsertUser } from "./db/postgres";
 import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
@@ -147,6 +147,7 @@ type PlayerWorldState = {
 
 type PlayerState = {
 	player_id: string;
+	state_revision: number;
 	display_name?: string;
 	wallet: ResourceWallet;
 	lab: LabState;
@@ -204,6 +205,7 @@ const CORS_ORIGINS = parseCorsOrigins();
 const dbFilePath = ensureDbPath(config.dbPath);
 const db = new Database(dbFilePath);
 db.exec("PRAGMA journal_mode = WAL;");
+db.exec("PRAGMA busy_timeout = 5000;");
 const getPlayerByIdStmt = db.prepare(
 	"SELECT player_id, display_name, state_json, updated_at FROM players WHERE player_id = ?"
 );
@@ -214,10 +216,10 @@ const insertPlayerStmt = db.prepare(
 	"INSERT INTO players (player_id, display_name, state_json, updated_at) VALUES (?, ?, ?, ?)"
 );
 const updatePlayerStmt = db.prepare(
-	"UPDATE players SET state_json = ?, updated_at = ? WHERE player_id = ?"
+	"UPDATE players SET state_json = json_set(?, '$.state_revision', CASE WHEN json_valid(state_json) THEN MAX(0, CAST(COALESCE(json_extract(state_json, '$.state_revision'), 0) AS INTEGER)) + 1 ELSE 1 END), updated_at = ? WHERE player_id = ?"
 );
 const getActionStmt = db.prepare(
-	"SELECT player_id, result_state_json FROM action_log WHERE player_id = ? AND client_action_id = ?"
+	"SELECT player_id, action_type, payload_json, result_state_json FROM action_log WHERE player_id = ? AND client_action_id = ?"
 );
 const insertActionStmt = db.prepare(
 	"INSERT INTO action_log (player_id, client_action_id, action_type, payload_json, result_state_json, created_at) VALUES (?, ?, ?, ?, ?, ?)"
@@ -305,6 +307,8 @@ function loadConfig(): Config {
 		merged = mergeConfig(merged, devConfig);
 	}
 	merged.dbPath = Bun.env.DB_PATH || merged.dbPath;
+	merged.port = Math.max(1, Math.min(65535, Math.trunc(getEnvNumber("PORT", merged.port))));
+	merged.host = Bun.env.HOST || merged.host;
 	const maxBody = getEnvNumber("MAX_BODY_BYTES", merged.maxBodyBytes);
 	const tokenSeconds = getEnvNumber("SESSION_TTL_SECONDS", merged.tokenTtlMs / 1000);
 	merged.maxBodyBytes = Math.max(1024, maxBody);
@@ -553,11 +557,13 @@ async function metricsResponse(): Promise<Response> {
 }
 
 function stateResponse(state: PlayerState, ok = true, error?: string, status = 200): Response {
+	const current = getPlayerByIdStmt.get(state.player_id) as { state_json: string } | undefined;
+	const authoritative = current ? safeParseState(current.state_json, state.player_id, state.display_name ?? "") ?? state : state;
 	return jsonResponse(
 		{
 			ok,
 			server_time_unix_ms: Date.now(),
-			updated_player_state: state,
+			updated_player_state: authoritative,
 			error: error ?? null
 		},
 		status
@@ -565,10 +571,12 @@ function stateResponse(state: PlayerState, ok = true, error?: string, status = 2
 }
 
 function stateResponseExtra(state: PlayerState, extra: Record<string, unknown> = {}): Response {
+	const current = getPlayerByIdStmt.get(state.player_id) as { state_json: string } | undefined;
+	const authoritative = current ? safeParseState(current.state_json, state.player_id, state.display_name ?? "") ?? state : state;
 	return jsonResponse({
 		ok: true,
 		server_time_unix_ms: Date.now(),
-		updated_player_state: state,
+		updated_player_state: authoritative,
 		...extra
 	});
 }
@@ -703,6 +711,15 @@ function getIdempotentState(playerId: string, clientActionId: string): PlayerSta
 	return ensurePlayerState(playerId);
 }
 
+function canonicalActionPayload(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonicalActionPayload).join(",")}]`;
+	if (value !== null && typeof value === "object") {
+		const obj = value as Record<string, unknown>;
+		return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}:${canonicalActionPayload(obj[key])}`).join(",")}}`;
+	}
+	return JSON.stringify(value) ?? "null";
+}
+
 function safeParseState(
 	stateJson: string,
 	playerId: string,
@@ -722,6 +739,7 @@ function safeParseState(
 	return {
 		...parsed,
 		player_id: playerId,
+		state_revision: Number.isSafeInteger(parsed.state_revision) && parsed.state_revision >= 0 ? parsed.state_revision : 0,
 		display_name: resolvedName,
 		wallet,
 		lab,
@@ -742,6 +760,7 @@ function createDefaultState(playerId: string, displayName: string, now: number, 
 	const world = normalizeWorld({}, now);
 	return {
 		player_id: playerId,
+		state_revision: 0,
 		display_name: displayName,
 		wallet,
 		lab,
@@ -986,7 +1005,9 @@ async function startServer(): Promise<void> {
 					const state = ensurePlayerState(playerId);
 					const now = Date.now();
 					const runtime = ensureLabRuntime(state);
-					const changed = cleanupLabRuntime(runtime, now) || autoCompleteResearch(state, now);
+					let changed = cleanupLabRuntime(runtime, now);
+					changed = autoCompleteResearch(state, now) || changed;
+					changed = refreshWorldPlayer(state.world, now) || changed;
 					if (changed) {
 						state.updated_at = now;
 						updatePlayerStmt.run(JSON.stringify(state), now, playerId);
@@ -1024,35 +1045,24 @@ async function startServer(): Promise<void> {
 						console.warn("Action: payload must be an object");
 						payload = {};
 					}
-					const already = getActionStmt.get(playerId, clientActionId) as
-						| { player_id: string; result_state_json: string | null }
-						| undefined;
-					if (already) {
-						if (already.result_state_json) {
-							const parsed = safeParseState(already.result_state_json, playerId, "");
-							if (parsed) {
-								return stateResponse(parsed);
-							}
+					const debugBypass = isDebugBypass(req);
+					const result = db.transaction(() => {
+						const already = getActionStmt.get(playerId, clientActionId) as { action_type: string; payload_json: string; result_state_json: string | null } | undefined;
+						if (already) {
+							let previousPayload: unknown;
+							try { previousPayload = JSON.parse(already.payload_json); } catch { throw new HttpError(409, "Cannot verify previous action payload."); }
+							if (already.action_type !== actionType || canonicalActionPayload(previousPayload) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+							return { state: ensurePlayerState(playerId), duplicate: true };
 						}
 						const state = ensurePlayerState(playerId);
-						return stateResponse(state);
-					}
-					const state = ensurePlayerState(playerId);
-					const debugBypass = isDebugBypass(req);
-					const updated = applyAction(state, actionType, payload, clientActionId, debugBypass);
-					if (updated.error) {
-						console.warn("Action: rejected", actionType, updated.error);
-						throw new HttpError(400, updated.error);
-					}
-					const walletDelta = computeWalletDelta(state.wallet, updated.state.wallet);
-					checkSuspiciousDelta(playerId, walletDelta, actionType, clientActionId);
-					const invariantError = getWalletInvariantError(updated.state.wallet);
-					if (invariantError) {
-						throw new HttpError(400, invariantError);
-					}
-					const now = Date.now();
-					updated.state.updated_at = now;
-					db.transaction(() => {
+						const updated = applyAction(state, actionType, payload, clientActionId, debugBypass);
+						if (updated.error) throw new HttpError(400, updated.error);
+						const walletDelta = computeWalletDelta(state.wallet, updated.state.wallet);
+						checkSuspiciousDelta(playerId, walletDelta, actionType, clientActionId);
+						const invariantError = getWalletInvariantError(updated.state.wallet);
+						if (invariantError) throw new HttpError(400, invariantError);
+						const now = Date.now();
+						updated.state.updated_at = now;
 						assertWalletInvariant(updated.state.wallet);
 						updatePlayerStmt.run(JSON.stringify(updated.state), now, playerId);
 						insertActionStmt.run(
@@ -1064,14 +1074,16 @@ async function startServer(): Promise<void> {
 							now
 						);
 						auditWalletMutation(playerId, walletDelta, actionType, clientActionId, now);
-					})();
+						return { state: updated.state, duplicate: false };
+					}).immediate();
+					if (result.duplicate) return stateResponseExtra(result.state, { duplicate: true });
 					void enqueueJob("audit_snapshot", {
 						player_id: playerId,
 						action_type: actionType,
-						at: now
+						at: Date.now()
 					});
 					broadcast({ type: "player_action", player_id: playerId, action_type: actionType });
-					return stateResponse(updated.state);
+					return stateResponse(result.state);
 				}
 
 				if (req.method == "GET" && url.pathname == "/market/orders") {
@@ -1768,8 +1780,8 @@ async function startServer(): Promise<void> {
 				return finalRes;
 			} catch (err) {
 				recordError();
-				const message = err instanceof HttpError ? err.message : "Internal server error";
-				const status = err instanceof HttpError ? err.status : 500;
+				const message = err instanceof HttpError || err instanceof AccountStatusUnavailableError ? err.message : "Internal server error";
+				const status = err instanceof AccountStatusUnavailableError ? 503 : err instanceof HttpError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);
@@ -2476,7 +2488,6 @@ function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
 		boss_tokens: bossTokens,
 		sessions
 	};
-	refreshWorldPlayer(world, now);
 	return world;
 }
 

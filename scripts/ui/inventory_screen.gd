@@ -164,7 +164,10 @@ func _setup_spell_progress() -> void:
 	var debug := DebugFlags.new()
 	debug.reload()
 	if debug.unlock_all_buildings:
-		_spell_progress = debug.load_lab_state().get("spell_progress", {})
+		var debug_state := debug.load_lab_state()
+		_spell_progress = debug_state.get("spell_progress", {})
+		_item_progress = debug_state.get("item_progress", {})
+		_item_progress_known = true
 		_spell_progress_known = true
 		return
 	_spell_backend = BackendClient.new()
@@ -178,9 +181,9 @@ func _setup_spell_progress() -> void:
 
 func _on_spell_progress_updated(state: Dictionary) -> void:
 	_spell_progress = state.get("spell_progress", {})
-	_spell_progress_known = true
+	_spell_progress_known = not state.is_empty()
 	_item_progress = state.get("item_progress", {})
-	_item_progress_known = true
+	_item_progress_known = not state.is_empty()
 	_refresh_build_levels()
 	_refresh_spell_catalog()
 
@@ -597,9 +600,9 @@ func _entry_details(entry: Variant) -> String:
 	elif kind == "build":
 		lines.append("Level: %d / 10" % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else "Level: unavailable")
 		lines.append("Rarity: %s" % str(entry.get("rarity", "Unknown")).capitalize())
-		var effects = entry.get("effects", {})
+		var effects = preload("res://scripts/domain/item_progress.gd").effective_item(entry, _item_progress).get("effects", {}) if _item_progress_known else entry.get("effects", {})
 		if effects is Dictionary and not effects.is_empty():
-			lines.append("Effects by level: %s" % _format_effects(effects))
+			lines.append("Current effects: %s" % _format_effects(effects) if _item_progress_known else "Effects by level: %s" % _format_effects(effects))
 	elif kind == "spell":
 		lines.append("Type: %s  |  %s" % [str(entry.get("type", "Unknown")).capitalize(), str(entry.get("category", "")).capitalize()])
 		lines.append("Power: x%.2f  |  Accuracy: %d%%  |  Cooldown: %d" % [float(entry.get("power_mult", 0)), int(round(float(entry.get("accuracy", 0)) * 100)), int(entry.get("cooldown_turns", 0))])

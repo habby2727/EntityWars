@@ -2,6 +2,7 @@
 
 const DEFAULT_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/entity_wars";
 const databaseUrl = Bun.env.DATABASE_URL || DEFAULT_DATABASE_URL;
+export class AccountStatusUnavailableError extends Error {}
 
 const poolSize = Number(Bun.env.PG_POOL_SIZE || 10);
 const idleTimeoutSeconds = Number(Bun.env.PG_IDLE_TIMEOUT_SECONDS || 30);
@@ -43,6 +44,9 @@ export async function isUserDisabled(userId: string): Promise<boolean> {
 		return row?.disabled === true;
 	} catch (err) {
 		console.warn("[postgres] user disabled check failed", err);
+		if ([Bun.env.NODE_ENV, Bun.env.BUN_ENV].some((v) => ["production", "prod"].includes((v ?? "").toLowerCase()))) {
+			throw new AccountStatusUnavailableError("Account status temporarily unavailable");
+		}
 		return false;
 	}
 }

@@ -55,24 +55,60 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
     expect(first.status).toBe(200);
     expect(first.data.updated_player_state.item_progress.bismuth_talisman.level).toBe(1);
     expect(first.data.updated_player_state.wallet.essence).toBe(80);
+    expect(first.data.updated_player_state.state_revision).toBe((seed.state_revision ?? 0) + 1);
     const duplicate = await action("forge-upgrade-1");
     expect(duplicate.status).toBe(200);
+    expect(duplicate.data.updated_player_state.state_revision).toBe(first.data.updated_player_state.state_revision);
     expect(JSON.parse(getRow().state_json).wallet.essence).toBe(80);
     expect(JSON.parse(getRow().state_json).item_progress.bismuth_talisman.level).toBe(1);
+    const conflicting = await request("/player/action", { client_action_id: "forge-upgrade-1", action_type: "FORGE_UPGRADE", payload: { item_id: "wind_amulet" } }, token);
+    expect(conflicting.status).toBe(409);
+    const differentType = await request("/player/action", { client_action_id: "forge-upgrade-1", action_type: "CLAIM_PRODUCTION", payload: { item_id: "bismuth_talisman" } }, token);
+    expect(differentType.status).toBe(409);
+    const second = await action("forge-upgrade-2");
+    expect(second.status).toBe(200);
+    expect(second.data.updated_player_state.state_revision).toBe(first.data.updated_player_state.state_revision + 1);
+    const oldRetry = await action("forge-upgrade-1");
+    expect(oldRetry.data.updated_player_state.item_progress.bismuth_talisman.level).toBe(2);
+    expect(oldRetry.data.updated_player_state.wallet.essence).toBe(50);
     await stop();
     await start();
     login = await request("/auth/dev_login", { name: "forge_test_isolated" });
     expect(login.status).toBe(200);
     token = login.data.token;
     const reloaded = (await request("/player/state", undefined, token)).data.updated_player_state;
-    expect(reloaded.item_progress.bismuth_talisman.level).toBe(1);
+    expect(reloaded.item_progress.bismuth_talisman.level).toBe(2);
     expect(reloaded.spell_progress).toEqual(originalSpells);
     expect(reloaded.research_flags.archive_basics).toBe(true);
     expect(reloaded.custom_fixture).toEqual({ retained: true });
     expect(reloaded.item_progress.bismuth_talisman.extra).toEqual({ retained: true });
     expect(reloaded.lab.buildings.build_forge.level).toBe(1);
     expect(reloaded.world.sessions).toEqual(seed.world.sessions);
-    expect(reloaded.wallet.essence).toBe(80);
+    expect(reloaded.wallet.essence).toBe(50);
+    const worldSeed = JSON.parse(getRow().state_json);
+    worldSeed.world.stamina = 0;
+    worldSeed.world.last_stamina_at = Date.now() - 3600_000;
+    worldSeed.world.last_entry_reset_at = Date.now();
+    worldSeed.world.last_boss_ticket_at = Date.now();
+    writeState(worldSeed);
+    const beforeWorldRevision = JSON.parse(getRow().state_json).state_revision;
+    expect((await request("/world/state", undefined, token)).status).toBe(200);
+    const afterWorld = JSON.parse(getRow().state_json);
+    expect(afterWorld.world.stamina).toBeGreaterThan(0);
+    expect(afterWorld.state_revision).toBe(beforeWorldRevision + 1);
+    expect((await request("/world/state", undefined, token)).status).toBe(200);
+    expect(JSON.parse(getRow().state_json).state_revision).toBe(afterWorld.state_revision);
+    for (const [scenario, balance, expectedSuccesses, expectedLevel, expectedBalance] of [["enough", 100, 2, 2, 50], ["limited", 20, 1, 1, 0]] as const) {
+      const state = JSON.parse(getRow().state_json);
+      state.wallet.essence = balance;
+      state.item_progress.bismuth_talisman.level = 0;
+      writeState(state);
+      const responses = await Promise.all([action(`forge-${scenario}-a`), action(`forge-${scenario}-b`)]);
+      expect(responses.filter((response) => response.status === 200)).toHaveLength(expectedSuccesses);
+      const after = JSON.parse(getRow().state_json);
+      expect(after.item_progress.bismuth_talisman.level).toBe(expectedLevel);
+      expect(after.wallet.essence).toBe(expectedBalance);
+    }
     for (const scenario of ["insufficient", "unbuilt", "maximum"]) {
       const state = JSON.parse(getRow().state_json);
       state.wallet.essence = scenario === "insufficient" ? 0 : 100;
@@ -84,6 +120,7 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
       const after = JSON.parse(getRow().state_json);
       expect(after.wallet.essence).toBe(state.wallet.essence);
       expect(after.item_progress.bismuth_talisman.level).toBe(state.item_progress.bismuth_talisman.level);
+      expect(after.state_revision).toBe(state.state_revision);
     }
   } finally {
     await stop();
