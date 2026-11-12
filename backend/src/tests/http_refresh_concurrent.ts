@@ -1,0 +1,10 @@
+const base = Bun.env.BASE_URL || "";
+if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(base) || Bun.env.FORGE_SMOKE_FIXTURE !== "1") throw new Error("Isolated test server required");
+const post = (path: string, body: unknown) => fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const login = await post("/v1/auth/login", { email: "refresh-concurrency@example.test", name: "refresh_concurrency" });
+if (!login.ok) throw new Error(`Login failed ${login.status}`);
+const { refresh_token } = await login.json() as { refresh_token: string };
+const replies = await Promise.all(Array.from({ length: 8 }, () => post("/v1/auth/refresh", { refresh_token })));
+const statuses = replies.map(r => r.status);
+if (statuses.filter(s => s === 200).length !== 1 || statuses.filter(s => s === 401).length !== 7) throw new Error(`Concurrent refresh statuses: ${statuses}`);
+console.log("PASS concurrent HTTP refresh: one success, seven rejections");

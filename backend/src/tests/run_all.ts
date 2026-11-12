@@ -499,14 +499,15 @@ async function testIdempotency(ctx: TestContext): Promise<void> {
 		wallet: { essence: 1000, core: 0 }
 	});
 	const buyActionId = crypto.randomUUID();
+	const marketOrderId = first.data.order_id;
 	first = await ctx.client.market_buy(buyer.token, {
 		client_action_id: buyActionId,
-		order_id: first.data.order_id,
+		order_id: marketOrderId,
 		amount: 5
 	});
 	second = await ctx.client.market_buy(buyer.token, {
 		client_action_id: buyActionId,
-		order_id: first.data.order_id,
+		order_id: marketOrderId,
 		amount: 5
 	});
 	assertEqual(first.status, 200, "market buy idempotency first status");
@@ -580,6 +581,7 @@ async function testIdempotency(ctx: TestContext): Promise<void> {
 	// WORLD_FARM
 	const worldPlayer = await createSeededPlayer(ctx, "idem_world", {
 		wallet: { essence: 200 },
+		buildings: { world_gate: { level: 1 } },
 		research_flags: { unlock_world_zones: true }
 	});
 	const zones = ctx.staticData.zones.map((z) => z.id);
@@ -1099,6 +1101,7 @@ async function testTradeJobs(ctx: TestContext): Promise<void> {
 async function testWorld(ctx: TestContext): Promise<void> {
 	const player = await createSeededPlayer(ctx, "world", {
 		wallet: { essence: 200 },
+		buildings: { world_gate: { level: 1 } },
 		research_flags: { unlock_world_zones: true }
 	});
 	const zoneId = ctx.staticData.zones[0]?.id ?? "zone_corrupted";

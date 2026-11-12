@@ -462,9 +462,11 @@ func _get_farm_count() -> int:
 	return max(1, count)
 
 func _make_client_id() -> String:
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	return "%08x" % rng.randi()
+	var bytes := Crypto.new().generate_random_bytes(16)
+	bytes[6] = (bytes[6] & 15) | 64
+	bytes[8] = (bytes[8] & 63) | 128
+	var hex := bytes.hex_encode()
+	return "%s-%s-%s-%s-%s" % [hex.substr(0, 8), hex.substr(8, 4), hex.substr(12, 4), hex.substr(16, 4), hex.substr(20, 12)]
 
 func _set_error(message: String) -> void:
 	if _error_label != null:

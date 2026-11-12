@@ -38,8 +38,14 @@ export async function upsertUser(user: { id: string; email: string; displayName?
 }
 
 export async function isUserDisabled(userId: string): Promise<boolean> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
-		const rows = await sql`SELECT disabled FROM users WHERE id = ${userId}`;
+		const query = sql`SELECT disabled FROM users WHERE id = ${userId}`;
+		const timeoutMs = Number(Bun.env.AUTH_ACCOUNT_TIMEOUT_MS || 3000);
+		const rows = await Promise.race([
+			query,
+			new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Account status query timed out")), Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 3000); })
+		]);
 		const row = rows[0] as { disabled?: boolean } | undefined;
 		return row?.disabled === true;
 	} catch (err) {
@@ -48,6 +54,8 @@ export async function isUserDisabled(userId: string): Promise<boolean> {
 			throw new AccountStatusUnavailableError("Account status temporarily unavailable");
 		}
 		return false;
+	} finally {
+		if (timer) clearTimeout(timer);
 	}
 }
 

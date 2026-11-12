@@ -8,7 +8,7 @@ $proxy = $null
 $productionServer = $null
 $oldLocation = Get-Location
 $savedEnv = @{}
-foreach ($key in @('DATABASE_URL', 'REDIS_URL', 'DB_PATH', 'NODE_ENV', 'BUN_ENV', 'HOST', 'PORT', 'DEBUG_BYPASS', 'LOGIN_RATE_LIMIT_MAX', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP', 'FORGE_SMOKE_URL', 'FORGE_SMOKE_ISOLATED', 'FORGE_SMOKE_USER_ROOT', 'FORGE_SMOKE_FIXTURE', 'COMBAT_RESTART_TEST', 'LOST_RESPONSE_URL', 'LOST_RESPONSE_PORT', 'LOST_RESPONSE_MARKER', 'LOST_RESPONSE_RESTART', 'TEST_AUTH_USER_ID')) {
+foreach ($key in @('DATABASE_URL', 'REDIS_URL', 'DB_PATH', 'NODE_ENV', 'BUN_ENV', 'HOST', 'PORT', 'DEBUG_BYPASS', 'LOGIN_RATE_LIMIT_MAX', 'RATE_LIMIT_MAX', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP', 'FORGE_SMOKE_URL', 'FORGE_SMOKE_ISOLATED', 'FORGE_SMOKE_USER_ROOT', 'FORGE_SMOKE_FIXTURE', 'COMBAT_RESTART_TEST', 'LOST_RESPONSE_URL', 'LOST_RESPONSE_PORT', 'LOST_RESPONSE_MARKER', 'LOST_RESPONSE_RESTART', 'TEST_AUTH_USER_ID', 'BASE_URL')) {
     $savedEnv[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
 }
 try {
@@ -155,6 +155,7 @@ try {
         }
         Write-Output 'PASS Godot account test process exit code 0'
     }
+    $legacyLogin = Invoke-RestMethod -Method Post -Uri "$base/auth/dev_login" -ContentType 'application/json' -Body '{"name":"legacy_production_test"}'
     $devPort = $env:PORT
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
     $listener.Start()
@@ -174,9 +175,10 @@ try {
     }
     if (-not $prodReady) { throw 'Production test server not ready' }
     Invoke-RestMethod -Uri "$prodBase/player/state" -Headers @{ Authorization = "Bearer $($enabled.access_token)" } | Out-Null
+    Invoke-RestMethod -Uri "$prodBase/player/state" -Headers @{ Authorization = "Bearer $($legacyLogin.token)" } | Out-Null
     foreach ($service in @('redis', 'postgres')) {
-        docker compose -p $project -f $compose stop $service | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Could not stop test $service" }
+        docker compose -p $project -f $compose pause $service | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Could not pause test $service" }
         try {
             Invoke-RestMethod -Uri "$prodBase/player/state" -Headers @{ Authorization = "Bearer $($enabled.access_token)" } -TimeoutSec 15 | Out-Null
             throw "Production accepted a request while $service was unavailable"
@@ -185,15 +187,15 @@ try {
             if ($_.Exception.Response.StatusCode.value__ -ne $expected) { throw }
         }
         Write-Output "PASS production $service unavailable: HTTP $expected"
-        docker compose -p $project -f $compose up -d --wait $service | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Could not restart test $service" }
         if ($service -eq 'redis') {
-            $env:TEST_AUTH_USER_ID = [string]$state.updated_player_state.player_id
-            $env:FORGE_SMOKE_FIXTURE = '1'
-            bun run src/tests/seed_auth_token.ts
-            if ($LASTEXITCODE -ne 0) { throw 'Could not seed isolated Redis token' }
-            $enabled.access_token = 'integration-recovery-token'
+            try {
+                Invoke-RestMethod -Uri "$prodBase/player/state" -Headers @{ Authorization = "Bearer $($legacyLogin.token)" } -TimeoutSec 15 | Out-Null
+                throw 'Production accepted a cached legacy session without Redis'
+            } catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
+            Write-Output 'PASS production cached legacy session rejected when Redis unavailable'
         }
+        docker compose -p $project -f $compose unpause $service | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Could not unpause test $service" }
         $recovered = $false
         for ($i = 0; $i -lt 40; $i++) {
             try {
@@ -204,6 +206,13 @@ try {
         if (-not $recovered) { throw "Authentication did not recover after restarting $service" }
         Write-Output "PASS $service recovery"
     }
+    $env:BASE_URL = $base
+    $env:FORGE_SMOKE_FIXTURE = '1'
+    bun run src/tests/http_refresh_concurrent.ts
+    if ($LASTEXITCODE -ne 0) { throw 'Concurrent HTTP refresh test failed' }
+    $env:RATE_LIMIT_MAX = '1000'
+    bun run test:all
+    if ($LASTEXITCODE -ne 0) { throw "Backend test:all failed with exit code $LASTEXITCODE" }
 } finally {
     if ($productionServer -and -not $productionServer.HasExited) { Stop-Process -Id $productionServer.Id; $productionServer.WaitForExit() }
     if ($proxy -and -not $proxy.HasExited) { Stop-Process -Id $proxy.Id; $proxy.WaitForExit() }

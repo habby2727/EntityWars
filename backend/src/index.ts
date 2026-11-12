@@ -695,12 +695,18 @@ function ensurePlayerState(playerId: string): PlayerState {
 	return parsed;
 }
 
-function getIdempotentState(playerId: string, clientActionId: string): PlayerState | null {
+function getIdempotentState(playerId: string, clientActionId: string, actionType?: string, payload?: unknown): PlayerState | null {
 	const already = getActionStmt.get(playerId, clientActionId) as
-		| { player_id: string; result_state_json: string | null }
+		| { player_id: string; action_type: string; payload_json: string; result_state_json: string | null }
 		| undefined;
 	if (!already) {
 		return null;
+	}
+	if (actionType) {
+		let previous: unknown;
+		try { previous = JSON.parse(already.payload_json); } catch { throw new HttpError(409, "Stored action payload is invalid."); }
+		if (already.action_type !== actionType || canonicalActionPayload(previous) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+		return ensurePlayerState(playerId);
 	}
 	if (already.result_state_json) {
 		const parsed = safeParseState(already.result_state_json, playerId, "");
@@ -1158,7 +1164,7 @@ async function startServer(): Promise<void> {
 						console.warn("Market: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
-					const stored = getIdempotentState(playerId, clientActionId);
+					const stored = getIdempotentState(playerId, clientActionId, "MARKET_ORDER", body);
 					const orderId = makeOrderId(playerId, clientActionId);
 					if (stored) {
 						return stateResponseExtra(stored, { order_id: orderId });
@@ -1265,7 +1271,7 @@ async function startServer(): Promise<void> {
 						console.warn("Market: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
-					const stored = getIdempotentState(playerId, clientActionId);
+					const stored = getIdempotentState(playerId, clientActionId, "MARKET_CANCEL", body);
 					if (stored) {
 						return stateResponse(stored);
 					}
@@ -1335,7 +1341,7 @@ async function startServer(): Promise<void> {
 						console.warn("Market: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
-					const stored = getIdempotentState(buyerId, clientActionId);
+					const stored = getIdempotentState(buyerId, clientActionId, "MARKET_BUY", body);
 					if (stored) {
 						return stateResponse(stored);
 					}
@@ -1517,7 +1523,7 @@ async function startServer(): Promise<void> {
 						console.warn("Trade: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
-					const existing = getIdempotentState(providerId, clientActionId);
+					const existing = getIdempotentState(providerId, clientActionId, "TRADE_JOB_CREATE", body);
 					const jobId = makeTradeJobId(providerId, clientActionId);
 					if (existing) {
 						return stateResponseExtra(existing, { job_id: jobId });
@@ -4346,7 +4352,7 @@ function submitTradeRun(
 	if (!jobId) {
 		return { error: "Missing job_id." };
 	}
-	const stored = getIdempotentState(customerId, clientActionId);
+	const stored = getIdempotentState(customerId, clientActionId, "TRADE_SUBMIT", body);
 	const runId = makeTradeRunId(customerId, clientActionId, jobId);
 	if (stored) {
 		const existingRun = getTradeRunStmt.get(runId) as Record<string, any> | undefined;
@@ -4459,7 +4465,7 @@ function claimTradeRun(
 	if (!runId) {
 		return { error: "Missing run_id." };
 	}
-	const stored = getIdempotentState(customerId, clientActionId);
+	const stored = getIdempotentState(customerId, clientActionId, "TRADE_CLAIM", body);
 	if (stored) {
 		return { state: stored };
 	}
@@ -4580,7 +4586,7 @@ function enterWorldSession(
 		logSuspiciousAction(playerId, { essence: -entryFee }, "WORLD_ENTER", zoneId);
 		return { error: "Suspicious entry fee." };
 	}
-	const stored = getIdempotentState(playerId, clientActionId);
+	const stored = getIdempotentState(playerId, clientActionId, "WORLD_ENTER", body);
 	const sessionId = makeWorldSessionId(playerId, clientActionId, zoneId);
 	if (stored) {
 		return {
@@ -4659,7 +4665,7 @@ function farmWorldSession(
 	if (!sessionId) {
 		return { error: "Missing session_id." };
 	}
-	const stored = getIdempotentState(playerId, clientActionId);
+	const stored = getIdempotentState(playerId, clientActionId, "WORLD_FARM", body);
 	if (stored) {
 		const world = stored.world;
 		const session = world.sessions[sessionId];
@@ -4744,7 +4750,7 @@ function claimWorldSession(
 	if (!sessionId) {
 		return { error: "Missing session_id." };
 	}
-	const stored = getIdempotentState(playerId, clientActionId);
+	const stored = getIdempotentState(playerId, clientActionId, "WORLD_CLAIM", body);
 	if (stored) {
 		return { state: stored, sessionId, claimed: {} };
 	}
@@ -4835,7 +4841,7 @@ function attackBoss(
 	if (!allowBossIp(ip, bossState.window_ends_at)) {
 		return { error: "Boss attack rate limit reached." };
 	}
-	const stored = getIdempotentState(playerId, clientActionId);
+	const stored = getIdempotentState(playerId, clientActionId, "BOSS_ATTACK", body);
 	if (stored) {
 		const existingBoss = getBossFromWorld(ensureWorldState(now), bossId);
 		const score = existingBoss?.contributors[playerId] ?? 0;
@@ -4937,7 +4943,7 @@ function claimBossRewards(
 	if (now <= bossState.window_ends_at) {
 		return { error: "Boss window still active." };
 	}
-	const stored = getIdempotentState(playerId, clientActionId);
+	const stored = getIdempotentState(playerId, clientActionId, "BOSS_CLAIM", body);
 	if (stored) {
 		return { state: stored, claimed: {} };
 	}

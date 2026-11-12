@@ -7,6 +7,8 @@ export type SessionRecord = {
 };
 
 const inMemorySessions = new Map<string, SessionRecord>();
+const revokedSessions = new Set<string>();
+const production = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some(v => ["production", "prod"].includes((v ?? "").toLowerCase()));
 
 function makeSessionKey(token: string): string {
 	return `sess:${token}`;
@@ -31,35 +33,43 @@ export async function issueSession(userId: string, ttlMs: number): Promise<strin
 		createdAt: now,
 		expiresAt: now + ttlMs
 	};
-	inMemorySessions.set(token, record);
+	let persisted = false;
 	try {
 		const redis = getRedis();
 		if (await ensureRedisReady()) {
 			await redis.set(makeSessionKey(token), JSON.stringify(record), "PX", ttlMs);
+			persisted = true;
 		}
 	} catch (err) {
 		console.warn("[auth] redis session write failed", err);
 	}
+	if (production && !persisted) throw new Error("Session storage unavailable");
+	inMemorySessions.set(token, record);
 	return token;
 }
 
 export async function revokeSession(token: string): Promise<void> {
 	inMemorySessions.delete(token);
+	revokedSessions.add(token);
+	let persisted = false;
 	try {
 		const redis = getRedis();
 		if (await ensureRedisReady()) {
 			await redis.del(makeSessionKey(token));
+			persisted = true;
 		}
 	} catch (err) {
 		console.warn("[auth] redis session delete failed", err);
 	}
+	if (production && !persisted) throw new Error("Session revocation unavailable");
 }
 
 export async function getSession(token: string): Promise<SessionRecord | null> {
+	if (revokedSessions.has(token)) return null;
 	const now = Date.now();
 	const cached = inMemorySessions.get(token);
 	if (cached) {
-		if (cached.expiresAt > now) {
+		if (cached.expiresAt > now && !production) {
 			return cached;
 		}
 		inMemorySessions.delete(token);
@@ -67,14 +77,14 @@ export async function getSession(token: string): Promise<SessionRecord | null> {
 	try {
 		const redis = getRedis();
 		if (!(await ensureRedisReady())) {
-			return cached ?? null;
+			return !production && cached && cached.expiresAt > Date.now() ? cached : null;
 		}
 		const raw = await redis.get(makeSessionKey(token));
 		if (!raw) {
 			return null;
 		}
 		const parsed = JSON.parse(raw) as SessionRecord;
-		if (!parsed || typeof parsed.userId != "string") {
+		if (!parsed || typeof parsed.userId != "string" || !Number.isFinite(parsed.expiresAt)) {
 			return null;
 		}
 		if (parsed.expiresAt <= now) {
@@ -85,6 +95,6 @@ export async function getSession(token: string): Promise<SessionRecord | null> {
 		return parsed;
 	} catch (err) {
 		console.warn("[auth] redis session read failed", err);
-		return cached ?? null;
+		return !production && cached && cached.expiresAt > Date.now() ? cached : null;
 	}
 }
