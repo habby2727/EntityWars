@@ -56,6 +56,12 @@ var _combat_backend: BackendClient
 var _combat_started := false
 var _combat_session_invalid := false
 var _combat_identity := ""
+var _combat_debug := false
+# Populated only by a future server-authoritative combat verification flow.
+var _verified_combat_match_id := ""
+var _reward_action_id := ""
+var _reward_request_id := ""
+var _reward_label: Label
 var _combat_wait_timer: Timer
 var _type_effectiveness := {}
 var _spell_exchange_active := false
@@ -235,6 +241,7 @@ func _status_effect_text(kind: String, value: float) -> String:
 
 func _begin_combat_initialization() -> void:
 	var debug := DebugFlags.new()
+	_combat_debug = debug.unlock_all_buildings
 	if debug.unlock_all_buildings:
 		_combat_spell_state = debug.load_lab_state()
 		debug.free()
@@ -245,6 +252,7 @@ func _begin_combat_initialization() -> void:
 	_combat_backend.base_url = backend_url
 	_combat_backend.auto_dev_login = false
 	_combat_backend.state_updated.connect(_on_combat_state_updated)
+	_combat_backend.api_completed.connect(_on_combat_reward_completed)
 	add_child(_combat_backend)
 	if _combat_backend.token.is_empty():
 		_log_immediate("Offline battle: no online progression loaded.")
@@ -1701,6 +1709,8 @@ func _handle_battle_end() -> void:
 		else:
 			_log_immediate("Match draw.")
 		_battle_over = true
+		if _player_wins > _enemy_wins:
+			_show_unverified_reward_status()
 		_show_highlights()
 		next_turn_btn.text = "Return to Loadout"
 		next_turn_btn.show()
@@ -1722,6 +1732,8 @@ func _handle_battle_end() -> void:
 		else:
 			_log_immediate("Match loss.")
 		_battle_over = true
+		if _player_wins > _enemy_wins:
+			_show_unverified_reward_status()
 		_show_highlights()
 		next_turn_btn.text = "Return to Loadout"
 		next_turn_btn.show()
@@ -1759,6 +1771,51 @@ func _record_spell_damage(spell: Dictionary, amount: int) -> void:
 	if not spell_name.is_empty() and amount > 0:
 		_spell_damage_totals[spell_name] = int(_spell_damage_totals.get(spell_name, 0)) + amount
 
+func _show_unverified_reward_status() -> void:
+	if _verified_combat_match_id.is_empty() or _combat_debug or _combat_session_invalid or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity:
+		_set_reward_status("Rewards unavailable: online combat verification required.")
+		return
+	if _reward_action_id.is_empty():
+		_reward_action_id = _combat_backend._make_uuid()
+	_reward_request_id = _combat_backend.request_api("POST", "/combat/rewards/claim", {"match_id": _verified_combat_match_id, "client_action_id": _reward_action_id}, true)
+	_set_reward_status("Claiming..." if not _reward_request_id.is_empty() else "Reward claim unavailable; retry later.")
+
+func _on_combat_reward_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id.is_empty() or request_id != _reward_request_id:
+		return
+	_reward_request_id = ""
+	if _combat_session_invalid or _combat_backend == null or _combat_backend._verified_player_id != _combat_identity:
+		_set_reward_status("Reward verification unavailable: session changed.")
+		return
+	if not ok:
+		_set_reward_status("Reward verification unavailable or rejected: %s" % str(data.get("error", "unknown error")))
+		return
+	var reward: Variant = data.get("reward")
+	var prefix := "Already claimed: " if bool(data.get("duplicate", false)) else ""
+	if reward == null:
+		_set_reward_status(prefix + "No material dropped.")
+	elif reward is Dictionary:
+		var id := str(reward.get("resource_id", ""))
+		_set_reward_status(prefix + "%s x%d" % [_reward_resource_name(id), int(reward.get("amount", 0))])
+	else:
+		_set_reward_status("Reward response invalid.")
+
+func _reward_resource_name(id: String) -> String:
+	var file := FileAccess.open("res://data/static/resources.json", FileAccess.READ)
+	if file:
+		var parsed: Variant = JSON.parse_string(file.get_as_text())
+		if parsed is Dictionary:
+			for resource in parsed.get("resources", []):
+				if resource is Dictionary and str(resource.get("id", "")) == id:
+					return str(resource.get("display_name", id))
+	return id
+
+func _set_reward_status(message: String) -> void:
+	_highlights["reward_status"] = message
+	_log_immediate(message)
+	if is_instance_valid(_reward_label):
+		_reward_label.text = message
+
 func _show_highlights() -> void:
 	var lines: Array[String] = []
 	if int(_highlights.damage) > 0:
@@ -1783,7 +1840,7 @@ func _show_highlights() -> void:
 			total = int(_spell_damage_totals[spell_name])
 	if total > 0:
 		lines.append("Most damaging spell: %s (%d total)" % [strongest, total])
-	if lines.is_empty():
+	if lines.is_empty() and not _highlights.has("reward_status"):
 		return
 	var panel := PanelContainer.new()
 	panel.position = Vector2(24, 24)
@@ -1798,7 +1855,15 @@ func _show_highlights() -> void:
 	label.text = "BATTLE HIGHLIGHTS\n" + "\n".join(lines)
 	label.add_theme_font_size_override("font_size", 17)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	panel.add_child(label)
+	var content := VBoxContainer.new()
+	panel.add_child(content)
+	content.add_child(label)
+	if _highlights.has("reward_status"):
+		_reward_label = Label.new()
+		_reward_label.text = str(_highlights.reward_status)
+		_reward_label.add_theme_font_size_override("font_size", 16)
+		_reward_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		content.add_child(_reward_label)
 	add_child(panel)
 
 func _reset_fighter(f: Dictionary) -> void:

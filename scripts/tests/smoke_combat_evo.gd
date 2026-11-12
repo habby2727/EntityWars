@@ -88,6 +88,9 @@ func _run() -> void:
 	if not scene._battle_over or not scene.next_turn_btn.visible:
 		_fail("Match did not finish")
 		return
+	if not scene._reward_request_id.is_empty() or not scene._verified_combat_match_id.is_empty() or not str(scene._highlights.get("reward_status", "")).contains("verification required"):
+		_fail("Offline combat must not claim unverified rewards")
+		return
 	await _capture("highlights")
 	if viewport.size == Vector2i(1280, 720):
 		var ordered: Array[int] = []

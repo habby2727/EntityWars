@@ -21,6 +21,7 @@ import { enqueueJob, getJobQueueSize } from "./jobs/queue";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
+import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 
 type RateLimitConfig = {
 	windowMs: number;
@@ -1031,6 +1032,35 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (req.method == "POST" && url.pathname == "/combat/rewards/claim") {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					const matchId = typeof body?.match_id === "string" ? body.match_id.trim().toLowerCase() : "";
+					const actionId = typeof body?.client_action_id === "string" ? body.client_action_id.trim().toLowerCase() : "";
+					const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+					if (!uuid.test(matchId) || !uuid.test(actionId)) throw new HttpError(400, "match_id and client_action_id must be UUIDs.");
+					const payload = { match_id: matchId };
+					const result = claimVerifiedCombatReward(db, matchId, playerId, (reward, duplicate) => {
+						const prior = getIdempotentState(playerId, actionId, "COMBAT_REWARD_CLAIM", payload);
+						if (prior && !duplicate) throw new HttpError(409, "Inconsistent combat reward action.");
+						const state = prior ?? ensurePlayerState(playerId);
+						const now = Date.now();
+						if (!duplicate && reward) {
+							if (!isValidResourceId(reward.resource_id)) throw new HttpError(400, "Unknown reward resource.");
+							const before = { ...state.wallet };
+							applyWalletGrant(state.wallet, { [reward.resource_id]: reward.amount });
+							assertWalletInvariant(state.wallet);
+							state.updated_at = now;
+							updatePlayerStmt.run(JSON.stringify(state), now, playerId);
+							auditWalletMutation(playerId, computeWalletDelta(before, state.wallet), "COMBAT_REWARD_CLAIM", matchId, now);
+						}
+						if (!prior) insertActionStmt.run(playerId, actionId, "COMBAT_REWARD_CLAIM", JSON.stringify(payload), JSON.stringify(state), now);
+						return state;
+					});
+					return stateResponseExtra(result.state, { match_id: matchId, reward: result.reward, duplicate: result.duplicate });
+				}
+
 				if (req.method == "POST" && url.pathname == "/player/action") {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, {
@@ -1846,8 +1876,8 @@ async function startServer(): Promise<void> {
 			} catch (err) {
 				recordError();
 				const sqliteBusy = typeof err === "object" && err !== null && typeof (err as { code?: unknown }).code === "string" && String((err as { code: string }).code).startsWith("SQLITE_BUSY");
-				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof AccountStatusUnavailableError ? err.message : "Internal server error";
-				const status = sqliteBusy || err instanceof AccountStatusUnavailableError ? 503 : err instanceof HttpError ? err.status : 500;
+				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError ? err.message : "Internal server error";
+				const status = sqliteBusy || err instanceof AccountStatusUnavailableError ? 503 : err instanceof HttpError || err instanceof CombatRewardError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);
