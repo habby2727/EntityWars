@@ -204,8 +204,16 @@ const EXPENSIVE_RATE_MAX = getEnvNumber("EXPENSIVE_RATE_LIMIT_MAX", 60);
 const CORS_ORIGINS = parseCorsOrigins();
 const dbFilePath = ensureDbPath(config.dbPath);
 const db = new Database(dbFilePath);
-db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA busy_timeout = 5000;");
+for (let attempt = 0; ; attempt++) {
+	try {
+		db.exec("PRAGMA journal_mode = WAL;");
+		break;
+	} catch (err) {
+		if (attempt >= 50 || typeof err !== "object" || err === null || !String((err as { code?: unknown }).code).startsWith("SQLITE_BUSY")) throw err;
+		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+	}
+}
 const getPlayerByIdStmt = db.prepare(
 	"SELECT player_id, display_name, state_json, updated_at FROM players WHERE player_id = ?"
 );
@@ -1008,6 +1016,7 @@ async function startServer(): Promise<void> {
 
 				if (url.pathname == "/player/state") {
 					const playerId = await requireAuth(req, ctx);
+					return db.transaction(() => {
 					const state = ensurePlayerState(playerId);
 					const now = Date.now();
 					const runtime = ensureLabRuntime(state);
@@ -1019,6 +1028,7 @@ async function startServer(): Promise<void> {
 						updatePlayerStmt.run(JSON.stringify(state), now, playerId);
 					}
 					return stateResponse(state);
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/player/action") {
@@ -1164,6 +1174,7 @@ async function startServer(): Promise<void> {
 						console.warn("Market: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
 					const stored = getIdempotentState(playerId, clientActionId, "MARKET_ORDER", body);
 					const orderId = makeOrderId(playerId, clientActionId);
 					if (stored) {
@@ -1253,6 +1264,7 @@ async function startServer(): Promise<void> {
 						throw new HttpError(500, "Failed to resolve seller state.");
 					}
 					return stateResponseExtra(state, { order_id: orderId });
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/market/cancel") {
@@ -1271,6 +1283,7 @@ async function startServer(): Promise<void> {
 						console.warn("Market: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
 					const stored = getIdempotentState(playerId, clientActionId, "MARKET_CANCEL", body);
 					if (stored) {
 						return stateResponse(stored);
@@ -1323,6 +1336,7 @@ async function startServer(): Promise<void> {
 						throw new HttpError(500, "Failed to resolve seller state.");
 					}
 					return stateResponse(state);
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/market/buy") {
@@ -1341,6 +1355,7 @@ async function startServer(): Promise<void> {
 						console.warn("Market: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
 					const stored = getIdempotentState(buyerId, clientActionId, "MARKET_BUY", body);
 					if (stored) {
 						return stateResponse(stored);
@@ -1458,6 +1473,7 @@ async function startServer(): Promise<void> {
 						throw new HttpError(500, "Failed to resolve buyer state.");
 					}
 					return stateResponse(buyerState);
+					}).immediate();
 				}
 
 				if (req.method == "GET" && url.pathname == "/trade/jobs") {
@@ -1523,6 +1539,7 @@ async function startServer(): Promise<void> {
 						console.warn("Trade: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
 					const existing = getIdempotentState(providerId, clientActionId, "TRADE_JOB_CREATE", body);
 					const jobId = makeTradeJobId(providerId, clientActionId);
 					if (existing) {
@@ -1533,6 +1550,7 @@ async function startServer(): Promise<void> {
 						throw new HttpError(400, createResult.error || "Failed to create trade job.");
 					}
 					return stateResponseExtra(createResult.state, { job_id: createResult.jobId });
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/trade/submit") {
@@ -1551,6 +1569,8 @@ async function startServer(): Promise<void> {
 						console.warn("Trade: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
+					getIdempotentState(customerId, clientActionId, "TRADE_SUBMIT", body);
 					const submitResult = submitTradeRun(customerId, clientActionId, body);
 					if (submitResult.error || !submitResult.state) {
 						throw new HttpError(400, submitResult.error || "Failed to submit trade.");
@@ -1559,6 +1579,7 @@ async function startServer(): Promise<void> {
 						run_id: submitResult.runId,
 						completes_at: submitResult.completesAt
 					});
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/trade/claim") {
@@ -1577,6 +1598,8 @@ async function startServer(): Promise<void> {
 						console.warn("Trade: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
+					getIdempotentState(customerId, clientActionId, "TRADE_CLAIM", body);
 					const claimResult = claimTradeRun(customerId, clientActionId, body);
 					if (claimResult.error || !claimResult.state) {
 						throw new HttpError(400, claimResult.error || "Failed to claim trade.");
@@ -1584,12 +1607,14 @@ async function startServer(): Promise<void> {
 					return stateResponseExtra(claimResult.state, {
 						output_amount: claimResult.outputAmount
 					});
+					}).immediate();
 				}
 
 				if (req.method == "GET" && url.pathname == "/world/state") {
+					const playerId = await tryAuth(req, ctx);
+					return db.transaction(() => {
 					const now = Date.now();
 					const worldState = ensureWorldState(now);
-					const playerId = await tryAuth(req, ctx);
 					if (playerId) {
 						const state = ensurePlayerState(playerId);
 						const world = ensurePlayerWorld(state, now);
@@ -1609,6 +1634,7 @@ async function startServer(): Promise<void> {
 						server_time_unix_ms: now,
 						world_state: worldState
 					});
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/world/enter") {
@@ -1627,6 +1653,13 @@ async function startServer(): Promise<void> {
 						console.warn("World: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
+					const duplicate = getIdempotentState(playerId, clientActionId, "WORLD_ENTER", body);
+					if (duplicate) {
+						const zoneId = String(body.zone_id ?? "").trim();
+						const sessionId = makeWorldSessionId(playerId, clientActionId, zoneId);
+						return stateResponseExtra(duplicate, { session_id: sessionId, zone_id: zoneId, modifiers: duplicate.world.sessions[sessionId]?.modifiers ?? [], duplicate: true });
+					}
 					const debugBypass = isDebugBypass(req);
 					const result = enterWorldSession(playerId, clientActionId, body, debugBypass);
 					if (result.error || !result.state) {
@@ -1637,6 +1670,7 @@ async function startServer(): Promise<void> {
 						zone_id: result.zoneId,
 						modifiers: result.modifiers
 					});
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/world/farm") {
@@ -1655,6 +1689,13 @@ async function startServer(): Promise<void> {
 						console.warn("World: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
+					const duplicate = getIdempotentState(playerId, clientActionId, "WORLD_FARM", body);
+					if (duplicate) {
+						const sessionId = String(body.session_id ?? "");
+						const zoneId = duplicate.world.sessions[sessionId]?.zone_id;
+						return stateResponseExtra(duplicate, { session_id: sessionId, drops: {}, heat: zoneId ? duplicate.world.zone_progress[zoneId]?.heat ?? 0 : 0, stamina: duplicate.world.stamina, duplicate: true });
+					}
 					const result = farmWorldSession(playerId, clientActionId, body);
 					if (result.error || !result.state) {
 						throw new HttpError(400, result.error || "Failed to farm world zone.");
@@ -1665,6 +1706,7 @@ async function startServer(): Promise<void> {
 						heat: result.heat,
 						stamina: result.stamina
 					});
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/world/claim") {
@@ -1683,6 +1725,9 @@ async function startServer(): Promise<void> {
 						console.warn("World: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
+					const duplicate = getIdempotentState(playerId, clientActionId, "WORLD_CLAIM", body);
+					if (duplicate) return stateResponseExtra(duplicate, { session_id: body.session_id, claimed: {}, duplicate: true });
 					const result = claimWorldSession(playerId, clientActionId, body);
 					if (result.error || !result.state) {
 						throw new HttpError(400, result.error || "Failed to claim world loot.");
@@ -1691,9 +1736,11 @@ async function startServer(): Promise<void> {
 						session_id: result.sessionId,
 						claimed: result.claimed
 					});
+					}).immediate();
 				}
 
 				if (req.method == "GET" && url.pathname == "/boss/state") {
+					return db.transaction(() => {
 					const now = Date.now();
 					const worldState = ensureWorldState(now);
 					return jsonResponse({
@@ -1701,6 +1748,7 @@ async function startServer(): Promise<void> {
 						server_time_unix_ms: now,
 						bosses: worldState.bosses
 					});
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/boss/attack") {
@@ -1719,6 +1767,12 @@ async function startServer(): Promise<void> {
 						console.warn("Boss: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
+					const duplicate = getIdempotentState(playerId, clientActionId, "BOSS_ATTACK", body);
+					if (duplicate) {
+						const boss = getBossFromWorld(ensureWorldState(Date.now()), String(body.boss_id ?? ""));
+						return stateResponseExtra(duplicate, boss ? { duplicate: true, damage: 0, boss_hp: boss.hp, boss_max_hp: boss.max_hp, phase: boss.phase, contributor_score: boss.contributors[playerId] ?? 0, tokens_earned: 0 } : { duplicate: true });
+					}
 					const ip = getClientIp(req);
 					const result = attackBoss(playerId, clientActionId, body, ip);
 					if (result.error || !result.state || !result.boss) {
@@ -1732,6 +1786,7 @@ async function startServer(): Promise<void> {
 						contributor_score: result.contributorScore ?? 0,
 						tokens_earned: result.tokens ?? 0
 					});
+					}).immediate();
 				}
 
 				if (req.method == "POST" && url.pathname == "/boss/claim_rewards") {
@@ -1750,6 +1805,9 @@ async function startServer(): Promise<void> {
 						console.warn("Boss: missing client_action_id", body);
 						throw new HttpError(400, "Missing client_action_id.");
 					}
+					return db.transaction(() => {
+					const duplicate = getIdempotentState(playerId, clientActionId, "BOSS_CLAIM", body);
+					if (duplicate) return stateResponseExtra(duplicate, { claimed: {}, duplicate: true });
 					const result = claimBossRewards(playerId, clientActionId, body);
 					if (result.error || !result.state) {
 						throw new HttpError(400, result.error || "Failed to claim boss rewards.");
@@ -1758,6 +1816,7 @@ async function startServer(): Promise<void> {
 						tier: result.tier ?? "none",
 						claimed: result.claimed ?? {}
 					});
+					}).immediate();
 				}
 
 				if (req.method == "GET" && url.pathname == "/static/version") {
@@ -1786,8 +1845,9 @@ async function startServer(): Promise<void> {
 				return finalRes;
 			} catch (err) {
 				recordError();
-				const message = err instanceof HttpError || err instanceof AccountStatusUnavailableError ? err.message : "Internal server error";
-				const status = err instanceof AccountStatusUnavailableError ? 503 : err instanceof HttpError ? err.status : 500;
+				const sqliteBusy = typeof err === "object" && err !== null && typeof (err as { code?: unknown }).code === "string" && String((err as { code: string }).code).startsWith("SQLITE_BUSY");
+				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof AccountStatusUnavailableError ? err.message : "Internal server error";
+				const status = sqliteBusy || err instanceof AccountStatusUnavailableError ? 503 : err instanceof HttpError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);

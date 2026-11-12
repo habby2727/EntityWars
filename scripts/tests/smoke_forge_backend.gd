@@ -101,8 +101,8 @@ func _action_confirmed(_id: String) -> void:
 			if level != 1 or essence != 100 - base_cost:
 				_fail("Duplicate charged again")
 				return
-			phase = "second"
-			call_deferred("_send", "godot-forge-smoke-2")
+			phase = "conflict"
+			call_deferred("_send_conflict")
 		"second":
 			phase = "third"
 			call_deferred("_send", "godot-forge-smoke-3")
@@ -114,11 +114,19 @@ func _action_confirmed(_id: String) -> void:
 			call_deferred("_send", "godot-forge-smoke-4")
 
 func _action_failed(_id: String, error: String) -> void:
-	if phase == "insufficient" and error.contains("Insufficient") and sent == 5 and confirmed == 4:
+	if phase == "conflict" and error.contains("different content"):
+		phase = "second"
+		call_deferred("_send", "godot-forge-smoke-2")
+		return
+	if phase == "insufficient" and error.contains("Insufficient") and sent == 6 and confirmed == 4:
 		phase = "rejection_reload"
 		client.call_deferred("refresh_state")
 		return
 	_fail("Unexpected failure at %s: %s" % [phase, error])
+
+func _send_conflict() -> void:
+	if client.send_action({"action_type": "FORGE_UPGRADE", "client_action_id": FIRST_ID, "payload": {"item_id": "wind_amulet"}}) == "":
+		_fail("Could not send conflict")
 
 func _fail(message: String) -> void:
 	push_error("FORGE_SMOKE_FAIL: " + message)

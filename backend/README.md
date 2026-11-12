@@ -68,6 +68,8 @@ bun run test:all
 Optional env vars:
 - `BASE_URL` (default: `http://127.0.0.1:8787`)
 - `DB_PATH` (default: `data/dev.sqlite`)
+
+All backend processes serving the same players must use the same SQLite database file. Separate SQLite databases do not share action IDs or player state and are not a supported multi-server deployment. SQLite WAL also requires a filesystem that supports its locking and shared-memory semantics.
 - `RATE_LIMIT_WINDOW_MS` (default: `60000`)
 - `RATE_LIMIT_MAX` (default: `60`)
 - `DATABASE_URL` (default: `postgres://postgres:postgres@127.0.0.1:5432/entity_wars`)

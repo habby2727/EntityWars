@@ -27,6 +27,12 @@ const server = Bun.listen({
       headers.delete("host"); headers.delete("connection"); headers.delete("content-length");
       try {
         const body = data.subarray(end + 4, end + 4 + length);
+        if (path === "/player/action" && body.toString().includes("retry-500")) {
+          const bytes = Buffer.from('{"error":"temporary test failure"}');
+          socket.write(`HTTP/1.1 500 Test\r\nContent-Type: application/json\r\nContent-Length: ${bytes.length}\r\nConnection: close\r\n\r\n`);
+          socket.end(bytes);
+          return;
+        }
         const response = await fetch(target + path, { method, headers, body: length ? body : undefined });
         const result = await response.text();
         if (!dropped && path === "/player/action" && body.toString().includes("lost-forge-action")) {

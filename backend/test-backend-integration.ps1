@@ -153,6 +153,12 @@ try {
             if ($lostProcess.ExitCode -ne 0) { throw "Lost-response $phase failed with exit code $($lostProcess.ExitCode): $(Get-Content -Raw (Join-Path $temp 'proxy.err'))" }
             if ($phase -eq 'first' -and -not (Test-Path -LiteralPath $env:LOST_RESPONSE_MARKER)) { throw 'Proxy did not verify the committed response' }
         }
+        $retryLog = Join-Path $temp 'retry.log'
+        $retryArgs = @('--headless', '--path', ('"' + (Split-Path $PSScriptRoot -Parent) + '"'), '--log-file', ('"' + $retryLog + '"'), '--script', 'res://scripts/tests/smoke_retry_exhausted.gd')
+        $retryProcess = Start-Process -FilePath $godot -ArgumentList $retryArgs -WindowStyle Hidden -PassThru
+        if (-not $retryProcess.WaitForExit(20000)) { Stop-Process -Id $retryProcess.Id; throw 'Godot retry test exceeded 20 seconds' }
+        if (Test-Path -LiteralPath $retryLog) { Get-Content -LiteralPath $retryLog }
+        if ($retryProcess.ExitCode -ne 0) { throw "Godot retry test failed with exit code $($retryProcess.ExitCode)" }
         Write-Output 'PASS Godot account test process exit code 0'
     }
     $legacyLogin = Invoke-RestMethod -Method Post -Uri "$base/auth/dev_login" -ContentType 'application/json' -Body '{"name":"legacy_production_test"}'
