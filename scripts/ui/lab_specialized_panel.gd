@@ -116,6 +116,7 @@ func _catalog(homunculi: bool) -> void:
 	var entries: Dictionary = _registry.get_homunculi() if homunculi else _registry.get_items()
 	var list := ItemList.new()
 	list.custom_minimum_size = Vector2(220, 150)
+	list.add_theme_font_size_override("font_size", 19)
 	var list_bg := StyleBoxFlat.new()
 	list_bg.bg_color = Color(0.02, 0.08, 0.08, 0.94)
 	list.add_theme_stylebox_override("panel", list_bg)
@@ -143,6 +144,7 @@ func _catalog(homunculi: bool) -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	details.add_child(scroll)
 	var info := Label.new()
+	info.add_theme_font_size_override("font_size", 19)
 	if not homunculi:
 		_forge_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL

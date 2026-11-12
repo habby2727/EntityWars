@@ -1,0 +1,33 @@
+name: Regression
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - name: Install existing backend dependencies
+        working-directory: backend
+        run: bun install --frozen-lockfile
+      - name: Run isolated backend regression tests
+        working-directory: backend
+        run: bun run test:isolated
+      - name: Install Godot 4.6
+        run: |
+          curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot/releases/download/4.6-stable/Godot_v4.6-stable_linux.x86_64.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+      - name: Import project headlessly
+        run: /tmp/godot/Godot_v4.6-stable_linux.x86_64 --headless --path "$GITHUB_WORKSPACE" --editor --quit
+      - name: Check scene navigation with isolated user data
+        run: |
+          export UI_CAPTURE_DIR="$RUNNER_TEMP/entitywars-ui"
+          export XDG_DATA_HOME="$UI_CAPTURE_DIR"
+          mkdir -p "$UI_CAPTURE_DIR"
+          /tmp/godot/Godot_v4.6-stable_linux.x86_64 --headless --path "$GITHUB_WORKSPACE" --script res://scripts/tests/smoke_ui_navigation.gd

@@ -85,6 +85,11 @@ var _current_homunculus_id: String = ""
 var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
 var _spell_debug := DebugFlags.new()
+
+func _exit_tree() -> void:
+	_spell_debug.free()
+	if is_instance_valid(_reg):
+		_reg.free()
 var _spell_backend: BackendClient
 var _spell_state := {}
 var _spell_synced := false

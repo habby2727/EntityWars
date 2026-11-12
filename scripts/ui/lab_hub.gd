@@ -56,6 +56,11 @@ var _catalog := AssetCatalog.new()
 var _db := StaticDB.new()
 var _debug := DebugFlags.new()
 
+func _exit_tree() -> void:
+	_catalog.free()
+	_db.free()
+	_debug.free()
+
 var _canvas: Control = null
 var _background: TextureRect = null
 var _icon_layer: Control = null

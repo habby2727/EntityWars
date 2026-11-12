@@ -70,6 +70,11 @@ var _boss_error_label: Label = null
 var _catalog := AssetCatalog.new()
 var _db := StaticDB.new()
 var _debug := DebugFlags.new()
+
+func _exit_tree() -> void:
+	_catalog.free()
+	_db.free()
+	_debug.free()
 var _ui_scale := 1.0
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)

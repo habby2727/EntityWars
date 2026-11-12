@@ -25,6 +25,16 @@ structures_button_path = NodePath("Aspect/Canvas/TopOverlay/StructuresButton")
 [node name="BackendClient" type="Node" parent="."]
 script = ExtResource("2_backend_client")
 
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.025, 0.035, 0.035, 1)
+
 [node name="Aspect" type="AspectRatioContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15

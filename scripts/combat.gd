@@ -532,7 +532,7 @@ func _style_spell_buttons() -> void:
 			style.set_corner_radius_all(3)
 			style.set_content_margin_all(4)
 			button.add_theme_stylebox_override(state, style)
-		button.add_theme_font_size_override("font_size", 14)
+		button.add_theme_font_size_override("font_size", 18)
 		button.add_theme_color_override("font_color", Color(0.94, 0.94, 0.92))
 		button.add_theme_color_override("font_disabled_color", Color(0.53, 0.54, 0.54))
 

@@ -102,6 +102,12 @@ var _experiment_rows: Dictionary = {}
 var _research_rows: Dictionary = {}
 var _resource_rows: Dictionary = {}
 var _debug := DebugFlags.new()
+
+func _exit_tree() -> void:
+	_catalog.free()
+	_db.free()
+	_spell_registry.free()
+	_debug.free()
 var _ui_scale := 1.0
 var _status_refresh_elapsed := 0.0
 var _action_message := ""

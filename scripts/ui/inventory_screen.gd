@@ -30,6 +30,11 @@ var _techs_list: VBoxContainer = null
 
 var _catalog := AssetCatalog.new()
 var _registry: DataRegistry = null
+
+func _exit_tree() -> void:
+	_catalog.free()
+	if is_instance_valid(_registry):
+		_registry.free()
 var _ui_scale := 1.0
 var _return_to_lab := false
 var _entry_group := ButtonGroup.new()
@@ -169,7 +174,9 @@ func _setup_spell_progress() -> void:
 		_item_progress = debug_state.get("item_progress", {})
 		_item_progress_known = true
 		_spell_progress_known = true
+		debug.free()
 		return
+	debug.free()
 	_spell_backend = BackendClient.new()
 	_spell_backend.auto_dev_login = false
 	_spell_backend.auto_flush = false
