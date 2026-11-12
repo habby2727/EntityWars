@@ -3,6 +3,31 @@
 [ext_resource type="Script" path="res://scripts/combat.gd" id="1"]
 [ext_resource type="Texture2D" path="res://assets/ui/alchemy_kit/combat_bg.png" id="2"]
 [ext_resource type="Script" path="res://scripts/ui/combat_status_icons.gd" id="3_status"]
+[ext_resource type="Texture2D" path="res://assets/ui/new-elements/marco-slot-small.png" id="4_slot"]
+
+[sub_resource type="StyleBoxFlat" id="ReturnButtonNormal"]
+bg_color = Color(0.07, 0.12, 0.12, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.74, 0.64, 0.36, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="ReturnButtonHover"]
+bg_color = Color(0.13, 0.23, 0.22, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.96, 0.82, 0.46, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
 
 [node name="Combat" type="Control"]
 layout_mode = 3
@@ -21,9 +46,9 @@ anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -100.0
-offset_top = -110.0
+offset_top = -365.0
 offset_right = 100.0
-offset_bottom = -62.0
+offset_bottom = -325.0
 horizontal_alignment = 1
 text = "Turn 1"
 theme_override_colors/font_color = Color(1, 1, 1, 1)
@@ -95,6 +120,10 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 25.0
+offset_top = -90.0
+offset_right = 25.0
+offset_bottom = -90.0
 grow_horizontal = 2
 grow_vertical = 2
 expand_mode = 1
@@ -160,6 +189,7 @@ size_flags_horizontal = 0
 
 [node name="PlayerBottomSpacer" type="Control" parent="PlayerPanel"]
 layout_mode = 2
+custom_minimum_size = Vector2(0, 32)
 size_flags_vertical = 3
 
 [node name="PlayerBuildTitle" type="Label" parent="PlayerPanel"]
@@ -176,16 +206,56 @@ theme_override_constants/separation = 6
 size_flags_horizontal = 3
 alignment = 1
 
-[node name="PlayerItem1" type="TextureRect" parent="PlayerPanel/PlayerItems"]
+[node name="Slot1" type="Control" parent="PlayerPanel/PlayerItems"]
 layout_mode = 2
 custom_minimum_size = Vector2(144, 144)
+
+[node name="Frame" type="TextureRect" parent="PlayerPanel/PlayerItems/Slot1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+texture = ExtResource("4_slot")
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="PlayerItem1" type="TextureRect" parent="PlayerPanel/PlayerItems/Slot1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
 expand_mode = 1
 stretch_mode = 5
 mouse_filter = 1
 
-[node name="PlayerItem2" type="TextureRect" parent="PlayerPanel/PlayerItems"]
+[node name="Slot2" type="Control" parent="PlayerPanel/PlayerItems"]
 layout_mode = 2
 custom_minimum_size = Vector2(144, 144)
+
+[node name="Frame" type="TextureRect" parent="PlayerPanel/PlayerItems/Slot2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+texture = ExtResource("4_slot")
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="PlayerItem2" type="TextureRect" parent="PlayerPanel/PlayerItems/Slot2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
 expand_mode = 1
 stretch_mode = 5
 mouse_filter = 1
@@ -232,6 +302,10 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = -25.0
+offset_top = -60.0
+offset_right = -25.0
+offset_bottom = -60.0
 grow_horizontal = 2
 grow_vertical = 2
 expand_mode = 1
@@ -246,6 +320,8 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_top = 18.0
+offset_bottom = 18.0
 grow_horizontal = 2
 grow_vertical = 2
 expand_mode = 1
@@ -301,6 +377,7 @@ size_flags_horizontal = 0
 
 [node name="EnemyBottomSpacer" type="Control" parent="EnemyPanel"]
 layout_mode = 2
+custom_minimum_size = Vector2(0, 32)
 size_flags_vertical = 3
 
 [node name="EnemyBuildTitle" type="Label" parent="EnemyPanel"]
@@ -317,59 +394,105 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 6
 alignment = 1
 
-[node name="EnemyItem1" type="TextureRect" parent="EnemyPanel/EnemyItems"]
+[node name="Slot1" type="Control" parent="EnemyPanel/EnemyItems"]
 layout_mode = 2
 custom_minimum_size = Vector2(144, 144)
-expand_mode = 1
-stretch_mode = 5
-mouse_filter = 1
 
-[node name="EnemyItem2" type="TextureRect" parent="EnemyPanel/EnemyItems"]
-layout_mode = 2
-custom_minimum_size = Vector2(144, 144)
-expand_mode = 1
-stretch_mode = 5
-mouse_filter = 1
-
-[node name="LogBG" type="ColorRect" parent="."]
+[node name="Frame" type="TextureRect" parent="EnemyPanel/EnemyItems/Slot1"]
 layout_mode = 1
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-offset_left = 14.0
-offset_top = 14.0
-offset_right = 426.0
-offset_bottom = 214.0
-color = Color(0, 0, 0, 0.6)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+texture = ExtResource("4_slot")
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="EnemyItem1" type="TextureRect" parent="EnemyPanel/EnemyItems/Slot1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 1
+
+[node name="Slot2" type="Control" parent="EnemyPanel/EnemyItems"]
+layout_mode = 2
+custom_minimum_size = Vector2(144, 144)
+
+[node name="Frame" type="TextureRect" parent="EnemyPanel/EnemyItems/Slot2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+texture = ExtResource("4_slot")
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="EnemyItem2" type="TextureRect" parent="EnemyPanel/EnemyItems/Slot2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 1
+
+[node name="LogBG" type="Panel" parent="."]
+layout_mode = 1
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -310.0
+offset_top = -320.0
+offset_right = 310.0
+offset_bottom = -80.0
+mouse_filter = 2
 
 [node name="Log" type="RichTextLabel" parent="."]
 layout_mode = 1
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-offset_left = 20.0
-offset_top = 20.0
-offset_right = 420.0
-offset_bottom = 210.0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -296.0
+offset_top = -306.0
+offset_right = 296.0
+offset_bottom = -94.0
 fit_content = false
 scroll_active = true
 scroll_following = true
+theme_override_font_sizes/normal_font_size = 20
 bg_color = Color(0, 0, 0, 0)
 
 [node name="NextTurn" type="Button" parent="."]
 visible = false
+z_index = 100
 layout_mode = 1
 anchors_preset = 13
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -80.0
-offset_top = -50.0
-offset_right = 80.0
-offset_bottom = -10.0
+offset_left = -140.0
+offset_top = -56.0
+offset_right = 140.0
+offset_bottom = -8.0
+theme_override_font_sizes/font_size = 21
+theme_override_styles/normal = SubResource("ReturnButtonNormal")
+theme_override_styles/hover = SubResource("ReturnButtonHover")
+theme_override_styles/pressed = SubResource("ReturnButtonHover")
 text = "Next Turn"
 
 [node name="SpellPanel" type="PanelContainer" parent="."]
@@ -381,6 +504,76 @@ offset_left = -300.0
 offset_top = 56.0
 offset_right = 300.0
 offset_bottom = 200.0
+
+[node name="SwitchWeapon" type="Button" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -210.0
+offset_top = 208.0
+offset_right = 210.0
+offset_bottom = 250.0
+theme_override_font_sizes/font_size = 17
+theme_override_styles/normal = SubResource("ReturnButtonNormal")
+theme_override_styles/hover = SubResource("ReturnButtonHover")
+theme_override_styles/pressed = SubResource("ReturnButtonHover")
+
+[node name="Ultraturn" type="Button" parent="."]
+visible = false
+toggle_mode = true
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = 315.0
+offset_top = 58.0
+offset_right = 620.0
+offset_bottom = 104.0
+theme_override_font_sizes/font_size = 17
+theme_override_styles/normal = SubResource("ReturnButtonNormal")
+theme_override_styles/hover = SubResource("ReturnButtonHover")
+theme_override_styles/pressed = SubResource("ReturnButtonHover")
+tooltip_text = "Available once in the decisive 1-1 battle.\nActivate before choosing a spell to double its\ndamage and applicable buffs/debuffs.\nConsumed even if the spell misses."
+
+[node name="HomDecision" type="HBoxContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -350.0
+offset_top = 260.0
+offset_right = 350.0
+offset_bottom = 308.0
+theme_override_constants/separation = 6
+
+[node name="Hold" type="Button" parent="HomDecision"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("ReturnButtonNormal")
+theme_override_styles/hover = SubResource("ReturnButtonHover")
+text = "Hold"
+tooltip_text = "Keep homunculus energy."
+
+[node name="Attack" type="Button" parent="HomDecision"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("ReturnButtonNormal")
+theme_override_styles/hover = SubResource("ReturnButtonHover")
+text = "Attack"
+
+[node name="Sacrifice" type="Button" parent="HomDecision"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("ReturnButtonNormal")
+theme_override_styles/hover = SubResource("ReturnButtonHover")
+text = "Sacrifice (+30 HP)"
+tooltip_text = "Heal up to 30 HP; lose this homunculus for the rest of the combat."
 
 [node name="SpellGrid" type="GridContainer" parent="SpellPanel"]
 layout_mode = 2

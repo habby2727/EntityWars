@@ -254,10 +254,19 @@ func _setup_build_dialog() -> void:
 	block.alignment = BoxContainer.ALIGNMENT_CENTER
 	var grid := block.get_node("BuildGrid") as GridContainer
 	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	for slot in [dd_item1, dd_item2, dd_side1, dd_side2]:
+	dd_side1.hide()
+	dd_side2.hide()
+	for slot in [dd_item1, dd_item2]:
 		if slot is Button:
 			slot.custom_minimum_size = Vector2(275, 70)
 			MenuArt.button(slot)
+			var heading := Label.new()
+			heading.text = "Primary Weapon" if slot == dd_item1 else "Secondary Weapon"
+			heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			heading.add_theme_color_override("font_color", Color(0.92, 0.92, 0.85))
+			heading.add_theme_font_size_override("font_size", 18)
+			grid.add_child(heading)
+			grid.move_child(heading, 0 if slot == dd_item1 else 1)
 	var close := Button.new()
 	close.text = "Done"
 	close.custom_minimum_size = Vector2(160, 46)
@@ -674,6 +683,7 @@ func _wire_buttons() -> void:
 func _populate_dropdowns() -> void:
 	_populate_control_with_list(dd_item1, _items)
 	_populate_control_with_list(dd_item2, _items)
+	_ensure_distinct_weapons()
 	# Sideboard uses the same item pool as equips for now.
 	_populate_control_with_list(dd_side1, _items)
 	_populate_control_with_list(dd_side2, _items)
@@ -729,7 +739,14 @@ func _on_equip_button_pressed(btn: Button) -> void:
 	var sidx = btn.get_meta("selected_idx")
 	if typeof(sidx) != TYPE_INT:
 		sidx = int(sidx)
-	sidx = (sidx + 1) % items.size()
+	var other: Button = dd_item2 if btn == dd_item1 else dd_item1 if btn == dd_item2 else null
+	var other_id := _idx_to_id(_items, other) if other != null else ""
+	for attempt in items.size():
+		sidx = (sidx + 1) % items.size()
+		var candidate: Variant = items[sidx]
+		var candidate_id := str(candidate.get("id", "")) if candidate is Dictionary else str(candidate)
+		if candidate_id.is_empty() or candidate_id != other_id:
+			break
 	btn.set_meta("selected_idx", sidx)
 	btn.text = _label_for_item(items[sidx], "None")
 	_refresh_build_slot_icon(btn)
@@ -1310,10 +1327,21 @@ func _load_seal(which: String) -> void:
 
 	_set_button_selection(dd_item1, _items, data.get("equip_1", ""))
 	_set_button_selection(dd_item2, _items, data.get("equip_2", ""))
+	_ensure_distinct_weapons()
 	_set_button_selection(dd_side1, _items, data.get("side_1", ""))
 	_set_button_selection(dd_side2, _items, data.get("side_2", ""))
 	_set_button_selection(dd_atktech, _atk_techs, data.get("attack_tech", ""))
 	_set_button_selection(dd_deftech, _def_techs, data.get("defense_tech", ""))
+
+func _ensure_distinct_weapons() -> void:
+	if not _has_duplicate_build_items():
+		return
+	var selected := _idx_to_id(_items, dd_item1)
+	for item in _items:
+		var item_id := str(item.get("id", "")) if item is Dictionary else str(item)
+		if not item_id.is_empty() and item_id != selected:
+			_set_button_selection(dd_item2, _items, item_id)
+			return
 
 func _set_button_selection(btn: Button, items: Array, desired) -> void:
 	if btn == null:

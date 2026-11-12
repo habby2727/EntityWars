@@ -128,10 +128,15 @@ func _setup_inventory_layout() -> void:
 	_detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_detail_panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-informativo-small.png", Vector4(95, 105, 80, 60)))
 	_tab_layouts[0].add_child(_detail_panel)
+	var center := CenterContainer.new()
+	_detail_panel.add_child(center)
 	var content := VBoxContainer.new()
+	content.custom_minimum_size.x = 700
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 12)
-	_detail_panel.add_child(content)
+	center.add_child(content)
 	var header := HBoxContainer.new()
+	header.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	header.add_theme_constant_override("separation", 18)
 	content.add_child(header)
 	var icon_frame := UIThemeFactory.make_icon_slot() as TextureRect
@@ -140,17 +145,21 @@ func _setup_inventory_layout() -> void:
 	header.add_child(icon_frame)
 	_detail_icon = icon_frame.get_node("Icon") as TextureRect
 	_detail_title = Label.new()
-	_detail_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_title.custom_minimum_size.x = 220
+	_detail_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_detail_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail_title.add_theme_font_size_override("font_size", 24)
 	header.add_child(_detail_title)
 	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size.y = 240
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	content.add_child(scroll)
 	_detail_text = Label.new()
 	_detail_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_detail_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_detail_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail_text.add_theme_font_size_override("font_size", 17)
 	scroll.add_child(_detail_text)

@@ -18,11 +18,33 @@ const DEFINITIONS := [
 
 var _wins := 0
 var _effects: Array = []
+var _previous_status := {}
+var _status_initialized := false
+var _feedback := ""
+var _feedback_until := 0
+var _feedback_queue: Array[Dictionary] = []
+var _feedback_icon := "type"
+var _previous_neutralization := 0.0
+var _previous_mark_turns := 0
 
 func set_fighter(wins: int, fighter: Dictionary) -> void:
 	_wins = wins
 	_effects.clear()
 	var status: Dictionary = fighter.get("status", {})
+	if _status_initialized:
+		for definition in DEFINITIONS:
+			var key: String = definition[0]
+			var previous := float(_previous_status.get(key, 0.0))
+			var current := float(status.get(key, 0.0))
+			if not is_equal_approx(previous, current):
+				var value_text := str(current)
+				if definition[3] in ["percent", "plus", "minus"]:
+					value_text = "%d%%" % roundi(absf(current) * 100.0)
+				elif definition[3] == "turns":
+					value_text = "%dT" % int(current)
+				_queue_feedback("%s %s" % [key.replace("_pct", "").replace("_", " ").capitalize(), "ended" if current == 0.0 else value_text], str(definition[1]))
+	_previous_status = status.duplicate(true)
+	_status_initialized = true
 	for definition in DEFINITIONS:
 		var value := float(status.get(definition[0], 0))
 		if value == 0.0 or (value < 0.0 and definition[0] != "tempo_bonus"):
@@ -40,11 +62,40 @@ func set_fighter(wins: int, fighter: Dictionary) -> void:
 		_effects.append({"icon": "chain", "label": "%dT" % int(mark.remaining), "tooltip": "Marca híbrida: %d acciones del lanzador" % int(mark.remaining)})
 	var active := float(fighter.get("spell_neutralize_active", 0.0))
 	var pending := float(fighter.get("spell_neutralize_pending", 0.0))
+	var neutralization := maxf(active, pending)
+	var mark_turns := int(mark.get("remaining", 0))
+	if _status_initialized and not is_equal_approx(neutralization, _previous_neutralization):
+		_queue_feedback("Type alteration %s" % ("ended" if neutralization == 0 else "%d%%" % roundi(neutralization * 100.0)))
+	if _status_initialized and mark_turns != _previous_mark_turns:
+		_queue_feedback("Hybrid mark %s" % ("ended" if mark_turns == 0 else "%dT" % mark_turns))
+	_previous_neutralization = neutralization
+	_previous_mark_turns = mark_turns
 	if active > 0.0 or pending > 0.0:
 		var value := maxf(active, pending)
 		var phase := "intercambio actual" if active > 0.0 else "próximo intercambio"
 		_effects.append({"icon": "type", "label": "%d%%" % int(round(value * 100)), "tooltip": "Alteración de tipo: %d%% (%s)" % [int(round(value * 100)), phase]})
 	queue_redraw()
+
+func _process(_delta: float) -> void:
+	if Time.get_ticks_msec() >= _feedback_until:
+		_show_next_feedback()
+
+func _show_next_feedback() -> void:
+	if _feedback_queue.is_empty():
+		_feedback = ""
+		set_process(false)
+	else:
+		var next: Dictionary = _feedback_queue.pop_front()
+		_feedback = str(next.text)
+		_feedback_icon = str(next.icon)
+		_feedback_until = Time.get_ticks_msec() + 1800
+		set_process(true)
+	queue_redraw()
+
+func _queue_feedback(message: String, icon: String = "type") -> void:
+	_feedback_queue.append({"text": message, "icon": icon})
+	if _feedback.is_empty():
+		_show_next_feedback()
 
 func _get_tooltip(at_position: Vector2) -> String:
 	var slot := int(at_position.x / SLOT)
@@ -68,6 +119,9 @@ func _draw() -> void:
 		_draw_label(_effects[i].label, (i + 2) * SLOT)
 	if _effects.size() > 5:
 		_draw_label("+%d" % (_effects.size() - 5), 7 * SLOT, 15)
+	if not _feedback.is_empty():
+		_draw_icon(_feedback_icon, Vector2(200, 0), true)
+		draw_string(ThemeDB.fallback_font, Vector2(226, 14), _feedback, HORIZONTAL_ALIGNMENT_LEFT, 150, 13, Color("e4d39b"))
 
 func _draw_label(label: String, x: float, baseline: int = 28) -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(x, baseline), label, HORIZONTAL_ALIGNMENT_CENTER, SLOT, 9, Color(1, 1, 1))

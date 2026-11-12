@@ -2,90 +2,98 @@
   "items": [
     {
       "id": "bismuth_talisman",
-      "name": "Talisman of Bismuth",
+      "name": "Bismuth Sword",
       "rarity": "basic",
       "slot": "build",
-      "desc": "Bismuth lattice sharpens blows, adding a sliver of true damage.",
+      "desc": "Power bonus; true damage on hit; +1 Guard.",
       "effects": {
         "power_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
-        "true_on_hit": [1]
+        "true_on_hit": [1],
+        "guard_flat": [1]
       }
     },
     {
       "id": "wind_amulet",
-      "name": "Amulet of Wind",
+      "name": "Wind Spear",
       "rarity": "basic",
       "slot": "build",
-      "desc": "Wind currents grant tempo and a slight chance to evade a strike.",
+      "desc": "Tempo bonus; 8% evasion; +1 Power.",
       "effects": {
         "tempo_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
-        "evasion_pct": [0.08]
+        "evasion_pct": [0.08],
+        "power_flat": [1]
       }
     },
     {
       "id": "saltstone_charm",
-      "name": "Saltstone Charm",
+      "name": "Saltstone Hammer",
       "rarity": "basic",
       "slot": "build",
-      "desc": "Salt wards harden armor and raise a brief protective ward.",
+      "desc": "Guard bonus; 12% ward each round; +1 Power.",
       "effects": {
         "guard_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
-        "ward_pct": [0.12]
+        "ward_pct": [0.12],
+        "power_flat": [1]
       }
     },
     {
       "id": "mirror_sigel",
-      "name": "Mirror Sigil",
+      "name": "Mirror Blade",
       "rarity": "advanced",
       "slot": "build",
-      "desc": "Mirror glyph returns a portion of damage and raises a faint ward.",
+      "desc": "Reflects damage; 8% ward each round; +1 Guard.",
       "effects": {
         "reflect_pct": [0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12],
-        "ward_pct": [0.08]
+        "ward_pct": [0.08],
+        "guard_flat": [1]
       }
     },
     {
       "id": "vitriol_vial",
-      "name": "Vitriol Vial",
+      "name": "Vitriol Dagger",
       "rarity": "advanced",
       "slot": "build",
-      "desc": "Etching acid corrodes for true damage and leaves targets exposed.",
+      "desc": "True corrosion damage on hit; 10% vulnerability; +1 Power.",
       "effects": {
         "dot_true": [1, 2, 2, 3, 3, 4, 4, 5, 6, 7],
-        "vuln_on_hit": [0.1]
+        "vuln_on_hit": [0.1],
+        "power_flat": [1]
       }
     },
     {
       "id": "gilded_scale",
-      "name": "Gilded Scale",
+      "name": "Gilded Wardblade",
       "rarity": "advanced",
       "slot": "build",
-      "desc": "Gilded balance softens bad matchups and grants a light ward.",
+      "desc": "Reduces type disadvantage; 6% ward each round; +1 Guard.",
       "effects": {
         "disadvantage_reduction": [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.15],
-        "ward_pct": [0.06]
+        "ward_pct": [0.06],
+        "guard_flat": [1]
       }
     },
     {
       "id": "mercury_lens",
-      "name": "Mercury Lens",
+      "name": "Mercury Sabre",
       "rarity": "advanced",
       "slot": "build",
-      "desc": "Mercury refines initiative; victory grants extra tempo next round.",
+      "desc": "Tempo after winning a round; 4% evasion; +1 Power.",
       "effects": {
         "tempo_on_win": [1, 1, 2, 2, 3, 3, 4, 4, 5, 6],
-        "evasion_pct": [0.04]
+        "evasion_pct": [0.04],
+        "power_flat": [1]
       }
     },
     {
       "id": "aether_knot",
-      "name": "Aether Knot",
+      "name": "Aether Edge",
       "rarity": "advanced",
       "slot": "build",
-      "desc": "Aether knot unravels mirrors and steadies a faint ward.",
+      "desc": "Chance to ignore reflection; 6% ward each round; +1 Power.",
       "effects": {
         "ignore_reflect_chance": [0.15, 0.18, 0.21, 0.24, 0.27, 0.3, 0.33, 0.36, 0.4, 0.45],
-        "ward_pct": [0.06]
+        "ward_pct": [0.06],
+        "power_flat": [1]
       }
     }
   ],

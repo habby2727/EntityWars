@@ -1,7 +1,11 @@
-﻿extends Control
+extends Control
 
 const REG_PATH := "res://scripts/data_registry.gd"
 const SpellLoadout := preload("res://scripts/domain/spell_loadout.gd")
+const CombatLogPresenter := preload("res://scripts/ui/combat_log_presenter.gd")
+const CombatTypeIcon := preload("res://scripts/ui/combat_type_icon.gd")
+const CombatHomStatus := preload("res://scripts/ui/combat_hom_status.gd")
+const CombatInspiration := preload("res://scripts/ui/combat_inspiration.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
@@ -44,6 +48,10 @@ var _entities: Array = []
 var _homunculi: Array = []
 var _items: Array = []
 var _combat_spell_state := {}
+var _log_presenter := CombatLogPresenter.new()
+var _spell_detail: AcceptDialog
+var _highlights := {"damage": 0, "damage_text": "", "reflection": 0, "reflection_text": ""}
+var _spell_damage_totals := {}
 var _combat_backend: BackendClient
 var _combat_started := false
 var _combat_session_invalid := false
@@ -55,6 +63,15 @@ var _resolving_exchange := false
 var _spell_acts_second := false
 var _animation_tweens := {}
 var _animation_original := {}
+var _pending_hom_action := {}
+var _player_hom_status: PanelContainer
+var _enemy_hom_status: PanelContainer
+var _inspiration_panel: PanelContainer
+var _inspiration_cards: Array[Button] = []
+var _inspiration_options: Array = []
+var _player_inspiration: Control
+var _enemy_inspiration: Control
+var _ultra_armed := false
 
 var player := {}
 var enemy := {}
@@ -81,8 +98,8 @@ var _hp_fill_red: StyleBoxFlat = null
 @onready var player_hom: TextureRect = $PlayerPanel/PlayerSprites/PlayerHomFrame/PlayerHom
 @onready var player_hp: ProgressBar = $PlayerPanel/PlayerHPRow/PlayerHP
 @onready var player_indicators: Control = $PlayerPanel/PlayerHPRow/PlayerHP/Indicators
-@onready var player_item1: TextureRect = $PlayerPanel/PlayerItems/PlayerItem1
-@onready var player_item2: TextureRect = $PlayerPanel/PlayerItems/PlayerItem2
+@onready var player_item1: TextureRect = $PlayerPanel/PlayerItems/Slot1/PlayerItem1
+@onready var player_item2: TextureRect = $PlayerPanel/PlayerItems/Slot2/PlayerItem2
 
 @onready var enemy_name: Label = $EnemyPanel/EnemyName
 @onready var enemy_entity_name: Label = $EnemyPanel/EnemyNames/EnemyEntityName
@@ -91,11 +108,14 @@ var _hp_fill_red: StyleBoxFlat = null
 @onready var enemy_hom: TextureRect = $EnemyPanel/EnemySprites/EnemyHomFrame/EnemyHom
 @onready var enemy_hp: ProgressBar = $EnemyPanel/EnemyHPRow/EnemyHP
 @onready var enemy_indicators: Control = $EnemyPanel/EnemyHPRow/EnemyHP/Indicators
-@onready var enemy_item1: TextureRect = $EnemyPanel/EnemyItems/EnemyItem1
-@onready var enemy_item2: TextureRect = $EnemyPanel/EnemyItems/EnemyItem2
+@onready var enemy_item1: TextureRect = $EnemyPanel/EnemyItems/Slot1/EnemyItem1
+@onready var enemy_item2: TextureRect = $EnemyPanel/EnemyItems/Slot2/EnemyItem2
 
 @onready var log_box: RichTextLabel = $Log
 @onready var next_turn_btn: Button = $NextTurn
+@onready var switch_weapon_btn: Button = $SwitchWeapon
+@onready var ultra_button: Button = $Ultraturn
+@onready var hom_decision: HBoxContainer = $HomDecision
 @onready var spell_panel: PanelContainer = $SpellPanel
 @onready var spell_buttons: Array = [$SpellPanel/SpellGrid/Spell1, $SpellPanel/SpellGrid/Spell2, $SpellPanel/SpellGrid/Spell3, $SpellPanel/SpellGrid/Spell4]
 @onready var back_button: Button = $BackButton
@@ -115,15 +135,22 @@ var _hp_fill_red: StyleBoxFlat = null
 @onready var confirm_leave: Button = $ConfirmLeave/Panel/VBox/Buttons/LeaveButton
 
 func _ready() -> void:
+	_fit_combat_view()
+	get_viewport().size_changed.connect(_fit_combat_view)
 	_load_registry_safe()
+	_setup_combat_log()
 	_setup_hp_styles()
+	_setup_hom_ui()
+	_setup_combat_labels()
+	_setup_aligned_health_panels()
+	_setup_inspiration_ui()
 	_configure_tooltip_text()
 	next_turn_btn.pressed.connect(_on_next_turn)
-	swap_side1.pressed.connect(func(): _on_swap_chosen("side_1"))
-	swap_side2.pressed.connect(func(): _on_swap_chosen("side_2"))
-	swap_icon1.gui_input.connect(func(event): _on_swap_icon_input(event, "side_1"))
-	swap_icon2.gui_input.connect(func(event): _on_swap_icon_input(event, "side_2"))
-	swap_cancel.pressed.connect(_on_swap_cancel)
+	switch_weapon_btn.pressed.connect(_on_switch_weapon)
+	ultra_button.toggled.connect(_on_ultra_toggled)
+	$HomDecision/Hold.pressed.connect(_on_hom_choice.bind("hold"))
+	$HomDecision/Attack.pressed.connect(_on_hom_choice.bind("attack"))
+	$HomDecision/Sacrifice.pressed.connect(_on_hom_choice.bind("sacrifice"))
 	_connect_item_tooltips()
 	for i in spell_buttons.size():
 		spell_buttons[i].pressed.connect(_on_spell_chosen.bind(i))
@@ -137,6 +164,74 @@ func _ready() -> void:
 	if confirm_leave:
 		confirm_leave.pressed.connect(_on_confirm_leave)
 	_begin_combat_initialization()
+
+func _fit_combat_view() -> void:
+	var available := get_viewport_rect().size
+	if available.x <= 0 or available.y <= 0:
+		return
+	var factor := minf(available.x / 1920.0, available.y / 1080.0)
+	set_anchors_preset(Control.PRESET_TOP_LEFT)
+	position = Vector2.ZERO
+	size = available / factor
+	scale = Vector2.ONE * factor
+
+func _setup_combat_log() -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.025, 0.04, 0.045, 0.9)
+	style.border_color = Color("95834f")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	$LogBG.add_theme_stylebox_override("panel", style)
+	log_box.add_theme_font_override("normal_font", load("res://assets/fonts/liberation-serif/LiberationSerif-Regular.ttf"))
+	log_box.meta_clicked.connect(_on_log_spell_clicked)
+	log_box.meta_hover_started.connect(_on_log_spell_hovered)
+	log_box.meta_hover_ended.connect(func(_meta): log_box.tooltip_text = "")
+	_spell_detail = AcceptDialog.new()
+	_spell_detail.title = "Spell Details"
+	_spell_detail.dialog_autowrap = true
+	var dialog_style := StyleBoxFlat.new()
+	dialog_style.bg_color = Color(0.025, 0.055, 0.06, 0.98)
+	dialog_style.border_color = Color("ac975e")
+	dialog_style.set_border_width_all(2)
+	dialog_style.set_content_margin_all(16)
+	_spell_detail.add_theme_stylebox_override("panel", dialog_style)
+	add_child(_spell_detail)
+
+func _on_log_spell_clicked(meta: Variant) -> void:
+	if _reg == null:
+		return
+	var spell_id := str(meta.get("id", "")) if meta is Dictionary else str(meta)
+	var spell: Dictionary = _reg.get_spell_by_id(spell_id)
+	if spell.is_empty():
+		return
+	_spell_detail.dialog_text = _spell_description(spell)
+	if meta is Dictionary and meta.get("context") is Dictionary:
+		var damage := int(meta.context.get("actual_damage", 0))
+		if damage > 0:
+			_spell_detail.dialog_text += "\nRecorded damage: %d" % damage
+	_spell_detail.popup_centered(Vector2i(440, 260))
+
+func _on_log_spell_hovered(meta: Variant) -> void:
+	if _reg != null:
+		var spell_id := str(meta.get("id", "")) if meta is Dictionary else str(meta)
+		var spell: Dictionary = _reg.get_spell_by_id(spell_id)
+		log_box.tooltip_text = _spell_description(spell) if not spell.is_empty() else ""
+
+func _spell_description(spell: Dictionary) -> String:
+	var lines: Array[String] = []
+	for effect in spell.get("effects", []):
+		var extra: Array[String] = []
+		for key in effect:
+			if key not in ["kind", "value", "target"]:
+				extra.append("%s: %s" % [str(key).replace("_", " ").capitalize(), str(effect[key])])
+		lines.append("%s: %s (%s)%s" % [str(effect.get("kind", "")).replace("_", " ").capitalize(), str(effect.get("value", "")), str(effect.get("target", "")), "; " + ", ".join(extra) if not extra.is_empty() else ""])
+	return "%s\nType: %s | %s\nPower: x%.2f | Accuracy: %d%% | Cooldown: %d\n%s\n%s" % [spell.get("name", ""), str(spell.get("type", "")).capitalize(), str(spell.get("category", "")).capitalize(), float(spell.get("power_mult", 0)), int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), ", ".join(lines) if not lines.is_empty() else "No additional effects", spell.get("desc", "")]
+
+func _status_effect_text(kind: String, value: float) -> String:
+	var label := kind.replace("_", " ").capitalize()
+	if kind in ["poison", "hom_stun"]:
+		return "%s %dT" % [label, int(value)]
+	return "%s %d%%" % [label, roundi(value * 100.0)]
 
 func _begin_combat_initialization() -> void:
 	var debug := DebugFlags.new()
@@ -176,6 +271,9 @@ func _on_combat_state_timeout() -> void:
 func _on_combat_state_updated(state: Dictionary) -> void:
 	if _combat_started:
 		if _combat_identity != "" and (state.is_empty() or str(state.get("player_id", "")) != _combat_identity):
+			_restore_inspiration(player)
+			_restore_inspiration(enemy)
+			_inspiration_panel.hide()
 			_combat_session_invalid = true
 			_battle_over = true
 			spell_panel.hide()
@@ -199,6 +297,12 @@ func _start_combat() -> void:
 	next_turn_btn.hide()
 	_load_player_from_seal()
 	_setup_enemy()
+	for pair in [[player_hp, player], [enemy_hp, enemy]]:
+		var icon := CombatTypeIcon.new()
+		icon.name = "CombatTypeIcon"
+		icon.position = Vector2(-30, -3)
+		icon.configure(str(pair[1].get("type", "")))
+		pair[0].add_child(icon)
 	_update_ui()
 	_refresh_spell_buttons()
 	_log_immediate("Battle 1 begins.")
@@ -222,6 +326,8 @@ func _on_confirm_leave() -> void:
 	_leave_combat()
 
 func _leave_combat() -> void:
+	_restore_inspiration(player)
+	_restore_inspiration(enemy)
 	_reset_animations()
 	_battle_over = true
 	_log_immediate("You forfeited the combat.")
@@ -276,17 +382,11 @@ func _setup_enemy(spell_ids: Array = []) -> void:
 	var e2 := _pick_item_id_unique(used)
 	if e2 != "":
 		used.append(e2)
-	var s1 := _pick_item_id_unique(used)
-	if s1 != "":
-		used.append(s1)
-	var s2 := _pick_item_id_unique(used)
 	var data := {
 		"entity_id": pick,
 		"homunculus_id": hom_id,
 		"equip_1": e1,
 		"equip_2": e2,
-		"side_1": s1,
-		"side_2": s2,
 		"spell_ids": spell_ids,
 	}
 	enemy = _build_fighter(data, false)
@@ -320,8 +420,8 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		side1 = helper.effective_item(side1, progress_items)
 		side2 = helper.effective_item(side2, progress_items)
 
-	var mods = _item_mods([equip1, equip2])
-	var fx = _collect_item_effects([equip1, equip2])
+	var mods = _item_mods([equip1])
+	var fx = _collect_item_effects([equip1])
 	atk += mods.atk_flat
 	def += mods.def_flat
 
@@ -331,6 +431,10 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		"type": str(ent.get("type", "")),
 		"hom_id": str(hom.get("id", "")),
 		"hom_name": str(hom.get("name", "")),
+		"hom_energy": 0,
+		"hom_max_energy": 6,
+		"hom_ready_at": 3,
+		"hom_spent": hom.is_empty(),
 		"atk": atk,
 		"def": def,
 		"max_hp": hp,
@@ -339,29 +443,50 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		"item_fx": fx,
 		"equip_1": equip1,
 		"equip_2": equip2,
+		"active_weapon_slot": 1,
+		"npc_weapon_switched": false,
 		"side_1": side1,
 		"side_2": side2,
 		"spell_ids": fighter_spells,
+		"original_spell_ids": fighter_spells.duplicate(),
+		"inspiration": 0,
+		"inspiration_used_this_battle": false,
+		"inspiration_pending": false,
+		"temporary_spell_id": "",
+		"temporary_replaced_slot": -1,
+		"ultra_used": false,
 		"status": {"poison": 0, "stun": 0, "shield_pct": 0.0, "atk_boost": 0.0, "vuln_pct": 0.0, "atk_down": 0.0, "hom_stun": 0, "reflect_pct": 0.0, "tempo_bonus": 0.0},
 		"spell_cooldowns": {}, "spell_hit_this_exchange": false, "spell_hit_last_exchange": false,
 		"spell_neutralize_pending": 0.0, "spell_neutralize_active": 0.0
 	}
 
 func _update_ui() -> void:
+	_player_inspiration.call("set_fighter", player)
+	_enemy_inspiration.call("set_fighter", enemy)
+	_player_hom_status.call("set_fighter", player)
+	_enemy_hom_status.call("set_fighter", enemy)
+	player_hom.visible = not bool(player.get("hom_spent", false))
+	enemy_hom.visible = not bool(enemy.get("hom_spent", false))
+	for pair in [[player_hp, player], [enemy_hp, enemy]]:
+		var icon: Node = pair[0].get_node_or_null("CombatTypeIcon")
+		if icon != null and str(icon.get("element")) != str(pair[1].get("type", "")):
+			icon.call("configure", str(pair[1].get("type", "")))
 	player_indicators.set_fighter(_player_wins, player)
 	enemy_indicators.set_fighter(_enemy_wins, enemy)
 	var header = "Sudden Death" if _sudden_death else "Battle %d" % _battle_index
 	turn_label.text = "%s\nTurn %d" % [header, _display_turn()]
 	player_name.text = "Player"
 	player_entity_name.text = str(player.get("name", ""))
-	player_hom_name.text = str(player.get("hom_name", ""))
+	player_hom_name.text = ""
 	enemy_name.text = "NPC"
 	enemy_entity_name.text = str(enemy.get("name", ""))
-	enemy_hom_name.text = str(enemy.get("hom_name", ""))
+	enemy_hom_name.text = ""
 	player_hp.max_value = float(player.get("max_hp", 1))
 	player_hp.value = float(player.get("hp", 1))
 	enemy_hp.max_value = float(enemy.get("max_hp", 1))
 	enemy_hp.value = float(enemy.get("hp", 1))
+	player_hp.get_node("HealthValue").text = "%d / %d" % [int(player.hp), int(player.max_hp)]
+	enemy_hp.get_node("HealthValue").text = "%d / %d" % [int(enemy.hp), int(enemy.max_hp)]
 	player_entity.texture = _load_preview_tex(player.get("id", ""), "entity", player.get("type", ""))
 	player_hom.texture = _load_preview_tex(player.get("hom_id", ""), "homunculus", player.get("hom_name", ""))
 	enemy_entity.texture = _load_preview_tex(enemy.get("id", ""), "entity", enemy.get("type", ""))
@@ -370,7 +495,68 @@ func _update_ui() -> void:
 	_set_item_icon(player_item2, player.get("equip_2", {}))
 	_set_item_icon(enemy_item1, enemy.get("equip_1", {}))
 	_set_item_icon(enemy_item2, enemy.get("equip_2", {}))
+	_update_weapon_slots(player, [player_item1, player_item2])
+	_update_weapon_slots(enemy, [enemy_item1, enemy_item2])
 	_apply_hp_colors()
+
+func _get_active_weapon(fighter: Dictionary) -> Dictionary:
+	return fighter.get("equip_%d" % int(fighter.get("active_weapon_slot", 1)), {})
+
+func _set_active_weapon(fighter: Dictionary, slot: int) -> void:
+	if slot not in [1, 2] or fighter.get("equip_%d" % slot, {}).is_empty():
+		return
+	for field in ["shield_pct", "reflect_pct"]:
+		var key: String = "weapon_" + field
+		if fighter.has(key):
+			fighter.status[field] = float(fighter.get("other_" + field, 0.0))
+			fighter.erase(key)
+			fighter.erase("other_" + field)
+	fighter.active_weapon_slot = slot
+	_refresh_weapon_stats(fighter)
+
+func _weapon_defense(fighter: Dictionary, field: String, value: float) -> void:
+	var key := "weapon_" + field
+	if not fighter.has(key):
+		fighter["other_" + field] = float(fighter.status.get(field, 0.0))
+	fighter[key] = maxf(float(fighter.get(key, 0.0)), value)
+	fighter.status[field] = maxf(float(fighter["other_" + field]), float(fighter[key]))
+
+func _other_defense(fighter: Dictionary, field: String, value: float) -> void:
+	if fighter.has("weapon_" + field):
+		fighter["other_" + field] = maxf(float(fighter.get("other_" + field, 0.0)), value)
+	fighter.status[field] = maxf(float(fighter.status.get(field, 0.0)), value)
+
+func _clear_defense(fighter: Dictionary, field: String) -> void:
+	fighter.status[field] = 0.0
+	fighter.erase("weapon_" + field)
+	fighter.erase("other_" + field)
+
+func _refresh_weapon_stats(fighter: Dictionary) -> void:
+	fighter.mods = _item_mods([_get_active_weapon(fighter)])
+	_apply_mods(fighter)
+
+func _update_weapon_slots(fighter: Dictionary, slots: Array) -> void:
+	for i in 2:
+		var slot: Control = slots[i].get_parent()
+		var active := int(fighter.get("active_weapon_slot", 1)) == i + 1
+		slot.modulate = Color.WHITE if active else Color(0.55, 0.55, 0.55, 0.8)
+		var label := slot.get_node_or_null("ActiveWeapon") as Label
+		if label == null:
+			label = Label.new()
+			label.name = "ActiveWeapon"
+			label.text = "ACTIVE"
+			label.add_theme_font_size_override("font_size", 16)
+			label.add_theme_color_override("font_color", Color("7af1ef"))
+			label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			label.position = Vector2(35, 8)
+			slot.add_child(label)
+			_add_label_plaque(label)
+			var plaque := label.get_node("LabelPlaque") as TextureRect
+			plaque.offset_left = -55
+			plaque.offset_right = 55
+			plaque.offset_top = -4
+			plaque.offset_bottom = 21
+		label.visible = active and not _get_active_weapon(fighter).is_empty()
 
 func _setup_hp_styles() -> void:
 	_hp_fill_green = StyleBoxFlat.new()
@@ -379,6 +565,276 @@ func _setup_hp_styles() -> void:
 	_hp_fill_yellow.bg_color = Color(0.95, 0.8, 0.2, 1.0)
 	_hp_fill_red = StyleBoxFlat.new()
 	_hp_fill_red.bg_color = Color(0.9, 0.2, 0.2, 1.0)
+	for bar in [player_hp, enemy_hp]:
+		bar.custom_minimum_size.y = 22
+		var background := StyleBoxFlat.new()
+		background.bg_color = Color("15232a")
+		background.border_color = Color("b9a66c")
+		background.set_border_width_all(2)
+		background.set_corner_radius_all(3)
+		bar.add_theme_stylebox_override("background", background)
+		bar.show_percentage = false
+		bar.tooltip_text = "Entity health"
+		var value_label := Label.new()
+		value_label.name = "HealthValue"
+		value_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		value_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		value_label.add_theme_font_size_override("font_size", 18)
+		value_label.add_theme_color_override("font_color", Color.WHITE)
+		value_label.add_theme_color_override("font_outline_color", Color.BLACK)
+		value_label.add_theme_constant_override("outline_size", 2)
+		value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.add_child(value_label)
+	for fill in [_hp_fill_green, _hp_fill_yellow, _hp_fill_red]:
+		fill.set_corner_radius_all(3)
+
+func _setup_hom_ui() -> void:
+	_player_hom_status = CombatHomStatus.new()
+	_player_hom_status.position = Vector2(28, 540)
+	add_child(_player_hom_status)
+	_enemy_hom_status = CombatHomStatus.new()
+	_enemy_hom_status.position = Vector2(1652, 540)
+	add_child(_enemy_hom_status)
+
+func _setup_combat_labels() -> void:
+	for label in [player_name, enemy_name, $PlayerPanel/PlayerBuildTitle, $EnemyPanel/EnemyBuildTitle, turn_label]:
+		if label == player_name or label == enemy_name:
+			label.custom_minimum_size.x = 130
+			label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_add_label_plaque(label)
+		var plaque := label.get_node("LabelPlaque") as TextureRect
+		if label == player_name or label == enemy_name:
+			plaque.offset_left = -70
+			plaque.offset_right = 70
+		elif label == turn_label:
+			plaque.offset_left = -150
+			plaque.offset_right = 150
+			plaque.offset_bottom = 56
+	for label in [player_entity_name, enemy_entity_name]:
+		var panel := Panel.new()
+		panel.name = "HealthPanel"
+		panel.show_behind_parent = true
+		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		panel.anchor_left = 0.5
+		panel.anchor_right = 0.5
+		panel.offset_left = -145
+		panel.offset_right = 112
+		panel.offset_top = -5
+		panel.offset_bottom = 52
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.025, 0.06, 0.07, 0.94)
+		style.border_color = Color("a9955d")
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(3)
+		panel.add_theme_stylebox_override("panel", style)
+		label.add_child(panel)
+
+func _setup_aligned_health_panels() -> void:
+	var player_name_row := player_entity_name.get_parent() as Control
+	var player_hp_row := player_hp.get_parent() as Control
+	var enemy_hp_row := enemy_hp.get_parent() as Control
+	player_name_row.custom_minimum_size.y = 22
+	player_hp_row.custom_minimum_size.y = 22
+	enemy_hp_row.custom_minimum_size.y = 22
+	for pair in [[player_entity_name, player_hp], [enemy_entity_name, enemy_hp]]:
+		var group := Control.new()
+		group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		group.size = Vector2(200, 44)
+		add_child(group)
+		pair[0].reparent(group, false)
+		pair[1].reparent(group, false)
+		pair[0].custom_minimum_size = Vector2(200, 22)
+		pair[0].position = Vector2.ZERO
+		pair[0].size = Vector2(200, 22)
+		pair[1].position = Vector2(0, 22)
+		pair[1].size = Vector2(200, 22)
+		group.name = "PlayerHealthGroup" if pair[0] == player_entity_name else "EnemyHealthGroup"
+	call_deferred("_align_health_panels")
+	get_viewport().size_changed.connect(_align_health_panels, CONNECT_DEFERRED)
+
+func _align_health_panels() -> void:
+	var inverse := get_global_transform().affine_inverse()
+	var player_center: Vector2 = inverse * player_entity.get_global_rect().get_center()
+	var enemy_center: Vector2 = inverse * enemy_entity.get_global_rect().get_center()
+	$PlayerHealthGroup.position = Vector2(player_center.x - 100, 610)
+	$EnemyHealthGroup.position = Vector2(enemy_center.x - 100, 610)
+
+func _setup_inspiration_ui() -> void:
+	_player_inspiration = CombatInspiration.new()
+	_player_inspiration.position = Vector2(0, -32)
+	$PlayerHealthGroup.add_child(_player_inspiration)
+	_enemy_inspiration = CombatInspiration.new()
+	_enemy_inspiration.position = Vector2(0, -32)
+	$EnemyHealthGroup.add_child(_enemy_inspiration)
+	_inspiration_panel = PanelContainer.new()
+	_inspiration_panel.name = "InspirationSelection"
+	_inspiration_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_inspiration_panel.position = Vector2(-455, -200)
+	_inspiration_panel.custom_minimum_size = Vector2(910, 400)
+	_inspiration_panel.z_index = 150
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.025, 0.06, 0.98)
+	style.border_color = Color("d4af37")
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(14)
+	_inspiration_panel.add_theme_stylebox_override("panel", style)
+	add_child(_inspiration_panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	_inspiration_panel.add_child(column)
+	var title := Label.new()
+	title.text = "INSPIRATION - Choose a temporary spell"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color("d4af37"))
+	column.add_child(title)
+	var info := Label.new()
+	info.text = "Choose one spell. It replaces a random equipped spell until this battle ends."
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info.add_theme_font_size_override("font_size", 16)
+	column.add_child(info)
+	var cards := HBoxContainer.new()
+	cards.add_theme_constant_override("separation", 8)
+	cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(cards)
+	for i in 3:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(275, 280)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size", 17)
+		button.pressed.connect(_choose_inspiration.bind(i))
+		var icon := CombatTypeIcon.new()
+		icon.name = "TypeIcon"
+		icon.position = Vector2(10, 8)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		button.add_child(icon)
+		cards.add_child(button)
+		_inspiration_cards.append(button)
+	_inspiration_panel.hide()
+
+func _award_inspiration(caster: Dictionary, recipient: Dictionary, kind: String) -> void:
+	if is_same(caster, recipient) or bool(caster.get("inspiration_used_this_battle", false)):
+		return
+	var previous := int(caster.get("inspiration", 0))
+	if previous >= 3:
+		return
+	caster.inspiration = previous + 1
+	caster.inspiration_pending = caster.inspiration == 3
+	var text := " gains inspiration (%d/3) from %s." % [caster.inspiration, kind.replace("_", " ")]
+	_append_combat_log("", _combat_event(caster, "inspiration", text, {}))
+	if caster.inspiration_pending:
+		_append_combat_log("", _combat_event(caster, "inspiration", " reaches 3/3 inspiration.", {}))
+
+func _inspiration_candidates(fighter: Dictionary) -> Array:
+	var candidates := []
+	if _reg == null:
+		return candidates
+	var element := str(fighter.get("type", ""))
+	for spell in _reg.get_spells_for_type(element) + _reg.get_spells_for_type("hybrid"):
+		if (spell.get("type") == element or (spell.get("type") == "hybrid" and spell.get("primary_type") == element)) and spell.id not in fighter.get("spell_ids", []):
+			candidates.append(spell)
+	candidates.shuffle()
+	return candidates.slice(0, 3)
+
+func _finish_inspiration_exchange() -> void:
+	if _battle_over or _combat_session_invalid or _processing_steps or _resolving_exchange or _inspiration_panel.visible or player.hp <= 0 or enemy.hp <= 0:
+		return
+	if bool(enemy.get("inspiration_pending", false)):
+		var options := _inspiration_candidates(enemy)
+		if options.size() == 3:
+			_append_combat_log("", _combat_event(enemy, "inspiration", " considers three temporary spells.", {}))
+			var best: Dictionary = options[0]
+			var best_score := -1.0
+			for option in options:
+				var score := float(option.get("power_mult", 0.0)) + randf() * 0.15
+				for effect in option.get("effects", []):
+					if effect.kind == "heal" and enemy.hp < enemy.max_hp * 0.5:
+						score += 2.0
+					elif effect.kind == "poison" and player.status.poison <= 0:
+						score += 0.6
+				if score > best_score:
+					best_score = score
+					best = option
+			_replace_inspiration_spell(enemy, best)
+	if bool(player.get("inspiration_pending", false)):
+		_inspiration_options = _inspiration_candidates(player)
+		if _inspiration_options.size() != 3:
+			push_warning("Inspiration: fewer than three eligible spells")
+			return
+		_append_combat_log("", _combat_event(player, "inspiration", " can choose one of three temporary spells.", {}))
+		for i in 3:
+			var spell: Dictionary = _inspiration_options[i]
+			var elements := str(spell.get("primary_type", spell.type)).capitalize()
+			if spell.type == "hybrid":
+				elements += " + " + str(spell.get("secondary_type", "")).capitalize()
+			var details := _spell_description(spell)
+			_inspiration_cards[i].text = elements + "\n\n" + details
+			_inspiration_cards[i].tooltip_text = details
+			_inspiration_cards[i].get_node("TypeIcon").call("configure", str(spell.get("primary_type", spell.type)))
+		_inspiration_panel.show()
+		_refresh_spell_buttons()
+	_update_ui()
+
+func _choose_inspiration(index: int) -> void:
+	if not _inspiration_panel.visible or index < 0 or index >= _inspiration_options.size() or not bool(player.get("inspiration_pending", false)):
+		return
+	var choice: Dictionary = _inspiration_options[index]
+	_inspiration_panel.hide()
+	_inspiration_options.clear()
+	_replace_inspiration_spell(player, choice)
+	_update_ui()
+	_refresh_spell_buttons()
+
+func _replace_inspiration_spell(fighter: Dictionary, spell: Dictionary) -> void:
+	if not bool(fighter.get("inspiration_pending", false)) or bool(fighter.get("inspiration_used_this_battle", false)) or fighter.get("spell_ids", []).size() != 4:
+		return
+	var slot := randi() % 4
+	var old_id := str(fighter.spell_ids[slot])
+	var old_spell: Dictionary = _reg.get_spell_by_id(old_id)
+	fighter.original_spell_ids = fighter.spell_ids.duplicate()
+	fighter.temporary_replaced_slot = slot
+	fighter.temporary_spell_id = str(spell.id)
+	fighter.spell_ids[slot] = str(spell.id)
+	fighter.inspiration_used_this_battle = true
+	fighter.inspiration_pending = false
+	_append_combat_log("", _combat_event(fighter, "inspiration", " chooses %s: %s replaced until this battle ends." % [spell.name, old_spell.get("name", old_id)], {}))
+
+func _restore_inspiration(fighter: Dictionary) -> void:
+	if fighter.is_empty():
+		return
+	if not str(fighter.get("temporary_spell_id", "")).is_empty():
+		fighter.spell_ids = fighter.get("original_spell_ids", []).duplicate()
+		_append_combat_log("", _combat_event(fighter, "inspiration", " restores the original spell loadout.", {}))
+	fighter.original_spell_ids = fighter.get("spell_ids", []).duplicate()
+	fighter.temporary_spell_id = ""
+	fighter.temporary_replaced_slot = -1
+	fighter.inspiration = 0
+	fighter.inspiration_pending = false
+	fighter.inspiration_used_this_battle = false
+
+func _add_label_plaque(label: Label, centered: bool = true) -> void:
+	var plaque := TextureRect.new()
+	plaque.name = "LabelPlaque"
+	plaque.show_behind_parent = true
+	plaque.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plaque.texture = load("res://assets/ui/new-elements/boton-loadout-opciones.png")
+	plaque.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	plaque.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	if centered:
+		plaque.anchor_left = 0.5
+		plaque.anchor_right = 0.5
+		plaque.offset_left = -100
+		plaque.offset_right = 100
+	else:
+		plaque.offset_left = -25
+		plaque.offset_right = 110
+	plaque.offset_top = -7
+	plaque.offset_bottom = 33
+	label.add_child(plaque)
 
 func _apply_hp_colors() -> void:
 	_apply_hp_color(player_hp, player)
@@ -409,7 +865,7 @@ func _on_next_turn() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _on_spell_chosen(index: int) -> void:
-	if _resolving_exchange or _processing_steps or _swap_pending or _battle_over:
+	if _resolving_exchange or _processing_steps or _swap_pending or _battle_over or _inspiration_panel.visible:
 		return
 	var options := _fighter_spell_options(player)
 	if index < 0 or index >= options.size():
@@ -417,15 +873,113 @@ func _on_spell_chosen(index: int) -> void:
 	var chosen: Dictionary = options[index]
 	if int(player.spell_cooldowns.get(chosen.id, 0)) > 0:
 		return
-	var npc_spell := _choose_npc_spell()
-	if npc_spell.is_empty():
+	var action := {"kind": "spell", "spell": chosen, "ultra": _ultra_armed and _ultra_available(player)}
+	_ultra_armed = false
+	await _queue_combat_action(action)
+
+func _ultra_available(fighter: Dictionary) -> bool:
+	return _battle_index == 3 and _player_wins == 1 and _enemy_wins == 1 and not _sudden_death and not bool(fighter.get("ultra_used", false))
+
+func _on_ultra_toggled(armed: bool) -> void:
+	_ultra_armed = armed and _ultra_available(player) and not _resolving_exchange and not _processing_steps and not _inspiration_panel.visible and _pending_hom_action.is_empty()
+	_refresh_spell_buttons()
+
+func _commit_ultra(fighter: Dictionary, action: Dictionary) -> void:
+	if action.get("kind", "spell") != "spell" or not bool(action.get("ultra", false)) or not _ultra_available(fighter):
+		action["ultra"] = false
+		return
+	fighter.ultra_used = true
+	_highlights["ultraturn"] = str(fighter.name) + " used Ultraturn"
+	_append_combat_log("", _combat_event(fighter, "inspiration", " activates ULTRATURN x2; consumed for this battle.", {}))
+
+func _on_switch_weapon() -> void:
+	if _resolving_exchange or _processing_steps or _battle_over or not _combat_started or _inspiration_panel.visible:
+		return
+	var slot := 2 if int(player.get("active_weapon_slot", 1)) == 1 else 1
+	if player.get("equip_%d" % slot, {}).is_empty():
+		return
+	await _queue_combat_action({"kind": "switch", "slot": slot})
+
+func _hom_ready(fighter: Dictionary) -> bool:
+	return not bool(fighter.get("hom_spent", true)) and int(fighter.get("hom_energy", 0)) >= int(fighter.get("hom_ready_at", 3))
+
+func _queue_combat_action(action: Dictionary) -> void:
+	if not _pending_hom_action.is_empty():
+		return
+	if _hom_ready(player):
+		_pending_hom_action = action
+		hom_decision.show()
+		$HomDecision/Attack.text = "Attack (BOOST)" if int(player.hom_energy) >= 6 else "Attack"
+		$HomDecision/Hold.grab_focus()
+		_refresh_spell_buttons()
+		return
+	action["hom"] = "hold"
+	await _start_weapon_exchange(action)
+
+func _on_hom_choice(choice: String) -> void:
+	if _pending_hom_action.is_empty() or _resolving_exchange:
+		return
+	var action := _pending_hom_action
+	_pending_hom_action = {}
+	hom_decision.hide()
+	action["hom"] = choice if _hom_ready(player) else "hold"
+	await _start_weapon_exchange(action)
+
+func _start_weapon_exchange(action: Dictionary) -> void:
+	if _combat_session_invalid or _battle_over:
+		return
+	var npc_action := _choose_npc_action()
+	if npc_action.is_empty():
 		_log_immediate("No spell available for the opponent.")
 		return
+	if npc_action.get("kind") == "spell":
+		npc_action["ultra"] = _npc_should_ultra(npc_action.spell)
+	_commit_ultra(player, action)
+	_commit_ultra(enemy, npc_action)
+	npc_action["hom"] = _choose_npc_hom_action()
 	_resolving_exchange = true
 	_refresh_spell_buttons()
-	await _resolve_spell_exchange(chosen, npc_spell)
+	await _resolve_spell_exchange(action, npc_action)
 	_resolving_exchange = false
+	_finish_inspiration_exchange()
 	_refresh_spell_buttons()
+
+func _choose_npc_action() -> Dictionary:
+	var alternative: Dictionary = enemy.get("equip_2", {})
+	if int(enemy.get("active_weapon_slot", 1)) == 1 and not bool(enemy.get("npc_weapon_switched", false)) and not alternative.is_empty():
+		var current := _get_active_weapon(enemy)
+		var low_hp := float(enemy.hp) < float(enemy.max_hp) * 0.5
+		var current_mods := _item_mods([current])
+		var alternative_mods := _item_mods([alternative])
+		if low_hp and int(alternative_mods.def_flat) >= int(current_mods.def_flat) + 2:
+			return {"kind": "switch", "slot": 2}
+	var spell := _choose_npc_spell()
+	return {} if spell.is_empty() else {"kind": "spell", "spell": spell}
+
+func _choose_npc_hom_action() -> String:
+	if not _hom_ready(enemy):
+		return "hold"
+	var damage := maxi(1, roundi(float(enemy.atk) * (0.6 if int(enemy.hom_energy) >= 6 else 0.4)))
+	if int(enemy.hom_energy) >= 6 or damage >= int(player.hp):
+		return "attack"
+	if enemy.hp <= enemy.max_hp - 15 and enemy.hp <= enemy.max_hp * 0.3 and randf() < 0.15:
+		return "sacrifice"
+	if player.hp < player.max_hp * 0.3 and randf() < 0.45:
+		return "attack"
+	return "hold"
+
+func _npc_should_ultra(spell: Dictionary) -> bool:
+	if not _ultra_available(enemy) or spell.is_empty():
+		return false
+	var power := float(spell.get("power_mult", 0.0))
+	var estimate := maxi(1, roundi((float(enemy.atk) - float(player.def) * 0.5) * power)) * 2
+	if power > 0 and estimate >= int(player.hp):
+		return true
+	if float(enemy.hp) <= float(enemy.max_hp) * 0.4:
+		return true
+	if _turn >= 4:
+		return true
+	return _turn >= 3 and (power >= 1.1 or (power == 0.0 and not spell.get("effects", []).is_empty()))
 
 func _resolve_spell_exchange(chosen: Dictionary, npc_spell: Dictionary) -> void:
 	_turn += 1
@@ -440,15 +994,22 @@ func _resolve_spell_exchange(chosen: Dictionary, npc_spell: Dictionary) -> void:
 	await _resolve_spell_action(first, second, first_spell)
 	if _combat_session_invalid:
 		return
+	if first.hp > 0 and (second.hp > 0 or first_spell.get("hom", "hold") == "sacrifice"):
+		await _resolve_hom_choice(first, second, str(first_spell.get("hom", "hold")))
 	if first.hp > 0 and second.hp > 0:
 		_spell_acts_second = true
 		await _resolve_spell_action(second, first, second_spell)
 		if _combat_session_invalid:
 			return
+		if second.hp > 0 and (first.hp > 0 or second_spell.get("hom", "hold") == "sacrifice"):
+			await _resolve_hom_choice(second, first, str(second_spell.get("hom", "hold")))
 	if player.hp > 0 and enemy.hp > 0:
 		_apply_spell_poison(player)
 		_apply_spell_poison(enemy)
 		await _flush_steps()
+	_charge_homunculus(player)
+	_charge_homunculus(enemy)
+	await _flush_steps()
 	_end_spell_exchange()
 	if player.hp <= 0 or enemy.hp <= 0:
 		_check_end()
@@ -464,41 +1025,110 @@ func _resolve_spell_exchange(chosen: Dictionary, npc_spell: Dictionary) -> void:
 	_update_ui()
 
 func _resolve_spell_action(caster: Dictionary, target: Dictionary, spell: Dictionary) -> void:
-	_execute_spell(caster, target, spell)
+	if spell.get("kind", "spell") == "switch":
+		for key in caster.spell_cooldowns.keys():
+			caster.spell_cooldowns[key] = maxi(0, int(caster.spell_cooldowns[key]) - 1)
+		if int(caster.status.stun) > 0:
+			_log_step("%s is stunned and cannot switch." % caster.name, func(): caster.status.stun -= 1, _combat_event(caster, "debuff", " is stunned and cannot switch.", {}))
+		else:
+			var old_name := _item_label(_get_active_weapon(caster))
+			var slot := int(spell.get("slot", 1))
+			var new_name := _item_label(caster.get("equip_%d" % slot, {}))
+			_log_step("%s switches %s to %s; action spent." % [caster.name, old_name, new_name], func():
+				_set_active_weapon(caster, slot)
+				if is_same(caster, enemy):
+					caster.npc_weapon_switched = true
+			, _combat_event(caster, "switch", " switches %s to %s. Action spent; no spell." % [old_name, new_name], {}))
+		await _flush_steps()
+		return
+	var ultra := bool(spell.get("ultra", false))
+	if spell.has("spell"):
+		spell = spell.spell
+	_execute_spell(caster, target, spell, ultra)
 	await _flush_steps()
 	if _combat_session_invalid:
 		return
 	if caster.hp <= 0 or target.hp <= 0:
 		spell_panel.hide()
-	if caster.hp > 0 and target.hp > 0:
-		_attack_homunculus(caster, target)
-		await _flush_steps()
-		if caster.hp <= 0 or target.hp <= 0:
-			spell_panel.hide()
+
+func _resolve_hom_choice(fighter: Dictionary, target: Dictionary, choice: String) -> void:
+	if not _hom_ready(fighter):
+		return
+	match choice:
+		"attack":
+			var boosted := int(fighter.hom_energy) >= 6
+			fighter.hom_energy = 0
+			if boosted:
+				_log_step("%s unleashes an overcharged attack." % fighter.hom_name, Callable(), _combat_event(fighter, "homunculus", " unleashes an overcharged attack.", {}, true))
+			_attack_homunculus(fighter, target, boosted)
+		"sacrifice":
+			_log_step("%s sacrifices its homunculus." % fighter.name, func():
+				fighter.hom_spent = true
+				fighter.hom_energy = 0
+				_refresh_weapon_stats(fighter)
+				var healed := mini(30, int(fighter.max_hp) - int(fighter.hp))
+				fighter.hp = mini(int(fighter.max_hp), int(fighter.hp) + 30)
+				_animate_pulse(_fighter_sprite(fighter), Color(0.55, 1.0, 0.65), 1.04)
+				_highlights["sacrifice"] = "%s sacrificed %s, healing %d HP" % [fighter.name, fighter.hom_name, healed]
+			, _combat_event(fighter, "heal", " sacrifices %s: restores up to 30 HP; homunculus unavailable for this combat." % fighter.hom_name, {}))
+		_:
+			_log_step("%s holds homunculus energy." % fighter.name, Callable(), _combat_event(fighter, "homunculus", " holds its charge.", {}, true))
+	await _flush_steps()
+
+func _charge_homunculus(fighter: Dictionary) -> void:
+	if bool(fighter.get("hom_spent", true)):
+		return
+	fighter.hom_energy = mini(int(fighter.get("hom_max_energy", 6)), int(fighter.get("hom_energy", 0)) + 1)
+	if fighter.hom_energy in [3, 6]:
+		var state := "is ready (3/6)." if fighter.hom_energy == 3 else "is overcharged (6/6)."
+		_log_step("%s %s" % [fighter.hom_name, state], Callable(), _combat_event(fighter, "homunculus", " " + state, {}, true))
 
 func _apply_spell_poison(fighter: Dictionary) -> void:
 	if fighter.status.poison > 0:
 		_log_step("%s suffers poison (2)." % fighter.name, func():
+			_record_highlight("damage", mini(int(fighter.hp), 2), "%s: poison" % fighter.name)
 			fighter.status.poison -= 1
 			fighter.hp = max(0, fighter.hp - 2)
 			fighter.spell_hit_this_exchange = true
-		)
+		, _combat_event(fighter, "debuff", " suffers 2 poison damage.", {}))
 
 func _refresh_spell_buttons() -> void:
 	var options := _fighter_spell_options(player)
 	spell_panel.visible = not _battle_over and not _swap_pending
+	var alternative := 2 if int(player.get("active_weapon_slot", 1)) == 1 else 1
+	var weapon: Dictionary = player.get("equip_%d" % alternative, {})
+	switch_weapon_btn.visible = _combat_started and not _battle_over and not weapon.is_empty()
+	switch_weapon_btn.disabled = _resolving_exchange or _processing_steps or _swap_pending or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty()
+	switch_weapon_btn.text = "Switch to: %s" % _item_label(weapon)
+	var deciding := _battle_index == 3 and _player_wins == 1 and _enemy_wins == 1 and not _sudden_death
+	ultra_button.visible = _combat_started and deciding and not _battle_over
+	ultra_button.disabled = not _ultra_available(player) or _resolving_exchange or _processing_steps or _inspiration_panel.visible or not _pending_hom_action.is_empty()
+	ultra_button.set_pressed_no_signal(_ultra_armed and _ultra_available(player))
+	ultra_button.text = "ULTRATURN USED" if bool(player.get("ultra_used", false)) else "ULTRATURN x2 - ARMED" if _ultra_armed else "ULTRATURN x2 - Ready"
+	ultra_button.modulate = Color("d7b6ff") if _ultra_armed else Color.WHITE
 	for i in spell_buttons.size():
 		var button: Button = spell_buttons[i]
 		button.visible = i < options.size()
 		if i >= options.size():
 			continue
 		var spell: Dictionary = options[i]
+		var type_icon := button.get_node_or_null("SpellTypeIcon") as Control
+		if type_icon == null:
+			type_icon = CombatTypeIcon.new()
+			type_icon.name = "SpellTypeIcon"
+			type_icon.position = Vector2(8, 5)
+			type_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			button.add_child(type_icon)
+		var type_id := str(spell.get("type", ""))
+		type_icon.visible = type_id in ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"]
+		if type_icon.visible and str(type_icon.get("element")) != type_id:
+			type_icon.call("configure", type_id)
 		var cd := int(player.get("spell_cooldowns", {}).get(spell.id, 0))
 		var power := "Support" if float(spell.power_mult) == 0.0 else "x%.2f" % float(spell.power_mult)
 		var cooldown := "  |  CD: %d" % cd if cd > 0 else ""
 		button.text = "%s\n%s  |  %d%%%s" % [spell.name, power, int(round(float(spell.accuracy) * 100)), cooldown]
-		button.tooltip_text = str(spell.get("desc", ""))
-		button.disabled = _resolving_exchange or _processing_steps or _swap_pending or _battle_over or cd > 0
+		button.tooltip_text = _spell_description(spell)
+		button.disabled = _resolving_exchange or _processing_steps or _swap_pending or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty() or cd > 0
 
 func _style_spell_buttons() -> void:
 	var accent := Color("a7b0bd")
@@ -547,11 +1177,11 @@ func _choose_npc_spell() -> Dictionary:
 		for effect in spell.effects:
 			match str(effect.kind):
 				"heal":
-					weight = 0.0 if enemy.hp >= enemy.max_hp else (7.0 if enemy.hp < enemy.max_hp * 0.65 else 2.0)
+					weight = 0.0 if enemy.hp >= enemy.max_hp else (9.0 if enemy.hp <= enemy.max_hp * 0.4 else 2.0)
 				"shield":
-					weight = 0.0 if enemy.status.shield_pct > 0 else (5.0 if enemy.hp < enemy.max_hp * 0.75 else 2.0)
+					weight = 0.0 if enemy.status.shield_pct >= float(effect.value) else (5.0 if enemy.hp < enemy.max_hp * 0.75 else 2.0)
 				"reflect":
-					weight = 0.0 if enemy.status.reflect_pct > 0 else 3.0
+					weight = 0.0 if enemy.status.reflect_pct >= float(effect.value) else 3.0
 				"poison":
 					weight = 1.0 if player.status.poison > 0 else 6.0
 				"hom_stun":
@@ -562,9 +1192,9 @@ func _choose_npc_spell() -> Dictionary:
 					if effect.target == "enemy":
 						weight = 1.0 if player.status.vuln_pct > 0 else 3.5
 				"atk_boost":
-					weight = 0.0 if enemy.status.atk_boost > 0 else 3.0
+					weight = 0.0 if enemy.status.atk_boost >= float(effect.value) else 3.0
 				"type_neutralize":
-					weight = 0.0 if enemy.spell_neutralize_pending > 0 or _type_multiplier(player, enemy) >= 1.0 else 3.0
+					weight = 0.0 if enemy.spell_neutralize_pending > 0 or _type_multiplier(player, enemy, false) >= 1.0 else 3.0
 				"bonus_if_poisoned":
 					weight += 4.0 if player.status.poison > 0 else 0.0
 				"bonus_if_hit_last_exchange":
@@ -610,7 +1240,7 @@ func _end_spell_exchange() -> void:
 	for fighter in [player, enemy]:
 		fighter.spell_neutralize_active = 0.0
 
-func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) -> bool:
+func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, ultra_active: bool = false) -> bool:
 	var id := str(spell.get("id", ""))
 	if id.is_empty() or caster.get("hp", 0) <= 0 or target.get("hp", 0) <= 0:
 		return false
@@ -633,20 +1263,26 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) -
 				current["remaining"] = int(current.get("remaining", 0)) - 1
 				if current.remaining <= 0:
 					target.status.erase("hybrid_mark")
-		)
+		, _combat_event(caster, "debuff", "'s mark approaches expiry.", {}))
+	var attack_context := {"spell": spell, "actual_damage": 0, "pierce": 0.0, "dispel": 0.0, "ultra": ultra_active}
+	if ultra_active:
+		_log_step("%s boosts the spell with Ultraturn." % caster.name, Callable(), _combat_event(caster, "inspiration", " boosts this spell with ULTRATURN x2.", {}))
 	var animate_attack: bool = spell.get("category") == "attack" and caster.status.stun <= 0
 	_log_step("%s uses spell %s." % [caster.name, spell.get("name", id)], func():
 		if animate_attack:
 			_animate_lunge(_fighter_sprite(caster), 20.0 if is_same(caster, player) else -20.0, true)
-	)
+	, _combat_event(caster, "damage" if animate_attack else "buff", " uses ", {"spell_id": id, "spell_name": spell.get("name", id), "spell_meta": {"id": id, "context": attack_context}, "suffix": "."}))
 	if caster.status.stun > 0:
-		_log_step("%s is stunned and skips the spell." % caster.name, func(): caster.status.stun -= 1)
+		_log_step("%s is stunned and skips the spell." % caster.name, func(): caster.status.stun -= 1, _combat_event(caster, "debuff", " is stunned and skips the spell.", {}))
 		return true
+	if id == str(caster.get("temporary_spell_id", "")):
+		_highlights["inspiration_spell"] = "%s used %s" % [caster.name, spell.get("name", id)]
 	var power := float(spell.get("power_mult", 0.0))
 	var accuracy_focus := 0.0
 	var accuracy_misalign := 0.0
-	var attack_context := {"spell": spell, "actual_damage": 0, "pierce": 0.0, "dispel": 0.0}
 	var poisoned_before := int(target.status.poison) > 0
+	var combo_poisoned := false
+	var combo_retaliation := false
 	if spell.get("category") == "attack":
 		accuracy_focus = float(caster.status.get("focus_next", 0.0))
 		accuracy_misalign = float(caster.status.get("misalign_next", 0.0))
@@ -654,14 +1290,14 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) -
 			_log_step("%s expends accuracy effects." % caster.name, func():
 				caster.status.erase("focus_next")
 				caster.status.erase("misalign_next")
-			)
+			, _combat_event(caster, "buff", " expends accuracy effects.", {}))
 	for effect in spell.get("effects", []):
 		if effect.kind == "bonus_if_poisoned" and target.status.poison > 0:
 			power *= 1.0 + float(effect.value)
-			_log_step("%s exploits poison." % caster.name, Callable())
+			combo_poisoned = true
 		elif effect.kind == "bonus_if_hit_last_exchange" and caster.get("spell_hit_last_exchange", false):
 			power *= 1.0 + float(effect.value)
-			_log_step("%s retaliates for the previous exchange." % caster.name, Callable())
+			combo_retaliation = true
 		elif effect.kind == "bonus_if_low_hp" and float(caster.hp) < float(caster.max_hp) * float(effect.get("threshold", 0.4)):
 			power += float(effect.value)
 		elif effect.kind == "bonus_if_marked" and marked:
@@ -681,15 +1317,23 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) -
 		hit = _attack_entity(caster, target, power, float(spell.get("accuracy", 1.0)), true, attack_context, accuracy_focus, accuracy_misalign)
 	else:
 		hit = randf() < float(spell.get("accuracy", 1.0))
-		_log_step("%s's spell %s." % [caster.name, "succeeds" if hit else "misses"], Callable())
+		_log_step("%s's spell %s." % [caster.name, "succeeds" if hit else "misses"], Callable(), _combat_event(caster, "buff" if hit else "miss", "'s spell %s." % ("succeeds" if hit else "misses"), {}))
 	if not hit:
 		return true
+	if combo_poisoned:
+		_log_step("%s exploits poison." % caster.name, Callable(), _combat_event(caster, "combo", " COMBO: exploits poison.", {}))
+	if combo_retaliation:
+		_log_step("%s retaliates for the previous exchange." % caster.name, Callable(), _combat_event(caster, "combo", " COMBO: retaliates for the previous exchange.", {}))
 	if spell.get("type") == "hybrid" and marked:
-		_log_step("%s consumes the hybrid mark." % caster.name, func(): target.status.erase("hybrid_mark"))
+		_log_step("%s consumes the hybrid mark." % caster.name, func(): target.status.erase("hybrid_mark"), _combat_event(caster, "combo", " consumes the hybrid mark.", {}))
 	for effect in spell.get("effects", []):
 		var recipient: Dictionary = caster if effect.target == "self" else target
 		var value := float(effect.value)
 		var kind := str(effect.kind)
+		if ultra_active and kind in ["heal", "recoil", "atk_boost", "atk_down", "shield", "reflect", "vuln", "poison", "hom_stun", "focus_next", "misalign_next", "tempo_shift", "hybrid_mark", "type_neutralize", "poison_on_reflect"]:
+			value *= 2.0
+			if kind in ["atk_boost", "atk_down", "shield", "reflect", "vuln", "focus_next", "misalign_next", "type_neutralize"]:
+				value = clampf(value, 0.0, 0.95 if kind in ["shield", "reflect"] else 1.0)
 		match kind:
 			"cleanse_one":
 				_log_step("%s cleanses one negative status." % recipient.name, func():
@@ -697,194 +1341,256 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) -
 						if float(recipient.status.get(field, 0)) > 0:
 							recipient.status[field] = 0
 							break
-				)
+				, _combat_event(recipient, "buff", " cleanses one negative status.", {}))
 			"focus_next", "misalign_next":
-				_log_step("%s gains %s." % [recipient.name, kind], func(): recipient.status[kind] = maxf(float(recipient.status.get(kind, 0)), value))
+				_log_step("%s gains %s." % [recipient.name, kind], func():
+					var before := float(recipient.status.get(kind, 0))
+					recipient.status[kind] = maxf(before, value)
+					if kind == "misalign_next" and float(recipient.status[kind]) > before:
+						_award_inspiration(caster, recipient, kind)
+				, _combat_event(recipient, "buff" if kind == "focus_next" else "debuff", " gains %s." % _status_effect_text(kind, value), {}))
 			"tempo_shift":
-				_log_step("%s's next initiative shifts by %s." % [recipient.name, str(value)], func(): recipient.status.tempo_bonus = value)
+				_log_step("%s's next initiative shifts by %s." % [recipient.name, str(value)], func():
+					var before := float(recipient.status.get("tempo_bonus", 0.0))
+					recipient.status.tempo_bonus = value
+					if value < 0.0 and value < before:
+						_award_inspiration(caster, recipient, kind)
+				, _combat_event(recipient, "buff", "'s initiative shifts by %s." % str(value), {}))
 			"recoil":
 				_log_step("%s takes %d recoil." % [recipient.name, int(value)], func():
+					_record_highlight("damage", mini(int(recipient.hp), int(value)), "%s: recoil" % recipient.name)
 					if recipient.hp > 0 and value > 0:
 						recipient.spell_hit_this_exchange = true
 					recipient.hp = max(0, recipient.hp - int(value))
 					if value > 0:
 						_animate_hit(_fighter_sprite(recipient), int(value), recipient.max_hp)
-				)
+				, _combat_event(recipient, "damage", " takes %d recoil." % int(value), {}))
 			"life_leech":
-				var cap := int(effect.get("max_heal", 0))
+				var cap := int(effect.get("max_heal", 0)) * (2 if ultra_active else 1)
 				_log_step("%s siphons health." % recipient.name, func():
 					if recipient.hp > 0:
 						var recovered := mini(cap, int(floor(float(attack_context.actual_damage) * value)))
+						var actual := mini(recovered, int(recipient.max_hp) - int(recipient.hp))
 						recipient.hp = mini(recipient.max_hp, recipient.hp + recovered)
-				)
+						_append_combat_log("", _combat_event(recipient, "heal", " restores %d HP from life leech." % actual, {}))
+				, _combat_event(recipient, "heal", " siphons health.", {}))
 			"consume_poison":
 				if poisoned_before:
-					_log_step("%s consumes poison." % caster.name, func(): recipient.status.poison = maxi(0, int(recipient.status.poison) - int(value)))
+					_log_step("%s consumes poison." % caster.name, func(): recipient.status.poison = maxi(0, int(recipient.status.poison) - int(value)), _combat_event(caster, "combo", " consumes poison.", {}))
 			"hybrid_mark":
-				_log_step("%s marks %s." % [caster.name, recipient.name], func(): recipient.status.hybrid_mark = {"owner": mark_owner, "remaining": int(value)})
+				_log_step("%s marks %s." % [caster.name, recipient.name], func():
+					var before: Dictionary = recipient.status.get("hybrid_mark", {}).duplicate(true)
+					recipient.status.hybrid_mark = {"owner": mark_owner, "remaining": int(value)}
+					if before != recipient.status.hybrid_mark:
+						_award_inspiration(caster, recipient, kind)
+				, _combat_event(caster, "debuff", " marks ", {"target": recipient.name, "target_color": _actor_color(recipient), "suffix": " for %d actions." % int(value)}))
 			"shield_by_order":
 				var shield_value := float(effect.get("second_value", value)) if _spell_acts_second else value
-				_log_step("%s gains a shield." % recipient.name, func(): recipient.status.shield_pct = maxf(float(recipient.status.shield_pct), shield_value))
+				if ultra_active:
+					shield_value = minf(shield_value * 2.0, 0.95)
+				_log_step("%s gains a shield." % recipient.name, func(): _other_defense(recipient, "shield_pct", shield_value), _combat_event(recipient, "shield", " gains shield %d%%." % roundi(shield_value * 100), {}))
 			"poison_on_reflect":
-				_log_step("%s prepares a toxic reflection." % recipient.name, func(): recipient.status.poison_on_reflect = int(value))
+				_log_step("%s prepares a toxic reflection." % recipient.name, func(): recipient.status.poison_on_reflect = int(value), _combat_event(recipient, "shield", " prepares a reflection with %d poison turns." % int(value), {}))
 			"heal":
 				_log_step("%s restores %d HP." % [recipient.name, int(value)], func():
 					if recipient.hp < recipient.max_hp:
 						_animate_pulse(_fighter_sprite(recipient), Color(0.55, 1.0, 0.65), 1.04)
+					var healed := mini(int(value), int(recipient.max_hp) - int(recipient.hp))
 					recipient.hp = min(recipient.max_hp, recipient.hp + int(value))
-				)
+					if ultra_active:
+						_append_combat_log("", _combat_event(recipient, "heal", " restores %d HP from the boosted spell." % healed, {}))
+				, _combat_event(recipient, "heal", " restores up to %d HP." % int(value), {}))
 			"shield", "reflect", "atk_boost", "atk_down", "vuln", "poison", "hom_stun":
 				var fields := {"shield": "shield_pct", "reflect": "reflect_pct", "vuln": "vuln_pct"}
 				var field: String = fields.get(kind, kind)
-				_log_step("%s gains %s (%s)." % [recipient.name, kind, str(effect.value)], func():
+				_log_step("%s gains %s (%s)." % [recipient.name, kind, str(value)], func():
+					var before := float(recipient.status.get(field, 0))
 					if kind in ["shield", "reflect", "atk_boost"] and value > float(recipient.status.get(field, 0)):
 						_animate_pulse(_fighter_sprite(recipient), Color(0.62, 0.7, 1.0), 1.04)
-					recipient.status[field] = max(recipient.status.get(field, 0), value)
-				)
+					if kind in ["shield", "reflect"]:
+						_other_defense(recipient, field, value)
+					else:
+						recipient.status[field] = max(recipient.status.get(field, 0), value)
+					if kind in ["atk_down", "vuln", "poison", "hom_stun"] and float(recipient.status.get(field, 0)) > before:
+						_award_inspiration(caster, recipient, kind)
+				, _combat_event(recipient, "shield" if kind in ["shield", "reflect"] else "buff" if kind == "atk_boost" else "debuff", " gains %s." % _status_effect_text(kind, value), {}))
 			"type_neutralize":
 				_log_step("%s prepares type neutralization." % recipient.name, func():
 					if value > float(recipient.get("spell_neutralize_pending", 0.0)):
 						_animate_pulse(_fighter_sprite(recipient), Color(0.8, 0.65, 1.0), 1.04)
 					recipient.spell_neutralize_pending = max(recipient.get("spell_neutralize_pending", 0.0), value)
-				)
+				, _combat_event(recipient, "buff", " prepares %d%% type neutralization." % roundi(value * 100), {}))
 	return true
 
 func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: float = 1.0, accuracy: float = 0.9, spell_attack: bool = false, context: Dictionary = {}, accuracy_focus: float = 0.0, accuracy_misalign: float = 0.0) -> bool:
 	if defender.hp <= 0:
 		return false
 	if attacker.status.stun > 0:
-		_log_step("%s is stunned and skips a turn." % attacker.name, func(): attacker.status.stun -= 1)
+		_log_step("%s is stunned and skips a turn." % attacker.name, func(): attacker.status.stun -= 1, _combat_event(attacker, "debuff", " is stunned and skips a turn.", {}))
 		return false
 	if _try_evasion(defender):
-		var ev_item := _item_with_effect([defender.equip_1, defender.equip_2], "evasion_pct")
-		_log_step("%s evades the strike via %s." % [defender.name, _item_label(ev_item)], func(): _animate_item_effect(defender, "evasion_pct"))
+		var ev_item := _item_with_effect([_get_active_weapon(defender)], "evasion_pct")
+		_log_step("%s evades the strike via %s." % [defender.name, _item_label(ev_item)], func(): _animate_item_effect(defender, "evasion_pct"), _combat_event(defender, "miss", " evades via %s." % _item_label(ev_item), {}))
 		return false
 	if not _roll_hit(attacker, defender, accuracy, spell_attack, accuracy_focus, accuracy_misalign):
-		_log_step("%s's attack misses %s." % [attacker.name, defender.name], Callable())
+		_log_step("%s's attack misses %s." % [attacker.name, defender.name], Callable(), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}))
 		return false
 
 	var mult: float = _spell_multiplier(attacker, defender, context.get("spell", {})) if not context.is_empty() else _type_multiplier(attacker, defender)
 	var base_atk: int = int(attacker.atk)
 	if attacker.status.atk_down > 0:
 		base_atk = int(round(base_atk * (1.0 - attacker.status.atk_down)))
-		_log_step("%s shakes off the weakness." % attacker.name, func(): attacker.status.atk_down = 0)
+		_log_step("%s shakes off the weakness." % attacker.name, func(): attacker.status.atk_down = 0, _combat_event(attacker, "debuff", " shakes off the weakness.", {}))
 	if attacker.status.atk_boost > 0:
+		var previous_atk := base_atk
 		base_atk = int(round(base_atk * (1.0 + attacker.status.atk_boost)))
-		_log_step("%s expends the surge." % attacker.name, func(): attacker.status.atk_boost = 0)
+		var boost_gain := maxi(0, maxi(1, int(round((base_atk - int(defender.def * 0.5)) * mult * power_mult))) - maxi(1, int(round((previous_atk - int(defender.def * 0.5)) * mult * power_mult))))
+		_log_step("%s expends the surge." % attacker.name, func():
+			attacker.status.atk_boost = 0
+			_record_highlight("combo", boost_gain, "%s: attack boost" % attacker.name)
+		, _combat_event(attacker, "combo", " COMBO: attack boost applied.", {}))
 	var dmg: int = max(1, int(round((base_atk - int(defender.def * 0.5)) * mult * power_mult)))
 	if defender.status.vuln_pct > 0:
+		var before_vulnerability := dmg
 		dmg = int(round(dmg * (1.0 + defender.status.vuln_pct)))
-		_log_step("%s's vulnerability is consumed." % defender.name, func(): defender.status.vuln_pct = 0)
+		var vulnerability_gain := maxi(0, dmg - before_vulnerability)
+		_log_step("%s's vulnerability is consumed." % defender.name, func():
+			defender.status.vuln_pct = 0
+			_record_highlight("combo", vulnerability_gain, "%s: vulnerability" % attacker.name)
+		, _combat_event(attacker, "combo", " COMBO: exploits vulnerability.", {}))
 	if defender.status.shield_pct > 0:
 		var dispel := clampf(float(context.get("dispel", 0.0)), 0.0, 1.0)
 		var pierce := clampf(float(context.get("pierce", 0.0)), 0.0, 1.0)
 		if dispel > 0.0:
-			_log_step("%s's shield is weakened." % defender.name, func(): defender.status.shield_pct *= 1.0 - dispel)
+			_log_step("%s's shield is weakened." % defender.name, func():
+				defender.status.shield_pct *= 1.0 - dispel
+				for field in ["weapon_shield_pct", "other_shield_pct"]:
+					if defender.has(field):
+						defender[field] *= 1.0 - dispel
+			, _combat_event(defender, "shield", "'s shield is weakened.", {}))
 		var effective_shield: float = defender.status.shield_pct * (1.0 - dispel) * (1.0 - pierce)
+		var before_shield := dmg
 		dmg = int(round(dmg * (1.0 - effective_shield)))
-		_log_step("%s's ward shatters." % defender.name, func(): defender.status.shield_pct = 0)
+		var prevented := maxi(0, before_shield - dmg)
+		_log_step("%s's ward shatters." % defender.name, func():
+			_clear_defense(defender, "shield_pct")
+			_record_highlight("defense", prevented, str(defender.name))
+		, _combat_event(defender, "shield", "'s ward blocks %d damage." % prevented, {}))
+	if bool(context.get("ultra", false)):
+		dmg *= 2
 	_log_step("%s hits %s for %d." % [attacker.name, defender.name, dmg], func():
+		_record_highlight("damage", mini(int(defender.hp), dmg), "%s to %s" % [attacker.name, defender.name])
 		if not context.is_empty():
+			_record_spell_damage(context.get("spell", {}), mini(int(defender.hp), dmg))
 			context.actual_damage += mini(int(defender.hp), dmg)
 		defender.hp = max(0, defender.hp - dmg)
 		_animate_hit(_fighter_sprite(defender), dmg, defender.max_hp)
 		if spell_attack and dmg > 0:
 			defender.spell_hit_this_exchange = true
-	)
+	, _combat_event(attacker, "damage", " hits ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " for %d." % dmg, "damage": dmg, "effectiveness": mult, "spell_id": str(context.get("spell", {}).get("id", "")) if not context.is_empty() else "", "show_spell_link": false}))
 	if defender.status.reflect_pct > 0:
 		if _try_ignore_reflect(attacker):
-			var ir_item := _item_with_effect([attacker.equip_1, attacker.equip_2], "ignore_reflect_chance")
+			var ir_item := _item_with_effect([_get_active_weapon(attacker)], "ignore_reflect_chance")
 			_log_step("%s nullifies reflect via %s." % [attacker.name, _item_label(ir_item)], func():
-				defender.status.reflect_pct = 0
+				_clear_defense(defender, "reflect_pct")
 				defender.status.erase("poison_on_reflect")
 				_animate_item_effect(attacker, "ignore_reflect_chance")
-			)
+			, _combat_event(attacker, "shield", " nullifies reflect via %s." % _item_label(ir_item), {}))
 		else:
 			var r := int(round(dmg * defender.status.reflect_pct))
 			_log_step("%s reflects %d damage." % [defender.name, r], func():
+				_record_highlight("damage", mini(int(attacker.hp), r), "%s: reflection" % defender.name)
+				_record_highlight("reflection", mini(int(attacker.hp), r), "%s against %s" % [defender.name, attacker.name])
 				attacker.hp = max(0, attacker.hp - r)
 				if r > 0:
 					_animate_hit(_fighter_sprite(attacker), r, attacker.max_hp)
 				if spell_attack and r > 0:
 					attacker.spell_hit_this_exchange = true
-				defender.status.reflect_pct = 0
+				_clear_defense(defender, "reflect_pct")
 				if int(defender.status.get("poison_on_reflect", 0)) > 0:
 					attacker.status.poison = maxi(int(attacker.status.poison), int(defender.status.poison_on_reflect))
 				defender.status.erase("poison_on_reflect")
-			)
+			, _combat_event(defender, "shield", " reflects %d damage." % r, {}))
 	var true_bonus: int = _true_on_hit(attacker)
 	if true_bonus > 0:
-		var t_item := _item_with_effect([attacker.equip_1, attacker.equip_2], "true_on_hit")
+		var t_item := _item_with_effect([_get_active_weapon(attacker)], "true_on_hit")
 		_log_step("%s's %s adds +%d true damage." % [attacker.name, _item_label(t_item), true_bonus], func():
+			_record_highlight("damage", mini(int(defender.hp), true_bonus), "%s: %s" % [attacker.name, _item_label(t_item)])
 			if not context.is_empty():
+				_record_spell_damage(context.get("spell", {}), mini(int(defender.hp), true_bonus))
 				context.actual_damage += mini(int(defender.hp), true_bonus)
 			defender.hp = max(0, defender.hp - true_bonus)
 			_animate_item_effect(attacker, "true_on_hit")
 			_animate_hit(_fighter_sprite(defender), true_bonus, defender.max_hp)
-		)
+		, _combat_event(attacker, "damage", "'s %s adds +%d true damage." % [_item_label(t_item), true_bonus], {}))
 	var dot_true: int = _dot_on_hit(attacker)
 	if dot_true > 0:
-		var d_item := _item_with_effect([attacker.equip_1, attacker.equip_2], "dot_true")
+		var d_item := _item_with_effect([_get_active_weapon(attacker)], "dot_true")
 		_log_step("%s's %s corrodes for %d." % [attacker.name, _item_label(d_item), dot_true], func():
+			_record_highlight("damage", mini(int(defender.hp), dot_true), "%s: %s" % [attacker.name, _item_label(d_item)])
 			if not context.is_empty():
+				_record_spell_damage(context.get("spell", {}), mini(int(defender.hp), dot_true))
 				context.actual_damage += mini(int(defender.hp), dot_true)
 			defender.hp = max(0, defender.hp - dot_true)
 			_animate_item_effect(attacker, "dot_true")
 			_animate_hit(_fighter_sprite(defender), dot_true, defender.max_hp)
-		)
+		, _combat_event(attacker, "debuff", "'s %s corrodes for %d." % [_item_label(d_item), dot_true], {}))
 		var v_hit: float = _vuln_on_hit(attacker)
 		if v_hit > 0.0:
 			_log_step("%s is left vulnerable by the corrosion." % defender.name, func():
 				defender.status.vuln_pct = max(defender.status.vuln_pct, v_hit)
 				_animate_item_effect(attacker, "vuln_on_hit")
-			)
+			, _combat_event(defender, "debuff", " is left vulnerable by the corrosion.", {}))
 
 	if attacker.type == "vitriol" and randi() % 100 < 30:
-		_log_step("%s corrodes %s (Poison)." % [attacker.name, defender.name], func(): defender.status.poison = 2)
+		_log_step("%s corrodes %s (Poison)." % [attacker.name, defender.name], func(): defender.status.poison = 2, _combat_event(attacker, "debuff", " corrodes ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " (Poison)."}))
 	if attacker.type == "mercury" and randi() % 100 < 20:
-		_log_step("%s shocks %s (Stun)." % [attacker.name, defender.name], func(): defender.status.stun = 1)
+		_log_step("%s shocks %s (Stun)." % [attacker.name, defender.name], func(): defender.status.stun = 1, _combat_event(attacker, "debuff", " shocks ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " (Stun)."}))
 	if attacker.type == "sulfur" and randi() % 100 < 20:
-		_log_step("%s sears %s (Atk down)." % [attacker.name, defender.name], func(): defender.status.atk_down = max(defender.status.atk_down, 0.15))
+		_log_step("%s sears %s (Atk down)." % [attacker.name, defender.name], func(): defender.status.atk_down = max(defender.status.atk_down, 0.15), _combat_event(attacker, "debuff", " sears ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " (Atk down)."}))
 	if attacker.type == "sodium" and randi() % 100 < 20:
 		_log_step("%s crystallizes a ward." % attacker.name, func():
 			if attacker.status.shield_pct < 0.12:
 				_animate_pulse(_fighter_sprite(attacker), Color(0.62, 0.7, 1.0), 1.04)
-			attacker.status.shield_pct = max(attacker.status.shield_pct, 0.12)
-		)
+			_other_defense(attacker, "shield_pct", 0.12)
+		, _combat_event(attacker, "shield", " crystallizes a ward.", {}))
 	if attacker.type == "aether" and randi() % 100 < 20:
-		_log_step("%s rends the veil (Vulnerable)." % attacker.name, func(): defender.status.vuln_pct = max(defender.status.vuln_pct, 0.12))
+		_log_step("%s rends the veil (Vulnerable)." % attacker.name, func(): defender.status.vuln_pct = max(defender.status.vuln_pct, 0.12), _combat_event(attacker, "debuff", " rends the veil (Vulnerable).", {}))
 	if attacker.type == "gold" and randi() % 100 < 20:
 		_log_step("%s mints 3 HP." % attacker.name, func():
 			if attacker.hp < attacker.max_hp:
 				_animate_pulse(_fighter_sprite(attacker), Color(0.55, 1.0, 0.65), 1.04)
 			attacker.hp = min(attacker.max_hp, attacker.hp + 3)
-		)
+		, _combat_event(attacker, "heal", " mints up to 3 HP.", {}))
 
 	if not spell_attack and defender.status.poison > 0:
 		defender.status.poison -= 1
 		defender.hp = max(0, defender.hp - 2)
-		_log("%s suffers poison (2)." % defender.name)
+		_log("%s suffers poison (2)." % defender.name, _combat_event(defender, "debuff", " suffers 2 poison damage.", {}))
 	return true
 
-func _attack_homunculus(attacker: Dictionary, defender: Dictionary) -> void:
+func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: bool = false) -> void:
 	if defender.hp <= 0:
+		return
+	if bool(attacker.get("hom_spent", true)):
 		return
 	var stunned_fighter := attacker if _spell_exchange_active else defender
 	if stunned_fighter.status.hom_stun > 0:
-		_log_step("%s's homunculus is nullified this turn." % stunned_fighter.name, func(): stunned_fighter.status.hom_stun -= 1)
+		_log_step("%s's homunculus is nullified this turn." % stunned_fighter.name, func(): stunned_fighter.status.hom_stun -= 1, _combat_event(stunned_fighter, "debuff", " is nullified.", {}, true))
 		return
 	if not _roll_hit(attacker, defender, 0.95):
-		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], func(): _animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false))
+		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], func(): _animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}, true))
 		return
-	var hom_dmg: int = max(1, int(round(attacker.atk * 0.4)))
+	var hom_dmg: int = max(1, int(round(attacker.atk * (0.6 if boosted else 0.4))))
 	var track_hit := _spell_exchange_active
 	_log_step("%s's homunculus strikes %s for %d." % [attacker.name, defender.name, hom_dmg], func():
+		_record_highlight("damage", mini(int(defender.hp), hom_dmg), "%s (%s) to %s" % [attacker.hom_name, attacker.name, defender.name])
 		_animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false)
 		defender.hp = max(0, defender.hp - hom_dmg)
 		_animate_hit(_fighter_sprite(defender), hom_dmg, defender.max_hp)
 		if track_hit:
 			defender.spell_hit_this_exchange = true
-	)
+	, _combat_event(attacker, "homunculus", " overcharged attack on " if boosted else " strikes ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " for %d." % hom_dmg}, true))
 
 func _check_round_swap() -> void:
 	if _round != 2:
@@ -894,18 +1600,8 @@ func _check_round_swap() -> void:
 	var player_wins: bool = player.hp > enemy.hp
 	if player_wins:
 		_apply_tempo_win_bonus(player, true)
-		_swap_pending = true
-		swap_panel.visible = true
-		swap_side1.text = _item_label(player.side_1)
-		swap_side2.text = _item_label(player.side_2)
-		swap_icon1.texture = _load_item_icon(player.side_1)
-		swap_icon2.texture = _load_item_icon(player.side_2)
-		swap_icon1.custom_minimum_size = Vector2(96, 96)
-		swap_icon2.custom_minimum_size = Vector2(96, 96)
-		_log_immediate("You won round 1. Choose a sideboard item to swap in.")
 	else:
 		_apply_tempo_win_bonus(enemy, false)
-		_npc_swap()
 
 func _on_swap_chosen(which: String) -> void:
 	if not _swap_pending:
@@ -962,6 +1658,8 @@ func _apply_mods(f: Dictionary) -> void:
 	var hom := _find_by_id(_homunculi, f.hom_id)
 	var stats := _get_base_stats(ent)
 	var buffs := _get_homunculus_buffs(hom)
+	if bool(f.get("hom_spent", false)):
+		buffs = {"atk": 0, "def": 0, "hp": 0}
 	var atk = stats.atk + buffs.atk
 	var def = stats.def + buffs.def
 	var hp = stats.hp + buffs.hp
@@ -970,7 +1668,7 @@ func _apply_mods(f: Dictionary) -> void:
 	f.def = def + mods.def_flat
 	f.max_hp = hp
 	f.hp = min(f.hp, f.max_hp)
-	f.item_fx = _collect_item_effects([f.equip_1, f.equip_2])
+	f.item_fx = _collect_item_effects([_get_active_weapon(f)])
 
 func _check_end() -> void:
 	if player.hp <= 0 or enemy.hp <= 0:
@@ -991,6 +1689,9 @@ func _handle_battle_end() -> void:
 		_log_immediate("You win battle %d." % _battle_index)
 
 	_log_immediate("Score: %d-%d" % [_player_wins, _enemy_wins])
+	_restore_inspiration(player)
+	_restore_inspiration(enemy)
+	_inspiration_panel.hide()
 
 	if _player_wins >= 2 or _enemy_wins >= 2:
 		if _player_wins > _enemy_wins:
@@ -1000,7 +1701,8 @@ func _handle_battle_end() -> void:
 		else:
 			_log_immediate("Match draw.")
 		_battle_over = true
-		next_turn_btn.text = "Return"
+		_show_highlights()
+		next_turn_btn.text = "Return to Loadout"
 		next_turn_btn.show()
 		next_turn_btn.disabled = false
 		return
@@ -1020,7 +1722,8 @@ func _handle_battle_end() -> void:
 		else:
 			_log_immediate("Match loss.")
 		_battle_over = true
-		next_turn_btn.text = "Return"
+		_show_highlights()
+		next_turn_btn.text = "Return to Loadout"
 		next_turn_btn.show()
 		next_turn_btn.disabled = false
 		return
@@ -1046,8 +1749,64 @@ func _reset_battle_state() -> void:
 	_reset_fighter(player)
 	_reset_fighter(enemy)
 
+func _record_highlight(kind: String, amount: int, description: String) -> void:
+	if amount > int(_highlights.get(kind, 0)):
+		_highlights[kind] = amount
+		_highlights[kind + "_text"] = description
+
+func _record_spell_damage(spell: Dictionary, amount: int) -> void:
+	var spell_name := str(spell.get("name", ""))
+	if not spell_name.is_empty() and amount > 0:
+		_spell_damage_totals[spell_name] = int(_spell_damage_totals.get(spell_name, 0)) + amount
+
+func _show_highlights() -> void:
+	var lines: Array[String] = []
+	if int(_highlights.damage) > 0:
+		lines.append("Highest damage: %d | %s" % [_highlights.damage, _highlights.damage_text])
+	if int(_highlights.reflection) > 0:
+		lines.append("Largest reflection: %d | %s" % [_highlights.reflection, _highlights.reflection_text])
+	if int(_highlights.get("defense", 0)) > 0:
+		lines.append("Damage blocked: %d | %s" % [_highlights.defense, _highlights.defense_text])
+	if int(_highlights.get("combo", 0)) > 0:
+		lines.append("Best synergy: +%d before mitigation | %s" % [_highlights.combo, _highlights.combo_text])
+	if _highlights.has("sacrifice"):
+		lines.append(str(_highlights.sacrifice))
+	if _highlights.has("inspiration_spell"):
+		lines.append("Inspiration: " + str(_highlights.inspiration_spell))
+	if _highlights.has("ultraturn"):
+		lines.append(str(_highlights.ultraturn))
+	var strongest := ""
+	var total := 0
+	for spell_name in _spell_damage_totals:
+		if int(_spell_damage_totals[spell_name]) > total:
+			strongest = str(spell_name)
+			total = int(_spell_damage_totals[spell_name])
+	if total > 0:
+		lines.append("Most damaging spell: %s (%d total)" % [strongest, total])
+	if lines.is_empty():
+		return
+	var panel := PanelContainer.new()
+	panel.position = Vector2(24, 24)
+	panel.custom_minimum_size = Vector2(440, 0)
+	var background := StyleBoxFlat.new()
+	background.bg_color = Color(0.025, 0.04, 0.045, 0.92)
+	background.border_color = Color("95834f")
+	background.set_border_width_all(1)
+	background.set_content_margin_all(14)
+	panel.add_theme_stylebox_override("panel", background)
+	var label := Label.new()
+	label.text = "BATTLE HIGHLIGHTS\n" + "\n".join(lines)
+	label.add_theme_font_size_override("font_size", 17)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(label)
+	add_child(panel)
+
 func _reset_fighter(f: Dictionary) -> void:
+	_restore_inspiration(f)
 	f.hp = f.max_hp
+	for field in ["shield_pct", "reflect_pct"]:
+		f.erase("weapon_" + field)
+		f.erase("other_" + field)
 	f.spell_cooldowns = {}
 	f.spell_hit_this_exchange = false
 	f.spell_hit_last_exchange = false
@@ -1091,7 +1850,7 @@ func _spell_multiplier(attacker: Dictionary, defender: Dictionary, spell: Dictio
 	var neutralize := maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0)))
 	return 1.0 + (multiplier - 1.0) * (1.0 - neutralize)
 
-func _type_multiplier(attacker: Dictionary, defender: Dictionary) -> float:
+func _type_multiplier(attacker: Dictionary, defender: Dictionary, emit_log: bool = true) -> float:
 	_ensure_type_effectiveness()
 	var row: Dictionary = _type_effectiveness.get(str(attacker.type), {})
 	var relationship := float(row.get(str(defender.type), 1.0))
@@ -1100,9 +1859,9 @@ func _type_multiplier(attacker: Dictionary, defender: Dictionary) -> float:
 		multiplier = 1.12
 	elif relationship < 1.0:
 		var red: float = float(attacker.item_fx.get("disadvantage_reduction", 0.0))
-		if red > 0.0:
-			var d_item := _item_with_effect([attacker.equip_1, attacker.equip_2], "disadvantage_reduction")
-			_log("%s steadies the disadvantage via %s." % [attacker.name, _item_label(d_item)])
+		if red > 0.0 and emit_log:
+			var d_item := _item_with_effect([_get_active_weapon(attacker)], "disadvantage_reduction")
+			_log("%s steadies the disadvantage via %s." % [attacker.name, _item_label(d_item)], _combat_event(attacker, "advantage", " steadies the disadvantage via %s." % _item_label(d_item), {}))
 		multiplier = min(0.92 + red, 1.0)
 	var neutralize := maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0)))
 	return 1.0 + (multiplier - 1.0) * (1.0 - neutralize)
@@ -1218,34 +1977,33 @@ func _apply_round_start_effects() -> void:
 func _apply_round_start_for(f: Dictionary, _is_player: bool) -> void:
 	if f.item_fx.get("ward_pct", 0.0) > 0.0:
 		var ward: float = float(f.item_fx.get("ward_pct", 0.0))
-		_log_step("%s forms a ward via %s." % [f.name, _item_label(_item_with_effect([f.equip_1, f.equip_2], "ward_pct"))], func():
+		_log_step("%s forms a ward via %s." % [f.name, _item_label(_item_with_effect([_get_active_weapon(f)], "ward_pct"))], func():
 			if ward > f.status.shield_pct:
 				_animate_item_effect(f, "ward_pct")
 				_animate_pulse(_fighter_sprite(f), Color(0.62, 0.7, 1.0), 1.04)
-			f.status.shield_pct = max(f.status.shield_pct, ward)
-		)
+			_weapon_defense(f, "shield_pct", ward)
+		, _combat_event(f, "shield", " forms a ward via %s." % _item_label(_item_with_effect([_get_active_weapon(f)], "ward_pct")), {}))
 	if f.item_fx.get("reflect_pct", 0.0) > 0.0:
 		var refl: float = float(f.item_fx.get("reflect_pct", 0.0))
-		_log_step("%s readies a mirror from %s." % [f.name, _item_label(_item_with_effect([f.equip_1, f.equip_2], "reflect_pct"))], func():
+		_log_step("%s readies a mirror from %s." % [f.name, _item_label(_item_with_effect([_get_active_weapon(f)], "reflect_pct"))], func():
 			if refl > f.status.reflect_pct:
 				_animate_item_effect(f, "reflect_pct")
 				_animate_pulse(_fighter_sprite(f), Color(0.8, 0.65, 1.0), 1.04)
-			f.status.reflect_pct = max(f.status.reflect_pct, refl)
-		)
+			_weapon_defense(f, "reflect_pct", refl)
+		, _combat_event(f, "shield", " readies a mirror from %s." % _item_label(_item_with_effect([_get_active_weapon(f)], "reflect_pct")), {}))
 
 func _apply_tempo_win_bonus(f: Dictionary, _is_player: bool) -> void:
 	var tempo: float = float(f.item_fx.get("tempo_on_win", 0.0))
 	if tempo <= 0.0:
 		return
-	_log_step("%s accelerates via %s." % [f.name, _item_label(_item_with_effect([f.equip_1, f.equip_2], "tempo_on_win"))], func():
+	_log_step("%s accelerates via %s." % [f.name, _item_label(_item_with_effect([_get_active_weapon(f)], "tempo_on_win"))], func():
 		f.status.tempo_bonus = tempo
 		_animate_item_effect(f, "tempo_on_win")
-	)
+	, _combat_event(f, "buff", " accelerates via %s." % _item_label(_item_with_effect([_get_active_weapon(f)], "tempo_on_win")), {}))
 
 func _initiative(f: Dictionary) -> float:
 	var score: float = 10.0
-	score += _item_initiative(f.get("equip_1", {}))
-	score += _item_initiative(f.get("equip_2", {}))
+	score += _item_initiative(_get_active_weapon(f))
 	score += float(f.status.get("tempo_bonus", 0.0))
 	f.status.tempo_bonus = 0.0
 	return score
@@ -1517,15 +2275,38 @@ func _alchemy_flair(desc: String) -> String:
 		return ""
 	return desc
 
-func _log(msg: String) -> void:
-	_step_queue.append({"msg": msg, "action": Callable()})
+func _log(msg: String, event: Dictionary = {}) -> void:
+	_step_queue.append({"msg": msg, "action": Callable(), "event": event})
 
-func _log_step(msg: String, action: Callable) -> void:
-	_step_queue.append({"msg": msg, "action": action})
+func _actor_color(fighter: Dictionary, homunculus: bool = false) -> String:
+	if is_same(fighter, player):
+		return "85dca2" if homunculus else "69d7e8"
+	return "c6a5f5" if homunculus else "f2a078"
+
+func _combat_event(fighter: Dictionary, category: String, verb: String, details: Dictionary, homunculus: bool = false) -> Dictionary:
+	var event := details.duplicate()
+	event["category"] = category
+	event["actor"] = str(fighter.get("hom_name" if homunculus else "name", ""))
+	event["actor_kind"] = "homunculus" if homunculus else "entity"
+	event["actor_side"] = "player" if is_same(fighter, player) else "enemy"
+	event["actor_color"] = _actor_color(fighter, homunculus)
+	event["verb"] = verb
+	if homunculus:
+		event["parent"] = str(fighter.get("name", ""))
+		event["parent_color"] = _actor_color(fighter)
+	return event
+
+func _log_step(msg: String, action: Callable, event: Dictionary = {}) -> void:
+	_step_queue.append({"msg": msg, "action": action, "event": event})
 
 func _log_immediate(msg: String) -> void:
-	log_box.append_text("T%d: %s\n" % [_display_turn(), msg])
-	_scroll_log_to_bottom()
+	_append_combat_log(msg)
+
+func _append_combat_log(msg: String, event: Dictionary = {}) -> void:
+	var scroll := log_box.get_v_scroll_bar()
+	var following := scroll == null or scroll.value >= scroll.max_value - scroll.page - 2.0
+	log_box.scroll_following = following
+	_log_presenter.append(log_box, _display_turn(), msg, event)
 
 func _fighter_sprite(fighter: Dictionary, homunculus: bool = false) -> Control:
 	if is_same(fighter, player):
@@ -1601,10 +2382,9 @@ func _animate_pulse(node: Control, color: Color, factor: float) -> void:
 
 func _animate_item_effect(fighter: Dictionary, effect: String) -> void:
 	var slots := [player_item1, player_item2] if is_same(fighter, player) else [enemy_item1, enemy_item2]
-	for i in 2:
-		var item: Dictionary = fighter.get("equip_%d" % (i + 1), {})
-		if item.get("effects", {}).has(effect):
-			_animate_pulse(slots[i], Color.WHITE, 1.12)
+	var i := int(fighter.get("active_weapon_slot", 1)) - 1
+	if _get_active_weapon(fighter).get("effects", {}).has(effect):
+		_animate_pulse(slots[i], Color.WHITE, 1.12)
 
 func _flush_steps() -> void:
 	if _processing_steps:
@@ -1615,13 +2395,14 @@ func _flush_steps() -> void:
 			break
 		var msg := str(step.get("msg", ""))
 		if msg != "":
-			log_box.append_text("T%d: %s\n" % [_display_turn(), msg])
-			_scroll_log_to_bottom()
+			_append_combat_log(msg, step.get("event", {}))
 		var action: Callable = step.get("action", Callable())
 		if action.is_valid():
 			action.call()
 		_update_ui()
-		await get_tree().create_timer(LOG_STEP_SECONDS).timeout
+		var category := str(step.get("event", {}).get("category", "system"))
+		var delay := 1.35 if category == "combo" else 1.25 if category in ["debuff", "shield"] else 0.8 if category == "system" else LOG_STEP_SECONDS
+		await get_tree().create_timer(delay).timeout
 	_step_queue.clear()
 	_processing_steps = false
 

@@ -40,10 +40,10 @@ const LAYOUT_POS := {
 	"homunculus_vat": Vector2(1280, 450),
 	"ultrahit_tower": Vector2(480, 620),
 	"experiment_chamber": Vector2(1120, 620),
-	"sync_nexus": Vector2(200, 250),
-	"anomaly_containment": Vector2(1400, 250),
-	"trade_hall": Vector2(250, 730),
-	"world_gate": Vector2(1350, 730)
+	"sync_nexus": Vector2(640, 280),
+	"anomaly_containment": Vector2(960, 280),
+	"trade_hall": Vector2(650, 620),
+	"world_gate": Vector2(950, 620)
 }
 
 const ICON_SIZE_PX := {
