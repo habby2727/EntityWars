@@ -357,6 +357,63 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   expect(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { cinder: { level: 99 } } }, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
 });
 
+test("all eight catalog weapons resolve at Forge levels 0, 5 and 10", () => {
+  for (const item of catalogs.items) for (const level of [0, 5, 10]) {
+    const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { [item.id]: { level } } }, { ...selection, weapon_ids: [item.id, null] }, catalogs));
+    expect(state.item_id).toBe(item.id);
+    for (const [key, values] of Object.entries(item.effects) as [string, number[]][]) {
+      const expected = level === 0 && values.length === 10 && key in (item.base_effects ?? {}) ? item.base_effects[key] : values[Math.min(values.length - 1, Math.max(0, level - 1))];
+      expect(state.item_effects[key]).toBe(expected);
+    }
+    state.boss.status.stun = 1;
+    expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBeLessThan(112);
+  }
+});
+
+test("Forge paths and all donor imprints derive from official balance", () => {
+  for (const path of ["aggressive", "defensive", "technical"]) {
+    const pool = catalogs.balance.forge_trait_pool[path];
+    const traits = Object.keys(pool).slice(0, 3).map((id, i) => ({ id, points: i === 0 ? 2 : 0 }));
+    const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { bismuth_talisman: { level: 5, specialization: path, traits } } }, { ...selection, weapon_ids: ["bismuth_talisman", null] }, catalogs));
+    const base = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { bismuth_talisman: { level: 5 } } }, { ...selection, weapon_ids: ["bismuth_talisman", null] }, catalogs));
+    expect(state.item_effects[traits[0].id]).toBe((base.item_effects[traits[0].id] ?? 0) + pool[traits[0].id] * 2);
+    state.boss.status.stun = 1;
+    expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBeLessThan(112);
+  }
+  for (const donor of catalogs.items) {
+    const target = donor.id === "bismuth_talisman" ? "wind_amulet" : "bismuth_talisman";
+    const base = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { [target]: { level: 3 } } }, { ...selection, weapon_ids: [target, null] }, catalogs));
+    const fused = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { [target]: { level: 3, fusion: { donor_id: donor.id } }, [donor.id]: { level: 3 } } }, { ...selection, weapon_ids: [target, null] }, catalogs));
+    const [key, amount] = Object.entries(catalogs.balance.forge_fusion_imprints[donor.id])[0] as [string, number];
+    expect(fused.item_effects[key]).toBeCloseTo((base.item_effects[key] ?? 0) + amount);
+  }
+});
+
+test("weapon evasion, ward, corrosion and reflection prevention activate", () => {
+  const fixture = (id: string, level = 0) => createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { [id]: { level } } }, { ...selection, weapon_ids: [id, null] }, catalogs));
+  const action = (spell_id: string) => ({ turn: 1, spell_id, target: "boss" });
+  const dodge = resolveCombatTurn(fixture("wind_amulet"), action("ash_temper"), () => 0);
+  expect(dodge.next_state.player.hp).toBe(104);
+  expect(dodge.events.some((event: any) => event.kind === "evade")).toBe(true);
+  const ward = fixture("saltstone_charm"); ward.boss.status.stun = 1;
+  expect(resolveCombatTurn(ward, action("ash_temper"), rng).next_state.player.status.shield_pct).toBe(0.12);
+  const mirror = fixture("mirror_sigel", 5); mirror.boss.status.stun = 1;
+  const guarded = resolveCombatTurn(mirror, action("ash_temper"), rng).next_state;
+  expect([guarded.player.status.shield_pct, guarded.player.status.reflect_pct]).toEqual([0.08, 0.07]);
+  const returned = resolveCombatTurn(guarded, { turn: 2, spell_id: "cinder_fist", target: "boss" }, rng);
+  expect(returned.events.find((event: any) => event.kind === "reflect").damage).toBe(1);
+  expect(returned.next_state.player.status.reflect_pct).toBeUndefined();
+  const corrosion = fixture("vitriol_vial", 5); corrosion.boss.status.stun = 1;
+  const corroded = resolveCombatTurn(corrosion, action("cinder_fist"), rng);
+  expect(corroded.events.find((event: any) => event.kind === "corrosion").damage).toBe(3);
+  expect(corroded.next_state.boss.status.vuln_pct).toBe(0.1);
+  const protectedPlayer = fixture("aether_knot", 10); protectedPlayer.boss.status.reflect_pct = 1; protectedPlayer.boss.status.stun = 1;
+  const ignored = resolveCombatTurn(protectedPlayer, action("cinder_fist"), () => 0);
+  expect(ignored.next_state.player.hp).toBe(104);
+  const suffered = resolveCombatTurn(protectedPlayer, action("cinder_fist"), (_turn, draw) => [0, 0.99, 0.99][draw % 3]);
+  expect(suffered.next_state.player.hp).toBeLessThan(104);
+});
+
 test("marks are owned, expire on actions and are consumed on hybrid hit", () => {
   const ids = ["paradox_edict", "gilded_exception", "rift_touch", "paradox_fold"];
   const progress = { learned_by_entity: { aether_01: ids.slice(0, 2) }, equipped_by_mode: { attack: { aether_01: ids } } };
