@@ -47,6 +47,11 @@ test("trust, spell and deterministic RNG boundaries", () => {
   expect(createCombatState({ selection_authority: "SERVER_VALIDATED" })).toEqual({ error: "UNTRUSTED_SETUP" });
   expect(buildTrustedCombatSetup(snapshot, { ...selection, state_revision: 50 }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
   expect(buildTrustedCombatSetup(snapshot, { ...selection, spell_ids: ["steady_script", ...selection.spell_ids.slice(1)] }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+  const mismatched = { ...selection, spell_ids: ["null_lattice", ...selection.spell_ids.slice(1)] };
+  const progress = { learned_by_entity: { sulfur_01: ["null_lattice"] }, equipped_by_mode: { attack: { sulfur_01: mismatched.spell_ids } } };
+  expect(buildTrustedCombatSetup({ ...snapshot, spell_progress: progress }, mismatched, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+  const equipped = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+  expect(resolveCombatTurn(equipped, { turn: 1, spell_id: "steady_script", target: "boss" }, rng)).toEqual({ error: "INVALID_DECISION" });
   const secret = new Uint8Array(32).fill(42);
   expect(deterministicDraw(secret, "session", 1, 0)).toBe(deterministicDraw(secret, "session", 1, 0));
 });
@@ -194,7 +199,7 @@ test("Gold spells and received-hit tracking across exchanges", () => {
 });
 
 test("researchable catalog spells resolve or fail closed", () => {
-  const unsupported = new Set(["pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "hybrid_mark", "bonus_if_marked", "shield_by_order", "ward_dispel", "poison_on_reflect"]);
+  const unsupported = new Set<string>();
   const counts = { universal: 0, hybrid: 0 };
   for (const spell of catalogs.spells.filter((s: any) => ["universal", "hybrid"].includes(s.type))) {
     const entity = catalogs.entities.find((e: any) => spell.eligible_types.includes(e.type));
@@ -212,6 +217,7 @@ test("researchable catalog spells resolve or fail closed", () => {
     expect(state).toEqual(before);
   }
   console.log("Researchable spells supported:", JSON.stringify(counts));
+  expect(counts).toEqual({ universal: 10, hybrid: 30 });
 });
 
 test("universal is neutral and hybrid uses both catalog types", () => {
@@ -224,4 +230,87 @@ test("universal is neutral and hybrid uses both catalog types", () => {
   expect(resolveCombatTurn(neutral, { turn: 1, spell_id: "steady_script", target: "boss" }, rng).next_state.boss.hp).toBe(92);
   const hybrid = setupFor("void_etching"); hybrid.boss.status.stun = 1;
   expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "void_etching", target: "boss" }, rng).next_state.boss.hp).toBe(91);
+});
+
+test("catalog sweep includes all 64 equipped spells", () => {
+  let passed = 0;
+  for (const spell of catalogs.spells) {
+    const entity = catalogs.entities.find((e: any) => spell.type === e.type || spell.eligible_types?.includes(e.type));
+    const defaults = catalogs.spells.filter((s: any) => s.type === entity.type).map((s: any) => s.id);
+    const equipped = [spell.id, ...defaults.filter((id: string) => id !== spell.id).slice(0, 3)];
+    const progress = { learned_by_entity: { [entity.id]: [spell.id] }, equipped_by_mode: { attack: { [entity.id]: equipped } } };
+    const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, spell_progress: progress }, { ...selection, entity_id: entity.id, spell_ids: equipped }, catalogs));
+    state.boss.status.stun = 1;
+    const result = resolveCombatTurn(state, { turn: 1, spell_id: spell.id, target: "boss" }, rng);
+    expect(result.error).toBeUndefined();
+    expect(result.next_state.turn).toBe(1);
+    passed++;
+  }
+  expect(passed).toBe(64);
+});
+
+test("precision, shields, leech and initiative have observable effects", () => {
+  const fixture = (id: string, entity = "sulfur_01") => {
+    const ids = [id, ...catalogs.spells.filter((s: any) => s.type === catalogs.entities.find((e: any) => e.id === entity).type).map((s: any) => s.id).filter((x: string) => x !== id).slice(0, 3)];
+    const progress = { learned_by_entity: { [entity]: [id] }, equipped_by_mode: { attack: { [entity]: ids } } };
+    return createCombatState(buildTrustedCombatSetup({ ...snapshot, spell_progress: progress }, { ...selection, entity_id: entity, spell_ids: ids }, catalogs));
+  };
+  const cast = (state: any, spell_id: string, random = rng) => resolveCombatTurn(state, { turn: state.turn + 1, spell_id, target: "boss" }, random);
+  const pierce = fixture("needle_etch"); pierce.boss.status.shield_pct = 0.5; pierce.boss.status.stun = 1;
+  expect(cast(pierce, "needle_etch").next_state.boss.hp).toBe(104);
+  const dispel = fixture("quicksilver_solvent", "mercury_01"); dispel.boss.status.shield_pct = 0.5; dispel.boss.status.stun = 1;
+  expect(cast(dispel, "quicksilver_solvent").next_state.boss.hp).toBe(106);
+  const leech = fixture("echo_siphon"); leech.player.hp = 80; leech.boss.status.stun = 1;
+  expect(cast(leech, "echo_siphon").next_state.player.hp).toBe(81);
+  const overkill = fixture("echo_siphon"); overkill.player.hp = 80; overkill.boss.hp = 1; overkill.boss.max_hp = 2;
+  expect(cast(overkill, "echo_siphon").next_state.player.hp).toBe(80);
+  const focus = fixture("quiet_focus"); focus.boss.status.stun = 1;
+  const focused = cast(focus, "quiet_focus").next_state;
+  expect(focused.player.status.focus_next).toBe(0.12);
+  focused.boss.status.stun = 1;
+  expect(cast(focused, "furnace_rush", () => 0.99).next_state.player.status.focus_next).toBeUndefined();
+  const crooked = fixture("crooked_rune"); crooked.boss.status.stun = 1;
+  expect(cast(crooked, "crooked_rune").next_state.boss.status.misalign_next).toBe(0.1);
+  const misaligned = cast(fixture("crooked_rune"), "crooked_rune", (_turn, draw) => [0, 0.99, 0.84][draw % 3]);
+  expect(misaligned.events.some((e: any) => e.actor === "boss" && e.kind === "miss")).toBe(true);
+  expect(misaligned.next_state.boss.status.misalign_next).toBeUndefined();
+  const tempo = fixture("second_measure"); tempo.boss.status.stun = 1;
+  expect(cast(tempo, "second_measure").next_state.player.status.tempo_bonus).toBe(2);
+  const recoil = fixture("last_axiom"); recoil.player.hp = 2; recoil.boss.status.stun = 1;
+  expect(cast(recoil, "last_axiom").terminal_result).toBe("LOSS");
+  const second = fixture("fluid_anchor", "mercury_01"); second.player.status.tempo_bonus = -2;
+  const result = cast(second, "fluid_anchor");
+  expect(result.events[0].actor).toBe("boss");
+  expect(result.next_state.player.status.shield_pct).toBe(0.18);
+  const first = fixture("fluid_anchor", "mercury_01"); first.boss.status.stun = 1;
+  expect(cast(first, "fluid_anchor").next_state.player.status.shield_pct).toBe(0.08);
+  const killed = fixture("fluid_anchor", "mercury_01"); killed.player.status.tempo_bonus = -2; killed.player.hp = 1;
+  expect(cast(killed, "fluid_anchor").events.some((e: any) => e.actor === "player")).toBe(false);
+  const toxic = fixture("toxic_mirror", "mercury_01");
+  const reflected = cast(toxic, "toxic_mirror", rng);
+  expect(reflected.events.some((e: any) => e.kind === "reflect")).toBe(true);
+  expect(reflected.next_state.boss.status.poison).toBe(0);
+  expect(reflected.next_state.player.status.poison_on_reflect).toBeUndefined();
+  const miss = fixture("toxic_mirror", "mercury_01"); miss.boss.status.stun = 1;
+  const saved = cast(miss, "toxic_mirror", rng).next_state;
+  expect(saved.player.status.poison_on_reflect).toBe(1);
+  expect(saved.boss.status.poison ?? 0).toBe(0);
+});
+
+test("marks are owned, expire on actions and are consumed on hybrid hit", () => {
+  const ids = ["paradox_edict", "gilded_exception", "rift_touch", "paradox_fold"];
+  const progress = { learned_by_entity: { aether_01: ids.slice(0, 2) }, equipped_by_mode: { attack: { aether_01: ids } } };
+  const make = () => createCombatState(buildTrustedCombatSetup({ ...snapshot, spell_progress: progress }, { ...selection, entity_id: "aether_01", spell_ids: ids }, catalogs));
+  const state = make(); state.boss.status.stun = 1;
+  const marked = resolveCombatTurn(state, { turn: 1, spell_id: "paradox_edict", target: "boss" }, rng).next_state;
+  expect(marked.boss.status.hybrid_mark).toEqual({ owner: "player", remaining: 2 });
+  marked.boss.status.stun = 1;
+  const consumed = resolveCombatTurn(marked, { turn: 2, spell_id: "gilded_exception", target: "boss" }, rng).next_state;
+  expect(consumed.boss.status.hybrid_mark).toBeUndefined();
+  const foreign = make(); foreign.boss.status.stun = 1; foreign.boss.status.hybrid_mark = { owner: "enemy", remaining: 2 };
+  const other = resolveCombatTurn(foreign, { turn: 1, spell_id: "gilded_exception", target: "boss" }, rng).next_state;
+  expect(other.boss.status.hybrid_mark).toEqual({ owner: "enemy", remaining: 2 });
+  const expiring = make(); expiring.boss.status.stun = 1; expiring.boss.status.hybrid_mark = { owner: "player", remaining: 1 };
+  const expired = resolveCombatTurn(expiring, { turn: 1, spell_id: "rift_touch", target: "boss" }, rng).next_state;
+  expect(expired.boss.status.hybrid_mark).toBeUndefined();
 });
