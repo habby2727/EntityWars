@@ -156,3 +156,39 @@ test("reflection uses calculated damage even when the target has little HP", () 
   expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([0, 106]);
   expect(result.events.find((event: any) => event.kind === "reflect").damage).toBe(6);
 });
+
+test("Gold spells and received-hit tracking across exchanges", () => {
+  const spells = ["aurum_edge", "gilded_reprisal", "debt_seal", "tribunal_strike"];
+  const fixture = () => createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, entity_id: "gold_01", spell_ids: spells }, catalogs));
+  const action = (turn: number, spell_id: string) => ({ turn, spell_id, target: "boss" });
+  const state = fixture();
+  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([104, 18, 14]);
+  for (const spell of spells) {
+    const result = resolveCombatTurn(fixture(), action(1, spell), rng);
+    expect(result.error).toBeUndefined();
+    expect(result.next_state.cooldowns[spell]).toBe(state.spells.find((s: any) => s.id === spell).cooldown_turns);
+  }
+  const normal = resolveCombatTurn(fixture(), action(1, "tribunal_strike"), rng);
+  expect(normal.next_state.boss.hp).toBe(99);
+  const first = resolveCombatTurn(fixture(), action(1, "aurum_edge"), rng).next_state;
+  expect(first.player.spell_hit_this_exchange).toBe(true);
+  const boosted = resolveCombatTurn(first, action(2, "tribunal_strike"), rng);
+  expect(boosted.events.find((e: any) => e.actor === "player" && e.kind === "damage").damage).toBe(16);
+  expect(boosted).toEqual(resolveCombatTurn(first, action(2, "tribunal_strike"), rng));
+  const outgoing = fixture(); outgoing.boss.status.stun = 1;
+  const onlyHit = resolveCombatTurn(outgoing, action(1, "aurum_edge"), rng).next_state;
+  expect(onlyHit.player.spell_hit_this_exchange).toBe(false);
+  expect(resolveCombatTurn(onlyHit, action(2, "tribunal_strike"), rng).events[0].damage).toBe(13);
+  const missed = resolveCombatTurn(fixture(), action(1, "aurum_edge"), () => 0.99).next_state;
+  expect(missed.player.spell_hit_this_exchange).toBe(false);
+  const blocked = fixture(); blocked.player.status.shield_pct = 1;
+  expect(resolveCombatTurn(blocked, action(1, "aurum_edge"), rng).next_state.player.spell_hit_this_exchange).toBe(false);
+  const reflection = fixture(); reflection.boss.status.reflect_pct = 0.5; reflection.boss.status.stun = 1;
+  expect(resolveCombatTurn(reflection, action(1, "aurum_edge"), rng).next_state.player.spell_hit_this_exchange).toBe(true);
+  const poison = fixture(); poison.player.status.poison = 1; poison.boss.status.stun = 1;
+  const poisoned = resolveCombatTurn(poison, action(1, "aurum_edge"), rng).next_state;
+  expect(poisoned.player.hp).toBe(102);
+  expect(poisoned.player.spell_hit_this_exchange).toBe(true);
+  const healing = fixture(); healing.player.hp = 103; healing.boss.status.stun = 1;
+  expect(resolveCombatTurn(healing, action(1, "aurum_edge"), () => 0).next_state.player.hp).toBe(104);
+});
