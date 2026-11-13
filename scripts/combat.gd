@@ -81,6 +81,8 @@ var _enemy_inspiration: Control
 var _ultra_armed := false
 var _solo_boss_mode := false
 var _solo_context := {}
+var _solo_forfeit_request := ""
+var _solo_forfeit_action := ""
 var _solo_def := {}
 var _solo_texture: Texture2D
 var _solo_minion_texture: Texture2D
@@ -329,6 +331,12 @@ func _start_combat() -> void:
 	_setup_enemy()
 	_solo_context = SceneRouter.consume_solo_hunt_context()
 	if not _solo_context.is_empty():
+		if not str(_solo_context.get("session_id", "")).is_empty() and _combat_backend == null:
+			_combat_backend = BackendClient.new()
+			_combat_backend.base_url = backend_url
+			_combat_backend.auto_dev_login = false
+			_combat_backend.api_completed.connect(_on_combat_reward_completed)
+			add_child(_combat_backend)
 		if not _setup_solo_boss():
 			get_tree().call_deferred("change_scene_to_file", SceneRouter.SCENE_WORLD_GATE)
 			return
@@ -361,7 +369,27 @@ func _on_confirm_stay() -> void:
 func _on_confirm_leave() -> void:
 	if confirm_popup:
 		confirm_popup.hide()
+	if _solo_boss_mode and not str(_solo_context.get("session_id", "")).is_empty():
+		if _resolving_exchange or _processing_steps:
+			_log_immediate("Wait for the current exchange before forfeiting.")
+			return
+		_request_solo_forfeit()
+		return
 	_leave_combat()
+
+func _request_solo_forfeit() -> void:
+	if not _solo_forfeit_request.is_empty():
+		return
+	if _combat_backend == null or _combat_backend.token.is_empty():
+		_log_immediate("Forfeit unavailable: reconnect and retry. Session remains active.")
+		return
+	if _solo_forfeit_action.is_empty():
+		_solo_forfeit_action = _combat_backend._make_uuid()
+	_solo_forfeit_request = _combat_backend.request_api("POST", "/world/boss-hunts/forfeit", {"session_id": str(_solo_context.session_id), "client_action_id": _solo_forfeit_action}, false)
+	if _solo_forfeit_request.is_empty():
+		_log_immediate("Forfeit could not be sent; retry. Session remains active.")
+	else:
+		_log_immediate("Confirming forfeit with server...")
 
 func _leave_combat() -> void:
 	_clear_solo_power()
@@ -506,7 +534,7 @@ func _create_solo_panel() -> void:
 	var help := Label.new()
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	help.text = "Below 50% HP, a Power Turn may appear: deal x2 damage. If the boss survives, its next strike gains tier-scaled Fury. Defeat minions to expose the boss. Unverified preview."
+	help.text = "Below 50% HP, a Power Turn may appear: deal x2 damage. If the boss survives, its next strike gains tier-scaled Fury. Defeat minions to expose the boss. " + ("Session active / Settlement locked. Local loadout unverified." if not str(_solo_context.get("session_id", "")).is_empty() else "Unverified preview.")
 	_solo_panel.add_child(help)
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
@@ -1241,7 +1269,7 @@ func _on_next_turn() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _on_spell_chosen(index: int) -> void:
-	if _resolving_exchange or _processing_steps or _battle_over or _inspiration_panel.visible:
+	if _resolving_exchange or _processing_steps or _battle_over or not _solo_forfeit_request.is_empty() or _inspiration_panel.visible:
 		return
 	var options := _fighter_spell_options(player)
 	if index < 0 or index >= options.size():
@@ -1273,7 +1301,7 @@ func _commit_ultra(fighter: Dictionary, action: Dictionary) -> void:
 	_append_combat_log("", _combat_event(fighter, "inspiration", " activates ULTRATURN x2; consumed for this battle.", {}))
 
 func _on_switch_weapon() -> void:
-	if _resolving_exchange or _processing_steps or _battle_over or not _combat_started or _inspiration_panel.visible:
+	if _resolving_exchange or _processing_steps or _battle_over or not _solo_forfeit_request.is_empty() or not _combat_started or _inspiration_panel.visible:
 		return
 	var slot := 2 if int(player.get("active_weapon_slot", 1)) == 1 else 1
 	if player.get("equip_%d" % slot, {}).is_empty():
@@ -2171,6 +2199,13 @@ func _show_unverified_reward_status() -> void:
 	_set_reward_status("Claiming..." if not _reward_request_id.is_empty() else "Reward claim unavailable; retry later.")
 
 func _on_combat_reward_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	if not request_id.is_empty() and request_id == _solo_forfeit_request:
+		_solo_forfeit_request = ""
+		if ok and str(data.get("status", "")) == "FORFEIT":
+			_leave_combat()
+		else:
+			_log_immediate("Forfeit not confirmed: %s. Session may remain active; retry." % str(data.get("error", "invalid response")))
+		return
 	if request_id.is_empty() or request_id != _reward_request_id:
 		return
 	_reward_request_id = ""

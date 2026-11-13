@@ -23,8 +23,8 @@ static var _next_world_boss_id: String = ""
 static var _combat_seal_mode := "attack"
 static var _solo_hunt_context := {}
 
-static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "") -> void:
-	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key, "display_texture_id": display_texture_id}
+static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "") -> void:
+	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key, "display_texture_id": display_texture_id, "session_id": session_id}
 	_go_to(SCENE_COMBAT, "Combat")
 
 static func consume_solo_hunt_context() -> Dictionary:

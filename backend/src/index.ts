@@ -2043,6 +2043,60 @@ async function startServer(): Promise<void> {
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts") {
 					return jsonResponse(soloBossSchedule(Date.now()));
 				}
+				if (req.method == "GET" && url.pathname == "/world/boss-hunts/session") {
+					const playerId = await requireAuth(req, ctx);
+					return db.transaction(() => {
+						const now = Date.now();
+						expireSoloHunts(playerId, now);
+						const row = db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId) as SoloHuntRow | null;
+						return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now });
+					}).immediate();
+				}
+				if (req.method == "POST" && (url.pathname == "/world/boss-hunts/start" || url.pathname == "/world/boss-hunts/forfeit")) {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					const actionId = typeof body?.client_action_id === "string" ? body.client_action_id.trim() : "";
+					if (!actionId || actionId.length > 64) throw new HttpError(400, "Invalid client_action_id.");
+					const start = url.pathname.endsWith("/start");
+					const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key } : { session_id: body?.session_id };
+					if (start ? typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key) : typeof payload.session_id !== "string" || !payload.session_id) throw new HttpError(400, "Invalid hunt request.");
+					const actionType = start ? "SOLO_HUNT_START" : "SOLO_HUNT_FORFEIT";
+					db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
+					return db.transaction(() => {
+						const now = Date.now();
+						expireSoloHunts(playerId, now);
+						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
+						if (prior) {
+							let previous: unknown, result: any;
+							try { previous = JSON.parse(prior.payload_json); result = JSON.parse(prior.result_state_json ?? "{}"); } catch { throw new HttpError(409, "Invalid stored action."); }
+							if (prior.action_type !== actionType || canonicalActionPayload(previous) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+							const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(result.session_id, playerId) as SoloHuntRow | null;
+							if (!existing) throw new HttpError(409, "Session unavailable.");
+							return jsonResponse({ ...soloHuntResponse(existing), duplicate: true });
+						}
+						let row: SoloHuntRow;
+						if (start) {
+							const schedule = soloBossSchedule(now);
+							const boss = schedule.bosses.find(candidate => candidate.id === payload.hunt_id);
+							if (payload.rotation_key !== schedule.rotation_key || !boss || !boss.available) throw new HttpError(409, "Boss hunt is not available for this rotation.");
+							if (db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) throw new HttpError(409, "An active boss hunt already exists.");
+							const state = ensurePlayerState(playerId);
+							const snapshot = { item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
+							const sessionId = crypto.randomUUID();
+							db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at) VALUES (?,?,?,?,'ACTIVE',?,?,?,?)").run(sessionId, playerId, boss.id, schedule.rotation_key, JSON.stringify(boss), JSON.stringify(snapshot), now, now + 2700000);
+							row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId) as SoloHuntRow;
+						} else {
+							const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(payload.session_id, playerId) as SoloHuntRow | null;
+							if (!existing) throw new HttpError(404, "Session not found.");
+							if (existing.status !== "ACTIVE" && existing.status !== "FORFEIT") throw new HttpError(409, "Session is already closed.");
+							if (existing.status === "ACTIVE") db.query("UPDATE solo_hunt_sessions SET status = 'FORFEIT', finished_at = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE'").run(now, existing.session_id, playerId);
+							row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(existing.session_id) as SoloHuntRow;
+						}
+						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify({ session_id: row.session_id }), now);
+						return jsonResponse(soloHuntResponse(row));
+					}).immediate();
+				}
 				if (req.method == "GET" && url.pathname == "/boss/state") {
 					return db.transaction(() => {
 					const now = Date.now();
@@ -2250,7 +2304,17 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 	return catalog as SoloBossCatalog;
 }
 
-function soloBossSchedule(now: number): object {
+type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; started_at: number; expires_at: number; finished_at: number | null };
+
+function expireSoloHunts(playerId: string, now: number): void {
+	db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
+}
+
+function soloHuntResponse(row: SoloHuntRow) {
+	return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, boss_definition: JSON.parse(row.boss_snapshot_json) };
+}
+
+function soloBossSchedule(now: number) {
 	const { rotation, bosses } = staticData.soloBosses;
 	const interval = rotation.interval_seconds * 1000, window = rotation.window_seconds * 1000;
 	const key = Math.floor(now / interval), start = key * interval, end = start + window;

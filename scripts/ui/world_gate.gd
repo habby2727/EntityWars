@@ -119,6 +119,10 @@ var _hunt_window_end := 0
 var _hunt_elapsed := 0.0
 var _hunt_fight: Button
 var _hunt_rotation_key := -1
+var _hunt_start_id := ""
+var _hunt_start_payload := {}
+var _hunt_active := {}
+var _hunt_active_owner := ""
 
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
@@ -141,6 +145,7 @@ func _ready() -> void:
 	_request_world_state()
 	_request_boss_state()
 	_request_hunt_schedule()
+	_send_api_request("GET", "/world/boss-hunts/session", null, "hunt_session", false)
 	_schedule_poll()
 
 func _build_hunt_tab() -> void:
@@ -206,14 +211,36 @@ func _build_hunt_tab() -> void:
 func _on_hunt_fight() -> void:
 	_update_hunt_fight()
 	if not _hunt_fight.disabled:
+		if not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _get_server_now_ms():
+			_enter_hunt_session(_hunt_active)
+			return
 		var boss: Dictionary = _hunt_rows[_hunt_selected].boss
-		SceneRouter.go_to_solo_hunt(_hunt_selected, _hunt_rotation_key, str(boss.get("display_texture_id", boss.get("texture_id", ""))))
+		var payload := {"hunt_id": _hunt_selected, "rotation_key": _hunt_rotation_key}
+		if _hunt_start_id.is_empty() or _hunt_start_payload != payload:
+			_hunt_start_id = _backend._make_uuid()
+			_hunt_start_payload = payload.duplicate()
+		payload["client_action_id"] = _hunt_start_id
+		_hunt_loading = true
+		_hunt_status.text = "Starting boss hunt..."
+		_update_hunt_fight()
+		_send_api_request("POST", "/world/boss-hunts/start", payload, "hunt_start", false)
+
+func _enter_hunt_session(session: Dictionary) -> void:
+	var boss: Dictionary = session.get("boss_definition", {})
+	var session_id := str(session.get("session_id", ""))
+	if session_id.is_empty() or str(session.get("status", "")) != "ACTIVE":
+		_hunt_status.text = "Invalid or closed boss session."
+		return
+	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), session_id)
 
 func _update_hunt_fight() -> void:
 	if not is_instance_valid(_hunt_fight):
 		return
 	var boss: Dictionary = _hunt_rows.get(_hunt_selected, {}).get("boss", {})
-	_hunt_fight.disabled = not (_hunt_valid and not _hunt_loading and _hunt_rotation_key >= 0 and _hunt_boundary > _get_server_now_ms() and bool(boss.get("available", false)) and _backend != null and not str(_backend.token).is_empty() and not _backend._verified_player_id.is_empty())
+	var authenticated := _backend != null and not str(_backend.token).is_empty() and not _backend._verified_player_id.is_empty()
+	var active := not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _get_server_now_ms() if _backend != null else false
+	_hunt_fight.text = "Resume Hunt" if active else "Fight (Unverified Preview)"
+	_hunt_fight.disabled = not (authenticated and not _hunt_loading and not _busy and (active or (_hunt_valid and _hunt_rotation_key >= 0 and _hunt_boundary > _get_server_now_ms() and bool(boss.get("available", false)))))
 
 func _request_hunt_schedule() -> void:
 	if _hunt_loading:
@@ -578,6 +605,10 @@ func _send_api_request(
 		if kind == "hunt_schedule":
 			_hunt_loading = false
 			_hunt_disconnected()
+		elif kind == "hunt_start":
+			_hunt_loading = false
+			_hunt_status.text = "Could not send hunt request; retry."
+			_update_hunt_fight()
 		else:
 			_set_zone_error("Request failed to send.")
 
@@ -629,6 +660,10 @@ func _flush_api_queue() -> void:
 		elif str(next.get("kind", "")) == "hunt_schedule":
 			_hunt_loading = false
 			_hunt_disconnected()
+		elif str(next.get("kind", "")) == "hunt_start":
+			_hunt_loading = false
+			_hunt_status.text = "Could not send hunt request; retry."
+			_update_hunt_fight()
 		else:
 			_schedule_api_retry()
 		return
@@ -680,6 +715,17 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 		_hunt_boundary = _hunt_window_end if _hunt_window_end > now else _hunt_next_rotation
 		_hunt_status.text = "" if _hunt_valid else "Boss hunt schedule unavailable."
 		_render_hunt_rows()
+	elif kind == "hunt_session":
+		_hunt_active = data.get("session", {}) if data.get("session") is Dictionary else {}
+		_hunt_active_owner = _backend._verified_player_id if _backend != null else ""
+		_update_hunt_fight()
+	elif kind == "hunt_start":
+		_hunt_loading = false
+		_hunt_active = data
+		_hunt_active_owner = _backend._verified_player_id if _backend != null else ""
+		_hunt_start_id = ""
+		_enter_hunt_session(data)
+		return
 	elif kind == "world_state":
 		_world_state = data.get("world_state", {})
 		var pw = data.get("player_world", null)
@@ -718,6 +764,11 @@ func _handle_api_error(info: Dictionary, data: Dictionary) -> void:
 		_hunt_loading = false
 		_hunt_disconnected()
 		return
+	if kind == "hunt_start":
+		_hunt_loading = false
+		_hunt_status.text = "Hunt could not start: %s. Retry or refresh." % err
+		_update_hunt_fight()
+		return
 	if kind == "farm":
 		_set_zone_error("Farm failed: %s" % err)
 		if _active_session_id != "":
@@ -741,8 +792,16 @@ func _handle_api_error(info: Dictionary, data: Dictionary) -> void:
 	_set_zone_error(err)
 
 func _on_state_updated(state: Dictionary) -> void:
+	var previous_player := _player_id
 	_state = state
 	_player_id = str(state.get("player_id", ""))
+	if previous_player != _player_id:
+		_hunt_active.clear()
+		_hunt_active_owner = ""
+		_hunt_start_id = ""
+		_hunt_start_payload.clear()
+		if not _player_id.is_empty():
+			_send_api_request("GET", "/world/boss-hunts/session", null, "hunt_session", false)
 	_player_world = state.get("world", {})
 	if typeof(_player_world) != TYPE_DICTIONARY:
 		_player_world = {}
