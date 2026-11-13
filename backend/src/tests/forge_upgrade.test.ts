@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async () => {
   const port = await new Promise<number>((resolvePort, reject) => {
@@ -17,7 +17,7 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
   const db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", EXPERIMENT_SECRET: "isolated-experiment-fixture" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", EXPERIMENT_SECRET: "isolated-experiment-fixture", WORLD_SECRET: "isolated-world-fixture" };
   let server: ReturnType<typeof Bun.spawn> | undefined;
   const start = async () => {
     server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
@@ -46,6 +46,16 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
     const rareHunt = hunts.data.bosses.find((boss: any) => boss.id === "hunt_rare");
     expect(rareHunt.display_texture_id).toBe(rareHunt.texture_variants[hunts.data.rotation_key % rareHunt.texture_variants.length]);
     expect(hunts.data.bosses.find((boss: any) => boss.id === "hunt_legendary").display_texture_id).toBe("ghost_boss");
+    const catalog = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/solo_bosses.json"), "utf8"));
+    expect(catalog.rotation.weights).toEqual({ mythic: 0.35, rare: 0.30, epic: 0.20, legendary: 0.15 });
+    const key = Math.floor(hunts.data.server_time_unix_ms / 900000);
+    expect([hunts.data.rotation_key, hunts.data.next_rotation_at, hunts.data.special_window_ends_at]).toEqual([key, (key + 1) * 900000, key * 900000 + 720000]);
+    const roll = createHmac("sha256", env.WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 0x100000000;
+    const expectedTier = roll < 0.35 ? "mythic" : roll < 0.65 ? "rare" : roll < 0.85 ? "epic" : "legendary";
+    expect(hunts.data.bosses.find((boss: any) => boss.id === hunts.data.current_special_id).tier).toBe(expectedTier);
+    expect(hunts.data.bosses.find((boss: any) => boss.tier === "common").available).toBe(true);
+    const again = await request("/world/boss-hunts");
+    if (again.data.rotation_key === key) expect(again.data.current_special_id).toBe(hunts.data.current_special_id);
     const getRow = () => db.query("SELECT state_json FROM players WHERE player_id = ?").get(playerId) as { state_json: string };
     const writeState = (state: any) => db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(state), playerId);
     const seed = JSON.parse(getRow().state_json);

@@ -100,6 +100,11 @@ var _solo_panel: VBoxContainer
 var _solo_status: Label
 var _solo_targets: VBoxContainer
 var _solo_events: Array = []
+var _solo_power_used := false
+var _solo_power_active := false
+var _solo_power_eligible := 0
+var _solo_fury_pending := false
+var _solo_power_label: Label
 
 var player := {}
 var enemy := {}
@@ -327,6 +332,7 @@ func _start_combat() -> void:
 		if not _setup_solo_boss():
 			get_tree().call_deferred("change_scene_to_file", SceneRouter.SCENE_WORLD_GATE)
 			return
+		_prepare_solo_power_turn()
 		_prepare_solo_intent()
 		_create_solo_panel()
 	for pair in [[player_hp, player], [enemy_hp, enemy]]:
@@ -358,6 +364,7 @@ func _on_confirm_leave() -> void:
 	_leave_combat()
 
 func _leave_combat() -> void:
+	_clear_solo_power()
 	_restore_inspiration(player)
 	_restore_inspiration(enemy)
 	_reset_animations()
@@ -469,28 +476,52 @@ func _setup_solo_boss() -> bool:
 
 func _create_solo_panel() -> void:
 	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	panel.offset_left = -380
-	panel.offset_right = -20
-	panel.offset_top = 230
-	panel.offset_bottom = 470
+	panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	panel.offset_left = -270
+	panel.offset_right = 270
+	panel.offset_top = 220
+	panel.offset_bottom = 490
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.025, 0.045, 0.055, 0.94)
+	style.border_color = Color("a9955d")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(14)
+	panel.add_theme_stylebox_override("panel", style)
 	add_child(panel)
 	_solo_panel = VBoxContainer.new()
+	_solo_panel.add_theme_constant_override("separation", 8)
 	panel.add_child(_solo_panel)
+	_solo_power_label = Label.new()
+	_solo_power_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_solo_power_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_solo_power_label.add_theme_color_override("font_color", Color("ffca67"))
+	_solo_panel.add_child(_solo_power_label)
 	_solo_status = Label.new()
 	_solo_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_solo_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_solo_panel.add_child(_solo_status)
 	_solo_targets = VBoxContainer.new()
 	_solo_panel.add_child(_solo_targets)
 	var help := Label.new()
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	help.text = "Defeat minions to expose the boss. Shield reduces direct damage; fury grows as HP falls. Special uses a fixed spell. Unverified preview."
+	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help.text = "Below 50% HP, a Power Turn may appear: deal x2 damage. If the boss survives, its next strike gains tier-scaled Fury. Defeat minions to expose the boss. Unverified preview."
 	_solo_panel.add_child(help)
+	_enemy_hom_status.hide()
+	_enemy_inspiration.hide()
+	enemy_name.modulate.a = 0.0
+	$EnemyPanel/EnemyBuildTitle.modulate.a = 0.0
+	$EnemyPanel/EnemyItems.modulate.a = 0.0
+	enemy_item1.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	enemy_item2.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _update_solo_panel() -> void:
 	if not is_instance_valid(_solo_status):
 		return
-	_solo_status.text = "Boss Intent: %s\nShield: %d%% | %d turns\n%s" % [_solo_intent, roundi(float(_solo_def.shield_reduction) * 100.0) if _solo_shield_turns > 0 else 0, _solo_shield_turns, "Boss Protected - Kill Minions" if _solo_has_minions() else "Boss vulnerable"]
+	_solo_power_label.visible = _solo_power_active or _solo_fury_pending
+	_solo_power_label.text = "POWER TURN x2\nDEFEAT BOSS NOW OR FACE FURY x%.1f" % float(_solo_def.fury_mult) if _solo_power_active else "FURY PENDING x%.1f" % float(_solo_def.fury_mult)
+	_solo_status.text = "%s | %s\nBoss Intent: %s\nShield: %d%% | %d turns\n%s" % [str(_solo_def.get("name", "Boss")), str(_solo_def.get("tier", "")).to_upper(), _solo_intent, roundi(float(_solo_def.shield_reduction) * 100.0) if _solo_shield_turns > 0 else 0, _solo_shield_turns, "Boss Protected - Kill Minions" if _solo_has_minions() else "Boss vulnerable"]
 	for child in _solo_targets.get_children():
 		_solo_targets.remove_child(child)
 		child.queue_free()
@@ -527,9 +558,31 @@ func _solo_target() -> Dictionary:
 			return _solo_minions[i]
 	return enemy
 
+func _clear_solo_power() -> void:
+	_solo_power_active = false
+	_solo_fury_pending = false
+	_solo_power_used = false
+	_solo_power_eligible = 0
+
+func _prepare_solo_power_turn(roll: float = -1.0) -> void:
+	_solo_power_active = false
+	if not _solo_boss_mode or _solo_power_used or _battle_over or player.hp <= 0 or enemy.hp <= 0 or float(enemy.hp) >= float(enemy.max_hp) * 0.5 or _solo_has_minions() or _solo_shield_turns > 0:
+		return
+	_solo_power_eligible += 1
+	var activate := _solo_power_eligible >= 4
+	if not activate:
+		activate = (randf() if roll < 0.0 else roll) < 0.35
+	if activate:
+		_solo_power_used = true
+		_solo_power_active = true
+		_solo_events.append({"turn": _turn + 1, "power_turn": true})
+		_log_immediate("POWER TURN x2 - Defeat the boss now or face Fury x%.1f." % float(_solo_def.fury_mult))
+
 func _prepare_solo_intent() -> void:
 	var ratio := float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
-	if _solo_has_minions():
+	if _solo_fury_pending:
+		_solo_intent = "FURY STRIKE"
+	elif _solo_has_minions():
 		_solo_intent = "Strike"
 	elif not _solo_summoned and int(_solo_def.minions) > 0 and (_solo_actions >= 2 or ratio < 0.7):
 		_solo_intent = "Summon"
@@ -577,8 +630,10 @@ func _solo_boss_action() -> void:
 		)
 	else:
 		var ratio := float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
-		var fury := 1.0 if ratio > 0.7 else 1.2 if ratio > 0.4 else 1.4 if ratio > 0.15 else 1.6
-		if _solo_has_minions():
+		var fury := float(_solo_def.fury_mult) if intent == "FURY STRIKE" and _solo_fury_pending else (1.0 if ratio > 0.7 else 1.2 if ratio > 0.4 else 1.4 if ratio > 0.15 else 1.6)
+		if intent == "FURY STRIKE":
+			_solo_fury_pending = false
+		elif _solo_has_minions():
 			fury *= 0.5
 		_attack_entity(enemy, player, fury, 0.9, true)
 	await _flush_steps()
@@ -624,6 +679,11 @@ func _resolve_solo_exchange(action: Dictionary) -> void:
 	_charge_homunculus(player)
 	await _flush_steps()
 	_end_spell_exchange()
+	if _solo_power_active:
+		_solo_power_active = false
+		if enemy.hp > 0 and player.hp > 0:
+			_solo_fury_pending = true
+			_log_immediate("FURY PENDING x%.1f on the boss's next strike." % float(_solo_def.fury_mult))
 	if shield_active_at_start and _solo_shield_turns > 0:
 		_solo_shield_turns -= 1
 		if _solo_shield_turns == 0:
@@ -1255,6 +1315,7 @@ func _start_weapon_exchange(action: Dictionary) -> void:
 		_resolving_exchange = false
 		_finish_inspiration_exchange()
 		if not _battle_over:
+			_prepare_solo_power_turn()
 			_prepare_solo_intent()
 		_update_ui()
 		_refresh_spell_buttons()
@@ -1816,6 +1877,8 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		, _combat_event(defender, "shield", "'s ward blocks %d damage." % prevented, {}))
 	if bool(context.get("ultra", false)):
 		dmg *= 2
+	if _solo_boss_mode and _solo_power_active and is_same(attacker, player) and is_same(defender, enemy):
+		dmg *= 2
 	var boss_prevented := 0
 	if _solo_boss_mode and is_same(defender, enemy) and _solo_shield_turns > 0:
 		var reduced := maxi(0, roundi(float(dmg) * (1.0 - float(_solo_def.shield_reduction))))
@@ -1937,6 +2000,8 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], func(): _animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}, true))
 		return
 	var hom_dmg: int = max(1, int(round(attacker.atk * (0.6 if boosted else 0.4) * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0))))
+	if _solo_boss_mode and _solo_power_active and is_same(attacker, player) and is_same(defender, enemy):
+		hom_dmg *= 2
 	var boss_prevented := 0
 	if _solo_boss_mode and is_same(defender, enemy) and _solo_shield_turns > 0:
 		var reduced := maxi(0, roundi(float(hom_dmg) * (1.0 - float(_solo_def.shield_reduction))))
@@ -1997,6 +2062,7 @@ func _handle_battle_end() -> void:
 	if _battle_over:
 		return
 	if _solo_boss_mode:
+		_clear_solo_power()
 		_battle_over = true
 		var victory: bool = player.hp > 0 and enemy.hp <= 0 and not _solo_has_minions()
 		_solo_events.append({"turn": _turn, "result": "victory" if victory else "defeat"})
@@ -2743,6 +2809,7 @@ func _reset_animations() -> void:
 		_restore_animation(node)
 
 func _exit_tree() -> void:
+	_clear_solo_power()
 	_reset_animations()
 	if is_instance_valid(_reg):
 		_reg.free()

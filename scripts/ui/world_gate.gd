@@ -155,7 +155,7 @@ func _build_hunt_tab() -> void:
 	title.add_theme_font_size_override("font_size", 22)
 	layout.add_child(title)
 	var note := Label.new()
-	note.text = "Common bosses are regularly farmable. Special bosses rotate every 3 hours."
+	note.text = "Common bosses are regularly farmable. Special bosses rotate periodically."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(note)
 	var top := HBoxContainer.new()
