@@ -15,6 +15,7 @@ func _run() -> void:
 	var visual_zone := OS.get_environment("COMBAT_VISUAL_ZONE")
 	if not visual_zone.is_empty():
 		SceneRouter._solo_hunt_context = {"hunt_id": "hunt_legendary", "rotation_key": 1, "visual_zone_id": visual_zone}
+		SceneRouter._hunt_loadout = {"entity_id": "sulfur_01", "homunculus_id": "cinder", "equip_1": "bismuth_talisman", "equip_2": "wind_amulet", "spell_ids": ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"]}
 	var scene = load("res://scenes/Combat.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame
@@ -28,7 +29,18 @@ func _run() -> void:
 		quit(1)
 		return
 	if OS.has_environment("COMBAT_GUARDIAN_TEXTURE"):
-		scene.enemy_entity.texture = load(OS.get_environment("COMBAT_GUARDIAN_TEXTURE")) as Texture2D
+		scene._solo_texture = load(OS.get_environment("COMBAT_GUARDIAN_TEXTURE")) as Texture2D
+		scene._solo_def.name = "QA Guardian"
+		scene._solo_def.tier = "common"
+		scene.enemy.name = "QA Guardian"
+		scene._update_ui()
+		scene._update_solo_panel()
+		if scene.enemy_entity.texture != scene._solo_texture:
+			push_error("Guardian texture was not applied")
+			quit(1)
+			return
+		await process_frame
+		await process_frame
 	var image := root.get_texture().get_image()
 	var suffix := OS.get_environment("COMBAT_CAPTURE_NAME")
 	if suffix.is_empty():
@@ -47,6 +59,10 @@ func _run() -> void:
 		await process_frame
 	if scene._resolving_exchange:
 		push_error("Combat exchange timed out")
+		quit(1)
+		return
+	if OS.has_environment("COMBAT_GUARDIAN_TEXTURE") and scene.enemy_entity.texture != scene._solo_texture:
+		push_error("Guardian texture changed after exchange")
 		quit(1)
 		return
 	print("PASS rendered combat and spell button signal")

@@ -23,6 +23,14 @@ func _run() -> void:
 	var entity_id: String = loadout._current_entity_id
 	var hom_id: String = loadout._current_homunculus_id
 	var weapon_id: String = loadout._idx_to_id(loadout._items, loadout.dd_item1)
+	var weapon2: String = loadout._idx_to_id(loadout._items, loadout.dd_item2)
+	var before: Dictionary = loadout._spell_debug.load_lab_state()
+	var spells: Array = loadout._equipped_spells("attack", entity_id)
+	spells.reverse()
+	loadout._spell_draft = spells.duplicate()
+	loadout._confirm_spell_dialog()
+	assert(loadout._equipped_spells("attack", entity_id) == spells)
+	assert(loadout._spell_debug.load_lab_state() == before)
 	loadout._on_play_pressed()
 	await process_frame
 	await process_frame
@@ -32,6 +40,8 @@ func _run() -> void:
 	assert(combat.player.id == entity_id)
 	assert(combat.player.hom_id == hom_id)
 	assert(str(combat.player.equip_1.get("id", "")) == weapon_id)
+	assert(str(combat.player.equip_2.get("id", "")) == weapon2)
+	assert(combat.player.spell_ids == spells)
 	assert(not FileAccess.file_exists("user://seal_attack.json"))
 	print("PASS hunt loadout, boss session and selections")
 	quit(0)

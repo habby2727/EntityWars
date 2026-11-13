@@ -327,7 +327,12 @@ func _start_combat() -> void:
 		_combat_wait_timer.stop()
 	_combat_started = true
 	next_turn_btn.hide()
-	_load_player_from_seal()
+	if not _load_player_from_seal():
+		_combat_started = false
+		_log_immediate("Invalid Boss Hunt loadout. Return and select your equipment again.")
+		next_turn_btn.text = "Return"
+		next_turn_btn.show()
+		return
 	_setup_enemy()
 	_solo_context = SceneRouter.consume_solo_hunt_context()
 	if not _solo_context.is_empty():
@@ -455,10 +460,24 @@ func _load_registry_safe() -> void:
 	if _reg and _reg.has_method("get_items"):
 		_items = _as_array(_reg.call("get_items"))
 
-func _load_player_from_seal() -> void:
+func _load_player_from_seal() -> bool:
 	var mode := SceneRouter.consume_combat_seal_mode()
-	var data: Dictionary = SceneRouter._hunt_loadout.duplicate(true) if not SceneRouter._solo_hunt_context.is_empty() else {}
+	var hunt := not SceneRouter._solo_hunt_context.is_empty()
+	var data: Dictionary = SceneRouter._hunt_loadout.duplicate(true) if hunt else {}
 	SceneRouter._hunt_loadout.clear()
+	if hunt:
+		var entity_id := str(data.get("entity_id", ""))
+		var hom_id := str(data.get("homunculus_id", ""))
+		var first := str(data.get("equip_1", ""))
+		var second := str(data.get("equip_2", ""))
+		if _find_by_id(_entities, entity_id).is_empty() or _find_by_id(_homunculi, hom_id).is_empty():
+			return false
+		if (not first.is_empty() and _find_by_id(_items, first).is_empty()) or (not second.is_empty() and _find_by_id(_items, second).is_empty()) or (not first.is_empty() and first == second):
+			return false
+		if not SpellLoadout.valid(_reg, entity_id, _combat_spell_state.get("spell_progress", {}), data.get("spell_ids", [])):
+			return false
+		player = _build_fighter(data, true)
+		return true
 	if data.is_empty():
 		data = _load_seal(mode)
 	if data.is_empty():
@@ -476,6 +495,7 @@ func _load_player_from_seal() -> void:
 	debug.free()
 	data["spell_ids"] = SpellLoadout.saved_ids(_reg, _combat_spell_state, mode, str(data.get("entity_id", "")), data, not debug_enabled)
 	player = _build_fighter(data, true)
+	return true
 
 func _setup_enemy(spell_ids: Array = []) -> void:
 	var pick := _pick_enemy_entity(player.get("type", ""))
@@ -548,7 +568,8 @@ func _create_solo_panel() -> void:
 	if has_node("WorldCombatSprites"):
 		panel.offset_left = -220
 		panel.offset_right = 220
-		panel.offset_bottom = 360
+		panel.offset_top = 285
+		panel.offset_bottom = 425
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.045, 0.055, 0.94)
 	style.border_color = Color("a9955d")

@@ -85,6 +85,7 @@ var _current_homunculus_id: String = ""
 var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
 var _hunt_mode := false
+var _hunt_spells: Dictionary = {}
 var _spell_debug := DebugFlags.new()
 
 func _exit_tree() -> void:
@@ -402,6 +403,11 @@ func _read_seal_data(mode: String) -> Dictionary:
 func _equipped_spells(mode: String, entity_id: String) -> Array:
 	if _reg == null:
 		return []
+	if _hunt_mode:
+		var selected: Variant = _hunt_spells.get(entity_id, [])
+		if SpellLoadout.valid(_reg, entity_id, _spell_state.get("spell_progress", {}), selected):
+			return selected.duplicate()
+		return SpellLoadout.initial_ids(_reg, entity_id)
 	return SpellLoadout.saved_ids(_reg, _spell_state, mode, entity_id, _read_seal_data(mode), not _spell_debug.unlock_all_buildings)
 
 func _refresh_spell_button() -> void:
@@ -606,6 +612,13 @@ func _refresh_spell_draft(slot_index: int) -> void:
 
 func _confirm_spell_dialog() -> void:
 	if not SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft):
+		return
+	if _hunt_mode:
+		if not _spell_debug.unlock_all_buildings and not _spell_synced:
+			_set_build_error("Server state is unavailable.")
+			return
+		_hunt_spells[_current_entity_id] = _spell_draft.duplicate()
+		_set_build_error("Boss Hunt spells selected.")
 		return
 	if _spell_debug.unlock_all_buildings:
 		var next := _spell_debug.load_lab_state()
