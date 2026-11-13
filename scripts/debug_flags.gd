@@ -39,7 +39,7 @@ func start_lab_cooldown(state: Dictionary, building_id: String) -> void:
 	cooldowns[building_id] = Time.get_unix_time_from_system() + 1.0
 	state["debug_cooldowns"] = cooldowns
 
-func claim_lab_production(state: Dictionary, db: StaticDB) -> Dictionary:
+func claim_lab_production(state: Dictionary, db: StaticDB, collect: bool = true) -> Dictionary:
 	if not unlock_all_buildings:
 		return {}
 	var lab: Dictionary = state.get("lab", {})
@@ -71,7 +71,26 @@ func claim_lab_production(state: Dictionary, db: StaticDB) -> Dictionary:
 		balance["volatile_loss_chance"] = float(db.get_balance("volatile_loss_chance", 0.25)) * loss_mult
 	if mutagen:
 		balance["mutagenic_rare_base_chance"] = float(db.get_balance("mutagenic_rare_base_chance", 0.08)) * float(db.get_balance("mutagen_rare_mult", 1.5))
-	engine.accumulate("essence_reactor", now, level, reactor_route, storage_route, hq_path, balance, now)
+	var cap_ms := int(float(db.get_balance("offline_cap_hours", 12)) * 3600000.0)
+	if cap_ms > 0 and now - int(runtime.get("last_tick", now)) > cap_ms:
+		engine.set_building_state("essence_reactor", float(runtime.get("stored_output", 0)), now - cap_ms)
+	var accumulation := engine.accumulate("essence_reactor", now, level, reactor_route, storage_route, hq_path, balance, now)
+	var reactor_state := engine.get_building_state("essence_reactor")
+	var directive: Dictionary = lab.get("runtime", {}).get("directive", {})
+	if str(directive.get("id", "")) == "production":
+		var end := int(reactor_state.get("last_tick", now))
+		var start := end - int(float(accumulation.get("delta_seconds", 0)) * 1000)
+		var overlap := maxi(0, mini(end, int(directive.get("ends_at", 0))) - maxi(start, int(directive.get("starts_at", 0))))
+		var seconds := float(accumulation.get("delta_seconds", 0))
+		if seconds > 0:
+			reactor_state["stored_output"] = float(reactor_state.get("stored_output", 0)) + float(accumulation.get("produced", 0)) * (float(overlap) / (seconds * 1000.0)) * (float(db.get_balance("hq_directive_production_mult", 1.1)) - 1.0)
+			engine.set_building_state("essence_reactor", reactor_state.stored_output, end)
+	if not collect:
+		reactor["runtime"] = engine.get_building_state("essence_reactor")
+		buildings["essence_reactor"] = reactor
+		lab["buildings"] = buildings
+		state["lab"] = lab
+		return {"accrued": true}
 	var capacity := Capacity.compute_total_capacity(int(storage.get("level", 0)), storage_route, hq_path, balance)
 	var result := engine.claim("essence_reactor", capacity, reactor_route, storage_route, hq_path, balance)
 	reactor["runtime"] = engine.get_building_state("essence_reactor")
@@ -82,6 +101,12 @@ func claim_lab_production(state: Dictionary, db: StaticDB) -> Dictionary:
 	for resource in result.get("grants", {}):
 		wallet[resource] = int(wallet.get(resource, 0)) + int(floor(float(result.grants[resource])))
 	state["wallet"] = wallet
+	var lab_runtime: Dictionary = lab.get("runtime", {})
+	var overcharge: Dictionary = lab_runtime.get("reactor_overcharge", {"progress": 0, "last_used_at": 0})
+	overcharge["progress"] = mini(int(db.get_balance("reactor_overcharge_threshold", 300)), int(overcharge.get("progress", 0)) + int(result.get("grants", {}).get("essence", 0)))
+	lab_runtime["reactor_overcharge"] = overcharge
+	lab["runtime"] = lab_runtime
+	state["lab"] = lab
 	return result
 
 func _init() -> void:

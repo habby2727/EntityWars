@@ -9,6 +9,18 @@
     "forge_upgrade_essence_per_level": 10,
     "forge_specialize_cost": { "essence": 60, "core": 2 },
     "forge_reroll_cost": { "essence": 25, "core": 1 },
+    "forge_fusion_cost_basic": { "essence": 80, "core": 3, "arcane_shard": 1 },
+    "forge_fusion_cost_advanced": { "essence": 120, "core": 4, "arcane_shard": 2 },
+    "forge_fusion_imprints": {
+      "bismuth_talisman": { "true_on_hit": 1 },
+      "wind_amulet": { "evasion_pct": 0.02 },
+      "saltstone_charm": { "ward_pct": 0.03 },
+      "mirror_sigel": { "reflect_pct": 0.02 },
+      "vitriol_vial": { "dot_true": 1 },
+      "gilded_scale": { "disadvantage_reduction": 0.03 },
+      "mercury_lens": { "tempo_on_win": 1 },
+      "aether_knot": { "ignore_reflect_chance": 0.04 }
+    },
     "forge_reroll_high_level_shard": 1,
     "forge_trait_max_points_per_slot": 4,
     "forge_trait_pool": {
@@ -17,6 +29,13 @@
       "technical": { "tempo_flat": 1, "ignore_reflect_chance": 0.03, "evasion_pct": 0.015, "vuln_on_hit": 0.02, "guard_flat": 1, "ward_pct": 0.015 }
     },
     "tick_seconds": 1,
+    "hq_directive_duration_seconds": 86400,
+    "hq_directive_production_mult": 1.10,
+    "hq_directive_research_time_mult": 0.90,
+    "hq_directive_experiment_chance_bonus": 0.05,
+    "reactor_overcharge_threshold": 300,
+    "reactor_overcharge_cooldown_seconds": 10800,
+    "reactor_overcharge_reward": { "essence": 15, "core": 1 },
     "offline_cap_hours": 12,
     "reactor_base_rate": 1.0,
     "reactor_rate_per_level": 0.2,

@@ -156,7 +156,7 @@ func send_action(action_dict: Dictionary) -> String:
 	var action_id: String = action.get("client_action_id", "")
 	if _pending.contains_id(action_id):
 		return ""
-	var online_only := str(action.get("action_type", "")) in ["SET_SPELL_LOADOUT", "FORGE_UPGRADE", "FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL"]
+	var online_only := str(action.get("action_type", "")) in ["SET_SPELL_LOADOUT", "FORGE_UPGRADE", "FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL", "FORGE_FUSE", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE"]
 	var key := _make_action_key(action)
 	if key != "" and _pending_keys.has(key):
 		return str(_pending_keys[key])

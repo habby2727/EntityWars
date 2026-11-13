@@ -4,6 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
+import { createHash } from "node:crypto";
 
 test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async () => {
   const port = await new Promise<number>((resolvePort, reject) => {
@@ -16,7 +17,7 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
   const db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", EXPERIMENT_SECRET: "isolated-experiment-fixture" };
   let server: ReturnType<typeof Bun.spawn> | undefined;
   const start = async () => {
     server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
@@ -173,9 +174,87 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
     expect((await traitAction("trait-no-funds", "FORGE_REROLL_TRAIT", { slot: 0 })).status).toBe(400);
     const afterUpgrade = await action("trait-preserving-upgrade");
     expect([afterUpgrade.status, afterUpgrade.data.updated_player_state.item_progress.bismuth_talisman]).toEqual([200, { ...upgraded, level: 8 }]);
+    const fusionSeed = JSON.parse(getRow().state_json);
+    fusionSeed.wallet = { ...fusionSeed.wallet, essence: 500, core: 20, arcane_shard: 10 };
+    fusionSeed.item_progress.wind_amulet = { level: 3, extra: "donor" };
+    fusionSeed.item_progress.mirror_sigel = { level: 3 };
+    writeState(fusionSeed);
+    const fuse = (id: string, donor: string) => request("/player/action", { client_action_id: id, action_type: "FORGE_FUSE", payload: { item_id: "bismuth_talisman", donor_id: donor, bonus: 999 } }, token);
+    const fusion = await fuse("fuse-basic", "wind_amulet");
+    const fusionState = fusion.data.updated_player_state;
+    expect([fusion.status, fusionState.item_progress.bismuth_talisman.fusion, fusionState.item_progress.wind_amulet, fusionState.wallet.essence, fusionState.wallet.core, fusionState.wallet.arcane_shard]).toEqual([200, { donor_id: "wind_amulet" }, { level: 3, extra: "donor" }, 420, 17, 9]);
+    expect([fusionState.item_progress.bismuth_talisman.specialization, fusionState.item_progress.bismuth_talisman.traits]).toEqual([upgraded.specialization, upgraded.traits]);
+    const fusionRetry = await fuse("fuse-basic", "wind_amulet");
+    expect([fusionRetry.status, fusionRetry.data.duplicate, fusionRetry.data.updated_player_state.wallet.essence]).toEqual([200, true, 420]);
+    expect((await fuse("fuse-identical", "wind_amulet")).status).toBe(400);
+    expect((await fuse("fuse-invalid", "missing")).status).toBe(400);
+    const replacement = await fuse("fuse-advanced", "mirror_sigel");
+    expect([replacement.status, replacement.data.updated_player_state.item_progress.bismuth_talisman.fusion.donor_id, replacement.data.updated_player_state.wallet.essence, replacement.data.updated_player_state.wallet.core, replacement.data.updated_player_state.wallet.arcane_shard]).toEqual([200, "mirror_sigel", 300, 13, 7]);
+    const poor = JSON.parse(getRow().state_json);
+    poor.wallet.arcane_shard = 0;
+    writeState(poor);
+    expect((await fuse("fuse-poor", "wind_amulet")).status).toBe(400);
+    expect(JSON.parse(getRow().state_json).item_progress.bismuth_talisman.fusion.donor_id).toBe("mirror_sigel");
+    const lab = JSON.parse(getRow().state_json);
+    lab.wallet = { essence: 1000, core: 30, arcane_shard: 10, time_crystal: 0 };
+    lab.lab.hqLevel = 3;
+    lab.lab.hqPath = "Scientific";
+    lab.lab.buildings.essence_reactor = { level: 1, route: "stable", runtime: { last_tick: Date.now() - 400000, stored_output: 0 } };
+    lab.lab.buildings.storage_vault = { level: 1 };
+    lab.lab.buildings.arcane_archives = { level: 1 };
+    lab.lab.buildings.experiment_chamber = { level: 1 };
+    lab.lab.runtime = { cooldowns: {}, boosts: {}, research: {}, directive: { id: "production", starts_at: Date.now() - 300000, ends_at: Date.now() - 100000 } };
+    lab.research_flags.archive_basics = false;
+    writeState(lab);
+    const labAction = (id: string, type: string, payload: object = {}) => request("/player/action", { client_action_id: id, action_type: type, payload }, token);
+    const collected = await labAction("lab-collect", "CLAIM_PRODUCTION", { building_id: "essence_reactor" });
+    expect(collected.status).toBe(200);
+    const tickEnd = collected.data.updated_player_state.lab.buildings.essence_reactor.runtime.last_tick;
+    const tickStart = lab.lab.buildings.essence_reactor.runtime.last_tick;
+    const overlap = Math.max(0, Math.min(tickEnd, lab.lab.runtime.directive.ends_at) - Math.max(tickStart, lab.lab.runtime.directive.starts_at));
+    expect(collected.data.updated_player_state.wallet.essence).toBe(1000 + Math.floor(0.96 * ((tickEnd - tickStart) + overlap * 0.1) / 1000));
+    expect(collected.data.updated_player_state.lab.runtime.reactor_overcharge.progress).toBe(300);
+    const charge = await labAction("lab-charge", "REACTOR_OVERCHARGE");
+    expect([charge.status, charge.data.updated_player_state.wallet.essence, charge.data.updated_player_state.wallet.core, charge.data.updated_player_state.lab.runtime.reactor_overcharge.progress]).toEqual([200, collected.data.updated_player_state.wallet.essence + 15, 31, 0]);
+    expect((await labAction("lab-charge", "REACTOR_OVERCHARGE")).data.duplicate).toBe(true);
+    expect((await labAction("lab-charge-insufficient", "REACTOR_OVERCHARGE")).status).toBe(400);
+    const cooling = JSON.parse(getRow().state_json);
+    cooling.lab.runtime.reactor_overcharge.progress = 300;
+    writeState(cooling);
+    expect((await labAction("lab-charge-early", "REACTOR_OVERCHARGE")).status).toBe(400);
+    const readyAgain = JSON.parse(getRow().state_json);
+    readyAgain.lab.runtime.reactor_overcharge.last_used_at = Date.now() - 10801000;
+    writeState(readyAgain);
+    expect((await labAction("lab-charge-later", "REACTOR_OVERCHARGE")).status).toBe(200);
+    const directive = await labAction("lab-directive", "SET_HQ_DIRECTIVE", { directive: "research" });
+    expect(directive.status).toBe(200);
+    expect((await labAction("lab-directive-early", "SET_HQ_DIRECTIVE", { directive: "production" })).status).toBe(400);
+    const research = await labAction("lab-research", "START_RESEARCH", { research_id: "archive_basics" });
+    expect(research.status).toBe(200);
+    expect(research.data.updated_player_state.lab.runtime.research.completes_at - research.data.updated_player_state.lab.runtime.research.started_at).toBe(27000);
+    const exp = JSON.parse(getRow().state_json);
+    exp.lab.runtime.directive = { id: "experimentation", starts_at: Date.now() - 1000, ends_at: Date.now() + 60000 };
+    exp.lab.runtime.cooldowns = {};
+    writeState(exp);
+    let expId = "";
+    for (let i = 0; i < 10000; i++) {
+      const candidate = `lab-experiment-${i}`;
+      const roll = createHash("sha256").update(`${env.EXPERIMENT_SECRET}:${candidate}:arcane_distill:success`).digest().readUInt32BE(0) / 0xffffffff;
+      if (roll > 0.7 && roll < 0.75) { expId = candidate; break; }
+    }
+    expect(expId).not.toBe("");
+    const experiment = await labAction(expId, "START_EXPERIMENT", { experiment_id: "arcane_distill" });
+    expect([experiment.status, experiment.data.updated_player_state.wallet.arcane_shard]).toEqual([200, exp.wallet.arcane_shard + 1]);
+    const expired = JSON.parse(getRow().state_json);
+    expired.lab.runtime.directive.ends_at = Date.now() - 1;
+    expired.lab.runtime.cooldowns = {};
+    writeState(expired);
+    const normalId = Array.from({ length: 10000 }, (_, i) => `lab-expired-${i}`).find(id => { const roll = createHash("sha256").update(`${env.EXPERIMENT_SECRET}:${id}:arcane_distill:success`).digest().readUInt32BE(0) / 0xffffffff; return roll > 0.7 && roll < 0.75; })!;
+    const normal = await labAction(normalId, "START_EXPERIMENT", { experiment_id: "arcane_distill" });
+    expect([normal.status, normal.data.updated_player_state.wallet.arcane_shard]).toEqual([200, expired.wallet.arcane_shard]);
   } finally {
     await stop();
     db.close();
     rmSync(directory, { recursive: true, force: true });
   }
-}, 60000);
+}, 90000);

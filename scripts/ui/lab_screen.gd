@@ -164,6 +164,7 @@ func _build_specialized_panel() -> void:
 	_specialized_panel = SpecializedPanel.new()
 	_specialized_panel.setup(_spell_registry, _backend, _debug.unlock_all_buildings, int(_db.get_balance("forge_upgrade_essence_base", 20)), int(_db.get_balance("forge_upgrade_essence_per_level", 10)))
 	_specialized_panel.debug_forge_updated.connect(_on_debug_forge_updated)
+	_specialized_panel.lab_action_requested.connect(_send_action)
 	detail.add_child(_specialized_panel)
 
 func _on_debug_forge_updated(state: Dictionary) -> void:
@@ -201,6 +202,18 @@ func _process(delta: float) -> void:
 		_update_spell_section()
 		if _debug.unlock_all_buildings:
 			_update_buttons()
+		_update_lab_status()
+
+func _update_lab_status() -> void:
+	if _specialized_panel == null or _selected_id not in ["lab_th", "essence_reactor"]:
+		return
+	var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
+	var rate := _get_reactor_rate_per_hour() if _selected_id == "essence_reactor" else 0.0
+	var directive: Dictionary = _state.get("lab", {}).get("runtime", {}).get("directive", {})
+	if directive.get("id") == "production" and int(directive.get("starts_at", 0)) <= now and now < int(directive.get("ends_at", 0)):
+		rate *= float(_db.get_balance("hq_directive_production_mult", 1.1))
+	var metrics := {"rate": rate, "stored": _state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("runtime", {}).get("stored_output", 0), "threshold": int(_db.get_balance("reactor_overcharge_threshold", 300)), "cooldown": int(_db.get_balance("reactor_overcharge_cooldown_seconds", 10800)), "reward": _db.get_balance("reactor_overcharge_reward", {"essence": 15, "core": 1})}
+	_specialized_panel.update_lab_status(_state, now, _is_pending_building(_selected_id), metrics)
 
 func _resolve_nodes() -> void:
 	_backend = get_node_or_null(backend_path) as BackendClient
@@ -838,6 +851,7 @@ func _update_detail() -> void:
 			metrics["capacity"] = Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
 			metrics["next_capacity"] = Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance) if level < HqRules.get_max_level("storage_vault") else "MAX"
 		_specialized_panel.show_building(_selected_id, _state, names, metrics, _spell_state_synced)
+		_update_lab_status()
 
 func _update_routes() -> void:
 	if _route_option == null:
@@ -1128,7 +1142,7 @@ func _on_open_pressed() -> void:
 
 func _send_action(action: Dictionary, building_id: String) -> void:
 	if _debug.unlock_all_buildings:
-		if not _debug.lab_cooldown_active(_state, building_id):
+		if str(action.get("action_type", "")) in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE"] or not _debug.lab_cooldown_active(_state, building_id):
 			_simulate_debug_action(action)
 		return
 	if _backend == null:
@@ -1146,8 +1160,41 @@ func _simulate_debug_action(action: Dictionary) -> void:
 	if typeof(payload) != TYPE_DICTIONARY:
 		payload = {}
 	var building_id = str(payload.get("building_id", ""))
+	if action_type == "SET_HQ_DIRECTIVE":
+		building_id = "lab_th"
+	elif action_type == "REACTOR_OVERCHARGE":
+		building_id = "essence_reactor"
 	var previous = _state.duplicate(true)
 	match action_type:
+		"SET_HQ_DIRECTIVE":
+			var lab: Dictionary = _state.get("lab", {})
+			var runtime: Dictionary = lab.get("runtime", {})
+			var now := int(Time.get_unix_time_from_system() * 1000)
+			var id := str(payload.get("directive", ""))
+			if id not in ["production", "research", "experimentation"] or _get_hq_level() < 1 or int(runtime.get("directive", {}).get("ends_at", 0)) > now:
+				return
+			_debug.claim_lab_production(_state, _db, false)
+			lab = _state.get("lab", {})
+			runtime = lab.get("runtime", {})
+			runtime["directive"] = {"id": id, "starts_at": now, "ends_at": now + int(_db.get_balance("hq_directive_duration_seconds", 86400)) * 1000}
+			lab["runtime"] = runtime
+			_state["lab"] = lab
+		"REACTOR_OVERCHARGE":
+			var lab: Dictionary = _state.get("lab", {})
+			var runtime: Dictionary = lab.get("runtime", {})
+			var charge: Dictionary = runtime.get("reactor_overcharge", {})
+			var now := int(Time.get_unix_time_from_system() * 1000)
+			var last := int(charge.get("last_used_at", 0))
+			if _get_building_level("essence_reactor") < 1 or int(charge.get("progress", 0)) < int(_db.get_balance("reactor_overcharge_threshold", 300)) or (last > 0 and now < last + int(_db.get_balance("reactor_overcharge_cooldown_seconds", 10800)) * 1000):
+				return
+			var wallet: Dictionary = _state.get("wallet", {})
+			var reward: Dictionary = _db.get_balance("reactor_overcharge_reward", {"essence": 15, "core": 1})
+			for resource in reward:
+				wallet[resource] = int(wallet.get(resource, 0)) + int(reward[resource])
+			_state["wallet"] = wallet
+			runtime["reactor_overcharge"] = {"progress": 0, "last_used_at": now}
+			lab["runtime"] = runtime
+			_state["lab"] = lab
 		"UPGRADE_BUILDING":
 			if building_id == "" or _get_building_level(building_id) >= HqRules.get_max_level(building_id):
 				return
@@ -1202,7 +1249,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 					boosts[str(experiment.get("boost_id", ""))] = {"expires_at": int(Time.get_unix_time_from_system() * 1000) + int(experiment.get("boost_duration_s", 0)) * 1000}
 					runtime["boosts"] = boosts
 					results[experiment_id] = "Boost active"
-				elif randf() < float(experiment.get("success_chance", 1.0)):
+				elif randf() < minf(1.0, float(experiment.get("success_chance", 1.0)) + (float(_db.get_balance("hq_directive_experiment_chance_bonus", 0.05)) if str(runtime.get("directive", {}).get("id", "")) == "experimentation" and int(runtime.get("directive", {}).get("starts_at", 0)) <= int(Time.get_unix_time_from_system() * 1000) and int(runtime.get("directive", {}).get("ends_at", 0)) > int(Time.get_unix_time_from_system() * 1000) else 0.0)):
 					var wallet = _state.get("wallet", {})
 					for resource in experiment.get("grants", {}):
 						wallet[resource] = int(wallet.get(resource, 0)) + int(experiment.grants[resource])
@@ -1220,7 +1267,8 @@ func _simulate_debug_action(action: Dictionary) -> void:
 					if bool(_state.get("research_flags", {}).get(str(research.get("flag_id", research_id)), false)) or not runtime.get("research", {}).get("active_id", "").is_empty():
 						return
 					var now = int(Time.get_unix_time_from_system() * 1000)
-					runtime["research"] = {"active_id": research_id, "started_at": now, "completes_at": now + 1000}
+					var modifier := float(_db.get_balance("hq_directive_research_time_mult", 0.9)) if str(runtime.get("directive", {}).get("id", "")) == "research" and int(runtime.get("directive", {}).get("starts_at", 0)) <= now and int(runtime.get("directive", {}).get("ends_at", 0)) > now else 1.0
+					runtime["research"] = {"active_id": research_id, "started_at": now, "completes_at": now + int(maxf(1.0, float(research.get("time_sec", 0)) * modifier) * 1000)}
 				else:
 					var active = runtime.get("research", {})
 					if str(active.get("active_id", "")) != research_id or int(active.get("completes_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
@@ -1233,7 +1281,8 @@ func _simulate_debug_action(action: Dictionary) -> void:
 			_state["lab"] = lab
 		_:
 			return
-	_debug.start_lab_cooldown(_state, building_id)
+	if action_type not in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE"]:
+		_debug.start_lab_cooldown(_state, building_id)
 	_action_message_building = building_id
 	if not _debug.save_lab_state(_state):
 		_state = previous

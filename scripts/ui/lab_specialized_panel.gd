@@ -1,6 +1,7 @@
 extends VBoxContainer
 
 signal debug_forge_updated(state: Dictionary)
+signal lab_action_requested(action: Dictionary, building_id: String)
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const ITEM_FILES := {"bismuth_talisman": "talisman_bismuth", "mirror_sigel": "mirror", "vitriol_vial": "vitriol"}
@@ -22,8 +23,15 @@ var _forge_cost_per_level := 10
 var _forge_trait_buttons: Array[Button] = []
 var _forge_reroll_button: Button
 var _forge_reroll_slot: OptionButton
+var _fusion_donor: OptionButton
+var _fusion_button: Button
+var _fusion_info: Label
 var _forge_confirm_action := ""
 var _forge_confirm_payload: Dictionary = {}
+var _lab_status: Label
+var _lab_progress: ProgressBar
+var _lab_buttons: Array[Button] = []
+var _lab_metrics: Dictionary = {}
 
 func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cost: int, cost_per_level: int) -> void:
 	_registry = registry
@@ -45,6 +53,9 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 		_forge_pending = ""
 	_forge_state = state
 	_forge_synced = synced
+	_lab_metrics = metrics
+	if building_id == _current_id and building_id in ["lab_th", "essence_reactor"]:
+		return
 	if building_id == _current_id and building_id in ["build_forge", "homunculus_vat", "sync_nexus", "anomaly_containment"]:
 		_update_forge_button()
 		return
@@ -55,7 +66,13 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_forge_confirm = null
 	_forge_reroll_button = null
 	_forge_reroll_slot = null
+	_fusion_donor = null
+	_fusion_button = null
+	_fusion_info = null
 	_forge_trait_buttons.clear()
+	_lab_buttons.clear()
+	_lab_status = null
+	_lab_progress = null
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -66,7 +83,7 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 		"sync_nexus": _unconfigured("Nexus status", ["Overview", "Projects", "Contributions"])
 		"anomaly_containment": _unconfigured("Containment status", ["Threats", "Containment", "History"])
 		"lab_th": _hq(state, building_names)
-		"essence_reactor": _message("PRODUCTION", "Current rate: %.1f Essence / hour\nStored at last update: %.1f Essence\nRates and storage are estimates until confirmed by the server." % [float(metrics.get("rate", 0)), float(metrics.get("stored", 0))])
+		"essence_reactor": _reactor_controls()
 		"storage_vault": _message("STORAGE", "Capacity: %s   |   Next level: %s\nResources:\n%s" % [metrics.get("capacity", "-"), metrics.get("next_capacity", "-"), _format_values(state.get("wallet", {}))])
 		"trade_hall": _message("MARKET AND JOBS", "Open Trade Hall to manage market orders and trade jobs.")
 		"world_gate": _message("WORLD ACCESS", "Open World Gate to access the available zones.")
@@ -96,6 +113,60 @@ func _hq(state: Dictionary, names: Dictionary) -> void:
 		elif required == level + 1:
 			next.append(str(names[id]))
 	_message("LAB PROGRESS", "Unlocked: %s\nNext HQ level: %s" % [", ".join(unlocked), ", ".join(next) if not next.is_empty() else "No additional unlocks"])
+	var row := HBoxContainer.new()
+	add_child(row)
+	for directive in ["production", "research", "experimentation"]:
+		var button := Button.new()
+		button.text = {"production": "Production +10%", "research": "Research time -10%", "experimentation": "Experiment chance +5%"}[directive]
+		MenuArt.button(button)
+		button.pressed.connect(func(): lab_action_requested.emit({"action_type": "SET_HQ_DIRECTIVE", "payload": {"directive": directive}}, "lab_th"))
+		row.add_child(button)
+		_lab_buttons.append(button)
+	_lab_status = Label.new()
+	add_child(_lab_status)
+
+func _reactor_controls() -> void:
+	_message("PRODUCTION", "Collect Essence to charge the reactor.")
+	_lab_progress = ProgressBar.new()
+	_lab_progress.show_percentage = false
+	add_child(_lab_progress)
+	_lab_status = Label.new()
+	add_child(_lab_status)
+	var button := Button.new()
+	button.text = "Activate Overcharge"
+	button.tooltip_text = "Reward: 15 Essence and 1 Core"
+	MenuArt.button(button)
+	button.pressed.connect(func(): lab_action_requested.emit({"action_type": "REACTOR_OVERCHARGE", "payload": {}}, "essence_reactor"))
+	add_child(button)
+	_lab_buttons.append(button)
+
+func update_lab_status(state: Dictionary, now_ms: int, pending: bool, metrics: Dictionary) -> void:
+	if not is_instance_valid(_lab_status):
+		return
+	var runtime: Dictionary = state.get("lab", {}).get("runtime", {})
+	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
+	if _current_id == "lab_th":
+		var directive: Dictionary = runtime.get("directive", {})
+		var remaining := maxi(0, int(directive.get("ends_at", 0)) - now_ms)
+		_lab_status.text = "Active: %s | %s remaining" % [str(directive.get("id", "")).capitalize(), _clock(remaining)] if remaining > 0 else "Ready to choose"
+		for i in range(_lab_buttons.size()):
+			_lab_buttons[i].disabled = not ready or pending or remaining > 0
+			_lab_buttons[i].modulate = Color(1.25, 1.1, 0.7) if remaining > 0 and directive.get("id") == ["production", "research", "experimentation"][i] else Color.WHITE
+	elif _current_id == "essence_reactor":
+		var charge: Dictionary = runtime.get("reactor_overcharge", {})
+		var threshold := int(metrics.get("threshold", 300))
+		var progress := clampi(int(charge.get("progress", 0)), 0, threshold)
+		var last := int(charge.get("last_used_at", 0))
+		var remaining := maxi(0, last + int(metrics.get("cooldown", 10800)) * 1000 - now_ms) if last > 0 else 0
+		_lab_progress.max_value = threshold
+		_lab_progress.value = progress
+		_lab_status.text = "Rate: %.1f Essence / hour | Stored: %.1f\n%d / %d collected | %s\nReward: %s" % [float(metrics.get("rate", 0)), float(metrics.get("stored", 0)), progress, threshold, "Cooldown: " + _clock(remaining) if remaining > 0 else ("Ready to activate" if progress >= threshold else "Charging"), _format_values(metrics.get("reward", {})).replace("\n", ", ")]
+		_lab_buttons[0].disabled = not ready or pending or int(state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("level", 0)) < 1 or progress < threshold or remaining > 0
+		_lab_buttons[0].modulate = Color(1.25, 1.1, 0.7) if not _lab_buttons[0].disabled else Color.WHITE
+
+func _clock(milliseconds: int) -> String:
+	var seconds := int(ceil(float(milliseconds) / 1000.0))
+	return "%02d:%02d:%02d" % [seconds / 3600, (seconds / 60) % 60, seconds % 60]
 
 func _unconfigured(title: String, tabs: Array) -> void:
 	var heading := Label.new()
@@ -116,11 +187,27 @@ func _catalog(homunculi: bool) -> void:
 	var title := Label.new()
 	title.text = "HOMUNCULUS CATALOG" if homunculi else "TALISMAN CATALOG"
 	title.add_theme_font_size_override("font_size", 18)
+	if not homunculi:
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(title)
 	var row := HBoxContainer.new()
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 14)
-	add_child(row)
+	if homunculi:
+		add_child(row)
+	else:
+		var center := HBoxContainer.new()
+		center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		add_child(center)
+		var left_space := Control.new()
+		left_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		center.add_child(left_space)
+		row.custom_minimum_size.x = 1050
+		row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		center.add_child(row)
+		var right_space := Control.new()
+		right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		center.add_child(right_space)
 	var entries: Dictionary = _registry.get_homunculi() if homunculi else _registry.get_items()
 	var list := ItemList.new()
 	list.custom_minimum_size = Vector2(220, 150)
@@ -136,16 +223,38 @@ func _catalog(homunculi: bool) -> void:
 	list.add_theme_stylebox_override("selected_focus", selected)
 	row.add_child(list)
 	var preview := TextureRect.new()
-	preview.custom_minimum_size = Vector2(120, 120)
 	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(preview)
+	if homunculi:
+		preview.custom_minimum_size = Vector2(120, 120)
+		row.add_child(preview)
+	else:
+		var preview_center := CenterContainer.new()
+		preview_center.custom_minimum_size = Vector2(190, 190)
+		row.add_child(preview_center)
+		var frame := TextureRect.new()
+		frame.custom_minimum_size = Vector2(190, 190)
+		frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
+		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		preview_center.add_child(frame)
+		frame.add_child(preview)
+		preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		preview.offset_left = 18
+		preview.offset_top = 18
+		preview.offset_right = -18
+		preview.offset_bottom = -18
 	var details := VBoxContainer.new()
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if not homunculi:
+		details.add_theme_constant_override("separation", 8)
 	row.add_child(details)
 	var heading := Label.new()
 	heading.add_theme_font_size_override("font_size", 18)
+	if not homunculi:
+		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.add_child(heading)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -157,8 +266,13 @@ func _catalog(homunculi: bool) -> void:
 		_forge_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if not homunculi:
+		info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	scroll.add_child(info)
 	var actions := HBoxContainer.new()
+	if not homunculi:
+		actions.alignment = BoxContainer.ALIGNMENT_CENTER
+		actions.add_theme_constant_override("separation", 10)
 	details.add_child(actions)
 	for label in (["Upgrade Homunculus", "Mutation"] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
@@ -181,6 +295,8 @@ func _catalog(homunculi: bool) -> void:
 	actions.add_child(inventory)
 	if not homunculi:
 		var trait_actions := HBoxContainer.new()
+		trait_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+		trait_actions.add_theme_constant_override("separation", 8)
 		details.add_child(trait_actions)
 		_forge_reroll_slot = OptionButton.new()
 		_forge_reroll_slot.tooltip_text = "Trait to reroll"
@@ -194,8 +310,29 @@ func _catalog(homunculi: bool) -> void:
 			trait_actions.add_child(trait_button)
 			_forge_trait_buttons.append(trait_button)
 			trait_button.pressed.connect(_request_trait_action.bind(i))
+		var fusion_row := HBoxContainer.new()
+		fusion_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		fusion_row.add_theme_constant_override("separation", 8)
+		details.add_child(fusion_row)
+		_fusion_donor = OptionButton.new()
+		_fusion_donor.custom_minimum_size.x = 165
+		for donor_id in entries:
+			_fusion_donor.add_item(str(entries[donor_id].get("name", donor_id)))
+			_fusion_donor.set_item_metadata(_fusion_donor.item_count - 1, donor_id)
+		_fusion_donor.item_selected.connect(func(_index): _update_forge_button())
+		fusion_row.add_child(_fusion_donor)
+		_fusion_button = Button.new()
+		_fusion_button.text = "Fusion"
+		MenuArt.button(_fusion_button)
+		_fusion_button.pressed.connect(_request_fusion)
+		fusion_row.add_child(_fusion_button)
+		_fusion_info = Label.new()
+		_fusion_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_fusion_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		details.add_child(_fusion_info)
 		_forge_status = Label.new()
 		_forge_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_forge_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		details.add_child(_forge_status)
 		_forge_confirm = ConfirmationDialog.new()
 		_forge_confirm.title = "Upgrade talisman"
@@ -267,7 +404,7 @@ func _update_forge_button() -> void:
 	var outstanding := ""
 	if not _forge_debug and _backend != null:
 		for action in _backend.get_pending_actions():
-			if str(action.get("action_type", "")) in ["FORGE_UPGRADE", "FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL"]:
+			if str(action.get("action_type", "")) in ["FORGE_UPGRADE", "FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL", "FORGE_FUSE"]:
 				outstanding = str(action.get("client_action_id", ""))
 				break
 		if _backend._verified_player_id.is_empty():
@@ -282,6 +419,26 @@ func _update_forge_button() -> void:
 	var reroll_cost: Dictionary = balance_data.get("balance", {}).get("forge_reroll_cost", {}) if balance_data is Dictionary else {}
 	var shard_cost := int(balance_data.get("balance", {}).get("forge_reroll_high_level_shard", 1)) if level >= 7 and balance_data is Dictionary else 0
 	var wallet: Dictionary = _forge_state.get("wallet", {})
+	if is_instance_valid(_fusion_donor) and is_instance_valid(_fusion_button) and _fusion_donor.selected >= 0:
+		var donor := str(_fusion_donor.get_item_metadata(_fusion_donor.selected))
+		var donor_item: Dictionary = _registry.get_items().get(donor, {})
+		var fusion_balance: Dictionary = balance_data.get("balance", {}) if balance_data is Dictionary else {}
+		var imprint: Dictionary = fusion_balance.get("forge_fusion_imprints", {}).get(donor, {})
+		var fusion_cost: Dictionary = fusion_balance.get("forge_fusion_cost_" + str(donor_item.get("rarity", "")), {})
+		var current_fusion: Variant = item_state.get("fusion", {})
+		var current_donor := str(current_fusion.get("donor_id", "")) if current_fusion is Dictionary else ""
+		var preview_progress := progress.duplicate(true)
+		var preview_entry := item_state.duplicate(true)
+		preview_entry["fusion"] = {"donor_id": donor}
+		preview_progress[_forge_item] = preview_entry
+		var preview: Dictionary = preload("res://scripts/domain/item_progress.gd").effective_item(_registry.get_items().get(_forge_item, {}), preview_progress)
+		var enough := not fusion_cost.is_empty()
+		for resource in fusion_cost:
+			if int(wallet.get(resource, 0)) < int(fusion_cost[resource]):
+				enough = false
+		_fusion_donor.disabled = not can_trait
+		_fusion_button.disabled = not can_trait or has_offer or donor == _forge_item or donor == current_donor or level < 3 or int(progress.get(donor, {}).get("level", 0)) < 3 or imprint.is_empty() or not enough
+		_fusion_info.text = "Fusion: %s | Imprint: %s | Cost: %s\nPreview: %s" % [str(_registry.get_items().get(current_donor, {}).get("name", "None")), _format_values(imprint).replace("\n", ", "), _format_values(fusion_cost).replace("\n", ", "), _format_values(preview.get("effects", {})).replace("\n", ", ")]
 	var reroll_text := "%d Essence, %d Core%s" % [int(reroll_cost.get("essence", 0)), int(reroll_cost.get("core", 0)), ", %d Arcane Shard" % shard_cost if shard_cost > 0 else ""]
 	if is_instance_valid(_forge_reroll_button) and is_instance_valid(_forge_reroll_slot):
 		_forge_reroll_slot.visible = specialization != "" and not has_offer
@@ -369,13 +526,24 @@ func _request_forge_reroll() -> void:
 	_forge_confirm.dialog_text = "Reroll %s for %s?" % [_forge_reroll_slot.get_item_text(_forge_reroll_slot.selected), _forge_reroll_button.tooltip_text.trim_prefix("Reroll cost: ")]
 	_forge_confirm.popup_centered()
 
+func _request_fusion() -> void:
+	if not is_instance_valid(_fusion_button) or _fusion_button.disabled:
+		return
+	_forge_confirm_action = "FORGE_FUSE"
+	_forge_confirm_payload = {"item_id": _forge_item, "donor_id": str(_fusion_donor.get_item_metadata(_fusion_donor.selected))}
+	_forge_confirm.dialog_text = "Fuse %s with %s? Resources are spent permanently; the donor is not consumed.\n%s" % [_forge_item, _fusion_donor.get_item_text(_fusion_donor.selected), _fusion_info.text]
+	_forge_confirm.popup_centered()
+
 func _send_forge_confirmed() -> void:
 	if _forge_confirm_action == "FORGE_UPGRADE":
 		_send_forge_upgrade()
 		return
 	if (not _forge_debug and _backend == null) or _forge_pending != "" or _forge_confirm_payload.get("item_id") != _forge_item:
 		return
-	if _forge_confirm_action == "FORGE_REROLL_TRAIT":
+	if _forge_confirm_action == "FORGE_FUSE":
+		if not is_instance_valid(_fusion_button) or _fusion_button.disabled or str(_fusion_donor.get_item_metadata(_fusion_donor.selected)) != str(_forge_confirm_payload.get("donor_id", "")):
+			return
+	elif _forge_confirm_action == "FORGE_REROLL_TRAIT":
 		if not is_instance_valid(_forge_reroll_button) or _forge_reroll_button.disabled or _forge_reroll_slot.selected != int(_forge_confirm_payload.get("slot", -1)):
 			return
 	else:
@@ -413,7 +581,19 @@ func _apply_debug_trait_action() -> void:
 	var traits: Array = item.get("traits", [])
 	var slot := int(_forge_confirm_payload.get("slot", -1))
 	var cost: Dictionary = {}
-	if _forge_confirm_action == "FORGE_SPECIALIZE":
+	if _forge_confirm_action == "FORGE_FUSE":
+		var donor := str(_forge_confirm_payload.get("donor_id", ""))
+		var donor_item: Dictionary = _registry.get_items().get(donor, {})
+		var fusion: Variant = item.get("fusion", {})
+		if donor == _forge_item or donor_item.is_empty() or level < 3 or int(progress.get(donor, {}).get("level", 0)) < 3 or item.has("pending_reroll") or (fusion is Dictionary and fusion.get("donor_id") == donor) or balance.get("forge_fusion_imprints", {}).get(donor, {}).is_empty() or int(state.get("lab", {}).get("buildings", {}).get("build_forge", {}).get("level", 0)) < 1:
+			debug.free()
+			return
+		cost = balance.get("forge_fusion_cost_" + str(donor_item.get("rarity", "")), {}).duplicate()
+		if cost.is_empty():
+			debug.free()
+			return
+		item["fusion"] = {"donor_id": donor}
+	elif _forge_confirm_action == "FORGE_SPECIALIZE":
 		var path := str(_forge_confirm_payload.get("path", ""))
 		var pool: Dictionary = balance.get("forge_trait_pool", {}).get(path, {})
 		if level < 1 or item.has("specialization") or pool.size() < 3:

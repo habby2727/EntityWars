@@ -79,6 +79,8 @@ type LabRuntime = {
 	cooldowns: Record<string, number>;
 	boosts: Record<string, BoostState>;
 	research: ResearchRuntime;
+	directive?: { id: string; starts_at: number; ends_at: number };
+	reactor_overcharge?: { progress: number; last_used_at: number };
 };
 
 type LabState = {
@@ -857,6 +859,24 @@ function applyAction(
 		next.item_progress[id] = { ...current, level: current.level + 1 };
 		return { state: next };
 	}
+	if (actionType === "FORGE_FUSE") {
+		const id = typeof payload?.item_id === "string" ? payload.item_id : "";
+		const donor = typeof payload?.donor_id === "string" ? payload.donor_id : "";
+		if (!staticData.itemIds.has(id) || !staticData.itemIds.has(donor) || id === donor) return { state: next, error: "Invalid fusion weapons." };
+		if ((next.lab.buildings.build_forge?.level ?? 0) < 1) return { state: next, error: "Build Forge is not constructed." };
+		const current = next.item_progress[id] ?? { level: 0 };
+		if (current.level < 3 || (next.item_progress[donor]?.level ?? 0) < 3) return { state: next, error: "Both weapons require level 3." };
+		if (current.pending_reroll != null || (current.fusion as any)?.donor_id === donor) return { state: next, error: "Fusion unavailable." };
+		const rarity = staticData.itemRarities[donor];
+		const imprint = staticData.balance.forge_fusion_imprints?.[donor];
+		const cost = staticData.balance[`forge_fusion_cost_${rarity}`];
+		const effectIds = ["true_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "dot_true", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"];
+		if (!["basic", "advanced"].includes(rarity) || !imprint || typeof imprint !== "object" || Array.isArray(imprint) || Object.entries(imprint).length !== 1 || Object.entries(imprint).some(([key, value]) => !effectIds.includes(key) || typeof value !== "number" || !Number.isFinite(value) || value <= 0) || !cost || typeof cost !== "object" || Array.isArray(cost) || Object.keys(cost).sort().join(",") !== "arcane_shard,core,essence" || Object.values(cost).some(value => !Number.isSafeInteger(value) || (value as number) < 0)) return { state: next, error: "Invalid fusion configuration." };
+		if (Object.entries(cost).some(([resource, amount]) => (next.wallet[resource] ?? 0) < (amount as number))) return { state: next, error: "Insufficient resources." };
+		for (const [resource, amount] of Object.entries(cost)) next.wallet[resource] = (next.wallet[resource] ?? 0) - (amount as number);
+		next.item_progress[id] = { ...current, fusion: { donor_id: donor } };
+		return { state: next };
+	}
 	if (["FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL"].includes(actionType)) {
 		const id = typeof payload?.item_id === "string" ? payload.item_id : "";
 		if (!staticData.itemIds.has(id)) return { state: next, error: "Unknown item_id." };
@@ -927,6 +947,26 @@ function applyAction(
 	}
 	if (actionType == "CLAIM_PRODUCTION") {
 		return applyClaim(next, payload, now);
+	}
+	if (actionType === "SET_HQ_DIRECTIVE") {
+		const id = payload?.directive;
+		if (!["production", "research", "experimentation"].includes(id) || next.lab.hqLevel < 1) return { state: next, error: "Invalid HQ directive." };
+		if ((runtime.directive?.ends_at ?? 0) > now) return { state: next, error: "HQ directive is active." };
+		const reactor = ensureBuildingState(next, "essence_reactor");
+		const storage = ensureBuildingState(next, "storage_vault");
+		if (reactor.level > 0) tickProduction(reactor, now, reactor.level, reactor.route || "stable", storage.route || "", next.lab.hqPath, runtime);
+		runtime.directive = { id, starts_at: now, ends_at: now + Math.max(1, getBalanceNumber("hq_directive_duration_seconds", 86400)) * 1000 };
+		return { state: next };
+	}
+	if (actionType === "REACTOR_OVERCHARGE") {
+		const threshold = Math.max(1, Math.trunc(getBalanceNumber("reactor_overcharge_threshold", 300)));
+		const charge = runtime.reactor_overcharge ?? { progress: 0, last_used_at: 0 };
+		if ((next.lab.buildings.essence_reactor?.level ?? 0) < 1 || charge.progress < threshold || (charge.last_used_at > 0 && now < charge.last_used_at + getBalanceNumber("reactor_overcharge_cooldown_seconds", 10800) * 1000)) return { state: next, error: "Overcharge is not ready." };
+		const reward = staticData.balance.reactor_overcharge_reward;
+		if (!reward || typeof reward !== "object" || Array.isArray(reward) || Object.entries(reward).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) < 0)) return { state: next, error: "Invalid overcharge reward." };
+		applyWalletGrant(next.wallet, reward);
+		runtime.reactor_overcharge = { progress: 0, last_used_at: now };
+		return { state: next };
 	}
 	if (actionType == "START_EXPERIMENT") {
 		return applyStartExperiment(next, payload, clientActionId, now);
@@ -2010,6 +2050,7 @@ async function startServer(): Promise<void> {
 
 type StaticData = {
 	itemIds: Set<string>;
+	itemRarities: Record<string, string>;
 	resources: Set<string>;
 	buildings: Record<string, any>;
 	hqPaths: string[];
@@ -2024,6 +2065,7 @@ function loadStaticData(): StaticData {
 	const staticDir = resolve(import.meta.dir, "..", "..", "data", "static");
 	const itemsRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "items.json"), "utf8"));
 	const itemIds = new Set<string>((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).map((item: any) => item.id).filter((id: unknown): id is string => typeof id === "string"));
+	const itemRarities: Record<string, string> = Object.fromEntries((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).filter((item: any) => typeof item.id === "string" && typeof item.rarity === "string").map((item: any) => [item.id, item.rarity]));
 	const resources = loadResourceIds(resolve(staticDir, "resources.json"));
 	const buildingsData = loadBuildings(resolve(staticDir, "buildings.json"));
 	const balance = loadBalance(resolve(staticDir, "balance.json"));
@@ -2032,6 +2074,7 @@ function loadStaticData(): StaticData {
 	const bosses = loadBosses(resolve(staticDir, "bosses.json"));
 	return {
 		itemIds,
+		itemRarities,
 		resources: resources.ids,
 		buildings: buildingsData.buildings,
 		hqPaths: buildingsData.hqPaths,
@@ -2598,7 +2641,15 @@ function normalizeLabRuntime(runtimeRaw: any): LabRuntime {
 			}
 		}
 	}
-	return { cooldowns, boosts, research };
+	const result: LabRuntime = { cooldowns, boosts, research };
+	const directive = runtimeRaw?.directive;
+	if (directive && ["production", "research", "experimentation"].includes(directive.id)) {
+		const starts = clampInt(directive.starts_at, 0, Number.MAX_SAFE_INTEGER);
+		const ends = clampInt(directive.ends_at, 0, Number.MAX_SAFE_INTEGER);
+		if (ends > starts) result.directive = { id: directive.id, starts_at: starts, ends_at: ends };
+	}
+	if (runtimeRaw?.reactor_overcharge && typeof runtimeRaw.reactor_overcharge === "object") result.reactor_overcharge = { progress: clampInt(runtimeRaw.reactor_overcharge.progress, 0, Math.max(1, getBalanceNumber("reactor_overcharge_threshold", 300))), last_used_at: clampInt(runtimeRaw.reactor_overcharge.last_used_at, 0, Number.MAX_SAFE_INTEGER) };
+	return result;
 }
 
 function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
@@ -3337,6 +3388,9 @@ function applyClaim(
 		nowMs
 	);
 	applyWalletGrant(state.wallet, claimResult.grants);
+	const overcharge = runtime.reactor_overcharge ?? { progress: 0, last_used_at: 0 };
+	overcharge.progress = Math.min(Math.max(1, Math.trunc(getBalanceNumber("reactor_overcharge_threshold", 300))), overcharge.progress + (claimResult.grants.essence ?? 0));
+	runtime.reactor_overcharge = overcharge;
 	return { state };
 }
 
@@ -3386,7 +3440,7 @@ function applyStartExperiment(
 		}
 	}
 	if (experiment.kind == "convert") {
-		const chance = clampChance(experiment.success_chance ?? 1.0);
+		const chance = clampChance((experiment.success_chance ?? 1.0) + (directiveActive(runtime, "experimentation", nowMs) ? getBalanceNumber("hq_directive_experiment_chance_bonus", 0.05) : 0));
 		const seed = `${EXPERIMENT_SECRET}:${clientActionId}:${experimentId}:success`;
 		const roll = seededRandom01(seed);
 		if (roll <= chance) {
@@ -3462,7 +3516,7 @@ function applyStartResearch(
 	runtime.research = {
 		active_id: researchId,
 		started_at: nowMs,
-		completes_at: nowMs + Math.max(0, node.time_sec) * 1000
+		completes_at: nowMs + Math.max(1, node.time_sec * (directiveActive(runtime, "research", nowMs) ? getBalanceNumber("hq_directive_research_time_mult", 0.9) : 1)) * 1000
 	};
 	return { state };
 }
@@ -3654,6 +3708,11 @@ function computeCapacity(storageLevel: number, storageRoute: string, hqPath: str
 	return Math.floor(Math.max(0, (base + perLevel * level) * routeMult * hqMult));
 }
 
+function directiveActive(runtime: LabRuntime, id: string, at: number): boolean {
+	const directive = runtime.directive;
+	return !!directive && directive.id === id && directive.starts_at <= at && at < directive.ends_at;
+}
+
 function tickProduction(
 	building: BuildingState,
 	nowMs: number,
@@ -3682,10 +3741,14 @@ function tickProduction(
 		runtime.last_tick = nowMs;
 		return;
 	}
+	const end = nowMs;
+	const start = end - delta;
+	const directive = labRuntime.directive;
+	const activeMs = directive?.id === "production" ? Math.max(0, Math.min(end, directive.ends_at) - Math.max(start, directive.starts_at)) : 0;
 	const rate = computeOutputRate(level, route, storageRoute, hqPath, labRuntime, nowMs);
-	const produced = rate * (delta / 1000);
+	const produced = rate * (delta + activeMs * (getBalanceNumber("hq_directive_production_mult", 1.1) - 1)) / 1000;
 	runtime.stored_output = Math.max(0, (runtime.stored_output ?? 0) + produced);
-	runtime.last_tick = lastTick + delta;
+	runtime.last_tick = nowMs;
 }
 
 function computeOutputRate(

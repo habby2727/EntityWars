@@ -21,6 +21,14 @@ func _initialize() -> void:
 	traits.test_item.traits[1].points = 0
 	assert(ItemProgress.effective_item(base, traits) == ItemProgress.effective_item(base, {"test_item": {"level": 3}}))
 	assert(ItemProgress.effective_item(base, {}) == initial)
+	traits.test_item.traits[0].points = 2
+	traits.test_item.traits[1].points = 1
+	traits.test_item.fusion = {"donor_id": "bismuth_talisman"}
+	var fused := ItemProgress.effective_item(base, traits)
+	assert(fused.effects.power_flat[0] == 6 and fused.effects.true_on_hit[0] == 2)
+	assert(ItemProgress.effective_item(base, traits).effects.true_on_hit[0] == 2 and base == original)
+	traits.test_item.erase("specialization")
+	assert(ItemProgress.effective_item(base, traits).effects.true_on_hit[0] == 1)
 	var file := FileAccess.open("res://data/items.json", FileAccess.READ)
 	var catalog: Dictionary = JSON.parse_string(file.get_as_text())
 	assert(catalog.items.size() == 8)
