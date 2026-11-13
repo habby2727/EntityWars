@@ -1448,7 +1448,8 @@ func _update_save_button_label() -> void:
 		return
 	var path := "user://seal_%s.json" % _mode
 	_has_saved = FileAccess.file_exists(path)
-	btn_save.text = "Load Seal              [X]" if _has_saved else "Save Seal"
+	btn_save.text = "Load Seal" if _has_saved else "Save Seal"
+	btn_save.get_node("ResetMark").visible = _has_saved
 
 func _idx_to_id(_arr: Array, dd: Node) -> String:
 	if dd == null:

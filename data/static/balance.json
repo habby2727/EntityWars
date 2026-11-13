@@ -1,12 +1,21 @@
 {
   "balance": {
-    "combat_rewards": {
-      "arcane_shard": 0.30,
-      "time_crystal": 0.15,
-      "primordial_sigil": 0.05
-    },
+    "combat_rewards": [
+      { "resource_id": "arcane_shard", "amount": 1, "weight": 0.30 },
+      { "resource_id": "time_crystal", "amount": 1, "weight": 0.15 },
+      { "resource_id": "time_crystal", "amount": 3, "weight": 0.05 }
+    ],
     "forge_upgrade_essence_base": 20,
     "forge_upgrade_essence_per_level": 10,
+    "forge_specialize_cost": { "essence": 60, "core": 2 },
+    "forge_reroll_cost": { "essence": 25, "core": 1 },
+    "forge_reroll_high_level_shard": 1,
+    "forge_trait_max_points_per_slot": 4,
+    "forge_trait_pool": {
+      "aggressive": { "power_flat": 1, "true_on_hit": 1, "dot_true": 1, "vuln_on_hit": 0.02, "tempo_on_win": 1, "tempo_flat": 1 },
+      "defensive": { "guard_flat": 1, "ward_pct": 0.02, "reflect_pct": 0.02, "evasion_pct": 0.015, "disadvantage_reduction": 0.02, "power_flat": 1 },
+      "technical": { "tempo_flat": 1, "ignore_reflect_chance": 0.03, "evasion_pct": 0.015, "vuln_on_hit": 0.02, "guard_flat": 1, "ward_pct": 0.015 }
+    },
     "tick_seconds": 1,
     "offline_cap_hours": 12,
     "reactor_base_rate": 1.0,
@@ -114,7 +123,7 @@
     "wallet_suspicious_threshold": 5000000,
     "wallet_caps": {},
     "boss_rewards": {
-      "t1": { "arcane_shard": 5, "time_crystal": 2, "primordial_sigil": 1 },
+      "t1": { "arcane_shard": 5, "time_crystal": 5 },
       "t2": { "arcane_shard": 3, "time_crystal": 1 },
       "t3": { "arcane_shard": 2 },
       "t4": { "arcane_shard": 1 }

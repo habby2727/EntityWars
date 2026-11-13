@@ -16,24 +16,9 @@
       "display_name": "Arcane Shard"
     },
     {
-      "id": "living_catalyst",
-      "name": "Living Catalyst",
-      "display_name": "Living Catalyst"
-    },
-    {
-      "id": "chaos_cell",
-      "name": "Chaos Cell",
-      "display_name": "Chaos Cell"
-    },
-    {
       "id": "time_crystal",
       "name": "Time Crystal",
       "display_name": "Time Crystal"
-    },
-    {
-      "id": "primordial_sigil",
-      "name": "Primordial Sigil",
-      "display_name": "Primordial Sigil"
     }
   ]
 }

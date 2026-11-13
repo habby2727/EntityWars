@@ -7,10 +7,7 @@ const REQUIRED_RESOURCE_IDS := [
 	"essence",
 	"core",
 	"arcane_shard",
-	"living_catalyst",
-	"chaos_cell",
-	"time_crystal",
-	"primordial_sigil"
+	"time_crystal"
 ]
 const REQUIRED_BUILDING_IDS := [
 	"lab_th",

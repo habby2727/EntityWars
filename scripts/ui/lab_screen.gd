@@ -199,6 +199,8 @@ func _process(delta: float) -> void:
 		_update_experiments()
 		_update_research()
 		_update_spell_section()
+		if _debug.unlock_all_buildings:
+			_update_buttons()
 
 func _resolve_nodes() -> void:
 	_backend = get_node_or_null(backend_path) as BackendClient

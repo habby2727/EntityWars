@@ -306,7 +306,12 @@ func _send_local_debug(action_type: String) -> void:
 	_message = "Local debug action saved."
 	debug_state_changed.emit(_state)
 	_refresh()
-	get_tree().create_timer(1.0).timeout.connect(_refresh, CONNECT_ONE_SHOT)
+	get_tree().create_timer(1.1).timeout.connect(_refresh_debug_cooldown, CONNECT_ONE_SHOT)
+
+func _refresh_debug_cooldown() -> void:
+	_refresh()
+	if visible and _debug != null and _debug.unlock_all_buildings and _debug.lab_cooldown_active(_state, _building_id):
+		get_tree().create_timer(0.2).timeout.connect(_refresh_debug_cooldown, CONNECT_ONE_SHOT)
 
 func _on_manage() -> void:
 	if not _manage.disabled:

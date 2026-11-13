@@ -50,6 +50,31 @@ func _run() -> void:
 	if int(debug.load_lab_state().wallet.essence) != 19:
 		_fail("Rejected upgrade changed wallet")
 		return
+	state.item_progress.aether_knot.level = 3
+	state.wallet = {"essence": 200, "core": 5, "arcane_shard": 2}
+	debug.save_lab_state(state)
+	panel.show_building("build_forge", state, {}, {}, true)
+	panel._request_trait_action(0)
+	panel._send_forge_confirmed()
+	panel._request_trait_action(0)
+	panel._send_forge_confirmed()
+	if panel._forge_reroll_button.disabled:
+		_fail("Debug reroll disabled")
+		return
+	panel._request_forge_reroll()
+	panel._send_forge_confirmed()
+	var offer_state := debug.load_lab_state()
+	var offer: Dictionary = offer_state.item_progress.aether_knot.get("pending_reroll", {})
+	if offer.get("options", []).size() != 3:
+		_fail("Debug reroll offer not saved")
+		return
+	panel.show_building("build_forge", offer_state, {}, {}, true)
+	panel._request_trait_action(0)
+	panel._send_forge_confirmed()
+	var chosen := debug.load_lab_state()
+	if chosen.item_progress.aether_knot.has("pending_reroll") or chosen.item_progress.aether_knot.traits[0].id != offer.options[0] or int(chosen.item_progress.aether_knot.traits[0].points) != 1:
+		_fail("Debug reroll selection not saved")
+		return
 	print("PASS debug Forge cost, levels 0-10, maximum, insufficient Essence and saved state")
 	panel.queue_free()
 	registry.free()

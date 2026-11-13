@@ -28,7 +28,7 @@ const EXPERIMENTS := [
 		"desc": "Essence + Arcane Shard -> Living Catalyst (medium)",
 		"kind": "convert",
 		"cost": {"essence": 60, "arcane_shard": 1},
-		"grants": {"living_catalyst": 1},
+		"grants": {"core": 2},
 		"success_chance": 0.7,
 		"cooldown_s": 120
 	},
@@ -47,7 +47,7 @@ const EXPERIMENTS := [
 		"name": "Volatile Overclock",
 		"desc": "10 min reactor output boost; increases volatile loss chance",
 		"kind": "boost",
-		"cost": {"essence": 80, "chaos_cell": 1},
+		"cost": {"essence": 80, "arcane_shard": 1},
 		"cooldown_s": 600,
 		"boost_id": "volatile_overclock",
 		"boost_duration_s": 600
@@ -57,7 +57,7 @@ const EXPERIMENTS := [
 		"name": "Mutagen Surge",
 		"desc": "10 min rare chance boost; increases failure chance",
 		"kind": "boost",
-		"cost": {"essence": 80, "arcane_shard": 1, "chaos_cell": 1},
+		"cost": {"essence": 80, "arcane_shard": 2},
 		"cooldown_s": 600,
 		"boost_id": "mutagen_surge",
 		"boost_duration_s": 600

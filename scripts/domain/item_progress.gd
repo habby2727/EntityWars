@@ -1,5 +1,20 @@
 extends RefCounted
 
+static var _trait_pool: Dictionary = {}
+static var _pool_loaded := false
+
+static func trait_pool() -> Dictionary:
+	if not _pool_loaded:
+		_pool_loaded = true
+		var file := FileAccess.open("res://data/static/balance.json", FileAccess.READ)
+		if file:
+			var data: Variant = JSON.parse_string(file.get_as_text())
+			if data is Dictionary and data.get("balance", {}) is Dictionary:
+				var pool: Variant = data.balance.get("forge_trait_pool", {})
+				if pool is Dictionary:
+					_trait_pool = pool
+	return _trait_pool
+
 static func level_for(item_id: String, progress: Dictionary) -> int:
 	var entry: Variant = progress.get(item_id, {})
 	if not entry is Dictionary:
@@ -21,4 +36,36 @@ static func effective_item(item: Dictionary, progress: Dictionary) -> Dictionary
 				effects[key] = [baselines[key]]
 			else:
 				effects[key] = [value[clampi(level - 1, 0, value.size() - 1)]]
+	var entry: Variant = progress.get(str(item.get("id", "")), {})
+	if not entry is Dictionary:
+		return result
+	var path := str(entry.get("specialization", ""))
+	var pool: Variant = trait_pool().get(path, {}) if path in ["aggressive", "defensive", "technical"] else {}
+	var traits: Variant = entry.get("traits", [])
+	if not pool is Dictionary or not traits is Array or traits.size() != 3:
+		return result
+	var seen := {}
+	var allocated := 0
+	for trait_entry in traits:
+		if not trait_entry is Dictionary or not trait_entry.get("id") is String:
+			continue
+		var id: String = trait_entry.id
+		var raw_points: Variant = trait_entry.get("points")
+		if not (raw_points is int or raw_points is float) or not is_finite(float(raw_points)) or float(raw_points) != floorf(float(raw_points)):
+			continue
+		var points := int(raw_points)
+		var bonus: Variant = pool.get(id)
+		if seen.has(id) or points < 0 or points > 4 or allocated + points > level or not (bonus is float or bonus is int) or not is_finite(float(bonus)) or float(bonus) <= 0:
+			continue
+		seen[id] = true
+		allocated += points
+		if points == 0:
+			continue
+		var existing: Variant = effects.get(id, [0])
+		if not existing is Array or existing.is_empty() or not (existing[0] is int or existing[0] is float):
+			continue
+		var total: float = float(existing[0]) + float(bonus) * points
+		if id in ["ward_pct", "reflect_pct", "evasion_pct", "disadvantage_reduction", "ignore_reflect_chance", "vuln_on_hit"]:
+			total = clampf(total, 0.0, 1.0)
+		effects[id] = [total]
 	return result

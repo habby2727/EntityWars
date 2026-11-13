@@ -367,12 +367,9 @@ async function testIdempotency(ctx: TestContext): Promise<void> {
 	const baseSeed: SeedOptions = {
 		wallet: {
 			essence: 10000,
-			core: 2000,
-			arcane_shard: 200,
-			living_catalyst: 50,
-			chaos_cell: 50,
-			time_crystal: 50,
-			primordial_sigil: 10
+			core: 2100,
+			arcane_shard: 250,
+			time_crystal: 80
 		},
 		hqLevel: 3,
 		hqPath: "Scientific",
@@ -683,7 +680,7 @@ async function testWalletAndCapacity(ctx: TestContext): Promise<void> {
 async function testLabSystem(ctx: TestContext): Promise<void> {
 	const balance = ctx.staticData.balance;
 	const player = await createSeededPlayer(ctx, "lab", {
-		wallet: { essence: 10000, core: 2000, arcane_shard: 200, chaos_cell: 50 },
+		wallet: { essence: 10000, core: 2000, arcane_shard: 250 },
 		hqLevel: 1,
 		hqPath: "Scientific",
 		buildings: {
@@ -829,7 +826,7 @@ async function testLabSystem(ctx: TestContext): Promise<void> {
 }
 async function testExperiments(ctx: TestContext): Promise<void> {
 	const player = await createSeededPlayer(ctx, "exp", {
-		wallet: { essence: 500, core: 20, arcane_shard: 10, chaos_cell: 5 },
+		wallet: { essence: 500, core: 20, arcane_shard: 15 },
 		hqLevel: 3,
 		hqPath: "Scientific",
 		buildings: { experiment_chamber: { level: 1 } }

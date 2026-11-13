@@ -527,6 +527,20 @@ text = "Save Seal"
 focus_mode = 0
 custom_minimum_size = Vector2(200, 72)
 
+[node name="ResetMark" type="Label" parent="RootMargin/MainHSplit/RightPanel/BottomRow/Save"]
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -180.0
+mouse_filter = 2
+text = "[X]"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="Play" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=2093744421]
 layout_mode = 2
 size_flags_horizontal = 3

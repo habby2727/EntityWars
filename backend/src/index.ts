@@ -1,5 +1,5 @@
 ﻿import { Database } from "bun:sqlite";
-import { createHash } from "crypto";
+import { createHash, createHmac } from "crypto";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import defaultConfig from "./config/default";
@@ -855,6 +855,71 @@ function applyAction(
 		if ((next.wallet.essence ?? 0) < cost) return { state: next, error: "Insufficient essence." };
 		next.wallet.essence -= cost;
 		next.item_progress[id] = { ...current, level: current.level + 1 };
+		return { state: next };
+	}
+	if (["FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL"].includes(actionType)) {
+		const id = typeof payload?.item_id === "string" ? payload.item_id : "";
+		if (!staticData.itemIds.has(id)) return { state: next, error: "Unknown item_id." };
+		const current = next.item_progress[id] ?? { level: 0 };
+		const isSpecialize = actionType === "FORGE_SPECIALIZE";
+		const isReroll = actionType === "FORGE_REROLL_TRAIT";
+		const isChoose = actionType === "FORGE_CHOOSE_REROLL";
+		if ((isSpecialize || isReroll) && (next.lab.buildings.build_forge?.level ?? 0) < 1) return { state: next, error: "Build Forge is not constructed." };
+		const path = isSpecialize ? payload?.path : current.specialization;
+		if (typeof path !== "string" || !["aggressive", "defensive", "technical"].includes(path)) return { state: next, error: "Invalid specialization." };
+		if (isSpecialize && (current.level < 1 || current.specialization != null)) return { state: next, error: "Item cannot be specialized." };
+		const pool = staticData.balance.forge_trait_pool?.[path];
+		if (!pool || typeof pool !== "object" || Array.isArray(pool)) return { state: next, error: "Invalid trait configuration." };
+		const ids = Object.keys(pool);
+		if (ids.length < 3 || ids.some(key => typeof pool[key] !== "number" || !Number.isFinite(pool[key]) || pool[key] <= 0)) return { state: next, error: "Invalid trait configuration." };
+		const maxPoints = getBalanceNumber("forge_trait_max_points_per_slot", 4);
+		if (!Number.isInteger(maxPoints) || maxPoints < 1) return { state: next, error: "Invalid trait configuration." };
+		let traits: { id: string; points: number }[] = [];
+		if (!isSpecialize) {
+			if (!Array.isArray(current.traits) || current.traits.length !== 3) return { state: next, error: "Invalid item traits." };
+			traits = current.traits.map((trait: any) => ({ ...trait }));
+			if (traits.some(t => !t || typeof t.id !== "string" || !ids.includes(t.id) || !Number.isInteger(t.points) || t.points < 0 || t.points > maxPoints) || new Set(traits.map(t => t.id)).size !== 3 || traits.reduce((sum, t) => sum + t.points, 0) > current.level) return { state: next, error: "Invalid item traits." };
+		}
+		const slot = payload?.slot;
+		if (!isSpecialize && (!Number.isInteger(slot) || slot < 0 || slot > 2)) return { state: next, error: "Invalid trait slot." };
+		if (!isSpecialize && !isChoose && current.pending_reroll != null) return { state: next, error: "Resolve the pending reroll first." };
+		if (!isSpecialize && !isReroll && !isChoose && (traits[slot].points >= maxPoints || traits.reduce((sum, t) => sum + t.points, 0) >= current.level)) return { state: next, error: "No available trait points." };
+		const pending = current.pending_reroll as { slot?: unknown; options?: unknown } | undefined;
+		if (isChoose && (!pending || pending.slot !== slot || !Array.isArray(pending.options) || pending.options.length !== 3 || new Set(pending.options).size !== 3 || pending.options.some(option => typeof option !== "string" || !ids.includes(option) || traits.some(t => t.id === option)) || typeof payload?.trait_id !== "string" || !pending.options.includes(payload.trait_id))) return { state: next, error: "Invalid or stale reroll selection." };
+		const chooseTrait = (candidates: string[], slotIndex: number): string => {
+			const digest = createHmac("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
+			return candidates[digest.readUInt32BE(0) % candidates.length];
+		};
+		if (isReroll && ids.filter(candidate => !traits.some(t => t.id === candidate)).length < 3) return { state: next, error: "Not enough alternative traits available." };
+		if (isSpecialize || isReroll) {
+			const configuredCost = staticData.balance[isSpecialize ? "forge_specialize_cost" : "forge_reroll_cost"];
+			if (!configuredCost || typeof configuredCost !== "object" || Array.isArray(configuredCost)) return { state: next, error: "Invalid forge cost configuration." };
+			const cost: ResourceWallet = { essence: configuredCost.essence, core: configuredCost.core };
+			if (isReroll && current.level >= 7) cost.arcane_shard = getBalanceNumber("forge_reroll_high_level_shard", 1);
+			if (Object.values(cost).some(amount => !Number.isSafeInteger(amount) || amount < 0)) return { state: next, error: "Invalid forge cost configuration." };
+			if (Object.entries(cost).some(([resource, amount]) => (next.wallet[resource] ?? 0) < amount)) return { state: next, error: "Insufficient resources." };
+			for (const [resource, amount] of Object.entries(cost)) next.wallet[resource] = (next.wallet[resource] ?? 0) - amount;
+		}
+		if (isSpecialize) {
+			for (let i = 0; i < 3; i++) traits.push({ id: chooseTrait(ids.filter(candidate => !traits.some(t => t.id === candidate)), i), points: 0 });
+		} else if (isReroll) {
+			const options: string[] = [];
+			for (let i = 0; i < 3; i++) {
+				const candidates = ids.filter(candidate => !traits.some(t => t.id === candidate) && !options.includes(candidate));
+				const digest = createHmac("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
+				options.push(candidates[digest.readUInt32BE(0) % candidates.length]);
+			}
+			next.item_progress[id] = { ...current, specialization: path, traits, pending_reroll: { slot, options } };
+			return { state: next };
+		} else if (isChoose) {
+			traits[slot] = { ...traits[slot], id: payload.trait_id };
+			const { pending_reroll: _pending, ...remaining } = current;
+			next.item_progress[id] = { ...remaining, specialization: path, traits };
+			return { state: next };
+		} else {
+			traits[slot] = { ...traits[slot], points: traits[slot].points + 1 };
+		}
+		next.item_progress[id] = { ...current, specialization: path, traits };
 		return { state: next };
 	}
 	if (actionType == "SET_BUILDING_ROUTE") {
@@ -1983,10 +2048,7 @@ function loadResourceIds(path: string): { ids: Set<string> } {
 		"essence",
 		"core",
 		"arcane_shard",
-		"living_catalyst",
-		"chaos_cell",
-		"time_crystal",
-		"primordial_sigil"
+		"time_crystal"
 	];
 	const data = readJsonFile(path);
 	if (!data || typeof data != "object") {
@@ -2224,12 +2286,10 @@ function defaultZoneDefs(): ZoneDef[] {
 			name: "Corrupted Zone",
 			drops: {
 				essence: 70,
-				chaos_cell: 20,
-				arcane_shard: 10
+				arcane_shard: 30
 			},
 			rare_drops: {
-				primordial_sigil: 5,
-				time_crystal: 5
+				time_crystal: 10
 			},
 			modifiers: ["corrupt_fog", "unstable_flux", "spiteful_echoes"]
 		},
@@ -2242,7 +2302,7 @@ function defaultZoneDefs(): ZoneDef[] {
 				time_crystal: 15
 			},
 			rare_drops: {
-				primordial_sigil: 4,
+				time_crystal: 4,
 				arcane_shard: 6
 			},
 			modifiers: ["resonant_growth", "shard_bloom", "prismatic_shift"]
@@ -2252,13 +2312,11 @@ function defaultZoneDefs(): ZoneDef[] {
 			name: "Chaos Zone",
 			drops: {
 				essence: 50,
-				arcane_shard: 25,
-				chaos_cell: 15,
+				arcane_shard: 40,
 				core: 10
 			},
 			rare_drops: {
-				primordial_sigil: 7,
-				time_crystal: 3
+				time_crystal: 10
 			},
 			modifiers: ["entropy_surge", "wild_flux", "rift_winds"]
 		}
@@ -2332,7 +2390,7 @@ function defaultResearchNodes(): ResearchNode[] {
 			id: "anomaly_theory",
 			name: "Anomaly Theory",
 			flag_id: "unlock_anomalies",
-			cost: { essence: 200, chaos_cell: 2 },
+			cost: { essence: 200, arcane_shard: 2 },
 			time_sec: 300,
 			requires: ["unlock_sync"]
 		},
@@ -3129,7 +3187,7 @@ const EXPERIMENTS: Record<string, ExperimentDef> = {
 		name: "Catalyst Brew",
 		kind: "convert",
 		cost: { essence: 60, arcane_shard: 1 },
-		grants: { living_catalyst: 1 },
+		grants: { core: 2 },
 		success_chance: 0.7,
 		cooldown_s: 120
 	},
@@ -3146,7 +3204,7 @@ const EXPERIMENTS: Record<string, ExperimentDef> = {
 		id: "volatile_overclock",
 		name: "Volatile Overclock",
 		kind: "boost",
-		cost: { essence: 80, chaos_cell: 1 },
+		cost: { essence: 80, arcane_shard: 1 },
 		cooldown_s: 600,
 		boost_id: "volatile_overclock",
 		boost_duration_s: 600
@@ -3155,7 +3213,7 @@ const EXPERIMENTS: Record<string, ExperimentDef> = {
 		id: "mutagen_surge",
 		name: "Mutagen Surge",
 		kind: "boost",
-		cost: { essence: 80, arcane_shard: 1, chaos_cell: 1 },
+		cost: { essence: 80, arcane_shard: 2 },
 		cooldown_s: 600,
 		boost_id: "mutagen_surge",
 		boost_duration_s: 600
@@ -4239,7 +4297,7 @@ function getBossRewardTable(tier: string): Record<string, number> {
 		}
 	}
 	if (tier == "t1") {
-		return { arcane_shard: 5, time_crystal: 2, primordial_sigil: 1 };
+		return { arcane_shard: 5, time_crystal: 5 };
 	}
 	if (tier == "t2") {
 		return { arcane_shard: 3, time_crystal: 1 };
@@ -5258,7 +5316,7 @@ function runBackendTests(): void {
 	const boostChamber = ensureBuildingState(boostState, "experiment_chamber");
 	boostChamber.level = 1;
 	boostState.wallet.essence = 500;
-	boostState.wallet.chaos_cell = 5;
+	boostState.wallet.arcane_shard = 5;
 	const boostResult = applyAction(
 		boostState,
 		"START_EXPERIMENT",

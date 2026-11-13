@@ -66,10 +66,16 @@ test("verified rewards are isolated, atomic and cannot be forged or rerolled", a
 		const initial = readState();
 		initial.custom_fixture = { retained: true };
 		db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(initial), playerId);
-		const forceShard = { combat_rewards: { arcane_shard: 1, time_crystal: 0, primordial_sigil: 0 } };
-		const noDrop = { combat_rewards: { arcane_shard: 0, time_crystal: 0, primordial_sigil: 0 } };
+		const forceShard = { combat_rewards: [{ resource_id: "arcane_shard", amount: 1, weight: 1 }] };
+		const noDrop = { combat_rewards: [] };
 		const official = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance;
-		expect(official.combat_rewards).toEqual({ arcane_shard: 0.30, time_crystal: 0.15, primordial_sigil: 0.05 });
+		const readStatic = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, `../../../data/static/${name}.json`), "utf8"));
+		const resourceIds = readStatic("resources").resources.map((entry: any) => entry.id);
+		expect(resourceIds).toEqual(["essence", "core", "arcane_shard", "time_crystal"]);
+		for (const building of readStatic("buildings").buildings) for (const cost of Object.values(building.costs ?? {})) expect(Object.keys(cost as object).every(id => resourceIds.includes(id))).toBe(true);
+		for (const zone of readStatic("zones").zones) for (const table of [zone.drops, zone.rare_drops]) expect(Object.keys(table).every(id => resourceIds.includes(id))).toBe(true);
+		for (const node of readStatic("research").research) expect(Object.keys(node.cost ?? {}).every(id => resourceIds.includes(id))).toBe(true);
+		expect(official.combat_rewards).toEqual([{ resource_id: "arcane_shard", amount: 1, weight: 0.30 }, { resource_id: "time_crystal", amount: 1, weight: 0.15 }, { resource_id: "time_crystal", amount: 3, weight: 0.05 }]);
 		expect(evaluateCombatReward({ status: "VERIFIED_LOSS" }, forceShard)).toBeNull();
 		expect(evaluateCombatReward({ status: "INVALID" }, forceShard)).toBeNull();
 		expect(evaluateCombatReward({ status: "VERIFIED_WIN" }, noDrop)).toBeNull();
@@ -86,7 +92,7 @@ test("verified rewards are isolated, atomic and cannot be forged or rerolled", a
 		expect(() => recordVerifiedCombatResult(db, { match_id: "", player_id: playerId, status: "VERIFIED_WIN" }, forceShard)).toThrow();
 		const sharedId = randomUUID();
 		const modulePath = resolve(import.meta.dir, "../combat_rewards.ts");
-		const worker = `import { Database } from 'bun:sqlite'; import { recordVerifiedCombatResult } from ${JSON.stringify(modulePath)}; const db = new Database(process.argv[1]); db.exec('PRAGMA busy_timeout=10000'); recordVerifiedCombatResult(db, { match_id: process.argv[2], player_id: process.argv[3], status: 'VERIFIED_WIN' }, {combat_rewards:{arcane_shard:1,time_crystal:0,primordial_sigil:0}}); db.close();`;
+		const worker = `import { Database } from 'bun:sqlite'; import { recordVerifiedCombatResult } from ${JSON.stringify(modulePath)}; const db = new Database(process.argv[1]); db.exec('PRAGMA busy_timeout=10000'); recordVerifiedCombatResult(db, { match_id: process.argv[2], player_id: process.argv[3], status: 'VERIFIED_WIN' }, {combat_rewards:[{resource_id:'arcane_shard',amount:1,weight:1}]}); db.close();`;
 		const writers = Array.from({ length: 4 }, () => Bun.spawn([process.execPath, "-e", worker, path, sharedId, playerId], { stdout: "pipe", stderr: "pipe" }));
 		for (const writer of writers) {
 			const code = await writer.exited;
@@ -126,13 +132,14 @@ test("verified rewards are isolated, atomic and cannot be forged or rerolled", a
 		expect(noReward.status).toBe(200);
 		expect(noReward.data.reward).toBeNull();
 		expect((await claim(0, empty, randomUUID(), a.data.token)).data.duplicate).toBe(true);
-		for (const resource of ["time_crystal", "primordial_sigil"] as const) {
-			const table = { arcane_shard: 0, time_crystal: 0, primordial_sigil: 0, [resource]: 1 };
-			const receipt = record("VERIFIED_WIN", { combat_rewards: table });
+		let crystals = initial.wallet.time_crystal ?? 0;
+		for (const amount of [1, 3] as const) {
+			const receipt = record("VERIFIED_WIN", { combat_rewards: [{ resource_id: "time_crystal", amount, weight: 1 }] });
 			const result = await claim(0, receipt, randomUUID(), a.data.token);
 			expect(result.status).toBe(200);
-			expect(result.data.reward).toEqual({ resource_id: resource, amount: 1 });
-			expect(readState().wallet[resource]).toBe((initial.wallet[resource] ?? 0) + 1);
+			expect(result.data.reward).toEqual({ resource_id: "time_crystal", amount });
+			crystals += amount;
+			expect(readState().wallet.time_crystal).toBe(crystals);
 		}
 		const capState = readState();
 		capState.wallet.arcane_shard = official.wallet_caps?.arcane_shard ?? official.wallet_max_per_resource ?? 1_000_000_000;

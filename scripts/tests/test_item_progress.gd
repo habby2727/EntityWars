@@ -12,6 +12,15 @@ func _initialize() -> void:
 	assert(base.effects.power_flat.size() == 10)
 	assert(upgraded.effects.poison[0] == 2 and base.effects.ward_pct[0] == 0.2)
 	assert(ItemProgress.level_for("test_item", {"test_item": {"level": 99}}) == 10)
+	var original := base.duplicate(true)
+	var traits := {"test_item": {"level": 3, "specialization": "aggressive", "traits": [{"id": "power_flat", "points": 2}, {"id": "true_on_hit", "points": 1}, {"id": "dot_true", "points": 0}]}}
+	var trait_item := ItemProgress.effective_item(base, traits)
+	assert(trait_item.effects.power_flat[0] == 6 and trait_item.effects.true_on_hit[0] == 1)
+	assert(not trait_item.effects.has("dot_true") and base == original)
+	traits.test_item.traits[0].points = 0
+	traits.test_item.traits[1].points = 0
+	assert(ItemProgress.effective_item(base, traits) == ItemProgress.effective_item(base, {"test_item": {"level": 3}}))
+	assert(ItemProgress.effective_item(base, {}) == initial)
 	var file := FileAccess.open("res://data/items.json", FileAccess.READ)
 	var catalog: Dictionary = JSON.parse_string(file.get_as_text())
 	assert(catalog.items.size() == 8)

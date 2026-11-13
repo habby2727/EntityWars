@@ -36,7 +36,7 @@
       "id": "anomaly_theory",
       "name": "Anomaly Theory",
       "flag_id": "unlock_anomalies",
-      "cost": { "essence": 200, "chaos_cell": 2 },
+      "cost": { "essence": 200, "arcane_shard": 2 },
       "time_sec": 300,
       "requires": ["unlock_sync"]
     },

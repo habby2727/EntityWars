@@ -2,8 +2,11 @@ import { Database } from "bun:sqlite";
 import { randomInt } from "node:crypto";
 
 export type VerifiedStatus = "VERIFIED_WIN" | "VERIFIED_LOSS" | "INVALID";
-export type CombatReward = { resource_id: "arcane_shard" | "time_crystal" | "primordial_sigil"; amount: 1 } | null;
-const rewardIds = ["arcane_shard", "time_crystal", "primordial_sigil"] as const;
+export type CombatReward = { resource_id: "arcane_shard" | "time_crystal"; amount: 1 | 3 } | null;
+
+function validReward(value: any): value is Exclude<CombatReward, null> {
+	return value && typeof value === "object" && !Array.isArray(value) && ((value.resource_id === "arcane_shard" && value.amount === 1) || (value.resource_id === "time_crystal" && (value.amount === 1 || value.amount === 3)));
+}
 
 export class CombatRewardError extends Error {
 	constructor(public status: number, message: string) { super(message); }
@@ -13,14 +16,12 @@ export class CombatRewardError extends Error {
 export function evaluateCombatReward(result: { status: VerifiedStatus }, balance: Record<string, unknown>): CombatReward {
 	if (result.status !== "VERIFIED_WIN") return null;
 	const table = balance.combat_rewards;
-	if (!table || typeof table !== "object") throw new Error("Combat reward table missing");
-	const probabilities = rewardIds.map(id => Number((table as Record<string, unknown>)[id]));
-	if (probabilities.some(p => !Number.isFinite(p) || p < 0 || p > 1) || probabilities.reduce((a, b) => a + b, 0) > 1) throw new Error("Invalid combat reward probabilities");
+	if (!Array.isArray(table) || table.some(entry => !validReward(entry) || typeof entry.weight !== "number" || !Number.isFinite(entry.weight) || entry.weight < 0 || entry.weight > 1) || table.reduce((sum, entry) => sum + entry.weight, 0) > 1) throw new Error("Invalid combat reward probabilities");
 	const roll = randomInt(1_000_000) / 1_000_000;
 	let threshold = 0;
-	for (let i = 0; i < rewardIds.length; i++) {
-		threshold += probabilities[i];
-		if (roll < threshold) return { resource_id: rewardIds[i], amount: 1 };
+	for (const entry of table) {
+		threshold += entry.weight;
+		if (roll < threshold) return { resource_id: entry.resource_id, amount: entry.amount };
 	}
 	return null;
 }
@@ -47,7 +48,7 @@ export function claimVerifiedCombatReward<T>(db: Database, matchId: string, play
 		if (!row || row.player_id !== playerId || row.status !== "VERIFIED_WIN") throw new CombatRewardError(404, "Verified combat reward not found.");
 		let reward: unknown;
 		try { reward = JSON.parse(row.reward_json); } catch { throw new CombatRewardError(500, "Invalid stored combat reward."); }
-		if (reward !== null && (typeof reward !== "object" || Array.isArray(reward) || !rewardIds.includes((reward as any).resource_id) || (reward as any).amount !== 1 || Object.keys(reward).length !== 2)) throw new CombatRewardError(500, "Invalid stored combat reward.");
+		if (reward !== null && (!validReward(reward) || Object.keys(reward).length !== 2)) throw new CombatRewardError(500, "Invalid stored combat reward.");
 		const duplicate = row.claimed_at !== null;
 		const state = apply(reward as CombatReward, duplicate);
 		if (!duplicate) db.prepare("UPDATE combat_reward_receipts SET claimed_at = ? WHERE match_id = ? AND claimed_at IS NULL").run(Date.now(), matchId);

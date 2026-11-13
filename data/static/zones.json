@@ -5,12 +5,10 @@
       "name": "Corrupted Zone",
       "drops": {
         "essence": 70,
-        "chaos_cell": 20,
-        "arcane_shard": 10
+        "arcane_shard": 30
       },
       "rare_drops": {
-        "primordial_sigil": 5,
-        "time_crystal": 5
+        "time_crystal": 10
       },
       "modifiers": [
         "corrupt_fog",
@@ -27,7 +25,7 @@
         "time_crystal": 15
       },
       "rare_drops": {
-        "primordial_sigil": 4,
+        "time_crystal": 4,
         "arcane_shard": 6
       },
       "modifiers": [
@@ -41,13 +39,11 @@
       "name": "Chaos Zone",
       "drops": {
         "essence": 50,
-        "arcane_shard": 25,
-        "chaos_cell": 15,
+        "arcane_shard": 40,
         "core": 10
       },
       "rare_drops": {
-        "primordial_sigil": 7,
-        "time_crystal": 3
+        "time_crystal": 10
       },
       "modifiers": [
         "entropy_surge",

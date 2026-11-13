@@ -616,6 +616,14 @@ func _entry_details(entry: Variant) -> String:
 	elif kind == "build":
 		lines.append("Level: %d / 10" % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else "Level: unavailable")
 		lines.append("Rarity: %s" % str(entry.get("rarity", "Unknown")).capitalize())
+		var item_state: Variant = _item_progress.get(str(entry.get("id", "")), {})
+		if _item_progress_known and item_state is Dictionary:
+			lines.append("Specialization: %s" % str(item_state.get("specialization", "None")).capitalize())
+			var traits: Variant = item_state.get("traits", [])
+			if traits is Array:
+				for trait_entry in traits:
+					if trait_entry is Dictionary and trait_entry.get("id") is String:
+						lines.append("%s: %s / 4" % [str(trait_entry.id).replace("_", " ").capitalize(), str(trait_entry.get("points", 0))])
 		var effects = preload("res://scripts/domain/item_progress.gd").effective_item(entry, _item_progress).get("effects", {}) if _item_progress_known else entry.get("effects", {})
 		if effects is Dictionary and not effects.is_empty():
 			lines.append("Current effects: %s" % _format_effects(effects) if _item_progress_known else "Effects by level: %s" % _format_effects(effects))
