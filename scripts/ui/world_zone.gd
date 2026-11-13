@@ -22,6 +22,7 @@ const WORLD_ART := {
 	"zone_crystal": ["crystal_bear", "crystal_golem", "crystal_hydra", "crystal_mage", "crystal_sentinel", "crystal_wolf"]
 }
 const WORLD_BACKGROUNDS := {"zone_chaos": "bg1", "zone_corrupted": "bg2", "zone_crystal": "bg3"}
+const TIER_COLORS := {"common": "65e47b", "mythic": "ffd65a", "rare": "6eb8ff", "epic": "ff9d5c", "legendary": "d697ff"}
 
 var _backend: BackendClient = null
 var _background: TextureRect = null
@@ -56,12 +57,19 @@ var _auth_refresh_needed := false
 var _gate_clock = preload("res://scripts/domain/world_gate_cooldown.gd").new()
 var _gate_display_seconds := -2
 var _world_sprite: TextureRect
-var _world_name: Label
+var _world_name: RichTextLabel
 var _world_art_index := 0
 var _world_idle: Tween
 var _world_modal: Control
+var _world_stage: Control
+var _preview_stage: Control
+var _preview_tweens: Array[Tween] = []
+var _preview_selection := ""
+var _preview_selected_encounter: Dictionary = {}
+var _preview_status: Label
 
 func _exit_tree() -> void:
+	_clear_guardian_preview()
 	if _world_idle != null:
 		_world_idle.kill()
 	_catalog.free()
@@ -147,6 +155,16 @@ func _setup_zone_view() -> void:
 		_back_button.offset_bottom = 70
 		_back_button.z_index = 5
 		MenuArt.button(_back_button)
+	var encounters := Button.new()
+	encounters.text = "Global encounters"
+	encounters.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	encounters.offset_left = -235
+	encounters.offset_right = -30
+	encounters.offset_top = 80
+	encounters.offset_bottom = 122
+	encounters.pressed.connect(func(): _open_encounters("Boss Hunts"))
+	add_child(encounters)
+	MenuArt.button(encounters)
 	if _enter_button != null:
 		_enter_button.text = "Enter zone"
 	if _farm_button != null:
@@ -175,6 +193,10 @@ func _setup_zone_view() -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
 	panel.add_child(content)
+	_preview_status = Label.new()
+	_preview_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_preview_status.visible = false
+	content.add_child(_preview_status)
 	var title := Label.new()
 	title.text = "WORLD BOSSES"
 	title.add_theme_font_size_override("font_size", 20)
@@ -223,15 +245,18 @@ func _setup_zone_view() -> void:
 
 func _setup_world_art() -> void:
 	var stage := Control.new()
+	_world_stage = stage
 	stage.name = "WorldArt"
 	stage.set_anchors_preset(Control.PRESET_FULL_RECT)
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(stage)
 	_world_sprite = TextureRect.new()
 	_world_sprite.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_world_sprite.offset_left = -230
-	_world_sprite.offset_right = 230
-	_world_sprite.offset_top = -560
+	_world_sprite.anchor_top = 0.79
+	_world_sprite.anchor_bottom = 0.79
+	_world_sprite.offset_left = -115
+	_world_sprite.offset_right = 115
+	_world_sprite.offset_top = -335
 	_world_sprite.offset_bottom = -110
 	_world_sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_world_sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -240,16 +265,33 @@ func _setup_world_art() -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			_world_modal.visible = true)
 	stage.add_child(_world_sprite)
-	_world_name = Label.new()
-	_world_name.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_world_name.offset_left = -230
-	_world_name.offset_right = 230
-	_world_name.offset_top = -105
-	_world_name.offset_bottom = -72
-	_world_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_world_name.add_theme_constant_override("outline_size", 5)
-	_world_name.add_theme_color_override("font_outline_color", Color.BLACK)
-	stage.add_child(_world_name)
+	var name_panel := PanelContainer.new()
+	name_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	name_panel.anchor_top = 0.79
+	name_panel.anchor_bottom = 0.79
+	name_panel.offset_left = -250
+	name_panel.offset_right = 250
+	name_panel.offset_top = -385
+	name_panel.offset_bottom = -345
+	name_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var name_style := StyleBoxFlat.new()
+	name_style.bg_color = Color(0.025, 0.03, 0.04, 0.94)
+	name_style.set_corner_radius_all(4)
+	name_style.set_content_margin_all(6)
+	name_panel.add_theme_stylebox_override("panel", name_style)
+	stage.add_child(name_panel)
+	_world_name = RichTextLabel.new()
+	_world_name.bbcode_enabled = true
+	_world_name.fit_content = true
+	_world_name.scroll_active = false
+	_world_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_world_name.add_theme_color_override("default_color", Color.WHITE)
+	_world_name.add_theme_font_size_override("bold_font_size", 22)
+	var bold_font := SystemFont.new()
+	bold_font.font_names = PackedStringArray(["Arial"])
+	bold_font.font_weight = 700
+	_world_name.add_theme_font_override("bold_font", bold_font)
+	name_panel.add_child(_world_name)
 	for direction in [-1, 1]:
 		var button := Button.new()
 		button.text = "<" if direction < 0 else ">"
@@ -264,6 +306,117 @@ func _setup_world_art() -> void:
 		MenuArt.button(button)
 	_change_world_art(0)
 
+# Isolated presentation only: no selection from this fixture authorizes a fight.
+func show_guardian_preview(main: Dictionary, guardians: Array) -> void:
+	_clear_guardian_preview()
+	_world_stage.visible = false
+	if _world_idle != null and _world_idle.is_valid():
+		_world_idle.pause()
+	_preview_stage = Control.new()
+	_preview_stage.name = "GuardianPreview"
+	_preview_stage.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_preview_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_preview_stage)
+	if _world_modal != null:
+		move_child(_world_modal, get_child_count() - 1)
+	var remaining: Array = []
+	for guardian in guardians:
+		if guardian is Dictionary and not guardian.get("defeated", false):
+			remaining.append(guardian)
+	var required: PackedStringArray = []
+	for guardian in remaining:
+		required.append(str(guardian.get("name", guardian.get("id", "Guardian"))))
+	_add_preview_actor(main, 0.5, 0.59, true, required)
+	var count := mini(remaining.size(), 5)
+	for i in count:
+		var x := 0.5 if count == 1 else 0.27 + 0.46 * float(i) / float(count - 1)
+		_add_preview_actor(remaining[i], x, 0.75, false, PackedStringArray())
+
+func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, required: PackedStringArray) -> void:
+	var texture: Texture2D = null
+	var texture_id := str(entry.get("texture_id", ""))
+	if texture_id.begins_with("res://"):
+		texture = load(texture_id) as Texture2D
+	elif _catalog.has(texture_id):
+		texture = _catalog.get_tex(texture_id)
+	if texture == null:
+		return
+	var actor := Control.new()
+	actor.name = "Actor_" + str(entry.get("id", "unknown"))
+	actor.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	actor.anchor_left = x
+	actor.anchor_right = x
+	actor.anchor_top = ground
+	actor.anchor_bottom = ground
+	var width := 200.0 if main else 140.0
+	var height := 190.0 if main else 135.0
+	actor.offset_left = -width / 2
+	actor.offset_right = width / 2
+	actor.offset_top = -height
+	actor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_preview_stage.add_child(actor)
+	var sprite := TextureRect.new()
+	sprite.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	sprite.texture = texture
+	sprite.pivot_offset = Vector2(width / 2, height)
+	sprite.mouse_filter = Control.MOUSE_FILTER_STOP
+	actor.add_child(sprite)
+	var title := RichTextLabel.new()
+	title.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	title.offset_left = -36
+	title.offset_right = 36
+	title.offset_top = -42
+	title.offset_bottom = -4
+	title.bbcode_enabled = true
+	title.fit_content = true
+	title.scroll_active = false
+	title.add_theme_font_size_override("normal_font_size", 20)
+	title.add_theme_constant_override("outline_size", 5)
+	title.add_theme_color_override("font_outline_color", Color.BLACK)
+	var tier := str(entry.get("tier", "common")).to_lower()
+	title.text = "[center][color=#%s][lb]%s[rb][/color] %s%s[/center]" % [TIER_COLORS.get(tier, TIER_COLORS["common"]), tier.capitalize(), str(entry.get("name", "Boss")), " - LOCKED" if main and not required.is_empty() else ""]
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	actor.add_child(title)
+	var actor_id := str(entry.get("id", ""))
+	sprite.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_preview_selection = actor_id
+			_preview_selected_encounter = {"id": actor_id, "texture_id": texture_id, "zone_id": _get_zone_id(), "preview": true}
+			_preview_status.text = "PREVIEW: %s\n%s" % [str(entry.get("name", actor_id)), "Locked: " + ", ".join(required) if main and not required.is_empty() else "No authoritative encounter available."]
+			_preview_status.visible = true
+			_boss_picker.visible = false
+			_boss_hp.visible = false
+			_boss_status.visible = false
+			_boss_open.visible = false
+			_world_modal.visible = true)
+	var tween := create_tween().set_loops()
+	tween.tween_property(sprite, "scale", Vector2(1.01, 1.01), 1.2).set_trans(Tween.TRANS_SINE)
+	tween.tween_property(sprite, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_SINE)
+	tween.tween_interval(1.0)
+	_preview_tweens.append(tween)
+
+func _clear_guardian_preview() -> void:
+	_preview_selected_encounter.clear()
+	_preview_selection = ""
+	for tween in _preview_tweens:
+		if tween.is_valid():
+			tween.kill()
+	_preview_tweens.clear()
+	if is_instance_valid(_preview_stage):
+		_preview_stage.queue_free()
+		_preview_stage = null
+	if is_instance_valid(_world_stage):
+		_world_stage.visible = true
+		if _world_idle != null and _world_idle.is_valid():
+			_world_idle.play()
+	if is_instance_valid(_preview_status):
+		_preview_status.visible = false
+		_boss_picker.visible = true
+		_boss_status.visible = true
+		_boss_open.visible = true
+
 func _change_world_art(direction: int) -> void:
 	var zone := _get_zone_id()
 	var entries: Array = WORLD_ART.get(zone, [])
@@ -273,11 +426,12 @@ func _change_world_art(direction: int) -> void:
 	var id: String = entries[_world_art_index]
 	var path := "res://assets/lab/bosses/%s_common/%s.png" % [zone.trim_prefix("zone_") + "_zone", id]
 	_world_sprite.texture = load(path) as Texture2D
-	_world_name.text = "Common " + id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize() + "  |  Appearance only"
+	var display_name := id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize()
+	_world_name.text = "[center][b][color=#%s][lb]Common[rb][/color] %s[/b][/center]" % [TIER_COLORS["common"], display_name]
 	if _world_idle != null:
 		_world_idle.kill()
 	_world_sprite.scale = Vector2.ONE
-	_world_sprite.pivot_offset = Vector2(230, 450)
+	_world_sprite.pivot_offset = Vector2(115, 225)
 	_world_idle = create_tween().set_loops()
 	_world_idle.tween_property(_world_sprite, "scale", Vector2(1.015, 1.015), 1.2).set_trans(Tween.TRANS_SINE)
 	_world_idle.tween_property(_world_sprite, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_SINE)
@@ -322,7 +476,31 @@ func _open_boss() -> void:
 	if _boss_picker.selected < 0:
 		return
 	var boss: Dictionary = _boss_picker.get_item_metadata(_boss_picker.selected)
-	SceneRouter.go_to_world_gate_boss(str(boss.get("boss_id", "")))
+	_world_modal.visible = false
+	_open_encounters("Boss", str(boss.get("boss_id", "")))
+
+func _open_encounters(tab_name: String, boss_id: String = "") -> void:
+	if has_node("GlobalEncounterOverlay"):
+		return
+	var overlay := Control.new()
+	overlay.name = "GlobalEncounterOverlay"
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.z_index = 10
+	add_child(overlay)
+	var gate := (load("res://scenes/ui/WorldGate.tscn") as PackedScene).instantiate()
+	gate.embedded_encounters = true
+	gate.initial_encounter_tab = tab_name
+	gate.initial_boss_id = boss_id
+	overlay.add_child(gate)
+	gate.anchor_left = 0.08
+	gate.anchor_right = 0.92
+	gate.anchor_top = 0.08
+	gate.anchor_bottom = 0.92
+	gate.offset_left = 0
+	gate.offset_right = 0
+	gate.offset_top = 0
+	gate.offset_bottom = 0
 
 func _on_auth_changed(token: String) -> void:
 	if token != "":

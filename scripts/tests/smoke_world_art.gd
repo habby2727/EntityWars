@@ -5,7 +5,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	if OS.has_environment("EW_CAPTURE_DIR"):
-		DisplayServer.window_set_size(Vector2i(1920, 1080))
+		DisplayServer.window_set_size(Vector2i(1280, 720) if OS.has_environment("EW_SMALL") else Vector2i(1920, 1080))
 	for world in ["Chaos", "Corrupted", "Crystal"]:
 		var scene := load("res://scenes/ui/WorldZone%s.tscn" % world) as PackedScene
 		var zone := scene.instantiate()
@@ -32,6 +32,55 @@ func _run() -> void:
 		assert(close_button != null and close_button.text == "X")
 		close_button.pressed.emit()
 		assert(not zone._world_modal.visible)
+		var tiers := ["mythic", "rare", "epic", "legendary"]
+		var textures := ["boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
+		for tier_index in tiers.size():
+			var guardians: Array = []
+			if tier_index > 0:
+				guardians.append({"id": "higher", "name": "Higher guardian", "tier": tiers[tier_index - 1], "texture_id": textures[tier_index - 1]})
+			var commons := 2 if tier_index <= 1 else tier_index + 1
+			for i in commons:
+				guardians.append({"id": "common_%d" % i, "name": "Common %d" % i, "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [world.to_lower(), entries[i]]})
+			var main := {"id": "main", "name": "Boss", "tier": tiers[tier_index], "texture_id": textures[tier_index]}
+			zone.show_guardian_preview(main, guardians)
+			await process_frame
+			assert(zone._preview_stage.get_child_count() == guardians.size() + 1)
+			var actor: Control = zone._preview_stage.get_child(1)
+			actor.get_child(0).gui_input.emit(click)
+			assert(zone._preview_selection == str(guardians[0].id))
+			zone._world_modal.visible = false
+			guardians[0]["defeated"] = true
+			zone.show_guardian_preview(main, guardians)
+			await process_frame
+			assert(zone._preview_stage.get_child_count() == guardians.size())
+			for guardian in guardians:
+				guardian["defeated"] = true
+			zone.show_guardian_preview(main, guardians)
+			await process_frame
+			assert(zone._preview_stage.get_child_count() == 1)
+			assert(not "LOCKED" in zone._preview_stage.get_child(0).get_child(1).text)
+			if OS.has_environment("EW_CAPTURE_DIR") and tier_index == 3:
+				for guardian in guardians:
+					guardian["defeated"] = false
+				zone.show_guardian_preview(main, guardians)
+				await process_frame
+				await create_timer(0.3).timeout
+				root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("stage_" + world + ".png"))
+		zone._clear_guardian_preview()
+		zone._open_encounters("Boss Hunts")
+		await process_frame
+		var overlay: Control = zone.get_node("GlobalEncounterOverlay")
+		var gate = overlay.get_child(0)
+		assert(not gate._tabs.tabs_visible)
+		assert(gate._tabs.get_child(gate._tabs.current_tab).name == "Boss Hunts")
+		if OS.has_environment("EW_CAPTURE_DIR") and world == "Chaos":
+			await create_timer(0.5).timeout
+			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("encounters.png"))
+		gate._select_encounter_tab("Boss")
+		assert(gate._tabs.get_child(gate._tabs.current_tab).name == "Boss")
+		gate._on_back_pressed()
+		await process_frame
+		assert(not zone.has_node("GlobalEncounterOverlay"))
 		zone.queue_free()
 		await process_frame
 		print("PASS ", world, " ", entries.size())
