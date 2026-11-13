@@ -41,6 +41,11 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
     const playerId = login.data.player_id as string;
     expect(token).toBeTruthy();
     expect(playerId).toBeTruthy();
+    const hunts = await request("/world/boss-hunts");
+    expect(hunts.status).toBe(200);
+    const rareHunt = hunts.data.bosses.find((boss: any) => boss.id === "hunt_rare");
+    expect(rareHunt.display_texture_id).toBe(rareHunt.texture_variants[hunts.data.rotation_key % rareHunt.texture_variants.length]);
+    expect(hunts.data.bosses.find((boss: any) => boss.id === "hunt_legendary").display_texture_id).toBe("ghost_boss");
     const getRow = () => db.query("SELECT state_json FROM players WHERE player_id = ?").get(playerId) as { state_json: string };
     const writeState = (state: any) => db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(state), playerId);
     const seed = JSON.parse(getRow().state_json);
@@ -235,23 +240,38 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
     const exp = JSON.parse(getRow().state_json);
     exp.lab.runtime.directive = { id: "experimentation", starts_at: Date.now() - 1000, ends_at: Date.now() + 60000 };
     exp.lab.runtime.cooldowns = {};
+    exp.lab.runtime.boosts = {};
+    exp.lab.runtime.experiment_stability = { failures: 0 };
     writeState(exp);
     let expId = "";
     for (let i = 0; i < 10000; i++) {
       const candidate = `lab-experiment-${i}`;
-      const roll = createHash("sha256").update(`${env.EXPERIMENT_SECRET}:${candidate}:arcane_distill:success`).digest().readUInt32BE(0) / 0xffffffff;
-      if (roll > 0.7 && roll < 0.75) { expId = candidate; break; }
+      const roll = createHash("sha256").update(`${env.EXPERIMENT_SECRET}:${candidate}:fast_research:success`).digest().readUInt32BE(0) / 0xffffffff;
+      if (roll > 0.80 && roll < 0.85) { expId = candidate; break; }
     }
     expect(expId).not.toBe("");
-    const experiment = await labAction(expId, "START_EXPERIMENT", { experiment_id: "arcane_distill" });
-    expect([experiment.status, experiment.data.updated_player_state.wallet.arcane_shard]).toEqual([200, exp.wallet.arcane_shard + 1]);
+    const experiment = await labAction(expId, "START_EXPERIMENT", { experiment_id: "fast_research" });
+    expect(experiment.status).toBe(200);
+    const experimentState = experiment.data.updated_player_state;
+    expect([experimentState.wallet.essence, experimentState.wallet.core]).toEqual([exp.wallet.essence - 80, exp.wallet.core - 1]);
+    expect(experimentState.lab.runtime.experiment_last.success).toBe(true);
+    expect(experimentState.lab.runtime.experiment_stability.failures).toBe(0);
+    expect(experimentState.lab.runtime.boosts.fast_research.expires_at - experimentState.lab.runtime.boosts.fast_research.started_at).toBe(1200000);
     const expired = JSON.parse(getRow().state_json);
     expired.lab.runtime.directive.ends_at = Date.now() - 1;
     expired.lab.runtime.cooldowns = {};
+    expired.lab.runtime.boosts = {};
+    expired.lab.runtime.experiment_stability = { failures: 0 };
     writeState(expired);
-    const normalId = Array.from({ length: 10000 }, (_, i) => `lab-expired-${i}`).find(id => { const roll = createHash("sha256").update(`${env.EXPERIMENT_SECRET}:${id}:arcane_distill:success`).digest().readUInt32BE(0) / 0xffffffff; return roll > 0.7 && roll < 0.75; })!;
-    const normal = await labAction(normalId, "START_EXPERIMENT", { experiment_id: "arcane_distill" });
-    expect([normal.status, normal.data.updated_player_state.wallet.arcane_shard]).toEqual([200, expired.wallet.arcane_shard]);
+    const normalId = Array.from({ length: 10000 }, (_, i) => `lab-expired-${i}`).find(id => { const roll = createHash("sha256").update(`${env.EXPERIMENT_SECRET}:${id}:fast_research:success`).digest().readUInt32BE(0) / 0xffffffff; return roll > 0.80 && roll < 0.85; })!;
+    expect(normalId).toBeTruthy();
+    const normal = await labAction(normalId, "START_EXPERIMENT", { experiment_id: "fast_research" });
+    expect(normal.status).toBe(200);
+    const normalState = normal.data.updated_player_state;
+    expect([normalState.wallet.essence, normalState.wallet.core]).toEqual([expired.wallet.essence - 80, expired.wallet.core - 1]);
+    expect(normalState.lab.runtime.experiment_last.success).toBe(false);
+    expect(normalState.lab.runtime.experiment_stability.failures).toBe(1);
+    expect(normalState.lab.runtime.boosts.fast_research).toBeUndefined();
     const vatSeed = JSON.parse(getRow().state_json);
     vatSeed.wallet = { essence: 500, core: 10, arcane_shard: 5, time_crystal: 0 };
     vatSeed.lab.hqLevel = 2;

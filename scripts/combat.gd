@@ -83,6 +83,7 @@ var _solo_boss_mode := false
 var _solo_context := {}
 var _solo_def := {}
 var _solo_texture: Texture2D
+var _solo_minion_texture: Texture2D
 var _solo_minions: Array = []
 var _solo_target_index := 0
 var _solo_base_hp := 1
@@ -444,7 +445,14 @@ func _setup_solo_boss() -> bool:
 	if _solo_signature.is_empty():
 		return false
 	var assets := AssetCatalog.new()
-	_solo_texture = assets.get_tex(str(_solo_def.get("texture_id", "")))
+	var texture_id := str(_solo_def.get("texture_id", ""))
+	var requested_texture := str(_solo_context.get("display_texture_id", ""))
+	var variants: Variant = _solo_def.get("texture_variants", [])
+	if requested_texture == texture_id or (variants is Array and requested_texture in variants):
+		texture_id = requested_texture
+	_solo_texture = assets.get_tex(texture_id)
+	var minion_texture_id := str(_solo_def.get("minion_texture_id", ""))
+	_solo_minion_texture = assets.get_tex(minion_texture_id) if not minion_texture_id.is_empty() else null
 	assets.free()
 	_solo_boss_mode = true
 	enemy.equip_1 = {}
@@ -491,6 +499,9 @@ func _update_solo_panel() -> void:
 		if int(minion.hp) <= 0:
 			continue
 		var button := Button.new()
+		button.icon = _solo_minion_texture
+		button.expand_icon = true
+		button.add_theme_constant_override("icon_max_width", 36)
 		button.text = "%s: %d / %d HP%s" % [minion.name, minion.hp, minion.max_hp, " [TARGET]" if i == _solo_target_index else ""]
 		button.disabled = _resolving_exchange or _battle_over
 		button.pressed.connect(_select_solo_target.bind(i))
@@ -573,13 +584,15 @@ func _solo_boss_action() -> void:
 	await _flush_steps()
 
 func _solo_player_action(action: Dictionary) -> void:
-	await _resolve_spell_action(player, _solo_target(), action)
-	if player.hp > 0 and (_solo_target().hp > 0 or action.get("hom", "hold") == "sacrifice"):
-		await _resolve_hom_choice(player, _solo_target(), str(action.get("hom", "hold")))
+	var target := _solo_target()
+	await _resolve_spell_action(player, target, action)
+	if player.hp > 0 and (target.hp > 0 or action.get("hom", "hold") == "sacrifice"):
+		await _resolve_hom_choice(player, target, str(action.get("hom", "hold")))
 
 func _resolve_solo_exchange(action: Dictionary) -> void:
 	_turn += 1
 	_begin_spell_exchange()
+	var shield_active_at_start := _solo_shield_turns > 0
 	var minions_at_start := _solo_minions.duplicate()
 	if _initiative(player) >= _initiative(enemy):
 		await _solo_player_action(action)
@@ -611,11 +624,11 @@ func _resolve_solo_exchange(action: Dictionary) -> void:
 	_charge_homunculus(player)
 	await _flush_steps()
 	_end_spell_exchange()
-	if _solo_shield_turns > 0:
+	if shield_active_at_start and _solo_shield_turns > 0:
 		_solo_shield_turns -= 1
 		if _solo_shield_turns == 0:
 			_solo_shield_cooldown = 3
-	elif _solo_shield_cooldown > 0:
+	elif _solo_shield_turns == 0 and _solo_shield_cooldown > 0:
 		_solo_shield_cooldown -= 1
 	if player.hp <= 0 or (enemy.hp <= 0 and not _solo_has_minions()):
 		_check_end()

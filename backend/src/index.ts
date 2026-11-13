@@ -2231,7 +2231,7 @@ function loadStaticData(): StaticData {
 	};
 }
 
-type SoloBoss = { id: string; name: string; tier: string; texture_id: string; hp_mult: number; attack_mult: number; minions: number; shield_reduction: number; shield_turns: number; fury_mult: number; shield_heal_ratio: number; signature_pool: string[] };
+type SoloBoss = { id: string; name: string; tier: string; texture_id: string; texture_variants?: string[]; minion_texture_id?: string; hp_mult: number; attack_mult: number; minions: number; shield_reduction: number; shield_turns: number; fury_mult: number; shield_heal_ratio: number; signature_pool: string[] };
 type SoloBossCatalog = { rotation: { interval_seconds: number; window_seconds: number; common_cooldown_seconds: number; weights: Record<string, number> }; bosses: SoloBoss[] };
 
 function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog {
@@ -2241,9 +2241,10 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 	const invalid = () => { throw new Error("Invalid solo boss catalog configuration."); };
 	if (!rotation || !Number.isSafeInteger(rotation.interval_seconds) || rotation.interval_seconds !== 10800 || !Number.isSafeInteger(rotation.window_seconds) || rotation.window_seconds !== 2700 || !Number.isSafeInteger(rotation.common_cooldown_seconds) || rotation.common_cooldown_seconds !== 60 || !rotation.weights || Object.keys(rotation.weights).sort().join(",") !== tiers.slice(1).sort().join(",") || tiers.slice(1).some(tier => typeof rotation.weights[tier] !== "number" || !Number.isFinite(rotation.weights[tier]) || rotation.weights[tier] <= 0) || Math.abs(tiers.slice(1).reduce((sum, tier) => sum + rotation.weights[tier], 0) - 1) > 0.000001 || !Array.isArray(catalog?.bosses) || catalog.bosses.length !== 5 || !Array.isArray(spells?.spells)) return invalid();
 	const spellIds = new Set(spells.spells.map((spell: any) => spell.id));
+	const bossTextures = ["boss_common", "boss_colossus", "boss_leviathan", "tier3boss", "boss_temporal", "ghost_boss"];
 	const seenIds = new Set<string>(), seenTiers = new Set<string>();
 	for (const boss of catalog.bosses) {
-		if (!boss || typeof boss.id !== "string" || !/^hunt_[a-z0-9_]+$/.test(boss.id) || seenIds.has(boss.id) || !tiers.includes(boss.tier) || seenTiers.has(boss.tier) || typeof boss.name !== "string" || !boss.name.trim() || !["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal"].includes(boss.texture_id) || [boss.hp_mult, boss.attack_mult, boss.fury_mult].some(value => typeof value !== "number" || !Number.isFinite(value) || value <= 0) || [boss.shield_reduction, boss.shield_heal_ratio].some(value => typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) || !Number.isSafeInteger(boss.minions) || boss.minions < 0 || boss.minions > 2 || !Number.isSafeInteger(boss.shield_turns) || boss.shield_turns < 1 || !Array.isArray(boss.signature_pool) || boss.signature_pool.length === 0 || boss.signature_pool.some((id: unknown) => typeof id !== "string" || !spellIds.has(id))) return invalid();
+		if (!boss || typeof boss.id !== "string" || !/^hunt_[a-z0-9_]+$/.test(boss.id) || seenIds.has(boss.id) || !tiers.includes(boss.tier) || seenTiers.has(boss.tier) || typeof boss.name !== "string" || !boss.name.trim() || !bossTextures.includes(boss.texture_id) || (boss.texture_variants !== undefined && (!Array.isArray(boss.texture_variants) || boss.texture_variants.length === 0 || new Set(boss.texture_variants).size !== boss.texture_variants.length || !boss.texture_variants.includes(boss.texture_id) || boss.texture_variants.some((id: unknown) => typeof id !== "string" || !bossTextures.includes(id)))) || (boss.minions > 0 ? boss.minion_texture_id !== "summoned-boss" : boss.minion_texture_id !== undefined && boss.minion_texture_id !== "summoned-boss") || [boss.hp_mult, boss.attack_mult, boss.fury_mult].some(value => typeof value !== "number" || !Number.isFinite(value) || value <= 0) || [boss.shield_reduction, boss.shield_heal_ratio].some(value => typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) || !Number.isSafeInteger(boss.minions) || boss.minions < 0 || boss.minions > 2 || !Number.isSafeInteger(boss.shield_turns) || boss.shield_turns < 1 || !Array.isArray(boss.signature_pool) || boss.signature_pool.length === 0 || boss.signature_pool.some((id: unknown) => typeof id !== "string" || !spellIds.has(id))) return invalid();
 		seenIds.add(boss.id); seenTiers.add(boss.tier);
 	}
 	return catalog as SoloBossCatalog;
@@ -2257,7 +2258,7 @@ function soloBossSchedule(now: number): object {
 	let cumulative = 0, chosen = "legendary";
 	for (const tier of ["mythic", "rare", "epic", "legendary"]) { cumulative += rotation.weights[tier]; if (roll < cumulative) { chosen = tier; break; } }
 	const special = bosses.find(boss => boss.tier === chosen)!;
-	return { server_time_unix_ms: now, rotation_key: key, current_special_id: special.id, next_rotation_at: start + interval, special_window_ends_at: end, bosses: bosses.map(boss => ({ ...boss, available: boss.tier === "common" || (boss.id === special.id && now < end), appearance_starts_at: boss.tier === "common" ? null : (boss.id === special.id ? start : null), appearance_ends_at: boss.tier === "common" ? null : (boss.id === special.id ? end : null) })) };
+	return { server_time_unix_ms: now, rotation_key: key, current_special_id: special.id, next_rotation_at: start + interval, special_window_ends_at: end, bosses: bosses.map(boss => ({ ...boss, display_texture_id: boss.texture_variants?.[key % boss.texture_variants.length] ?? boss.texture_id, available: boss.tier === "common" || (boss.id === special.id && now < end), appearance_starts_at: boss.tier === "common" ? null : (boss.id === special.id ? start : null), appearance_ends_at: boss.tier === "common" ? null : (boss.id === special.id ? end : null) })) };
 }
 
 function loadResourceIds(path: string): { ids: Set<string> } {

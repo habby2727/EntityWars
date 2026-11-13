@@ -206,7 +206,8 @@ func _build_hunt_tab() -> void:
 func _on_hunt_fight() -> void:
 	_update_hunt_fight()
 	if not _hunt_fight.disabled:
-		SceneRouter.go_to_solo_hunt(_hunt_selected, _hunt_rotation_key)
+		var boss: Dictionary = _hunt_rows[_hunt_selected].boss
+		SceneRouter.go_to_solo_hunt(_hunt_selected, _hunt_rotation_key, str(boss.get("display_texture_id", boss.get("texture_id", ""))))
 
 func _update_hunt_fight() -> void:
 	if not is_instance_valid(_hunt_fight):
@@ -250,7 +251,7 @@ func _render_hunt_rows() -> void:
 		portrait.custom_minimum_size = Vector2(80, 80)
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		var texture_id := str(boss.get("texture_id", ""))
+		var texture_id := str(boss.get("display_texture_id", boss.get("texture_id", "")))
 		portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
 		row.add_child(portrait)
 		var column := VBoxContainer.new()
@@ -276,7 +277,7 @@ func _select_hunt(id: String) -> void:
 		return
 	_hunt_selected = id
 	var boss: Dictionary = _hunt_rows[id].boss
-	var texture_id := str(boss.get("texture_id", ""))
+	var texture_id := str(boss.get("display_texture_id", boss.get("texture_id", "")))
 	_hunt_portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
 	var tier := str(boss.get("tier", ""))
 	var rank := ["common", "mythic", "rare", "epic", "legendary"].find(tier) + 1
