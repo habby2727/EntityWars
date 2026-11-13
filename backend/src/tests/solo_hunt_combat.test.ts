@@ -75,3 +75,39 @@ test("six elemental procs resolve and update combat state", () => {
   const result = resolveCombatTurn(capped, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0);
   expect(result.next_state.player.hp).toBe(104);
 });
+
+test("validated Mercury and Sodium defensive spells", () => {
+  const fixture = (type: string, spells: string[]) => createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, entity_id: type + "_01", spell_ids: spells }, catalogs));
+  const mercury = () => fixture("mercury", ["silver_needle", "false_signal", "liquid_decoy", "mercury_snare"]);
+  const sodium = () => fixture("sodium", ["crystal_ram", "salt_barrier", "brine_mend", "bastion_return"]);
+  const hit = (_turn: number, draw: number) => [0, 0, 0.99][draw % 3];
+  const cast = (state: any, spell_id: string, random = hit) => resolveCombatTurn(state, { turn: 1, spell_id, target: "boss" }, random);
+  const decoy = cast(mercury(), "liquid_decoy");
+  expect(decoy.next_state.player.hp).toBe(86);
+  expect(decoy.next_state.player.status.shield_pct ?? 0).toBe(0);
+  const stronger = mercury(); stronger.player.status.shield_pct = 0.3;
+  expect(cast(stronger, "liquid_decoy").next_state.player.hp).toBe(88);
+  const barrier = cast(sodium(), "salt_barrier");
+  expect(barrier.next_state.player.hp).toBe(106);
+  const barrierProc = cast(sodium(), "salt_barrier", () => 0);
+  expect(barrierProc.next_state.player.hp).toBe(106);
+  expect(barrierProc.next_state.boss.status.shield_pct).toBe(0.12);
+  const injured = sodium(); injured.player.hp = 50;
+  const healed = cast(injured, "brine_mend");
+  expect(healed.next_state.player.hp).toBe(53);
+  const full = sodium(); full.boss.status.stun = 1;
+  expect(cast(full, "brine_mend").next_state.player.hp).toBe(112);
+  const reflected = cast(sodium(), "bastion_return");
+  expect(reflected.events.find((e: any) => e.kind === "reflect").damage).toBe(1);
+  expect(reflected.next_state.boss.hp).toBe(111);
+  expect(reflected.next_state.player.status.reflect_pct ?? 0).toBe(0);
+  const snare = cast(mercury(), "mercury_snare", () => 0);
+  expect(snare.next_state.boss.status.hom_stun).toBe(1);
+  const miss = cast(mercury(), "mercury_snare", () => 0.99);
+  expect(miss.next_state.boss.hp).toBe(112);
+  expect(miss.next_state.cooldowns.mercury_snare).toBe(3);
+  expect(cast(sodium(), "bastion_return")).toEqual(reflected);
+  for (const [state, id] of [[mercury(), "silver_needle"], [mercury(), "false_signal"], [sodium(), "crystal_ram"]] as const) {
+    expect(cast(state, id, () => 0).next_state.boss.hp).toBeLessThan(112);
+  }
+});

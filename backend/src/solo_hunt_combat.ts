@@ -39,8 +39,8 @@ export function createCombatState(setup: any): any {
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
   if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target"].includes(k)) || decision.turn !== state.turn + 1 || decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0 || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id);
-  const supportedEffects = new Set(["atk_boost", "atk_down", "vuln"]);
-  const supportedStatus = new Set(["atk_boost", "atk_down", "vuln_pct", "shield_pct", "stun", "poison"]);
+  const supportedEffects = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun"]);
+  const supportedStatus = new Set(["atk_boost", "atk_down", "vuln_pct", "shield_pct", "reflect_pct", "hom_stun", "stun", "poison"]);
   if (!spell || spell.type !== state.player.type || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !supportedEffects.has(e.kind)) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
   let counter = next.rng_counter;
@@ -57,8 +57,15 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     let damage = Math.max(1, Math.round((atk - Math.trunc(d.def * 0.5)) * mult * power));
     if (d.status.vuln_pct > 0) { damage = Math.round(damage * (1 + d.status.vuln_pct)); delete d.status.vuln_pct; }
     if (d.status.shield_pct > 0) { damage = Math.round(damage * (1 - d.status.shield_pct)); delete d.status.shield_pct; }
+    const actualDamage = Math.min(d.hp, damage);
     d.hp = Math.max(0, d.hp - damage);
     events.push({ actor, kind: "damage", damage });
+    if (d.status.reflect_pct > 0) {
+      const reflected = Math.round(actualDamage * d.status.reflect_pct);
+      a.hp = Math.max(0, a.hp - reflected);
+      delete d.status.reflect_pct;
+      events.push({ actor: actor === "player" ? "boss" : "player", kind: "reflect", damage: reflected });
+    }
     const passiveChance = a.type === "vitriol" ? 0.30 : 0.20;
     if (["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(a.type) && draw() < passiveChance) {
       if (a.type === "sulfur") d.status.atk_down = Math.max(d.status.atk_down ?? 0, 0.15);
@@ -66,7 +73,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (a.type === "sodium") a.status.shield_pct = Math.max(a.status.shield_pct ?? 0, 0.12);
       if (a.type === "aether") d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, 0.12);
       if (a.type === "vitriol") d.status.poison = 2;
-      if (a.type === "gold") a.hp = Math.min(a.max_hp, a.hp + 3);
+      if (a.type === "gold" && a.hp > 0) a.hp = Math.min(a.max_hp, a.hp + 3);
       events.push({ actor, kind: "elemental_proc", type: a.type });
     }
     return true;
@@ -80,8 +87,12 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     else success = draw() < spell.accuracy;
     if (success) for (const effect of spell.effects) {
       const recipient = effect.target === "self" ? next.player : next.boss;
-      const field = effect.kind === "vuln" ? "vuln_pct" : effect.kind;
-      recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+      if (effect.kind === "heal") {
+        if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.trunc(effect.value));
+      } else {
+        const field = ({ vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" } as Record<string, string>)[effect.kind] ?? effect.kind;
+        recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+      }
     }
     if (next.boss.hp > 0) {
       const ratio = next.boss.hp / next.boss.max_hp;
