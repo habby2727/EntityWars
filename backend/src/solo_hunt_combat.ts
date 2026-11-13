@@ -24,11 +24,13 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
   if (!Array.isArray(learned) || !Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids) || selection.spell_ids.some((id: string) => !catalogs.spells.some((s: any) => s.id === id && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))) return { error: "UNTRUSTED_SETUP" };
   if (selection.weapon_ids[0] && selection.weapon_ids[0] === selection.weapon_ids[1]) return { error: "UNTRUSTED_SETUP" };
-  if (selection.weapon_ids[1] || (selection.weapon_ids[0] && selection.weapon_ids[0] !== "bismuth_talisman") || (selection.homunculus_id && (selection.homunculus_id !== "cinder" || entity.type !== "sulfur")) || boss.tier !== "common") return { error: "UNSUPPORTED_MECHANIC" };
+  if (selection.weapon_ids[1] || (selection.weapon_ids[0] && selection.weapon_ids[0] !== "bismuth_talisman") || boss.tier !== "common") return { error: "UNSUPPORTED_MECHANIC" };
   const item = selection.weapon_ids[0] ? catalogs.items.find((v: any) => v.id === selection.weapon_ids[0]) : null;
   const itemProgress = snapshot.item_progress?.[selection.weapon_ids[0]] ?? {};
   const homProgress = snapshot.homunculus_progress?.[selection.homunculus_id] ?? {};
-  if ((item && (itemProgress.specialization || itemProgress.fusion || itemProgress.traits?.length)) || homProgress.mutation_id) return { error: "UNSUPPORTED_MECHANIC" };
+  if (itemProgress.fusion) return { error: "UNSUPPORTED_MECHANIC" };
+  const validLevel = (v: any) => v === undefined || (Number.isInteger(v) && v >= 0 && v <= 10);
+  if (!validLevel(itemProgress.level) || !validLevel(homProgress.level)) return { error: "UNTRUSTED_SETUP" };
   const itemLevel = Math.max(0, Math.min(10, Number.isFinite(Number(itemProgress.level)) ? Math.trunc(Number(itemProgress.level)) : 0));
   const homLevel = Math.max(0, Math.min(10, Number.isFinite(Number(homProgress.level)) ? Math.trunc(Number(homProgress.level)) : 0));
   const itemEffects: Record<string, number> = {};
@@ -36,11 +38,26 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
     if (!["power_flat", "guard_flat", "true_on_hit"].includes(key) || !Array.isArray(value) || !value.length || value.some((v: any) => typeof v !== "number" || !Number.isFinite(v))) return { error: "UNSUPPORTED_MECHANIC" };
     itemEffects[key] = itemLevel === 0 && value.length === 10 && key in (item.base_effects ?? {}) ? item.base_effects[key] : value[Math.max(0, Math.min(itemLevel - 1, value.length - 1))];
   }
+  if (item && itemProgress.traits !== undefined && !Array.isArray(itemProgress.traits)) return { error: "UNTRUSTED_SETUP" };
+  if (item && (itemProgress.specialization || itemProgress.traits?.length)) {
+    const pool = catalogs.balance?.forge_trait_pool?.[itemProgress.specialization];
+    const traits = itemProgress.traits;
+    if (!pool || !Array.isArray(traits) || traits.length !== 3 || new Set(traits.map((t: any) => t?.id)).size !== 3) return { error: "UNTRUSTED_SETUP" };
+    let allocated = 0;
+    for (const trait of traits) {
+      if (!trait || !Object.hasOwn(pool, trait.id) || !Number.isInteger(trait.points) || trait.points < 0 || trait.points > 4 || (allocated += trait.points) > itemLevel) return { error: "UNTRUSTED_SETUP" };
+      if (trait.points > 0 && !["power_flat", "guard_flat", "true_on_hit"].includes(trait.id)) return { error: "UNSUPPORTED_MECHANIC" };
+      if (trait.points > 0) itemEffects[trait.id] = (itemEffects[trait.id] ?? 0) + pool[trait.id] * trait.points;
+    }
+  }
   const hom = selection.homunculus_id ? catalogs.homunculi.find((v: any) => v.id === selection.homunculus_id) : null;
+  const mutation = homProgress.mutation_id ? catalogs.mutations?.find((v: any) => v.id === homProgress.mutation_id) : null;
+  if (homProgress.mutation_id && !mutation) return { error: "UNTRUSTED_SETUP" };
+  if (mutation && Object.keys(mutation.effects ?? {}).some(key => !["hp_flat", "power_flat", "guard_flat"].includes(key))) return { error: "UNSUPPORTED_MECHANIC" };
   const synergy = hom?.per_type?.[entity.type] ?? {};
-  if (Object.keys(synergy).some(key => !["power_flat", "guard_flat"].includes(key))) return { error: "UNSUPPORTED_MECHANIC" };
-  const bonuses = { hp: hom ? hom.buff_hp + homLevel : 0, atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) };
-  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, bonuses };
+  if (Object.keys(synergy).some(key => !["power_flat", "guard_flat", "tempo_flat"].includes(key))) return { error: "UNSUPPORTED_MECHANIC" };
+  const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
+  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -54,7 +71,7 @@ export function createCombatState(setup: any): any {
   player.def += setup.bonuses.def + Math.trunc(setup.itemEffects.guard_flat ?? 0);
   player.max_hp += setup.bonuses.hp;
   player.hp = player.max_hp;
-  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), item_id: setup.item_id, item_effects: setup.itemEffects, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
+  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), item_id: setup.item_id, item_effects: setup.itemEffects, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
 }
 
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
@@ -132,7 +149,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     return true;
   };
   try {
-    const playerFirst = (next.player.status.tempo_bonus ?? 0) >= (next.boss.status.tempo_bonus ?? 0);
+    const playerFirst = (next.player.status.tempo_bonus ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.status.tempo_bonus ?? 0);
     delete next.player.status.tempo_bonus;
     delete next.boss.status.tempo_bonus;
     const bossAction = () => {

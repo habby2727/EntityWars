@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { buildTrustedCombatSetup, createCombatState, resolveCombatTurn, deterministicDraw } from "../solo_hunt_combat";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
-const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, bosses: read("static/solo_bosses.json").bosses, types: read("types.json") };
+const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
 const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} };
 const selection = { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
 const rng = (_turn: number, draw: number) => draw % 2 === 0 ? 0 : 0.99;
@@ -329,7 +329,32 @@ test("server Bismuth and Cinder progression applies without trusting client stat
   expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, () => { draws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
   expect(draws).toBe(0);
   expect(buildTrustedCombatSetup(progress, { ...selected, weapon_ids: ["bismuth_talisman", "bismuth_talisman"] }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
-  expect(buildTrustedCombatSetup({ ...progress, item_progress: { bismuth_talisman: { level: 5, specialization: "aggressive" } } }, selected, catalogs)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+  expect(buildTrustedCombatSetup({ ...progress, item_progress: { bismuth_talisman: { level: 5, specialization: "aggressive" } } }, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+});
+
+test("catalog homunculi and validated flat Forge traits use server progression", () => {
+  const selected = { ...selection, weapon_ids: ["bismuth_talisman", null], homunculus_id: "cinder" };
+  const progress = { ...snapshot, item_progress: { bismuth_talisman: { level: 5, specialization: "aggressive", traits: [{ id: "power_flat", points: 2 }, { id: "true_on_hit", points: 1 }, { id: "dot_true", points: 0 }] } }, homunculus_progress: { cinder: { level: 5, mutation_id: "vitality" } } };
+  const enhanced = createCombatState(buildTrustedCombatSetup(progress, selected, catalogs));
+  expect([enhanced.player.hp, enhanced.player.atk, enhanced.item_effects.true_on_hit]).toEqual([114, 35, 2]);
+  enhanced.boss.status.stun = 1;
+  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(86);
+  const supported = structuredClone(progress); supported.item_progress.bismuth_talisman.specialization = "technical";
+  supported.item_progress.bismuth_talisman.traits = [{ id: "guard_flat", points: 2 }, { id: "power_flat", points: 1 }, { id: "tempo_flat", points: 0 }];
+  expect(buildTrustedCombatSetup(supported, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+  const vitality = { ...snapshot, homunculus_progress: { cinder: { level: 5, mutation_id: "vitality" } } };
+  const state = createCombatState(buildTrustedCombatSetup(vitality, selected, catalogs));
+  expect([state.player.hp, state.player.atk]).toEqual([114, 28]);
+  const sodium = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, homunculus_id: "sodium" }, catalogs));
+  expect(sodium.hom_id).toBe("sodium");
+  sodium.boss.status.stun = 1;
+  expect(resolveCombatTurn(sodium, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "hold" }, rng).next_state.hom_energy).toBe(1);
+  const silphide = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, homunculus_id: "silphide" }, catalogs));
+  silphide.boss.status.tempo_bonus = 1;
+  expect(resolveCombatTurn(silphide, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events[0].actor).toBe("player");
+  const catalyst = { ...snapshot, homunculus_progress: { cinder: { level: 5, mutation_id: "catalyst" } } };
+  expect(createCombatState(buildTrustedCombatSetup(catalyst, selected, catalogs)).player.atk).toBe(29);
+  expect(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { cinder: { level: 99 } } }, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
 });
 
 test("marks are owned, expire on actions and are consumed on hybrid hit", () => {
