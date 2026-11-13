@@ -84,6 +84,7 @@ var _current_homunculus_id: String = ""
 
 var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
+var _hunt_mode := false
 var _spell_debug := DebugFlags.new()
 
 func _exit_tree() -> void:
@@ -181,6 +182,15 @@ func _resolve_nodes() -> void:
 
 func _ready() -> void:
 	_resolve_nodes()
+	_hunt_mode = SceneRouter._hunt_loadout_active
+	if _hunt_mode:
+		$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
+		btn_save.hide()
+		var back := $BackButton as Button
+		var original_back := Callable(back, "_on_pressed")
+		if back.pressed.is_connected(original_back):
+			back.pressed.disconnect(original_back)
+		back.pressed.connect(SceneRouter.cancel_hunt_loadout)
 	if tooltip_panel:
 		tooltip_panel.visible = false
 		if tooltip_panel.get_parent() != self:
@@ -222,6 +232,8 @@ func _ready() -> void:
 	_build_cards()
 	_refresh_details()
 	_update_save_button_label()
+	if _hunt_mode and lbl_mode != null:
+		lbl_mode.text = "Boss Hunt"
 
 func _setup_build_dialog() -> void:
 	var card: VBoxContainer = $RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox
@@ -889,7 +901,7 @@ func _refresh_details() -> void:
 		ent = _find_by_id(_entities, _current_entity_id)
 	if ent.is_empty():
 		if lbl_name: lbl_name.text = "(Select an entity)"
-		if lbl_mode: lbl_mode.text = "Mode: " + _mode.to_upper()
+		if lbl_mode: lbl_mode.text = "Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper()
 		if lbl_homunculus: lbl_homunculus.text = "Homunculus: —"
 		if preview: preview.texture = null
 		if _spell_button: _spell_button.hide()
@@ -897,7 +909,7 @@ func _refresh_details() -> void:
 	_refresh_spell_button()
 
 	if lbl_name: lbl_name.text = str(ent.get("name", _current_entity_id))
-	if lbl_mode: lbl_mode.text = "Mode: " + _mode.to_upper()
+	if lbl_mode: lbl_mode.text = "Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper()
 	if lbl_homunculus:
 		var hom0 := _find_by_id(_homunculi, _current_homunculus_id)
 		var hname0 := str(hom0.get("name", _current_homunculus_id)) if typeof(hom0) == TYPE_DICTIONARY else _current_homunculus_id
@@ -1267,6 +1279,10 @@ func _on_play_pressed() -> void:
 		return
 	_set_build_error("")
 	_save_seal(_mode)
+	if _hunt_mode:
+		SceneRouter._hunt_loadout_active = false
+		SceneRouter.go_to_combat()
+		return
 	SceneRouter.set_combat_seal_mode(_mode)
 	if ResourceLoader.exists("res://scenes/Combat.tscn"):
 		get_tree().change_scene_to_file("res://scenes/Combat.tscn")
@@ -1298,6 +1314,9 @@ func _save_seal(which: String) -> void:
 		"defense_tech": _idx_to_id(_def_techs, dd_deftech),
 		"spell_ids": _equipped_spells(_mode, _current_entity_id),
 	}
+	if _hunt_mode:
+		SceneRouter._hunt_loadout = payload
+		return
 	var path := "user://seal_%s.json" % which
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f:

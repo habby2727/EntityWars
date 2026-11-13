@@ -492,6 +492,7 @@ func _open_encounters(tab_name: String, boss_id: String = "") -> void:
 	gate.embedded_encounters = true
 	gate.initial_encounter_tab = tab_name
 	gate.initial_boss_id = boss_id
+	gate.visual_zone_id = _get_zone_id()
 	overlay.add_child(gate)
 	gate.anchor_left = 0.08
 	gate.anchor_right = 0.92

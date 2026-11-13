@@ -12,6 +12,9 @@ func _run() -> void:
 	var debug := FileAccess.open("user://debug.json", FileAccess.WRITE)
 	debug.store_string(JSON.stringify({"unlock_all_buildings": true}))
 	debug.close()
+	var visual_zone := OS.get_environment("COMBAT_VISUAL_ZONE")
+	if not visual_zone.is_empty():
+		SceneRouter._solo_hunt_context = {"hunt_id": "hunt_legendary", "rotation_key": 1, "visual_zone_id": visual_zone}
 	var scene = load("res://scenes/Combat.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame
@@ -20,8 +23,17 @@ func _run() -> void:
 		push_error("Combat controls unavailable")
 		quit(1)
 		return
+	if not visual_zone.is_empty() and (not scene._solo_boss_mode or not scene.has_node("WorldCombatSprites")):
+		push_error("World boss visuals unavailable")
+		quit(1)
+		return
+	if OS.has_environment("COMBAT_GUARDIAN_TEXTURE"):
+		scene.enemy_entity.texture = load(OS.get_environment("COMBAT_GUARDIAN_TEXTURE")) as Texture2D
 	var image := root.get_texture().get_image()
-	if image == null or image.is_empty() or image.save_png(output + "/combat.png") != OK:
+	var suffix := OS.get_environment("COMBAT_CAPTURE_NAME")
+	if suffix.is_empty():
+		suffix = "combat"
+	if image == null or image.is_empty() or image.save_png(output + "/" + suffix + ".png") != OK:
 		push_error("Cannot capture rendered combat")
 		quit(1)
 		return

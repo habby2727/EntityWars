@@ -22,10 +22,24 @@ static var _next_world_zone_id: String = ""
 static var _next_world_boss_id: String = ""
 static var _combat_seal_mode := "attack"
 static var _solo_hunt_context := {}
+static var _hunt_loadout_active := false
+static var _hunt_loadout := {}
 
-static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "") -> void:
-	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key, "display_texture_id": display_texture_id, "session_id": session_id}
-	_go_to(SCENE_COMBAT, "Combat")
+static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "", visual_zone_id: String = "") -> void:
+	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key, "display_texture_id": display_texture_id, "session_id": session_id, "visual_zone_id": visual_zone_id if visual_zone_id in ["zone_chaos", "zone_corrupted", "zone_crystal"] else ""}
+	_hunt_loadout_active = true
+	_hunt_loadout.clear()
+	_go_to(SCENE_LOADOUT, "LoadoutGrid")
+
+static func cancel_hunt_loadout() -> void:
+	var zone_id := str(_solo_hunt_context.get("visual_zone_id", ""))
+	_hunt_loadout_active = false
+	_hunt_loadout.clear()
+	_solo_hunt_context.clear()
+	if zone_id.is_empty():
+		go_to_world_gate()
+	else:
+		go_to_world_zone(zone_id)
 
 static func consume_solo_hunt_context() -> Dictionary:
 	var context := _solo_hunt_context.duplicate(true)

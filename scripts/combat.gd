@@ -340,6 +340,7 @@ func _start_combat() -> void:
 		if not _setup_solo_boss():
 			get_tree().call_deferred("change_scene_to_file", SceneRouter.SCENE_WORLD_GATE)
 			return
+		_apply_world_combat_visuals(str(_solo_context.get("visual_zone_id", "")))
 		_prepare_solo_power_turn()
 		_prepare_solo_intent()
 		_create_solo_panel()
@@ -352,6 +353,38 @@ func _start_combat() -> void:
 	_update_ui()
 	_refresh_spell_buttons()
 	_log_immediate("Unverified boss preview: no rewards." if _solo_boss_mode else "Battle 1 begins.")
+
+func _apply_world_combat_visuals(zone_id: String) -> void:
+	var layouts := {
+		"zone_chaos": ["bgcombat1", Vector2(210, 710), Vector2(620, 710), Vector2(1520, 710)],
+		"zone_corrupted": ["bgcombat2", Vector2(220, 675), Vector2(610, 665), Vector2(1500, 665)],
+		"zone_crystal": ["bgcombat3", Vector2(210, 665), Vector2(610, 665), Vector2(1590, 665)]
+	}
+	if not layouts.has(zone_id):
+		return
+	var layout: Array = layouts[zone_id]
+	var background := $Background as TextureRect
+	background.texture = load("res://assets/lab/resources/world_zones/%s.png" % layout[0]) as Texture2D
+	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var layer := Control.new()
+	layer.name = "WorldCombatSprites"
+	layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(layer)
+	move_child(layer, background.get_index() + 1)
+	for entry in [[player_hom, layout[1], Vector2(190, 210)], [player_entity, layout[2], Vector2(360, 390)], [enemy_entity, layout[3], Vector2(410, 390)]]:
+		var sprite: TextureRect = entry[0]
+		var center: Vector2 = entry[1]
+		var dimensions: Vector2 = entry[2]
+		sprite.reparent(layer)
+		sprite.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		sprite.position = Vector2(center.x - dimensions.x / 2, center.y - dimensions.y)
+		sprite.size = dimensions
+		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	enemy_hom.visible = false
+	_player_hom_status.position = Vector2(25, 935)
+	_align_health_panels()
 
 func _on_back_pressed() -> void:
 	if confirm_popup == null:
@@ -424,7 +457,10 @@ func _load_registry_safe() -> void:
 
 func _load_player_from_seal() -> void:
 	var mode := SceneRouter.consume_combat_seal_mode()
-	var data := _load_seal(mode)
+	var data: Dictionary = SceneRouter._hunt_loadout.duplicate(true) if not SceneRouter._solo_hunt_context.is_empty() else {}
+	SceneRouter._hunt_loadout.clear()
+	if data.is_empty():
+		data = _load_seal(mode)
 	if data.is_empty():
 		mode = "defense" if mode == "attack" else "attack"
 		data = _load_seal(mode)
@@ -509,6 +545,10 @@ func _create_solo_panel() -> void:
 	panel.offset_right = 270
 	panel.offset_top = 220
 	panel.offset_bottom = 490
+	if has_node("WorldCombatSprites"):
+		panel.offset_left = -220
+		panel.offset_right = 220
+		panel.offset_bottom = 360
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.045, 0.055, 0.94)
 	style.border_color = Color("a9955d")
@@ -535,6 +575,9 @@ func _create_solo_panel() -> void:
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.text = "Below 50% HP, a Power Turn may appear: deal x2 damage. If the boss survives, its next strike gains tier-scaled Fury. Defeat minions to expose the boss. " + ("Session active / Settlement locked. Local loadout unverified." if not str(_solo_context.get("session_id", "")).is_empty() else "Unverified preview.")
+	if has_node("WorldCombatSprites"):
+		panel.tooltip_text = help.text
+		help.visible = false
 	_solo_panel.add_child(help)
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
@@ -805,7 +848,7 @@ func _update_ui() -> void:
 	_player_hom_status.call("set_fighter", player)
 	_enemy_hom_status.call("set_fighter", enemy)
 	player_hom.visible = not bool(player.get("hom_spent", false))
-	enemy_hom.visible = not bool(enemy.get("hom_spent", false))
+	enemy_hom.visible = not has_node("WorldCombatSprites") and not bool(enemy.get("hom_spent", false))
 	for pair in [[player_hp, player], [enemy_hp, enemy]]:
 		var icon: Node = pair[0].get_node_or_null("CombatTypeIcon")
 		if icon != null and str(icon.get("element")) != str(pair[1].get("type", "")):
@@ -1035,8 +1078,9 @@ func _align_health_panels() -> void:
 	var inverse := get_global_transform().affine_inverse()
 	var player_center: Vector2 = inverse * player_entity.get_global_rect().get_center()
 	var enemy_center: Vector2 = inverse * enemy_entity.get_global_rect().get_center()
-	$PlayerHealthGroup.position = Vector2(player_center.x - 100, 610)
-	$EnemyHealthGroup.position = Vector2(enemy_center.x - 100, 610)
+	var health_y := 690 if has_node("WorldCombatSprites") else 610
+	$PlayerHealthGroup.position = Vector2(player_center.x - 100, health_y)
+	$EnemyHealthGroup.position = Vector2(enemy_center.x - 100, health_y)
 
 func _setup_inspiration_ui() -> void:
 	_player_inspiration = CombatInspiration.new()

@@ -10,6 +10,7 @@ class_name WorldGate
 var embedded_encounters := false
 var initial_encounter_tab := "Boss Hunts"
 var initial_boss_id := ""
+var visual_zone_id := ""
 
 @export var zone_list_path: NodePath
 @export var zone_refresh_path: NodePath
@@ -257,7 +258,7 @@ func _enter_hunt_session(session: Dictionary) -> void:
 	if session_id.is_empty() or str(session.get("status", "")) != "ACTIVE":
 		_hunt_status.text = "Invalid or closed boss session."
 		return
-	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), session_id)
+	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), session_id, visual_zone_id)
 
 func _update_hunt_fight() -> void:
 	if not is_instance_valid(_hunt_fight):
