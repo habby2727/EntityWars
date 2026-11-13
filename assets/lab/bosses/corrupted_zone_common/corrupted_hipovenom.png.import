@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://fwjxmn1nrwqe"
-path="res://.godot/imported/chaos_zone_load_bg.png-4734de6578e03989d3eb6b772dea1752.ctex"
+uid="uid://ct08fun14ujgf"
+path="res://.godot/imported/corrupted_hipovenom.png-98229791e61eca2069ec2b307b3b16d2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/lab/resources/world_zones/chaos_zone_load_bg.png"
-dest_files=["res://.godot/imported/chaos_zone_load_bg.png-4734de6578e03989d3eb6b772dea1752.ctex"]
+source_file="res://assets/lab/bosses/corrupted_zone_common/corrupted_hipovenom.png"
+dest_files=["res://.godot/imported/corrupted_hipovenom.png-98229791e61eca2069ec2b307b3b16d2.ctex"]
 
 [params]
 

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b6ipavu8ljbs4"
-path="res://.godot/imported/chaos_zone.png-dd959b183e0445aa5b062f1f5e41d0db.ctex"
+uid="uid://baco06loswnxm"
+path="res://.godot/imported/corrupted_medusa.png-146010d9bee4731898a946762ef38a3d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/lab/resources/world_zones/chaos_zone.png"
-dest_files=["res://.godot/imported/chaos_zone.png-dd959b183e0445aa5b062f1f5e41d0db.ctex"]
+source_file="res://assets/lab/bosses/corrupted_zone_common/corrupted_medusa.png"
+dest_files=["res://.godot/imported/corrupted_medusa.png-146010d9bee4731898a946762ef38a3d.ctex"]
 
 [params]
 

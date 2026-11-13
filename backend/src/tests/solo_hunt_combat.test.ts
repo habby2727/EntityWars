@@ -414,6 +414,108 @@ test("weapon evasion, ward, corrosion and reflection prevention activate", () =>
   expect(suffered.next_state.player.hp).toBeLessThan(104);
 });
 
+test("both slots validate and each weapon switches into real combat at every Forge level", () => {
+  for (const item of catalogs.items) for (const level of [0, 5, 10]) {
+    const other = item.id === "bismuth_talisman" ? "wind_amulet" : "bismuth_talisman";
+    for (const ids of [[item.id, other], [other, item.id]]) {
+      const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { [item.id]: { level } } }, { ...selection, weapon_ids: ids }, catalogs));
+      expect(state.weapons[ids.indexOf(item.id)].id).toBe(item.id);
+      for (const [key, values] of Object.entries(item.effects) as [string, number[]][]) {
+        const expected = level === 0 && values.length === 10 && key in (item.base_effects ?? {}) ? item.base_effects[key] : values[Math.min(values.length - 1, Math.max(0, level - 1))];
+        expect(state.weapons[ids.indexOf(item.id)].effects[key]).toBe(expected);
+      }
+      state.boss.status.stun = 1;
+      const destination = ids.indexOf(item.id) + 1;
+      const initial = destination === 1 ? 2 : 1;
+      if (destination === 1) {
+        const swapped = resolveCombatTurn(state, { turn: 1, switch_slot: initial }, rng);
+        expect(swapped.next_state.active_weapon_slot).toBe(2);
+        swapped.next_state.boss.status.stun = 1;
+        const returned = resolveCombatTurn(swapped.next_state, { turn: 2, switch_slot: destination }, rng);
+        expect(returned.next_state.item_id).toBe(item.id);
+      } else {
+        const switched = resolveCombatTurn(state, { turn: 1, switch_slot: destination }, rng);
+        expect(switched.next_state.item_id).toBe(item.id);
+      }
+    }
+    const onlySecond = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { [item.id]: { level } } }, { ...selection, weapon_ids: [null, item.id] }, catalogs));
+    expect([onlySecond.active_weapon_slot, onlySecond.item_id]).toEqual([2, item.id]);
+  }
+});
+
+test("switch consumes action, preserves independent defenses and recalculates stats", () => {
+  const state = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["bismuth_talisman", "mirror_sigel"] }, catalogs));
+  expect([state.player.hp, state.player.atk, state.player.def, state.active_weapon_slot]).toEqual([104, 22, 12, 1]);
+  state.cooldowns.ash_temper = 2;
+  state.boss.status.stun = 1;
+  const switched = resolveCombatTurn(state, { turn: 1, switch_slot: 2 }, rng);
+  expect([switched.next_state.player.hp, switched.next_state.player.atk, switched.next_state.player.def, switched.next_state.active_weapon_slot, switched.next_state.cooldowns.ash_temper]).toEqual([104, 21, 12, 2, 1]);
+  expect(switched.events.some((event: any) => event.kind === "switch")).toBe(true);
+  expect(switched.next_state.player.status.shield_pct).toBe(0.08);
+  const next = switched.next_state;
+  next.other_defenses.shield_pct = 0.05;
+  next.other_defenses.reflect_pct = 0.01;
+  next.player.status.poison = 1;
+  next.boss.status.stun = 1;
+  const back = resolveCombatTurn(next, { turn: 2, switch_slot: 1 }, rng);
+  expect([back.next_state.player.atk, back.next_state.player.def, back.next_state.player.status.shield_pct, back.next_state.player.status.reflect_pct]).toEqual([22, 12, 0.05, 0.01]);
+  expect(back.next_state.player.hp).toBe(102);
+  expect(resolveCombatTurn(next, { turn: 2, switch_slot: 1 }, rng)).toEqual(back);
+  let draws = 0;
+  expect(resolveCombatTurn(state, { turn: 1, switch_slot: 2, spell_id: "cinder_fist" }, () => { draws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
+  expect(draws).toBe(0);
+  expect(resolveCombatTurn(state, { turn: 1, switch_slot: 1 }, rng)).toEqual({ error: "INVALID_DECISION" });
+  expect(resolveCombatTurn(state, { turn: 1, switch_slot: 3 }, rng)).toEqual({ error: "INVALID_DECISION" });
+  const stunned = structuredClone(state); stunned.player.status.stun = 1;
+  expect(resolveCombatTurn(stunned, { turn: 1, switch_slot: 2 }, rng).next_state.active_weapon_slot).toBe(1);
+  const defeated = structuredClone(state); defeated.player.hp = 1; defeated.boss.status.stun = 0; defeated.boss.status.tempo_bonus = 100;
+  const killed = resolveCombatTurn(defeated, { turn: 1, switch_slot: 2 }, () => 0);
+  expect([killed.terminal_result, killed.next_state.active_weapon_slot]).toEqual(["LOSS", 1]);
+  const activeBoss = structuredClone(state); activeBoss.boss.status.stun = 0;
+  const bossTurn = resolveCombatTurn(activeBoss, { turn: 1, switch_slot: 2 }, rng);
+  expect(bossTurn.events.some((event: any) => event.actor === "player" && event.kind === "damage")).toBe(false);
+  expect(bossTurn.events.some((event: any) => event.actor === "boss" && event.kind === "damage")).toBe(true);
+  const sodium = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, entity_id: "sodium_01", spell_ids: ["crystal_ram", "salt_barrier", "brine_mend", "bastion_return"], weapon_ids: ["mirror_sigel", "bismuth_talisman"] }, catalogs));
+  sodium.boss.status.stun = 1;
+  const protectedState = resolveCombatTurn(sodium, { turn: 1, spell_id: "salt_barrier", target: "boss" }, rng).next_state;
+  expect([protectedState.player.status.shield_pct, protectedState.weapon_defenses.shield_pct, protectedState.other_defenses.shield_pct]).toEqual([0.24, 0.08, 0.24]);
+  protectedState.boss.status.stun = 1;
+  const preserved = resolveCombatTurn(protectedState, { turn: 2, switch_slot: 2 }, rng).next_state;
+  expect(preserved.player.status.shield_pct).toBe(0.24);
+  const withoutTempo = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"] }, catalogs));
+  const withTempo = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["wind_amulet", "bismuth_talisman"] }, catalogs));
+  withoutTempo.boss.status.tempo_bonus = 1; withTempo.boss.status.tempo_bonus = 1;
+  expect(resolveCombatTurn(withoutTempo, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events[0].actor).toBe("boss");
+  expect(resolveCombatTurn(withTempo, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events[0].actor).toBe("player");
+});
+
+test("each slot retains its own Forge traits and fusion through switching", () => {
+  const item_progress = {
+    bismuth_talisman: { level: 5, specialization: "aggressive", traits: [{ id: "power_flat", points: 2 }, { id: "true_on_hit", points: 1 }, { id: "dot_true", points: 0 }], fusion: { donor_id: "wind_amulet" } },
+    wind_amulet: { level: 5, specialization: "defensive", traits: [{ id: "guard_flat", points: 2 }, { id: "ward_pct", points: 1 }, { id: "reflect_pct", points: 0 }], fusion: { donor_id: "mirror_sigel" } },
+    mirror_sigel: { level: 3 },
+  };
+  const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress }, { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"] }, catalogs));
+  expect([state.player.atk, state.item_effects.true_on_hit, state.item_effects.evasion_pct]).toEqual([29, 2, 0.02]);
+  expect(state.item_effects.ward_pct).toBeUndefined();
+  state.boss.status.stun = 1;
+  const switched = resolveCombatTurn(state, { turn: 1, switch_slot: 2 }, rng).next_state;
+  expect([switched.player.atk, switched.player.def, switched.item_effects.ward_pct, switched.item_effects.reflect_pct]).toEqual([22, 13, 0.02, 0.02]);
+  expect(switched.item_effects.true_on_hit).toBeUndefined();
+  expect(switched.player.status.shield_pct).toBe(0.02);
+});
+
+test("switch and sacrifice preserve recalculated stats on subsequent switches", () => {
+  const selected = { ...selection, weapon_ids: ["bismuth_talisman", "mirror_sigel"], homunculus_id: "cinder" };
+  const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { cinder: { level: 5 } } }, selected, catalogs));
+  state.hom_energy = 3; state.player.hp = 50; state.boss.status.stun = 1;
+  const switched = resolveCombatTurn(state, { turn: 1, switch_slot: 2, hom_action: "sacrifice" }, rng).next_state;
+  expect([switched.player.hp, switched.player.max_hp, switched.player.atk, switched.player.def, switched.hom_spent]).toEqual([80, 104, 21, 12, true]);
+  switched.boss.status.stun = 1;
+  const back = resolveCombatTurn(switched, { turn: 2, switch_slot: 1 }, rng).next_state;
+  expect([back.player.hp, back.player.atk, back.player.def, back.hom_spent]).toEqual([80, 22, 12, true]);
+});
+
 test("marks are owned, expire on actions and are consumed on hybrid hit", () => {
   const ids = ["paradox_edict", "gilded_exception", "rift_touch", "paradox_fold"];
   const progress = { learned_by_entity: { aether_01: ids.slice(0, 2) }, equipped_by_mode: { attack: { aether_01: ids } } };

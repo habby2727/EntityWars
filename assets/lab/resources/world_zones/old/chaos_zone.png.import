@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://tsymmgdw8hsv"
-path="res://.godot/imported/crystal_zone.png-9c39050e3aea06914cb05a3a5a137e66.ctex"
+uid="uid://b6ipavu8ljbs4"
+path="res://.godot/imported/chaos_zone.png-4284ac69d8666e37d3a47ab0de0b70c2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/lab/resources/world_zones/crystal_zone.png"
-dest_files=["res://.godot/imported/crystal_zone.png-9c39050e3aea06914cb05a3a5a137e66.ctex"]
+source_file="res://assets/lab/resources/world_zones/old/chaos_zone.png"
+dest_files=["res://.godot/imported/chaos_zone.png-4284ac69d8666e37d3a47ab0de0b70c2.ctex"]
 
 [params]
 

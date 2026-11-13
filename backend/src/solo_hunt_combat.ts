@@ -24,7 +24,17 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
   if (!Array.isArray(learned) || !Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids) || selection.spell_ids.some((id: string) => !catalogs.spells.some((s: any) => s.id === id && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))) return { error: "UNTRUSTED_SETUP" };
   if (selection.weapon_ids[0] && selection.weapon_ids[0] === selection.weapon_ids[1]) return { error: "UNTRUSTED_SETUP" };
-  if (selection.weapon_ids[1] || boss.tier !== "common") return { error: "UNSUPPORTED_MECHANIC" };
+  if (boss.tier !== "common") return { error: "UNSUPPORTED_MECHANIC" };
+  if (selection.weapon_ids[1]) {
+    const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs);
+    if (first.error) return first;
+    const second = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs);
+    if (second.error) return second;
+    const base = validated.get(first), other = validated.get(second);
+    const combined = { ...base, weapons: [{ id: base.item_id, effects: base.itemEffects }, { id: other.item_id, effects: other.itemEffects }] };
+    validated.set(combined, structuredClone(combined));
+    return Object.freeze(combined);
+  }
   const item = selection.weapon_ids[0] ? catalogs.items.find((v: any) => v.id === selection.weapon_ids[0]) : null;
   const itemProgress = snapshot.item_progress?.[selection.weapon_ids[0]] ?? {};
   const homProgress = snapshot.homunculus_progress?.[selection.homunculus_id] ?? {};
@@ -78,20 +88,35 @@ export function createCombatState(setup: any): any {
   setup = validated.get(setup);
   const fighter = (e: any, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false });
   const player = fighter(setup.entity);
-  player.atk += setup.bonuses.atk + Math.trunc(setup.itemEffects.power_flat ?? 0);
-  player.def += setup.bonuses.def + Math.trunc(setup.itemEffects.guard_flat ?? 0);
+  const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
+  const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
+  const active = weapons[activeSlot - 1];
+  player.atk += setup.bonuses.atk + Math.trunc(active.effects.power_flat ?? 0);
+  player.def += setup.bonuses.def + Math.trunc(active.effects.guard_flat ?? 0);
   player.max_hp += setup.bonuses.hp;
   player.hp = player.max_hp;
-  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), item_id: setup.item_id, item_effects: setup.itemEffects, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
+  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: structuredClone(active.effects), weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
 }
 
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
-  if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target", "hom_action"].includes(k)) || ![undefined, "hold", "attack", "sacrifice"].includes(decision.hom_action) || (decision.hom_action && decision.hom_action !== "hold" && (state.hom_spent || !state.hom_id || state.hom_energy < 3)) || decision.turn !== state.turn + 1 || decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0 || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  const switching = decision?.switch_slot !== undefined;
+  if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target", "hom_action", "switch_slot"].includes(k)) || ![undefined, "hold", "attack", "sacrifice"].includes(decision.hom_action) || (decision.hom_action && decision.hom_action !== "hold" && (state.hom_spent || !state.hom_id || state.hom_energy < 3)) || decision.turn !== state.turn + 1 || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  if (switching ? (decision.spell_id !== undefined || decision.target !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id) : (decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0)) return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id);
   const supportedEffects = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order"]);
   const supportedStatus = new Set(["atk_boost", "atk_down", "vuln_pct", "shield_pct", "reflect_pct", "hom_stun", "stun", "poison", "focus_next", "misalign_next", "hybrid_mark", "poison_on_reflect", "tempo_bonus"]);
-  if (!spell || !(spell.type === state.player.type || (["universal", "hybrid"].includes(spell.type) && spell.eligible_types?.includes(state.player.type))) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !supportedEffects.has(e.kind)) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
+  if ((!switching && (!spell || !(spell.type === state.player.type || (["universal", "hybrid"].includes(spell.type) && spell.eligible_types?.includes(state.player.type))) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !supportedEffects.has(e.kind)))) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
+  next.weapon_defenses ??= {};
+  next.other_defenses ??= {};
+  const otherDefense = (fighter: any, field: string, value: number) => {
+    if (fighter === next.player && next.weapon_defenses[field] !== undefined) next.other_defenses[field] = Math.max(next.other_defenses[field] ?? 0, value);
+    fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
+  };
+  const clearDefense = (fighter: any, field: string) => {
+    delete fighter.status[field];
+    if (fighter === next.player) { delete next.weapon_defenses[field]; delete next.other_defenses[field]; }
+  };
   for (const fighter of [next.player, next.boss]) {
     fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
     fighter.spell_hit_this_exchange = false;
@@ -128,7 +153,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       const dispel = actor === "player" ? Math.max(0, Math.min(1, spell.effects.find((e: any) => e.kind === "ward_dispel")?.value ?? 0)) : 0;
       const pierce = actor === "player" ? Math.max(0, Math.min(1, spell.effects.find((e: any) => e.kind === "pierce_ward")?.value ?? 0)) : 0;
       damage = Math.round(damage * (1 - d.status.shield_pct * (1 - dispel) * (1 - pierce)));
-      delete d.status.shield_pct;
+      clearDefense(d, "shield_pct");
     }
     if (actor === "player") actualDamage = Math.min(d.hp, damage);
     d.hp = Math.max(0, d.hp - damage);
@@ -139,7 +164,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       const reflected = ignored ? 0 : Math.round(damage * d.status.reflect_pct);
       a.hp = Math.max(0, a.hp - reflected);
       if (reflected > 0) a.spell_hit_this_exchange = true;
-      delete d.status.reflect_pct;
+      clearDefense(d, "reflect_pct");
       if (!ignored && (d.status.poison_on_reflect ?? 0) > 0) a.status.poison = Math.max(a.status.poison ?? 0, d.status.poison_on_reflect);
       delete d.status.poison_on_reflect;
       events.push({ actor: actor === "player" ? "boss" : "player", kind: "reflect", damage: reflected });
@@ -161,7 +186,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(a.type) && draw() < passiveChance) {
       if (a.type === "sulfur") d.status.atk_down = Math.max(d.status.atk_down ?? 0, 0.15);
       if (a.type === "mercury") d.status.stun = 1;
-      if (a.type === "sodium") a.status.shield_pct = Math.max(a.status.shield_pct ?? 0, 0.12);
+      if (a.type === "sodium") otherDefense(a, "shield_pct", 0.12);
       if (a.type === "aether") d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, 0.12);
       if (a.type === "vitriol") d.status.poison = 2;
       if (a.type === "gold" && a.hp > 0) a.hp = Math.min(a.max_hp, a.hp + 3);
@@ -185,6 +210,25 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (!playerFirst) bossAction();
     if (next.player.hp > 0 && next.boss.hp > 0) {
     for (const key of Object.keys(next.cooldowns)) next.cooldowns[key] = Math.max(0, next.cooldowns[key] - 1);
+    if (switching) {
+      if (next.player.status.stun > 0) next.player.status.stun--;
+      else {
+        for (const field of ["shield_pct", "reflect_pct"]) if (next.weapon_defenses[field] !== undefined) {
+          next.player.status[field] = next.other_defenses[field] ?? 0;
+          delete next.weapon_defenses[field];
+          delete next.other_defenses[field];
+        }
+        const old = next.item_effects;
+        const weapon = next.weapons[decision.switch_slot - 1];
+        next.player.atk += Math.trunc(weapon.effects.power_flat ?? 0) - Math.trunc(old.power_flat ?? 0);
+        next.player.def += Math.trunc(weapon.effects.guard_flat ?? 0) - Math.trunc(old.guard_flat ?? 0);
+        next.player.hp = Math.min(next.player.hp, next.player.max_hp);
+        next.active_weapon_slot = decision.switch_slot;
+        next.item_id = weapon.id;
+        next.item_effects = structuredClone(weapon.effects);
+        events.push({ actor: "player", kind: "switch", slot: decision.switch_slot });
+      }
+    } else {
     next.cooldowns[spell.id] = spell.cooldown_turns;
     let success = false;
     const poisonedBefore = (next.boss.status.poison ?? 0) > 0;
@@ -216,7 +260,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(effect.kind)) continue;
       if (effect.kind === "hybrid_mark") { recipient.status.hybrid_mark = { owner: "player", remaining: Math.trunc(effect.value) }; continue; }
       if (effect.kind === "tempo_shift") { recipient.status.tempo_bonus = effect.value; continue; }
-      if (effect.kind === "shield_by_order") { recipient.status.shield_pct = Math.max(recipient.status.shield_pct ?? 0, playerFirst ? effect.value : effect.second_value ?? effect.value); continue; }
+      if (effect.kind === "shield_by_order") { otherDefense(recipient, "shield_pct", playerFirst ? effect.value : effect.second_value ?? effect.value); continue; }
       if (effect.kind === "poison_on_reflect") { recipient.status.poison_on_reflect = Math.trunc(effect.value); continue; }
       if (effect.kind === "life_leech") { if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value))); continue; }
       if (effect.kind === "cleanse_one") {
@@ -231,8 +275,10 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.trunc(effect.value));
       } else {
         const field = ({ vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" } as Record<string, string>)[effect.kind] ?? effect.kind;
-        recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+        if (["shield_pct", "reflect_pct"].includes(field)) otherDefense(recipient, field, effect.value);
+        else recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
       }
+    }
     }
     if (next.player.hp > 0 && decision.hom_action === "sacrifice" && !next.hom_spent) {
       next.hom_spent = true;
@@ -266,7 +312,11 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   if (next.player.hp > 0 && next.boss.hp > 0 && next.turn % 2 === 1) {
     for (const [effect, status] of [["ward_pct", "shield_pct"], ["reflect_pct", "reflect_pct"]]) {
       const value = next.item_effects?.[effect] ?? 0;
-      if (value > 0) next.player.status[status] = Math.max(next.player.status[status] ?? 0, value);
+      if (value > 0) {
+        if (next.weapon_defenses[status] === undefined) next.other_defenses[status] = next.player.status[status] ?? 0;
+        next.weapon_defenses[status] = Math.max(next.weapon_defenses[status] ?? 0, value);
+        next.player.status[status] = Math.max(next.other_defenses[status], next.weapon_defenses[status]);
+      }
     }
     if (next.turn === 1 && next.player.hp > next.boss.hp && (next.item_effects?.tempo_on_win ?? 0) > 0) next.player.status.tempo_bonus = next.item_effects.tempo_on_win;
   }

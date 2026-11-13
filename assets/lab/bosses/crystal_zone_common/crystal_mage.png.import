@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b44mabjdd0sfm"
-path="res://.godot/imported/corrupted_zone.png-a2ff9f1f0b2664b3c7f5cd4a2113fe5f.ctex"
+uid="uid://t63pebqxfxlm"
+path="res://.godot/imported/crystal_mage.png-454b7b0153a88a6fa22f2fcc8609ba0f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/lab/resources/world_zones/corrupted_zone.png"
-dest_files=["res://.godot/imported/corrupted_zone.png-a2ff9f1f0b2664b3c7f5cd4a2113fe5f.ctex"]
+source_file="res://assets/lab/bosses/crystal_zone_common/crystal_mage.png"
+dest_files=["res://.godot/imported/crystal_mage.png-454b7b0153a88a6fa22f2fcc8609ba0f.ctex"]
 
 [params]
 

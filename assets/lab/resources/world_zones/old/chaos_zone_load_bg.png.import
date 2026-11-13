@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://tbtkaptwmsoa"
-path="res://.godot/imported/corrupted_zone_load_bg.png-b4b017e30600480acc5dc3c46e5358ef.ctex"
+uid="uid://fwjxmn1nrwqe"
+path="res://.godot/imported/chaos_zone_load_bg.png-fccd2d3fdda87fa903393188ca6d19f9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/lab/resources/world_zones/corrupted_zone_load_bg.png"
-dest_files=["res://.godot/imported/corrupted_zone_load_bg.png-b4b017e30600480acc5dc3c46e5358ef.ctex"]
+source_file="res://assets/lab/resources/world_zones/old/chaos_zone_load_bg.png"
+dest_files=["res://.godot/imported/chaos_zone_load_bg.png-fccd2d3fdda87fa903393188ca6d19f9.ctex"]
 
 [params]
 
