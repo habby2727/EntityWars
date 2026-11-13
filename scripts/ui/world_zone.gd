@@ -16,6 +16,12 @@ class_name WorldZone
 @export var zone_id_override: String = ""
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const WORLD_ART := {
+	"zone_chaos": ["chaos_astral_alchemist", "chaos_astral_alchemist_variant", "chaos_astral_eagle", "chaos_cyber_warrior", "chaos_lion_warrior"],
+	"zone_corrupted": ["corrupted_cocodragon", "corrupted_cybermantis", "corrupted_doctor", "corrupted_hipovenom", "corrupted_medusa", "corrupted_sphinx"],
+	"zone_crystal": ["crystal_bear", "crystal_golem", "crystal_hydra", "crystal_mage", "crystal_sentinel", "crystal_wolf"]
+}
+const WORLD_BACKGROUNDS := {"zone_chaos": "bg1", "zone_corrupted": "bg2", "zone_crystal": "bg3"}
 
 var _backend: BackendClient = null
 var _background: TextureRect = null
@@ -49,8 +55,15 @@ var _enter_confirm: ConfirmationDialog
 var _auth_refresh_needed := false
 var _gate_clock = preload("res://scripts/domain/world_gate_cooldown.gd").new()
 var _gate_display_seconds := -2
+var _world_sprite: TextureRect
+var _world_name: Label
+var _world_art_index := 0
+var _world_idle: Tween
+var _world_modal: Control
 
 func _exit_tree() -> void:
+	if _world_idle != null:
+		_world_idle.kill()
 	_catalog.free()
 	_db.free()
 	_debug.free()
@@ -103,6 +116,10 @@ func _setup_zone_view() -> void:
 	var overlay := get_node_or_null("Overlay") as PanelContainer
 	if overlay != null:
 		overlay.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for control in overlay.find_children("*", "Control", true, false):
+			if not control is BaseButton and not control is OptionButton:
+				control.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var root := get_node_or_null("Overlay/Margin/RootVBox") as VBoxContainer
 	if root != null:
 		for node in root.find_children("*", "Label", true, false):
@@ -140,13 +157,14 @@ func _setup_zone_view() -> void:
 		if button != null:
 			button.custom_minimum_size = Vector2(130, 42)
 			MenuArt.button(button)
+	_setup_world_art()
 	var panel := PanelContainer.new()
 	panel.name = "WorldBossPanel"
 	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	panel.offset_left = -390
+	panel.offset_left = -330
 	panel.offset_right = -30
 	panel.offset_top = 125
-	panel.offset_bottom = 660
+	panel.offset_bottom = 420
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.02, 0.06, 0.07, 0.9)
 	style.border_color = Color(0.58, 0.5, 0.3, 0.9)
@@ -166,8 +184,8 @@ func _setup_zone_view() -> void:
 	_boss_picker.item_selected.connect(_on_boss_selected)
 	content.add_child(_boss_picker)
 	_boss_portrait = TextureRect.new()
-	_boss_portrait.custom_minimum_size = Vector2(0, 180)
-	_boss_portrait.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_boss_portrait.custom_minimum_size = Vector2(0, 0)
+	_boss_portrait.visible = false
 	_boss_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_boss_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_boss_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -187,6 +205,83 @@ func _setup_zone_view() -> void:
 	MenuArt.button(_boss_open)
 	_boss_open.pressed.connect(_open_boss)
 	content.add_child(_boss_open)
+	panel.visible = false
+	_world_modal = Control.new()
+	_world_modal.name = "EncounterModal"
+	_world_modal.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_world_modal.mouse_filter = Control.MOUSE_FILTER_STOP
+	_world_modal.visible = false
+	add_child(_world_modal)
+	panel.reparent(_world_modal)
+	panel.visible = true
+	var close := Button.new()
+	close.text = "X"
+	close.custom_minimum_size = Vector2(40, 40)
+	close.pressed.connect(func(): _world_modal.visible = false)
+	content.add_child(close)
+	MenuArt.button(close)
+
+func _setup_world_art() -> void:
+	var stage := Control.new()
+	stage.name = "WorldArt"
+	stage.set_anchors_preset(Control.PRESET_FULL_RECT)
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(stage)
+	_world_sprite = TextureRect.new()
+	_world_sprite.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_world_sprite.offset_left = -230
+	_world_sprite.offset_right = 230
+	_world_sprite.offset_top = -560
+	_world_sprite.offset_bottom = -110
+	_world_sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_world_sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_world_sprite.mouse_filter = Control.MOUSE_FILTER_STOP
+	_world_sprite.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_world_modal.visible = true)
+	stage.add_child(_world_sprite)
+	_world_name = Label.new()
+	_world_name.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_world_name.offset_left = -230
+	_world_name.offset_right = 230
+	_world_name.offset_top = -105
+	_world_name.offset_bottom = -72
+	_world_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_world_name.add_theme_constant_override("outline_size", 5)
+	_world_name.add_theme_color_override("font_outline_color", Color.BLACK)
+	stage.add_child(_world_name)
+	for direction in [-1, 1]:
+		var button := Button.new()
+		button.text = "<" if direction < 0 else ">"
+		button.tooltip_text = "Previous appearance" if direction < 0 else "Next appearance"
+		button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+		button.offset_left = -300 if direction < 0 else 250
+		button.offset_right = button.offset_left + 50
+		button.offset_top = -310
+		button.offset_bottom = -260
+		button.pressed.connect(func(): _change_world_art(direction))
+		stage.add_child(button)
+		MenuArt.button(button)
+	_change_world_art(0)
+
+func _change_world_art(direction: int) -> void:
+	var zone := _get_zone_id()
+	var entries: Array = WORLD_ART.get(zone, [])
+	if entries.is_empty():
+		return
+	_world_art_index = posmod(_world_art_index + direction, entries.size())
+	var id: String = entries[_world_art_index]
+	var path := "res://assets/lab/bosses/%s_common/%s.png" % [zone.trim_prefix("zone_") + "_zone", id]
+	_world_sprite.texture = load(path) as Texture2D
+	_world_name.text = "Common " + id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize() + "  |  Appearance only"
+	if _world_idle != null:
+		_world_idle.kill()
+	_world_sprite.scale = Vector2.ONE
+	_world_sprite.pivot_offset = Vector2(230, 450)
+	_world_idle = create_tween().set_loops()
+	_world_idle.tween_property(_world_sprite, "scale", Vector2(1.015, 1.015), 1.2).set_trans(Tween.TRANS_SINE)
+	_world_idle.tween_property(_world_sprite, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_SINE)
+	_world_idle.tween_interval(1.0)
 
 func _refresh_bosses() -> void:
 	if _boss_picker == null:
@@ -238,13 +333,10 @@ func _apply_background() -> void:
 	if _background == null:
 		return
 	var zone_id = _get_zone_id()
-	var tex: Texture2D = _catalog.get_tex(zone_id)
-	if tex == null:
-		var fallback = _catalog.find_id_contains(zone_id.replace("zone_", ""))
-		if fallback != "":
-			tex = _catalog.get_tex(fallback)
+	var background_id: String = WORLD_BACKGROUNDS.get(zone_id, "")
+	var tex: Texture2D = load("res://assets/lab/resources/world_zones/%s.png" % background_id) as Texture2D if background_id != "" else null
 	_background.texture = tex
-	_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	if _header_label != null:
 		_header_label.text = _get_zone_name(zone_id)
