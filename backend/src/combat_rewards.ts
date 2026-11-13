@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { randomInt, randomUUID } from "node:crypto";
+import { randomInt } from "node:crypto";
 
 export type VerifiedStatus = "VERIFIED_WIN" | "VERIFIED_LOSS" | "INVALID";
 export type CombatReward = { resource_id: "arcane_shard" | "time_crystal" | "primordial_sigil"; amount: 1 } | null;
@@ -25,14 +25,20 @@ export function evaluateCombatReward(result: { status: VerifiedStatus }, balance
 	return null;
 }
 
-export function recordVerifiedCombatResult(db: Database, result: { player_id: string; status: VerifiedStatus }, balance: Record<string, unknown>): string {
-	if (!result.player_id || !["VERIFIED_WIN", "VERIFIED_LOSS", "INVALID"].includes(result.status)) throw new Error("Invalid trusted combat result");
-	const matchId = randomUUID();
-	const now = Date.now();
-	const reward = evaluateCombatReward(result, balance);
-	db.prepare("INSERT INTO combat_reward_receipts (match_id, player_id, status, reward_json, verified_at, claimed_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)")
-		.run(matchId, result.player_id, result.status, JSON.stringify(reward), now, now);
-	return matchId;
+export function recordVerifiedCombatResult(db: Database, result: { match_id: string; player_id: string; status: VerifiedStatus }, balance: Record<string, unknown>): string {
+	return db.transaction(() => {
+		if (typeof result.match_id !== "string" || !result.match_id.trim() || result.match_id.length > 128 || typeof result.player_id !== "string" || !result.player_id.trim() || result.player_id.length > 256 || !["VERIFIED_WIN", "VERIFIED_LOSS", "INVALID"].includes(result.status)) throw new Error("Invalid trusted combat result");
+		const existing = db.query("SELECT player_id, status FROM combat_reward_receipts WHERE match_id = ?").get(result.match_id) as { player_id: string; status: string } | null;
+		if (existing) {
+			if (existing.player_id !== result.player_id || existing.status !== result.status) throw new CombatRewardError(409, "Combat match result conflicts with existing receipt.");
+			return result.match_id;
+		}
+		const now = Date.now();
+		const reward = evaluateCombatReward(result, balance);
+		db.query("INSERT INTO combat_reward_receipts (match_id, player_id, status, reward_json, verified_at, claimed_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)")
+			.run(result.match_id, result.player_id, result.status, JSON.stringify(reward), now, now);
+		return result.match_id;
+	}).immediate();
 }
 
 export function claimVerifiedCombatReward<T>(db: Database, matchId: string, playerId: string, apply: (reward: CombatReward, duplicate: boolean) => T): { reward: CombatReward; duplicate: boolean; state: T } {

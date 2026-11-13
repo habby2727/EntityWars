@@ -38,12 +38,34 @@ func _run() -> void:
 		_fail("Confirmed entry cost mismatch")
 		return
 	var session_id: String = scene._session_id
+	if scene._gate_remaining() <= 0 or not scene._enter_button.disabled or scene._farm_button.disabled or scene._claim_button.disabled:
+		_fail("Cooldown must block new entry while preserving farm and claim")
+		return
+	var before_countdown: int = scene._gate_remaining()
+	await create_timer(1.1).timeout
+	if scene._gate_remaining() >= before_countdown:
+		_fail("Server-derived cooldown did not count down locally")
+		return
+	var gate = load("res://scenes/ui/WorldGate.tscn").instantiate()
+	gate.get_node("BackendClient").base_url = url
+	gate.get_node("BackendClient").auto_dev_login = false
+	root.add_child(gate)
+	if not await _wait_for(func(): return gate._gate_remaining() > 0 and not gate._zone_rows.is_empty()):
+		return
+	if gate._zone_rows["zone_corrupted"].enter.disabled:
+		_fail("Existing zone session cannot be resumed during cooldown")
+		return
+	for zone in gate._zone_rows:
+		if zone != "zone_corrupted" and not gate._zone_rows[zone].enter.disabled:
+			_fail("New zone entry remains enabled during cooldown")
+			return
+	gate.queue_free()
 	scene._update_from_state(scene._backend.load_cached_state())
 	scene._on_enter_pressed()
 	if scene._session_id != session_id:
 		_fail("Existing session was not retained")
 		return
-	print("PASS World Gate: view free, explicit entry costs 5, existing session retained")
+	print("PASS World Gate: explicit entry, cooldown and existing session access")
 	scene.queue_free()
 	login.queue_free()
 	await process_frame

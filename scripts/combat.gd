@@ -89,7 +89,6 @@ var _player_wins: int = 0
 var _enemy_wins: int = 0
 var _sudden_death: bool = false
 var _player_turn: bool = true
-var _swap_pending: bool = false
 var _battle_over: bool = false
 var _step_queue: Array = []
 var _processing_steps: bool = false
@@ -126,12 +125,6 @@ var _hp_fill_red: StyleBoxFlat = null
 @onready var spell_buttons: Array = [$SpellPanel/SpellGrid/Spell1, $SpellPanel/SpellGrid/Spell2, $SpellPanel/SpellGrid/Spell3, $SpellPanel/SpellGrid/Spell4]
 @onready var back_button: Button = $BackButton
 
-@onready var swap_panel: PanelContainer = $SwapPanel
-@onready var swap_side1: Button = $SwapPanel/SwapVBox/SwapButtons/SwapSide1
-@onready var swap_side2: Button = $SwapPanel/SwapVBox/SwapButtons/SwapSide2
-@onready var swap_icon1: TextureRect = $SwapPanel/SwapVBox/SwapIcons/SwapIcon1
-@onready var swap_icon2: TextureRect = $SwapPanel/SwapVBox/SwapIcons/SwapIcon2
-@onready var swap_cancel: Button = $SwapPanel/SwapVBox/SwapCancel
 
 @onready var item_tooltip: PanelContainer = $ItemTooltip
 @onready var tooltip_label: Label = $ItemTooltip/TooltipLabel
@@ -141,6 +134,9 @@ var _hp_fill_red: StyleBoxFlat = null
 @onready var confirm_leave: Button = $ConfirmLeave/Panel/VBox/Buttons/LeaveButton
 
 func _ready() -> void:
+	var configured_url := OS.get_environment("ENTITYWARS_BACKEND_URL").strip_edges().trim_suffix("/")
+	if backend_url == "http://127.0.0.1:8787" and not configured_url.is_empty():
+		backend_url = configured_url
 	_fit_combat_view()
 	get_viewport().size_changed.connect(_fit_combat_view)
 	_load_registry_safe()
@@ -285,7 +281,6 @@ func _on_combat_state_updated(state: Dictionary) -> void:
 			_combat_session_invalid = true
 			_battle_over = true
 			spell_panel.hide()
-			swap_panel.hide()
 			next_turn_btn.text = "Return"
 			next_turn_btn.show()
 			_log_immediate("Session changed. Leave combat and authenticate again.")
@@ -372,8 +367,6 @@ func _load_player_from_seal() -> void:
 			data["homunculus_id"] = str(_homunculi[0].get("id", ""))
 		data["equip_1"] = ""
 		data["equip_2"] = ""
-		data["side_1"] = ""
-		data["side_2"] = ""
 	var debug := DebugFlags.new()
 	var debug_enabled := debug.unlock_all_buildings
 	debug.free()
@@ -418,15 +411,11 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 
 	var equip1 = _find_by_id(_items, str(data.get("equip_1", "")))
 	var equip2 = _find_by_id(_items, str(data.get("equip_2", "")))
-	var side1 = _find_by_id(_items, str(data.get("side_1", "")))
-	var side2 = _find_by_id(_items, str(data.get("side_2", "")))
 	if _is_player:
 		var progress_items: Dictionary = _combat_spell_state.get("item_progress", {})
 		var helper = preload("res://scripts/domain/item_progress.gd")
 		equip1 = helper.effective_item(equip1, progress_items)
 		equip2 = helper.effective_item(equip2, progress_items)
-		side1 = helper.effective_item(side1, progress_items)
-		side2 = helper.effective_item(side2, progress_items)
 
 	var mods = _item_mods([equip1])
 	var fx = _collect_item_effects([equip1])
@@ -453,8 +442,6 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		"equip_2": equip2,
 		"active_weapon_slot": 1,
 		"npc_weapon_switched": false,
-		"side_1": side1,
-		"side_2": side2,
 		"spell_ids": fighter_spells,
 		"original_spell_ids": fighter_spells.duplicate(),
 		"inspiration": 0,
@@ -691,6 +678,7 @@ func _setup_inspiration_ui() -> void:
 	_inspiration_panel.add_theme_stylebox_override("panel", style)
 	add_child(_inspiration_panel)
 	var column := VBoxContainer.new()
+	column.name = "Content"
 	column.add_theme_constant_override("separation", 8)
 	_inspiration_panel.add_child(column)
 	var title := Label.new()
@@ -722,6 +710,17 @@ func _setup_inspiration_ui() -> void:
 		button.add_child(icon)
 		cards.add_child(button)
 		_inspiration_cards.append(button)
+	var cancel := Button.new()
+	cancel.name = "Cancel"
+	cancel.text = "Cancel"
+	cancel.tooltip_text = "Keep your current spells. Inspiration will be consumed and cannot be used again this battle."
+	cancel.custom_minimum_size = Vector2(180, 40)
+	cancel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	cancel.add_theme_font_size_override("font_size", 18)
+	for state in ["normal", "hover", "pressed"]:
+		cancel.add_theme_stylebox_override(state, next_turn_btn.get_theme_stylebox(state))
+	cancel.pressed.connect(_on_inspiration_cancel)
+	column.add_child(cancel)
 	_inspiration_panel.hide()
 
 func _award_inspiration(caster: Dictionary, recipient: Dictionary, kind: String) -> void:
@@ -794,6 +793,18 @@ func _choose_inspiration(index: int) -> void:
 	_inspiration_panel.hide()
 	_inspiration_options.clear()
 	_replace_inspiration_spell(player, choice)
+	_update_ui()
+	_refresh_spell_buttons()
+
+func _on_inspiration_cancel() -> void:
+	if not _inspiration_panel.visible or not bool(player.get("inspiration_pending", false)) or _inspiration_options.size() != 3 or bool(player.get("inspiration_used_this_battle", false)):
+		return
+	_inspiration_panel.hide()
+	_inspiration_options.clear()
+	player.inspiration_pending = false
+	player.inspiration_used_this_battle = true
+	player.inspiration = 0
+	_append_combat_log("", _combat_event(player, "inspiration", " declines Inspiration; the existing four spells are preserved.", {}))
 	_update_ui()
 	_refresh_spell_buttons()
 
@@ -873,7 +884,7 @@ func _on_next_turn() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _on_spell_chosen(index: int) -> void:
-	if _resolving_exchange or _processing_steps or _swap_pending or _battle_over or _inspiration_panel.visible:
+	if _resolving_exchange or _processing_steps or _battle_over or _inspiration_panel.visible:
 		return
 	var options := _fighter_spell_options(player)
 	if index < 0 or index >= options.size():
@@ -897,7 +908,11 @@ func _commit_ultra(fighter: Dictionary, action: Dictionary) -> void:
 		action["ultra"] = false
 		return
 	fighter.ultra_used = true
-	_highlights["ultraturn"] = str(fighter.name) + " used Ultraturn"
+	var actors: Array = _highlights.get("ultraturn_actors", [])
+	var side := "player" if is_same(fighter, player) else "enemy"
+	if side not in actors:
+		actors.append(side)
+	_highlights["ultraturn_actors"] = actors
 	_append_combat_log("", _combat_event(fighter, "inspiration", " activates ULTRATURN x2; consumed for this battle.", {}))
 
 func _on_switch_weapon() -> void:
@@ -1028,7 +1043,7 @@ func _resolve_spell_exchange(chosen: Dictionary, npc_spell: Dictionary) -> void:
 		_round += 1
 		_apply_round_start_effects()
 		await _flush_steps()
-		_check_round_swap()
+		_apply_round_winner_tempo()
 		await _flush_steps()
 	_update_ui()
 
@@ -1102,11 +1117,11 @@ func _apply_spell_poison(fighter: Dictionary) -> void:
 
 func _refresh_spell_buttons() -> void:
 	var options := _fighter_spell_options(player)
-	spell_panel.visible = not _battle_over and not _swap_pending
+	spell_panel.visible = not _battle_over
 	var alternative := 2 if int(player.get("active_weapon_slot", 1)) == 1 else 1
 	var weapon: Dictionary = player.get("equip_%d" % alternative, {})
 	switch_weapon_btn.visible = _combat_started and not _battle_over and not weapon.is_empty()
-	switch_weapon_btn.disabled = _resolving_exchange or _processing_steps or _swap_pending or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty()
+	switch_weapon_btn.disabled = _resolving_exchange or _processing_steps or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty()
 	switch_weapon_btn.text = "Switch to: %s" % _item_label(weapon)
 	var deciding := _battle_index == 3 and _player_wins == 1 and _enemy_wins == 1 and not _sudden_death
 	ultra_button.visible = _combat_started and deciding and not _battle_over
@@ -1136,7 +1151,7 @@ func _refresh_spell_buttons() -> void:
 		var cooldown := "  |  CD: %d" % cd if cd > 0 else ""
 		button.text = "%s\n%s  |  %d%%%s" % [spell.name, power, int(round(float(spell.accuracy) * 100)), cooldown]
 		button.tooltip_text = _spell_description(spell)
-		button.disabled = _resolving_exchange or _processing_steps or _swap_pending or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty() or cd > 0
+		button.disabled = _resolving_exchange or _processing_steps or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty() or cd > 0
 
 func _style_spell_buttons() -> void:
 	var accent := Color("a7b0bd")
@@ -1228,11 +1243,6 @@ func _fighter_spell_options(fighter: Dictionary) -> Array:
 		if not spell.is_empty():
 			options.append(spell)
 	return options
-
-func _side_attack(attacker: Dictionary, defender: Dictionary, _is_player: bool) -> void:
-	_attack_entity(attacker, defender)
-	if defender.hp > 0:
-		_attack_homunculus(attacker, defender)
 
 # C2B must flush each action before resolving the next one.
 func _begin_spell_exchange() -> void:
@@ -1600,7 +1610,7 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 			defender.spell_hit_this_exchange = true
 	, _combat_event(attacker, "homunculus", " overcharged attack on " if boosted else " strikes ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " for %d." % hom_dmg}, true))
 
-func _check_round_swap() -> void:
+func _apply_round_winner_tempo() -> void:
 	if _round != 2:
 		return
 	if player.hp == enemy.hp:
@@ -1610,56 +1620,6 @@ func _check_round_swap() -> void:
 		_apply_tempo_win_bonus(player, true)
 	else:
 		_apply_tempo_win_bonus(enemy, false)
-
-func _on_swap_chosen(which: String) -> void:
-	if not _swap_pending:
-		return
-	var item: Dictionary = player.get(which, {})
-	if item == null or item.is_empty():
-		_swap_pending = false
-		swap_panel.visible = false
-		_refresh_spell_buttons()
-		return
-	if _is_duplicate_swap(player, item):
-		_log_immediate("Swap canceled: duplicate item.")
-		_swap_pending = false
-		swap_panel.visible = false
-		_refresh_spell_buttons()
-		return
-	player.equip_1 = item
-	player.mods = _item_mods([player.equip_1, player.equip_2])
-	_apply_mods(player)
-	_swap_pending = false
-	swap_panel.visible = false
-	_log_immediate("Swapped in %s." % _item_label(item))
-	_update_ui()
-	_refresh_spell_buttons()
-
-func _on_swap_cancel() -> void:
-	if not _swap_pending:
-		return
-	_swap_pending = false
-	swap_panel.visible = false
-	_log_immediate("Swap canceled.")
-	_refresh_spell_buttons()
-
-func _on_swap_icon_input(event: InputEvent, which: String) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		_on_swap_chosen(which)
-
-func _npc_swap() -> void:
-	var s1 = enemy.side_1
-	var s2 = enemy.side_2
-	var m1 = _item_mods([s1])
-	var m2 = _item_mods([s2])
-	var pick = s1 if m1.atk_flat + m1.def_flat >= m2.atk_flat + m2.def_flat else s2
-	if _is_duplicate_swap(enemy, pick):
-		pick = s2 if pick == s1 else s1
-	enemy.equip_1 = pick
-	enemy.mods = _item_mods([enemy.equip_1, enemy.equip_2])
-	_apply_mods(enemy)
-	_log_immediate("NPC swaps in %s." % _item_label(pick))
-	_update_ui()
 
 func _apply_mods(f: Dictionary) -> void:
 	var ent := _find_by_id(_entities, f.id)
@@ -1751,15 +1711,16 @@ func _reset_battle_state() -> void:
 	_turn = 0
 	_round = 1
 	_player_turn = true
-	_swap_pending = false
+	_pending_hom_action.clear()
+	hom_decision.hide()
 	_processing_steps = false
 	_spell_exchange_active = false
 	_spell_acts_second = false
 	next_turn_btn.hide()
 	_step_queue.clear()
-	swap_panel.visible = false
 	_reset_fighter(player)
 	_reset_fighter(enemy)
+	_update_ui()
 
 func _record_highlight(kind: String, amount: int, description: String) -> void:
 	if amount > int(_highlights.get(kind, 0)):
@@ -1830,8 +1791,9 @@ func _show_highlights() -> void:
 		lines.append(str(_highlights.sacrifice))
 	if _highlights.has("inspiration_spell"):
 		lines.append("Inspiration: " + str(_highlights.inspiration_spell))
-	if _highlights.has("ultraturn"):
-		lines.append(str(_highlights.ultraturn))
+	for side in _highlights.get("ultraturn_actors", []):
+		var fighter: Dictionary = player if side == "player" else enemy
+		lines.append("%s used Ultraturn" % str(fighter.get("name", side)))
 	var strongest := ""
 	var total := 0
 	for spell_name in _spell_damage_totals:
@@ -1868,6 +1830,7 @@ func _show_highlights() -> void:
 
 func _reset_fighter(f: Dictionary) -> void:
 	_restore_inspiration(f)
+	f.hom_energy = 0
 	f.hp = f.max_hp
 	for field in ["shield_pct", "reflect_pct"]:
 		f.erase("weapon_" + field)
@@ -1932,14 +1895,12 @@ func _type_multiplier(attacker: Dictionary, defender: Dictionary, emit_log: bool
 	return 1.0 + (multiplier - 1.0) * (1.0 - neutralize)
 
 func _type_advantage(t: String) -> String:
-	match t:
-		"sulfur": return "vitriol"
-		"vitriol": return "sodium"
-		"sodium": return "mercury"
-		"mercury": return "sulfur"
-		"aether": return "gold"
-		"gold": return "aether"
-		_: return ""
+	_ensure_type_effectiveness()
+	var row: Dictionary = _type_effectiveness.get(t, {})
+	for target in row:
+		if float(row[target]) > 1.0:
+			return str(target)
+	return ""
 
 func _item_mods(items: Array) -> Dictionary:
 	var mods := {"atk_flat": 0, "def_flat": 0}
@@ -2160,14 +2121,6 @@ func _item_label(item: Dictionary) -> String:
 	if item == null or item.is_empty():
 		return "None"
 	return str(item.get("name", item.get("id", "")))
-
-func _is_duplicate_swap(f: Dictionary, new_item: Dictionary) -> bool:
-	if new_item == null or new_item.is_empty():
-		return false
-	var new_id: String = str(new_item.get("id", ""))
-	var other: Dictionary = f.get("equip_2", {})
-	var other_id: String = str(other.get("id", ""))
-	return new_id != "" and new_id == other_id
 
 func _load_seal(which: String) -> Dictionary:
 	var path := "user://seal_%s.json" % which

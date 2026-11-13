@@ -36,10 +36,10 @@ func _run() -> void:
 	scene._weapon_defense(player, "shield_pct", 0.12)
 	scene._other_defense(player, "shield_pct", 0.08)
 	scene._set_active_weapon(player, 2)
-	_check(player.atk == before_atk - 1 and player.hp == hp, "switch stats or hp")
+	_check(player.atk == before_atk and player.hp == hp, "switch stats or hp")
 	_check(is_equal_approx(float(player.status.shield_pct), 0.08), "spell shield preservation")
 	_check(is_equal_approx(float(player.item_fx.evasion_pct), 0.08) and int(player.item_fx.true_on_hit) == 0, "switch effects")
-	_check(scene._initiative(player) == 12.0, "active initiative")
+	_check(scene._initiative(player) == 11.0, "active initiative")
 	player.spell_cooldowns = {"test": 2}
 	var enemy_hp: int = enemy.hp
 	await scene._resolve_spell_action(player, enemy, {"kind": "switch", "slot": 1})
@@ -62,6 +62,8 @@ func _run() -> void:
 	_check(enemy.active_weapon_slot == 2 and player.hp == player_hp, "npc switch action")
 	enemy.equip_1 = scene._find_by_id(scene._items, "wind_amulet")
 	enemy.equip_2 = scene._find_by_id(scene._items, "saltstone_charm")
+	enemy.equip_2 = enemy.equip_2.duplicate(true)
+	enemy.equip_2.effects.guard_flat = [2]
 	enemy.active_weapon_slot = 1
 	enemy.npc_weapon_switched = false
 	enemy.hp = int(enemy.max_hp * 0.4)
@@ -72,12 +74,18 @@ func _run() -> void:
 	scene._round = 2
 	player.hp = player.max_hp
 	enemy.hp = maxi(1, int(enemy.hp) - 1)
-	scene._check_round_swap()
-	_check(not scene._swap_pending and not scene.swap_panel.visible and player.active_weapon_slot == 1, "free round swap")
+	scene._apply_round_winner_tempo()
+	_check(not scene.has_node("SwapPanel") and player.active_weapon_slot == 1 and not player.has("side_1"), "free round swap")
 	scene._set_active_weapon(player, 2)
 	scene._reset_fighter(player)
 	_check(player.active_weapon_slot == 2, "weapon persisted across battles")
 	var helper = load("res://scripts/domain/item_progress.gd")
+	scene._ensure_type_effectiveness()
+	for source in scene._type_effectiveness:
+		for target in scene._type_effectiveness[source]:
+			if float(scene._type_effectiveness[source][target]) > 1.0:
+				_check(scene._type_advantage(source) == target, "NPC type matrix")
+	_check(scene._type_advantage("mercury") == "gold" and scene._type_advantage("aether") == "sulfur", "NPC type examples")
 	var names := ["Bismuth Sword", "Wind Spear", "Saltstone Hammer", "Mirror Blade", "Vitriol Dagger", "Gilded Wardblade", "Mercury Sabre", "Aether Edge"]
 	_check(scene._items.size() == 8, "catalog size")
 	for i in 8:
@@ -86,7 +94,9 @@ func _run() -> void:
 		for level in 11:
 			var effective: Dictionary = helper.effective_item(item, {item.id: {"level": level}})
 			for key in item.effects:
-				_check(effective.effects[key][0] == item.effects[key][clampi(level - 1, 0, item.effects[key].size() - 1)], "forge progression")
+				var values: Array = item.effects[key]
+				var expected: Variant = item.base_effects[key] if level == 0 and values.size() == 10 else values[clampi(level - 1, 0, values.size() - 1)]
+				_check(effective.effects[key][0] == expected, "forge progression")
 	print("PASS dual weapons: legacy slots, active effects, switching, stun, rounds, levels and icons")
 	scene.queue_free()
 	await process_frame

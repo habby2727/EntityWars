@@ -13,8 +13,12 @@ static func effective_item(item: Dictionary, progress: Dictionary) -> Dictionary
 	var level := level_for(str(item.get("id", "")), progress)
 	result["forge_level"] = level
 	var effects: Dictionary = result.get("effects", {})
+	var baselines: Dictionary = result.get("base_effects", {})
 	for key in effects:
 		var value: Variant = effects.get(key)
 		if value is Array and not value.is_empty():
-			effects[key] = [value[clampi(level - 1, 0, value.size() - 1)]]
+			if level == 0 and value.size() == 10 and baselines.has(key):
+				effects[key] = [baselines[key]]
+			else:
+				effects[key] = [value[clampi(level - 1, 0, value.size() - 1)]]
 	return result

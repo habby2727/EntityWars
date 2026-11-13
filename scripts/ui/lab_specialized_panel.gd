@@ -210,7 +210,10 @@ func _update_forge_button() -> void:
 		var helper = preload("res://scripts/domain/item_progress.gd")
 		var current: Dictionary = helper.effective_item(item, progress)
 		var next: Dictionary = helper.effective_item(item, {_forge_item: {"level": mini(10, level + 1)}})
-		_forge_info.text = "%s\nCurrent: %s\nNext: %s" % [item.get("desc", ""), _format_values(current.get("effects", {})), _format_values(next.get("effects", {}))]
+		var base: Dictionary = helper.effective_item(item, {_forge_item: {"level": 0}})
+		var level_one: Dictionary = helper.effective_item(item, {_forge_item: {"level": 1}})
+		var level_two: Dictionary = helper.effective_item(item, {_forge_item: {"level": 2}})
+		_forge_info.text = "%s\nBase (Lv 0): %s\nLv 1: %s\nLv 2: %s\nCurrent: %s\nNext: %s" % [item.get("desc", ""), _format_values(base.get("effects", {})), _format_values(level_one.get("effects", {})), _format_values(level_two.get("effects", {})), _format_values(current.get("effects", {})), _format_values(next.get("effects", {}))]
 	var forge_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("build_forge", {}).get("level", 0))
 	var cost := maxi(0, _forge_base_cost + level * _forge_cost_per_level)
 	var essence := int(_forge_state.get("wallet", {}).get("essence", 0))

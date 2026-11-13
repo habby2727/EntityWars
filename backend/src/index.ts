@@ -23,6 +23,21 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 
+const IS_PRODUCTION = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some(
+	(value) => value?.toLowerCase() == "production" || value?.toLowerCase() == "prod"
+);
+function economicSecret(name: string, developmentDefault: string): string {
+	const secret = Bun.env[name];
+	if (IS_PRODUCTION && (!secret || secret.trim().length < 32 || ["dev_experiment_secret", "dev_trade_secret", "dev_world_secret"].includes(secret.trim()))) {
+		throw new Error(`${name} must be configured with a non-development secret of at least 32 characters in production.`);
+	}
+	return secret || developmentDefault;
+}
+const EXPERIMENT_SECRET = economicSecret("EXPERIMENT_SECRET", "dev_experiment_secret");
+const TRADE_SECRET = economicSecret("TRADE_SECRET", "dev_trade_secret");
+const WORLD_SECRET = economicSecret("WORLD_SECRET", "dev_world_secret");
+const TOKEN_SIGNING_SECRET = Bun.env.TOKEN_SIGNING_SECRET || "";
+
 type RateLimitConfig = {
 	windowMs: number;
 	maxPostsPerWindow: number;
@@ -137,6 +152,7 @@ type PlayerWorldState = {
 	zone_progress: Record<string, ZoneProgress>;
 	daily_entries: number;
 	last_entry_reset_at: number;
+	last_gate_entry_at: number;
 	stamina: number;
 	last_stamina_at: number;
 	boss_tickets: number;
@@ -293,14 +309,30 @@ const updateWorldStmt = db.prepare("UPDATE world SET state_json = ?, updated_at 
 
 const bossIpWindow = new Map<string, { windowEnd: number; count: number }>();
 const sockets = new Set<WebSocket>();
-const EXPERIMENT_SECRET = Bun.env.EXPERIMENT_SECRET || "dev_experiment_secret";
-const TRADE_SECRET = Bun.env.TRADE_SECRET || "dev_trade_secret";
-const WORLD_SECRET = Bun.env.WORLD_SECRET || "dev_world_secret";
-const TOKEN_SIGNING_SECRET = Bun.env.TOKEN_SIGNING_SECRET || "";
-const IS_PRODUCTION = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some(
-	(value) => value?.toLowerCase() == "production" || value?.toLowerCase() == "prod"
-);
 const DEBUG_BYPASS = !IS_PRODUCTION && Bun.env.DEBUG_BYPASS == "1";
+
+function developmentLoginAllowed(address: string | undefined, origin: string | null): boolean {
+	if (IS_PRODUCTION || !address) return false;
+	if (origin) {
+		try {
+			const parsed = new URL(origin);
+			if (!["http:", "https:"].includes(parsed.protocol) || !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)) return false;
+		} catch { return false; }
+	}
+	const peer = address.startsWith("::ffff:") ? address.slice(7) : address;
+	if (peer === "127.0.0.1" || peer === "::1") return true;
+	if (Bun.env.DEV_DOCKER_LOCAL_LOGIN !== "1") return false;
+	try {
+		for (const line of readFileSync("/proc/net/route", "utf8").split("\n").slice(1)) {
+			const fields = line.trim().split(/\s+/);
+			if (fields[1] !== "00000000" || !/^[0-9A-Fa-f]{8}$/.test(fields[2] ?? "")) continue;
+			const gateway = Number.parseInt(fields[2], 16);
+			const ip = [gateway & 255, (gateway >>> 8) & 255, (gateway >>> 16) & 255, (gateway >>> 24) & 255].join(".");
+			if (peer === ip && ip !== "0.0.0.0") return true;
+		}
+	} catch { /* Non-Linux or no gateway: fail closed. */ }
+	return false;
+}
 
 // TODO: world module
 // TODO: sync module
@@ -910,7 +942,7 @@ async function startServer(): Promise<void> {
 
 				if (req.method == "POST" && url.pathname == "/auth/dev_login") {
 						const address = server.requestIP(req)?.address;
-						if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
+						if (!developmentLoginAllowed(address, req.headers.get("origin"))) {
 							throw new HttpError(403, "Development login unavailable.");
 						}
 					await applyRateLimit(ctx, {
@@ -934,7 +966,7 @@ async function startServer(): Promise<void> {
 
 				if (req.method == "POST" && url.pathname == "/v1/auth/login") {
 						const address = server.requestIP(req)?.address;
-						if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
+						if (!developmentLoginAllowed(address, req.headers.get("origin"))) {
 							throw new HttpError(403, "Development login unavailable.");
 						}
 					await applyRateLimit(ctx, {
@@ -2576,6 +2608,7 @@ function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
 		zone_progress: zoneProgress,
 		daily_entries: dailyEntries,
 		last_entry_reset_at: lastEntryResetAt,
+		last_gate_entry_at: clampInt(worldRaw?.last_gate_entry_at ?? 0, 0, Number.MAX_SAFE_INTEGER),
 		stamina,
 		last_stamina_at: lastStaminaAt,
 		boss_tickets: bossTickets,
@@ -4665,32 +4698,29 @@ function enterWorldSession(
 	if (!isValidZoneId(zoneId)) {
 		return { error: "Unknown zone_id." };
 	}
-	const now = Date.now();
-	const worldState = ensureWorldState(now);
-	const zoneRotation = getZoneRotation(worldState, zoneId);
-	if (!zoneRotation) {
-		return { error: "Zone is not available." };
+	const stored = getIdempotentState(playerId, clientActionId, "WORLD_ENTER", body);
+	const sessionId = makeWorldSessionId(playerId, clientActionId, zoneId);
+	if (stored) {
+		return { state: stored, sessionId, zoneId, modifiers: stored.world.sessions[sessionId]?.modifiers ?? [] };
 	}
+	const now = Date.now();
 	const entryFee = getWorldEntryFee();
 	if (entryFee > 0 && isSuspiciousAmount(entryFee)) {
 		logSuspiciousAction(playerId, { essence: -entryFee }, "WORLD_ENTER", zoneId);
 		return { error: "Suspicious entry fee." };
 	}
-	const stored = getIdempotentState(playerId, clientActionId, "WORLD_ENTER", body);
-	const sessionId = makeWorldSessionId(playerId, clientActionId, zoneId);
-	if (stored) {
-		return {
-			state: stored,
-			sessionId,
-			zoneId,
-			modifiers: zoneRotation.modifier_ids
-		};
-	}
 	let state: PlayerState | null = null;
+	let modifiers: string[] = [];
 	db.transaction(() => {
 		state = ensurePlayerState(playerId);
 		const beforeWallet = cloneWallet(state.wallet);
 		const world = ensurePlayerWorld(state, now);
+		const cooldownMs = Math.max(0, Math.floor(getBalanceNumber("world_gate_cooldown_seconds", 3600) * 1000));
+		const remainingMs = world.last_gate_entry_at > 0 ? Math.max(0, world.last_gate_entry_at + cooldownMs - now) : 0;
+		if (remainingMs > 0) throw new HttpError(400, `World Gate cooldown: ${Math.ceil(remainingMs / 1000)} seconds remaining.`);
+		const zoneRotation = getZoneRotation(ensureWorldState(now), zoneId);
+		if (!zoneRotation) throw new HttpError(400, "Zone is not available.");
+		modifiers = zoneRotation.modifier_ids.slice();
 		refreshWorldPlayer(world, now);
 		if (!debugBypass) {
 			const gate = ensureBuildingState(state, "world_gate");
@@ -4721,6 +4751,7 @@ function enterWorldSession(
 			};
 		}
 		world.daily_entries += 1;
+		world.last_gate_entry_at = now;
 		assertWalletInvariant(state.wallet);
 		state.updated_at = now;
 		updatePlayerStmt.run(JSON.stringify(state), now, playerId);
@@ -4742,7 +4773,7 @@ function enterWorldSession(
 		state,
 		sessionId,
 		zoneId,
-		modifiers: zoneRotation.modifier_ids
+		modifiers
 	};
 }
 

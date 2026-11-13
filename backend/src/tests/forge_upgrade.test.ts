@@ -6,30 +6,30 @@ import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 
 test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async () => {
-	await new Promise<void>((resolvePort, reject) => {
+  const port = await new Promise<number>((resolvePort, reject) => {
 		const probe = createServer();
-		probe.once("error", () => reject(new Error("Port 8787 is occupied; refusing to use an existing server")));
-		probe.listen(8787, "0.0.0.0", () => probe.close(() => resolvePort()));
+		probe.once("error", reject);
+		probe.listen(0, "127.0.0.1", () => { const value = (probe.address() as { port: number }).port; probe.close(() => resolvePort(value)); });
 	});
   const directory = mkdtempSync(join(tmpdir(), "entitywars-forge-"));
   const dbPath = join(directory, "test.sqlite");
   const db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
   let server: ReturnType<typeof Bun.spawn> | undefined;
   const start = async () => {
     server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
     for (let i = 0; i < 100; i++) {
-      if (server.exitCode !== null) throw new Error("Test backend exited before startup (port 8787 may be occupied)");
-      try { if ((await fetch("http://127.0.0.1:8787/health")).ok) return; } catch {}
+      if (server.exitCode !== null) throw new Error("Test backend exited before startup");
+      try { if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return; } catch {}
       await Bun.sleep(100);
     }
-    throw new Error("Test backend did not start on port 8787");
+    throw new Error(`Test backend did not start on port ${port}`);
   };
   const stop = async () => { if (server) { server.kill(); await server.exited; server = undefined; } };
   const request = async (path: string, body?: unknown, token?: string) => {
-    const res = await fetch("http://127.0.0.1:8787" + path, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(`http://127.0.0.1:${port}` + path, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: res.status, data: await res.json() as any };
   };
   try {

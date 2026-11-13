@@ -101,6 +101,8 @@ var _poll_timer: SceneTreeTimer = null
 const POLL_INTERVAL_SEC := 8.0
 
 var _server_time_offset_ms: float = 0.0
+var _gate_clock = preload("res://scripts/domain/world_gate_cooldown.gd").new()
+var _gate_display_seconds := -2
 
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
@@ -125,6 +127,10 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_update_boss_countdown()
+	var remaining := _gate_remaining()
+	if remaining != _gate_display_seconds:
+		_gate_display_seconds = remaining
+		_update_zone_cards()
 
 func _resolve_nodes() -> void:
 	_backend = get_node_or_null(backend_path) as BackendClient
@@ -294,6 +300,9 @@ func _on_refresh_zones_pressed() -> void:
 func _on_enter_pressed(zone_id: String) -> void:
 	_clear_zone_error()
 	if zone_id == "":
+		return
+	if _gate_remaining() != 0 and not _has_zone_session(zone_id):
+		_set_zone_error("World Gate cooldown: %s" % _gate_remaining_text())
 		return
 	_selected_zone_id = zone_id
 	SceneRouter.go_to_world_zone(zone_id)
@@ -594,7 +603,26 @@ func _update_zone_cards() -> void:
 			mod_label.text = mod_text
 		var enter_btn: Button = row.get("enter", null)
 		if enter_btn != null:
-			enter_btn.disabled = false
+			var has_session := _has_zone_session(str(zone_id))
+			var remaining := _gate_remaining()
+			enter_btn.disabled = not has_session and remaining != 0
+			enter_btn.text = "Resume" if has_session else "Wait %s" % _gate_remaining_text() if remaining != 0 else "Enter"
+			enter_btn.tooltip_text = "World Gate cooldown: %s" % _gate_remaining_text() if remaining != 0 and not has_session else ""
+
+func _has_zone_session(zone_id: String) -> bool:
+	var sessions: Variant = _player_world.get("sessions", {})
+	if sessions is Dictionary:
+		for entry in sessions.values():
+			if entry is Dictionary and str(entry.get("zone_id", "")) == zone_id:
+				return true
+	return false
+
+func _gate_remaining() -> int:
+	return _gate_clock.remaining_seconds(_player_world, int(_db.get_balance("world_gate_cooldown_seconds", 3600)))
+
+func _gate_remaining_text() -> String:
+	var remaining := _gate_remaining()
+	return "checking server time" if remaining < 0 else _gate_clock.format_remaining(remaining)
 
 func _update_session_panel() -> void:
 	if _session_zone_label == null or _session_stats_label == null:
@@ -848,6 +876,7 @@ func _compute_panel_scale() -> float:
 	return clamp(ui_scale, 0.9, 1.35)
 
 func _update_server_time(server_time_ms: int) -> void:
+	_gate_clock.sync(server_time_ms)
 	var local_ms = Time.get_unix_time_from_system() * 1000.0
 	_server_time_offset_ms = float(server_time_ms) - local_ms
 

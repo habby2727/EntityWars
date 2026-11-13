@@ -20,6 +20,14 @@ func _run() -> void:
 	viewport.add_child(scene)
 	await process_frame
 	await process_frame
+	if OS.get_environment("INSPIRATION_ONLY_SELECTION") == "1":
+		scene.player.inspiration = 3
+		scene.player.inspiration_pending = true
+		scene._finish_inspiration_exchange()
+		await _capture(viewport, output, "selection")
+		print("PASS inspiration selection capture ", viewport.size)
+		quit(0)
+		return
 	scene.player.inspiration = 2
 	scene._update_ui()
 	await _capture(viewport, output, "two")

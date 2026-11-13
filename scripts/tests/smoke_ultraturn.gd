@@ -145,6 +145,13 @@ func _run() -> void:
 	var enemy_action := {"kind": "spell", "spell": attack, "ultra": true, "hom": "hold"}
 	scene._commit_ultra(player, player_action)
 	scene._commit_ultra(enemy, enemy_action)
+	_check(scene._highlights.ultraturn_actors == ["player", "enemy"], "both ultraturn highlights")
+	scene._show_highlights()
+	var highlight_panel: Node = scene.get_child(scene.get_child_count() - 1)
+	var highlighted := ""
+	for label in highlight_panel.find_children("*", "Label", true, false):
+		highlighted += label.text
+	_check(highlighted.count("used Ultraturn") == 2, "both activations shown")
 	var previous_turn: int = scene._turn
 	seed(1)
 	await scene._resolve_spell_exchange(player_action, enemy_action)

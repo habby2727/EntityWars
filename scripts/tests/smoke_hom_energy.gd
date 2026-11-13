@@ -32,6 +32,14 @@ func _run() -> void:
 		scene._charge_homunculus(player)
 		_check(player.hom_energy == i + 1 and scene._hom_ready(player) == (i >= 2), "charge threshold")
 	await scene._flush_steps()
+	player.hom_energy = 5
+	enemy.hom_energy = 5
+	scene._pending_hom_action = {"kind": "switch"}
+	scene.hom_decision.show()
+	scene._reset_battle_state()
+	_check(player.hom_energy == 0 and enemy.hom_energy == 0 and not scene.hom_decision.visible and scene._pending_hom_action.is_empty(), "new battle energy or pending decision")
+	_check(scene._player_hom_status._state.text.contains("0 / 6") and scene._enemy_hom_status._state.text.contains("0 / 6"), "new battle energy indicators")
+	player.hom_energy = 6
 	await scene._resolve_hom_choice(player, enemy, "hold")
 	_check(player.hom_energy == 6, "hold")
 	var old_hp: int = enemy.hp
@@ -78,6 +86,31 @@ func _run() -> void:
 	_check(scene._choose_npc_hom_action() == "attack", "npc overcharge")
 	scene._update_ui()
 	_check(not scene.player_hom.visible and scene._player_hom_status.tooltip_text.contains("6") and scene._player_hom_status.tooltip_text.contains("30 HP"), "ui or tooltip")
+	scene._battle_index = 1
+	scene._player_wins = 0
+	scene._enemy_wins = 0
+	player.hom_energy = 5
+	enemy.hom_energy = 5
+	player.hp = player.max_hp
+	enemy.hp = 0
+	scene._handle_battle_end()
+	_check(scene._battle_index == 2 and player.hom_energy == 0 and enemy.hom_energy == 0 and player.hom_spent, "battle two energy reset")
+	player.hom_energy = 5
+	enemy.hom_energy = 5
+	player.hp = 0
+	enemy.hp = enemy.max_hp
+	scene._handle_battle_end()
+	_check(scene._battle_index == 3 and scene._player_wins == 1 and scene._enemy_wins == 1 and player.hom_energy == 0 and enemy.hom_energy == 0 and player.hom_spent, "battle three energy reset")
+	player.hom_energy = 5
+	enemy.hom_energy = 5
+	player.hp = 0
+	enemy.hp = 0
+	scene._battle_index = 3
+	scene._player_wins = 1
+	scene._enemy_wins = 1
+	scene._sudden_death = false
+	scene._handle_battle_end()
+	_check(scene._sudden_death and scene._battle_index == 4 and player.hom_energy == 0 and enemy.hom_energy == 0 and player.hom_spent and not scene.player_hom.visible, "sudden death energy and sacrifice")
 	print("PASS hom energy, attack, overcharge, hold, sacrifice, persistence, npc and UI")
 	scene.queue_free()
 	await process_frame

@@ -43,6 +43,9 @@ func _exit_tree() -> void:
 		_debug_flags.free()
 
 func _ready() -> void:
+	var configured_url := OS.get_environment("ENTITYWARS_BACKEND_URL").strip_edges().trim_suffix("/")
+	if base_url == "http://127.0.0.1:8787" and not configured_url.is_empty():
+		base_url = configured_url
 	add_to_group("backend_session_clients")
 	_ensure_http()
 	_pending.clear_identity()

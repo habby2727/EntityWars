@@ -1,9 +1,9 @@
 {
   "balance": {
     "combat_rewards": {
-      "arcane_shard": 0.025,
-      "time_crystal": 0.004,
-      "primordial_sigil": 0.001
+      "arcane_shard": 0.30,
+      "time_crystal": 0.15,
+      "primordial_sigil": 0.05
     },
     "forge_upgrade_essence_base": 20,
     "forge_upgrade_essence_per_level": 10,

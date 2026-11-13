@@ -116,6 +116,22 @@ func _run() -> void:
 	scene._finish_inspiration_exchange()
 	_check(scene._inspiration_panel.visible and scene._inspiration_options.size() == 3, "selection panel")
 	_check(scene._player_inspiration.tooltip_text.contains("Repeated types"), "indicator tooltip")
+	var cancel: Button = scene._inspiration_panel.get_node("Content/Cancel")
+	_check(cancel.visible and cancel.pressed.is_connected(Callable(scene, "_on_inspiration_cancel")), "cancel button")
+	var originals: Array = player.original_spell_ids.duplicate()
+	cancel.pressed.emit()
+	_check(not scene._inspiration_panel.visible and scene._inspiration_options.is_empty() and player.inspiration == 0 and player.inspiration_used_this_battle and not player.inspiration_pending, "cancel state")
+	_check(player.spell_ids == original and player.original_spell_ids == originals and player.temporary_spell_id == "" and player.temporary_replaced_slot == -1, "cancel changed spells")
+	_check(player.spell_cooldowns.existing == 2 and scene._turn == turn and JSON.stringify(scene._combat_spell_state) == progression and scene._player_inspiration._used, "cancel changed turn, cooldown or progression")
+	scene._award_inspiration(player, enemy, "poison")
+	scene._finish_inspiration_exchange()
+	_check(player.inspiration == 0 and not scene._inspiration_panel.visible, "cancel reopened in same battle")
+	scene._reset_fighter(player)
+	_check(not player.inspiration_used_this_battle, "next battle did not reset inspiration")
+	player.spell_cooldowns = {"existing": 2}
+	player.inspiration = 3
+	player.inspiration_pending = true
+	scene._finish_inspiration_exchange()
 	scene._choose_inspiration(0)
 	_check(not scene._inspiration_panel.visible and player.inspiration_used_this_battle and scene._turn == turn, "redemption costs turn")
 	_check(player.spell_cooldowns.existing == 2 and JSON.stringify(scene._combat_spell_state) == progression, "cooldowns or progression changed")

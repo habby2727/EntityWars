@@ -6,6 +6,7 @@
       "rarity": "basic",
       "slot": "build",
       "desc": "Power bonus; true damage on hit; +1 Guard.",
+      "base_effects": { "power_flat": 1 },
       "effects": {
         "power_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
         "true_on_hit": [1],
@@ -18,6 +19,7 @@
       "rarity": "basic",
       "slot": "build",
       "desc": "Tempo bonus; 8% evasion; +1 Power.",
+      "base_effects": { "tempo_flat": 1 },
       "effects": {
         "tempo_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
         "evasion_pct": [0.08],
@@ -30,6 +32,7 @@
       "rarity": "basic",
       "slot": "build",
       "desc": "Guard bonus; 12% ward each round; +1 Power.",
+      "base_effects": { "guard_flat": 1 },
       "effects": {
         "guard_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
         "ward_pct": [0.12],
@@ -42,6 +45,7 @@
       "rarity": "advanced",
       "slot": "build",
       "desc": "Reflects damage; 8% ward each round; +1 Guard.",
+      "base_effects": { "reflect_pct": 0.02 },
       "effects": {
         "reflect_pct": [0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12],
         "ward_pct": [0.08],
@@ -54,6 +58,7 @@
       "rarity": "advanced",
       "slot": "build",
       "desc": "True corrosion damage on hit; 10% vulnerability; +1 Power.",
+      "base_effects": { "dot_true": 0 },
       "effects": {
         "dot_true": [1, 2, 2, 3, 3, 4, 4, 5, 6, 7],
         "vuln_on_hit": [0.1],
@@ -66,6 +71,7 @@
       "rarity": "advanced",
       "slot": "build",
       "desc": "Reduces type disadvantage; 6% ward each round; +1 Guard.",
+      "base_effects": { "disadvantage_reduction": 0.04 },
       "effects": {
         "disadvantage_reduction": [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.15],
         "ward_pct": [0.06],
@@ -78,6 +84,7 @@
       "rarity": "advanced",
       "slot": "build",
       "desc": "Tempo after winning a round; 4% evasion; +1 Power.",
+      "base_effects": { "tempo_on_win": 0 },
       "effects": {
         "tempo_on_win": [1, 1, 2, 2, 3, 3, 4, 4, 5, 6],
         "evasion_pct": [0.04],
@@ -90,6 +97,7 @@
       "rarity": "advanced",
       "slot": "build",
       "desc": "Chance to ignore reflection; 6% ward each round; +1 Power.",
+      "base_effects": { "ignore_reflect_chance": 0.10 },
       "effects": {
         "ignore_reflect_chance": [0.15, 0.18, 0.21, 0.24, 0.27, 0.3, 0.33, 0.36, 0.4, 0.45],
         "ward_pct": [0.06],

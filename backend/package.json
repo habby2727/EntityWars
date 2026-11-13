@@ -7,7 +7,7 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun dist/index.js",
     "test:all": "bun run src/tests/run_all.ts",
-    "test:isolated": "bun test src/tests/forge_upgrade.test.ts src/tests/economic_multiprocess.test.ts",
+    "test:isolated": "bun test src/tests/forge_upgrade.test.ts src/tests/economic_multiprocess.test.ts src/tests/combat_rewards.test.ts",
     "migrate": "bun run src/migrate.ts",
     "worker": "bun run src/worker.ts",
     "smoke": "bun run src/tests/smoke.ts"

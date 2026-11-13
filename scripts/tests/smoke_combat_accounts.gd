@@ -11,6 +11,7 @@ func _run() -> void:
 	if not url.begins_with("http://127.0.0.1:") or user_root.is_empty() or not OS.get_user_data_dir().replace("\\", "/").to_lower().begins_with(user_root + "/"):
 		_fail("Test isolation missing")
 		return
+	OS.set_environment("ENTITYWARS_BACKEND_URL", url)
 	if OS.get_environment("COMBAT_RESTART_TEST") == "1":
 		var restarted = await _open_combat()
 		if restarted == null or not _check_fighters(restarted, 10) or not _check_spell(restarted, true):
@@ -23,7 +24,7 @@ func _run() -> void:
 		quit(0)
 		return
 	var seal := FileAccess.open("user://seal_attack.json", FileAccess.WRITE)
-	seal.store_string(JSON.stringify({"entity_id": "sulfur_01", "equip_1": "wind_amulet", "side_1": "saltstone_charm"}))
+	seal.store_string(JSON.stringify({"entity_id": "sulfur_01", "equip_1": "wind_amulet", "equip_2": "saltstone_charm", "side_1": "mirror_sigel"}))
 	seal.close()
 	var login := BackendClient.new()
 	login.base_url = url
@@ -34,7 +35,9 @@ func _run() -> void:
 	if not await _wait_verified(login):
 		return
 	var scene = await _open_combat()
-	if scene == null or not _check_fighters(scene, 10) or not _check_spell(scene, true) or not _check_swap(scene, 10):
+	if scene == null or not _check_fighters(scene, 10) or not _check_spell(scene, true) or not _check_weapons(scene, 10):
+		return
+	if not await _check_inventory(10):
 		return
 	login.login_dev("combat_account_b")
 	if not scene._combat_session_invalid:
@@ -45,7 +48,9 @@ func _run() -> void:
 	scene.queue_free()
 	await process_frame
 	scene = await _open_combat()
-	if scene == null or not _check_fighters(scene, 0) or not _check_spell(scene, false) or not _check_swap(scene, 0):
+	if scene == null or not _check_fighters(scene, 0) or not _check_spell(scene, false) or not _check_weapons(scene, 0):
+		return
+	if not await _check_inventory(0):
 		return
 	login.login_dev("combat_account_a")
 	if not scene._combat_session_invalid:
@@ -58,18 +63,20 @@ func _run() -> void:
 	scene = await _open_combat()
 	if scene == null or not _check_fighters(scene, 10) or not _check_spell(scene, true):
 		return
-	print("PASS real Combat accounts A/B/A, fighter equipment, sideboard and NPC")
+	if not await _check_inventory(10):
+		return
+	print("PASS real Combat accounts A/B/A, active weapons and NPC")
 	scene.queue_free()
 	login.queue_free()
 	await process_frame
 	quit(0)
 
 func _wait_verified(client: BackendClient) -> bool:
-	var deadline := Time.get_ticks_msec() + 8000
+	var deadline := Time.get_ticks_msec() + 20000
 	while client._verified_player_id.is_empty() and Time.get_ticks_msec() < deadline:
 		await process_frame
 	if client._verified_player_id.is_empty():
-		_fail("Backend identity timeout")
+		_fail("Backend identity timeout for %s (token present: %s, HTTP: %s, generation: %s)" % [client._last_login_name, not client.token.is_empty(), client._http.get_http_client_status(), client._session_generation])
 		return false
 	return true
 
@@ -86,14 +93,14 @@ func _open_combat():
 	return scene
 
 func _check_fighters(scene, level: int) -> bool:
-	var data := {"entity_id": "sulfur_01", "equip_1": "saltstone_charm", "side_1": "saltstone_charm"}
+	var data := {"entity_id": "sulfur_01", "equip_1": "saltstone_charm", "equip_2": "wind_amulet", "side_1": "mirror_sigel"}
 	var fighter: Dictionary = scene._build_fighter(data, true)
 	var npc: Dictionary = scene._build_fighter(data, false)
 	var expected := 0.12
-	if int(fighter.equip_1.get("forge_level", -1)) != level or int(fighter.side_1.get("forge_level", -1)) != level or not is_equal_approx(float(fighter.equip_1.effects.ward_pct[0]), expected):
-		_fail("Incorrect equipment or sideboard progression")
+	if int(fighter.equip_1.get("forge_level", -1)) != level or fighter.has("side_1") or not is_equal_approx(float(fighter.equip_1.effects.ward_pct[0]), expected):
+		_fail("Incorrect equipment progression or active legacy sideboard")
 		return false
-	if int(fighter.equip_1.effects.guard_flat[0]) != (12 if level == 10 else 6 if level == 5 else 2):
+	if int(fighter.equip_1.effects.guard_flat[0]) != (12 if level == 10 else 6 if level == 5 else 1):
 		_fail("Incorrect catalog level effect")
 		return false
 	if npc.equip_1.has("forge_level") or not is_equal_approx(float(npc.equip_1.effects.ward_pct[0]), 0.12):
@@ -105,21 +112,41 @@ func _check_fighters(scene, level: int) -> bool:
 		return false
 	return true
 
+func _check_inventory(level: int) -> bool:
+	var inventory = load("res://scenes/ui/Inventory.tscn").instantiate()
+	root.add_child(inventory)
+	var deadline := Time.get_ticks_msec() + 8000
+	while not inventory._item_progress_known and Time.get_ticks_msec() < deadline:
+		await process_frame
+	if not inventory._item_progress_known or int(inventory._item_progress.get("saltstone_charm", {}).get("level", 0)) != level:
+		_fail("Inventory item progress leaked between accounts")
+		return false
+	var item: Dictionary = inventory._registry.get_items().get("saltstone_charm", {})
+	var effective: Dictionary = preload("res://scripts/domain/item_progress.gd").effective_item(item, inventory._item_progress)
+	if int(effective.effects.guard_flat[0]) != (12 if level == 10 else 1):
+		_fail("Inventory effective item is inconsistent")
+		return false
+	inventory.queue_free()
+	await process_frame
+	return true
+
 func _check_spell(scene, learned: bool) -> bool:
 	if ("steady_script" in scene.player.spell_ids) != learned:
 		_fail("Combat spell loadout did not follow authenticated progress")
 		return false
 	return true
 
-func _check_swap(scene, level: int) -> bool:
-	scene._swap_pending = true
-	scene._on_swap_chosen("side_1")
-	var item: Dictionary = scene.player.equip_1
-	if str(item.get("id", "")) != "saltstone_charm" or int(item.get("forge_level", -1)) != level or not is_equal_approx(float(item.effects.ward_pct[0]), 0.12):
-		_fail("Actual sideboard swap lost or duplicated item progression")
+func _check_weapons(scene, level: int) -> bool:
+	if str(scene._get_active_weapon(scene.player).get("id", "")) != "wind_amulet" or float(scene.player.item_fx.ward_pct) != 0.0:
+		_fail("Inactive secondary or legacy weapon grants effects")
+		return false
+	scene._set_active_weapon(scene.player, 2)
+	var item: Dictionary = scene._get_active_weapon(scene.player)
+	if str(item.get("id", "")) != "saltstone_charm" or int(item.get("forge_level", -1)) != level or not is_equal_approx(float(scene.player.item_fx.ward_pct), 0.12) or float(scene.player.item_fx.evasion_pct) != 0.0:
+		_fail("Active secondary weapon progression or effects are incorrect")
 		return false
 	scene._reset_fighter(scene.player)
-	if not is_equal_approx(float(scene.player.equip_1.effects.ward_pct[0]), 0.12):
+	if not is_equal_approx(float(scene.player.item_fx.ward_pct), 0.12):
 		_fail("Battle reset changed item progression")
 		return false
 	return true

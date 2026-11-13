@@ -47,6 +47,8 @@ var _boss_open: Button
 var _loot_label: Label
 var _enter_confirm: ConfirmationDialog
 var _auth_refresh_needed := false
+var _gate_clock = preload("res://scripts/domain/world_gate_cooldown.gd").new()
+var _gate_display_seconds := -2
 
 func _exit_tree() -> void:
 	_catalog.free()
@@ -66,6 +68,12 @@ func _ready() -> void:
 	_setup_farm_options()
 	_load_state()
 	_request_world_state()
+
+func _process(_delta: float) -> void:
+	var remaining := _gate_remaining()
+	if remaining != _gate_display_seconds:
+		_gate_display_seconds = remaining
+		_update_labels()
 
 func _resolve_nodes() -> void:
 	_backend = get_node_or_null(backend_path) as BackendClient
@@ -265,6 +273,8 @@ func _load_state() -> void:
 		_update_from_state(state)
 
 func _update_from_state(state: Dictionary) -> void:
+	if _backend != null:
+		_gate_clock.sync(_backend.get_server_time_unix_ms())
 	_player_world = state.get("world", {})
 	_sync_session()
 	_update_labels()
@@ -280,6 +290,7 @@ func _request_world_state() -> void:
 		_set_error("Logging in...")
 
 func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
+	_gate_clock.sync(int(data.get("server_time_unix_ms", 0)))
 	if not ok:
 		_set_error(str(data.get("error", "Request failed.")))
 		if _boss_status != null and _bosses.is_empty():
@@ -317,6 +328,9 @@ func _on_enter_pressed() -> void:
 		return
 	if _session_id != "":
 		return
+	if _gate_remaining() != 0:
+		_set_error("World Gate cooldown: %s" % _gate_remaining_text())
+		return
 	var fee := int(_db.get_balance("world_entry_fee_essence", 0))
 	var balance := int(_backend.load_cached_state().get("wallet", {}).get("essence", 0))
 	var daily_limit := int(_db.get_balance("world_daily_entries", 10))
@@ -324,7 +338,7 @@ func _on_enter_pressed() -> void:
 	_enter_confirm.popup_centered()
 
 func _confirm_zone_entry() -> void:
-	if _session_id != "" or not _ensure_auth() or not _has_world_unlock():
+	if _session_id != "" or _gate_remaining() != 0 or not _ensure_auth() or not _has_world_unlock():
 		return
 	var zone_id = _get_zone_id()
 	if zone_id == "":
@@ -394,7 +408,7 @@ func _sync_session() -> void:
 func _update_labels() -> void:
 	var zone_id = _get_zone_id()
 	if _session_label != null:
-		_session_label.text = "Zone session active" if _session_id != "" else "No active zone session"
+		_session_label.text = "Zone session active" if _session_id != "" else "World Gate cooldown: %s" % _gate_remaining_text() if _gate_remaining() != 0 else "No active zone session"
 	if _modifier_label != null:
 		var mods := []
 		var zone_map = _world_state.get("zones", [])
@@ -424,11 +438,19 @@ func _update_labels() -> void:
 				parts.append("%s: %s" % [str(key).replace("_", " ").capitalize(), loot[key]])
 		_loot_label.text = "Stamina: %s  |  Unclaimed loot: %s" % [_player_world.get("stamina", "-"), ", ".join(parts) if not parts.is_empty() else "None"]
 	if _enter_button != null:
-		_enter_button.disabled = _session_id != ""
+		_enter_button.disabled = _session_id != "" or _gate_remaining() != 0
+		_enter_button.tooltip_text = "World Gate cooldown: %s" % _gate_remaining_text() if _session_id == "" and _gate_remaining() != 0 else ""
 	if _farm_button != null:
 		_farm_button.disabled = _session_id == ""
 	if _claim_button != null:
 		_claim_button.disabled = _session_id == ""
+
+func _gate_remaining() -> int:
+	return _gate_clock.remaining_seconds(_player_world, int(_db.get_balance("world_gate_cooldown_seconds", 3600)))
+
+func _gate_remaining_text() -> String:
+	var remaining := _gate_remaining()
+	return "checking server time" if remaining < 0 else _gate_clock.format_remaining(remaining)
 
 func _ensure_auth() -> bool:
 	if _backend == null:
