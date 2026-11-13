@@ -111,3 +111,48 @@ test("validated Mercury and Sodium defensive spells", () => {
     expect(cast(state, id, () => 0).next_state.boss.hp).toBeLessThan(112);
   }
 });
+
+test("native Aether and Vitriol spells, delayed neutralization and poison", () => {
+  const aether = ["rift_touch", "null_stitch", "veil_rupture", "paradox_fold"];
+  const vitriol = ["etching_fang", "caustic_mark", "bitter_haze", "rot_harvest"];
+  const fixture = (type: string, spells: string[], bossId: string) => createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_entity_id: bossId }, { ...selection, entity_id: type + "_01", spell_ids: spells }, catalogs));
+  const draws = (_turn: number, counter: number) => counter % 2 === 0 ? 0 : 0.99;
+  for (const [type, spells, bossId] of [["aether", aether, "sulfur_01"], ["vitriol", vitriol, "sodium_01"]] as const) {
+    for (const spell_id of spells) {
+      const state = fixture(type, spells, bossId); state.boss.status.stun = 1;
+      const before = structuredClone(state);
+      const decision = { turn: 1, spell_id, target: "boss" };
+      const result = resolveCombatTurn(state, decision, draws);
+      expect(result.error).toBeUndefined();
+      expect(result.next_state.cooldowns[spell_id]).toBe(state.spells.find((s: any) => s.id === spell_id).cooldown_turns);
+      expect(resolveCombatTurn(state, decision, draws)).toEqual(result);
+      expect(state).toEqual(before);
+    }
+  }
+  const base = fixture("aether", aether, "sulfur_01"); base.boss.status.stun = 1;
+  expect(resolveCombatTurn(base, { turn: 1, spell_id: "rift_touch", target: "boss" }, draws).next_state.boss.hp).toBe(88);
+  const fold = resolveCombatTurn(base, { turn: 1, spell_id: "paradox_fold", target: "boss" }, draws).next_state;
+  expect(fold.player.spell_neutralize_pending).toBe(0.5);
+  expect(fold.player.spell_neutralize_active).toBe(0);
+  fold.boss.status.stun = 1;
+  const follow = resolveCombatTurn(fold, { turn: 2, spell_id: "rift_touch", target: "boss" }, () => 0.1).next_state;
+  expect(follow.boss.hp).toBe(89);
+  expect([follow.player.spell_neutralize_pending, follow.player.spell_neutralize_active]).toEqual([0, 0]);
+  const plain = fixture("vitriol", vitriol, "sodium_01"); plain.boss.status.stun = 1;
+  const poisoned = structuredClone(plain); poisoned.boss.status.poison = 2;
+  const action = { turn: 1, spell_id: "rot_harvest", target: "boss" };
+  expect(resolveCombatTurn(plain, action, draws).next_state.boss.hp).toBe(98);
+  const harvest = resolveCombatTurn(poisoned, action, draws).next_state;
+  expect([harvest.boss.hp, harvest.boss.status.poison]).toEqual([91, 1]);
+  const marked = resolveCombatTurn(plain, { turn: 1, spell_id: "caustic_mark", target: "boss" }, draws).next_state;
+  expect(marked.boss.status.poison).toBe(1);
+});
+
+test("reflection uses calculated damage even when the target has little HP", () => {
+  const state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+  state.player.hp = 1;
+  state.player.status.reflect_pct = 0.5;
+  const result = resolveCombatTurn(state, { turn: 1, spell_id: "ash_temper", target: "boss" }, () => 0.1);
+  expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([0, 106]);
+  expect(result.events.find((event: any) => event.kind === "reflect").damage).toBe(6);
+});
