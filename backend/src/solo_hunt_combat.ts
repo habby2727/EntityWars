@@ -39,9 +39,9 @@ export function createCombatState(setup: any): any {
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
   if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target"].includes(k)) || decision.turn !== state.turn + 1 || decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0 || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id);
-  const supportedEffects = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange"]);
+  const supportedEffects = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange"]);
   const supportedStatus = new Set(["atk_boost", "atk_down", "vuln_pct", "shield_pct", "reflect_pct", "hom_stun", "stun", "poison"]);
-  if (!spell || spell.type !== state.player.type || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !supportedEffects.has(e.kind)) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
+  if (!spell || !(spell.type === state.player.type || (["universal", "hybrid"].includes(spell.type) && spell.eligible_types?.includes(state.player.type))) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !supportedEffects.has(e.kind)) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
   for (const fighter of [next.player, next.boss]) {
     fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
@@ -56,9 +56,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (a.max_hp > d.max_hp) acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
     if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor, kind: "miss" }); return false; }
     const relation = next.types?.effectiveness?.[a.type]?.[d.type] ?? 1;
-    const baseMult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
+    let baseMult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
+    if (actor === "player" && spell.type === "universal") baseMult = 1;
+    if (actor === "player" && spell.type === "hybrid") {
+      const factor = (type: string) => { const value = next.types?.effectiveness?.[type]?.[d.type] ?? 1; return value > 1 ? 1.25 : value < 1 ? 0.8 : 1; };
+      baseMult = Math.max(0.8, Math.min(1.25, Math.pow(factor(spell.primary_type), 0.65) * Math.pow(factor(spell.secondary_type), 0.35)));
+    }
     const neutralize = Math.max(a.spell_neutralize_active ?? 0, d.spell_neutralize_active ?? 0);
-    const mult = 1 + (baseMult - 1) * (1 - neutralize);
+    const mult = actor === "player" && spell.type === "universal" ? 1 : 1 + (baseMult - 1) * (1 - neutralize);
     let atk = a.atk;
     if (a.status.atk_down > 0) { atk = Math.round(atk * (1 - a.status.atk_down)); delete a.status.atk_down; }
     if (a.status.atk_boost > 0) { atk = Math.round(atk * (1 + a.status.atk_boost)); delete a.status.atk_boost; }
@@ -91,17 +96,30 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     for (const key of Object.keys(next.cooldowns)) next.cooldowns[key] = Math.max(0, next.cooldowns[key] - 1);
     next.cooldowns[spell.id] = spell.cooldown_turns;
     let success = false;
+    const poisonedBefore = (next.boss.status.poison ?? 0) > 0;
     if (next.player.status.stun > 0) { next.player.status.stun--; }
     else if (spell.category === "attack" && spell.power_mult > 0) {
       let power = spell.power_mult;
       for (const effect of spell.effects) if (effect.kind === "bonus_if_poisoned" && (next.boss.status.poison ?? 0) > 0) power *= 1 + effect.value;
       for (const effect of spell.effects) if (effect.kind === "bonus_if_hit_last_exchange" && next.player.spell_hit_last_exchange) power *= 1 + effect.value;
+      for (const effect of spell.effects) {
+        if (effect.kind === "bonus_power_if_poisoned" && poisonedBefore) power += effect.value;
+        if (effect.kind === "bonus_if_shielded" && (next.player.status.shield_pct ?? 0) > 0) power += effect.value;
+        if (effect.kind === "bonus_if_low_hp" && next.player.hp < next.player.max_hp * (effect.threshold ?? 0.4)) power += effect.value;
+        if (effect.kind === "bonus_power_if_hit_last_exchange" && next.player.spell_hit_last_exchange) power += effect.value;
+      }
       success = hit(next.player, next.boss, spell.accuracy, power, "player");
     }
     else success = draw() < spell.accuracy;
     if (success) for (const effect of spell.effects) {
       const recipient = effect.target === "self" ? next.player : next.boss;
-      if (effect.kind === "bonus_if_poisoned" || effect.kind === "bonus_if_hit_last_exchange") continue;
+      if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange"].includes(effect.kind)) continue;
+      if (effect.kind === "cleanse_one") {
+        for (const field of ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { recipient.status[field] = 0; break; }
+        continue;
+      }
+      if (effect.kind === "recoil") { if (recipient.hp > 0 && effect.value > 0) recipient.spell_hit_this_exchange = true; recipient.hp = Math.max(0, recipient.hp - Math.trunc(effect.value)); continue; }
+      if (effect.kind === "consume_poison") { if (poisonedBefore) recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(effect.value)); continue; }
       if (effect.kind === "type_neutralize") {
         recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, effect.value);
       } else if (effect.kind === "heal") {
@@ -111,7 +129,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
       }
     }
-    if (next.boss.hp > 0) {
+    if (next.boss.hp > 0 && next.player.hp > 0) {
       const ratio = next.boss.hp / next.boss.max_hp;
       if (next.boss.status.stun > 0) next.boss.status.stun--;
       else hit(next.boss, next.player, 0.9, ratio > 0.7 ? 1 : ratio > 0.4 ? 1.2 : ratio > 0.15 ? 1.4 : 1.6, "boss");

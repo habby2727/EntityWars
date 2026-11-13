@@ -192,3 +192,36 @@ test("Gold spells and received-hit tracking across exchanges", () => {
   const healing = fixture(); healing.player.hp = 103; healing.boss.status.stun = 1;
   expect(resolveCombatTurn(healing, action(1, "aurum_edge"), () => 0).next_state.player.hp).toBe(104);
 });
+
+test("researchable catalog spells resolve or fail closed", () => {
+  const unsupported = new Set(["pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "hybrid_mark", "bonus_if_marked", "shield_by_order", "ward_dispel", "poison_on_reflect"]);
+  const counts = { universal: 0, hybrid: 0 };
+  for (const spell of catalogs.spells.filter((s: any) => ["universal", "hybrid"].includes(s.type))) {
+    const entity = catalogs.entities.find((e: any) => spell.eligible_types.includes(e.type));
+    const defaults = catalogs.spells.filter((s: any) => s.type === entity.type).map((s: any) => s.id).slice(0, 4);
+    const equipped = [spell.id, ...defaults.slice(1)];
+    const progress = { learned_by_entity: { [entity.id]: [spell.id] }, equipped_by_mode: { attack: { [entity.id]: equipped } } };
+    const setup = buildTrustedCombatSetup({ ...snapshot, spell_progress: progress }, { ...selection, entity_id: entity.id, spell_ids: equipped }, catalogs);
+    const state = createCombatState(setup);
+    state.boss.status.stun = 1;
+    const decision = { turn: 1, spell_id: spell.id, target: "boss" };
+    const before = structuredClone(state);
+    const result = resolveCombatTurn(state, decision, rng);
+    if (spell.effects.some((effect: any) => unsupported.has(effect.kind))) expect(result).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+    else { expect(result.error).toBeUndefined(); counts[spell.type as "universal" | "hybrid"]++; }
+    expect(state).toEqual(before);
+  }
+  console.log("Researchable spells supported:", JSON.stringify(counts));
+});
+
+test("universal is neutral and hybrid uses both catalog types", () => {
+  const setupFor = (id: string) => {
+    const ids = [id, "null_stitch", "veil_rupture", "paradox_fold"];
+    const progress = { learned_by_entity: { aether_01: [id] }, equipped_by_mode: { attack: { aether_01: ids } } };
+    return createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_entity_id: "sulfur_01", spell_progress: progress }, { ...selection, entity_id: "aether_01", spell_ids: ids }, catalogs));
+  };
+  const neutral = setupFor("steady_script"); neutral.boss.status.stun = 1;
+  expect(resolveCombatTurn(neutral, { turn: 1, spell_id: "steady_script", target: "boss" }, rng).next_state.boss.hp).toBe(92);
+  const hybrid = setupFor("void_etching"); hybrid.boss.status.stun = 1;
+  expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "void_etching", target: "boss" }, rng).next_state.boss.hp).toBe(91);
+});
