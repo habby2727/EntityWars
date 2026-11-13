@@ -663,11 +663,15 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
   const offered = resolveCombatTurn(state, turn, rng).next_state;
   expect(state).toEqual(before);
   expect(offered.player.inspiration).toBe(3);
+  expect(offered.rng_counter).toBe(5);
   expect(new Set(offered.inspiration_offers).size).toBe(3);
   for (const id of offered.inspiration_offers) {
     const s = offered.inspiration_catalog.find((entry: any) => entry.id === id);
     expect(s.type === "sulfur" || (s.type === "hybrid" && s.primary_type === "sulfur")).toBe(true);
     expect(offered.spell_ids.includes(id)).toBe(false);
+    const candidate = resolveInspirationDecision(offered, { kind: "choose", spell_id: id }, () => 0).next_state;
+    candidate.boss.status.stun = 1;
+    expect(resolveCombatTurn(candidate, { turn: 2, spell_id: id, target: "boss" }, rng).error).toBeUndefined();
   }
   expect(resolveCombatTurn(offered, { turn: 2, spell_id: offered.spell_ids[0], target: "boss" }, rng)).toEqual({ error: "INVALID_DECISION" });
   let attempts = 0;
@@ -676,6 +680,7 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
   const chosen = resolveInspirationDecision(offered, { kind: "choose", spell_id: offered.inspiration_offers[0] }, () => 0.3).next_state;
   expect(resolveInspirationDecision(offered, { kind: "choose", spell_id: offered.inspiration_offers[0] }, () => 0.3).next_state).toEqual(chosen);
   expect([chosen.turn, chosen.temporary_replaced_slot, chosen.player.inspiration_used_this_battle]).toEqual([1, 1, true]);
+  expect(chosen.rng_counter).toBe(6);
   expect(chosen.spell_ids[1]).toBe(chosen.temporary_spell_id);
   chosen.boss.status.stun = 1;
   const cast = resolveCombatTurn(chosen, { turn: 2, spell_id: chosen.temporary_spell_id, target: "boss" }, rng);
@@ -683,9 +688,12 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
   expect(cast.next_state.boss.hp).toBeLessThan(chosen.boss.hp);
   expect(cast.next_state.player.inspiration).toBe(3);
   expect(resolveInspirationDecision(chosen, { kind: "decline" }, rng)).toEqual({ error: "INVALID_DECISION" });
-  const restored = restoreInspiration(chosen);
+  const withCooldown = structuredClone(chosen); withCooldown.cooldowns[chosen.temporary_spell_id] = 2; withCooldown.cooldowns.ash_temper = 1;
+  const restored = restoreInspiration(withCooldown);
   expect(restored.spell_ids).toEqual(state.spell_ids);
   expect(restored.temporary_spell_id).toBeNull();
+  expect(restored.cooldowns[chosen.temporary_spell_id]).toBeUndefined();
+  expect(restored.cooldowns.ash_temper).toBe(1);
   const winning = structuredClone(chosen); winning.boss.hp = 1; winning.boss.max_hp = 2;
   const win = resolveCombatTurn(winning, { turn: 2, spell_id: winning.temporary_spell_id, target: "boss" }, () => 0.1);
   expect(win.terminal_result).toBe("WIN");
@@ -696,7 +704,29 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
   expect(loss.terminal_result).toBe("LOSS");
   expect(loss.next_state.spell_ids).toEqual(state.spell_ids);
   const declined = resolveInspirationDecision(offered, { kind: "decline" }, rng).next_state;
+  expect(declined.rng_counter).toBe(offered.rng_counter);
   expect(declined.spell_ids).toEqual(state.spell_ids);
   expect([declined.player.inspiration, declined.player.inspiration_used_this_battle]).toEqual([0, true]);
   expect(resolveCombatTurn(state, { ...turn, ultra: true }, rng)).toEqual({ error: "INVALID_DECISION" });
+});
+
+test("inspiration setup requires three distinct valid eligible candidates", () => {
+  const defaults = catalogs.spells.filter((s: any) => s.type === "sulfur");
+  const candidates = catalogs.spells.filter((s: any) => s.type === "hybrid" && s.primary_type === "sulfur" && s.eligible_types.includes("sulfur")).slice(0, 3);
+  const minimal = { ...catalogs, spells: structuredClone([...defaults, ...candidates]) };
+  const original = structuredClone(minimal);
+  const accepted = buildTrustedCombatSetup(snapshot, selection, minimal);
+  expect(accepted.error).toBeUndefined();
+  const state = createCombatState(accepted); state.player.inspiration = 2; state.boss.status.stun = 1;
+  const offered = resolveCombatTurn(state, { turn: 1, spell_id: "brimstone_crash", target: "boss" }, rng).next_state;
+  expect(new Set(offered.inspiration_offers)).toEqual(new Set(candidates.map((spell: any) => spell.id)));
+  expect(minimal).toEqual(original);
+  const noThird = { ...minimal, spells: [...defaults, candidates[0], candidates[1], candidates[1]] };
+  expect(buildTrustedCombatSetup(snapshot, selection, noThird)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+  const ineligible = structuredClone(minimal); ineligible.spells[ineligible.spells.length - 1].eligible_types = ["gold"];
+  expect(buildTrustedCombatSetup(snapshot, selection, ineligible)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+  const invalid = structuredClone(minimal); invalid.spells[invalid.spells.length - 1].effects = [{ kind: "not_supported", value: 1, target: "enemy" }];
+  expect(buildTrustedCombatSetup(snapshot, selection, invalid)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+  const invalidNumber = structuredClone(minimal); invalidNumber.spells[invalidNumber.spells.length - 1].accuracy = 2;
+  expect(buildTrustedCombatSetup(snapshot, selection, invalidNumber)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
 });

@@ -3,6 +3,15 @@ import { createHmac } from "node:crypto";
 export const PARITY_GAPS = ["Normal Bo3 Ultraturn", "Boss AI, shield, minions, power turn and fury retaliation", "Authoritative selection persistence, turn concurrency and settlement"] as const;
 export type CombatError = { error: "UNTRUSTED_SETUP" | "UNSUPPORTED_MECHANIC" | "INVALID_DECISION" };
 const validated = new WeakMap<object, any>();
+const SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order"]);
+
+function castableSpell(spell: any, element: string): boolean {
+  if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || !(spell.type === element || (["universal", "hybrid"].includes(spell.type) && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(element))) || !["attack", "support"].includes(spell.category) || typeof spell.power_mult !== "number" || !Number.isFinite(spell.power_mult) || spell.power_mult < 0 || typeof spell.accuracy !== "number" || !Number.isFinite(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !Array.isArray(spell.effects)) return false;
+  const elements = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"];
+  if (spell.type === "hybrid" && (!elements.includes(spell.primary_type) || !elements.includes(spell.secondary_type) || spell.primary_type === spell.secondary_type)) return false;
+  if ((spell.category === "attack" && spell.power_mult <= 0) || (spell.category === "support" && spell.power_mult !== 0)) return false;
+  return spell.effects.every((e: any) => e && SUPPORTED_EFFECTS.has(e.kind) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every(key => e[key] === undefined || (typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0)) && (e.threshold === undefined || e.threshold <= 1));
+}
 
 export function deterministicDraw(secret: Uint8Array, sessionId: string, turn: number, draw: number): number {
   if (secret.length < 32 || !sessionId || !Number.isSafeInteger(turn) || turn < 0 || !Number.isSafeInteger(draw) || draw < 0) throw new Error("Invalid server RNG input");
@@ -23,7 +32,15 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const learned = snapshot.spell_progress?.learned_by_entity?.[entity.id] ?? [];
   const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
   if (!Array.isArray(learned) || !Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids) || selection.spell_ids.some((id: string) => !catalogs.spells.some((s: any) => s.id === id && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))) return { error: "UNTRUSTED_SETUP" };
+  if (selection.spell_ids.some((id: string) => !castableSpell(catalogs.spells.find((s: any) => s.id === id), entity.type))) return { error: "UNSUPPORTED_MECHANIC" };
   if (selection.weapon_ids[0] && selection.weapon_ids[0] === selection.weapon_ids[1]) return { error: "UNTRUSTED_SETUP" };
+  const seenCandidates = new Set<string>();
+  const inspirationCatalog = catalogs.spells.filter((spell: any) => {
+    if (!(spell?.type === entity.type || (spell?.type === "hybrid" && spell.primary_type === entity.type)) || !castableSpell(spell, entity.type) || selection.spell_ids.includes(spell.id) || seenCandidates.has(spell.id)) return false;
+    seenCandidates.add(spell.id);
+    return true;
+  });
+  if (inspirationCatalog.length < 3) return { error: "UNSUPPORTED_MECHANIC" };
   if (boss.tier !== "common") return { error: "UNSUPPORTED_MECHANIC" };
   if (selection.weapon_ids[1]) {
     const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs);
@@ -79,7 +96,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const synergy = hom?.per_type?.[entity.type] ?? {};
   if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value))) return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), inspiration_catalog: structuredClone(catalogs.spells.filter((s: any) => s.type === entity.type || (s.type === "hybrid" && s.primary_type === entity.type))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(selection.spell_ids.map((id: string) => catalogs.spells.find((s: any) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -110,9 +127,8 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   if (!state || state.terminal_result || state.player?.inspiration_pending || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target", "hom_action", "switch_slot"].includes(k)) || ![undefined, "hold", "attack", "sacrifice"].includes(decision.hom_action) || (decision.hom_action && decision.hom_action !== "hold" && (state.hom_spent || !state.hom_id || state.hom_energy < 3)) || decision.turn !== state.turn + 1 || typeof rng !== "function") return { error: "INVALID_DECISION" };
   if (switching ? (decision.spell_id !== undefined || decision.target !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id) : (decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0)) return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id);
-  const supportedEffects = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order"]);
   const supportedStatus = new Set(["atk_boost", "atk_down", "vuln_pct", "shield_pct", "reflect_pct", "hom_stun", "stun", "poison", "focus_next", "misalign_next", "hybrid_mark", "poison_on_reflect", "tempo_bonus"]);
-  if ((!switching && (!spell || !(spell.type === state.player.type || (["universal", "hybrid"].includes(spell.type) && spell.eligible_types?.includes(state.player.type))) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !supportedEffects.has(e.kind)))) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
+  if ((!switching && !castableSpell(spell, state.player.type)) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
   next.weapon_defenses ??= {};
   next.other_defenses ??= {};
@@ -389,6 +405,7 @@ export function restoreInspiration(state: any): any {
   const result = structuredClone(state);
   if (Array.isArray(result.original_spell_ids)) result.spell_ids = [...result.original_spell_ids];
   if (result.temporary_spell_id) result.spells = result.spells.filter((s: any) => s.id !== result.temporary_spell_id || result.original_spell_ids.includes(s.id));
+  if (result.temporary_spell_id && !result.original_spell_ids.includes(result.temporary_spell_id)) delete result.cooldowns[result.temporary_spell_id];
   result.temporary_spell_id = null;
   result.temporary_replaced_slot = null;
   result.inspiration_offers = [];
@@ -404,7 +421,7 @@ export function resolveInspirationDecision(state: any, decision: any, rng: (turn
   const next = structuredClone(state);
   if (decision.kind === "choose") {
     const spell = next.inspiration_catalog.find((entry: any) => entry.id === decision.spell_id);
-    if (!spell || next.spell_ids.includes(spell.id)) return { error: "INVALID_DECISION" };
+    if (!spell || !castableSpell(spell, next.player.type) || !(spell.type === next.player.type || (spell.type === "hybrid" && spell.primary_type === next.player.type)) || next.spell_ids.includes(spell.id)) return { error: "INVALID_DECISION" };
     const random = rng(next.turn, next.rng_counter);
     if (!Number.isFinite(random) || random < 0 || random >= 1) throw new Error("Invalid RNG draw");
     const slot = Math.floor(random * 4);
