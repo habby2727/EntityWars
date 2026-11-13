@@ -357,6 +357,101 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   expect(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { cinder: { level: 99 } } }, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
 });
 
+test("all 48 catalog entity and homunculus combinations resolve", () => {
+  let count = 0;
+  for (const entity of catalogs.entities) for (const hom of catalogs.homunculi) {
+    const spells = catalogs.spells.filter((s: any) => s.type === entity.type).map((s: any) => s.id);
+    const state = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, entity_id: entity.id, spell_ids: spells, homunculus_id: hom.id }, catalogs));
+    expect(state.hom_id).toBe(hom.id);
+    state.boss.status.stun = 1;
+    const result = resolveCombatTurn(state, { turn: 1, spell_id: spells[0], target: "boss", hom_action: "hold" }, rng);
+    expect(result.error).toBeUndefined();
+    expect(result.next_state.hom_energy).toBe(1);
+    count++;
+  }
+  expect(count).toBe(48);
+});
+
+test("homunculus levels and mutations are server-derived", () => {
+  for (const hom of catalogs.homunculi) for (const level of [0, 5, 10]) for (const mutation_id of ["catalyst", "vitality", "resonance"]) {
+    const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { [hom.id]: { level, mutation_id } } }, { ...selection, homunculus_id: hom.id }, catalogs));
+    expect(state.player.max_hp).toBe(104 + hom.buff_hp + level + (mutation_id === "vitality" ? 5 : 0));
+    expect(state.hom_advantage).toBeCloseTo(Math.min(0.5, (hom.per_type.sulfur.type_adv_bonus ?? 0) + (mutation_id === "resonance" ? 0.03 : 0)));
+    state.boss.status.stun = 1;
+    expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).error).toBeUndefined();
+  }
+  expect(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { cinder: { mutation_id: "forged" } } }, { ...selection, homunculus_id: "cinder" }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+});
+
+test("synergy damage, neutralization, corrosion and incoming reduction", () => {
+  const fixture = (entity_id: string, homunculus_id: string, boss_entity_id: string, mutation_id?: string) => {
+    const entity = catalogs.entities.find((e: any) => e.id === entity_id);
+    const spell_ids = catalogs.spells.filter((s: any) => s.type === entity.type).map((s: any) => s.id);
+    const homunculus_progress = mutation_id ? { [homunculus_id]: { mutation_id } } : {};
+    return createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_entity_id, homunculus_progress }, { ...selection, entity_id, spell_ids, homunculus_id }, catalogs));
+  };
+  const drakon = fixture("sulfur_01", "drakon", "vitriol_01", "resonance");
+  drakon.boss.status.stun = 1;
+  const d = resolveCombatTurn(drakon, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng);
+  expect(d.events.find((e: any) => e.kind === "damage").damage).toBe(19);
+  expect(drakon.hom_advantage).toBeCloseTo(0.08);
+  const unfavorable = fixture("sulfur_01", "drakon", "sodium_01", "resonance"); unfavorable.boss.status.stun = 1;
+  const withoutBonus = structuredClone(unfavorable); withoutBonus.hom_advantage = 0;
+  expect(resolveCombatTurn(unfavorable, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(resolveCombatTurn(withoutBonus, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp);
+  const universalIds = ["steady_script", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const spell_progress = { learned_by_entity: { sulfur_01: ["steady_script"] }, equipped_by_mode: { attack: { sulfur_01: universalIds } } };
+  const universal = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_entity_id: "vitriol_01", spell_progress, homunculus_progress: { drakon: { mutation_id: "resonance" } } }, { ...selection, spell_ids: universalIds, homunculus_id: "drakon" }, catalogs));
+  universal.boss.status.stun = 1;
+  expect(resolveCombatTurn(universal, { turn: 1, spell_id: "steady_script", target: "boss" }, rng).events.find((e: any) => e.kind === "damage").damage).toBe(14);
+  const hybridIds = ["golden_crucible", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const hybridProgress = { learned_by_entity: { sulfur_01: ["golden_crucible"] }, equipped_by_mode: { attack: { sulfur_01: hybridIds } } };
+  const hybrid = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_entity_id: "aether_01", spell_progress: hybridProgress, homunculus_progress: { drakon: { mutation_id: "resonance" } } }, { ...selection, spell_ids: hybridIds, homunculus_id: "drakon" }, catalogs));
+  hybrid.boss.status.stun = 1;
+  expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "golden_crucible", target: "boss" }, rng).events.find((e: any) => e.kind === "damage").damage).toBe(20);
+  const mothy = fixture("sulfur_01", "mothy", "sodium_01"); mothy.player.spell_neutralize_pending = 0.5; mothy.boss.status.stun = 1;
+  const m = resolveCombatTurn(mothy, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng);
+  expect(m.events.find((e: any) => e.kind === "damage").damage).toBe(14);
+  const pyritc = fixture("vitriol_01", "pyritc", "sodium_01"); pyritc.boss.status.stun = 1;
+  const p = resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng);
+  expect(p.events.find((e: any) => e.kind === "hom_corrosion").damage).toBe(3);
+  expect(resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, () => 0.99).events.some((e: any) => e.kind === "hom_corrosion")).toBe(false);
+  const silk = fixture("sodium_01", "silphide", "sodium_01");
+  const reduced = resolveCombatTurn(silk, { turn: 1, spell_id: "salt_barrier", target: "boss" }, (_t, i) => [0, 0, 0.99][i % 3]);
+  expect(reduced.next_state.player.hp).toBe(107);
+});
+
+test("Nighty scaling and Chimera reflection are removed safely on sacrifice", () => {
+  const weapons = ["bismuth_talisman", "wind_amulet"];
+  const item_progress = { bismuth_talisman: { level: 5, fusion: { donor_id: "wind_amulet" } }, wind_amulet: { level: 3 } };
+  const night = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress }, { ...selection, weapon_ids: weapons, homunculus_id: "nighty" }, catalogs));
+  expect(night.item_effects.power_flat).toBeCloseTo(6.3);
+  expect(night.item_effects.evasion_pct).toBeCloseTo(0.021);
+  night.hom_energy = 3; night.boss.status.stun = 1;
+  const sacrificed = resolveCombatTurn(night, { turn: 1, switch_slot: 2, hom_action: "sacrifice" }, rng).next_state;
+  expect(sacrificed.item_effects.tempo_flat).toBe(4);
+  expect(sacrificed.hom_spent).toBe(true);
+  sacrificed.boss.status.stun = 1;
+  const back = resolveCombatTurn(sacrificed, { turn: 2, switch_slot: 1 }, rng).next_state;
+  expect(back.item_effects.power_flat).toBe(6);
+  expect(back.item_effects.evasion_pct).toBe(0.02);
+  const chimera = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["mirror_sigel", "bismuth_talisman"], homunculus_id: "chimera" }, catalogs));
+  chimera.hom_energy = 3; chimera.boss.status.stun = 1;
+  const active = resolveCombatTurn(chimera, { turn: 1, spell_id: "ash_temper", target: "boss" }, rng).next_state;
+  expect(active.player.status.reflect_pct).toBe(0.02);
+  active.boss.status.stun = 1;
+  const removed = resolveCombatTurn(active, { turn: 2, switch_slot: 2, hom_action: "sacrifice" }, rng).next_state;
+  expect(removed.player.status.reflect_pct ?? 0).toBe(0);
+  const ids = ["reverse_quill", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const spell_progress = { learned_by_entity: { sulfur_01: ["reverse_quill"] }, equipped_by_mode: { attack: { sulfur_01: ids } } };
+  const combined = createCombatState(buildTrustedCombatSetup({ ...snapshot, spell_progress }, { ...selection, spell_ids: ids, weapon_ids: ["mirror_sigel", "bismuth_talisman"], homunculus_id: "chimera" }, catalogs));
+  combined.hom_energy = 3; combined.boss.status.stun = 1;
+  const defended = resolveCombatTurn(combined, { turn: 1, spell_id: "reverse_quill", target: "boss" }, rng).next_state;
+  expect(defended.player.status.reflect_pct).toBe(0.13);
+  defended.boss.status.stun = 1;
+  const preserved = resolveCombatTurn(defended, { turn: 2, switch_slot: 2, hom_action: "sacrifice" }, rng).next_state;
+  expect(preserved.player.status.reflect_pct).toBe(0.13);
+});
+
 test("all eight catalog weapons resolve at Forge levels 0, 5 and 10", () => {
   for (const item of catalogs.items) for (const level of [0, 5, 10]) {
     const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { [item.id]: { level } } }, { ...selection, weapon_ids: [item.id, null] }, catalogs));

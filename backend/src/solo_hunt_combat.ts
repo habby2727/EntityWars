@@ -72,13 +72,14 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   }
   for (const key of ["ward_pct", "reflect_pct", "evasion_pct", "disadvantage_reduction", "ignore_reflect_chance", "vuln_on_hit"]) if (key in itemEffects) itemEffects[key] = Math.max(0, Math.min(1, itemEffects[key]));
   const hom = selection.homunculus_id ? catalogs.homunculi.find((v: any) => v.id === selection.homunculus_id) : null;
+  if (homProgress.mutation_id !== undefined && typeof homProgress.mutation_id !== "string") return { error: "UNTRUSTED_SETUP" };
   const mutation = homProgress.mutation_id ? catalogs.mutations?.find((v: any) => v.id === homProgress.mutation_id) : null;
   if (homProgress.mutation_id && !mutation) return { error: "UNTRUSTED_SETUP" };
-  if (mutation && Object.keys(mutation.effects ?? {}).some(key => !["hp_flat", "power_flat", "guard_flat"].includes(key))) return { error: "UNSUPPORTED_MECHANIC" };
+  if (mutation && Object.entries(mutation.effects ?? {}).some(([key, value]) => !["hp_flat", "power_flat", "guard_flat", "favorable_type_bonus"].includes(key) || typeof value !== "number" || !Number.isFinite(value))) return { error: "UNSUPPORTED_MECHANIC" };
   const synergy = hom?.per_type?.[entity.type] ?? {};
-  if (Object.keys(synergy).some(key => !["power_flat", "guard_flat", "tempo_flat"].includes(key))) return { error: "UNSUPPORTED_MECHANIC" };
+  if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value))) return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, bonuses };
+  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -91,11 +92,17 @@ export function createCombatState(setup: any): any {
   const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
   const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
   const active = weapons[activeSlot - 1];
-  player.atk += setup.bonuses.atk + Math.trunc(active.effects.power_flat ?? 0);
-  player.def += setup.bonuses.def + Math.trunc(active.effects.guard_flat ?? 0);
+  const activeEffects = scaleWeapon(active.effects, setup.hom_id ? setup.hom_synergy.item_effect_mult : 1);
+  player.atk += setup.bonuses.atk + Math.trunc(activeEffects.power_flat ?? 0);
+  player.def += setup.bonuses.def + Math.trunc(activeEffects.guard_flat ?? 0);
   player.max_hp += setup.bonuses.hp;
   player.hp = player.max_hp;
-  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: structuredClone(active.effects), weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
+  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
+}
+
+function scaleWeapon(effects: Record<string, number>, multiplier: number = 1): Record<string, number> {
+  const factor = Math.max(0, Math.min(2, multiplier ?? 1));
+  return Object.fromEntries(Object.entries(effects).map(([key, value]) => [key, value * factor]));
 }
 
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
@@ -110,12 +117,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   next.weapon_defenses ??= {};
   next.other_defenses ??= {};
   const otherDefense = (fighter: any, field: string, value: number) => {
+    if (fighter === next.player && field === "reflect_pct" && next.hom_reflect_active !== undefined) next.hom_other_reflect = Math.max(next.hom_other_reflect ?? 0, value);
     if (fighter === next.player && next.weapon_defenses[field] !== undefined) next.other_defenses[field] = Math.max(next.other_defenses[field] ?? 0, value);
     fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
   };
   const clearDefense = (fighter: any, field: string) => {
     delete fighter.status[field];
     if (fighter === next.player) { delete next.weapon_defenses[field]; delete next.other_defenses[field]; }
+    if (fighter === next.player && field === "reflect_pct") { delete next.hom_reflect_active; delete next.hom_other_reflect; }
   };
   for (const fighter of [next.player, next.boss]) {
     fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
@@ -142,12 +151,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       const factor = (type: string) => { const value = next.types?.effectiveness?.[type]?.[d.type] ?? 1; return value > 1 ? 1.25 : value < 1 ? 0.8 : 1; };
       baseMult = Math.max(0.8, Math.min(1.25, Math.pow(factor(spell.primary_type), 0.65) * Math.pow(factor(spell.secondary_type), 0.35)));
     }
-    const neutralize = Math.max(a.spell_neutralize_active ?? 0, d.spell_neutralize_active ?? 0);
+    if (actor === "player" && spell.type !== "universal" && baseMult > 1 && !next.hom_spent) baseMult += next.hom_advantage ?? 0;
+    const neutralize = Math.max(a.spell_neutralize_active ?? 0, d.spell_neutralize_active ?? 0, next.hom_spent ? 0 : next.hom_synergy?.type_neutralize ?? 0);
     const mult = actor === "player" && spell.type === "universal" ? 1 : 1 + (baseMult - 1) * (1 - neutralize);
     let atk = a.atk;
     if (a.status.atk_down > 0) { atk = Math.round(atk * (1 - a.status.atk_down)); delete a.status.atk_down; }
     if (a.status.atk_boost > 0) { atk = Math.round(atk * (1 + a.status.atk_boost)); delete a.status.atk_boost; }
     let damage = Math.max(1, Math.round((atk - Math.trunc(d.def * 0.5)) * mult * power));
+    if (actor === "boss" && !next.hom_spent) damage = Math.max(1, Math.round(damage * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1))));
     if (d.status.vuln_pct > 0) { damage = Math.round(damage * (1 + d.status.vuln_pct)); delete d.status.vuln_pct; }
     if (d.status.shield_pct > 0) {
       const dispel = actor === "player" ? Math.max(0, Math.min(1, spell.effects.find((e: any) => e.kind === "ward_dispel")?.value ?? 0)) : 0;
@@ -181,6 +192,11 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       d.hp = Math.max(0, d.hp - bonus);
       events.push({ actor, kind: "corrosion", damage: bonus });
       if ((next.item_effects.vuln_on_hit ?? 0) > 0) d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, next.item_effects.vuln_on_hit);
+    }
+    if (actor === "player" && !next.hom_spent && (next.hom_synergy?.dot_true ?? 0) > 0) {
+      const damage = Math.trunc(next.hom_synergy.dot_true);
+      d.hp = Math.max(0, d.hp - damage);
+      events.push({ actor: "player", kind: "hom_corrosion", damage });
     }
     const passiveChance = a.type === "vitriol" ? 0.30 : 0.20;
     if (["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(a.type) && draw() < passiveChance) {
@@ -220,12 +236,13 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         }
         const old = next.item_effects;
         const weapon = next.weapons[decision.switch_slot - 1];
-        next.player.atk += Math.trunc(weapon.effects.power_flat ?? 0) - Math.trunc(old.power_flat ?? 0);
-        next.player.def += Math.trunc(weapon.effects.guard_flat ?? 0) - Math.trunc(old.guard_flat ?? 0);
+        const effects = scaleWeapon(weapon.effects, next.hom_spent ? 1 : next.hom_synergy?.item_effect_mult);
+        next.player.atk += Math.trunc(effects.power_flat ?? 0) - Math.trunc(old.power_flat ?? 0);
+        next.player.def += Math.trunc(effects.guard_flat ?? 0) - Math.trunc(old.guard_flat ?? 0);
         next.player.hp = Math.min(next.player.hp, next.player.max_hp);
         next.active_weapon_slot = decision.switch_slot;
         next.item_id = weapon.id;
-        next.item_effects = structuredClone(weapon.effects);
+        next.item_effects = effects;
         events.push({ actor: "player", kind: "switch", slot: decision.switch_slot });
       }
     } else {
@@ -281,6 +298,18 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     }
     }
     if (next.player.hp > 0 && decision.hom_action === "sacrifice" && !next.hom_spent) {
+      if (next.hom_reflect_active !== undefined) {
+        const independent = next.hom_other_reflect ?? 0;
+        if (next.weapon_defenses.reflect_pct !== undefined) next.other_defenses.reflect_pct = independent;
+        next.player.status.reflect_pct = Math.max(independent, next.weapon_defenses.reflect_pct ?? 0);
+        delete next.hom_reflect_active;
+        delete next.hom_other_reflect;
+      }
+      const oldEffects = next.item_effects;
+      const unscaled = scaleWeapon(next.weapons[next.active_weapon_slot - 1].effects);
+      next.player.atk += Math.trunc(unscaled.power_flat ?? 0) - Math.trunc(oldEffects.power_flat ?? 0);
+      next.player.def += Math.trunc(unscaled.guard_flat ?? 0) - Math.trunc(oldEffects.guard_flat ?? 0);
+      next.item_effects = unscaled;
       next.hom_spent = true;
       next.hom_energy = 0;
       next.player.atk -= next.hom_bonuses.atk;
@@ -310,6 +339,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   next.turn++;
   if (next.player.hp > 0 && next.boss.hp > 0 && next.turn % 2 === 1) {
+    const homReflect = next.hom_spent ? 0 : Math.max(0, Math.min(1, next.hom_synergy?.reflect_pct ?? 0));
+    if (homReflect > 0) {
+      const independent = next.hom_reflect_active !== undefined ? next.hom_other_reflect ?? 0 : next.weapon_defenses.reflect_pct !== undefined ? next.other_defenses.reflect_pct ?? 0 : next.player.status.reflect_pct ?? 0;
+      next.hom_other_reflect = independent;
+      next.hom_reflect_active = homReflect;
+      otherDefense(next.player, "reflect_pct", homReflect);
+      next.hom_other_reflect = independent;
+    }
     for (const [effect, status] of [["ward_pct", "shield_pct"], ["reflect_pct", "reflect_pct"]]) {
       const value = next.item_effects?.[effect] ?? 0;
       if (value > 0) {
