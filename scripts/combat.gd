@@ -381,6 +381,8 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 		var sprite: TextureRect = entry[0]
 		var center: Vector2 = entry[1]
 		var dimensions: Vector2 = entry[2]
+		if sprite == player_hom or sprite == player_entity:
+			center.y += 25
 		sprite.reparent(layer)
 		sprite.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		sprite.position = Vector2(center.x - dimensions.x / 2, center.y - dimensions.y)

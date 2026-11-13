@@ -232,6 +232,7 @@ func _refresh() -> void:
 	var pending = _debug.lab_cooldown_active(_state, _building_id) if debug_enabled else _pending.values().has(_building_id)
 	var online = debug_enabled or (_backend != null and _backend.token != "" and _health_ok and _fresh_state)
 	_upgrade.text = "Build" if level == 0 else "Upgrade"
+	_manage.text = "Open" if _building_id == "world_gate" else "Manage"
 	_upgrade.disabled = not online or pending or not can_upgrade or (not debug_enabled and not affordable)
 	_collect.visible = _building_id == "essence_reactor"
 	_collect.disabled = not online or pending or level <= 0 or not unlocked

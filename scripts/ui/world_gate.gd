@@ -506,6 +506,8 @@ func _build_zone_cards() -> void:
 		var name_label := Label.new()
 		name_label.text = str(entry.get("display_name", entry.get("name", zone_id)))
 		name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
+		var zone_colors := {"zone_chaos": Color("dc9dff"), "zone_corrupted": Color("90e68a"), "zone_crystal": Color("81dfff")}
+		name_label.add_theme_color_override("font_color", zone_colors.get(str(zone_id), Color.WHITE))
 		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name_label.clip_text = true
 		text_col.add_child(name_label)
@@ -518,6 +520,9 @@ func _build_zone_cards() -> void:
 		var enter_btn := Button.new()
 		enter_btn.text = "Enter"
 		enter_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
+		enter_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		enter_btn.custom_minimum_size = Vector2(165, 48) * _ui_scale
+		MenuArt.button(enter_btn)
 		enter_btn.pressed.connect(_on_enter_pressed.bind(zone_id))
 		row.add_child(enter_btn)
 		_zone_list.add_child(card)

@@ -67,6 +67,22 @@ func _run() -> void:
 				await create_timer(0.3).timeout
 				root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("stage_" + world + ".png"))
 		zone._clear_guardian_preview()
+		zone._show_map_hunt({"id": "hunt_rare", "name": "QA Hunt", "tier": "rare", "texture_id": "boss_leviathan", "available": true})
+		await process_frame
+		if OS.has_environment("EW_CAPTURE_DIR"):
+			await create_timer(0.3).timeout
+			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("map_hunt_" + world + ".png"))
+		assert(zone._preview_stage.get_child_count() == 5)
+		var map_actor: Control = zone._preview_stage.get_child(0)
+		map_actor.get_child(0).gui_input.emit(click)
+		assert(zone._preview_selection == "hunt_rare" and zone._hunt_fight.visible)
+		zone._world_modal.visible = false
+		zone._clear_guardian_preview()
+		zone._debug.unlock_all_buildings = true
+		zone._reroll_world_art()
+		assert(is_instance_valid(zone._preview_stage))
+		assert(zone._preview_stage.get_child_count() >= 3)
+		zone._clear_guardian_preview()
 		zone._open_encounters("Boss Hunts")
 		await process_frame
 		var overlay: Control = zone.get_node("GlobalEncounterOverlay")
