@@ -23,8 +23,24 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const learned = snapshot.spell_progress?.learned_by_entity?.[entity.id] ?? [];
   const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
   if (!Array.isArray(learned) || !Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids) || selection.spell_ids.some((id: string) => !catalogs.spells.some((s: any) => s.id === id && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))) return { error: "UNTRUSTED_SETUP" };
-  if (selection.weapon_ids.some((id: any) => id != null && id !== "") || selection.homunculus_id || boss.tier !== "common") return { error: "UNSUPPORTED_MECHANIC" };
-  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision };
+  if (selection.weapon_ids[0] && selection.weapon_ids[0] === selection.weapon_ids[1]) return { error: "UNTRUSTED_SETUP" };
+  if (selection.weapon_ids[1] || (selection.weapon_ids[0] && selection.weapon_ids[0] !== "bismuth_talisman") || (selection.homunculus_id && (selection.homunculus_id !== "cinder" || entity.type !== "sulfur")) || boss.tier !== "common") return { error: "UNSUPPORTED_MECHANIC" };
+  const item = selection.weapon_ids[0] ? catalogs.items.find((v: any) => v.id === selection.weapon_ids[0]) : null;
+  const itemProgress = snapshot.item_progress?.[selection.weapon_ids[0]] ?? {};
+  const homProgress = snapshot.homunculus_progress?.[selection.homunculus_id] ?? {};
+  if ((item && (itemProgress.specialization || itemProgress.fusion || itemProgress.traits?.length)) || homProgress.mutation_id) return { error: "UNSUPPORTED_MECHANIC" };
+  const itemLevel = Math.max(0, Math.min(10, Number.isFinite(Number(itemProgress.level)) ? Math.trunc(Number(itemProgress.level)) : 0));
+  const homLevel = Math.max(0, Math.min(10, Number.isFinite(Number(homProgress.level)) ? Math.trunc(Number(homProgress.level)) : 0));
+  const itemEffects: Record<string, number> = {};
+  if (item) for (const [key, value] of Object.entries(item.effects) as [string, any][]) {
+    if (!["power_flat", "guard_flat", "true_on_hit"].includes(key) || !Array.isArray(value) || !value.length || value.some((v: any) => typeof v !== "number" || !Number.isFinite(v))) return { error: "UNSUPPORTED_MECHANIC" };
+    itemEffects[key] = itemLevel === 0 && value.length === 10 && key in (item.base_effects ?? {}) ? item.base_effects[key] : value[Math.max(0, Math.min(itemLevel - 1, value.length - 1))];
+  }
+  const hom = selection.homunculus_id ? catalogs.homunculi.find((v: any) => v.id === selection.homunculus_id) : null;
+  const synergy = hom?.per_type?.[entity.type] ?? {};
+  if (Object.keys(synergy).some(key => !["power_flat", "guard_flat"].includes(key))) return { error: "UNSUPPORTED_MECHANIC" };
+  const bonuses = { hp: hom ? hom.buff_hp + homLevel : 0, atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) };
+  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -33,11 +49,16 @@ export function createCombatState(setup: any): any {
   if (!setup || !validated.has(setup)) return { error: "UNTRUSTED_SETUP" };
   setup = validated.get(setup);
   const fighter = (e: any, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false });
-  return { player: fighter(setup.entity), boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
+  const player = fighter(setup.entity);
+  player.atk += setup.bonuses.atk + Math.trunc(setup.itemEffects.power_flat ?? 0);
+  player.def += setup.bonuses.def + Math.trunc(setup.itemEffects.guard_flat ?? 0);
+  player.max_hp += setup.bonuses.hp;
+  player.hp = player.max_hp;
+  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), item_id: setup.item_id, item_effects: setup.itemEffects, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
 }
 
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
-  if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target"].includes(k)) || decision.turn !== state.turn + 1 || decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0 || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target", "hom_action"].includes(k)) || ![undefined, "hold", "attack", "sacrifice"].includes(decision.hom_action) || (decision.hom_action && decision.hom_action !== "hold" && (state.hom_spent || !state.hom_id || state.hom_energy < 3)) || decision.turn !== state.turn + 1 || decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0 || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id);
   const supportedEffects = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order"]);
   const supportedStatus = new Set(["atk_boost", "atk_down", "vuln_pct", "shield_pct", "reflect_pct", "hom_stun", "stun", "poison", "focus_next", "misalign_next", "hybrid_mark", "poison_on_reflect", "tempo_bonus"]);
@@ -92,6 +113,12 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       delete d.status.poison_on_reflect;
       events.push({ actor: actor === "player" ? "boss" : "player", kind: "reflect", damage: reflected });
     }
+    if (actor === "player" && (next.item_effects?.true_on_hit ?? 0) > 0) {
+      const bonus = Math.trunc(next.item_effects.true_on_hit);
+      actualDamage += Math.min(d.hp, bonus);
+      d.hp = Math.max(0, d.hp - bonus);
+      events.push({ actor, kind: "true_damage", damage: bonus });
+    }
     const passiveChance = a.type === "vitriol" ? 0.30 : 0.20;
     if (["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(a.type) && draw() < passiveChance) {
       if (a.type === "sulfur") d.status.atk_down = Math.max(d.status.atk_down ?? 0, 0.15);
@@ -112,10 +139,8 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       const ratio = next.boss.hp / next.boss.max_hp;
       if (next.boss.status.stun > 0) next.boss.status.stun--;
       else {
-        accuracyFocus = next.boss.status.focus_next ?? 0;
-        accuracyMisalign = next.boss.status.misalign_next ?? 0;
-        delete next.boss.status.focus_next;
-        delete next.boss.status.misalign_next;
+        accuracyFocus = 0;
+        accuracyMisalign = 0;
         hit(next.boss, next.player, 0.9, ratio > 0.7 ? 1 : ratio > 0.4 ? 1.2 : ratio > 0.15 ? 1.4 : 1.6, "boss");
       }
     };
@@ -171,9 +196,33 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
       }
     }
+    if (next.player.hp > 0 && decision.hom_action === "sacrifice" && !next.hom_spent) {
+      next.hom_spent = true;
+      next.hom_energy = 0;
+      next.player.atk -= next.hom_bonuses.atk;
+      next.player.def -= next.hom_bonuses.def;
+      next.player.max_hp -= next.hom_bonuses.hp;
+      next.player.hp = Math.min(next.player.max_hp, Math.min(next.player.hp, next.player.max_hp) + 30);
+      events.push({ actor: "player", kind: "hom_sacrifice" });
+    } else if (next.player.hp > 0 && next.boss.hp > 0 && decision.hom_action === "attack" && !next.hom_spent) {
+      const boosted = next.hom_energy >= 6;
+      next.hom_energy = 0;
+      if (next.player.status.hom_stun > 0) next.player.status.hom_stun--;
+      else {
+        let accuracy = 0.95 - (next.player.atk > next.boss.def * 1.6 ? 0.08 : 0);
+        if (next.player.max_hp > next.boss.max_hp) accuracy -= Math.min(0.15, (next.player.max_hp - next.boss.max_hp) / next.player.max_hp * 0.2);
+        if (draw() < Math.max(0.6, Math.min(0.98, accuracy))) {
+          const damage = Math.max(1, Math.round(next.player.atk * (boosted ? 0.6 : 0.4)));
+          next.boss.hp = Math.max(0, next.boss.hp - damage);
+          next.boss.spell_hit_this_exchange = true;
+          events.push({ actor: "player", kind: "hom_damage", damage });
+        } else events.push({ actor: "player", kind: "hom_miss" });
+      }
+    }
     }
     if (playerFirst && next.boss.hp > 0 && next.player.hp > 0) bossAction();
     if (next.player.hp > 0 && next.boss.hp > 0) for (const fighter of [next.player, next.boss]) if (fighter.status.poison > 0) { fighter.status.poison--; fighter.hp = Math.max(0, fighter.hp - 2); fighter.spell_hit_this_exchange = true; }
+    if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   next.turn++;
   for (const fighter of [next.player, next.boss]) fighter.spell_neutralize_active = 0;

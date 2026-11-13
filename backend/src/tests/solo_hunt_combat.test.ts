@@ -272,8 +272,8 @@ test("precision, shields, leech and initiative have observable effects", () => {
   const crooked = fixture("crooked_rune"); crooked.boss.status.stun = 1;
   expect(cast(crooked, "crooked_rune").next_state.boss.status.misalign_next).toBe(0.1);
   const misaligned = cast(fixture("crooked_rune"), "crooked_rune", (_turn, draw) => [0, 0.99, 0.84][draw % 3]);
-  expect(misaligned.events.some((e: any) => e.actor === "boss" && e.kind === "miss")).toBe(true);
-  expect(misaligned.next_state.boss.status.misalign_next).toBeUndefined();
+  expect(misaligned.events.some((e: any) => e.actor === "boss" && e.kind === "damage")).toBe(true);
+  expect(misaligned.next_state.boss.status.misalign_next).toBe(0.1);
   const tempo = fixture("second_measure"); tempo.boss.status.stun = 1;
   expect(cast(tempo, "second_measure").next_state.player.status.tempo_bonus).toBe(2);
   const recoil = fixture("last_axiom"); recoil.player.hp = 2; recoil.boss.status.stun = 1;
@@ -295,6 +295,41 @@ test("precision, shields, leech and initiative have observable effects", () => {
   const saved = cast(miss, "toxic_mirror", rng).next_state;
   expect(saved.player.status.poison_on_reflect).toBe(1);
   expect(saved.boss.status.poison ?? 0).toBe(0);
+});
+
+test("server Bismuth and Cinder progression applies without trusting client stats", () => {
+  const selected = { ...selection, weapon_ids: ["bismuth_talisman", null], homunculus_id: "cinder" };
+  const progress = { ...snapshot, item_progress: { bismuth_talisman: { level: 5 } }, homunculus_progress: { cinder: { level: 5 } } };
+  const state = createCombatState(buildTrustedCombatSetup(progress, selected, catalogs));
+  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([109, 33, 13]);
+  const base = createCombatState(buildTrustedCombatSetup(snapshot, selected, catalogs));
+  expect([base.player.hp, base.player.atk, base.player.def]).toEqual([104, 27, 12]);
+  state.boss.status.stun = 1;
+  const before = structuredClone(state);
+  const result = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "hold" }, rng);
+  expect(result.error).toBeUndefined();
+  expect(result.events.find((e: any) => e.kind === "true_damage").damage).toBe(1);
+  expect(result.next_state.hom_energy).toBe(1);
+  const ready = structuredClone(state); ready.hom_energy = 3;
+  const hom = resolveCombatTurn(ready, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, rng);
+  expect(hom.events.find((e: any) => e.kind === "hom_damage").damage).toBe(13);
+  expect(hom.next_state.hom_energy).toBe(1);
+  const stunned = structuredClone(ready); stunned.player.status.hom_stun = 1;
+  const nullified = resolveCombatTurn(stunned, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, rng);
+  expect(nullified.events.some((e: any) => e.kind === "hom_damage")).toBe(false);
+  expect([nullified.next_state.player.status.hom_stun, nullified.next_state.hom_energy]).toEqual([0, 1]);
+  ready.hom_energy = 6;
+  expect(resolveCombatTurn(ready, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, rng).events.find((e: any) => e.kind === "hom_damage").damage).toBe(20);
+  ready.hom_energy = 3; ready.player.hp = 50;
+  const sacrificed = resolveCombatTurn(ready, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "sacrifice" }, rng).next_state;
+  expect([sacrificed.player.hp, sacrificed.player.max_hp, sacrificed.player.atk, sacrificed.player.def, sacrificed.hom_spent]).toEqual([80, 104, 27, 12, true]);
+  expect(state).toEqual(before);
+  expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, rng)).toEqual({ error: "INVALID_DECISION" });
+  let draws = 0;
+  expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, () => { draws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
+  expect(draws).toBe(0);
+  expect(buildTrustedCombatSetup(progress, { ...selected, weapon_ids: ["bismuth_talisman", "bismuth_talisman"] }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+  expect(buildTrustedCombatSetup({ ...progress, item_progress: { bismuth_talisman: { level: 5, specialization: "aggressive" } } }, selected, catalogs)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
 });
 
 test("marks are owned, expire on actions and are consumed on hybrid hit", () => {
