@@ -1,0 +1,10 @@
+{
+  "rotation": { "interval_seconds": 10800, "window_seconds": 2700, "common_cooldown_seconds": 60, "weights": { "mythic": 0.50, "rare": 0.30, "epic": 0.15, "legendary": 0.05 } },
+  "bosses": [
+    { "id": "hunt_common", "name": "Gate Sentinel", "tier": "common", "texture_id": "boss_common", "hp_mult": 1.0, "attack_mult": 1.0, "minions": 0, "shield_reduction": 0.40, "shield_turns": 1, "fury_mult": 2.0, "shield_heal_ratio": 0, "signature_pool": ["cinder_fist", "silver_needle"] },
+    { "id": "hunt_mythic", "name": "Arcane Colossus", "tier": "mythic", "texture_id": "boss_colossus", "hp_mult": 1.4, "attack_mult": 1.15, "minions": 1, "shield_reduction": 0.45, "shield_turns": 2, "fury_mult": 2.2, "shield_heal_ratio": 0, "signature_pool": ["crystal_ram", "rift_touch"] },
+    { "id": "hunt_rare", "name": "Corrupted Leviathan", "tier": "rare", "texture_id": "boss_leviathan", "hp_mult": 1.9, "attack_mult": 1.35, "minions": 2, "shield_reduction": 0.50, "shield_turns": 2, "fury_mult": 2.4, "shield_heal_ratio": 0, "signature_pool": ["etching_fang", "null_stitch"] },
+    { "id": "hunt_epic", "name": "Temporal Warden Titan", "tier": "epic", "texture_id": "boss_temporal", "hp_mult": 2.6, "attack_mult": 1.55, "minions": 2, "shield_reduction": 0.55, "shield_turns": 2, "fury_mult": 2.7, "shield_heal_ratio": 0.20, "signature_pool": ["veil_rupture", "brimstone_crash"] },
+    { "id": "hunt_legendary", "name": "Eternal Warden Titan", "tier": "legendary", "texture_id": "boss_temporal", "hp_mult": 3.5, "attack_mult": 1.80, "minions": 2, "shield_reduction": 0.60, "shield_turns": 3, "fury_mult": 3.0, "shield_heal_ratio": 0.35, "signature_pool": ["tribunal_strike", "rot_harvest"] }
+  ]
+}

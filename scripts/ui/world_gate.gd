@@ -35,6 +35,7 @@ class_name WorldGate
 const FARM_COUNTS := [1, 5, 10, 25, 50]
 const FARM_THROTTLE_MS := 250
 const FARM_MAX_QUEUE := 200
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
 
 var _backend: BackendClient = null
 var _panel: Panel = null
@@ -103,6 +104,21 @@ const POLL_INTERVAL_SEC := 8.0
 var _server_time_offset_ms: float = 0.0
 var _gate_clock = preload("res://scripts/domain/world_gate_cooldown.gd").new()
 var _gate_display_seconds := -2
+var _hunt_rows: Dictionary = {}
+var _hunt_list: VBoxContainer
+var _hunt_bosses: Array = []
+var _hunt_status: Label
+var _hunt_details: Label
+var _hunt_portrait: TextureRect
+var _hunt_selected := ""
+var _hunt_loading := false
+var _hunt_valid := false
+var _hunt_boundary := 0
+var _hunt_next_rotation := 0
+var _hunt_window_end := 0
+var _hunt_elapsed := 0.0
+var _hunt_fight: Button
+var _hunt_rotation_key := -1
 
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
@@ -118,15 +134,185 @@ func _ready() -> void:
 	_apply_panel_background()
 	_connect_backend()
 	_connect_buttons()
+	_build_hunt_tab()
 	_setup_farm_options()
 	_load_state()
 	_build_zone_cards()
 	_request_world_state()
 	_request_boss_state()
+	_request_hunt_schedule()
 	_schedule_poll()
+
+func _build_hunt_tab() -> void:
+	if _tabs == null:
+		return
+	var layout := VBoxContainer.new()
+	layout.name = "Boss Hunts"
+	layout.add_theme_constant_override("separation", 8)
+	_tabs.add_child(layout)
+	var title := Label.new()
+	title.text = "BOSS HUNTS"
+	title.add_theme_font_size_override("font_size", 22)
+	layout.add_child(title)
+	var note := Label.new()
+	note.text = "Common bosses are regularly farmable. Special bosses rotate every 3 hours."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	layout.add_child(note)
+	var top := HBoxContainer.new()
+	layout.add_child(top)
+	_hunt_status = Label.new()
+	_hunt_status.text = "Connection required."
+	_hunt_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(_hunt_status)
+	var refresh := Button.new()
+	refresh.text = "Refresh"
+	MenuArt.button(refresh)
+	refresh.pressed.connect(_request_hunt_schedule)
+	top.add_child(refresh)
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 18)
+	layout.add_child(body)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.name = "HuntList"
+	_hunt_list = list
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 6)
+	scroll.add_child(list)
+	var details := VBoxContainer.new()
+	details.custom_minimum_size.x = 340
+	body.add_child(details)
+	_hunt_portrait = TextureRect.new()
+	_hunt_portrait.custom_minimum_size = Vector2(180, 180)
+	_hunt_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_hunt_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	details.add_child(_hunt_portrait)
+	_hunt_details = Label.new()
+	_hunt_details.text = "Select a boss hunt."
+	_hunt_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details.add_child(_hunt_details)
+	_hunt_fight = Button.new()
+	_hunt_fight.text = "Fight (Unverified Preview)"
+	_hunt_fight.disabled = true
+	_hunt_fight.pressed.connect(_on_hunt_fight)
+	MenuArt.button(_hunt_fight)
+	details.add_child(_hunt_fight)
+
+func _on_hunt_fight() -> void:
+	_update_hunt_fight()
+	if not _hunt_fight.disabled:
+		SceneRouter.go_to_solo_hunt(_hunt_selected, _hunt_rotation_key)
+
+func _update_hunt_fight() -> void:
+	if not is_instance_valid(_hunt_fight):
+		return
+	var boss: Dictionary = _hunt_rows.get(_hunt_selected, {}).get("boss", {})
+	_hunt_fight.disabled = not (_hunt_valid and not _hunt_loading and _hunt_rotation_key >= 0 and _hunt_boundary > _get_server_now_ms() and bool(boss.get("available", false)) and _backend != null and not str(_backend.token).is_empty() and not _backend._verified_player_id.is_empty())
+
+func _request_hunt_schedule() -> void:
+	if _hunt_loading:
+		return
+	if _backend == null:
+		_hunt_disconnected()
+		return
+	_hunt_loading = true
+	_send_api_request("GET", "/world/boss-hunts", null, "hunt_schedule", false)
+
+func _hunt_disconnected() -> void:
+	_hunt_valid = false
+	if is_instance_valid(_hunt_status):
+		_hunt_status.text = "Connection required. Boss hunt availability is unknown."
+	_update_hunt_countdowns()
+
+func _render_hunt_rows() -> void:
+	if _tabs == null:
+		return
+	if not is_instance_valid(_hunt_list):
+		return
+	for child in _hunt_list.get_children():
+		_hunt_list.remove_child(child)
+		child.queue_free()
+	_hunt_rows.clear()
+	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
+	for boss in _hunt_bosses:
+		if not boss is Dictionary:
+			continue
+		var id := str(boss.get("id", ""))
+		var row := HBoxContainer.new()
+		row.custom_minimum_size.y = 86
+		_hunt_list.add_child(row)
+		var portrait := TextureRect.new()
+		portrait.custom_minimum_size = Vector2(80, 80)
+		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		var texture_id := str(boss.get("texture_id", ""))
+		portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
+		row.add_child(portrait)
+		var column := VBoxContainer.new()
+		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(column)
+		var select := Button.new()
+		var tier := str(boss.get("tier", ""))
+		select.text = "%s | %s | Tier %d / 5" % [boss.get("name", id), tier.to_upper(), tiers.find(tier) + 1]
+		MenuArt.button(select)
+		select.pressed.connect(_select_hunt.bind(id))
+		column.add_child(select)
+		var status := Label.new()
+		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		column.add_child(status)
+		_hunt_rows[id] = {"status": status, "boss": boss}
+	if _hunt_selected == "" or not _hunt_rows.has(_hunt_selected):
+		_hunt_selected = str(_hunt_bosses[0].get("id", "")) if not _hunt_bosses.is_empty() else ""
+	_select_hunt(_hunt_selected)
+	_update_hunt_countdowns()
+
+func _select_hunt(id: String) -> void:
+	if not _hunt_rows.has(id):
+		return
+	_hunt_selected = id
+	var boss: Dictionary = _hunt_rows[id].boss
+	var texture_id := str(boss.get("texture_id", ""))
+	_hunt_portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
+	var tier := str(boss.get("tier", ""))
+	var rank := ["common", "mythic", "rare", "epic", "legendary"].find(tier) + 1
+	_hunt_details.text = "%s\n%s | Tier %d / 5\nDifficulty: %s\nLoot tier: %s\n\nUnverified preview: no rewards." % [boss.get("name", id), tier.to_upper(), rank, tier.capitalize(), tier.capitalize()]
+	_update_hunt_fight()
+
+func _update_hunt_countdowns() -> void:
+	_update_hunt_fight()
+	if _hunt_valid and _hunt_boundary > 0 and _get_server_now_ms() >= _hunt_boundary:
+		_hunt_valid = false
+		if is_instance_valid(_hunt_status):
+			_hunt_status.text = "Updating boss hunt schedule..."
+		_request_hunt_schedule()
+	for id in _hunt_rows:
+		var entry: Dictionary = _hunt_rows[id]
+		var boss: Dictionary = entry.boss
+		var label: Label = entry.status
+		if not _hunt_valid:
+			label.text = "Connection required" if not _hunt_loading else "Updating..."
+		elif str(boss.get("tier", "")) == "common":
+			label.text = "Available | Loot tier: Common"
+		elif bool(boss.get("available", false)):
+			label.text = "Available | Window ends in %s | Loot tier: %s" % [_hunt_clock(_hunt_window_end - _get_server_now_ms()), str(boss.get("tier", "")).capitalize()]
+		else:
+			label.text = "Not spawned | Next rotation in %s | Loot tier: %s" % [_hunt_clock(_hunt_next_rotation - _get_server_now_ms()), str(boss.get("tier", "")).capitalize()]
+
+func _hunt_clock(milliseconds: int) -> String:
+	var seconds := maxi(0, int(ceil(float(milliseconds) / 1000.0)))
+	return "%02d:%02d:%02d" % [int(seconds / 3600.0), int(seconds / 60.0) % 60, seconds % 60]
 
 func _process(_delta: float) -> void:
 	_update_boss_countdown()
+	_hunt_elapsed += _delta
+	if _hunt_elapsed >= 1.0:
+		_hunt_elapsed = 0.0
+		_update_hunt_countdowns()
 	var remaining := _gate_remaining()
 	if remaining != _gate_display_seconds:
 		_gate_display_seconds = remaining
@@ -388,7 +574,11 @@ func _send_api_request(
 		return
 	var request_id = _dispatch_api_request(method, path, body, kind, expect_state, extra)
 	if request_id == "":
-		_set_zone_error("Request failed to send.")
+		if kind == "hunt_schedule":
+			_hunt_loading = false
+			_hunt_disconnected()
+		else:
+			_set_zone_error("Request failed to send.")
 
 func _dispatch_api_request(
 	method: String,
@@ -435,6 +625,9 @@ func _flush_api_queue() -> void:
 	if request_id == "":
 		if str(next.get("kind", "")) == "farm":
 			_schedule_farm_backoff()
+		elif str(next.get("kind", "")) == "hunt_schedule":
+			_hunt_loading = false
+			_hunt_disconnected()
 		else:
 			_schedule_api_retry()
 		return
@@ -475,7 +668,18 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 		_flush_api_queue()
 		return
 	var kind = str(info.get("kind", ""))
-	if kind == "world_state":
+	if kind == "hunt_schedule":
+		_hunt_loading = false
+		_hunt_bosses = data.get("bosses", []) if data.get("bosses", []) is Array else []
+		_hunt_rotation_key = int(data.get("rotation_key", -1))
+		_hunt_next_rotation = int(data.get("next_rotation_at", 0))
+		_hunt_window_end = int(data.get("special_window_ends_at", 0))
+		_hunt_valid = _hunt_bosses.size() == 5 and _hunt_next_rotation > 0
+		var now := _get_server_now_ms()
+		_hunt_boundary = _hunt_window_end if _hunt_window_end > now else _hunt_next_rotation
+		_hunt_status.text = "" if _hunt_valid else "Boss hunt schedule unavailable."
+		_render_hunt_rows()
+	elif kind == "world_state":
 		_world_state = data.get("world_state", {})
 		var pw = data.get("player_world", null)
 		if typeof(pw) == TYPE_DICTIONARY:
@@ -509,6 +713,10 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 func _handle_api_error(info: Dictionary, data: Dictionary) -> void:
 	var kind = str(info.get("kind", ""))
 	var err = str(data.get("error", "Request failed."))
+	if kind == "hunt_schedule":
+		_hunt_loading = false
+		_hunt_disconnected()
+		return
 	if kind == "farm":
 		_set_zone_error("Farm failed: %s" % err)
 		if _active_session_id != "":

@@ -66,11 +66,13 @@ type BuildingState = {
 };
 
 type BoostState = {
+	started_at?: number;
 	expires_at: number;
 };
 
 type ResearchRuntime = {
 	active_id?: string;
+	queued_id?: string;
 	started_at?: number;
 	completes_at?: number;
 };
@@ -79,10 +81,13 @@ type LabRuntime = {
 	cooldowns: Record<string, number>;
 	boosts: Record<string, BoostState>;
 	research: ResearchRuntime;
+	experiment_stability?: { failures: number };
+	experiment_last?: { id: string; success: boolean; chance: number; at: number; expires_at: number };
 	directive?: { id: string; starts_at: number; ends_at: number };
 	reactor_overcharge?: { progress: number; last_used_at: number };
 	anomaly?: { next_at: number; last_choice: string; last_reward: ResourceWallet; last_at: number };
 	sync_project?: { project_id: string; partner_kind: string; partner_id: string; started_at: number; completes_at: number };
+	npc_trade?: { day_key: number; daily_uses: Record<string, number>; week_key: number; weekly_uses: Record<string, number> };
 };
 
 type LabState = {
@@ -993,6 +998,22 @@ function applyAction(
 	if (actionType == "CLAIM_PRODUCTION") {
 		return applyClaim(next, payload, now);
 	}
+	if (actionType === "NPC_TRADE") {
+		if (next.lab.hqLevel < 2 || (next.lab.buildings.trade_hall?.level ?? 0) < 1) return { state: next, error: "Trade Hall unavailable." };
+		const listing = npcTradeOffers(runtime, now);
+		const offer = listing.offers.find(entry => entry.id === payload?.offer_id && entry.period_key === payload?.period_key);
+		if (!offer || offer.remaining <= 0) return { state: next, error: "NPC offer unavailable or expired." };
+		if (Object.entries(offer.pay).some(([id, amount]) => (next.wallet[id] ?? 0) < amount)) return { state: next, error: "Insufficient resources." };
+		for (const [id, amount] of Object.entries(offer.pay)) next.wallet[id] = (next.wallet[id] ?? 0) - amount;
+		applyWalletGrant(next.wallet, offer.receive);
+		const counts = runtime.npc_trade ?? { day_key: listing.day_key, week_key: listing.week_key, daily_uses: {}, weekly_uses: {} };
+		if (counts.day_key !== listing.day_key) { counts.day_key = listing.day_key; counts.daily_uses = {}; }
+		if (counts.week_key !== listing.week_key) { counts.week_key = listing.week_key; counts.weekly_uses = {}; }
+		const uses = offer.period === "daily" ? counts.daily_uses : counts.weekly_uses;
+		uses[offer.id] = (uses[offer.id] ?? 0) + 1;
+		runtime.npc_trade = counts;
+		return { state: next };
+	}
 	if (actionType === "SYNC_START") {
 		if (next.lab.hqLevel < 4 || (next.lab.buildings.sync_nexus?.level ?? 0) < 1) return { state: next, error: "Sync Nexus unavailable." };
 		if (runtime.sync_project) return { state: next, error: "Sync project already active." };
@@ -1062,8 +1083,28 @@ function applyAction(
 	if (actionType == "START_RESEARCH") {
 		return applyStartResearch(next, payload, now);
 	}
+	if (actionType === "QUEUE_RESEARCH") {
+		const id = typeof payload?.research_id === "string" ? payload.research_id.trim() : "";
+		const node = staticData.research[id];
+		const activeId = runtime.research.active_id ?? "";
+		const active = staticData.research[activeId];
+		if (!node || !active || id === activeId || runtime.research.queued_id || next.research_flags[node.flag_id]) return { state: next, error: "Research queue unavailable." };
+		if (next.lab.hqLevel < (HQ_RULES.arcane_archives?.unlock ?? 3) || (next.lab.buildings.arcane_archives?.level ?? 0) < 1) return { state: next, error: "Arcane Archives not built or locked." };
+		if (node.requires.some(req => !next.research_flags[req] && req !== active.flag_id)) return { state: next, error: "Research requirements not met." };
+		const fee = getBalanceNumber("archive_queue_fee_essence", 10);
+		if (!Number.isSafeInteger(fee) || fee < 0) return { state: next, error: "Invalid queue fee." };
+		const cost: ResourceWallet = { essence: fee };
+		for (const [resource, amount] of Object.entries(node.cost)) {
+			if (!staticData.resources.has(resource) || !Number.isSafeInteger(amount) || amount < 0) return { state: next, error: "Invalid research cost." };
+			cost[resource] = (cost[resource] ?? 0) + amount;
+		}
+		if (Object.entries(cost).some(([resource, amount]) => (next.wallet[resource] ?? 0) < amount)) return { state: next, error: "Insufficient resources." };
+		for (const [resource, amount] of Object.entries(cost)) next.wallet[resource] = (next.wallet[resource] ?? 0) - amount;
+		runtime.research.queued_id = id;
+		return { state: next };
+	}
 	if (actionType == "START_SPELL_RESEARCH") {
-		const error = startSpellResearch(next, payload, now, staticData.resources, staticData.balance);
+		const error = startSpellResearch(next, payload, now, staticData.resources, staticData.balance, isBoostActive(runtime, "fast_spells", now) ? experimentEffect("fast_spells", "spell_time_mult", 0.85) : 1);
 		return error ? { state: next, error } : { state: next };
 	}
 	if (actionType == "SET_SPELL_LOADOUT") {
@@ -1731,6 +1772,11 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (req.method == "GET" && url.pathname == "/trade/npc/offers") {
+					const playerId = await requireAuth(req, ctx);
+					const now = Date.now();
+					return jsonResponse({ ok: true, server_time_unix_ms: now, ...npcTradeOffers(ensureLabRuntime(ensurePlayerState(playerId)), now) });
+				}
 				if (req.method == "GET" && url.pathname == "/trade/jobs") {
 					const outputResourceRaw = url.searchParams.get("output_resource_id");
 					const statusRaw = url.searchParams.get("status");
@@ -1994,6 +2040,9 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (req.method == "GET" && url.pathname == "/world/boss-hunts") {
+					return jsonResponse(soloBossSchedule(Date.now()));
+				}
 				if (req.method == "GET" && url.pathname == "/boss/state") {
 					return db.transaction(() => {
 					const now = Date.now();
@@ -2149,6 +2198,7 @@ type StaticData = {
 	researchFlags: Set<string>;
 	zones: Record<string, ZoneDef>;
 	bosses: Record<string, BossDef>;
+	soloBosses: SoloBossCatalog;
 };
 
 function loadStaticData(): StaticData {
@@ -2176,8 +2226,38 @@ function loadStaticData(): StaticData {
 		research: researchData.nodes,
 		researchFlags: researchData.flags,
 		zones,
-		bosses
+		bosses,
+		soloBosses: loadSoloBossCatalog(resolve(staticDir, "solo_bosses.json"), resolve(staticDir, "..", "spells.json"))
 	};
+}
+
+type SoloBoss = { id: string; name: string; tier: string; texture_id: string; hp_mult: number; attack_mult: number; minions: number; shield_reduction: number; shield_turns: number; fury_mult: number; shield_heal_ratio: number; signature_pool: string[] };
+type SoloBossCatalog = { rotation: { interval_seconds: number; window_seconds: number; common_cooldown_seconds: number; weights: Record<string, number> }; bosses: SoloBoss[] };
+
+function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog {
+	const catalog = readJsonFile(path), spells = readJsonFile(spellsPath);
+	const tiers = ["common", "mythic", "rare", "epic", "legendary"];
+	const rotation = catalog?.rotation;
+	const invalid = () => { throw new Error("Invalid solo boss catalog configuration."); };
+	if (!rotation || !Number.isSafeInteger(rotation.interval_seconds) || rotation.interval_seconds !== 10800 || !Number.isSafeInteger(rotation.window_seconds) || rotation.window_seconds !== 2700 || !Number.isSafeInteger(rotation.common_cooldown_seconds) || rotation.common_cooldown_seconds !== 60 || !rotation.weights || Object.keys(rotation.weights).sort().join(",") !== tiers.slice(1).sort().join(",") || tiers.slice(1).some(tier => typeof rotation.weights[tier] !== "number" || !Number.isFinite(rotation.weights[tier]) || rotation.weights[tier] <= 0) || Math.abs(tiers.slice(1).reduce((sum, tier) => sum + rotation.weights[tier], 0) - 1) > 0.000001 || !Array.isArray(catalog?.bosses) || catalog.bosses.length !== 5 || !Array.isArray(spells?.spells)) return invalid();
+	const spellIds = new Set(spells.spells.map((spell: any) => spell.id));
+	const seenIds = new Set<string>(), seenTiers = new Set<string>();
+	for (const boss of catalog.bosses) {
+		if (!boss || typeof boss.id !== "string" || !/^hunt_[a-z0-9_]+$/.test(boss.id) || seenIds.has(boss.id) || !tiers.includes(boss.tier) || seenTiers.has(boss.tier) || typeof boss.name !== "string" || !boss.name.trim() || !["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal"].includes(boss.texture_id) || [boss.hp_mult, boss.attack_mult, boss.fury_mult].some(value => typeof value !== "number" || !Number.isFinite(value) || value <= 0) || [boss.shield_reduction, boss.shield_heal_ratio].some(value => typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) || !Number.isSafeInteger(boss.minions) || boss.minions < 0 || boss.minions > 2 || !Number.isSafeInteger(boss.shield_turns) || boss.shield_turns < 1 || !Array.isArray(boss.signature_pool) || boss.signature_pool.length === 0 || boss.signature_pool.some((id: unknown) => typeof id !== "string" || !spellIds.has(id))) return invalid();
+		seenIds.add(boss.id); seenTiers.add(boss.tier);
+	}
+	return catalog as SoloBossCatalog;
+}
+
+function soloBossSchedule(now: number): object {
+	const { rotation, bosses } = staticData.soloBosses;
+	const interval = rotation.interval_seconds * 1000, window = rotation.window_seconds * 1000;
+	const key = Math.floor(now / interval), start = key * interval, end = start + window;
+	const roll = createHmac("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 0x100000000;
+	let cumulative = 0, chosen = "legendary";
+	for (const tier of ["mythic", "rare", "epic", "legendary"]) { cumulative += rotation.weights[tier]; if (roll < cumulative) { chosen = tier; break; } }
+	const special = bosses.find(boss => boss.tier === chosen)!;
+	return { server_time_unix_ms: now, rotation_key: key, current_special_id: special.id, next_rotation_at: start + interval, special_window_ends_at: end, bosses: bosses.map(boss => ({ ...boss, available: boss.tier === "common" || (boss.id === special.id && now < end), appearance_starts_at: boss.tier === "common" ? null : (boss.id === special.id ? start : null), appearance_ends_at: boss.tier === "common" ? null : (boss.id === special.id ? end : null) })) };
 }
 
 function loadResourceIds(path: string): { ids: Set<string> } {
@@ -2711,14 +2791,14 @@ function normalizeLabRuntime(runtimeRaw: any): LabRuntime {
 				if (typeof value == "number") {
 					const ts = clampInt(value, 0, Number.MAX_SAFE_INTEGER);
 					if (ts > 0) {
-						boosts[id] = { expires_at: ts };
+						boosts[id] = { started_at: 0, expires_at: ts };
 					}
 					continue;
 				}
 				if (value && typeof value == "object") {
 					const ts = clampInt((value as any).expires_at, 0, Number.MAX_SAFE_INTEGER);
 					if (ts > 0) {
-						boosts[id] = { expires_at: ts };
+						boosts[id] = { started_at: clampInt((value as any).started_at ?? 0, 0, ts), expires_at: ts };
 					}
 				}
 			}
@@ -2732,10 +2812,14 @@ function normalizeLabRuntime(runtimeRaw: any): LabRuntime {
 				research.active_id = activeId;
 				research.started_at = startedAt;
 				research.completes_at = completesAt;
+				if (typeof rawResearch.queued_id === "string" && rawResearch.queued_id !== activeId && staticData.research[rawResearch.queued_id]) research.queued_id = rawResearch.queued_id;
 			}
 		}
 	}
 	const result: LabRuntime = { cooldowns, boosts, research };
+	result.experiment_stability = { failures: clampInt(runtimeRaw?.experiment_stability?.failures, 0, 3) };
+	const last = runtimeRaw?.experiment_last;
+	if (last && typeof last.id === "string" && typeof last.success === "boolean" && Number.isFinite(last.chance)) result.experiment_last = { id: last.id, success: last.success, chance: clampChance(last.chance), at: clampInt(last.at, 0, Number.MAX_SAFE_INTEGER), expires_at: clampInt(last.expires_at, 0, Number.MAX_SAFE_INTEGER) };
 	const directive = runtimeRaw?.directive;
 	if (directive && ["production", "research", "experimentation"].includes(directive.id)) {
 		const starts = clampInt(directive.starts_at, 0, Number.MAX_SAFE_INTEGER);
@@ -2755,7 +2839,48 @@ function normalizeLabRuntime(runtimeRaw: any): LabRuntime {
 		const completes = clampInt(sync.completes_at, 0, Number.MAX_SAFE_INTEGER);
 		if (started > 0 && completes > started) result.sync_project = { project_id: "calibration", partner_kind: "npc", partner_id: "echo", started_at: started, completes_at: completes };
 	}
+	const trade = runtimeRaw?.npc_trade;
+	if (trade && typeof trade === "object") {
+		const normalizeUses = (raw: any, prefix: string, max: number): Record<string, number> => {
+			const uses: Record<string, number> = {};
+			if (raw && typeof raw === "object" && !Array.isArray(raw)) for (const [id, amount] of Object.entries(raw)) if (new RegExp(`^${prefix}[1-${max}]$`).test(id) && Number.isSafeInteger(amount) && (amount as number) >= 0) uses[id] = amount as number;
+			return uses;
+		};
+		result.npc_trade = { day_key: clampInt(trade.day_key, 0, Number.MAX_SAFE_INTEGER), week_key: clampInt(trade.week_key, 0, Number.MAX_SAFE_INTEGER), daily_uses: normalizeUses(trade.daily_uses, "d", 8), weekly_uses: normalizeUses(trade.weekly_uses, "w", 6) };
+	}
 	return result;
+}
+
+type NpcOffer = { id: string; period: "daily" | "weekly"; period_key: number; pay: ResourceWallet; receive: ResourceWallet; max: number; remaining: number };
+
+function npcTradeOffers(runtime: LabRuntime, now: number): { offers: NpcOffer[]; day_key: number; week_key: number; next_daily_at: number; next_weekly_at: number } {
+	const values = staticData.balance.npc_trade_values;
+	const daily = staticData.balance.npc_trade_daily;
+	const weekly = staticData.balance.npc_trade_weekly;
+	const ids = ["essence", "core", "arcane_shard", "time_crystal"];
+	if (!values || typeof values !== "object" || Object.keys(values).sort().join(",") !== [...ids].sort().join(",") || ids.some(id => !Number.isSafeInteger(values[id]) || values[id] <= 0) || !Array.isArray(daily) || daily.length !== 8 || !Array.isArray(weekly) || weekly.length !== 6) throw new HttpError(503, "Invalid NPC trade configuration.");
+	const seen = new Set<string>();
+	const amountValue = (amounts: any): number => {
+		if (!amounts || typeof amounts !== "object" || Array.isArray(amounts) || Object.keys(amounts).length !== 1) throw new HttpError(503, "Invalid NPC trade configuration.");
+		const [id, amount] = Object.entries(amounts)[0];
+		if (!ids.includes(id) || !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) <= 0 || !Number.isSafeInteger((amount as number) * values[id])) throw new HttpError(503, "Invalid NPC trade configuration.");
+		return (amount as number) * values[id];
+	};
+	for (const [pool, prefix] of [[daily, "d"], [weekly, "w"]] as const) for (let i = 0; i < pool.length; i++) {
+		const offer = pool[i];
+		if (!offer || offer.id !== `${prefix}${i + 1}` || seen.has(offer.id)) throw new HttpError(503, "Invalid NPC trade configuration.");
+		seen.add(offer.id);
+		const payValue = amountValue(offer.pay), receiveValue = amountValue(offer.receive);
+		if (Object.keys(offer.pay)[0] === Object.keys(offer.receive)[0] || !Number.isSafeInteger(payValue * 4) || !Number.isSafeInteger(receiveValue * 5) || payValue * 4 < receiveValue * 5) throw new HttpError(503, "Invalid NPC trade configuration.");
+	}
+	const day = Math.floor(now / 86400000), week = Math.floor((day + 3) / 7);
+	const counts = runtime.npc_trade;
+	const select = (pool: any[], period: "daily" | "weekly", key: number, quantity: number, step: number, max: number): NpcOffer[] => Array.from({ length: quantity }, (_, i) => {
+		const offer = pool[(key + step * i) % pool.length];
+		const uses = period === "daily" ? (counts?.day_key === day ? counts.daily_uses : {}) : (counts?.week_key === week ? counts.weekly_uses : {});
+		return { id: offer.id, period, period_key: key, pay: offer.pay, receive: offer.receive, max, remaining: Math.max(0, max - (uses[offer.id] ?? 0)) };
+	});
+	return { offers: [...select(daily, "daily", day, 3, 3, 2), ...select(weekly, "weekly", week, 2, 2, 1)], day_key: day, week_key: week, next_daily_at: (day + 1) * 86400000, next_weekly_at: ((week + 1) * 7 - 3) * 86400000 };
 }
 
 function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
@@ -3078,32 +3203,24 @@ function cleanupLabRuntime(runtime: LabRuntime, nowMs: number): boolean {
 			changed = true;
 		}
 	}
-	for (const [id, boost] of Object.entries(runtime.boosts)) {
-		const expiresAt = boost?.expires_at ?? 0;
-		if (!Number.isFinite(expiresAt) || expiresAt <= nowMs) {
-			delete runtime.boosts[id];
-			changed = true;
-		}
-	}
+	// Preserve expired intervals until production and queued research are settled.
 	return changed;
 }
 
 function autoCompleteResearch(state: PlayerState, nowMs: number): boolean {
 	const runtime = ensureLabRuntime(state);
-	const research = runtime.research;
-	if (!research || !research.active_id) {
-		return false;
+	let changed = false;
+	for (let i = 0; i < 2; i++) {
+		const research = runtime.research;
+		const completesAt = research?.completes_at ?? 0;
+		if (!research?.active_id || !Number.isFinite(completesAt) || completesAt <= 0 || completesAt > nowMs) break;
+		const node = staticData.research[research.active_id];
+		if (node?.flag_id) state.research_flags[node.flag_id] = true;
+		const queued = research.queued_id ? staticData.research[research.queued_id] : undefined;
+		runtime.research = queued ? { active_id: queued.id, started_at: completesAt, completes_at: completesAt + Math.max(1, queued.time_sec * (directiveActive(runtime, "research", completesAt) ? getBalanceNumber("hq_directive_research_time_mult", 0.9) : 1) * (isBoostActive(runtime, "fast_research", completesAt) ? experimentEffect("fast_research", "archive_time_mult", 0.85) : 1)) * 1000 } : {};
+		changed = true;
 	}
-	const completesAt = research.completes_at ?? 0;
-	if (!Number.isFinite(completesAt) || completesAt > nowMs) {
-		return false;
-	}
-	const node = staticData.research[research.active_id];
-	if (node && node.flag_id) {
-		state.research_flags[node.flag_id] = true;
-	}
-	runtime.research = {};
-	return true;
+	return changed;
 }
 
 function canonicalHqPath(value: any, paths: string[]): string | null {
@@ -3309,6 +3426,7 @@ type ExperimentDef = {
 	cooldown_s: number;
 	boost_id?: string;
 	boost_duration_s?: number;
+	effect?: Record<string, number>;
 };
 
 type ResearchNode = {
@@ -3320,62 +3438,13 @@ type ResearchNode = {
 	requires: string[];
 };
 
-const EXPERIMENTS: Record<string, ExperimentDef> = {
-	refine_core: {
-		id: "refine_core",
-		name: "Refine Core",
-		kind: "convert",
-		cost: { essence: 50 },
-		grants: { core: 1 },
-		success_chance: 1.0,
-		cooldown_s: 60
-	},
-	arcane_distill: {
-		id: "arcane_distill",
-		name: "Arcane Distill",
-		kind: "convert",
-		cost: { core: 2 },
-		grants: { arcane_shard: 1 },
-		success_chance: 0.7,
-		cooldown_s: 90
-	},
-	catalyst_brew: {
-		id: "catalyst_brew",
-		name: "Catalyst Brew",
-		kind: "convert",
-		cost: { essence: 60, arcane_shard: 1 },
-		grants: { core: 2 },
-		success_chance: 0.7,
-		cooldown_s: 120
-	},
-	temporal_crystallize: {
-		id: "temporal_crystallize",
-		name: "Temporal Crystallize",
-		kind: "convert",
-		cost: { essence: 120 },
-		grants: { time_crystal: 1 },
-		success_chance: 0.4,
-		cooldown_s: 180
-	},
-	volatile_overclock: {
-		id: "volatile_overclock",
-		name: "Volatile Overclock",
-		kind: "boost",
-		cost: { essence: 80, arcane_shard: 1 },
-		cooldown_s: 600,
-		boost_id: "volatile_overclock",
-		boost_duration_s: 600
-	},
-	mutagen_surge: {
-		id: "mutagen_surge",
-		name: "Mutagen Surge",
-		kind: "boost",
-		cost: { essence: 80, arcane_shard: 2 },
-		cooldown_s: 600,
-		boost_id: "mutagen_surge",
-		boost_duration_s: 600
-	}
-};
+const experimentCatalog = readJsonFile(resolve(import.meta.dir, "..", "..", "data", "static", "experiments.json"));
+const EXPERIMENTS: Record<string, ExperimentDef> = Object.fromEntries((Array.isArray(experimentCatalog?.experiments) ? experimentCatalog.experiments : []).filter((entry: any) => typeof entry?.id === "string").map((entry: ExperimentDef) => [entry.id, entry]));
+
+function experimentEffect(id: string, key: string, fallback: number): number {
+	const value = EXPERIMENTS[id]?.effect?.[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
 
 function applyUpgrade(
 	state: PlayerState,
@@ -3483,7 +3552,7 @@ function applyClaim(
 		state.lab.hqPath,
 		runtime
 	);
-	const capacity = computeCapacity(storage.level, storage.route || "", state.lab.hqPath);
+	const capacity = Math.floor(computeCapacity(storage.level, storage.route || "", state.lab.hqPath) * (isBoostActive(runtime, "extra_storage", nowMs) ? experimentEffect("extra_storage", "capacity_mult", 1.15) : 1));
 	const claimResult = claimProduction(
 		reactor,
 		capacity,
@@ -3515,6 +3584,7 @@ function applyStartExperiment(
 	if (!experiment) {
 		return { state, error: "Unknown experiment_id." };
 	}
+	if (experiment.kind !== "boost" || experiment.boost_id !== experimentId || !Number.isFinite(experiment.success_chance) || experiment.success_chance! < 0 || experiment.success_chance! > 1 || !Number.isSafeInteger(experiment.cooldown_s) || experiment.cooldown_s < 0 || !Number.isSafeInteger(experiment.boost_duration_s) || experiment.boost_duration_s! <= 0 || !experiment.cost || typeof experiment.cost !== "object" || Array.isArray(experiment.cost)) return { state, error: "Invalid experiment configuration." };
 	const unlockLevel = HQ_RULES.experiment_chamber?.unlock ?? 1;
 	if (state.lab.hqLevel < unlockLevel) {
 		return { state, error: "Experiment Chamber locked." };
@@ -3526,11 +3596,11 @@ function applyStartExperiment(
 	const runtime = ensureLabRuntime(state);
 	cleanupLabRuntime(runtime, nowMs);
 	const cooldownUntil = runtime.cooldowns[experimentId] ?? 0;
-	if (cooldownUntil > nowMs) {
+	if (cooldownUntil > nowMs || isBoostActive(runtime, experimentId, nowMs)) {
 		return { state, error: "Experiment on cooldown." };
 	}
 	for (const [resId, amountRaw] of Object.entries(experiment.cost)) {
-		if (!staticData.resources.has(resId)) {
+		if (!staticData.resources.has(resId) || !Number.isSafeInteger(amountRaw) || amountRaw < 0) {
 			return { state, error: "Unknown resource id in experiment cost." };
 		}
 		const amount = clampAmount(amountRaw);
@@ -3545,20 +3615,21 @@ function applyStartExperiment(
 			state.wallet[resId] = 0;
 		}
 	}
-	if (experiment.kind == "convert") {
-		const chance = clampChance((experiment.success_chance ?? 1.0) + (directiveActive(runtime, "experimentation", nowMs) ? getBalanceNumber("hq_directive_experiment_chance_bonus", 0.05) : 0));
-		const seed = `${EXPERIMENT_SECRET}:${clientActionId}:${experimentId}:success`;
-		const roll = seededRandom01(seed);
-		if (roll <= chance) {
-			applyWalletGrant(state.wallet, experiment.grants ?? {});
+	const stability = runtime.experiment_stability ?? { failures: 0 };
+	const chance = clampChance((experiment.success_chance ?? 0) + stability.failures * 0.1 + (directiveActive(runtime, "experimentation", nowMs) ? getBalanceNumber("hq_directive_experiment_chance_bonus", 0.05) : 0) + (experimentId !== "better_odds" && isBoostActive(runtime, "better_odds", nowMs) ? experimentEffect("better_odds", "experiment_chance_bonus", 0.1) : 0));
+	const success = chance >= 1 || seededRandom01(`${EXPERIMENT_SECRET}:${clientActionId}:${experimentId}:success`) < chance;
+	stability.failures = success ? 0 : Math.min(3, stability.failures + 1);
+	runtime.experiment_stability = stability;
+	const expiresAt = success ? nowMs + Math.max(0, experiment.boost_duration_s ?? 0) * 1000 : 0;
+	if (success) {
+		if (["volatile_overclock", "essence_turbo"].includes(experimentId)) {
+			const reactor = ensureBuildingState(state, "essence_reactor");
+			const storage = ensureBuildingState(state, "storage_vault");
+			if (reactor.level > 0) tickProduction(reactor, nowMs, reactor.level, reactor.route || "stable", storage.route || "", state.lab.hqPath, runtime);
 		}
-	} else if (experiment.kind == "boost") {
-		const boostId = experiment.boost_id ?? "";
-		const durationS = Math.max(0, experiment.boost_duration_s ?? 0);
-		if (boostId != "" && durationS > 0) {
-			runtime.boosts[boostId] = { expires_at: nowMs + durationS * 1000 };
-		}
+		runtime.boosts[experiment.boost_id ?? experimentId] = { started_at: nowMs, expires_at: expiresAt };
 	}
+	runtime.experiment_last = { id: experimentId, success, chance, at: nowMs, expires_at: expiresAt };
 	const cooldownS = Math.max(0, experiment.cooldown_s ?? 0);
 	if (cooldownS > 0) {
 		runtime.cooldowns[experimentId] = nowMs + cooldownS * 1000;
@@ -3622,7 +3693,7 @@ function applyStartResearch(
 	runtime.research = {
 		active_id: researchId,
 		started_at: nowMs,
-		completes_at: nowMs + Math.max(1, node.time_sec * (directiveActive(runtime, "research", nowMs) ? getBalanceNumber("hq_directive_research_time_mult", 0.9) : 1)) * 1000
+		completes_at: nowMs + Math.max(1, node.time_sec * (directiveActive(runtime, "research", nowMs) ? getBalanceNumber("hq_directive_research_time_mult", 0.9) : 1) * (isBoostActive(runtime, "fast_research", nowMs) ? experimentEffect("fast_research", "archive_time_mult", 0.85) : 1)) * 1000
 	};
 	return { state };
 }
@@ -3634,6 +3705,8 @@ function applyClaimResearch(
 ): { state: PlayerState; error?: string } {
 	const runtime = ensureLabRuntime(state);
 	autoCompleteResearch(state, nowMs);
+	const requested = typeof payload?.research_id == "string" ? payload.research_id.trim() : "";
+	if (requested && staticData.research[requested] && state.research_flags[staticData.research[requested].flag_id]) return { state };
 	const activeId = runtime.research?.active_id ?? "";
 	if (!activeId) {
 		const requested =
@@ -3646,8 +3719,6 @@ function applyClaimResearch(
 		}
 		return { state, error: "No research in progress." };
 	}
-	const requested =
-		typeof payload?.research_id == "string" ? payload.research_id.trim() : "";
 	if (requested && requested != activeId) {
 		return { state, error: "Research mismatch." };
 	}
@@ -3674,17 +3745,9 @@ function getBoostMultipliers(
 	nowMs: number
 ): { outputMult: number; lossChanceMult: number; rareChanceMult: number } {
 	const active = getActiveBoosts(labRuntime, nowMs);
-	const outputMult = active.overclock
-		? getBalanceNumber("overclock_output_mult", 1.25)
-		: 1.0;
-	let lossChanceMult = 1.0;
-	if (active.overclock) {
-		lossChanceMult *= getBalanceNumber("overclock_loss_mult", 1.25);
-	}
-	if (active.mutagen) {
-		lossChanceMult *= getBalanceNumber("mutagen_failure_mult", 1.2);
-	}
-	const rareChanceMult = active.mutagen ? getBalanceNumber("mutagen_rare_mult", 1.5) : 1.0;
+	const outputMult = Math.max(1, active.overclock ? experimentEffect("volatile_overclock", "reactor_output_mult", 1.1) : 1, isBoostActive(labRuntime, "essence_turbo", nowMs) ? experimentEffect("essence_turbo", "reactor_output_mult", 1.2) : 1);
+	const lossChanceMult = isBoostActive(labRuntime, "safe_reactor", nowMs) ? experimentEffect("safe_reactor", "volatile_loss_mult", 0.65) : 1;
+	const rareChanceMult = active.mutagen ? experimentEffect("mutagen_surge", "rare_chance_mult", 1.35) : 1;
 	return { outputMult, lossChanceMult, rareChanceMult };
 }
 
@@ -3703,7 +3766,7 @@ function isBoostActive(labRuntime: LabRuntime, boostId: string, nowMs: number): 
 		return false;
 	}
 	const expiresAt = entry.expires_at ?? 0;
-	return Number.isFinite(expiresAt) && expiresAt > nowMs;
+	return Number.isFinite(expiresAt) && (entry.started_at ?? 0) <= nowMs && expiresAt > nowMs;
 }
 
 function applyWalletGrant(wallet: ResourceWallet, grants: Record<string, number>): void {
@@ -3849,10 +3912,18 @@ function tickProduction(
 	}
 	const end = nowMs;
 	const start = end - delta;
-	const directive = labRuntime.directive;
-	const activeMs = directive?.id === "production" ? Math.max(0, Math.min(end, directive.ends_at) - Math.max(start, directive.starts_at)) : 0;
-	const rate = computeOutputRate(level, route, storageRoute, hqPath, labRuntime, nowMs);
-	const produced = rate * (delta + activeMs * (getBalanceNumber("hq_directive_production_mult", 1.1) - 1)) / 1000;
+	const boundaries = [start, end];
+	for (const period of [labRuntime.directive, labRuntime.boosts.volatile_overclock, labRuntime.boosts.essence_turbo]) {
+		if (!period) continue;
+		const interval: any = period;
+		for (const point of [interval.started_at ?? interval.starts_at ?? 0, interval.expires_at ?? interval.ends_at ?? 0]) if (point > start && point < end) boundaries.push(point);
+	}
+	boundaries.sort((a, b) => a - b);
+	let produced = 0;
+	for (let i = 1; i < boundaries.length; i++) {
+		const from = boundaries[i - 1], to = boundaries[i], sample = from + (to - from) / 2;
+		produced += computeOutputRate(level, route, storageRoute, hqPath, labRuntime, sample) * (to - from) / 1000 * (directiveActive(labRuntime, "production", sample) ? getBalanceNumber("hq_directive_production_mult", 1.1) : 1);
+	}
 	runtime.stored_output = Math.max(0, (runtime.stored_output ?? 0) + produced);
 	runtime.last_tick = nowMs;
 }

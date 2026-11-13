@@ -32,6 +32,7 @@ class_name TradeHall
 @export var job_error_label_path: NodePath
 
 const RUNS_PATH := "user://trade_runs.json"
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
 
 var _backend: BackendClient = null
 var _panel: Panel = null
@@ -66,6 +67,24 @@ var _job_error_label: Label = null
 var _catalog := AssetCatalog.new()
 var _db := StaticDB.new()
 var _state: Dictionary = {}
+var _npc_list: VBoxContainer
+var _npc_status: Label
+var _npc_daily_timer: Label
+var _npc_weekly_timer: Label
+var _npc_confirm: ConfirmationDialog
+var _npc_offers: Array = []
+var _npc_selected: Dictionary = {}
+var _npc_buttons: Array[Button] = []
+var _npc_server_ms := 0
+var _npc_received_tick := 0
+var _npc_next_daily := 0
+var _npc_next_weekly := 0
+var _npc_fetch_pending := false
+var _npc_rotation_requested := false
+var _npc_expired := false
+var _npc_elapsed := 0.0
+var _npc_feedback := ""
+var _npc_preview := false
 var _player_id: String = ""
 var _ui_scale := 1.0
 
@@ -86,18 +105,25 @@ func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
 	_resolve_nodes()
 	_apply_panel_background()
+	_apply_trade_layout()
 	_connect_backend()
 	_connect_buttons()
 	_build_resource_options()
+	_build_npc_exchange()
 	_load_state()
 	_load_runs()
 	_request_market_orders()
 	_request_my_orders()
 	_request_trade_jobs()
+	_request_npc_offers()
 	_refresh_runs()
 
 func _process(_delta: float) -> void:
 	_update_run_countdowns()
+	_npc_elapsed += _delta
+	if _npc_elapsed >= 1.0:
+		_npc_elapsed = 0.0
+		_update_npc_timers()
 
 func _resolve_nodes() -> void:
 	_backend = get_node_or_null(backend_path) as BackendClient
@@ -146,19 +172,78 @@ func _apply_input_scaling() -> void:
 func _apply_panel_background() -> void:
 	if _panel == null:
 		return
-	var tex: Texture2D = _catalog.get_tex("ui_panel")
+	var tex: Texture2D = load(MenuArt.DIR + "fondo-menus-edificios-laboratorio.png")
 	if tex == null:
 		return
 	var sb := StyleBoxTexture.new()
 	sb.texture = tex
-	UIThemeFactory._configure_stylebox(sb)
+	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
 	_panel.add_theme_stylebox_override("panel", sb)
+
+func _apply_trade_layout() -> void:
+	var margin := _panel.get_node_or_null("Margin") as MarginContainer
+	if margin:
+		for side in ["left", "right"]:
+			margin.add_theme_constant_override("margin_" + side, 110)
+		for side in ["top", "bottom"]:
+			margin.add_theme_constant_override("margin_" + side, 78)
+	var header := _panel.get_node_or_null("Margin/RootVBox/Header") as HBoxContainer
+	if header:
+		var title := header.get_node("Title") as Label
+		var spacer := header.get_node("Spacer") as Control
+		spacer.hide()
+		var left := Control.new()
+		left.custom_minimum_size.x = 140
+		header.add_child(left)
+		header.move_child(left, 0)
+		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_back_button.custom_minimum_size = Vector2(140, 44)
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.015, 0.035, 0.045, 0.78)
+	_tabs.add_theme_stylebox_override("panel", panel_style)
+	var tab_bar := _tabs.get_tab_bar()
+	if tab_bar.has_method("set_tab_alignment"):
+		tab_bar.call("set_tab_alignment", 1)
+	if _tabs.get_tab_count() > 1:
+		_tabs.set_tab_title(1, "Trade Jobs")
+	for path in ["Market/Scroll", "TradeJobs/Scroll"]:
+		var scroll := _tabs.get_node_or_null(path) as ScrollContainer
+		if scroll == null or scroll.get_child_count() == 0:
+			continue
+		var content := scroll.get_child(0) as Control
+		if content == null:
+			continue
+		scroll.remove_child(content)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		var centered := HBoxContainer.new()
+		centered.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(centered)
+		var left_space := Control.new()
+		left_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		centered.add_child(left_space)
+		content.custom_minimum_size.x = 900
+		content.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		centered.add_child(content)
+		var right_space := Control.new()
+		right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		centered.add_child(right_space)
+	for button in [_sell_create_button, _job_create_button]:
+		if button:
+			button.custom_minimum_size.x = 230
+			button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	for child in find_children("*", "Button", true, false):
+		if child is Button and not child is OptionButton:
+			MenuArt.button(child)
+			child.custom_minimum_size.y = maxf(child.custom_minimum_size.y, 42)
 
 func _connect_backend() -> void:
 	if _backend == null:
 		return
 	_backend.api_completed.connect(_on_api_completed)
 	_backend.state_updated.connect(_on_state_updated)
+	_backend.auth_changed.connect(_npc_auth_changed)
 
 func _connect_buttons() -> void:
 	if _back_button != null:
@@ -263,6 +348,197 @@ func _request_trade_jobs() -> void:
 	var path := "/trade/jobs?status=OPEN"
 	_send_api_request("GET", path, null, "trade_jobs", false)
 
+func _build_npc_exchange() -> void:
+	if _tabs == null:
+		return
+	var scroll := ScrollContainer.new()
+	scroll.name = "NPC Exchange"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_tabs.add_child(scroll)
+	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 90)
+	margin.add_theme_constant_override("margin_right", 90)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	scroll.add_child(margin)
+	_npc_list = VBoxContainer.new()
+	_npc_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_npc_list.add_theme_constant_override("separation", 8)
+	margin.add_child(_npc_list)
+	_npc_confirm = ConfirmationDialog.new()
+	_npc_confirm.title = "Confirm NPC exchange"
+	_npc_confirm.confirmed.connect(_confirm_npc_buy)
+	add_child(_npc_confirm)
+	_render_npc_offers()
+
+func _npc_auth_changed(token: String) -> void:
+	_npc_offers.clear()
+	_npc_expired = true
+	if token == "":
+		if not _show_debug_npc_preview("Backend sign-in required") and is_instance_valid(_npc_status):
+			_npc_status.text = "Sign in to use NPC Exchange."
+		_update_npc_buttons()
+	else:
+		_request_npc_offers()
+
+func _request_npc_offers() -> void:
+	if _npc_fetch_pending:
+		return
+	if _backend == null or _backend.token == "":
+		_show_debug_npc_preview("Backend sign-in required")
+		return
+	_npc_fetch_pending = true
+	_send_api_request("GET", "/trade/npc/offers", null, "npc_offers", false)
+
+func _show_debug_npc_preview(reason: String) -> bool:
+	var debug := DebugFlags.new()
+	var enabled := debug.unlock_all_buildings
+	debug.free()
+	if not enabled:
+		return false
+	var daily: Variant = _db.get_balance("npc_trade_daily", [])
+	var weekly: Variant = _db.get_balance("npc_trade_weekly", [])
+	if not daily is Array or daily.size() != 8 or not weekly is Array or weekly.size() != 6:
+		return false
+	var now := int(Time.get_unix_time_from_system() * 1000.0)
+	var day := int(floor(float(now) / 86400000.0))
+	var week := int(floor(float(day + 3) / 7.0))
+	_npc_offers.clear()
+	for i in range(3):
+		var offer: Dictionary = daily[(day + 3 * i) % daily.size()].duplicate(true)
+		offer.merge({"period": "daily", "period_key": day, "max": 2, "remaining": 0}, true)
+		_npc_offers.append(offer)
+	for i in range(2):
+		var offer: Dictionary = weekly[(week + 2 * i) % weekly.size()].duplicate(true)
+		offer.merge({"period": "weekly", "period_key": week, "max": 1, "remaining": 0}, true)
+		_npc_offers.append(offer)
+	_npc_preview = true
+	_npc_expired = true
+	_npc_feedback = "Local debug preview: %s. Connect an updated backend to purchase; availability is unverified." % reason
+	_npc_server_ms = now
+	_npc_received_tick = Time.get_ticks_msec()
+	_npc_next_daily = (day + 1) * 86400000
+	_npc_next_weekly = ((week + 1) * 7 - 3) * 86400000
+	_npc_rotation_requested = false
+	_render_npc_offers()
+	_update_npc_timers()
+	return true
+
+func _npc_amount_text(amounts: Dictionary) -> String:
+	var parts: Array[String] = []
+	for id in amounts:
+		var resource: Dictionary = _db.resources.get(id, {})
+		parts.append("%d %s" % [int(amounts[id]), str(resource.get("display_name", resource.get("name", id)))])
+	return ", ".join(parts)
+
+func _render_npc_offers() -> void:
+	if not is_instance_valid(_npc_list):
+		return
+	for child in _npc_list.get_children():
+		_npc_list.remove_child(child)
+		child.queue_free()
+	_npc_buttons.clear()
+	_npc_status = Label.new()
+	_npc_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_npc_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_npc_status.text = _npc_feedback if _npc_feedback != "" else ("" if not _npc_offers.is_empty() else ("Loading offers..." if _backend != null and _backend.token != "" else "Sign in to use NPC Exchange."))
+	_npc_list.add_child(_npc_status)
+	for period in ["daily", "weekly"]:
+		var heading := Label.new()
+		heading.text = "Daily offers" if period == "daily" else "Weekly offers"
+		heading.add_theme_font_size_override("font_size", 20)
+		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_npc_list.add_child(heading)
+		var timer := Label.new()
+		timer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_npc_list.add_child(timer)
+		if period == "daily":
+			_npc_daily_timer = timer
+		else:
+			_npc_weekly_timer = timer
+		for offer in _npc_offers:
+			if not offer is Dictionary or str(offer.get("period", "")) != period:
+				continue
+			var background := PanelContainer.new()
+			var row_style := StyleBoxFlat.new()
+			row_style.bg_color = Color(0.02, 0.09, 0.10, 0.88)
+			row_style.border_color = Color(0.42, 0.47, 0.32, 0.85)
+			row_style.set_border_width_all(1)
+			row_style.set_content_margin_all(8)
+			background.add_theme_stylebox_override("panel", row_style)
+			_npc_list.add_child(background)
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 12)
+			background.add_child(row)
+			var label := Label.new()
+			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			label.text = "%s -> %s   |   %s" % [_npc_amount_text(offer.get("pay", {})), _npc_amount_text(offer.get("receive", {})), "Availability unverified" if _npc_preview else "%d / %d remaining" % [int(offer.get("remaining", 0)), int(offer.get("max", 0))]]
+			row.add_child(label)
+			var button := Button.new()
+			button.text = "Buy"
+			button.custom_minimum_size = Vector2(120, 42)
+			MenuArt.button(button)
+			button.set_meta("offer", offer)
+			button.pressed.connect(_request_npc_buy.bind(offer))
+			row.add_child(button)
+			_npc_buttons.append(button)
+	_update_npc_buttons()
+
+func _update_npc_buttons() -> void:
+	var wallet: Dictionary = _state.get("wallet", {})
+	for button in _npc_buttons:
+		if not is_instance_valid(button):
+			continue
+		var offer: Dictionary = button.get_meta("offer", {})
+		var affordable := true
+		for resource in offer.get("pay", {}):
+			if int(wallet.get(resource, 0)) < int(offer.pay[resource]):
+				affordable = false
+		var lab: Dictionary = _state.get("lab", {})
+		var available := int(lab.get("hqLevel", 0)) >= 2 and int(lab.get("buildings", {}).get("trade_hall", {}).get("level", 0)) >= 1
+		button.disabled = _busy or _npc_fetch_pending or _npc_expired or _backend == null or _backend.token == "" or int(offer.get("remaining", 0)) <= 0 or not affordable or not available
+
+func _update_npc_timers() -> void:
+	if _npc_server_ms <= 0:
+		return
+	var now := _npc_server_ms + Time.get_ticks_msec() - _npc_received_tick
+	if is_instance_valid(_npc_daily_timer):
+		_npc_daily_timer.text = ("Local rotation in " if _npc_preview else "Rotation in ") + _npc_clock(maxi(0, _npc_next_daily - now))
+	if is_instance_valid(_npc_weekly_timer):
+		_npc_weekly_timer.text = ("Local rotation in " if _npc_preview else "Rotation in ") + _npc_clock(maxi(0, _npc_next_weekly - now))
+	if (_npc_next_daily > 0 and now >= _npc_next_daily) or (_npc_next_weekly > 0 and now >= _npc_next_weekly):
+		_npc_expired = true
+		_update_npc_buttons()
+		if not _npc_rotation_requested:
+			_npc_rotation_requested = true
+			if _npc_preview and (_backend == null or _backend.token == ""):
+				_show_debug_npc_preview("Backend sign-in required")
+			else:
+				_request_npc_offers()
+
+func _npc_clock(milliseconds: int) -> String:
+	var seconds := int(ceil(float(milliseconds) / 1000.0))
+	return "%02d:%02d:%02d" % [int(seconds / 3600.0), int(seconds / 60.0) % 60, seconds % 60]
+
+func _request_npc_buy(offer: Dictionary) -> void:
+	if _busy or _npc_expired or _npc_fetch_pending:
+		return
+	_npc_selected = offer.duplicate(true)
+	_npc_confirm.dialog_text = "Exchange %s for %s?" % [_npc_amount_text(offer.get("pay", {})), _npc_amount_text(offer.get("receive", {}))]
+	_npc_confirm.popup_centered()
+
+func _confirm_npc_buy() -> void:
+	_update_npc_buttons()
+	for button in _npc_buttons:
+		if button.get_meta("offer", {}) == _npc_selected and not button.disabled:
+			var body := {"client_action_id": _backend._make_uuid(), "action_type": "NPC_TRADE", "payload": {"offer_id": _npc_selected.get("id", ""), "period_key": _npc_selected.get("period_key", -1)}}
+			_send_api_request("POST", "/player/action", body, "npc_buy", true)
+			return
+
 func _send_api_request(method: String, path: String, body: Variant, kind: String, expect_state: bool, extra: Dictionary = {}) -> void:
 	if _backend == null:
 		return
@@ -278,6 +554,12 @@ func _send_api_request(method: String, path: String, body: Variant, kind: String
 		return
 	var request_id = _backend.request_api(method, path, body, expect_state)
 	if request_id == "":
+		if kind == "npc_offers":
+			_npc_fetch_pending = false
+			if _show_debug_npc_preview("Backend unavailable"):
+				return
+		if kind.begins_with("npc_") and is_instance_valid(_npc_status):
+			_npc_status.text = "Request busy or offline."
 		_set_error(kind, "Request busy or offline.")
 		return
 	var info = {"kind": kind}
@@ -288,11 +570,19 @@ func _send_api_request(method: String, path: String, body: Variant, kind: String
 
 func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 	var info = _requests.get(request_id, {})
+	var request_kind := str(info.get("kind", ""))
 	_requests.erase(request_id)
+	if request_kind == "npc_offers":
+		_npc_fetch_pending = false
 	_set_busy(false)
 	_flush_api_queue()
 	if not ok:
 		var msg = str(data.get("error", "Request failed"))
+		if request_kind == "npc_offers" and _show_debug_npc_preview("NPC exchange unavailable on backend"):
+			return
+		if request_kind.begins_with("npc_") and is_instance_valid(_npc_status):
+			_npc_feedback = "Exchange: " + msg
+			_npc_status.text = "Exchange: " + msg
 		_set_error(str(info.get("kind", "")), msg)
 		return
 	var kind = str(info.get("kind", ""))
@@ -316,6 +606,23 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 			_on_trade_claim_success(data, info)
 		_request_trade_jobs()
 		_refresh_runs()
+	elif kind == "npc_offers":
+		_npc_offers = data.get("offers", [])
+		_npc_preview = false
+		_npc_server_ms = int(data.get("server_time_unix_ms", 0))
+		_npc_received_tick = Time.get_ticks_msec()
+		_npc_next_daily = int(data.get("next_daily_at", 0))
+		_npc_next_weekly = int(data.get("next_weekly_at", 0))
+		_npc_rotation_requested = false
+		_npc_expired = false
+		if _npc_feedback.begins_with("Exchange:"):
+			_npc_feedback = ""
+		_render_npc_offers()
+		_update_npc_timers()
+	elif kind == "npc_buy":
+		_npc_feedback = "Exchange confirmed."
+		_npc_status.text = "Exchange confirmed."
+		_request_npc_offers()
 
 func _set_busy(value: bool) -> void:
 	_busy = value
@@ -348,6 +655,7 @@ func _apply_busy_to_buttons() -> void:
 	if _job_create_button != null:
 		_job_create_button.disabled = _busy
 	_update_dynamic_buttons()
+	_update_npc_buttons()
 
 func _update_dynamic_buttons() -> void:
 	# Dynamic buttons are rebuilt in refresh methods using current busy flag.
@@ -448,6 +756,7 @@ func _refresh_orders() -> void:
 		qty.placeholder_text = "Qty"
 		var buy_btn := Button.new()
 		buy_btn.text = "Buy"
+		MenuArt.button(buy_btn)
 		buy_btn.disabled = _busy
 		buy_btn.pressed.connect(_on_buy_pressed.bind(entry, qty))
 		row.add_child(slot)
@@ -480,6 +789,7 @@ func _refresh_my_orders() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var cancel_btn := Button.new()
 		cancel_btn.text = "Cancel"
+		MenuArt.button(cancel_btn)
 		cancel_btn.disabled = _busy
 		cancel_btn.pressed.connect(_on_cancel_order_pressed.bind(entry))
 		row.add_child(label)
@@ -506,6 +816,7 @@ func _refresh_jobs() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var submit_btn := Button.new()
 		submit_btn.text = "Submit"
+		MenuArt.button(submit_btn)
 		submit_btn.disabled = _busy or not _can_submit_job(entry)
 		submit_btn.pressed.connect(_on_submit_job_pressed.bind(entry))
 		row.add_child(label)
@@ -528,6 +839,7 @@ func _refresh_runs() -> void:
 		row.add_child(label)
 		var claim_btn := Button.new()
 		claim_btn.text = "Claim"
+		MenuArt.button(claim_btn)
 		claim_btn.disabled = _busy
 		claim_btn.pressed.connect(_on_claim_run_pressed.bind(run_id))
 		row.add_child(claim_btn)
@@ -710,11 +1022,19 @@ func _can_submit_job(job: Dictionary) -> bool:
 	return true
 
 func _on_state_updated(state: Dictionary) -> void:
+	var previous_player := _player_id
 	_state = state
 	_player_id = str(state.get("player_id", ""))
+	if previous_player != "" and previous_player != _player_id:
+		_npc_offers.clear()
+		_npc_expired = true
+		_npc_feedback = ""
+		_render_npc_offers()
+		_request_npc_offers()
 	_refresh_jobs()
 	_refresh_orders()
 	_request_my_orders()
+	_update_npc_buttons()
 
 func _get_option_id(option: OptionButton) -> String:
 	if option == null or option.item_count == 0:

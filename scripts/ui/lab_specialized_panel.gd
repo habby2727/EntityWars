@@ -426,6 +426,9 @@ func _catalog(homunculi: bool) -> void:
 	inventory.pressed.connect(func(): SceneRouter.go_to_inventory("Homunculi" if homunculi else "Builds", true))
 	actions.add_child(inventory)
 	if homunculi:
+		var mutation_heading := Label.new()
+		mutation_heading.text = "Mutations"
+		details.add_child(mutation_heading)
 		var mutation_row := HBoxContainer.new()
 		details.add_child(mutation_row)
 		for mutation_id in ["catalyst", "vitality", "resonance"]:
@@ -534,17 +537,36 @@ func _update_vat_status() -> void:
 	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
 	var vat_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("homunculus_vat", {}).get("level", 0))
 	var hq_level := int(_forge_state.get("lab", {}).get("hqLevel", 0))
+	var mutation_reason := ""
+	if not ready:
+		mutation_reason = "Sign in and wait for server state."
+	elif _vat_pending:
+		mutation_reason = "Waiting for action confirmation."
+	elif vat_level < 1:
+		mutation_reason = "Build the Homunculus Vat first."
+	elif level < 3:
+		mutation_reason = "Requires homunculus level 3 (current: %d)." % level
+	elif cooldown > 0:
+		mutation_reason = "Next mutation available in %s." % _clock(cooldown)
+	elif int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1:
+		mutation_reason = "Insufficient resources: %d/70 Essence, %d/2 Core, %d/1 Arcane Shard." % [int(wallet.get("essence", 0)), int(wallet.get("core", 0)), int(wallet.get("arcane_shard", 0))]
 	_vat_upgrade.disabled = not ready or _vat_pending or vat_level < 1 or hq_level < 2 or level >= 10 or int(wallet.get("essence", 0)) < essence_cost or int(wallet.get("core", 0)) < core_cost
 	_vat_upgrade.tooltip_text = "Cost: %d Essence%s" % [essence_cost, ", 1 Core" if core_cost else ""]
 	for i in range(_vat_mutations.size()):
 		var id: String = ["catalyst", "vitality", "resonance"][i]
 		_vat_mutations[i].disabled = not ready or _vat_pending or vat_level < 1 or level < 3 or cooldown > 0 or active == id or int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1
 		_vat_mutations[i].modulate = Color(1.25, 1.1, 0.7) if active == id else Color.WHITE
+		var description := str(mutations.get(id, {}).get("description", ""))
+		_vat_mutations[i].tooltip_text = description + ("\nCurrently equipped." if active == id else "\n" + mutation_reason if mutation_reason != "" else "\nSelect this mutation.")
 	_vat_status.text = "Upgrade: %d Essence%s | Mutation: 70 Essence, 2 Core, 1 Arcane Shard\nMutation cooldown: %s" % [essence_cost, ", 1 Core" if core_cost else "", _clock(cooldown) if cooldown > 0 else "Ready"]
 	if vat_level < 1 or hq_level < 2:
 		_vat_status.text += "\nUpgrade requires Homunculus Vat level 1 and HQ level 2 (current: %d / %d)." % [vat_level, hq_level]
 	if level < 3:
 		_vat_status.text += "\nMutation requires homunculus level 3 (current: %d)." % level
+	elif mutation_reason != "":
+		_vat_status.text += "\n" + mutation_reason
+	else:
+		_vat_status.text += "\nChoose a mutation above. The current mutation is highlighted."
 
 func _request_vat_upgrade() -> void:
 	if _vat_upgrade.disabled:

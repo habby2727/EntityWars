@@ -79,6 +79,26 @@ var _inspiration_options: Array = []
 var _player_inspiration: Control
 var _enemy_inspiration: Control
 var _ultra_armed := false
+var _solo_boss_mode := false
+var _solo_context := {}
+var _solo_def := {}
+var _solo_texture: Texture2D
+var _solo_minions: Array = []
+var _solo_target_index := 0
+var _solo_base_hp := 1
+var _solo_base_atk := 1
+var _solo_summoned := false
+var _solo_actions := 0
+var _solo_signature := {}
+var _solo_intent := "Strike"
+var _solo_shield_turns := 0
+var _solo_shield_cooldown := 0
+var _solo_shield_high := false
+var _solo_shield_low := false
+var _solo_panel: VBoxContainer
+var _solo_status: Label
+var _solo_targets: VBoxContainer
+var _solo_events: Array = []
 
 var player := {}
 var enemy := {}
@@ -301,6 +321,13 @@ func _start_combat() -> void:
 	next_turn_btn.hide()
 	_load_player_from_seal()
 	_setup_enemy()
+	_solo_context = SceneRouter.consume_solo_hunt_context()
+	if not _solo_context.is_empty():
+		if not _setup_solo_boss():
+			get_tree().call_deferred("change_scene_to_file", SceneRouter.SCENE_WORLD_GATE)
+			return
+		_prepare_solo_intent()
+		_create_solo_panel()
 	for pair in [[player_hp, player], [enemy_hp, enemy]]:
 		var icon := CombatTypeIcon.new()
 		icon.name = "CombatTypeIcon"
@@ -309,7 +336,7 @@ func _start_combat() -> void:
 		pair[0].add_child(icon)
 	_update_ui()
 	_refresh_spell_buttons()
-	_log_immediate("Battle 1 begins.")
+	_log_immediate("Unverified boss preview: no rewards." if _solo_boss_mode else "Battle 1 begins.")
 
 func _on_back_pressed() -> void:
 	if confirm_popup == null:
@@ -335,6 +362,10 @@ func _leave_combat() -> void:
 	_reset_animations()
 	_battle_over = true
 	_log_immediate("You forfeited the combat.")
+	if _solo_boss_mode:
+		_solo_events.append({"turn": _turn, "result": "defeat", "forfeit": true})
+		SceneRouter.go_to_world_gate()
+		return
 	if ResourceLoader.exists("res://scenes/LoadoutGrid.tscn"):
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
@@ -392,6 +423,210 @@ func _setup_enemy(spell_ids: Array = []) -> void:
 		"spell_ids": spell_ids,
 	}
 	enemy = _build_fighter(data, false)
+
+func _setup_solo_boss() -> bool:
+	var file := FileAccess.open("res://data/static/solo_bosses.json", FileAccess.READ)
+	if file == null or int(_solo_context.get("rotation_key", -1)) < 0:
+		return false
+	var catalog: Variant = JSON.parse_string(file.get_as_text())
+	if not catalog is Dictionary or not catalog.get("bosses") is Array:
+		return false
+	for boss in catalog.bosses:
+		if boss is Dictionary and str(boss.get("id", "")) == str(_solo_context.get("hunt_id", "")):
+			_solo_def = boss.duplicate(true)
+			break
+	if str(_solo_def.get("tier", "")) not in ["common", "mythic", "rare", "epic", "legendary"]:
+		return false
+	var pool: Variant = _solo_def.get("signature_pool", [])
+	if not pool is Array or pool.is_empty() or _reg == null:
+		return false
+	_solo_signature = _reg.get_spell_by_id(str(pool.pick_random()))
+	if _solo_signature.is_empty():
+		return false
+	var assets := AssetCatalog.new()
+	_solo_texture = assets.get_tex(str(_solo_def.get("texture_id", "")))
+	assets.free()
+	_solo_boss_mode = true
+	enemy.equip_1 = {}
+	enemy.equip_2 = {}
+	enemy.hom_spent = true
+	enemy.hom_id = ""
+	enemy.mods = _item_mods([])
+	_apply_mods(enemy)
+	_solo_base_hp = maxi(1, roundi(float(enemy.max_hp) / float(_solo_def.hp_mult)))
+	_solo_base_atk = maxi(1, roundi(float(enemy.atk) / float(_solo_def.attack_mult)))
+	enemy.hp = enemy.max_hp
+	enemy.name = str(_solo_def.name)
+	return true
+
+func _create_solo_panel() -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	panel.offset_left = -380
+	panel.offset_right = -20
+	panel.offset_top = 230
+	panel.offset_bottom = 470
+	add_child(panel)
+	_solo_panel = VBoxContainer.new()
+	panel.add_child(_solo_panel)
+	_solo_status = Label.new()
+	_solo_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_solo_panel.add_child(_solo_status)
+	_solo_targets = VBoxContainer.new()
+	_solo_panel.add_child(_solo_targets)
+	var help := Label.new()
+	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	help.text = "Defeat minions to expose the boss. Shield reduces direct damage; fury grows as HP falls. Special uses a fixed spell. Unverified preview."
+	_solo_panel.add_child(help)
+
+func _update_solo_panel() -> void:
+	if not is_instance_valid(_solo_status):
+		return
+	_solo_status.text = "Boss Intent: %s\nShield: %d%% | %d turns\n%s" % [_solo_intent, roundi(float(_solo_def.shield_reduction) * 100.0) if _solo_shield_turns > 0 else 0, _solo_shield_turns, "Boss Protected - Kill Minions" if _solo_has_minions() else "Boss vulnerable"]
+	for child in _solo_targets.get_children():
+		_solo_targets.remove_child(child)
+		child.queue_free()
+	for i in _solo_minions.size():
+		var minion: Dictionary = _solo_minions[i]
+		if int(minion.hp) <= 0:
+			continue
+		var button := Button.new()
+		button.text = "%s: %d / %d HP%s" % [minion.name, minion.hp, minion.max_hp, " [TARGET]" if i == _solo_target_index else ""]
+		button.disabled = _resolving_exchange or _battle_over
+		button.pressed.connect(_select_solo_target.bind(i))
+		_solo_targets.add_child(button)
+
+func _select_solo_target(index: int) -> void:
+	if not _resolving_exchange and index >= 0 and index < _solo_minions.size() and _solo_minions[index].hp > 0:
+		_solo_target_index = index
+		_update_solo_panel()
+
+func _solo_has_minions() -> bool:
+	for minion in _solo_minions:
+		if int(minion.hp) > 0:
+			return true
+	return false
+
+func _solo_target() -> Dictionary:
+	if _solo_target_index >= 0 and _solo_target_index < _solo_minions.size() and _solo_minions[_solo_target_index].hp > 0:
+		return _solo_minions[_solo_target_index]
+	for i in _solo_minions.size():
+		if _solo_minions[i].hp > 0:
+			_solo_target_index = i
+			return _solo_minions[i]
+	return enemy
+
+func _prepare_solo_intent() -> void:
+	var ratio := float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
+	if _solo_has_minions():
+		_solo_intent = "Strike"
+	elif not _solo_summoned and int(_solo_def.minions) > 0 and (_solo_actions >= 2 or ratio < 0.7):
+		_solo_intent = "Summon"
+	elif enemy.hp < enemy.max_hp and _solo_shield_turns == 0 and _solo_shield_cooldown == 0 and ((ratio > 0.5 and not _solo_shield_high) or (ratio <= 0.5 and not _solo_shield_low)):
+		_solo_intent = "Shield"
+	elif _solo_actions % 2 == 1 and int(enemy.spell_cooldowns.get(_solo_signature.id, 0)) == 0:
+		_solo_intent = "Special"
+	else:
+		_solo_intent = "Strike"
+
+func _solo_summon() -> void:
+	_solo_summoned = true
+	var ratios := {"mythic": 0.18, "rare": 0.20, "epic": 0.25, "legendary": 0.30}
+	for i in int(_solo_def.minions):
+		var minion := enemy.duplicate(true)
+		minion.name = "Minion %d" % (i + 1)
+		minion.type = ""
+		minion.max_hp = maxi(1, roundi(_solo_base_hp * float(ratios.get(_solo_def.tier, 0.0))))
+		minion.hp = minion.max_hp
+		minion.atk = maxi(1, roundi(_solo_base_atk * 0.25))
+		minion.status = {"poison": 0, "stun": 0, "shield_pct": 0.0, "atk_boost": 0.0, "vuln_pct": 0.0, "atk_down": 0.0, "hom_stun": 0, "reflect_pct": 0.0, "tempo_bonus": 0.0}
+		_solo_minions.append(minion)
+	_solo_target_index = 0
+
+func _solo_boss_action() -> void:
+	_solo_actions += 1
+	var intent := _solo_intent
+	_solo_events.append({"turn": _turn, "intent": intent})
+	if intent == "Special":
+		await _resolve_spell_action(enemy, player, {"kind": "spell", "spell": _solo_signature})
+		return
+	for key in enemy.spell_cooldowns.keys():
+		enemy.spell_cooldowns[key] = maxi(0, int(enemy.spell_cooldowns[key]) - 1)
+	if int(enemy.status.stun) > 0:
+		_log_step("%s is stunned." % enemy.name, func(): enemy.status.stun -= 1)
+	elif intent == "Summon":
+		_log_step("%s summons minions." % enemy.name, _solo_summon)
+	elif intent == "Shield":
+		_log_step("%s raises a shield." % enemy.name, func():
+			_solo_shield_turns = int(_solo_def.shield_turns)
+			if float(enemy.hp) > float(enemy.max_hp) * 0.5:
+				_solo_shield_high = true
+			else:
+				_solo_shield_low = true
+		)
+	else:
+		var ratio := float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
+		var fury := 1.0 if ratio > 0.7 else 1.2 if ratio > 0.4 else 1.4 if ratio > 0.15 else 1.6
+		if _solo_has_minions():
+			fury *= 0.5
+		_attack_entity(enemy, player, fury, 0.9, true)
+	await _flush_steps()
+
+func _solo_player_action(action: Dictionary) -> void:
+	await _resolve_spell_action(player, _solo_target(), action)
+	if player.hp > 0 and (_solo_target().hp > 0 or action.get("hom", "hold") == "sacrifice"):
+		await _resolve_hom_choice(player, _solo_target(), str(action.get("hom", "hold")))
+
+func _resolve_solo_exchange(action: Dictionary) -> void:
+	_turn += 1
+	_begin_spell_exchange()
+	var minions_at_start := _solo_minions.duplicate()
+	if _initiative(player) >= _initiative(enemy):
+		await _solo_player_action(action)
+		if _combat_session_invalid:
+			return
+		if player.hp > 0 and enemy.hp > 0:
+			await _solo_boss_action()
+	else:
+		await _solo_boss_action()
+		if _combat_session_invalid:
+			return
+		if player.hp > 0 and enemy.hp > 0:
+			await _solo_player_action(action)
+	if _combat_session_invalid:
+		return
+	for minion in minions_at_start:
+		if player.hp <= 0 or enemy.hp <= 0:
+			break
+		if minion.hp > 0:
+			_attack_entity(minion, player, 1.0, 0.9, true)
+			await _flush_steps()
+	if player.hp > 0:
+		_apply_spell_poison(player)
+		_apply_spell_poison(enemy)
+		for minion in _solo_minions:
+			if minion.hp > 0:
+				_apply_spell_poison(minion)
+		await _flush_steps()
+	_charge_homunculus(player)
+	await _flush_steps()
+	_end_spell_exchange()
+	if _solo_shield_turns > 0:
+		_solo_shield_turns -= 1
+		if _solo_shield_turns == 0:
+			_solo_shield_cooldown = 3
+	elif _solo_shield_cooldown > 0:
+		_solo_shield_cooldown -= 1
+	if player.hp <= 0 or (enemy.hp <= 0 and not _solo_has_minions()):
+		_check_end()
+		return
+	_player_turn = not _player_turn
+	if not _player_turn:
+		_round += 1
+		_apply_round_start_effects()
+		await _flush_steps()
+		_apply_round_winner_tempo()
+		await _flush_steps()
 
 func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 	var ent := _find_by_id(_entities, str(data.get("entity_id", "")))
@@ -494,6 +729,12 @@ func _update_ui() -> void:
 	player_hom.texture = _load_preview_tex(player.get("hom_id", ""), "homunculus", player.get("hom_name", ""))
 	enemy_entity.texture = _load_preview_tex(enemy.get("id", ""), "entity", enemy.get("type", ""))
 	enemy_hom.texture = _load_preview_tex(enemy.get("hom_id", ""), "homunculus", enemy.get("hom_name", ""))
+	if _solo_boss_mode:
+		enemy_entity.texture = _solo_texture
+		enemy_name.text = "BOSS - %s" % str(_solo_def.get("tier", "")).to_upper()
+		turn_label.text = "Boss Hunt\nTurn %d" % _display_turn()
+		enemy_indicators.visible = false
+		_update_solo_panel()
 	_set_item_icon(player_item1, player.get("equip_1", {}))
 	_set_item_icon(player_item2, player.get("equip_2", {}))
 	_set_item_icon(enemy_item1, enemy.get("equip_1", {}))
@@ -920,6 +1161,9 @@ func _on_next_turn() -> void:
 		_log_immediate("Retrying player state...")
 		_wait_for_combat_state()
 		return
+	if _battle_over and not _processing_steps and _solo_boss_mode:
+		SceneRouter.go_to_world_gate()
+		return
 	if _battle_over and not _processing_steps and ResourceLoader.exists("res://scenes/LoadoutGrid.tscn"):
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
@@ -937,7 +1181,7 @@ func _on_spell_chosen(index: int) -> void:
 	await _queue_combat_action(action)
 
 func _ultra_available(fighter: Dictionary) -> bool:
-	return _battle_index == 3 and _player_wins == 1 and _enemy_wins == 1 and not _sudden_death and not bool(fighter.get("ultra_used", false))
+	return not _solo_boss_mode and _battle_index == 3 and _player_wins == 1 and _enemy_wins == 1 and not _sudden_death and not bool(fighter.get("ultra_used", false))
 
 func _on_ultra_toggled(armed: bool) -> void:
 	_ultra_armed = armed and _ultra_available(player) and not _resolving_exchange and not _processing_steps and not _inspiration_panel.visible and _pending_hom_action.is_empty()
@@ -990,6 +1234,17 @@ func _on_hom_choice(choice: String) -> void:
 
 func _start_weapon_exchange(action: Dictionary) -> void:
 	if _combat_session_invalid or _battle_over:
+		return
+	if _solo_boss_mode:
+		_resolving_exchange = true
+		_refresh_spell_buttons()
+		await _resolve_solo_exchange(action)
+		_resolving_exchange = false
+		_finish_inspiration_exchange()
+		if not _battle_over:
+			_prepare_solo_intent()
+		_update_ui()
+		_refresh_spell_buttons()
 		return
 	var npc_action := _choose_npc_action()
 	if npc_action.is_empty():
@@ -1154,6 +1409,8 @@ func _charge_homunculus(fighter: Dictionary) -> void:
 		_log_step("%s %s" % [fighter.hom_name, state], Callable(), _combat_event(fighter, "homunculus", " " + state, {}, true))
 
 func _apply_spell_poison(fighter: Dictionary) -> void:
+	if _solo_boss_mode and is_same(fighter, enemy) and _solo_has_minions():
+		return
 	if fighter.status.poison > 0:
 		_log_step("%s suffers poison (2)." % fighter.name, func():
 			_record_highlight("damage", mini(int(fighter.hp), 2), "%s: poison" % fighter.name)
@@ -1488,6 +1745,8 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 	return true
 
 func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: float = 1.0, accuracy: float = 0.9, spell_attack: bool = false, context: Dictionary = {}, accuracy_focus: float = 0.0, accuracy_misalign: float = 0.0) -> bool:
+	if _solo_boss_mode and is_same(defender, enemy) and _solo_has_minions():
+		return false
 	if defender.hp <= 0:
 		return false
 	if attacker.status.stun > 0:
@@ -1544,12 +1803,19 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		, _combat_event(defender, "shield", "'s ward blocks %d damage." % prevented, {}))
 	if bool(context.get("ultra", false)):
 		dmg *= 2
+	var boss_prevented := 0
+	if _solo_boss_mode and is_same(defender, enemy) and _solo_shield_turns > 0:
+		var reduced := maxi(0, roundi(float(dmg) * (1.0 - float(_solo_def.shield_reduction))))
+		boss_prevented = dmg - reduced
+		dmg = reduced
 	_log_step("%s hits %s for %d." % [attacker.name, defender.name, dmg], func():
 		_record_highlight("damage", mini(int(defender.hp), dmg), "%s to %s" % [attacker.name, defender.name])
 		if not context.is_empty():
 			_record_spell_damage(context.get("spell", {}), mini(int(defender.hp), dmg))
 			context.actual_damage += mini(int(defender.hp), dmg)
 		defender.hp = max(0, defender.hp - dmg)
+		if boss_prevented > 0:
+			defender.hp = mini(int(defender.max_hp), int(defender.hp) + floori(boss_prevented * float(_solo_def.shield_heal_ratio)))
 		_animate_hit(_fighter_sprite(defender), dmg, defender.max_hp)
 		if spell_attack and dmg > 0:
 			defender.spell_hit_this_exchange = true
@@ -1564,6 +1830,8 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			, _combat_event(attacker, "shield", " nullifies reflect via %s." % _item_label(ir_item), {}))
 		else:
 			var r := int(round(dmg * defender.status.reflect_pct))
+			if _solo_boss_mode and is_same(attacker, enemy) and _solo_has_minions():
+				r = 0
 			_log_step("%s reflects %d damage." % [defender.name, r], func():
 				_record_highlight("damage", mini(int(attacker.hp), r), "%s: reflection" % defender.name)
 				_record_highlight("reflection", mini(int(attacker.hp), r), "%s against %s" % [defender.name, attacker.name])
@@ -1573,7 +1841,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 				if spell_attack and r > 0:
 					attacker.spell_hit_this_exchange = true
 				_clear_defense(defender, "reflect_pct")
-				if int(defender.status.get("poison_on_reflect", 0)) > 0:
+				if int(defender.status.get("poison_on_reflect", 0)) > 0 and not (_solo_boss_mode and is_same(attacker, enemy) and _solo_has_minions()):
 					attacker.status.poison = maxi(int(attacker.status.poison), int(defender.status.poison_on_reflect))
 				defender.status.erase("poison_on_reflect")
 			, _combat_event(defender, "shield", " reflects %d damage." % r, {}))
@@ -1642,6 +1910,8 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 	return true
 
 func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: bool = false) -> void:
+	if _solo_boss_mode and is_same(defender, enemy) and _solo_has_minions():
+		return
 	if defender.hp <= 0:
 		return
 	if bool(attacker.get("hom_spent", true)):
@@ -1654,11 +1924,18 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], func(): _animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}, true))
 		return
 	var hom_dmg: int = max(1, int(round(attacker.atk * (0.6 if boosted else 0.4) * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0))))
+	var boss_prevented := 0
+	if _solo_boss_mode and is_same(defender, enemy) and _solo_shield_turns > 0:
+		var reduced := maxi(0, roundi(float(hom_dmg) * (1.0 - float(_solo_def.shield_reduction))))
+		boss_prevented = hom_dmg - reduced
+		hom_dmg = reduced
 	var track_hit := _spell_exchange_active
 	_log_step("%s's homunculus strikes %s for %d." % [attacker.name, defender.name, hom_dmg], func():
 		_record_highlight("damage", mini(int(defender.hp), hom_dmg), "%s (%s) to %s" % [attacker.hom_name, attacker.name, defender.name])
 		_animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false)
 		defender.hp = max(0, defender.hp - hom_dmg)
+		if boss_prevented > 0:
+			defender.hp = mini(int(defender.max_hp), int(defender.hp) + floori(boss_prevented * float(_solo_def.shield_heal_ratio)))
 		_animate_hit(_fighter_sprite(defender), hom_dmg, defender.max_hp)
 		if track_hit:
 			defender.spell_hit_this_exchange = true
@@ -1691,15 +1968,32 @@ func _apply_mods(f: Dictionary) -> void:
 	f.atk = atk + mods.atk_flat
 	f.def = def + mods.def_flat
 	f.max_hp = hp
+	if _solo_boss_mode and is_same(f, enemy):
+		f.atk = maxi(1, roundi(float(f.atk) * float(_solo_def.attack_mult)))
+		f.max_hp = maxi(1, roundi(float(f.max_hp) * float(_solo_def.hp_mult)))
 	f.hp = min(f.hp, f.max_hp)
 	f.item_fx = _collect_item_effects([_get_active_weapon(f)])
 
 func _check_end() -> void:
+	if _solo_boss_mode and enemy.hp <= 0 and _solo_has_minions() and player.hp > 0:
+		return
 	if player.hp <= 0 or enemy.hp <= 0:
 		_handle_battle_end()
 
 func _handle_battle_end() -> void:
 	if _battle_over:
+		return
+	if _solo_boss_mode:
+		_battle_over = true
+		var victory: bool = player.hp > 0 and enemy.hp <= 0 and not _solo_has_minions()
+		_solo_events.append({"turn": _turn, "result": "victory" if victory else "defeat"})
+		_log_immediate("Victory - Rewards available in WG-B4 (Unverified / Preview)" if victory else "Defeat - Resource loss available in WG-B4 (Unverified / Preview)")
+		spell_panel.hide()
+		switch_weapon_btn.hide()
+		_inspiration_panel.hide()
+		next_turn_btn.text = "Return to World Gate"
+		next_turn_btn.disabled = false
+		next_turn_btn.show()
 		return
 	var player_dead: bool = int(player.get("hp", 0)) <= 0
 	var enemy_dead: bool = int(enemy.get("hp", 0)) <= 0

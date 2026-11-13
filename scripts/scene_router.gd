@@ -21,6 +21,16 @@ static var _inventory_return_to_lab := false
 static var _next_world_zone_id: String = ""
 static var _next_world_boss_id: String = ""
 static var _combat_seal_mode := "attack"
+static var _solo_hunt_context := {}
+
+static func go_to_solo_hunt(hunt_id: String, rotation_key: int) -> void:
+	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key}
+	_go_to(SCENE_COMBAT, "Combat")
+
+static func consume_solo_hunt_context() -> Dictionary:
+	var context := _solo_hunt_context.duplicate(true)
+	_solo_hunt_context.clear()
+	return context
 
 static func set_combat_seal_mode(mode: String) -> void:
 	_combat_seal_mode = "defense" if mode == "defense" else "attack"

@@ -95,7 +95,7 @@ export function setSpellLoadout(state: any, payload: any): string | null {
 	return null;
 }
 
-export function startSpellResearch(state: any, payload: any, now: number, resources: Set<string>, balance: Record<string, unknown> = {}): string | null {
+export function startSpellResearch(state: any, payload: any, now: number, resources: Set<string>, balance: Record<string, unknown> = {}, timeMultiplier = 1): string | null {
 	const entityId = typeof payload?.entity_id === "string" ? payload.entity_id : "";
 	const spellId = typeof payload?.spell_id === "string" ? payload.spell_id : "";
 	if (!isResearchable(entityId, spellId)) return "Unknown or incompatible entity and spell.";
@@ -119,7 +119,7 @@ export function startSpellResearch(state: any, payload: any, now: number, resour
 		if ((state.wallet[id] ?? 0) < cost[id]) return "Insufficient resources.";
 	}
 	for (const [id, amount] of Object.entries(cost)) state.wallet[id] -= amount;
-	progress.active_research = { entity_id: entityId, spell_id: spellId, started_at: now, completes_at: now + spell.research_time_sec! * 1000 };
+	progress.active_research = { entity_id: entityId, spell_id: spellId, started_at: now, completes_at: now + Math.max(1, spell.research_time_sec! * timeMultiplier) * 1000 };
 	return null;
 }
 

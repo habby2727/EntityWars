@@ -60,38 +60,49 @@ func claim_lab_production(state: Dictionary, db: StaticDB, collect: bool = true)
 	engine.set_building_state("essence_reactor", float(runtime.get("stored_output", 0)), int(runtime.get("last_tick", now)))
 	var balance := ProductionEngine.balance_for_server(db.balance)
 	var boosts: Dictionary = lab.get("runtime", {}).get("boosts", {})
-	var overclock := int(boosts.get("volatile_overclock", {}).get("expires_at", 0)) > now
-	var mutagen := int(boosts.get("mutagen_surge", {}).get("expires_at", 0)) > now
-	if overclock:
-		var output_mult := float(db.get_balance("overclock_output_mult", 1.25))
-		balance["reactor_base_rate"] = float(db.get_balance("reactor_base_rate", 1.0)) * output_mult
-		balance["reactor_rate_per_level"] = float(db.get_balance("reactor_rate_per_level", 0.2)) * output_mult
-	if overclock or mutagen:
-		var loss_mult := (float(db.get_balance("overclock_loss_mult", 1.25)) if overclock else 1.0) * (float(db.get_balance("mutagen_failure_mult", 1.2)) if mutagen else 1.0)
-		balance["volatile_loss_chance"] = float(db.get_balance("volatile_loss_chance", 0.25)) * loss_mult
-	if mutagen:
-		balance["mutagenic_rare_base_chance"] = float(db.get_balance("mutagenic_rare_base_chance", 0.08)) * float(db.get_balance("mutagen_rare_mult", 1.5))
-	var cap_ms := int(float(db.get_balance("offline_cap_hours", 12)) * 3600000.0)
-	if cap_ms > 0 and now - int(runtime.get("last_tick", now)) > cap_ms:
-		engine.set_building_state("essence_reactor", float(runtime.get("stored_output", 0)), now - cap_ms)
-	var accumulation := engine.accumulate("essence_reactor", now, level, reactor_route, storage_route, hq_path, balance, now)
-	var reactor_state := engine.get_building_state("essence_reactor")
 	var directive: Dictionary = lab.get("runtime", {}).get("directive", {})
-	if str(directive.get("id", "")) == "production":
-		var end := int(reactor_state.get("last_tick", now))
-		var start := end - int(float(accumulation.get("delta_seconds", 0)) * 1000)
-		var overlap := maxi(0, mini(end, int(directive.get("ends_at", 0))) - maxi(start, int(directive.get("starts_at", 0))))
-		var seconds := float(accumulation.get("delta_seconds", 0))
-		if seconds > 0:
-			reactor_state["stored_output"] = float(reactor_state.get("stored_output", 0)) + float(accumulation.get("produced", 0)) * (float(overlap) / (seconds * 1000.0)) * (float(db.get_balance("hq_directive_production_mult", 1.1)) - 1.0)
-			engine.set_building_state("essence_reactor", reactor_state.stored_output, end)
+	var cap_ms := int(float(db.get_balance("offline_cap_hours", 12)) * 3600000.0)
+	var start := mini(now, int(runtime.get("last_tick", now)))
+	if cap_ms > 0:
+		start = maxi(start, now - cap_ms)
+	engine.set_building_state("essence_reactor", float(runtime.get("stored_output", 0)), start)
+	var boundaries: Array[int] = [start, now]
+	for interval in [directive, boosts.get("volatile_overclock", {}), boosts.get("essence_turbo", {})]:
+		for point in [int(interval.get("started_at", interval.get("starts_at", 0))), int(interval.get("expires_at", interval.get("ends_at", 0)))]:
+			if point > start and point < now:
+				boundaries.append(point)
+	boundaries.sort()
+	for i in range(1, boundaries.size()):
+		var from := boundaries[i - 1]
+		var to := boundaries[i]
+		var midpoint := int((from + to) / 2.0)
+		var multiplier := 1.0
+		for id in ["volatile_overclock", "essence_turbo"]:
+			var boost: Dictionary = boosts.get(id, {})
+			if int(boost.get("started_at", 0)) <= midpoint and midpoint < int(boost.get("expires_at", 0)):
+				multiplier = maxf(multiplier, float(ExperimentCatalog.get_by_id(id).get("effect", {}).get("reactor_output_mult", 1.0)))
+		if str(directive.get("id", "")) == "production" and int(directive.get("starts_at", 0)) <= midpoint and midpoint < int(directive.get("ends_at", 0)):
+			multiplier *= float(db.get_balance("hq_directive_production_mult", 1.1))
+		var segment := balance.duplicate(true)
+		segment["reactor_base_rate"] = float(db.get_balance("reactor_base_rate", 1.0)) * multiplier
+		segment["reactor_rate_per_level"] = float(db.get_balance("reactor_rate_per_level", 0.2)) * multiplier
+		engine.accumulate("essence_reactor", to, level, reactor_route, storage_route, hq_path, segment, to)
 	if not collect:
 		reactor["runtime"] = engine.get_building_state("essence_reactor")
 		buildings["essence_reactor"] = reactor
 		lab["buildings"] = buildings
 		state["lab"] = lab
 		return {"accrued": true}
+	var safe: Dictionary = boosts.get("safe_reactor", {})
+	if int(safe.get("started_at", 0)) <= now and now < int(safe.get("expires_at", 0)):
+		balance["volatile_loss_chance"] = float(db.get_balance("volatile_loss_chance", 0.25)) * float(ExperimentCatalog.get_by_id("safe_reactor").get("effect", {}).get("volatile_loss_mult", 0.65))
+	var mutagen: Dictionary = boosts.get("mutagen_surge", {})
+	if int(mutagen.get("started_at", 0)) <= now and now < int(mutagen.get("expires_at", 0)):
+		balance["mutagenic_rare_base_chance"] = float(db.get_balance("mutagenic_rare_base_chance", 0.08)) * float(ExperimentCatalog.get_by_id("mutagen_surge").get("effect", {}).get("rare_chance_mult", 1.35))
 	var capacity := Capacity.compute_total_capacity(int(storage.get("level", 0)), storage_route, hq_path, balance)
+	var extra: Dictionary = boosts.get("extra_storage", {})
+	if int(extra.get("started_at", 0)) <= now and now < int(extra.get("expires_at", 0)):
+		capacity = int(floor(capacity * float(ExperimentCatalog.get_by_id("extra_storage").get("effect", {}).get("capacity_mult", 1.15))))
 	var result := engine.claim("essence_reactor", capacity, reactor_route, storage_route, hq_path, balance)
 	reactor["runtime"] = engine.get_building_state("essence_reactor")
 	buildings["essence_reactor"] = reactor

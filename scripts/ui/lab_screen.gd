@@ -90,8 +90,13 @@ var _pending_label: Label = null
 var _placeholder_popup: PopupPanel = null
 var _experiment_section: Control = null
 var _experiment_list: VBoxContainer = null
+var _experiment_stability_bar: ProgressBar
+var _experiment_summary: Label
+var _experiment_confirm: ConfirmationDialog
+var _experiment_confirm_id := ""
 var _research_section: Control = null
 var _research_list: VBoxContainer = null
+var _research_queue_label: Label
 
 var _cards: Dictionary = {}
 var _state: Dictionary = {}
@@ -198,6 +203,8 @@ func _process(delta: float) -> void:
 	_status_refresh_elapsed += delta
 	if _status_refresh_elapsed >= 1.0:
 		_status_refresh_elapsed = 0.0
+		if _debug.unlock_all_buildings:
+			_advance_debug_research()
 		_update_experiments()
 		_update_research()
 		_update_spell_section()
@@ -412,6 +419,17 @@ func _build_experiments() -> void:
 		child.queue_free()
 	_experiment_rows.clear()
 	_experiments = ExperimentCatalog.get_all()
+	_experiment_stability_bar = ProgressBar.new()
+	_experiment_stability_bar.max_value = 3
+	_experiment_stability_bar.show_percentage = false
+	_experiment_list.add_child(_experiment_stability_bar)
+	_experiment_summary = Label.new()
+	_experiment_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_experiment_list.add_child(_experiment_summary)
+	_experiment_confirm = ConfirmationDialog.new()
+	_experiment_confirm.title = "Start experiment"
+	_experiment_confirm.confirmed.connect(_confirm_experiment)
+	_experiment_list.add_child(_experiment_confirm)
 	for entry in _experiments:
 		if typeof(entry) != TYPE_DICTIONARY:
 			continue
@@ -433,9 +451,7 @@ func _build_experiments() -> void:
 		header.add_child(start_btn)
 
 		var desc_label := Label.new()
-		desc_label.text = str(entry.get("desc", ""))
-		if str(entry.get("kind", "")) == "convert":
-			desc_label.text += " | Success: %d%% | Reward: %s" % [int(round(float(entry.get("success_chance", 1.0)) * 100)), str(entry.get("grants", {}))]
+		desc_label.text = "%s\nDuration: %s | Cooldown: %s" % [str(entry.get("desc", "")), _experiment_clock(int(entry.get("boost_duration_s", 0)) * 1000), _experiment_clock(int(entry.get("cooldown_s", 0)) * 1000)]
 		desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 		var cost_row := HBoxContainer.new()
@@ -463,6 +479,9 @@ func _build_research() -> void:
 	for child in _research_list.get_children():
 		child.queue_free()
 	_research_rows.clear()
+	_research_queue_label = Label.new()
+	_research_queue_label.text = "Queue 0/1"
+	_research_list.add_child(_research_queue_label)
 	var entries = _db.list_research()
 	for entry in entries:
 		if typeof(entry) != TYPE_DICTIONARY:
@@ -772,7 +791,7 @@ func _update_spell_section() -> void:
 		elif not _can_afford(effective_cost):
 			status.text = "Locked: insufficient resources"
 		else:
-			status.text = "Researchable" if not _debug.unlock_all_buildings else "Researchable (local debug: 1s)"
+			status.text = "Researchable" if not _debug.unlock_all_buildings else "Researchable (local debug)"
 			button.disabled = pending
 		if not _debug.unlock_all_buildings and (_backend == null or _backend.token == ""):
 			if not button.disabled:
@@ -1027,7 +1046,15 @@ func _update_experiments() -> void:
 	var runtime = _get_lab_runtime()
 	var cooldowns = runtime.get("cooldowns", {})
 	var boosts = runtime.get("boosts", {})
-	var now_ms = Time.get_unix_time_from_system() * 1000
+	var now_ms := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
+	var failures := clampi(int(runtime.get("experiment_stability", {}).get("failures", 0)), 0, 3)
+	if is_instance_valid(_experiment_stability_bar):
+		_experiment_stability_bar.value = failures
+	if is_instance_valid(_experiment_summary):
+		var last: Dictionary = runtime.get("experiment_last", {})
+		_experiment_summary.text = "Stability: %d / 3 failures | +%d percentage points next try\nFailure increases the next chance; success resets stability." % [failures, failures * 10]
+		if not last.is_empty():
+			_experiment_summary.text += "\nLast: %s - %s (%.0f%%)" % [str(ExperimentCatalog.get_by_id(str(last.get("id", ""))).get("name", last.get("id", ""))), "Success" if bool(last.get("success", false)) else "Failed", float(last.get("chance", 0)) * 100.0]
 	var unlock_level = _get_unlock_level("experiment_chamber")
 	var locked = _get_hq_level() < unlock_level or _get_building_level("experiment_chamber") <= 0
 	if _debug.unlock_all_buildings:
@@ -1042,31 +1069,56 @@ func _update_experiments() -> void:
 		var label: Label = row.get("cooldown", null)
 		var cooldown_end = _get_time_value(cooldowns, str(exp_id))
 		var remaining = max(0, cooldown_end - now_ms)
+		var boost_id = str(data.get("boost_id", ""))
+		var boost_remaining = max(0, _get_time_value(boosts, boost_id) - now_ms)
+		var chance := _experiment_chance(data, runtime, now_ms)
 		var text := ""
 		if locked:
 			text = "Unlock at HQ Lv %s" % unlock_level
 		elif remaining > 0:
-			text = "Cooldown: %s" % _format_seconds(remaining)
+			text = "Cooldown: %s" % _experiment_clock(remaining)
 		else:
 			text = "Ready"
-		var boost_id = str(data.get("boost_id", ""))
 		if boost_id != "":
-			var boost_end = _get_time_value(boosts, boost_id)
-			var boost_remaining = max(0, boost_end - now_ms)
 			if boost_remaining > 0:
-				text += " | Boost: %s" % _format_seconds(boost_remaining)
-		if _debug.unlock_all_buildings:
-			var last_result = runtime.get("debug_results", {}).get(str(exp_id), "")
-			if last_result == "Boost active" and boost_id != "" and _get_time_value(boosts, boost_id) <= now_ms:
-				last_result = "Boost expired"
-			if last_result != "":
-				text += " | " + str(last_result)
+				text += " | Active: %s" % _experiment_clock(boost_remaining)
+		text += " | Success: %d%%" % int(round(chance * 100.0))
+		if str(exp_id) == "safe_reactor" and _get_building_route("essence_reactor").to_lower() != "volatile":
+			text += " | Requires Volatile route for effect"
+		elif str(exp_id) == "mutagen_surge" and _get_building_route("essence_reactor").to_lower() != "mutagenic":
+			text += " | Requires Mutagenic route for effect"
 		if label != null:
 			label.text = text
 		if button != null:
 			var cost = data.get("cost", {})
-			var can_afford = _can_afford(cost)
-			button.disabled = locked or pending or remaining > 0 or not can_afford
+			var can_afford := _experiment_can_afford(cost)
+			var online := _debug.unlock_all_buildings or (_backend != null and _backend.token != "" and _spell_state_synced)
+			button.disabled = locked or pending or remaining > 0 or boost_remaining > 0 or not can_afford or not online
+
+func _experiment_clock(ms: int) -> String:
+	var seconds := maxi(0, int(ceil(float(ms) / 1000.0)))
+	return "%02d:%02d:%02d" % [int(seconds / 3600.0), int(seconds / 60.0) % 60, seconds % 60]
+
+func _experiment_can_afford(cost: Dictionary) -> bool:
+	var wallet: Dictionary = _state.get("wallet", {})
+	for resource in cost:
+		if int(wallet.get(resource, 0)) < int(cost[resource]):
+			return false
+	return true
+
+func _experiment_chance(experiment: Dictionary, runtime: Dictionary, now_ms: int) -> float:
+	var chance := float(experiment.get("success_chance", 0)) + 0.1 * clampi(int(runtime.get("experiment_stability", {}).get("failures", 0)), 0, 3)
+	var directive: Dictionary = runtime.get("directive", {})
+	if directive.get("id") == "experimentation" and int(directive.get("starts_at", 0)) <= now_ms and now_ms < int(directive.get("ends_at", 0)):
+		chance += float(_db.get_balance("hq_directive_experiment_chance_bonus", 0.05))
+	var boost: Dictionary = runtime.get("boosts", {}).get("better_odds", {})
+	if str(experiment.get("id", "")) != "better_odds" and int(boost.get("started_at", 0)) <= now_ms and now_ms < int(boost.get("expires_at", 0)):
+		chance += float(ExperimentCatalog.get_by_id("better_odds").get("effect", {}).get("experiment_chance_bonus", 0.1))
+	return clampf(chance, 0.0, 1.0)
+
+func _debug_boost_active(runtime: Dictionary, id: String, at: int) -> bool:
+	var boost: Dictionary = runtime.get("boosts", {}).get(id, {})
+	return int(boost.get("started_at", 0)) <= at and at < int(boost.get("expires_at", 0))
 
 func _update_research() -> void:
 	if _research_section != null:
@@ -1078,9 +1130,12 @@ func _update_research() -> void:
 	if typeof(research_runtime) != TYPE_DICTIONARY:
 		research_runtime = {}
 	var active_id = str(research_runtime.get("active_id", ""))
+	var queued_id = str(research_runtime.get("queued_id", ""))
 	var completes_at = int(research_runtime.get("completes_at", 0))
-	var now_ms = Time.get_unix_time_from_system() * 1000
+	var now_ms = Time.get_unix_time_from_system() * 1000 + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
 	var flags = _get_research_flags()
+	if is_instance_valid(_research_queue_label):
+		_research_queue_label.text = "Queue 1/1: %s" % str(_db.get_research(queued_id).get("name", queued_id)) if queued_id != "" else "Queue 0/1"
 	var unlock_level = _get_unlock_level("arcane_archives")
 	var locked = _get_hq_level() < unlock_level or _get_building_level("arcane_archives") <= 0
 	if _debug.unlock_all_buildings:
@@ -1099,6 +1154,14 @@ func _update_research() -> void:
 		var text := ""
 		var can_start := true
 		var can_claim := false
+		var queue_mode: bool = active_id != "" and active_id != research_id
+		var queue_cost: Dictionary = data.get("cost", {}).duplicate()
+		queue_cost["essence"] = int(queue_cost.get("essence", 0)) + int(_db.get_balance("archive_queue_fee_essence", 10))
+		var effective_flags: Dictionary = flags.duplicate()
+		if active_id != "":
+			var active_data: Dictionary = _db.get_research(active_id)
+			if not active_data.is_empty():
+				effective_flags[str(active_data.get("flag_id", active_id))] = true
 		if locked:
 			text = "Unlock at HQ Lv %s" % unlock_level
 			can_start = false
@@ -1113,9 +1176,26 @@ func _update_research() -> void:
 				else:
 					text = "In progress: %s" % _format_seconds(completes_at - now_ms)
 				can_start = false
-			else:
-				text = "Research in progress"
+			elif queued_id == research_id:
+				text = "Queued | Starts in %s" % _format_seconds(maxf(0, completes_at - now_ms))
 				can_start = false
+			elif queued_id != "":
+				text = "Queue full"
+				can_start = false
+			elif not _requirements_met(requirements, effective_flags):
+				text = "Requires: %s" % _format_requirements(requirements)
+				can_start = false
+			else:
+				var wallet: Dictionary = _state.get("wallet", {})
+				var affordable := true
+				for resource in queue_cost:
+					if int(wallet.get(resource, 0)) < int(queue_cost[resource]):
+						affordable = false
+				var cost_text: Array[String] = []
+				for resource in queue_cost:
+					cost_text.append("%s %d" % [_get_resource_name(str(resource)), int(queue_cost[resource])])
+				text = ("Queue cost: " if affordable else "Insufficient resources: ") + ", ".join(cost_text)
+				can_start = affordable
 		else:
 			if not _debug.unlock_all_buildings and not _requirements_met(requirements, flags):
 				text = "Requires: %s" % _format_requirements(requirements)
@@ -1128,9 +1208,45 @@ func _update_research() -> void:
 		if status != null:
 			status.text = text
 		if start_btn != null:
+			start_btn.text = "Queue (+%d Essence)" % int(_db.get_balance("archive_queue_fee_essence", 10)) if queue_mode else "Start"
 			start_btn.disabled = locked or pending or not can_start
 		if claim_btn != null:
 			claim_btn.disabled = locked or pending or not can_claim
+
+func _advance_debug_research() -> void:
+	var previous := _state.duplicate(true)
+	var lab: Dictionary = _state.get("lab", {})
+	var runtime: Dictionary = lab.get("runtime", {})
+	var research: Dictionary = runtime.get("research", {})
+	var now := int(Time.get_unix_time_from_system() * 1000)
+	var changed := false
+	for i in range(2):
+		var active := str(research.get("active_id", ""))
+		var completes := int(research.get("completes_at", 0))
+		if active == "" or completes <= 0 or completes > now:
+			break
+		var node: Dictionary = _db.get_research(active)
+		var flags: Dictionary = _state.get("research_flags", {})
+		if not node.is_empty():
+			flags[str(node.get("flag_id", active))] = true
+		_state["research_flags"] = flags
+		var queued := str(research.get("queued_id", ""))
+		var next: Dictionary = _db.get_research(queued) if queued != "" else {}
+		research = {}
+		if not next.is_empty():
+			var directive: Dictionary = runtime.get("directive", {})
+			var modifier := float(_db.get_balance("hq_directive_research_time_mult", 0.9)) if str(directive.get("id", "")) == "research" and int(directive.get("starts_at", 0)) <= completes and completes < int(directive.get("ends_at", 0)) else 1.0
+			if _debug_boost_active(runtime, "fast_research", completes):
+				modifier *= float(ExperimentCatalog.get_by_id("fast_research").get("effect", {}).get("archive_time_mult", 0.85))
+			research = {"active_id": queued, "started_at": completes, "completes_at": completes + int(maxf(1.0, float(next.get("time_sec", 0)) * modifier) * 1000)}
+		changed = true
+	if changed:
+		runtime["research"] = research
+		lab["runtime"] = runtime
+		_state["lab"] = lab
+		if not _debug.save_lab_state(_state):
+			_state = previous
+			push_warning("Could not save completed debug research.")
 
 func _on_card_pressed(building_id: String) -> void:
 	_select_building(building_id)
@@ -1164,7 +1280,17 @@ func _on_claim_pressed() -> void:
 	_send_action(action, "essence_reactor")
 
 func _on_start_experiment_pressed(experiment_id: String) -> void:
-	if experiment_id == "":
+	if experiment_id == "" or not _experiment_rows.has(experiment_id) or _experiment_rows[experiment_id].button.disabled:
+		return
+	_experiment_confirm_id = experiment_id
+	var experiment: Dictionary = _experiment_rows[experiment_id].data
+	_experiment_confirm.dialog_text = "Start %s? Cost: %s" % [str(experiment.get("name", experiment_id)), _spell_cost_text(experiment.get("cost", {}))]
+	_experiment_confirm.popup_centered()
+
+func _confirm_experiment() -> void:
+	var experiment_id := _experiment_confirm_id
+	_update_experiments()
+	if not _experiment_rows.has(experiment_id) or _experiment_rows[experiment_id].button.disabled:
 		return
 	var action = {
 		"action_type": "START_EXPERIMENT",
@@ -1176,7 +1302,7 @@ func _on_start_research_pressed(research_id: String) -> void:
 	if research_id == "":
 		return
 	var action = {
-		"action_type": "START_RESEARCH",
+		"action_type": "QUEUE_RESEARCH" if str(_get_lab_runtime().get("research", {}).get("active_id", "")) != "" else "START_RESEARCH",
 		"payload": {"research_id": research_id, "building_id": "arcane_archives"}
 	}
 	_send_action(action, "arcane_archives")
@@ -1204,7 +1330,7 @@ func _on_open_pressed() -> void:
 
 func _send_action(action: Dictionary, building_id: String) -> void:
 	if _debug.unlock_all_buildings:
-		if str(action.get("action_type", "")) in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM"] or not _debug.lab_cooldown_active(_state, building_id):
+		if str(action.get("action_type", "")) in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "START_EXPERIMENT"] or not _debug.lab_cooldown_active(_state, building_id):
 			_simulate_debug_action(action)
 		return
 	if _backend == null:
@@ -1217,6 +1343,7 @@ func _send_action(action: Dictionary, building_id: String) -> void:
 func _simulate_debug_action(action: Dictionary) -> void:
 	if typeof(action) != TYPE_DICTIONARY:
 		return
+	_advance_debug_research()
 	var action_type = str(action.get("action_type", ""))
 	var payload = action.get("payload", {})
 	if typeof(payload) != TYPE_DICTIONARY:
@@ -1370,7 +1497,9 @@ func _simulate_debug_action(action: Dictionary) -> void:
 				if spell_id in owned or owned.size() >= 20 or (active is Dictionary and not active.is_empty()):
 					return
 				var now := int(Time.get_unix_time_from_system() * 1000)
-				progress["active_research"] = {"entity_id": entity_id, "spell_id": spell_id, "started_at": now, "completes_at": now + 1000}
+				var runtime: Dictionary = _state.get("lab", {}).get("runtime", {})
+				var time_mult := float(ExperimentCatalog.get_by_id("fast_spells").get("effect", {}).get("spell_time_mult", 0.85)) if _debug_boost_active(runtime, "fast_spells", now) else 1.0
+				progress["active_research"] = {"entity_id": entity_id, "spell_id": spell_id, "started_at": now, "completes_at": now + int(maxf(1.0, float(spell.get("research_time_sec", 1)) * time_mult) * 1000)}
 			else:
 				if spell_id in owned:
 					return
@@ -1381,7 +1510,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 				progress["learned_by_entity"] = learned
 				progress["active_research"] = null
 			_state["spell_progress"] = progress
-		"START_EXPERIMENT", "START_RESEARCH", "CLAIM_RESEARCH":
+		"START_EXPERIMENT", "START_RESEARCH", "CLAIM_RESEARCH", "QUEUE_RESEARCH":
 			var lab = _state.get("lab", {})
 			var runtime = lab.get("runtime", {})
 			if action_type == "START_EXPERIMENT":
@@ -1389,26 +1518,33 @@ func _simulate_debug_action(action: Dictionary) -> void:
 				var experiment = ExperimentCatalog.get_by_id(experiment_id)
 				if experiment.is_empty():
 					return
-				var cooldowns = runtime.get("cooldowns", {})
-				if int(cooldowns.get(experiment_id, 0)) > int(Time.get_unix_time_from_system() * 1000):
+				var now := int(Time.get_unix_time_from_system() * 1000)
+				var cooldowns: Dictionary = runtime.get("cooldowns", {})
+				var boosts: Dictionary = runtime.get("boosts", {})
+				var cost: Dictionary = experiment.get("cost", {})
+				if int(cooldowns.get(experiment_id, 0)) > now or int(boosts.get(experiment_id, {}).get("expires_at", 0)) > now or not _experiment_can_afford(cost):
 					return
-				cooldowns[experiment_id] = int(Time.get_unix_time_from_system() * 1000) + 1000
-				runtime["cooldowns"] = cooldowns
-				var results: Dictionary = runtime.get("debug_results", {})
-				if str(experiment.get("kind", "")) == "boost":
-					var boosts = runtime.get("boosts", {})
-					boosts[str(experiment.get("boost_id", ""))] = {"expires_at": int(Time.get_unix_time_from_system() * 1000) + int(experiment.get("boost_duration_s", 0)) * 1000}
+				var chance := _experiment_chance(experiment, runtime, now)
+				var wallet: Dictionary = _state.get("wallet", {})
+				for resource in cost:
+					wallet[resource] = int(wallet.get(resource, 0)) - int(cost[resource])
+				_state["wallet"] = wallet
+				var success := randf() < chance
+				if success and experiment_id in ["volatile_overclock", "essence_turbo"]:
+					_debug.claim_lab_production(_state, _db, false)
+					lab = _state.get("lab", {})
+					runtime = lab.get("runtime", {})
+					cooldowns = runtime.get("cooldowns", {})
+					boosts = runtime.get("boosts", {})
+				var failures := clampi(int(runtime.get("experiment_stability", {}).get("failures", 0)), 0, 3)
+				runtime["experiment_stability"] = {"failures": 0 if success else mini(3, failures + 1)}
+				var expires := now + int(experiment.get("boost_duration_s", 0)) * 1000 if success else 0
+				if success:
+					boosts[experiment_id] = {"started_at": now, "expires_at": expires}
 					runtime["boosts"] = boosts
-					results[experiment_id] = "Boost active"
-				elif randf() < minf(1.0, float(experiment.get("success_chance", 1.0)) + (float(_db.get_balance("hq_directive_experiment_chance_bonus", 0.05)) if str(runtime.get("directive", {}).get("id", "")) == "experimentation" and int(runtime.get("directive", {}).get("starts_at", 0)) <= int(Time.get_unix_time_from_system() * 1000) and int(runtime.get("directive", {}).get("ends_at", 0)) > int(Time.get_unix_time_from_system() * 1000) else 0.0)):
-					var wallet = _state.get("wallet", {})
-					for resource in experiment.get("grants", {}):
-						wallet[resource] = int(wallet.get(resource, 0)) + int(experiment.grants[resource])
-					_state["wallet"] = wallet
-					results[experiment_id] = "Reward: %s" % str(experiment.get("grants", {}))
-				else:
-					results[experiment_id] = "Experiment failed; no reward"
-				runtime["debug_results"] = results
+				runtime["experiment_last"] = {"id": experiment_id, "success": success, "chance": chance, "at": now, "expires_at": expires}
+				cooldowns[experiment_id] = now + int(experiment.get("cooldown_s", 0)) * 1000
+				runtime["cooldowns"] = cooldowns
 			else:
 				var research_id = str(payload.get("research_id", ""))
 				var research = _db.get_research(research_id)
@@ -1419,9 +1555,33 @@ func _simulate_debug_action(action: Dictionary) -> void:
 						return
 					var now = int(Time.get_unix_time_from_system() * 1000)
 					var modifier := float(_db.get_balance("hq_directive_research_time_mult", 0.9)) if str(runtime.get("directive", {}).get("id", "")) == "research" and int(runtime.get("directive", {}).get("starts_at", 0)) <= now and int(runtime.get("directive", {}).get("ends_at", 0)) > now else 1.0
+					if _debug_boost_active(runtime, "fast_research", now):
+						modifier *= float(ExperimentCatalog.get_by_id("fast_research").get("effect", {}).get("archive_time_mult", 0.85))
 					runtime["research"] = {"active_id": research_id, "started_at": now, "completes_at": now + int(maxf(1.0, float(research.get("time_sec", 0)) * modifier) * 1000)}
+				elif action_type == "QUEUE_RESEARCH":
+					var active: Dictionary = runtime.get("research", {})
+					var active_id := str(active.get("active_id", ""))
+					var active_node: Dictionary = _db.get_research(active_id)
+					var flags: Dictionary = _state.get("research_flags", {}).duplicate()
+					if not active_node.is_empty():
+						flags[str(active_node.get("flag_id", active_id))] = true
+					if _get_hq_level() < 3 or _get_building_level("arcane_archives") < 1 or active_id == "" or active_node.is_empty() or research_id == active_id or str(active.get("queued_id", "")) != "" or bool(_state.get("research_flags", {}).get(str(research.get("flag_id", research_id)), false)) or not _requirements_met(research.get("requires", []), flags):
+						return
+					var queue_cost: Dictionary = research.get("cost", {}).duplicate()
+					queue_cost["essence"] = int(queue_cost.get("essence", 0)) + int(_db.get_balance("archive_queue_fee_essence", 10))
+					var wallet: Dictionary = _state.get("wallet", {})
+					for resource in queue_cost:
+						if int(wallet.get(resource, 0)) < int(queue_cost[resource]):
+							return
+					for resource in queue_cost:
+						wallet[resource] = int(wallet.get(resource, 0)) - int(queue_cost[resource])
+					_state["wallet"] = wallet
+					active["queued_id"] = research_id
+					runtime["research"] = active
 				else:
 					var active = runtime.get("research", {})
+					if bool(_state.get("research_flags", {}).get(str(research.get("flag_id", research_id)), false)):
+						return
 					if str(active.get("active_id", "")) != research_id or int(active.get("completes_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
 						return
 					var flags = _state.get("research_flags", {})
@@ -1432,7 +1592,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 			_state["lab"] = lab
 		_:
 			return
-	if action_type not in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM"]:
+	if action_type not in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "START_EXPERIMENT"]:
 		_debug.start_lab_cooldown(_state, building_id)
 	_action_message_building = building_id
 	if not _debug.save_lab_state(_state):
@@ -1754,9 +1914,13 @@ func _get_reactor_rate_per_hour() -> float:
 	var hq_path = str(_state.get("lab", {}).get("hqPath", "Scientific"))
 	var engine := ProductionEngine.new()
 	var rate: float = engine._compute_output_rate(level, route, _get_building_route("storage_vault"), hq_path, ProductionEngine.balance_for_server(_db.balance))
-	var overclock = _state.get("lab", {}).get("runtime", {}).get("boosts", {}).get("volatile_overclock", {})
-	if int(overclock.get("expires_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
-		rate *= float(_db.get_balance("overclock_output_mult", 1.25))
+	var runtime: Dictionary = _state.get("lab", {}).get("runtime", {})
+	var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
+	var output_mult := 1.0
+	for id in ["volatile_overclock", "essence_turbo"]:
+		if _debug_boost_active(runtime, id, now):
+			output_mult = maxf(output_mult, float(ExperimentCatalog.get_by_id(id).get("effect", {}).get("reactor_output_mult", 1.0)))
+	rate *= output_mult
 	return rate * 3600.0
 
 func _get_mult(map: Variant, key: String, default_value: float) -> float:

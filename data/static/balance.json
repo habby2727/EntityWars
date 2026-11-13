@@ -29,6 +29,26 @@
       "technical": { "tempo_flat": 1, "ignore_reflect_chance": 0.03, "evasion_pct": 0.015, "vuln_on_hit": 0.02, "guard_flat": 1, "ward_pct": 0.015 }
     },
     "tick_seconds": 1,
+    "npc_trade_values": { "essence": 1, "core": 50, "arcane_shard": 120, "time_crystal": 300 },
+    "npc_trade_daily": [
+      { "id": "d1", "pay": { "essence": 65 }, "receive": { "core": 1 } },
+      { "id": "d2", "pay": { "core": 1 }, "receive": { "essence": 35 } },
+      { "id": "d3", "pay": { "core": 3 }, "receive": { "arcane_shard": 1 } },
+      { "id": "d4", "pay": { "arcane_shard": 1 }, "receive": { "essence": 90 } },
+      { "id": "d5", "pay": { "essence": 160 }, "receive": { "arcane_shard": 1 } },
+      { "id": "d6", "pay": { "time_crystal": 1 }, "receive": { "arcane_shard": 2 } },
+      { "id": "d7", "pay": { "core": 8 }, "receive": { "time_crystal": 1 } },
+      { "id": "d8", "pay": { "time_crystal": 1 }, "receive": { "core": 4 } }
+    ],
+    "npc_trade_weekly": [
+      { "id": "w1", "pay": { "essence": 630 }, "receive": { "core": 10 } },
+      { "id": "w2", "pay": { "core": 12 }, "receive": { "arcane_shard": 4 } },
+      { "id": "w3", "pay": { "arcane_shard": 7 }, "receive": { "time_crystal": 2 } },
+      { "id": "w4", "pay": { "time_crystal": 2 }, "receive": { "arcane_shard": 4 } },
+      { "id": "w5", "pay": { "core": 15 }, "receive": { "time_crystal": 2 } },
+      { "id": "w6", "pay": { "time_crystal": 2 }, "receive": { "core": 9 } }
+    ],
+    "archive_queue_fee_essence": 10,
     "spell_featured_discount_pct": 0.20,
     "spell_featured_rotation_seconds": 86400,
     "sync_npc_duration_seconds": 28800,
