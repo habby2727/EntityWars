@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-export const PARITY_GAPS = ["Equipment, forge and homunculi", "Spell effects and elemental passive procs", "Boss AI, shield, minions, power turn and fury retaliation", "Authoritative selection persistence, turn concurrency and settlement"] as const;
+export const PARITY_GAPS = ["Equipment, forge and homunculi", "Other spell effects and inspiration from status changes", "Boss AI, shield, minions, power turn and fury retaliation", "Authoritative selection persistence, turn concurrency and settlement"] as const;
 export type CombatError = { error: "UNTRUSTED_SETUP" | "UNSUPPORTED_MECHANIC" | "INVALID_DECISION" };
 const validated = new WeakMap<object, any>();
 
@@ -39,32 +39,56 @@ export function createCombatState(setup: any): any {
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
   if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target"].includes(k)) || decision.turn !== state.turn + 1 || decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0 || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id);
-  if (!spell || spell.type !== state.player.type || spell.category !== "attack" || !Array.isArray(spell.effects) || spell.effects.length !== 0 || Object.keys(state.player.status ?? {}).length > 0 || Object.keys(state.boss.status ?? {}).length > 0 || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
+  const supportedEffects = new Set(["atk_boost", "atk_down", "vuln"]);
+  const supportedStatus = new Set(["atk_boost", "atk_down", "vuln_pct", "shield_pct", "stun", "poison"]);
+  if (!spell || spell.type !== state.player.type || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !supportedEffects.has(e.kind)) || [state.player, state.boss].some(f => Object.keys(f.status ?? {}).some(k => !supportedStatus.has(k))) || state.boss_intent !== "Strike" || state.boss.hp < state.boss.max_hp * 0.5) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
   let counter = next.rng_counter;
   const draw = () => { const n = rng(next.turn + 1, counter++); if (!Number.isFinite(n) || n < 0 || n >= 1) throw new Error("Invalid RNG draw"); return n; };
   const hit = (a: any, d: any, accuracy: number, power: number, actor: string) => {
     let acc = accuracy - (a.atk > d.def * 1.6 ? 0.08 : 0);
     if (a.max_hp > d.max_hp) acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
-    if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor, kind: "miss" }); return; }
+    if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor, kind: "miss" }); return false; }
     const relation = next.types?.effectiveness?.[a.type]?.[d.type] ?? 1;
     const mult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
-    const damage = Math.max(1, Math.round((a.atk - Math.trunc(d.def * 0.5)) * mult * power));
+    let atk = a.atk;
+    if (a.status.atk_down > 0) { atk = Math.round(atk * (1 - a.status.atk_down)); delete a.status.atk_down; }
+    if (a.status.atk_boost > 0) { atk = Math.round(atk * (1 + a.status.atk_boost)); delete a.status.atk_boost; }
+    let damage = Math.max(1, Math.round((atk - Math.trunc(d.def * 0.5)) * mult * power));
+    if (d.status.vuln_pct > 0) { damage = Math.round(damage * (1 + d.status.vuln_pct)); delete d.status.vuln_pct; }
+    if (d.status.shield_pct > 0) { damage = Math.round(damage * (1 - d.status.shield_pct)); delete d.status.shield_pct; }
     d.hp = Math.max(0, d.hp - damage);
     events.push({ actor, kind: "damage", damage });
-    // Godot rolls an elemental passive after every successful hit. Reject the
-    // entire immutable turn if that unsupported passive would activate.
     const passiveChance = a.type === "vitriol" ? 0.30 : 0.20;
-    if (["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(a.type) && draw() < passiveChance) throw new Error("UNSUPPORTED_MECHANIC");
+    if (["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(a.type) && draw() < passiveChance) {
+      if (a.type === "sulfur") d.status.atk_down = Math.max(d.status.atk_down ?? 0, 0.15);
+      if (a.type === "mercury") d.status.stun = 1;
+      if (a.type === "sodium") a.status.shield_pct = Math.max(a.status.shield_pct ?? 0, 0.12);
+      if (a.type === "aether") d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, 0.12);
+      if (a.type === "vitriol") d.status.poison = 2;
+      if (a.type === "gold") a.hp = Math.min(a.max_hp, a.hp + 3);
+      events.push({ actor, kind: "elemental_proc", type: a.type });
+    }
+    return true;
   };
   try {
     for (const key of Object.keys(next.cooldowns)) next.cooldowns[key] = Math.max(0, next.cooldowns[key] - 1);
     next.cooldowns[spell.id] = spell.cooldown_turns;
-    hit(next.player, next.boss, spell.accuracy, spell.power_mult, "player");
+    let success = false;
+    if (next.player.status.stun > 0) { next.player.status.stun--; }
+    else if (spell.category === "attack" && spell.power_mult > 0) success = hit(next.player, next.boss, spell.accuracy, spell.power_mult, "player");
+    else success = draw() < spell.accuracy;
+    if (success) for (const effect of spell.effects) {
+      const recipient = effect.target === "self" ? next.player : next.boss;
+      const field = effect.kind === "vuln" ? "vuln_pct" : effect.kind;
+      recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+    }
     if (next.boss.hp > 0) {
       const ratio = next.boss.hp / next.boss.max_hp;
-      hit(next.boss, next.player, 0.9, ratio > 0.7 ? 1 : ratio > 0.4 ? 1.2 : ratio > 0.15 ? 1.4 : 1.6, "boss");
+      if (next.boss.status.stun > 0) next.boss.status.stun--;
+      else hit(next.boss, next.player, 0.9, ratio > 0.7 ? 1 : ratio > 0.4 ? 1.2 : ratio > 0.15 ? 1.4 : 1.6, "boss");
     }
+    if (next.player.hp > 0 && next.boss.hp > 0) for (const fighter of [next.player, next.boss]) if (fighter.status.poison > 0) { fighter.status.poison--; fighter.hp = Math.max(0, fighter.hp - 2); }
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   next.turn++;
   next.rng_counter = counter;

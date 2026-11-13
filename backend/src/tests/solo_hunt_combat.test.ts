@@ -27,8 +27,20 @@ test("validated setup and deterministic direct exchange", () => {
   expect(resolveCombatTurn({ ...state, terminal_result: "WIN" }, decision, rng)).toEqual({ error: "INVALID_DECISION" });
   expect(state).toEqual(before);
   expect(resolveCombatTurn(state, { ...decision, hp: 999 }, rng)).toEqual({ error: "INVALID_DECISION" });
-  expect(resolveCombatTurn(state, { ...decision, spell_id: "furnace_rush" }, rng)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
-  expect(resolveCombatTurn(state, decision, () => 0)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+  const proc = resolveCombatTurn(state, decision, () => 0);
+  expect(proc.next_state.boss.status.atk_down ?? 0).toBe(0);
+  expect(proc.events.some((e: any) => e.kind === "elemental_proc" && e.type === "sulfur")).toBe(true);
+  const support = resolveCombatTurn(state, { ...decision, spell_id: "ash_temper" }, rng);
+  expect(support.next_state.player.status.atk_boost).toBe(0.2);
+  expect(support.next_state.cooldowns.ash_temper).toBe(2);
+  const rush = resolveCombatTurn(state, { ...decision, spell_id: "furnace_rush" }, rng);
+  expect(rush.next_state.player.hp).toBeLessThan(104);
+  expect(rush.next_state.cooldowns.furnace_rush).toBe(2);
+  expect(rush.next_state.player.status.vuln_pct ?? 0).toBe(0);
+  const crash = resolveCombatTurn(state, { ...decision, spell_id: "brimstone_crash" }, rng);
+  expect(crash.next_state.boss.status.atk_down ?? 0).toBe(0);
+  expect(crash.next_state.player.hp).toBeGreaterThan(93);
+  expect(resolveCombatTurn(support.next_state, { turn: 2, spell_id: "ash_temper", target: "boss" }, rng)).toEqual({ error: "INVALID_DECISION" });
 });
 
 test("trust, spell and deterministic RNG boundaries", () => {
@@ -37,4 +49,29 @@ test("trust, spell and deterministic RNG boundaries", () => {
   expect(buildTrustedCombatSetup(snapshot, { ...selection, spell_ids: ["steady_script", ...selection.spell_ids.slice(1)] }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
   const secret = new Uint8Array(32).fill(42);
   expect(deterministicDraw(secret, "session", 1, 0)).toBe(deterministicDraw(secret, "session", 1, 0));
+});
+
+test("six elemental procs resolve and update combat state", () => {
+  for (const type of ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"]) {
+    const state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+    state.player.type = type;
+    state.spells.find((s: any) => s.id === "cinder_fist").type = type;
+    state.boss.type = "unknown";
+    state.player.hp = 90;
+    const result = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0);
+    expect(result.events.some((e: any) => e.kind === "elemental_proc" && e.type === type)).toBe(true);
+    if (type === "mercury") expect(result.next_state.player.hp).toBe(90);
+    if (type === "aether") expect(result.next_state.boss.status.vuln_pct).toBe(0.12);
+    if (type === "vitriol") expect(result.next_state.boss.status.poison).toBe(1);
+    if (type === "gold") expect(result.next_state.player.hp).toBeGreaterThan(79);
+    if (type === "sodium") expect(result.next_state.player.hp).toBeGreaterThan(79);
+    if (type === "sulfur") expect(result.next_state.player.hp).toBeGreaterThan(79);
+  }
+  const capped = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+  capped.player.type = "gold";
+  capped.spells.find((s: any) => s.id === "cinder_fist").type = "gold";
+  capped.player.hp = 103;
+  capped.boss.status.stun = 1;
+  const result = resolveCombatTurn(capped, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0);
+  expect(result.next_state.player.hp).toBe(104);
 });
