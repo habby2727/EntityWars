@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildTrustedCombatSetup, createCombatState, resolveCombatTurn, deterministicDraw } from "../solo_hunt_combat";
+import { buildTrustedCombatSetup, createCombatState, resolveCombatTurn, deterministicDraw, resolveInspirationDecision, restoreInspiration } from "../solo_hunt_combat";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
@@ -627,4 +627,76 @@ test("marks are owned, expire on actions and are consumed on hybrid hit", () => 
   const expiring = make(); expiring.boss.status.stun = 1; expiring.boss.status.hybrid_mark = { owner: "player", remaining: 1 };
   const expired = resolveCombatTurn(expiring, { turn: 1, spell_id: "rift_touch", target: "boss" }, rng).next_state;
   expect(expired.boss.status.hybrid_mark).toBeUndefined();
+});
+
+test("inspiration status triggers, three offers and temporary spell lifecycle", () => {
+  const build = (spellId: string) => {
+    const spell = catalogs.spells.find((s: any) => s.id === spellId);
+    const entity = catalogs.entities.find((e: any) => e.type === spell.type || spell.eligible_types?.includes(e.type));
+    const defaults = catalogs.spells.filter((s: any) => s.type === entity.type).map((s: any) => s.id);
+    const ids = [spell.id, ...defaults.filter((id: string) => id !== spell.id).slice(0, 3)];
+    const progress = { learned_by_entity: { [entity.id]: [spell.id] }, equipped_by_mode: { attack: { [entity.id]: ids } } };
+    return createCombatState(buildTrustedCombatSetup({ ...snapshot, spell_progress: progress }, { ...selection, entity_id: entity.id, spell_ids: ids }, catalogs));
+  };
+  for (const id of ["brimstone_crash", "veil_rupture", "caustic_mark", "mercury_snare", "crooked_rune", "salt_circuit", "paradox_edict"]) {
+    const state = build(id); state.boss.status.stun = 1;
+    const result = resolveCombatTurn(state, { turn: 1, spell_id: id, target: "boss" }, rng);
+    expect(result.next_state.player.inspiration).toBe(1);
+  }
+  const equal = build("caustic_mark"); equal.boss.status.stun = 1; equal.boss.status.poison = 2;
+  expect(resolveCombatTurn(equal, { turn: 1, spell_id: "caustic_mark", target: "boss" }, rng).next_state.player.inspiration).toBe(0);
+  const self = build("furnace_rush"); self.boss.status.stun = 1;
+  expect(resolveCombatTurn(self, { turn: 1, spell_id: "furnace_rush", target: "boss" }, rng).next_state.player.inspiration).toBe(0);
+  const miss = build("brimstone_crash"); miss.boss.status.stun = 1;
+  expect(resolveCombatTurn(miss, { turn: 1, spell_id: "brimstone_crash", target: "boss" }, () => 0.99).next_state.player.inspiration).toBe(0);
+  let accumulated = build("brimstone_crash"); accumulated.boss.hp = 10000; accumulated.boss.max_hp = 10000;
+  for (const [index, id] of ["brimstone_crash", "cinder_fist", "cinder_fist", "brimstone_crash", "cinder_fist", "cinder_fist", "brimstone_crash"].entries()) {
+    const result = resolveCombatTurn(accumulated, { turn: index + 1, spell_id: id, target: "boss" }, rng);
+    expect(result.error).toBeUndefined();
+    accumulated = result.next_state;
+    if ([0, 3, 6].includes(index)) expect(accumulated.player.inspiration).toBe([0, 3, 6].indexOf(index) + 1);
+  }
+  expect(accumulated.player.inspiration_pending).toBe(true);
+  const state = build("brimstone_crash"); state.player.inspiration = 2; state.boss.status.stun = 1;
+  const before = structuredClone(state);
+  const turn = { turn: 1, spell_id: "brimstone_crash", target: "boss" };
+  const offered = resolveCombatTurn(state, turn, rng).next_state;
+  expect(state).toEqual(before);
+  expect(offered.player.inspiration).toBe(3);
+  expect(new Set(offered.inspiration_offers).size).toBe(3);
+  for (const id of offered.inspiration_offers) {
+    const s = offered.inspiration_catalog.find((entry: any) => entry.id === id);
+    expect(s.type === "sulfur" || (s.type === "hybrid" && s.primary_type === "sulfur")).toBe(true);
+    expect(offered.spell_ids.includes(id)).toBe(false);
+  }
+  expect(resolveCombatTurn(offered, { turn: 2, spell_id: offered.spell_ids[0], target: "boss" }, rng)).toEqual({ error: "INVALID_DECISION" });
+  let attempts = 0;
+  expect(resolveInspirationDecision(offered, { kind: "choose", spell_id: "forged" }, () => { attempts++; return 0; })).toEqual({ error: "INVALID_DECISION" });
+  expect(attempts).toBe(0);
+  const chosen = resolveInspirationDecision(offered, { kind: "choose", spell_id: offered.inspiration_offers[0] }, () => 0.3).next_state;
+  expect(resolveInspirationDecision(offered, { kind: "choose", spell_id: offered.inspiration_offers[0] }, () => 0.3).next_state).toEqual(chosen);
+  expect([chosen.turn, chosen.temporary_replaced_slot, chosen.player.inspiration_used_this_battle]).toEqual([1, 1, true]);
+  expect(chosen.spell_ids[1]).toBe(chosen.temporary_spell_id);
+  chosen.boss.status.stun = 1;
+  const cast = resolveCombatTurn(chosen, { turn: 2, spell_id: chosen.temporary_spell_id, target: "boss" }, rng);
+  expect(cast.error).toBeUndefined();
+  expect(cast.next_state.boss.hp).toBeLessThan(chosen.boss.hp);
+  expect(cast.next_state.player.inspiration).toBe(3);
+  expect(resolveInspirationDecision(chosen, { kind: "decline" }, rng)).toEqual({ error: "INVALID_DECISION" });
+  const restored = restoreInspiration(chosen);
+  expect(restored.spell_ids).toEqual(state.spell_ids);
+  expect(restored.temporary_spell_id).toBeNull();
+  const winning = structuredClone(chosen); winning.boss.hp = 1; winning.boss.max_hp = 2;
+  const win = resolveCombatTurn(winning, { turn: 2, spell_id: winning.temporary_spell_id, target: "boss" }, () => 0.1);
+  expect(win.terminal_result).toBe("WIN");
+  expect(win.next_state.spell_ids).toEqual(state.spell_ids);
+  expect(win.next_state.temporary_spell_id).toBeNull();
+  const losing = structuredClone(chosen); losing.player.hp = 1; losing.boss.status.tempo_bonus = 100; losing.boss.status.stun = 0;
+  const loss = resolveCombatTurn(losing, { turn: 2, spell_id: losing.temporary_spell_id, target: "boss" }, () => 0.1);
+  expect(loss.terminal_result).toBe("LOSS");
+  expect(loss.next_state.spell_ids).toEqual(state.spell_ids);
+  const declined = resolveInspirationDecision(offered, { kind: "decline" }, rng).next_state;
+  expect(declined.spell_ids).toEqual(state.spell_ids);
+  expect([declined.player.inspiration, declined.player.inspiration_used_this_battle]).toEqual([0, true]);
+  expect(resolveCombatTurn(state, { ...turn, ultra: true }, rng)).toEqual({ error: "INVALID_DECISION" });
 });

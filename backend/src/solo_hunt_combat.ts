@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-export const PARITY_GAPS = ["Equipment, forge and homunculi", "Inspiration and Ultraturn", "Boss AI, shield, minions, power turn and fury retaliation", "Authoritative selection persistence, turn concurrency and settlement"] as const;
+export const PARITY_GAPS = ["Normal Bo3 Ultraturn", "Boss AI, shield, minions, power turn and fury retaliation", "Authoritative selection persistence, turn concurrency and settlement"] as const;
 export type CombatError = { error: "UNTRUSTED_SETUP" | "UNSUPPORTED_MECHANIC" | "INVALID_DECISION" };
 const validated = new WeakMap<object, any>();
 
@@ -79,7 +79,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const synergy = hom?.per_type?.[entity.type] ?? {};
   if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value))) return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), spells: structuredClone(catalogs.spells.filter((s: any) => selection.spell_ids.includes(s.id))), inspiration_catalog: structuredClone(catalogs.spells.filter((s: any) => s.type === entity.type || (s.type === "hybrid" && s.primary_type === entity.type))), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -87,7 +87,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
 export function createCombatState(setup: any): any {
   if (!setup || !validated.has(setup)) return { error: "UNTRUSTED_SETUP" };
   setup = validated.get(setup);
-  const fighter = (e: any, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false });
+  const fighter = (e: any, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
   const player = fighter(setup.entity);
   const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
   const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
@@ -97,7 +97,7 @@ export function createCombatState(setup: any): any {
   player.def += setup.bonuses.def + Math.trunc(activeEffects.guard_flat ?? 0);
   player.max_hp += setup.bonuses.hp;
   player.hp = player.max_hp;
-  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
+  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_intent: "Strike", spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: 0, terminal_result: null };
 }
 
 function scaleWeapon(effects: Record<string, number>, multiplier: number = 1): Record<string, number> {
@@ -107,7 +107,7 @@ function scaleWeapon(effects: Record<string, number>, multiplier: number = 1): R
 
 export function resolveCombatTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
   const switching = decision?.switch_slot !== undefined;
-  if (!state || state.terminal_result || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target", "hom_action", "switch_slot"].includes(k)) || ![undefined, "hold", "attack", "sacrifice"].includes(decision.hom_action) || (decision.hom_action && decision.hom_action !== "hold" && (state.hom_spent || !state.hom_id || state.hom_energy < 3)) || decision.turn !== state.turn + 1 || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  if (!state || state.terminal_result || state.player?.inspiration_pending || !decision || Object.keys(decision).some(k => !["turn", "spell_id", "target", "hom_action", "switch_slot"].includes(k)) || ![undefined, "hold", "attack", "sacrifice"].includes(decision.hom_action) || (decision.hom_action && decision.hom_action !== "hold" && (state.hom_spent || !state.hom_id || state.hom_energy < 3)) || decision.turn !== state.turn + 1 || typeof rng !== "function") return { error: "INVALID_DECISION" };
   if (switching ? (decision.spell_id !== undefined || decision.target !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id) : (decision.target !== "boss" || !state.spell_ids?.includes(decision.spell_id) || (state.cooldowns?.[decision.spell_id] ?? 0) > 0)) return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id);
   const supportedEffects = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order"]);
@@ -136,6 +136,13 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   let actualDamage = 0;
   let accuracyFocus = 0, accuracyMisalign = 0;
   const draw = () => { const n = rng(next.turn + 1, counter++); if (!Number.isFinite(n) || n < 0 || n >= 1) throw new Error("Invalid RNG draw"); return n; };
+  const award = (kind: string) => {
+    if (!next.player.inspiration_used_this_battle && next.player.inspiration < 3) {
+      next.player.inspiration++;
+      next.player.inspiration_pending = next.player.inspiration === 3;
+      events.push({ actor: "player", kind: "inspiration", source: kind, value: next.player.inspiration });
+    }
+  };
   const hit = (a: any, d: any, accuracy: number, power: number, actor: string) => {
     if (actor === "boss" && (next.item_effects?.evasion_pct ?? 0) > 0 && draw() < next.item_effects.evasion_pct) { events.push({ actor: "player", kind: "evade" }); return false; }
     let acc = accuracy - (a.atk > d.def * 1.6 ? 0.08 : 0);
@@ -275,8 +282,8 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (success) for (const effect of spell.effects) {
       const recipient = effect.target === "self" ? next.player : next.boss;
       if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(effect.kind)) continue;
-      if (effect.kind === "hybrid_mark") { recipient.status.hybrid_mark = { owner: "player", remaining: Math.trunc(effect.value) }; continue; }
-      if (effect.kind === "tempo_shift") { recipient.status.tempo_bonus = effect.value; continue; }
+      if (effect.kind === "hybrid_mark") { const before = JSON.stringify(recipient.status.hybrid_mark ?? {}); recipient.status.hybrid_mark = { owner: "player", remaining: Math.trunc(effect.value) }; if (recipient === next.boss && before !== JSON.stringify(recipient.status.hybrid_mark)) award(effect.kind); continue; }
+      if (effect.kind === "tempo_shift") { const before = recipient.status.tempo_bonus ?? 0; recipient.status.tempo_bonus = effect.value; if (recipient === next.boss && effect.value < 0 && effect.value < before) award(effect.kind); continue; }
       if (effect.kind === "shield_by_order") { otherDefense(recipient, "shield_pct", playerFirst ? effect.value : effect.second_value ?? effect.value); continue; }
       if (effect.kind === "poison_on_reflect") { recipient.status.poison_on_reflect = Math.trunc(effect.value); continue; }
       if (effect.kind === "life_leech") { if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value))); continue; }
@@ -292,8 +299,10 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.trunc(effect.value));
       } else {
         const field = ({ vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" } as Record<string, string>)[effect.kind] ?? effect.kind;
+        const before = recipient.status[field] ?? 0;
         if (["shield_pct", "reflect_pct"].includes(field)) otherDefense(recipient, field, effect.value);
         else recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+        if (recipient === next.boss && ["atk_down", "vuln", "poison", "hom_stun", "misalign_next"].includes(effect.kind) && recipient.status[field] > before) award(effect.kind);
       }
     }
     }
@@ -358,7 +367,55 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (next.turn === 1 && next.player.hp > next.boss.hp && (next.item_effects?.tempo_on_win ?? 0) > 0) next.player.status.tempo_bonus = next.item_effects.tempo_on_win;
   }
   for (const fighter of [next.player, next.boss]) fighter.spell_neutralize_active = 0;
-  next.rng_counter = counter;
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.boss.hp <= 0 ? "WIN" : null;
+  if (next.terminal_result) Object.assign(next, restoreInspiration(next));
+  else if (next.player.inspiration_pending) {
+    const unique = new Set<string>();
+    const options = next.inspiration_catalog.filter((s: any) => !next.spell_ids.includes(s.id) && !unique.has(s.id) && !!unique.add(s.id));
+    if (options.length < 3) return { error: "UNSUPPORTED_MECHANIC" };
+    next.inspiration_offers = [];
+    for (let i = 0; i < 3; i++) {
+      const value = rng(next.turn, counter++);
+      if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error("Invalid RNG draw");
+      next.inspiration_offers.push(options.splice(Math.floor(value * options.length), 1)[0].id);
+    }
+  }
+  next.rng_counter = counter;
   return { next_state: next, events, terminal_result: next.terminal_result };
+}
+
+// Pure cleanup for terminal/forfeit handling; permanent progression is external.
+export function restoreInspiration(state: any): any {
+  const result = structuredClone(state);
+  if (Array.isArray(result.original_spell_ids)) result.spell_ids = [...result.original_spell_ids];
+  if (result.temporary_spell_id) result.spells = result.spells.filter((s: any) => s.id !== result.temporary_spell_id || result.original_spell_ids.includes(s.id));
+  result.temporary_spell_id = null;
+  result.temporary_replaced_slot = null;
+  result.inspiration_offers = [];
+  result.player.inspiration = 0;
+  result.player.inspiration_pending = false;
+  return result;
+}
+
+export function resolveInspirationDecision(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
+  if (!state || state.terminal_result || !state.player?.inspiration_pending || state.player.inspiration_used_this_battle || !Array.isArray(state.inspiration_offers) || state.inspiration_offers.length !== 3 || !decision || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  const keys = Object.keys(decision).sort().join(",");
+  if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && typeof decision.spell_id === "string" && state.inspiration_offers.includes(decision.spell_id))) return { error: "INVALID_DECISION" };
+  const next = structuredClone(state);
+  if (decision.kind === "choose") {
+    const spell = next.inspiration_catalog.find((entry: any) => entry.id === decision.spell_id);
+    if (!spell || next.spell_ids.includes(spell.id)) return { error: "INVALID_DECISION" };
+    const random = rng(next.turn, next.rng_counter);
+    if (!Number.isFinite(random) || random < 0 || random >= 1) throw new Error("Invalid RNG draw");
+    const slot = Math.floor(random * 4);
+    next.rng_counter++;
+    next.spell_ids[slot] = spell.id;
+    if (!next.spells.some((entry: any) => entry.id === spell.id)) next.spells.push(structuredClone(spell));
+    next.temporary_spell_id = spell.id;
+    next.temporary_replaced_slot = slot;
+  } else next.player.inspiration = 0;
+  next.player.inspiration_pending = false;
+  next.player.inspiration_used_this_battle = true;
+  next.inspiration_offers = [];
+  return { next_state: next };
 }
