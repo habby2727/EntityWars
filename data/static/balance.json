@@ -29,6 +29,22 @@
       "technical": { "tempo_flat": 1, "ignore_reflect_chance": 0.03, "evasion_pct": 0.015, "vuln_on_hit": 0.02, "guard_flat": 1, "ward_pct": 0.015 }
     },
     "tick_seconds": 1,
+    "spell_featured_discount_pct": 0.20,
+    "spell_featured_rotation_seconds": 86400,
+    "sync_npc_duration_seconds": 28800,
+    "sync_npc_reward": { "core": 1, "arcane_shard": 1 },
+    "anomaly_cooldown_base_seconds": 28800,
+    "anomaly_cooldown_reduction_per_level": 900,
+    "anomaly_seal_reward": { "essence": 20, "arcane_shard": 1 },
+    "anomaly_investigate_outcomes": [
+      { "weight": 0.50, "reward": {} },
+      { "weight": 0.40, "reward": { "arcane_shard": 2 } },
+      { "weight": 0.10, "reward": { "time_crystal": 1 } }
+    ],
+    "hom_upgrade_essence_base": 25,
+    "hom_upgrade_essence_per_level": 15,
+    "hom_mutation_cost": { "essence": 70, "core": 2, "arcane_shard": 1 },
+    "hom_mutation_cooldown_seconds": 21600,
     "hq_directive_duration_seconds": 86400,
     "hq_directive_production_mult": 1.10,
     "hq_directive_research_time_mult": 0.90,

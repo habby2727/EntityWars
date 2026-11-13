@@ -38,6 +38,17 @@ function isResearchable(entityId: string, spellId: string): boolean {
 		Array.isArray(spell.eligible_types) && spell.eligible_types.includes(type);
 }
 
+export function featuredSpellIds(type: string, towerLevel: number, now: number, rotationSeconds = 86400): string[] {
+	const index = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].indexOf(type);
+	if (index < 0 || !Number.isFinite(now) || !Number.isFinite(rotationSeconds) || rotationSeconds <= 0) return [];
+	const candidates = [...spells.values()].filter(spell => (spell.type === "universal" || spell.type === "hybrid") && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(type) && Number.isInteger(spell.tower_level_required) && spell.tower_level_required! >= 1 && spell.tower_level_required! <= towerLevel).map(spell => spell.id).sort();
+	if (!candidates.length) return [];
+	const day = Math.floor(now / (rotationSeconds * 1000));
+	const start = ((day + index * 7) % candidates.length + candidates.length) % candidates.length;
+	const step = Math.max(1, Math.floor(candidates.length / 3));
+	return Array.from({ length: Math.min(3, candidates.length) }, (_, k) => candidates[(start + k * step) % candidates.length]);
+}
+
 function validLoadout(entityId: string, ids: unknown, learned: Record<string, string[]>): ids is string[] {
 	const type = entities.get(entityId);
 	if (!type || !Array.isArray(ids) || ids.length !== 4 || ids.some(id => typeof id !== "string") || new Set(ids).size !== 4) return false;
@@ -84,7 +95,7 @@ export function setSpellLoadout(state: any, payload: any): string | null {
 	return null;
 }
 
-export function startSpellResearch(state: any, payload: any, now: number, resources: Set<string>): string | null {
+export function startSpellResearch(state: any, payload: any, now: number, resources: Set<string>, balance: Record<string, unknown> = {}): string | null {
 	const entityId = typeof payload?.entity_id === "string" ? payload.entity_id : "";
 	const spellId = typeof payload?.spell_id === "string" ? payload.spell_id : "";
 	if (!isResearchable(entityId, spellId)) return "Unknown or incompatible entity and spell.";
@@ -97,11 +108,17 @@ export function startSpellResearch(state: any, payload: any, now: number, resour
 		!Number.isInteger(spell.research_time_sec) || (spell.research_time_sec ?? 0) <= 0 ||
 		!spell.research_cost || typeof spell.research_cost !== "object" || Array.isArray(spell.research_cost) || Object.keys(spell.research_cost).length === 0) return "Invalid spell research data.";
 	if ((state.lab.buildings.ultrahit_tower?.level ?? 0) < spell.tower_level_required!) return "Spell Tower level too low.";
+	const discount = balance.spell_featured_discount_pct ?? 0.2;
+	const rotation = balance.spell_featured_rotation_seconds ?? 86400;
+	if (typeof discount !== "number" || !Number.isFinite(discount) || discount < 0 || discount > 1 || typeof rotation !== "number" || !Number.isFinite(rotation) || rotation <= 0) return "Invalid featured research configuration.";
+	const featured = featuredSpellIds(entities.get(entityId)!, state.lab.buildings.ultrahit_tower?.level ?? 0, now, rotation).includes(spellId);
+	const cost: Record<string, number> = {};
 	for (const [id, amount] of Object.entries(spell.research_cost)) {
 		if (!resources.has(id) || !Number.isSafeInteger(amount) || amount < 0) return "Invalid spell research cost.";
-		if ((state.wallet[id] ?? 0) < amount) return "Insufficient resources.";
+		cost[id] = featured && amount > 0 ? Math.max(1, Math.ceil(amount * (1 - discount))) : amount;
+		if ((state.wallet[id] ?? 0) < cost[id]) return "Insufficient resources.";
 	}
-	for (const [id, amount] of Object.entries(spell.research_cost)) state.wallet[id] -= amount;
+	for (const [id, amount] of Object.entries(cost)) state.wallet[id] -= amount;
 	progress.active_research = { entity_id: entityId, spell_id: spellId, started_at: now, completes_at: now + spell.research_time_sec! * 1000 };
 	return null;
 }

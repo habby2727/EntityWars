@@ -49,7 +49,7 @@ const BUILDING_ORDER := [
 const REACTOR_ROUTES := ["Stable", "Volatile", "Mutagenic"]
 const STORAGE_ROUTES := ["Compact", "Reactive", "Sealed"]
 const HQ_PATHS := ["Scientific", "Chaotic", "Industrial"]
-const GATE_BUILDINGS := ["sync_nexus", "anomaly_containment", "trade_hall", "world_gate"]
+const GATE_BUILDINGS := ["trade_hall", "world_gate"]
 const RESEARCH_FLAG_ONLY := ["unlock_sync", "unlock_anomalies", "reduce_experiment_cooldown", "increase_storage_capacity", "reactor_efficiency", "unlock_arcane_catalog", "unlock_gateway_studies"]
 
 var _backend: BackendClient = null
@@ -60,6 +60,7 @@ var _spell_section: VBoxContainer
 var _spell_entity_selector: OptionButton
 var _spell_list: VBoxContainer
 var _spell_rows := {}
+var _spell_featured_header: Label
 var _spell_server_offset_ms := 0
 var _spell_state_synced := false
 var _spell_filter := "All"
@@ -205,14 +206,14 @@ func _process(delta: float) -> void:
 		_update_lab_status()
 
 func _update_lab_status() -> void:
-	if _specialized_panel == null or _selected_id not in ["lab_th", "essence_reactor"]:
+	if _specialized_panel == null or _selected_id not in ["lab_th", "essence_reactor", "homunculus_vat", "anomaly_containment", "sync_nexus"]:
 		return
 	var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
 	var rate := _get_reactor_rate_per_hour() if _selected_id == "essence_reactor" else 0.0
 	var directive: Dictionary = _state.get("lab", {}).get("runtime", {}).get("directive", {})
 	if directive.get("id") == "production" and int(directive.get("starts_at", 0)) <= now and now < int(directive.get("ends_at", 0)):
 		rate *= float(_db.get_balance("hq_directive_production_mult", 1.1))
-	var metrics := {"rate": rate, "stored": _state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("runtime", {}).get("stored_output", 0), "threshold": int(_db.get_balance("reactor_overcharge_threshold", 300)), "cooldown": int(_db.get_balance("reactor_overcharge_cooldown_seconds", 10800)), "reward": _db.get_balance("reactor_overcharge_reward", {"essence": 15, "core": 1})}
+	var metrics := {"rate": rate, "stored": _state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("runtime", {}).get("stored_output", 0), "threshold": int(_db.get_balance("reactor_overcharge_threshold", 300)), "cooldown": int(_db.get_balance("reactor_overcharge_cooldown_seconds", 10800)), "reward": _db.get_balance("reactor_overcharge_reward", {"essence": 15, "core": 1}), "sync_reward": _db.get_balance("sync_npc_reward", {"core": 1, "arcane_shard": 1})}
 	_specialized_panel.update_lab_status(_state, now, _is_pending_building(_selected_id), metrics)
 
 func _resolve_nodes() -> void:
@@ -530,6 +531,9 @@ func _build_spell_section() -> void:
 	var heading := Label.new()
 	heading.text = "Spell Research"
 	_spell_section.add_child(heading)
+	_spell_featured_header = Label.new()
+	_spell_featured_header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_spell_section.add_child(_spell_featured_header)
 	_spell_entity_selector = OptionButton.new()
 	var entity_ids := _spell_registry.entities.keys()
 	entity_ids.sort()
@@ -683,7 +687,39 @@ func _build_spell_rows() -> void:
 		actions.add_child(button)
 		row.add_child(actions)
 		_spell_list.add_child(row)
-		_spell_rows[str(spell.id)] = {"spell": spell, "status": status, "button": button}
+		_spell_rows[str(spell.id)] = {"spell": spell, "status": status, "button": button, "name": name_label, "base_name": name_label.text}
+
+func _featured_spell_ids(entity_type: String, tower_level: int, now_ms: int, rotation_seconds: int) -> Array[String]:
+	var result: Array[String] = []
+	var type_index := ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].find(entity_type)
+	if type_index < 0 or rotation_seconds <= 0:
+		return result
+	var candidates: Array[String] = []
+	for spell in _spell_registry.get_researchable_spells_for_type(entity_type):
+		if str(spell.get("type", "")) in ["universal", "hybrid"] and entity_type in spell.get("eligible_types", []) and int(spell.get("tower_level_required", 0)) >= 1 and int(spell.get("tower_level_required", 0)) <= tower_level:
+			candidates.append(str(spell.get("id", "")))
+	candidates.sort()
+	if candidates.is_empty():
+		return result
+	var day := int(floor(float(now_ms) / float(rotation_seconds * 1000)))
+	var start := posmod(day + type_index * 7, candidates.size())
+	var step := maxi(1, int(floor(float(candidates.size()) / 3.0)))
+	for i in range(mini(3, candidates.size())):
+		result.append(candidates[(start + i * step) % candidates.size()])
+	return result
+
+func _featured_cost(cost: Dictionary, discount: float) -> Dictionary:
+	var result := {}
+	for resource in cost:
+		var amount := int(cost[resource])
+		result[resource] = maxi(1, int(ceil(float(amount) * (1.0 - discount)))) if amount > 0 else amount
+	return result
+
+func _spell_cost_text(cost: Dictionary) -> String:
+	var values: Array[String] = []
+	for resource in cost:
+		values.append("%s %d" % [_get_resource_name(str(resource)), int(cost[resource])])
+	return ", ".join(values)
 
 func _update_spell_section() -> void:
 	if _spell_section == null:
@@ -698,12 +734,25 @@ func _update_spell_section() -> void:
 	if not active is Dictionary:
 		active = {}
 	var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
+	var rotation_seconds := maxi(1, int(_db.get_balance("spell_featured_rotation_seconds", 86400)))
+	var discount := clampf(float(_db.get_balance("spell_featured_discount_pct", 0.2)), 0.0, 1.0)
+	var entity_type := str(_spell_registry.entities.get(entity_id, {}).get("type", ""))
+	var featured := _featured_spell_ids(entity_type, _get_building_level("ultrahit_tower"), now, rotation_seconds)
+	var rotation_ms := rotation_seconds * 1000
+	var seconds_left := int(ceil(float(rotation_ms - posmod(now, rotation_ms)) / 1000.0))
+	_spell_featured_header.text = "Daily Featured Research -%d%%\nRotation in %02d:%02d:%02d%s" % [int(round(discount * 100.0)), int(seconds_left / 3600.0), int(seconds_left / 60.0) % 60, seconds_left % 60, "" if _debug.unlock_all_buildings or _spell_state_synced else " (awaiting server time)"]
 	var pending := _is_pending_building("ultrahit_tower")
 	for id in _spell_rows:
 		var row: Dictionary = _spell_rows[id]
 		var spell: Dictionary = row.spell
 		var status: Label = row.status
 		var button: Button = row.button
+		var name_label: Label = row.name
+		var is_featured := str(id) in featured
+		name_label.text = str(row.base_name) + ("  |  FEATURED" if is_featured else "")
+		name_label.add_theme_color_override("font_color", Color("e5c76d") if is_featured else Color.WHITE)
+		var normal_cost: Dictionary = spell.get("research_cost", {})
+		var effective_cost := _featured_cost(normal_cost, discount) if is_featured else normal_cost
 		button.text = "Research"
 		button.disabled = true
 		if spell.get("type", "") not in ["universal", "hybrid"]:
@@ -720,7 +769,7 @@ func _update_spell_section() -> void:
 				status.text = "Locked: another spell is being researched"
 		elif not _debug.unlock_all_buildings and _get_building_level("ultrahit_tower") < int(spell.tower_level_required):
 			status.text = "Locked: Spell Tower level %d required" % int(spell.tower_level_required)
-		elif not _can_afford(spell.research_cost):
+		elif not _can_afford(effective_cost):
 			status.text = "Locked: insufficient resources"
 		else:
 			status.text = "Researchable" if not _debug.unlock_all_buildings else "Researchable (local debug: 1s)"
@@ -733,6 +782,8 @@ func _update_spell_section() -> void:
 			if not button.disabled:
 				status.text = "Locked: awaiting server state"
 			button.disabled = true
+		if str(spell.get("type", "")) in ["universal", "hybrid"] and not normal_cost.is_empty():
+			status.text += "\nCost: %s%s" % [_spell_cost_text(effective_cost), " (normal: %s)" % _spell_cost_text(normal_cost) if is_featured else ""]
 
 func _on_spell_research_pressed(spell_id: String) -> void:
 	if not _spell_rows.has(spell_id) or _spell_rows[spell_id].button.disabled:
@@ -824,8 +875,19 @@ func _update_detail() -> void:
 	if _debug.unlock_all_buildings:
 		locked = false
 	if _locked_label != null:
-		_locked_label.visible = locked
-		_locked_label.text = "Unlock at HQ Lv %s" % unlock_level
+		var current_level := _get_building_level(_selected_id)
+		var max_level := HqRules.get_max_level(_selected_id)
+		var requirement := ""
+		if locked:
+			requirement = "Requires HQ level %d to unlock (current: %d)." % [unlock_level, _get_hq_level()]
+		elif current_level >= max_level:
+			requirement = "Maximum building level reached."
+		elif not _debug.unlock_all_buildings and not HqRules.can_upgrade(_selected_id, current_level, _get_hq_level()):
+			requirement = "Upgrade to level %d requires HQ level %d (current: %d)." % [current_level + 1, HqRules.get_required_hq_for_upgrade(_selected_id, current_level), _get_hq_level()]
+		elif current_level == 0:
+			requirement = "Build this structure to use its functions." if not _debug.unlock_all_buildings else "Not built (level 0); debug may bypass requirements."
+		_locked_label.visible = requirement != ""
+		_locked_label.text = requirement
 	if _pending_label != null:
 		var is_pending := _is_pending_building(_selected_id)
 		_pending_label.visible = is_pending or (_action_message_building == _selected_id and _action_message != "")
@@ -1142,7 +1204,7 @@ func _on_open_pressed() -> void:
 
 func _send_action(action: Dictionary, building_id: String) -> void:
 	if _debug.unlock_all_buildings:
-		if str(action.get("action_type", "")) in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE"] or not _debug.lab_cooldown_active(_state, building_id):
+		if str(action.get("action_type", "")) in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM"] or not _debug.lab_cooldown_active(_state, building_id):
 			_simulate_debug_action(action)
 		return
 	if _backend == null:
@@ -1164,8 +1226,97 @@ func _simulate_debug_action(action: Dictionary) -> void:
 		building_id = "lab_th"
 	elif action_type == "REACTOR_OVERCHARGE":
 		building_id = "essence_reactor"
+	elif action_type in ["HOM_UPGRADE", "HOM_MUTATE"]:
+		building_id = "homunculus_vat"
+	elif action_type == "ANOMALY_RESOLVE":
+		building_id = "anomaly_containment"
 	var previous = _state.duplicate(true)
 	match action_type:
+		"SYNC_START", "SYNC_CLAIM":
+			var lab: Dictionary = _state.get("lab", {})
+			var runtime: Dictionary = lab.get("runtime", {})
+			var project: Variant = runtime.get("sync_project")
+			var now := int(Time.get_unix_time_from_system() * 1000)
+			if action_type == "SYNC_START":
+				if project is Dictionary and not project.is_empty():
+					return
+				runtime["sync_project"] = {"project_id": "calibration", "partner_kind": "npc", "partner_id": "echo", "started_at": now, "completes_at": now + int(_db.get_balance("sync_npc_duration_seconds", 28800)) * 1000}
+			else:
+				if not project is Dictionary or project.is_empty() or int(project.get("completes_at", 0)) > now:
+					return
+				var wallet: Dictionary = _state.get("wallet", {})
+				var reward: Dictionary = _db.get_balance("sync_npc_reward", {})
+				for resource in reward:
+					wallet[resource] = int(wallet.get(resource, 0)) + int(reward[resource])
+				_state["wallet"] = wallet
+				runtime.erase("sync_project")
+			lab["runtime"] = runtime
+			_state["lab"] = lab
+		"ANOMALY_RESOLVE":
+			var choice := str(payload.get("choice", ""))
+			var level := _get_building_level("anomaly_containment")
+			var lab: Dictionary = _state.get("lab", {})
+			var runtime: Dictionary = lab.get("runtime", {})
+			var now := int(Time.get_unix_time_from_system() * 1000)
+			if choice not in ["seal", "investigate"] or level < 1 or _get_hq_level() < 5 or int(runtime.get("anomaly", {}).get("next_at", 0)) > now:
+				return
+			var reward: Dictionary = {}
+			if choice == "seal":
+				reward = _db.get_balance("anomaly_seal_reward", {}).duplicate()
+			else:
+				var outcomes: Array = _db.get_balance("anomaly_investigate_outcomes", [])
+				var roll := randf()
+				var cumulative := 0.0
+				for outcome in outcomes:
+					cumulative += float(outcome.get("weight", 0))
+					if roll < cumulative:
+						reward = outcome.get("reward", {}).duplicate()
+						break
+			var wallet: Dictionary = _state.get("wallet", {})
+			for resource in reward:
+				wallet[resource] = int(wallet.get(resource, 0)) + int(reward[resource])
+			_state["wallet"] = wallet
+			var cooldown := int(_db.get_balance("anomaly_cooldown_base_seconds", 28800)) - (level - 1) * int(_db.get_balance("anomaly_cooldown_reduction_per_level", 900))
+			runtime["anomaly"] = {"next_at": now + cooldown * 1000, "last_choice": choice, "last_reward": reward, "last_at": now}
+			lab["runtime"] = runtime
+			_state["lab"] = lab
+		"HOM_UPGRADE", "HOM_MUTATE":
+			var id := str(payload.get("homunculus_id", ""))
+			if not _spell_registry.get_homunculi().has(id) or _get_building_level("homunculus_vat") < 1:
+				return
+			var progress: Dictionary = _state.get("homunculus_progress", {})
+			var entry: Dictionary = progress.get(id, {"level": 0})
+			var level := int(entry.get("level", 0))
+			var cost: Dictionary
+			if action_type == "HOM_UPGRADE":
+				if _get_hq_level() < 2 or level >= 10:
+					return
+				cost = {"essence": int(_db.get_balance("hom_upgrade_essence_base", 25)) + int(_db.get_balance("hom_upgrade_essence_per_level", 15)) * level}
+				if level >= 5:
+					cost["core"] = 1
+			else:
+				var mutation := str(payload.get("mutation_id", ""))
+				var changed := int(entry.get("mutation_changed_at", 0))
+				if level < 3 or not _db.mutations.has(mutation) or mutation == str(entry.get("mutation_id", "")) or (changed > 0 and int(Time.get_unix_time_from_system() * 1000) < changed + int(_db.get_balance("hom_mutation_cooldown_seconds", 21600)) * 1000):
+					return
+				cost = _db.get_balance("hom_mutation_cost", {}).duplicate()
+			var wallet: Dictionary = _state.get("wallet", {})
+			for res in cost:
+				if int(wallet.get(res, 0)) < int(cost[res]):
+					_action_message = "Insufficient resources."
+					_action_message_building = building_id
+					_refresh_from_state()
+					return
+			for res in cost:
+				wallet[res] = int(wallet.get(res, 0)) - int(cost[res])
+			if action_type == "HOM_UPGRADE":
+				entry["level"] = level + 1
+			else:
+				entry["mutation_id"] = str(payload.get("mutation_id", ""))
+				entry["mutation_changed_at"] = int(Time.get_unix_time_from_system() * 1000)
+			progress[id] = entry
+			_state["homunculus_progress"] = progress
+			_state["wallet"] = wallet
 		"SET_HQ_DIRECTIVE":
 			var lab: Dictionary = _state.get("lab", {})
 			var runtime: Dictionary = lab.get("runtime", {})
@@ -1281,7 +1432,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 			_state["lab"] = lab
 		_:
 			return
-	if action_type not in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE"]:
+	if action_type not in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM"]:
 		_debug.start_lab_cooldown(_state, building_id)
 	_action_message_building = building_id
 	if not _debug.save_lab_state(_state):
@@ -1408,6 +1559,10 @@ func _rebuild_pending_from_queue() -> void:
 
 func _resolve_building_from_key(action_key: String) -> String:
 	var parts = action_key.split(":")
+	if parts[0] in ["HOM_UPGRADE", "HOM_MUTATE"]:
+		return "homunculus_vat"
+	if parts[0] == "ANOMALY_RESOLVE":
+		return "anomaly_containment"
 	if parts.size() >= 2:
 		return parts[1]
 	return ""

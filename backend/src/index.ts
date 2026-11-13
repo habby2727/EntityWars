@@ -81,6 +81,8 @@ type LabRuntime = {
 	research: ResearchRuntime;
 	directive?: { id: string; starts_at: number; ends_at: number };
 	reactor_overcharge?: { progress: number; last_used_at: number };
+	anomaly?: { next_at: number; last_choice: string; last_reward: ResourceWallet; last_at: number };
+	sync_project?: { project_id: string; partner_kind: string; partner_id: string; started_at: number; completes_at: number };
 };
 
 type LabState = {
@@ -174,6 +176,7 @@ type PlayerState = {
 	research_flags: Record<string, boolean>;
 	spell_progress: SpellProgress;
 	item_progress: Record<string, ItemProgress>;
+	homunculus_progress: Record<string, HomunculusProgress>;
 	updated_at: number;
 };
 
@@ -181,6 +184,25 @@ type ItemProgress = {
 	level: number;
 	[key: string]: unknown;
 };
+
+type HomunculusProgress = { level: number; mutation_id?: string; mutation_changed_at?: number };
+
+function normalizeHomunculusProgress(value: unknown): Record<string, HomunculusProgress> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const result: Record<string, HomunculusProgress> = {};
+	for (const [id, raw] of Object.entries(value)) {
+		if (!staticData.homunculusIds.has(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+		const entry = raw as Record<string, unknown>;
+		const level = Number(entry.level);
+		const progress: HomunculusProgress = { level: Number.isInteger(level) ? Math.max(0, Math.min(10, level)) : 0 };
+		if (typeof entry.mutation_id === "string" && staticData.mutationIds.has(entry.mutation_id)) {
+			progress.mutation_id = entry.mutation_id;
+			progress.mutation_changed_at = clampInt(entry.mutation_changed_at, 0, Number.MAX_SAFE_INTEGER);
+		}
+		result[id] = progress;
+	}
+	return result;
+}
 
 function normalizeItemProgress(value: unknown): Record<string, ItemProgress> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -796,6 +818,7 @@ function safeParseState(
 		research_flags: researchFlags,
 		spell_progress: normalizeSpellProgress(parsed.spell_progress),
 		item_progress: normalizeItemProgress(parsed.item_progress),
+		homunculus_progress: normalizeHomunculusProgress(parsed.homunculus_progress),
 		updated_at: Number(parsed.updated_at ?? Date.now())
 	};
 	} catch {
@@ -817,6 +840,7 @@ function createDefaultState(playerId: string, displayName: string, now: number, 
 		research_flags: {},
 		spell_progress: normalizeSpellProgress(null),
 		item_progress: {},
+		homunculus_progress: {},
 		updated_at: now
 	};
 }
@@ -835,6 +859,7 @@ function applyAction(
 		research_flags: { ...state.research_flags },
 		spell_progress: normalizeSpellProgress(state.spell_progress),
 		item_progress: normalizeItemProgress(state.item_progress),
+		homunculus_progress: normalizeHomunculusProgress(state.homunculus_progress),
 		lab: {
 			...state.lab,
 			buildings: { ...state.lab.buildings },
@@ -846,6 +871,26 @@ function applyAction(
 	autoCompleteResearch(next, now);
 	if (actionType == "UPGRADE_BUILDING") {
 		return applyUpgrade(next, payload, debugBypass);
+	}
+	if (actionType === "HOM_UPGRADE" || actionType === "HOM_MUTATE") {
+		const id = typeof payload?.homunculus_id === "string" ? payload.homunculus_id : "";
+		if (!staticData.homunculusIds.has(id)) return { state: next, error: "Unknown homunculus." };
+		if ((next.lab.buildings.homunculus_vat?.level ?? 0) < 1) return { state: next, error: "Homunculus Vat is not constructed." };
+		const current = next.homunculus_progress[id] ?? { level: 0 };
+		let cost: ResourceWallet;
+		if (actionType === "HOM_UPGRADE") {
+			if (next.lab.hqLevel < 2 || current.level >= 10) return { state: next, error: "Homunculus upgrade unavailable." };
+			cost = { essence: Math.trunc(getBalanceNumber("hom_upgrade_essence_base", 25) + current.level * getBalanceNumber("hom_upgrade_essence_per_level", 15)) };
+			if (current.level >= 5) cost.core = 1;
+		} else {
+			if (current.level < 3 || typeof payload?.mutation_id !== "string" || !staticData.mutationIds.has(payload.mutation_id) || payload.mutation_id === current.mutation_id || ((current.mutation_changed_at ?? 0) > 0 && now < current.mutation_changed_at! + getBalanceNumber("hom_mutation_cooldown_seconds", 21600) * 1000)) return { state: next, error: "Mutation unavailable." };
+			cost = staticData.balance.hom_mutation_cost;
+		}
+		if (!cost || typeof cost !== "object" || Array.isArray(cost) || Object.keys(cost).some(id => !staticData.resources.has(id)) || Object.values(cost).some(amount => !Number.isSafeInteger(amount) || amount < 0)) return { state: next, error: "Invalid homunculus cost configuration." };
+		if (Object.entries(cost).some(([res, amount]) => (next.wallet[res] ?? 0) < amount)) return { state: next, error: "Insufficient resources." };
+		for (const [res, amount] of Object.entries(cost)) next.wallet[res] = (next.wallet[res] ?? 0) - amount;
+		next.homunculus_progress[id] = actionType === "HOM_UPGRADE" ? { ...current, level: current.level + 1 } : { ...current, mutation_id: payload.mutation_id, mutation_changed_at: now };
+		return { state: next };
 	}
 	if (actionType == "FORGE_UPGRADE") {
 		const id = typeof payload?.item_id === "string" ? payload.item_id : "";
@@ -948,6 +993,49 @@ function applyAction(
 	if (actionType == "CLAIM_PRODUCTION") {
 		return applyClaim(next, payload, now);
 	}
+	if (actionType === "SYNC_START") {
+		if (next.lab.hqLevel < 4 || (next.lab.buildings.sync_nexus?.level ?? 0) < 1) return { state: next, error: "Sync Nexus unavailable." };
+		if (runtime.sync_project) return { state: next, error: "Sync project already active." };
+		const duration = getBalanceNumber("sync_npc_duration_seconds", 28800);
+		if (!Number.isSafeInteger(duration) || duration <= 0) return { state: next, error: "Invalid sync duration." };
+		runtime.sync_project = { project_id: "calibration", partner_kind: "npc", partner_id: "echo", started_at: now, completes_at: now + duration * 1000 };
+		return { state: next };
+	}
+	if (actionType === "SYNC_CLAIM") {
+		const project = runtime.sync_project;
+		if (!project || now < project.completes_at) return { state: next, error: "Sync project is not ready." };
+		const reward = staticData.balance.sync_npc_reward;
+		if (!reward || typeof reward !== "object" || Array.isArray(reward) || Object.entries(reward).some(([id, amount]) => !["essence", "core", "arcane_shard", "time_crystal"].includes(id) || !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) < 0)) return { state: next, error: "Invalid sync reward configuration." };
+		applyWalletGrant(next.wallet, reward);
+		delete runtime.sync_project;
+		return { state: next };
+	}
+	if (actionType === "ANOMALY_RESOLVE") {
+		const choice = payload?.choice;
+		const level = next.lab.buildings.anomaly_containment?.level ?? 0;
+		if (!["seal", "investigate"].includes(choice) || level < 1 || next.lab.hqLevel < (HQ_RULES.anomaly_containment?.unlock ?? 5)) return { state: next, error: "Anomaly unavailable." };
+		if ((runtime.anomaly?.next_at ?? 0) > now) return { state: next, error: "Anomaly on cooldown." };
+		const validReward = (reward: any): reward is ResourceWallet => !!reward && typeof reward === "object" && !Array.isArray(reward) && Object.entries(reward).every(([id, amount]) => ["essence", "core", "arcane_shard", "time_crystal"].includes(id) && staticData.resources.has(id) && Number.isSafeInteger(amount) && (amount as number) >= 0);
+		let reward: ResourceWallet;
+		if (choice === "seal") {
+			reward = staticData.balance.anomaly_seal_reward;
+			if (!validReward(reward)) return { state: next, error: "Invalid anomaly reward configuration." };
+		} else {
+			const outcomes = staticData.balance.anomaly_investigate_outcomes;
+			if (!Array.isArray(outcomes) || !outcomes.length || outcomes.some(entry => !entry || typeof entry.weight !== "number" || !Number.isFinite(entry.weight) || entry.weight < 0 || !validReward(entry.reward)) || Math.abs(outcomes.reduce((sum, entry) => sum + entry.weight, 0) - 1) > 0.000001) return { state: next, error: "Invalid anomaly outcome configuration." };
+			const digest = createHmac("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
+			const roll = digest.readUInt32BE(0) / 0x100000000;
+			let cumulative = 0;
+			reward = outcomes[outcomes.length - 1].reward;
+			for (const outcome of outcomes) { cumulative += outcome.weight; if (roll < cumulative) { reward = outcome.reward; break; } }
+		}
+		const base = getBalanceNumber("anomaly_cooldown_base_seconds", 28800);
+		const reduction = getBalanceNumber("anomaly_cooldown_reduction_per_level", 900);
+		if (base <= 0 || reduction < 0 || base - (level - 1) * reduction <= 0) return { state: next, error: "Invalid anomaly cooldown configuration." };
+		applyWalletGrant(next.wallet, reward);
+		runtime.anomaly = { next_at: now + (base - (level - 1) * reduction) * 1000, last_choice: choice, last_reward: { ...reward }, last_at: now };
+		return { state: next };
+	}
 	if (actionType === "SET_HQ_DIRECTIVE") {
 		const id = payload?.directive;
 		if (!["production", "research", "experimentation"].includes(id) || next.lab.hqLevel < 1) return { state: next, error: "Invalid HQ directive." };
@@ -975,7 +1063,7 @@ function applyAction(
 		return applyStartResearch(next, payload, now);
 	}
 	if (actionType == "START_SPELL_RESEARCH") {
-		const error = startSpellResearch(next, payload, now, staticData.resources);
+		const error = startSpellResearch(next, payload, now, staticData.resources, staticData.balance);
 		return error ? { state: next, error } : { state: next };
 	}
 	if (actionType == "SET_SPELL_LOADOUT") {
@@ -2050,6 +2138,8 @@ async function startServer(): Promise<void> {
 
 type StaticData = {
 	itemIds: Set<string>;
+	homunculusIds: Set<string>;
+	mutationIds: Set<string>;
 	itemRarities: Record<string, string>;
 	resources: Set<string>;
 	buildings: Record<string, any>;
@@ -2064,6 +2154,8 @@ type StaticData = {
 function loadStaticData(): StaticData {
 	const staticDir = resolve(import.meta.dir, "..", "..", "data", "static");
 	const itemsRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "items.json"), "utf8"));
+	const homunculiRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "homunculi.json"), "utf8"));
+	const mutationsRaw = JSON.parse(readFileSync(resolve(staticDir, "mutations.json"), "utf8"));
 	const itemIds = new Set<string>((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).map((item: any) => item.id).filter((id: unknown): id is string => typeof id === "string"));
 	const itemRarities: Record<string, string> = Object.fromEntries((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).filter((item: any) => typeof item.id === "string" && typeof item.rarity === "string").map((item: any) => [item.id, item.rarity]));
 	const resources = loadResourceIds(resolve(staticDir, "resources.json"));
@@ -2074,6 +2166,8 @@ function loadStaticData(): StaticData {
 	const bosses = loadBosses(resolve(staticDir, "bosses.json"));
 	return {
 		itemIds,
+		homunculusIds: new Set<string>((homunculiRaw.homunculi ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
+		mutationIds: new Set<string>((mutationsRaw.mutations ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
 		itemRarities,
 		resources: resources.ids,
 		buildings: buildingsData.buildings,
@@ -2649,6 +2743,18 @@ function normalizeLabRuntime(runtimeRaw: any): LabRuntime {
 		if (ends > starts) result.directive = { id: directive.id, starts_at: starts, ends_at: ends };
 	}
 	if (runtimeRaw?.reactor_overcharge && typeof runtimeRaw.reactor_overcharge === "object") result.reactor_overcharge = { progress: clampInt(runtimeRaw.reactor_overcharge.progress, 0, Math.max(1, getBalanceNumber("reactor_overcharge_threshold", 300))), last_used_at: clampInt(runtimeRaw.reactor_overcharge.last_used_at, 0, Number.MAX_SAFE_INTEGER) };
+	const anomaly = runtimeRaw?.anomaly;
+	if (anomaly && typeof anomaly === "object" && ["seal", "investigate"].includes(anomaly.last_choice)) {
+		const reward: ResourceWallet = {};
+		if (anomaly.last_reward && typeof anomaly.last_reward === "object" && !Array.isArray(anomaly.last_reward)) for (const [id, amount] of Object.entries(anomaly.last_reward)) if (["essence", "core", "arcane_shard", "time_crystal"].includes(id) && Number.isSafeInteger(amount) && (amount as number) >= 0) reward[id] = amount as number;
+		result.anomaly = { next_at: clampInt(anomaly.next_at, 0, Number.MAX_SAFE_INTEGER), last_at: clampInt(anomaly.last_at, 0, Number.MAX_SAFE_INTEGER), last_choice: anomaly.last_choice, last_reward: reward };
+	}
+	const sync = runtimeRaw?.sync_project;
+	if (sync && sync.project_id === "calibration" && sync.partner_kind === "npc" && sync.partner_id === "echo") {
+		const started = clampInt(sync.started_at, 0, Number.MAX_SAFE_INTEGER);
+		const completes = clampInt(sync.completes_at, 0, Number.MAX_SAFE_INTEGER);
+		if (started > 0 && completes > started) result.sync_project = { project_id: "calibration", partner_kind: "npc", partner_id: "echo", started_at: started, completes_at: completes };
+	}
 	return result;
 }
 

@@ -42,6 +42,14 @@ static func can_upgrade(building_id: String, current_level: int, hq_level: int, 
 	var cap = get_cap(building_id, hq_level, rules)
 	return int(current_level) < cap
 
+static func get_required_hq_for_upgrade(building_id: String, current_level: int, rules: Dictionary = DEFAULT_RULES) -> int:
+	if current_level >= get_max_level(building_id, rules):
+		return 0
+	for level in range(1, get_max_level("lab_th", rules) + 1):
+		if can_upgrade(building_id, current_level, level, rules):
+			return level
+	return 0
+
 static func _get_rule(building_id: String, rules: Dictionary) -> Dictionary:
 	if typeof(rules) == TYPE_DICTIONARY and rules.has(building_id):
 		var rule = rules[building_id]

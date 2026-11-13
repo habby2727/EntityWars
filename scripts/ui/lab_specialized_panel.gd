@@ -4,6 +4,7 @@ signal debug_forge_updated(state: Dictionary)
 signal lab_action_requested(action: Dictionary, building_id: String)
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const HomProgress := preload("res://scripts/domain/homunculus_progress.gd")
 const ITEM_FILES := {"bismuth_talisman": "talisman_bismuth", "mirror_sigel": "mirror", "vitriol_vial": "vitriol"}
 
 var _registry: DataRegistry
@@ -32,6 +33,19 @@ var _lab_status: Label
 var _lab_progress: ProgressBar
 var _lab_buttons: Array[Button] = []
 var _lab_metrics: Dictionary = {}
+var _vat_item := ""
+var _vat_info: Label
+var _vat_status: Label
+var _vat_upgrade: Button
+var _vat_mutations: Array[Button] = []
+var _vat_confirm: ConfirmationDialog
+var _vat_action: Dictionary = {}
+var _vat_now := 0
+var _vat_pending := false
+var _anomaly_confirm: ConfirmationDialog
+var _anomaly_choice := ""
+var _sync_now := 0
+var _sync_pending := false
 
 func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cost: int, cost_per_level: int) -> void:
 	_registry = registry
@@ -54,9 +68,15 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_forge_state = state
 	_forge_synced = synced
 	_lab_metrics = metrics
-	if building_id == _current_id and building_id in ["lab_th", "essence_reactor"]:
+	if building_id == _current_id and building_id == "sync_nexus":
+		_update_sync_status()
 		return
-	if building_id == _current_id and building_id in ["build_forge", "homunculus_vat", "sync_nexus", "anomaly_containment"]:
+	if building_id == _current_id and building_id in ["lab_th", "essence_reactor", "anomaly_containment"]:
+		return
+	if building_id == _current_id and building_id == "homunculus_vat":
+		_update_vat_status()
+		return
+	if building_id == _current_id and building_id == "build_forge":
 		_update_forge_button()
 		return
 	_current_id = building_id
@@ -73,6 +93,12 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_lab_buttons.clear()
 	_lab_status = null
 	_lab_progress = null
+	_vat_info = null
+	_vat_status = null
+	_vat_upgrade = null
+	_vat_confirm = null
+	_vat_mutations.clear()
+	_anomaly_confirm = null
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -80,8 +106,8 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	match building_id:
 		"build_forge": _catalog(false)
 		"homunculus_vat": _catalog(true)
-		"sync_nexus": _unconfigured("Nexus status", ["Overview", "Projects", "Contributions"])
-		"anomaly_containment": _unconfigured("Containment status", ["Threats", "Containment", "History"])
+		"sync_nexus": _sync_controls()
+		"anomaly_containment": _anomaly_controls()
 		"lab_th": _hq(state, building_names)
 		"essence_reactor": _reactor_controls()
 		"storage_vault": _message("STORAGE", "Capacity: %s   |   Next level: %s\nResources:\n%s" % [metrics.get("capacity", "-"), metrics.get("next_capacity", "-"), _format_values(state.get("wallet", {}))])
@@ -140,7 +166,93 @@ func _reactor_controls() -> void:
 	add_child(button)
 	_lab_buttons.append(button)
 
+func _sync_controls() -> void:
+	_message("CALIBRATION PROJECT", "Echo (NPC)")
+	_lab_progress = ProgressBar.new()
+	_lab_progress.show_percentage = false
+	_lab_progress.max_value = 100
+	add_child(_lab_progress)
+	_lab_status = Label.new()
+	_lab_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_lab_status)
+	var button := Button.new()
+	MenuArt.button(button)
+	button.pressed.connect(_sync_pressed)
+	add_child(button)
+	_lab_buttons.append(button)
+
+func _sync_pressed() -> void:
+	if _lab_buttons.is_empty() or _lab_buttons[0].disabled:
+		return
+	var project: Variant = _forge_state.get("lab", {}).get("runtime", {}).get("sync_project")
+	var action_type := "SYNC_CLAIM" if project is Dictionary and not project.is_empty() else "SYNC_START"
+	lab_action_requested.emit({"action_type": action_type, "payload": {"building_id": "sync_nexus"}}, "sync_nexus")
+
+func _update_sync_status() -> void:
+	if not is_instance_valid(_lab_status) or not is_instance_valid(_lab_progress) or _lab_buttons.is_empty():
+		return
+	var project: Variant = _forge_state.get("lab", {}).get("runtime", {}).get("sync_project")
+	var active: bool = project is Dictionary and not project.is_empty()
+	var remaining := maxi(0, int(project.get("completes_at", 0)) - _sync_now) if active else 0
+	var duration := maxi(1, int(project.get("completes_at", 0)) - int(project.get("started_at", 0))) if active else 1
+	_lab_progress.value = clampf(100.0 * (1.0 - float(remaining) / float(duration)), 0.0, 100.0) if active else 0
+	var reward: Dictionary = _lab_metrics.get("sync_reward", {"core": 1, "arcane_shard": 1})
+	_lab_status.text = "%s\nReward: %s" % ["Remaining: " + _clock(remaining) if active and remaining > 0 else ("Ready to claim" if active else "Ready to start"), _format_values(reward).replace("\n", ", ")]
+	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
+	var level := int(_forge_state.get("lab", {}).get("buildings", {}).get("sync_nexus", {}).get("level", 0))
+	var hq := int(_forge_state.get("lab", {}).get("hqLevel", 0))
+	if not active and not _forge_debug and (level < 1 or hq < 4):
+		_lab_status.text += "\nRequires Sync Nexus level 1 and HQ level 4 (current: %d / %d)." % [level, hq]
+	_lab_buttons[0].text = "CLAIM" if active else "START"
+	_lab_buttons[0].disabled = not ready or _sync_pending or (active and remaining > 0) or (not active and not _forge_debug and (level < 1 or hq < 4))
+
+func _anomaly_controls() -> void:
+	_message("ANOMALY DETECTED", "Seal: 20 Essence + 1 Arcane Shard.\nInvestigate: 50% nothing, 40% 2 Arcane Shards, 10% 1 Time Crystal.")
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	add_child(row)
+	for choice in ["seal", "investigate"]:
+		var button := Button.new()
+		button.text = choice.to_upper()
+		MenuArt.button(button)
+		button.pressed.connect(_request_anomaly.bind(choice))
+		row.add_child(button)
+		_lab_buttons.append(button)
+	_lab_status = Label.new()
+	_lab_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_lab_status)
+	_anomaly_confirm = ConfirmationDialog.new()
+	_anomaly_confirm.title = "Resolve anomaly"
+	_anomaly_confirm.confirmed.connect(_confirm_anomaly)
+	add_child(_anomaly_confirm)
+
+func _request_anomaly(choice: String) -> void:
+	var index := ["seal", "investigate"].find(choice)
+	if index < 0 or _lab_buttons[index].disabled:
+		return
+	_anomaly_choice = choice
+	_anomaly_confirm.dialog_text = "Resolve this anomaly by %s?" % choice
+	_anomaly_confirm.popup_centered()
+
+func _confirm_anomaly() -> void:
+	var index := ["seal", "investigate"].find(_anomaly_choice)
+	if index >= 0 and index < _lab_buttons.size() and not _lab_buttons[index].disabled:
+		lab_action_requested.emit({"action_type": "ANOMALY_RESOLVE", "payload": {"choice": _anomaly_choice}}, "anomaly_containment")
+
 func update_lab_status(state: Dictionary, now_ms: int, pending: bool, metrics: Dictionary) -> void:
+	if _current_id == "sync_nexus":
+		_forge_state = state
+		_lab_metrics = metrics
+		_sync_now = now_ms
+		_sync_pending = pending
+		_update_sync_status()
+		return
+	if _current_id == "homunculus_vat":
+		_forge_state = state
+		_vat_now = now_ms
+		_vat_pending = pending
+		_update_vat_status()
+		return
 	if not is_instance_valid(_lab_status):
 		return
 	var runtime: Dictionary = state.get("lab", {}).get("runtime", {})
@@ -161,8 +273,23 @@ func update_lab_status(state: Dictionary, now_ms: int, pending: bool, metrics: D
 		_lab_progress.max_value = threshold
 		_lab_progress.value = progress
 		_lab_status.text = "Rate: %.1f Essence / hour | Stored: %.1f\n%d / %d collected | %s\nReward: %s" % [float(metrics.get("rate", 0)), float(metrics.get("stored", 0)), progress, threshold, "Cooldown: " + _clock(remaining) if remaining > 0 else ("Ready to activate" if progress >= threshold else "Charging"), _format_values(metrics.get("reward", {})).replace("\n", ", ")]
+		if int(state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("level", 0)) < 1:
+			_lab_status.text += "\nRequires Essence Reactor level 1."
 		_lab_buttons[0].disabled = not ready or pending or int(state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("level", 0)) < 1 or progress < threshold or remaining > 0
 		_lab_buttons[0].modulate = Color(1.25, 1.1, 0.7) if not _lab_buttons[0].disabled else Color.WHITE
+	elif _current_id == "anomaly_containment":
+		var anomaly: Dictionary = runtime.get("anomaly", {})
+		var remaining := maxi(0, int(anomaly.get("next_at", 0)) - now_ms)
+		var level := int(state.get("lab", {}).get("buildings", {}).get("anomaly_containment", {}).get("level", 0))
+		var hq := int(state.get("lab", {}).get("hqLevel", 0))
+		_lab_status.text = "Level %d | %s" % [level, "Cooldown: " + _clock(remaining) if remaining > 0 else "Ready"]
+		if level < 1 or hq < 5:
+			_lab_status.text += "\nRequires Anomaly Containment level 1 and HQ level 5 (current: %d / %d)." % [level, hq]
+		if anomaly.has("last_choice"):
+			var reward: Dictionary = anomaly.get("last_reward", {})
+			_lab_status.text += "\nLast: %s | %s" % [str(anomaly.last_choice).capitalize(), "No reward" if reward.is_empty() else _format_values(reward).replace("\n", ", ")]
+		for button in _lab_buttons:
+			button.disabled = not ready or pending or level < 1 or hq < 5 or remaining > 0
 
 func _clock(milliseconds: int) -> String:
 	var seconds := int(ceil(float(milliseconds) / 1000.0))
@@ -264,6 +391,8 @@ func _catalog(homunculi: bool) -> void:
 	info.add_theme_font_size_override("font_size", 19)
 	if not homunculi:
 		_forge_info = info
+	else:
+		_vat_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	if not homunculi:
@@ -274,7 +403,7 @@ func _catalog(homunculi: bool) -> void:
 		actions.alignment = BoxContainer.ALIGNMENT_CENTER
 		actions.add_theme_constant_override("separation", 10)
 	details.add_child(actions)
-	for label in (["Upgrade Homunculus", "Mutation"] if homunculi else ["Upgrade", "Reroll"]):
+	for label in (["Upgrade Homunculus"] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
 		action.text = label
 		action.disabled = true
@@ -288,11 +417,32 @@ func _catalog(homunculi: bool) -> void:
 		elif not homunculi and label == "Reroll":
 			_forge_reroll_button = action
 			action.pressed.connect(_request_forge_reroll)
+		elif homunculi:
+			_vat_upgrade = action
+			action.pressed.connect(_request_vat_upgrade)
 	var inventory := Button.new()
 	inventory.text = "Open Inventory"
 	MenuArt.button(inventory)
 	inventory.pressed.connect(func(): SceneRouter.go_to_inventory("Homunculi" if homunculi else "Builds", true))
 	actions.add_child(inventory)
+	if homunculi:
+		var mutation_row := HBoxContainer.new()
+		details.add_child(mutation_row)
+		for mutation_id in ["catalyst", "vitality", "resonance"]:
+			var button := Button.new()
+			button.text = str(HomProgress.mutation_catalog().get(mutation_id, {}).get("name", mutation_id))
+			button.tooltip_text = str(HomProgress.mutation_catalog().get(mutation_id, {}).get("description", ""))
+			MenuArt.button(button)
+			button.pressed.connect(_request_vat_mutation.bind(mutation_id))
+			mutation_row.add_child(button)
+			_vat_mutations.append(button)
+		_vat_status = Label.new()
+		_vat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		details.add_child(_vat_status)
+		_vat_confirm = ConfirmationDialog.new()
+		_vat_confirm.title = "Confirm Homunculus Vat"
+		_vat_confirm.confirmed.connect(_send_vat_action)
+		add_child(_vat_confirm)
 	if not homunculi:
 		var trait_actions := HBoxContainer.new()
 		trait_actions.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -351,7 +501,8 @@ func _catalog(homunculi: bool) -> void:
 		var entry: Dictionary = entries[id]
 		heading.text = str(entry.get("name", id))
 		if homunculi:
-			info.text = "%s\nBase bonuses: ATK %+d, GUARD %+d, HP %+d\nSynergies:\n%s\nEvolution and mutations: not implemented." % [entry.get("desc", ""), int(entry.get("buff_atk", 0)), int(entry.get("buff_def", 0)), int(entry.get("buff_hp", 0)), _format_values(entry.get("per_type", {}))]
+			_vat_item = id
+			_update_vat_status()
 		else:
 			_update_forge_button()
 		var file: String = str(ITEM_FILES.get(id, id))
@@ -361,6 +512,64 @@ func _catalog(homunculi: bool) -> void:
 	if list.item_count > 0:
 		list.select(0)
 		select.call(0)
+
+func _update_vat_status() -> void:
+	if not is_instance_valid(_vat_info) or not is_instance_valid(_vat_upgrade) or _registry == null or _vat_item == "":
+		return
+	var progress: Dictionary = _forge_state.get("homunculus_progress", {})
+	var entry: Dictionary = progress.get(_vat_item, {})
+	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
+	var level := clampi(int(entry.get("level", 0)), 0, 10)
+	var next_progress := progress.duplicate(true)
+	var next_entry := entry.duplicate(true)
+	next_entry["level"] = mini(10, level + 1)
+	next_progress[_vat_item] = next_entry
+	var mutations := HomProgress.mutation_catalog()
+	var active := str(entry.get("mutation_id", ""))
+	_vat_info.text = "%s\nLevel %d / 10 | Mutation: %s\nCurrent: %s\nNext: %s\nMutations: Catalyst +1 Power | Vitality +5 HP | Resonance +0.03 favorable type multiplier\nSynergies:\n%s" % [hom.get("desc", ""), level, str(mutations.get(active, {}).get("name", "None")), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
+	var wallet: Dictionary = _forge_state.get("wallet", {})
+	var essence_cost := 25 + 15 * level
+	var core_cost := 1 if level >= 5 else 0
+	var cooldown := maxi(0, int(entry.get("mutation_changed_at", 0)) + 21600000 - _vat_now) if int(entry.get("mutation_changed_at", 0)) > 0 else 0
+	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
+	var vat_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("homunculus_vat", {}).get("level", 0))
+	var hq_level := int(_forge_state.get("lab", {}).get("hqLevel", 0))
+	_vat_upgrade.disabled = not ready or _vat_pending or vat_level < 1 or hq_level < 2 or level >= 10 or int(wallet.get("essence", 0)) < essence_cost or int(wallet.get("core", 0)) < core_cost
+	_vat_upgrade.tooltip_text = "Cost: %d Essence%s" % [essence_cost, ", 1 Core" if core_cost else ""]
+	for i in range(_vat_mutations.size()):
+		var id: String = ["catalyst", "vitality", "resonance"][i]
+		_vat_mutations[i].disabled = not ready or _vat_pending or vat_level < 1 or level < 3 or cooldown > 0 or active == id or int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1
+		_vat_mutations[i].modulate = Color(1.25, 1.1, 0.7) if active == id else Color.WHITE
+	_vat_status.text = "Upgrade: %d Essence%s | Mutation: 70 Essence, 2 Core, 1 Arcane Shard\nMutation cooldown: %s" % [essence_cost, ", 1 Core" if core_cost else "", _clock(cooldown) if cooldown > 0 else "Ready"]
+	if vat_level < 1 or hq_level < 2:
+		_vat_status.text += "\nUpgrade requires Homunculus Vat level 1 and HQ level 2 (current: %d / %d)." % [vat_level, hq_level]
+	if level < 3:
+		_vat_status.text += "\nMutation requires homunculus level 3 (current: %d)." % level
+
+func _request_vat_upgrade() -> void:
+	if _vat_upgrade.disabled:
+		return
+	_vat_action = {"action_type": "HOM_UPGRADE", "payload": {"homunculus_id": _vat_item}}
+	_vat_confirm.dialog_text = "Upgrade %s? %s" % [_vat_item, _vat_upgrade.tooltip_text]
+	_vat_confirm.popup_centered()
+
+func _request_vat_mutation(id: String) -> void:
+	var index := ["catalyst", "vitality", "resonance"].find(id)
+	if index < 0 or _vat_mutations[index].disabled:
+		return
+	_vat_action = {"action_type": "HOM_MUTATE", "payload": {"homunculus_id": _vat_item, "mutation_id": id}}
+	_vat_confirm.dialog_text = "Apply %s to %s for 70 Essence, 2 Core and 1 Arcane Shard?\n%s" % [id.capitalize(), _vat_item, _vat_mutations[index].tooltip_text]
+	_vat_confirm.popup_centered()
+
+func _send_vat_action() -> void:
+	if _vat_action.get("payload", {}).get("homunculus_id") != _vat_item:
+		return
+	_update_vat_status()
+	var action_type := str(_vat_action.get("action_type", ""))
+	var index := ["catalyst", "vitality", "resonance"].find(_vat_action.get("payload", {}).get("mutation_id", ""))
+	if (action_type == "HOM_UPGRADE" and _vat_upgrade.disabled) or (action_type == "HOM_MUTATE" and (index < 0 or _vat_mutations[index].disabled)):
+		return
+	lab_action_requested.emit(_vat_action.duplicate(true), "homunculus_vat")
 
 func _update_forge_button() -> void:
 	if not is_instance_valid(_forge_button) or not is_instance_valid(_forge_status):
@@ -439,6 +648,8 @@ func _update_forge_button() -> void:
 		_fusion_donor.disabled = not can_trait
 		_fusion_button.disabled = not can_trait or has_offer or donor == _forge_item or donor == current_donor or level < 3 or int(progress.get(donor, {}).get("level", 0)) < 3 or imprint.is_empty() or not enough
 		_fusion_info.text = "Fusion: %s | Imprint: %s | Cost: %s\nPreview: %s" % [str(_registry.get_items().get(current_donor, {}).get("name", "None")), _format_values(imprint).replace("\n", ", "), _format_values(fusion_cost).replace("\n", ", "), _format_values(preview.get("effects", {})).replace("\n", ", ")]
+		if level < 3 or int(progress.get(donor, {}).get("level", 0)) < 3:
+			_fusion_info.text += "\nFusion requires both weapons at level 3 (current: %d / %d)." % [level, int(progress.get(donor, {}).get("level", 0))]
 	var reroll_text := "%d Essence, %d Core%s" % [int(reroll_cost.get("essence", 0)), int(reroll_cost.get("core", 0)), ", %d Arcane Shard" % shard_cost if shard_cost > 0 else ""]
 	if is_instance_valid(_forge_reroll_button) and is_instance_valid(_forge_reroll_slot):
 		_forge_reroll_slot.visible = specialization != "" and not has_offer

@@ -72,6 +72,7 @@ var _animation_original := {}
 var _pending_hom_action := {}
 var _player_hom_status: PanelContainer
 var _enemy_hom_status: PanelContainer
+var _hom_details: PanelContainer
 var _inspiration_panel: PanelContainer
 var _inspiration_cards: Array[Button] = []
 var _inspiration_options: Array = []
@@ -404,7 +405,10 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		fighter_spells = requested_spells.duplicate() if SpellLoadout.valid(_reg, entity_id, {}, requested_spells, true) else SpellLoadout.initial_ids(_reg, entity_id)
 	var hom := _find_by_id(_homunculi, str(data.get("homunculus_id", "")))
 	var stats := _get_base_stats(ent)
-	var buffs := _get_homunculus_buffs(hom)
+	var hom_progress: Dictionary = _combat_spell_state.get("homunculus_progress", {}) if _is_player else {}
+	var effective := preload("res://scripts/domain/homunculus_progress.gd").effective_bonuses(hom, hom_progress)
+	var synergy: Dictionary = hom.get("per_type", {}).get(str(ent.get("type", "")), {})
+	var buffs := {"atk": int(effective.get("power_flat", 0)) + int(synergy.get("power_flat", 0)), "def": int(effective.get("guard_flat", 0)) + int(synergy.get("guard_flat", 0)), "hp": int(effective.get("hp_flat", 0))}
 	var atk = stats.atk + buffs.atk
 	var def = stats.def + buffs.def
 	var hp = stats.hp + buffs.hp
@@ -417,8 +421,9 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		equip1 = helper.effective_item(equip1, progress_items)
 		equip2 = helper.effective_item(equip2, progress_items)
 
-	var mods = _item_mods([equip1])
-	var fx = _collect_item_effects([equip1])
+	var scaled := _scaled_hom_weapon(equip1, synergy)
+	var mods = _item_mods([scaled])
+	var fx = _collect_item_effects([scaled])
 	atk += mods.atk_flat
 	def += mods.def_flat
 
@@ -428,6 +433,7 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		"type": str(ent.get("type", "")),
 		"hom_id": str(hom.get("id", "")),
 		"hom_name": str(hom.get("name", "")),
+		"hom_data": hom.duplicate(true), "hom_progress": hom_progress.duplicate(true), "hom_synergy": synergy.duplicate(true),
 		"hom_energy": 0,
 		"hom_max_energy": 6,
 		"hom_ready_at": 3,
@@ -456,6 +462,8 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 	}
 
 func _update_ui() -> void:
+	if is_instance_valid(_hom_details) and _hom_details.visible:
+		_hom_details.call("refresh")
 	_player_inspiration.call("set_fighter", player)
 	_enemy_inspiration.call("set_fighter", enemy)
 	_player_hom_status.call("set_fighter", player)
@@ -495,7 +503,22 @@ func _update_ui() -> void:
 	_apply_hp_colors()
 
 func _get_active_weapon(fighter: Dictionary) -> Dictionary:
-	return fighter.get("equip_%d" % int(fighter.get("active_weapon_slot", 1)), {})
+	return _scaled_hom_weapon(fighter.get("equip_%d" % int(fighter.get("active_weapon_slot", 1)), {}), _hom_synergy(fighter))
+
+func _hom_synergy(fighter: Dictionary) -> Dictionary:
+	return {} if bool(fighter.get("hom_spent", true)) else fighter.get("hom_synergy", {})
+
+func _scaled_hom_weapon(item: Dictionary, synergy: Dictionary) -> Dictionary:
+	var multiplier := clampf(float(synergy.get("item_effect_mult", 1.0)), 0.0, 2.0)
+	if item.is_empty() or is_equal_approx(multiplier, 1.0):
+		return item
+	var result := item.duplicate(true)
+	var effects: Dictionary = result.get("effects", {})
+	for key in effects:
+		var values: Variant = effects[key]
+		if values is Array and not values.is_empty() and (values[0] is int or values[0] is float):
+			values[0] = float(values[0]) * multiplier
+	return result
 
 func _set_active_weapon(fighter: Dictionary, slot: int) -> void:
 	if slot not in [1, 2] or fighter.get("equip_%d" % slot, {}).is_empty():
@@ -517,11 +540,16 @@ func _weapon_defense(fighter: Dictionary, field: String, value: float) -> void:
 	fighter.status[field] = maxf(float(fighter["other_" + field]), float(fighter[key]))
 
 func _other_defense(fighter: Dictionary, field: String, value: float) -> void:
+	if field == "reflect_pct" and fighter.has("hom_reflect_active") and not bool(fighter.get("recording_hom_reflect", false)):
+		fighter.hom_other_reflect = maxf(float(fighter.get("hom_other_reflect", 0.0)), value)
 	if fighter.has("weapon_" + field):
 		fighter["other_" + field] = maxf(float(fighter.get("other_" + field, 0.0)), value)
 	fighter.status[field] = maxf(float(fighter.status.get(field, 0.0)), value)
 
 func _clear_defense(fighter: Dictionary, field: String) -> void:
+	if field == "reflect_pct":
+		fighter.erase("hom_reflect_active")
+		fighter.erase("hom_other_reflect")
 	fighter.status[field] = 0.0
 	fighter.erase("weapon_" + field)
 	fighter.erase("other_" + field)
@@ -591,6 +619,18 @@ func _setup_hom_ui() -> void:
 	_enemy_hom_status = CombatHomStatus.new()
 	_enemy_hom_status.position = Vector2(1652, 540)
 	add_child(_enemy_hom_status)
+	_hom_details = preload("res://scripts/ui/combat_hom_details.gd").new()
+	add_child(_hom_details)
+	for entry in [[player_hom, true], [enemy_hom, false], [_player_hom_status, true], [_enemy_hom_status, false]]:
+		var control: Control = entry[0]
+		control.mouse_filter = Control.MOUSE_FILTER_PASS
+		control.gui_input.connect(_on_hom_details_input.bind(bool(entry[1])))
+
+func _on_hom_details_input(event: InputEvent, is_player: bool) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var fighter := player if is_player else enemy
+		if not fighter.is_empty():
+			_hom_details.call("show_fighter", fighter, player_hom.texture if is_player else enemy_hom.texture, "Player" if is_player else "NPC")
 
 func _setup_combat_labels() -> void:
 	for label in [player_name, enemy_name, $PlayerPanel/PlayerBuildTitle, $EnemyPanel/EnemyBuildTitle, turn_label]:
@@ -1088,6 +1128,13 @@ func _resolve_hom_choice(fighter: Dictionary, target: Dictionary, choice: String
 			_log_step("%s sacrifices its homunculus." % fighter.name, func():
 				fighter.hom_spent = true
 				fighter.hom_energy = 0
+				if fighter.has("hom_reflect_active"):
+					var remaining := maxf(float(fighter.get("hom_other_reflect", 0.0)), float(fighter.get("weapon_reflect_pct", 0.0)))
+					fighter.status.reflect_pct = remaining
+					if fighter.has("other_reflect_pct"):
+						fighter.other_reflect_pct = float(fighter.get("hom_other_reflect", 0.0))
+					fighter.erase("hom_reflect_active")
+					fighter.erase("hom_other_reflect")
 				_refresh_weapon_stats(fighter)
 				var healed := mini(30, int(fighter.max_hp) - int(fighter.hp))
 				fighter.hp = mini(int(fighter.max_hp), int(fighter.hp) + 30)
@@ -1468,6 +1515,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			_record_highlight("combo", boost_gain, "%s: attack boost" % attacker.name)
 		, _combat_event(attacker, "combo", " COMBO: attack boost applied.", {}))
 	var dmg: int = max(1, int(round((base_atk - int(defender.def * 0.5)) * mult * power_mult)))
+	dmg = maxi(1, int(round(dmg * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0))))
 	if defender.status.vuln_pct > 0:
 		var before_vulnerability := dmg
 		dmg = int(round(dmg * (1.0 + defender.status.vuln_pct)))
@@ -1559,6 +1607,12 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 				defender.status.vuln_pct = max(defender.status.vuln_pct, v_hit)
 				_animate_item_effect(attacker, "vuln_on_hit")
 			, _combat_event(defender, "debuff", " is left vulnerable by the corrosion.", {}))
+	var hom_dot := maxi(0, int(_hom_synergy(attacker).get("dot_true", 0)))
+	if hom_dot > 0:
+		_log_step("%s corrodes for %d." % [attacker.hom_name, hom_dot], func():
+			defender.hp = maxi(0, int(defender.hp) - hom_dot)
+			_animate_hit(_fighter_sprite(defender), hom_dot, defender.max_hp)
+		, _combat_event(attacker, "debuff", "'s homunculus %s corrodes for %d." % [attacker.hom_name, hom_dot], {}, true))
 
 	if attacker.type == "vitriol" and randi() % 100 < 30:
 		_log_step("%s corrodes %s (Poison)." % [attacker.name, defender.name], func(): defender.status.poison = 2, _combat_event(attacker, "debuff", " corrodes ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " (Poison)."}))
@@ -1599,7 +1653,7 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 	if not _roll_hit(attacker, defender, 0.95):
 		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], func(): _animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}, true))
 		return
-	var hom_dmg: int = max(1, int(round(attacker.atk * (0.6 if boosted else 0.4))))
+	var hom_dmg: int = max(1, int(round(attacker.atk * (0.6 if boosted else 0.4) * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0))))
 	var track_hit := _spell_exchange_active
 	_log_step("%s's homunculus strikes %s for %d." % [attacker.name, defender.name, hom_dmg], func():
 		_record_highlight("damage", mini(int(defender.hp), hom_dmg), "%s (%s) to %s" % [attacker.hom_name, attacker.name, defender.name])
@@ -1625,7 +1679,9 @@ func _apply_mods(f: Dictionary) -> void:
 	var ent := _find_by_id(_entities, f.id)
 	var hom := _find_by_id(_homunculi, f.hom_id)
 	var stats := _get_base_stats(ent)
-	var buffs := _get_homunculus_buffs(hom)
+	var effective := preload("res://scripts/domain/homunculus_progress.gd").effective_bonuses(hom, f.get("hom_progress", {}))
+	var synergy := _hom_synergy(f)
+	var buffs := {"atk": int(effective.get("power_flat", 0)) + int(synergy.get("power_flat", 0)), "def": int(effective.get("guard_flat", 0)) + int(synergy.get("guard_flat", 0)), "hp": int(effective.get("hp_flat", 0))}
 	if bool(f.get("hom_spent", false)):
 		buffs = {"atk": 0, "def": 0, "hp": 0}
 	var atk = stats.atk + buffs.atk
@@ -1831,6 +1887,8 @@ func _show_highlights() -> void:
 func _reset_fighter(f: Dictionary) -> void:
 	_restore_inspiration(f)
 	f.hom_energy = 0
+	f.erase("hom_reflect_active")
+	f.erase("hom_other_reflect")
 	f.hp = f.max_hp
 	for field in ["shield_pct", "reflect_pct"]:
 		f.erase("weapon_" + field)
@@ -1875,7 +1933,9 @@ func _spell_multiplier(attacker: Dictionary, defender: Dictionary, spell: Dictio
 	p = 1.25 if p > 1.0 else (0.80 if p < 1.0 else 1.0)
 	s = 1.25 if s > 1.0 else (0.80 if s < 1.0 else 1.0)
 	var multiplier := clampf(pow(p, 0.65) * pow(s, 0.35), 0.80, 1.25)
-	var neutralize := maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0)))
+	if multiplier > 1.0:
+		multiplier += _hom_advantage_bonus(attacker)
+	var neutralize := maxf(maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0))), maxf(float(_hom_synergy(attacker).get("type_neutralize", 0.0)), float(_hom_synergy(defender).get("type_neutralize", 0.0))))
 	return 1.0 + (multiplier - 1.0) * (1.0 - neutralize)
 
 func _type_multiplier(attacker: Dictionary, defender: Dictionary, emit_log: bool = true) -> float:
@@ -1884,15 +1944,21 @@ func _type_multiplier(attacker: Dictionary, defender: Dictionary, emit_log: bool
 	var relationship := float(row.get(str(defender.type), 1.0))
 	var multiplier := 1.0
 	if relationship > 1.0:
-		multiplier = 1.12
+		multiplier = 1.12 + _hom_advantage_bonus(attacker)
 	elif relationship < 1.0:
 		var red: float = float(attacker.item_fx.get("disadvantage_reduction", 0.0))
 		if red > 0.0 and emit_log:
 			var d_item := _item_with_effect([_get_active_weapon(attacker)], "disadvantage_reduction")
 			_log("%s steadies the disadvantage via %s." % [attacker.name, _item_label(d_item)], _combat_event(attacker, "advantage", " steadies the disadvantage via %s." % _item_label(d_item), {}))
 		multiplier = min(0.92 + red, 1.0)
-	var neutralize := maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0)))
+	var neutralize := maxf(maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0))), maxf(float(_hom_synergy(attacker).get("type_neutralize", 0.0)), float(_hom_synergy(defender).get("type_neutralize", 0.0))))
 	return 1.0 + (multiplier - 1.0) * (1.0 - neutralize)
+
+func _hom_advantage_bonus(fighter: Dictionary) -> float:
+	if bool(fighter.get("hom_spent", true)):
+		return 0.0
+	var bonuses: Dictionary = preload("res://scripts/domain/homunculus_progress.gd").effective_bonuses(fighter.get("hom_data", {}), fighter.get("hom_progress", {}))
+	return clampf(float(_hom_synergy(fighter).get("type_adv_bonus", 0.0)) + float(bonuses.get("favorable_type_bonus", 0.0)), 0.0, 0.5)
 
 func _type_advantage(t: String) -> String:
 	_ensure_type_effectiveness()
@@ -2001,6 +2067,15 @@ func _apply_round_start_effects() -> void:
 	_apply_round_start_for(enemy, false)
 
 func _apply_round_start_for(f: Dictionary, _is_player: bool) -> void:
+	var hom_reflect := clampf(float(_hom_synergy(f).get("reflect_pct", 0.0)), 0.0, 1.0)
+	if hom_reflect > 0:
+		_log_step("%s grants reflection." % f.hom_name, func():
+			f.hom_other_reflect = float(f.status.get("reflect_pct", 0.0))
+			f.hom_reflect_active = hom_reflect
+			f.recording_hom_reflect = true
+			_other_defense(f, "reflect_pct", hom_reflect)
+			f.erase("recording_hom_reflect")
+		, _combat_event(f, "shield", " grants reflection.", {}, true))
 	if f.item_fx.get("ward_pct", 0.0) > 0.0:
 		var ward: float = float(f.item_fx.get("ward_pct", 0.0))
 		_log_step("%s forms a ward via %s." % [f.name, _item_label(_item_with_effect([_get_active_weapon(f)], "ward_pct"))], func():
@@ -2029,7 +2104,7 @@ func _apply_tempo_win_bonus(f: Dictionary, _is_player: bool) -> void:
 
 func _initiative(f: Dictionary) -> float:
 	var score: float = 10.0
-	score += _item_initiative(_get_active_weapon(f))
+	score += _item_initiative(_get_active_weapon(f)) + float(_hom_synergy(f).get("tempo_flat", 0.0))
 	score += float(f.status.get("tempo_bonus", 0.0))
 	f.status.tempo_bonus = 0.0
 	return score

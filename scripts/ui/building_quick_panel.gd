@@ -199,11 +199,13 @@ func _refresh() -> void:
 	_level.text = "Level %s / %s%s" % [level, max_level, ("  →  %s" % (level + 1)) if level < max_level else ""]
 	_requirement.text = ""
 	if not unlocked:
-		_requirement.text = "Unlocks at HQ level %s" % HqRules.get_unlock_level(_building_id)
+		_requirement.text = "Requires HQ level %d to unlock (current: %d)." % [HqRules.get_unlock_level(_building_id), hq_level]
 	elif level >= max_level:
 		_requirement.text = "Maximum level reached"
 	elif not can_upgrade:
-		_requirement.text = "Upgrade your HQ to continue"
+		_requirement.text = "Upgrade to level %d requires HQ level %d (current: %d)." % [level + 1, HqRules.get_required_hq_for_upgrade(_building_id, level), hq_level]
+	elif level == 0:
+		_requirement.text = "Build this structure to use its functions."
 	_cost_title.visible = level < max_level
 	for child in _costs.get_children():
 		_costs.remove_child(child)
