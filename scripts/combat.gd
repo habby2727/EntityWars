@@ -84,6 +84,9 @@ var _online_hunt_guard := false
 var _online_hunt_request := ""
 var _online_hunt_session: Dictionary = {}
 var _online_hunt_revision := 0
+var _online_hunt_info: Label
+var _online_inspected_minion := ""
+var _online_visible_minions: Array[String] = []
 var _solo_context := {}
 var _solo_forfeit_request := ""
 var _solo_forfeit_action := ""
@@ -343,9 +346,22 @@ func _begin_combat_initialization() -> void:
 func _on_online_hunt_auth_changed(_token: String) -> void:
 	_online_hunt_session.clear()
 	_online_hunt_request = ""
+	_hide_online_hunt_view()
 	next_turn_btn.text = "Return"
 	next_turn_btn.show()
 	_log_immediate("Account changed. Return to World Zone; the session remains active.")
+
+func _hide_online_hunt_view() -> void:
+	get_node("PlayerPanel").hide()
+	get_node("EnemyPanel").hide()
+	var world_sprites := get_node_or_null("WorldCombatSprites") as CanvasItem
+	if world_sprites:
+		world_sprites.hide()
+	if _player_hom_status:
+		_player_hom_status.hide()
+	spell_panel.hide()
+	if _online_hunt_info:
+		_online_hunt_info.hide()
 
 func _on_online_hunt_identity(state: Dictionary) -> void:
 	if state.is_empty() or _combat_backend._verified_player_id.is_empty():
@@ -366,6 +382,7 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 	_online_hunt_request = ""
 	var session: Variant = data.get("session")
 	if not ok or not session is Dictionary or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(session.get("session_id", "")) != str(_solo_context.get("session_id", "")) or str(session.get("status", "")) != "ACTIVE" or int(session.get("combat_revision", 0)) < 1 or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
+		_hide_online_hunt_view()
 		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
 		next_turn_btn.text = "Retry"
 		next_turn_btn.show()
@@ -374,8 +391,138 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		_combat_wait_timer.stop()
 	_online_hunt_session = session.duplicate(true)
 	_online_hunt_revision = int(session.combat_revision)
+	if not _render_online_hunt(session):
+		_online_hunt_session.clear()
+		_log_immediate("Invalid server combat snapshot. Retry or return.")
+		next_turn_btn.text = "Retry"
+		next_turn_btn.show()
+		return
 	next_turn_btn.hide()
 	_log_immediate("Server combat synchronized. Server actions pending.")
+
+func _render_online_hunt(session: Dictionary) -> bool:
+	var state: Dictionary = session.combat_state
+	var loadout: Dictionary = session.combat_loadout
+	var boss_def: Variant = session.get("boss_definition", {})
+	if not boss_def is Dictionary or not state.get("player") is Dictionary or not state.get("boss") is Dictionary or not state.get("moves") is Array or state.moves.size() != 4 or not state.get("minions") is Array:
+		return false
+	var p: Dictionary = state.player
+	var b: Dictionary = state.boss
+	if int(p.get("max_hp", 0)) <= 0 or int(b.get("max_hp", 0)) <= 0 or str(loadout.get("entity_id", "")).is_empty():
+		return false
+	if _online_hunt_info == null:
+		_apply_world_combat_visuals(str(_solo_context.get("visual_zone_id", "")))
+		_create_solo_minion_views()
+		_online_hunt_info = Label.new()
+		_online_hunt_info.name = "OnlineHuntInfo"
+		_online_hunt_info.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		_online_hunt_info.position = Vector2(-250, 215)
+		_online_hunt_info.size = Vector2(500, 95)
+		_online_hunt_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_online_hunt_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		add_child(_online_hunt_info)
+		for icons in [player_indicators, enemy_indicators]:
+			icons.effect_clicked.connect(func(description: String):
+				_spell_detail.title = "Combat Status"
+				_spell_detail.dialog_text = description
+				_spell_detail.popup_centered(Vector2i(440, 260))
+			)
+	get_node("PlayerPanel").show()
+	get_node("EnemyPanel").show()
+	_enemy_hom_status.hide()
+	_enemy_inspiration.hide()
+	_player_inspiration.hide()
+	player_hom_name.modulate.a = 0.0
+	enemy_hom_name.modulate.a = 0.0
+	$EnemyPanel/EnemyBuildTitle.modulate.a = 0.0
+	$EnemyPanel/EnemyItems.modulate.a = 0.0
+	call_deferred("_align_health_panels")
+	var world_sprites := get_node_or_null("WorldCombatSprites") as CanvasItem
+	if world_sprites:
+		world_sprites.show()
+	_online_hunt_info.show()
+	spell_panel.show()
+	for pair in [[player_hp, p], [enemy_hp, b]]:
+		var icon: Node = pair[0].get_node_or_null("CombatTypeIcon")
+		if icon == null:
+			icon = CombatTypeIcon.new()
+			icon.name = "CombatTypeIcon"
+			icon.position = Vector2(-30, -3)
+			pair[0].add_child(icon)
+		icon.call("configure", str(pair[1].get("type", "")))
+	player_hp.max_value = float(p.max_hp)
+	player_hp.value = float(p.get("hp", 0))
+	enemy_hp.max_value = float(b.max_hp)
+	enemy_hp.value = float(b.get("hp", 0))
+	player_hp.get_node("HealthValue").text = "%d / %d" % [int(p.get("hp", 0)), int(p.max_hp)]
+	enemy_hp.get_node("HealthValue").text = "%d / %d" % [int(b.get("hp", 0)), int(b.max_hp)]
+	var entity_id := str(loadout.get("entity_id", ""))
+	var entity := _find_by_id(_entities, entity_id)
+	var hom_id := str(loadout.get("homunculus_id", "")) if loadout.get("homunculus_id") != null else ""
+	var hom := _find_by_id(_homunculi, hom_id)
+	player_entity_name.text = str(entity.get("name", entity_id))
+	enemy_entity_name.text = str(boss_def.get("name", "Boss"))
+	enemy_name.text = "BOSS - " + str(b.get("tier", "")).to_upper()
+	player_entity.texture = _load_preview_tex(entity_id, "entity", str(p.get("type", "")))
+	player_hom.visible = not hom_id.is_empty() and not bool(p.get("homunculus_spent", false))
+	if not hom_id.is_empty():
+		player_hom.texture = _load_preview_tex(hom_id, "homunculus", str(hom.get("name", "")))
+	_player_hom_status.visible = not hom_id.is_empty()
+	_player_hom_status.call("set_fighter", {"hom_name": str(hom.get("name", hom_id)), "hom_energy": int(p.get("homunculus_energy", 0)), "hom_spent": bool(p.get("homunculus_spent", false))})
+	enemy_hom.hide()
+	enemy_item1.hide()
+	enemy_item2.hide()
+	var assets := AssetCatalog.new()
+	var texture_id := str(boss_def.get("texture_id", ""))
+	var requested := str(_solo_context.get("display_texture_id", ""))
+	if requested == texture_id or requested in boss_def.get("texture_variants", []):
+		texture_id = requested
+	enemy_entity.texture = assets.get_tex(texture_id)
+	assets.free()
+	var weapons: Variant = loadout.get("weapon_ids", [])
+	for i in 2:
+		var id := str(weapons[i]) if weapons is Array and weapons.size() > i and weapons[i] != null else ""
+		var icon: TextureRect = player_item1 if i == 0 else player_item2
+		_set_item_icon(icon, _find_by_id(_items, id))
+		icon.modulate.a = 1.0 if int(p.get("active_weapon_slot", 1)) == i + 1 else 0.5
+	for i in 4:
+		var move: Dictionary = state.moves[i]
+		var cd := int(move.get("cooldown_remaining", 0))
+		spell_buttons[i].text = "%s%s" % [str(move.get("name", move.get("id", ""))), " | CD: %d" % cd if cd > 0 else ""]
+		spell_buttons[i].disabled = true
+	turn_label.text = "Boss Hunt | Turn %d | Revision %d" % [int(state.get("turn", 0)), _online_hunt_revision]
+	player_indicators.set_fighter(0, {"status": p.get("status", {})})
+	enemy_indicators.set_fighter(0, {"status": b.get("status", {})})
+	var shield: Dictionary = state.get("shield", {})
+	var fury: Dictionary = state.get("fury", {})
+	var power: Dictionary = state.get("power_turn", {})
+	var effects: Array = []
+	if int(shield.get("turns", 0)) > 0:
+		effects.append({"icon": "shield", "label": "%d%% %dT" % [roundi(float(shield.get("reduction", 0)) * 100), int(shield.turns)], "tooltip": "Alchemical Shield"})
+	if bool(fury.get("pending", false)):
+		effects.append({"icon": "fury", "label": "x%.1f" % float(fury.get("multiplier", 1)), "tooltip": "Fury pending"})
+	_solo_minions = state.minions.duplicate(true)
+	var alive := 0
+	for minion in _solo_minions:
+		if int(minion.get("hp", 0)) > 0:
+			alive += 1
+	if alive > 0:
+		effects.append({"icon": "minions", "label": str(alive), "tooltip": "Protected by minions"})
+	enemy_indicators.set_boss_effects(true, effects)
+	player_indicators.set_boss_effects(true, [{"icon": "power", "label": "x2", "tooltip": "Power Turn"}] if bool(power.get("active", false)) else [])
+	_update_solo_minion_views()
+	var intent := str(b.get("intent", ""))
+	if intent == "Special":
+		var special: Dictionary = _reg.get_spell_by_id(str(b.get("intent_spell_id", "")))
+		intent = str(special.get("name", intent))
+	var inspiration: Dictionary = state.get("inspiration", {})
+	var offers: Array[String] = []
+	if bool(inspiration.get("pending", false)):
+		for id in inspiration.get("offers", []):
+			var spell: Dictionary = _reg.get_spell_by_id(str(id))
+			offers.append(str(spell.get("name", id)))
+	_online_hunt_info.text = "Server combat synchronized - actions pending\nNEXT: %s%s" % [intent, "\nInspiration: " + ", ".join(offers) if not offers.is_empty() else ""]
+	return true
 
 func _wait_for_combat_state() -> void:
 	if _combat_wait_timer == null:
@@ -392,6 +539,7 @@ func _on_combat_state_timeout() -> void:
 			_combat_backend._api_http.cancel_request()
 			_combat_backend._api_in_flight.clear()
 			_online_hunt_request = ""
+		_hide_online_hunt_view()
 		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
 		next_turn_btn.text = "Retry"
 		next_turn_btn.show()
@@ -778,6 +926,19 @@ func _create_solo_minion_views() -> void:
 		portrait.size = Vector2(110, 106)
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		view.add_child(portrait)
+		if _online_hunt_guard:
+			view.mouse_filter = Control.MOUSE_FILTER_STOP
+			view.tooltip_text = "Inspect minion (no combat action)"
+			view.gui_input.connect(_on_online_minion_input.bind(i))
+			var marker := Label.new()
+			marker.name = "Selection"
+			marker.position = Vector2(0, 112)
+			marker.size = Vector2(110, 18)
+			marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			marker.add_theme_font_size_override("font_size", 12)
+			marker.add_theme_color_override("font_color", Color("67e5e2"))
+			marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.add_child(marker)
 		var hp := ColorRect.new()
 		hp.name = "HP"
 		hp.position = Vector2(10, 0)
@@ -798,17 +959,36 @@ func _update_solo_minion_views() -> void:
 	for minion in _solo_minions:
 		if int(minion.get("hp", 0)) > 0:
 			alive.append(minion)
+	if _online_hunt_guard:
+		_online_visible_minions.clear()
+		for minion in alive:
+			_online_visible_minions.append(str(minion.get("id", "")))
+		if _online_inspected_minion not in _online_visible_minions:
+			_online_inspected_minion = ""
 	for i in _solo_minion_views.size():
 		var view := _solo_minion_views[i]
 		view.visible = i < alive.size()
 		if not view.visible:
 			continue
 		var x := (enemy_entity.size.x - view.size.x) * 0.5
-		if alive.size() > 1:
+		var y := enemy_entity.size.y + 72.0
+		if _online_hunt_guard:
+			x = -view.size.x + 10.0 if i == 0 else enemy_entity.size.x - 10.0
+			y = enemy_entity.size.y - view.size.y
+		elif alive.size() > 1:
 			x += -75.0 if i == 0 else 75.0
-		view.position = Vector2(x, enemy_entity.size.y + 72.0)
+		view.position = Vector2(x, y)
 		var fill := view.get_node("HP/Fill") as ColorRect
 		fill.size.x = 90.0 * clampf(float(alive[i].hp) / maxf(1.0, float(alive[i].max_hp)), 0.0, 1.0)
+		if _online_hunt_guard:
+			var marker := view.get_node("Selection") as Label
+			marker.text = "INSPECTING" if str(alive[i].get("id", "")) == _online_inspected_minion else ""
+
+func _on_online_minion_input(event: InputEvent, index: int) -> void:
+	if not _online_hunt_guard or not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT or not event.pressed or index < 0 or index >= _online_visible_minions.size():
+		return
+	_online_inspected_minion = _online_visible_minions[index]
+	_update_solo_minion_views()
 
 func _update_solo_panel() -> void:
 	if not is_instance_valid(_solo_status):

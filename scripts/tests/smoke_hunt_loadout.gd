@@ -188,6 +188,44 @@ func _run_online() -> void:
 		quit(1)
 		return
 	var recovered: Dictionary = combat._online_hunt_session.duplicate(true)
+	assert(int(combat.player_hp.value) == int(recovered.combat_state.player.hp))
+	assert(int(combat.enemy_hp.value) == int(recovered.combat_state.boss.hp))
+	for button in combat.spell_buttons:
+		assert(button.disabled)
+	var fixture: Dictionary = recovered.duplicate(true)
+	fixture.combat_state.player.status = {"poison": 2}
+	fixture.combat_state.boss.status = {"stun": 1}
+	fixture.combat_state.moves[0].cooldown_remaining = 2
+	fixture.combat_state.inspiration = {"pending": true, "offers": ["cinder_fist", "silver_needle", "crystal_ram"]}
+	fixture.combat_state.minions = [{"id": "minion_0", "hp": 10, "max_hp": 20}, {"id": "minion_1", "hp": 20, "max_hp": 20}]
+	assert(combat._render_online_hunt(fixture))
+	assert(combat._solo_minion_views[0].visible and combat._solo_minion_views[1].visible)
+	assert(is_equal_approx(combat._solo_minion_views[0].get_node("HP/Fill").size.x, 45.0))
+	var inspect := InputEventMouseButton.new()
+	inspect.button_index = MOUSE_BUTTON_LEFT
+	inspect.pressed = true
+	combat._on_online_minion_input(inspect, 1)
+	assert(combat._online_inspected_minion == "minion_1")
+	assert(combat._solo_minion_views[1].get_node("Selection").text == "INSPECTING")
+	var capture_path := OS.get_environment("EW_HUNT_CAPTURE")
+	if not capture_path.is_empty():
+		await process_frame
+		await RenderingServer.frame_post_draw
+		var capture := root.get_texture().get_image()
+		if capture == null or capture.save_png(capture_path) != OK:
+			push_error("Failed to capture online combat")
+			quit(1)
+			return
+	assert("CD: 2" in combat.spell_buttons[0].text and "Inspiration:" in combat._online_hunt_info.text)
+	fixture.combat_state.minions[0].hp = 0
+	assert(combat._render_online_hunt(fixture))
+	assert(combat._solo_minion_views[0].visible and not combat._solo_minion_views[1].visible)
+	fixture.combat_state.minions[1].hp = 0
+	assert(combat._render_online_hunt(fixture))
+	assert(not combat._solo_minion_views[0].visible and not combat._solo_minion_views[1].visible)
+	assert(combat._online_inspected_minion.is_empty())
+	assert(combat._online_hunt_revision == 1 and not combat._combat_started)
+	assert(combat._render_online_hunt(recovered))
 	combat._online_hunt_session.clear()
 	var server_url: String = combat._combat_backend.base_url
 	combat._combat_backend.base_url = "http://127.0.0.1:1"
