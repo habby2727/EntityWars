@@ -28,6 +28,10 @@ func _run() -> void:
 		push_error("World boss visuals unavailable")
 		quit(1)
 		return
+	if OS.has_environment("COMBAT_ENERGY"):
+		scene.player.hom_energy = int(OS.get_environment("COMBAT_ENERGY"))
+		scene._update_ui()
+		await process_frame
 	if OS.has_environment("COMBAT_GUARDIAN_TEXTURE"):
 		scene._solo_texture = load(OS.get_environment("COMBAT_GUARDIAN_TEXTURE")) as Texture2D
 		scene._solo_def.name = "QA Guardian"
@@ -50,6 +54,8 @@ func _run() -> void:
 		quit(1)
 		return
 	scene.spell_buttons[0].pressed.emit()
+	if scene.hom_decision.visible:
+		scene._on_hom_choice("hold")
 	if not scene._resolving_exchange:
 		push_error("Spell button did not start an exchange")
 		quit(1)

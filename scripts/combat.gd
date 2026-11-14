@@ -390,7 +390,8 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	enemy_hom.visible = false
-	_player_hom_status.position = Vector2(25, 935)
+	_player_hom_status.position = Vector2(float(layout[1].x) - 120.0, 710)
+	$PlayerPanel/PlayerBottomSpacer.custom_minimum_size.y = 132
 	_align_health_panels()
 
 func _on_back_pressed() -> void:
@@ -440,10 +441,17 @@ func _leave_combat() -> void:
 	_log_immediate("You forfeited the combat.")
 	if _solo_boss_mode:
 		_solo_events.append({"turn": _turn, "result": "defeat", "forfeit": true})
-		SceneRouter.go_to_world_gate()
+		_return_from_solo_hunt()
 		return
 	if ResourceLoader.exists("res://scenes/LoadoutGrid.tscn"):
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
+
+func _return_from_solo_hunt() -> void:
+	var zone := str(_solo_context.get("visual_zone_id", ""))
+	if zone in ["zone_chaos", "zone_corrupted", "zone_crystal"]:
+		SceneRouter.go_to_world_zone(zone)
+	else:
+		SceneRouter.go_to_world_gate()
 
 func _configure_tooltip_text() -> void:
 	var font := load("res://assets/fonts/liberation-serif/LiberationSerif-Regular.ttf")
@@ -544,6 +552,25 @@ func _setup_solo_boss() -> bool:
 	if requested_texture == texture_id or (variants is Array and requested_texture in variants):
 		texture_id = requested_texture
 	_solo_texture = assets.get_tex(texture_id)
+	var debug_visual: Variant = _solo_context.get("debug_visual", {})
+	if _combat_debug and str(_solo_context.get("session_id", "")).is_empty() and debug_visual is Dictionary and not debug_visual.is_empty():
+		var debug_tier := str(debug_visual.get("tier", ""))
+		var debug_texture := str(debug_visual.get("texture", ""))
+		var zone := str(_solo_context.get("visual_zone_id", ""))
+		var allowed := {"mythic": "boss_colossus", "rare": "boss_leviathan", "epic": "boss_temporal", "legendary": "ghost_boss"}
+		var accepted := false
+		if debug_tier == "common" and zone in ["zone_chaos", "zone_corrupted", "zone_crystal"]:
+			var id := str(debug_visual.get("id", ""))
+			var world_art: Dictionary = load("res://scripts/ui/world_zone.gd").WORLD_ART
+			var path := "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), id]
+			if id in world_art.get(zone, []) and debug_texture == path and ResourceLoader.exists(path):
+				_solo_texture = load(path) as Texture2D
+				accepted = true
+		elif allowed.get(debug_tier, "") == debug_texture and assets.has(debug_texture):
+			_solo_texture = assets.get_tex(debug_texture)
+			accepted = true
+		if accepted:
+			_solo_def.name = str(debug_visual.get("name", "Boss")).left(80)
 	var minion_texture_id := str(_solo_def.get("minion_texture_id", ""))
 	_solo_minion_texture = assets.get_tex(minion_texture_id) if not minion_texture_id.is_empty() else null
 	assets.free()
@@ -1330,7 +1357,7 @@ func _on_next_turn() -> void:
 		_wait_for_combat_state()
 		return
 	if _battle_over and not _processing_steps and _solo_boss_mode:
-		SceneRouter.go_to_world_gate()
+		_return_from_solo_hunt()
 		return
 	if _battle_over and not _processing_steps and ResourceLoader.exists("res://scenes/LoadoutGrid.tscn"):
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
@@ -2160,12 +2187,19 @@ func _handle_battle_end() -> void:
 		_clear_solo_power()
 		_battle_over = true
 		var victory: bool = player.hp > 0 and enemy.hp <= 0 and not _solo_has_minions()
+		var preview: Variant = _solo_context.get("debug_visual", {})
+		if victory and _combat_debug and str(_solo_context.get("session_id", "")).is_empty() and preview is Dictionary and bool(preview.get("guardian", false)):
+			var index := int(preview.get("parent_index", 0))
+			var guardian_id := str(preview.get("encounter_id", ""))
+			var zone := str(_solo_context.get("visual_zone_id", ""))
+			if index >= 1 and index <= 4 and not guardian_id.is_empty() and zone in ["zone_chaos", "zone_corrupted", "zone_crystal"]:
+				SceneRouter._debug_guardian_wins[SceneRouter.debug_guardian_key(zone, index, guardian_id)] = true
 		_solo_events.append({"turn": _turn, "result": "victory" if victory else "defeat"})
 		_log_immediate("Victory - Rewards available in WG-B4 (Unverified / Preview)" if victory else "Defeat - Resource loss available in WG-B4 (Unverified / Preview)")
 		spell_panel.hide()
 		switch_weapon_btn.hide()
 		_inspiration_panel.hide()
-		next_turn_btn.text = "Return to World Gate"
+		next_turn_btn.text = "Return to World Zone" if not str(_solo_context.get("visual_zone_id", "")).is_empty() else "Return to World Gate"
 		next_turn_btn.disabled = false
 		next_turn_btn.show()
 		return

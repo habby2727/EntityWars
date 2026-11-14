@@ -24,9 +24,15 @@ static var _combat_seal_mode := "attack"
 static var _solo_hunt_context := {}
 static var _hunt_loadout_active := false
 static var _hunt_loadout := {}
+static var _debug_guardian_wins := {}
 
-static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "", visual_zone_id: String = "") -> void:
+static func debug_guardian_key(zone: String, tier_index: int, encounter_id: String) -> String:
+	return "%s:%d:%s" % [zone, tier_index, encounter_id]
+
+static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "", visual_zone_id: String = "", debug_visual: Dictionary = {}) -> void:
 	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key, "display_texture_id": display_texture_id, "session_id": session_id, "visual_zone_id": visual_zone_id if visual_zone_id in ["zone_chaos", "zone_corrupted", "zone_crystal"] else ""}
+	if session_id.is_empty() and not debug_visual.is_empty():
+		_solo_hunt_context["debug_visual"] = debug_visual.duplicate(true)
 	_hunt_loadout_active = true
 	_hunt_loadout.clear()
 	_go_to(SCENE_LOADOUT, "LoadoutGrid")

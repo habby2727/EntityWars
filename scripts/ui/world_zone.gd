@@ -81,6 +81,7 @@ var _hunt_action_id := ""
 var _hunt_action_key := ""
 var _hunt_fight: Button
 var _hunt_boundary := 0
+var _debug_visual: Dictionary = {}
 
 func _exit_tree() -> void:
 	_clear_guardian_preview()
@@ -203,10 +204,11 @@ func _setup_zone_view() -> void:
 	_preview_status.visible = false
 	content.add_child(_preview_status)
 	var title := Label.new()
-	title.text = "WORLD BOSSES"
+	title.text = "ENCOUNTER"
 	title.add_theme_font_size_override("font_size", 20)
 	content.add_child(title)
 	_boss_picker = OptionButton.new()
+	_boss_picker.visible = false
 	_boss_picker.disabled = true
 	_boss_picker.item_selected.connect(_on_boss_selected)
 	content.add_child(_boss_picker)
@@ -226,6 +228,7 @@ func _setup_zone_view() -> void:
 	_boss_hp.visible = false
 	content.add_child(_boss_hp)
 	_boss_open = Button.new()
+	_boss_open.visible = false
 	_boss_open.text = "Open boss encounter"
 	_boss_open.disabled = true
 	_boss_open.custom_minimum_size.y = 42
@@ -280,7 +283,7 @@ func _setup_world_art() -> void:
 	_world_sprite.mouse_filter = Control.MOUSE_FILTER_STOP
 	_world_sprite.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			_world_modal.visible = true)
+			_show_common_details())
 	stage.add_child(_world_sprite)
 	for x in [0.32, 0.68]:
 		var companion := TextureRect.new()
@@ -298,7 +301,8 @@ func _setup_world_art() -> void:
 		companion.gui_input.connect(func(event: InputEvent):
 			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 				_debug_hunt_id = "hunt_common"
-				_world_modal.visible = true)
+				_debug_visual = {"id": str(companion.get_meta("appearance_id", "")), "tier": "common", "texture": str(companion.get_meta("appearance_path", "")), "name": str(companion.get_meta("appearance_name", "Common"))}
+				_show_common_details())
 		stage.add_child(companion)
 		_world_companions.append(companion)
 	var name_panel := PanelContainer.new()
@@ -419,18 +423,24 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			_preview_selection = actor_id
 			_debug_hunt_id = "hunt_" + str(entry.get("tier", "common"))
+			_debug_visual = {"id": texture_id.get_file().get_basename() if texture_id.begins_with("res://") else actor_id, "tier": str(entry.get("tier", "common")), "texture": texture_id, "name": str(entry.get("name", "Boss")), "guardian": not main, "parent_index": _debug_rotation, "encounter_id": actor_id}
 			_preview_selected_encounter = {"id": actor_id, "texture_id": texture_id, "zone_id": _get_zone_id(), "preview": true}
 			var real_hunt := not _hunt_selected.is_empty() and actor_id == str(_hunt_selected.get("id", ""))
-			_preview_status.text = ("Global encounter: %s\nUnverified preview: no rewards." % str(entry.get("name", actor_id))) if real_hunt else ("PREVIEW: %s\n%s" % [str(entry.get("name", actor_id)), "Locked: " + ", ".join(required) if main and not required.is_empty() else "No authoritative encounter available."])
+			_preview_status.text = ("Boss Hunt: %s\nUnverified preview: no rewards." % str(entry.get("name", actor_id))) if real_hunt else ("Unverified debug preview: %s\n%s" % [str(entry.get("name", actor_id)), "Locked: " + ", ".join(required) if main and not required.is_empty() else "No rewards or persistent victories."])
 			_preview_status.visible = true
 			_boss_picker.visible = false
 			_boss_hp.visible = false
 			_boss_status.visible = false
 			_boss_open.visible = false
 			_hunt_fight.visible = real_hunt
+			_debug_fight.visible = _debug.unlock_all_buildings
+			_debug_fight.disabled = main and not required.is_empty()
 			if real_hunt:
-				var active := _backend != null and not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms()
-				_hunt_fight.disabled = _backend == null or _backend.token.is_empty() or (not bool(_hunt_selected.get("available", false)) and not active)
+				var active := _backend != null and not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and str(_hunt_active.get("hunt_id", "")) == actor_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms()
+				var needs_guardians := str(_hunt_selected.get("tier", "common")) != "common"
+				_hunt_fight.disabled = _backend == null or _backend.token.is_empty() or (not active and (needs_guardians or not bool(_hunt_selected.get("available", false))))
+				if needs_guardians and not active:
+					_preview_status.text += "\nLocked: guardian progress requires server verification."
 				_hunt_fight.text = "Resume Hunt" if active else "Fight (unverified preview)"
 			_world_modal.visible = true)
 	var tween := create_tween().set_loops()
@@ -456,9 +466,21 @@ func _clear_guardian_preview() -> void:
 	if is_instance_valid(_preview_status):
 		_preview_status.visible = false
 		_hunt_fight.visible = false
-		_boss_picker.visible = true
+		_boss_picker.visible = false
 		_boss_status.visible = true
-		_boss_open.visible = true
+		_boss_open.visible = false
+
+func _show_common_details() -> void:
+	_preview_status.text = "%s\nVisual appearance; no server encounter assigned." % str(_debug_visual.get("name", "Common"))
+	_preview_status.visible = true
+	_boss_picker.visible = false
+	_boss_hp.visible = false
+	_boss_status.visible = false
+	_boss_open.visible = false
+	_hunt_fight.visible = false
+	_debug_fight.visible = _debug.unlock_all_buildings
+	_debug_fight.disabled = false
+	_world_modal.visible = true
 
 func _change_world_art(direction: int) -> void:
 	var zone := _get_zone_id()
@@ -473,10 +495,14 @@ func _change_world_art(direction: int) -> void:
 		var other_id: String = entries[(_world_art_index + i + 1) % entries.size()]
 		var other_path := "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), other_id]
 		_world_companions[i].texture = load(other_path) as Texture2D
+		_world_companions[i].set_meta("appearance_id", other_id)
+		_world_companions[i].set_meta("appearance_path", other_path)
+		_world_companions[i].set_meta("appearance_name", other_id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize())
 	var display_name := id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize()
 	if id == "chaos_astral_alchemist_variant":
 		display_name = "Astral Alchemist"
 	_debug_hunt_id = "hunt_common"
+	_debug_visual = {"id": id, "tier": "common", "texture": path, "name": display_name}
 	_world_name.text = "[center][b][color=#%s][lb]Common[rb][/color] %s[/b][/center]" % [TIER_COLORS["common"], display_name]
 	if _world_idle != null:
 		_world_idle.kill()
@@ -493,9 +519,9 @@ func _reroll_world_art() -> void:
 		if _debug_rotation > 0:
 			_show_debug_boss(_debug_rotation)
 			return
-	elif not _hunt_schedule.is_empty():
+	else:
 		_debug_rotation = (_debug_rotation + 1) % (_hunt_schedule.size() + 1)
-		if _debug_rotation > 0:
+		if _debug_rotation > 0 and _debug_rotation <= _hunt_schedule.size():
 			_show_map_hunt(_hunt_schedule[_debug_rotation - 1])
 			return
 	_clear_guardian_preview()
@@ -521,18 +547,22 @@ func _show_map_hunt(boss: Dictionary) -> void:
 	add_child(_preview_stage)
 	move_child(_world_modal, get_child_count() - 1)
 	var entry := {"id": str(boss.get("id", "")), "name": str(boss.get("name", "Boss")), "tier": str(boss.get("tier", "common")), "texture_id": str(boss.get("display_texture_id", boss.get("texture_id", "")))}
-	_add_preview_actor(entry, 0.5, 0.59, true, PackedStringArray())
 	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
 	var textures := ["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
 	var rank := tiers.find(str(entry.tier))
 	var guardians: Array = []
 	if rank > 1:
 		guardians.append({"id": "visual_higher", "name": "Visual guardian", "tier": tiers[rank - 1], "texture_id": textures[rank - 1]})
-	var commons := 2 if rank <= 2 else rank
+	var commons := 0 if rank <= 0 else (2 if rank <= 2 else rank)
 	var zone := _get_zone_id()
 	var appearances: Array = WORLD_ART.get(zone, [])
 	for i in mini(commons, appearances.size()):
 		guardians.append({"id": "visual_common_%d" % i, "name": "Visual guardian", "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), appearances[i]]})
+	var required := PackedStringArray()
+	var resumed := _backend != null and not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and str(_hunt_active.get("hunt_id", "")) == str(entry.id) and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms()
+	if rank > 0 and not resumed:
+		required.append("Server-verified guardians")
+	_add_preview_actor(entry, 0.5, 0.59, true, required)
 	for i in guardians.size():
 		var x := 0.5 if guardians.size() == 1 else 0.27 + 0.46 * float(i) / float(guardians.size() - 1)
 		_add_preview_actor(guardians[i], x, 0.75, false, PackedStringArray())
@@ -551,9 +581,15 @@ func _start_map_hunt() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
 		return
 	if not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms():
-		_enter_map_hunt(_hunt_active)
+		if str(_hunt_active.get("hunt_id", "")) == str(_hunt_selected.get("id", "")):
+			_enter_map_hunt(_hunt_active)
+		else:
+			_preview_status.text = "Resume your active encounter before starting another."
 		return
 	_hunt_active.clear()
+	if str(_hunt_selected.get("tier", "common")) != "common":
+		_preview_status.text = "Locked: guardian victories require server verification."
+		return
 	if not bool(_hunt_selected.get("available", false)) or _hunt_rotation < 0 or (_hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary):
 		_preview_status.text = "Encounter expired. Refreshing..."
 		_request_map_hunts()
@@ -582,16 +618,18 @@ func _enter_map_hunt(session: Dictionary) -> void:
 	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), str(session.get("session_id", "")), _get_zone_id())
 
 func _show_debug_boss(index: int) -> void:
+	_debug_rotation = index
 	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
 	var textures := ["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
 	var guardians: Array = []
 	if index > 1:
-		guardians.append({"id": "preview_higher", "name": "Guardian", "tier": tiers[index - 1], "texture_id": textures[index - 1]})
+		guardians.append({"id": "preview_higher", "name": "Guardian", "tier": tiers[index - 1], "texture_id": textures[index - 1], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, "preview_higher"))})
 	var commons := 2 if index <= 2 else index
 	var zone := _get_zone_id()
 	var entries: Array = WORLD_ART.get(zone, [])
 	for i in mini(commons, entries.size()):
-		guardians.append({"id": "preview_common_%d" % i, "name": "Guardian %d" % (i + 1), "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), entries[i]]})
+		var guardian_id := "preview_common_%d" % i
+		guardians.append({"id": guardian_id, "name": "Guardian %d" % (i + 1), "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), entries[i]], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(zone, index, guardian_id))})
 	show_guardian_preview({"id": "preview_main", "name": "Boss (preview)", "tier": tiers[index], "texture_id": textures[index]}, guardians)
 	var reroll := Button.new()
 	reroll.text = "Reroll"
@@ -607,7 +645,7 @@ func _show_debug_boss(index: int) -> void:
 func _start_debug_hunt() -> void:
 	if not _debug.unlock_all_buildings:
 		return
-	SceneRouter.go_to_solo_hunt(_debug_hunt_id, 0, "", "", _get_zone_id())
+	SceneRouter.go_to_solo_hunt(_debug_hunt_id, 0, "", "", _get_zone_id(), _debug_visual)
 
 func _refresh_bosses() -> void:
 	if _boss_picker == null:
@@ -749,7 +787,7 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			"schedule":
 				_hunt_schedule.clear()
 				for boss in data.get("bosses", []):
-					if boss is Dictionary and str(boss.get("tier", "")) != "common":
+					if boss is Dictionary:
 						_hunt_schedule.append(boss)
 				_hunt_rotation = int(data.get("rotation_key", -1))
 				var now := _backend.get_server_time_unix_ms()
