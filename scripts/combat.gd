@@ -84,6 +84,12 @@ var _online_hunt_guard := false
 var _online_hunt_request := ""
 var _online_hunt_session: Dictionary = {}
 var _online_hunt_revision := 0
+var _online_turn_request := ""
+var _online_turn_payload: Dictionary = {}
+var _online_processed_turns := {}
+var _online_terminal_shown := false
+var _online_identity_invalid := false
+var _online_event_turn := -1
 var _online_hunt_info: Label
 var _online_inspected_minion := ""
 var _online_visible_minions: Array[String] = []
@@ -344,8 +350,10 @@ func _begin_combat_initialization() -> void:
 	_wait_for_combat_state()
 
 func _on_online_hunt_auth_changed(_token: String) -> void:
+	_online_identity_invalid = true
 	_online_hunt_session.clear()
 	_online_hunt_request = ""
+	_online_turn_request = ""
 	_hide_online_hunt_view()
 	next_turn_btn.text = "Return"
 	next_turn_btn.show()
@@ -364,12 +372,14 @@ func _hide_online_hunt_view() -> void:
 		_online_hunt_info.hide()
 
 func _on_online_hunt_identity(state: Dictionary) -> void:
+	if _online_identity_invalid:
+		return
 	if state.is_empty() or _combat_backend._verified_player_id.is_empty():
 		return
 	if _combat_identity.is_empty() or str(state.get("player_id", "")) != _combat_identity or _combat_backend._verified_player_id != _combat_identity:
 		_on_online_hunt_auth_changed("")
 		return
-	if _online_hunt_request.is_empty():
+	if _online_hunt_request.is_empty() and _online_turn_request.is_empty():
 		_online_hunt_request = _combat_backend.request_api("GET", "/world/boss-hunts/session?session_id=" + str(_solo_context.get("session_id", "")).uri_encode(), null, false)
 		if _online_hunt_request.is_empty():
 			_on_combat_state_timeout()
@@ -377,11 +387,40 @@ func _on_online_hunt_identity(state: Dictionary) -> void:
 			_combat_wait_timer.start(10.0)
 
 func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if not request_id.is_empty() and request_id == _online_turn_request:
+		_online_turn_request = ""
+		if _combat_wait_timer:
+			_combat_wait_timer.stop()
+		if not ok or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(data.get("session_id", "")) != str(_solo_context.get("session_id", "")) or str(data.get("status", "")) not in ["ACTIVE", "VERIFIED_WIN", "VERIFIED_LOSS"] or int(data.get("combat_revision", 0)) != int(_online_turn_payload.get("expected_revision", -2)) + 1 or not data.get("combat_state") is Dictionary or not data.get("combat_loadout") is Dictionary or not data.get("events") is Array:
+			_online_turn_unresolved()
+			return
+		if int(data.combat_revision) >= _online_hunt_revision:
+			var old_session := _online_hunt_session
+			var old_revision := _online_hunt_revision
+			_online_hunt_session = data.duplicate(true)
+			_online_hunt_revision = int(data.combat_revision)
+			if not _render_online_hunt(data):
+				_online_hunt_session = old_session
+				_online_hunt_revision = old_revision
+				_online_turn_unresolved()
+				return
+		var action_id := str(_online_turn_payload.get("client_action_id", ""))
+		if not _online_processed_turns.has(action_id):
+			_online_processed_turns[action_id] = true
+			for event in data.get("events", []):
+				if event is Dictionary:
+					_online_event_turn = int(event.get("turn", -1))
+					_log_immediate("Server: " + JSON.stringify(event))
+			_online_event_turn = -1
+		_online_turn_payload.clear()
+		_refresh_online_spell_buttons()
+		_present_online_terminal()
+		return
 	if request_id.is_empty() or request_id != _online_hunt_request:
 		return
 	_online_hunt_request = ""
 	var session: Variant = data.get("session")
-	if not ok or not session is Dictionary or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(session.get("session_id", "")) != str(_solo_context.get("session_id", "")) or str(session.get("status", "")) != "ACTIVE" or int(session.get("combat_revision", 0)) < 1 or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
+	if not ok or not session is Dictionary or _online_identity_invalid or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(session.get("session_id", "")) != str(_solo_context.get("session_id", "")) or str(session.get("status", "")) not in ["ACTIVE", "VERIFIED_WIN", "VERIFIED_LOSS"] or int(session.get("combat_revision", 0)) < maxi(1, _online_hunt_revision) or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
 		_hide_online_hunt_view()
 		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
 		next_turn_btn.text = "Retry"
@@ -397,8 +436,38 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		next_turn_btn.text = "Retry"
 		next_turn_btn.show()
 		return
+	if not _online_turn_payload.is_empty():
+		var expected := int(_online_turn_payload.get("expected_revision", -1))
+		if _online_hunt_revision < expected or (_online_hunt_revision == expected and str(session.status) != "ACTIVE"):
+			_online_turn_unresolved()
+			return
+		_send_online_pending_turn()
+		return
+	_refresh_online_spell_buttons()
 	next_turn_btn.hide()
+	_present_online_terminal()
 	_log_immediate("Server combat synchronized. Server actions pending.")
+
+func _present_online_terminal() -> void:
+	var status := str(_online_hunt_session.get("status", ""))
+	if status not in ["VERIFIED_WIN", "VERIFIED_LOSS"]:
+		return
+	_online_hunt_info.text = "Server result: " + ("VICTORY" if status == "VERIFIED_WIN" else "DEFEAT")
+	if not _online_terminal_shown:
+		_online_terminal_shown = true
+		_log_immediate(_online_hunt_info.text)
+	next_turn_btn.text = "Return"
+	next_turn_btn.show()
+
+func _send_online_pending_turn() -> void:
+	if _online_identity_invalid or _online_turn_payload.is_empty() or not _online_turn_request.is_empty() or not _online_hunt_request.is_empty() or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity or _combat_backend.token.is_empty():
+		_online_turn_unresolved()
+		return
+	_online_turn_request = _combat_backend.request_api("POST", "/world/boss-hunts/turn", _online_turn_payload.duplicate(true), false)
+	if _online_turn_request.is_empty():
+		_online_turn_unresolved()
+	elif _combat_wait_timer:
+		_combat_wait_timer.start(10.0)
 
 func _render_online_hunt(session: Dictionary) -> bool:
 	var state: Dictionary = session.combat_state
@@ -521,8 +590,19 @@ func _render_online_hunt(session: Dictionary) -> bool:
 		for id in inspiration.get("offers", []):
 			var spell: Dictionary = _reg.get_spell_by_id(str(id))
 			offers.append(str(spell.get("name", id)))
-	_online_hunt_info.text = "Server combat synchronized - actions pending\nNEXT: %s%s" % [intent, "\nInspiration: " + ", ".join(offers) if not offers.is_empty() else ""]
+	_online_hunt_info.text = "Server combat synchronized\nNEXT: %s%s" % [intent, "\nInspiration: " + ", ".join(offers) if not offers.is_empty() else ""]
 	return true
+
+func _refresh_online_spell_buttons() -> void:
+	for i in spell_buttons.size():
+		spell_buttons[i].disabled = not _online_turn_payload.is_empty() or not _online_turn_request.is_empty() or _online_spell_decision(i).is_empty()
+
+func _online_turn_unresolved() -> void:
+	for button in spell_buttons:
+		button.disabled = true
+	_log_immediate("Turn response uncertain. Recovery is required; no new turn has been sent.")
+	next_turn_btn.text = "Recover"
+	next_turn_btn.show()
 
 func _wait_for_combat_state() -> void:
 	if _combat_wait_timer == null:
@@ -535,6 +615,12 @@ func _wait_for_combat_state() -> void:
 
 func _on_combat_state_timeout() -> void:
 	if _online_hunt_guard:
+		if not _online_turn_request.is_empty() and _combat_backend != null:
+			_combat_backend._api_http.cancel_request()
+			_combat_backend._api_in_flight.clear()
+			_online_turn_request = ""
+			_online_turn_unresolved()
+			return
 		if not _online_hunt_request.is_empty() and _combat_backend != null:
 			_combat_backend._api_http.cancel_request()
 			_combat_backend._api_in_flight.clear()
@@ -644,6 +730,9 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 
 func _on_back_pressed() -> void:
 	if _online_hunt_guard:
+		if not _online_turn_payload.is_empty():
+			_log_immediate("Pending turn must be recovered before leaving.")
+			return
 		_return_from_solo_hunt()
 		return
 	if confirm_popup == null:
@@ -964,7 +1053,7 @@ func _update_solo_minion_views() -> void:
 		for minion in alive:
 			_online_visible_minions.append(str(minion.get("id", "")))
 		if _online_inspected_minion not in _online_visible_minions:
-			_online_inspected_minion = ""
+			_online_inspected_minion = _online_visible_minions[0] if not _online_visible_minions.is_empty() else ""
 	for i in _solo_minion_views.size():
 		var view := _solo_minion_views[i]
 		view.visible = i < alive.size()
@@ -982,13 +1071,34 @@ func _update_solo_minion_views() -> void:
 		fill.size.x = 90.0 * clampf(float(alive[i].hp) / maxf(1.0, float(alive[i].max_hp)), 0.0, 1.0)
 		if _online_hunt_guard:
 			var marker := view.get_node("Selection") as Label
-			marker.text = "INSPECTING" if str(alive[i].get("id", "")) == _online_inspected_minion else ""
+			marker.text = "TARGET" if str(alive[i].get("id", "")) == _online_inspected_minion else ""
 
 func _on_online_minion_input(event: InputEvent, index: int) -> void:
 	if not _online_hunt_guard or not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT or not event.pressed or index < 0 or index >= _online_visible_minions.size():
 		return
 	_online_inspected_minion = _online_visible_minions[index]
 	_update_solo_minion_views()
+
+func _online_spell_decision(index: int) -> Dictionary:
+	if not _online_hunt_guard or _online_hunt_session.is_empty() or str(_online_hunt_session.get("status", "")) != "ACTIVE" or _online_hunt_revision < 1 or int(_online_hunt_session.get("combat_revision", 0)) != _online_hunt_revision or not _online_hunt_request.is_empty() or not _online_turn_payload.is_empty() or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity or _combat_backend.token.is_empty():
+		return {}
+	var state: Variant = _online_hunt_session.get("combat_state")
+	if not state is Dictionary or bool(state.get("inspiration", {}).get("pending", false)):
+		return {}
+	var moves: Variant = state.get("moves")
+	if not moves is Array or index < 0 or index >= moves.size() or not moves[index] is Dictionary:
+		return {}
+	var move: Dictionary = moves[index]
+	if str(move.get("id", "")).is_empty() or int(move.get("cooldown_remaining", 0)) > 0:
+		return {}
+	var alive: Array[String] = []
+	for minion in state.get("minions", []):
+		if minion is Dictionary and int(minion.get("hp", 0)) > 0 and not str(minion.get("id", "")).is_empty():
+			alive.append(str(minion.id))
+	var target := "boss"
+	if not alive.is_empty():
+		target = _online_inspected_minion if _online_inspected_minion in alive else alive[0]
+	return {"turn": int(state.get("turn", 0)) + 1, "spell_id": str(move.id), "target": target, "hom_action": "hold"}
 
 func _update_solo_panel() -> void:
 	if not is_instance_valid(_solo_status):
@@ -1737,6 +1847,11 @@ func _apply_hp_color(bar: ProgressBar, f: Dictionary) -> void:
 
 func _on_next_turn() -> void:
 	if _online_hunt_guard:
+		if not _online_turn_payload.is_empty():
+			if not _online_identity_invalid and _online_hunt_request.is_empty() and _online_turn_request.is_empty():
+				next_turn_btn.hide()
+				_on_online_hunt_identity({"player_id": _combat_identity})
+			return
 		if next_turn_btn.text == "Retry" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity and not _combat_identity.is_empty():
 			next_turn_btn.hide()
 			_on_online_hunt_identity({"player_id": _combat_identity})
@@ -1756,6 +1871,12 @@ func _on_next_turn() -> void:
 
 func _on_spell_chosen(index: int) -> void:
 	if _online_hunt_guard:
+		var decision := _online_spell_decision(index)
+		if decision.is_empty() or not _online_turn_request.is_empty():
+			return
+		_online_turn_payload = {"session_id": str(_solo_context.get("session_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": _online_hunt_revision, "decision": decision}
+		_refresh_online_spell_buttons()
+		_send_online_pending_turn()
 		return
 	if _resolving_exchange or _processing_steps or _battle_over or not _solo_forfeit_request.is_empty() or _inspiration_panel.visible:
 		return
@@ -3410,6 +3531,10 @@ func _flush_steps() -> void:
 	_processing_steps = false
 
 func _display_turn() -> int:
+	if _online_hunt_guard:
+		if _online_event_turn >= 0:
+			return _online_event_turn
+		return int(_online_hunt_session.get("combat_state", {}).get("turn", 0))
 	return maxi(1, _turn)
 
 func _scroll_log_to_bottom() -> void:

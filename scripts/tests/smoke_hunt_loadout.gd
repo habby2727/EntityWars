@@ -190,14 +190,19 @@ func _run_online() -> void:
 	var recovered: Dictionary = combat._online_hunt_session.duplicate(true)
 	assert(int(combat.player_hp.value) == int(recovered.combat_state.player.hp))
 	assert(int(combat.enemy_hp.value) == int(recovered.combat_state.boss.hp))
-	for button in combat.spell_buttons:
-		assert(button.disabled)
+	assert(not combat.spell_buttons[0].disabled)
 	var fixture: Dictionary = recovered.duplicate(true)
 	fixture.combat_state.player.status = {"poison": 2}
 	fixture.combat_state.boss.status = {"stun": 1}
 	fixture.combat_state.moves[0].cooldown_remaining = 2
 	fixture.combat_state.inspiration = {"pending": true, "offers": ["cinder_fist", "silver_needle", "crystal_ram"]}
 	fixture.combat_state.minions = [{"id": "minion_0", "hp": 10, "max_hp": 20}, {"id": "minion_1", "hp": 20, "max_hp": 20}]
+	combat._online_hunt_session = fixture.duplicate(true)
+	assert(combat._online_spell_decision(0).is_empty())
+	fixture.combat_state.inspiration.pending = false
+	combat._online_hunt_session = fixture.duplicate(true)
+	assert(combat._online_spell_decision(1).target == "minion_0")
+	fixture.combat_state.inspiration.pending = true
 	assert(combat._render_online_hunt(fixture))
 	assert(combat._solo_minion_views[0].visible and combat._solo_minion_views[1].visible)
 	assert(is_equal_approx(combat._solo_minion_views[0].get_node("HP/Fill").size.x, 45.0))
@@ -206,7 +211,8 @@ func _run_online() -> void:
 	inspect.pressed = true
 	combat._on_online_minion_input(inspect, 1)
 	assert(combat._online_inspected_minion == "minion_1")
-	assert(combat._solo_minion_views[1].get_node("Selection").text == "INSPECTING")
+	assert(combat._online_spell_decision(1).target == "minion_1")
+	assert(combat._solo_minion_views[1].get_node("Selection").text == "TARGET")
 	var capture_path := OS.get_environment("EW_HUNT_CAPTURE")
 	if not capture_path.is_empty():
 		await process_frame
@@ -225,6 +231,7 @@ func _run_online() -> void:
 	assert(not combat._solo_minion_views[0].visible and not combat._solo_minion_views[1].visible)
 	assert(combat._online_inspected_minion.is_empty())
 	assert(combat._online_hunt_revision == 1 and not combat._combat_started)
+	combat._online_hunt_session = recovered.duplicate(true)
 	assert(combat._render_online_hunt(recovered))
 	combat._online_hunt_session.clear()
 	var server_url: String = combat._combat_backend.base_url
@@ -246,6 +253,71 @@ func _run_online() -> void:
 		push_error("HTTP retry did not recover the same session")
 		quit(1)
 		return
+	combat._on_spell_chosen(0)
+	var pending: Dictionary = combat._online_turn_payload.duplicate(true)
+	combat._on_spell_chosen(0)
+	assert(not pending.is_empty() and combat._online_turn_payload == pending)
+	assert(combat.spell_buttons[0].disabled)
+	deadline = Time.get_ticks_msec() + 20000
+	while combat._online_hunt_revision < 2 and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if combat._online_hunt_revision != 2 or not combat._online_turn_payload.is_empty() or combat._combat_started:
+		push_error("Authoritative turn failed")
+		quit(1)
+		return
+	assert(int(combat.player_hp.value) == int(combat._online_hunt_session.combat_state.player.hp))
+	assert(int(combat.enemy_hp.value) == int(combat._online_hunt_session.combat_state.boss.hp))
+	var available := -1
+	for i in 4:
+		if not combat._online_spell_decision(i).is_empty():
+			available = i
+			break
+	assert(available >= 0)
+	combat._combat_backend.base_url = "http://127.0.0.1:1"
+	combat._on_spell_chosen(available)
+	var unresolved: Dictionary = combat._online_turn_payload.duplicate(true)
+	deadline = Time.get_ticks_msec() + 20000
+	while combat.next_turn_btn.text != "Recover" and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	assert(combat.next_turn_btn.text == "Recover" and combat._online_turn_payload == unresolved)
+	assert(combat._online_hunt_revision == 2 and not combat._combat_started)
+	for button in combat.spell_buttons:
+		assert(button.disabled)
+	combat._combat_backend.base_url = server_url
+	combat._on_next_turn()
+	deadline = Time.get_ticks_msec() + 20000
+	while combat._online_hunt_revision < 3 and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	assert(combat._online_hunt_revision == 3 and combat._online_turn_payload.is_empty())
+	assert(combat._online_processed_turns.has(unresolved.client_action_id))
+	available = -1
+	for i in 4:
+		if not combat._online_spell_decision(i).is_empty():
+			available = i
+			break
+	assert(available >= 0)
+	combat._combat_backend.api_completed.disconnect(combat._on_online_hunt_response)
+	combat._on_spell_chosen(available)
+	var lost: Dictionary = combat._online_turn_payload.duplicate(true)
+	deadline = Time.get_ticks_msec() + 20000
+	while combat.next_turn_btn.text != "Recover" and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	combat._combat_backend.api_completed.connect(combat._on_online_hunt_response)
+	assert(combat._online_turn_payload == lost and combat._online_hunt_revision == 3)
+	combat._on_next_turn()
+	deadline = Time.get_ticks_msec() + 20000
+	while not combat._online_turn_payload.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	assert(combat._online_hunt_revision == 4 and combat._online_turn_payload.is_empty())
+	assert(combat._online_processed_turns.has(lost.client_action_id))
+	var replayed_response: Dictionary = combat._online_hunt_session.duplicate(true)
+	var before_replay: String = combat.log_box.get_parsed_text()
+	combat._online_turn_payload = lost.duplicate(true)
+	combat._online_turn_request = "duplicate-test"
+	combat._on_online_hunt_response("duplicate-test", true, replayed_response)
+	assert(combat.log_box.get_parsed_text() == before_replay)
+	assert(combat._online_hunt_revision == 4 and combat._online_turn_payload.is_empty())
+	assert(not combat._combat_started)
 	combat._on_online_hunt_identity({"player_id": "different-player"})
 	if not combat._online_hunt_session.is_empty() or combat.next_turn_btn.text != "Return" or not combat._combat_session_invalid or combat._combat_started:
 		push_error("Identity mismatch did not fail closed")
