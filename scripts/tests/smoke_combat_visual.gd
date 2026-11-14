@@ -45,20 +45,58 @@ func _run() -> void:
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
 		click.pressed = true
-		click.position = Vector2(10, 10)
+		var slots: Array = scene.enemy_indicators._boss_slots()
+		var effects: Array = scene.enemy_indicators._visible_effects()
+		for i in slots.size():
+			for j in range(i + 1, slots.size()):
+				if slots[i].intersects(slots[j]):
+					push_error("Boss status slots overlap")
+					quit(1)
+					return
+			click.position = slots[i].get_center()
+			if scene.enemy_indicators._get_tooltip(click.position) != effects[i].tooltip:
+				push_error("Boss status tooltip target mismatch")
+				quit(1)
+				return
+			scene.enemy_indicators._gui_input(click)
+			if not scene._spell_detail.visible or scene._spell_detail.dialog_text != effects[i].tooltip:
+				push_error("Boss status click target mismatch")
+				quit(1)
+				return
+			scene._spell_detail.hide()
+		scene.enemy_indicators.size.x = 75
+		var wrapped: Array = scene.enemy_indicators._boss_slots()
+		if wrapped.size() != slots.size() or wrapped.back().position.y <= 0:
+			push_error("Boss status wrapping unavailable")
+			quit(1)
+			return
+		click.position = wrapped.back().get_center()
+		if scene.enemy_indicators._get_tooltip(click.position) != effects.back().tooltip:
+			push_error("Wrapped final status tooltip mismatch")
+			quit(1)
+			return
 		scene.enemy_indicators._gui_input(click)
-		if not scene._spell_detail.visible or not scene._spell_detail.dialog_text.contains("Fury"):
-			push_error("Boss status click did not open details")
+		if not scene._spell_detail.visible or scene._spell_detail.dialog_text != effects.back().tooltip:
+			push_error("Wrapped final status click mismatch")
 			quit(1)
 			return
 		scene._spell_detail.hide()
+		scene.enemy_indicators.size.x = 300
+		scene.enemy.status.stun = 0
+		scene.enemy_indicators.set_fighter(0, scene.enemy)
+		if scene.enemy_indicators._boss_slots().size() != slots.size() - 1:
+			push_error("Expired status did not update layout")
+			quit(1)
+			return
+		scene.enemy.status.stun = 1
+		scene.enemy_indicators.set_fighter(0, scene.enemy)
 		scene._solo_power_active = true
 		scene._update_solo_panel()
 		if scene.player_indicators._extra_effects.is_empty() or scene.player_indicators._extra_effects[0].icon != "power":
 			push_error("Power Turn icon missing")
 			quit(1)
 			return
-		scene._solo_power_active = false
+		scene._solo_power_active = OS.has_environment("COMBAT_POWER_ACTIVE")
 		scene._update_solo_panel()
 		await process_frame
 	if OS.has_environment("COMBAT_ENERGY"):

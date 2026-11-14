@@ -670,7 +670,7 @@ func _create_solo_panel() -> void:
 			_spell_detail.dialog_text = description
 			_spell_detail.popup_centered(Vector2i(440, 260))
 		)
-		icons.size = Vector2(300, 32)
+		icons.size = Vector2(300, 108)
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
 	enemy_name.modulate.a = 0.0

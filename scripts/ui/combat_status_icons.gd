@@ -3,6 +3,7 @@ extends Control
 signal effect_clicked(description: String)
 
 const SLOT := 24.0
+const BOSS_ROW_HEIGHT := 36.0
 const DEFINITIONS := [
 	["poison", "poison", "Veneno: daño periódico", "turns"],
 	["shield_pct", "shield", "Escudo: reduce el próximo impacto", "percent"],
@@ -27,10 +28,30 @@ func set_boss_effects(enabled: bool, effects: Array) -> void:
 	_boss_mode = enabled
 	_extra_effects = effects.duplicate(true)
 	mouse_filter = Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+	_update_boss_height()
 	queue_redraw()
 
 func _visible_effects() -> Array:
 	return _extra_effects + _effects
+
+func _boss_slots() -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	var cursor := Vector2.ZERO
+	var available := maxf(SLOT + 8.0, size.x)
+	for effect in _visible_effects():
+		var text_width := ThemeDB.fallback_font.get_string_size(str(effect.label), HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
+		var width := maxf(SLOT, text_width) + 8.0
+		if cursor.x > 0.0 and cursor.x + width > available:
+			cursor.x = 0.0
+			cursor.y += BOSS_ROW_HEIGHT
+		result.append(Rect2(cursor, Vector2(width, BOSS_ROW_HEIGHT)))
+		cursor.x += width
+	return result
+
+func _update_boss_height() -> void:
+	if _boss_mode:
+		var slots := _boss_slots()
+		size.y = BOSS_ROW_HEIGHT if slots.is_empty() else slots.back().end.y
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -93,6 +114,7 @@ func set_fighter(wins: int, fighter: Dictionary) -> void:
 		var value := maxf(active, pending)
 		var phase := "intercambio actual" if active > 0.0 else "próximo intercambio"
 		_effects.append({"icon": "type", "label": "%d%%" % int(round(value * 100)), "tooltip": "Alteración de tipo: %d%% (%s)" % [int(round(value * 100)), phase]})
+	_update_boss_height()
 	queue_redraw()
 
 func _process(_delta: float) -> void:
@@ -117,6 +139,13 @@ func _queue_feedback(message: String, icon: String = "type") -> void:
 		_show_next_feedback()
 
 func _get_tooltip(at_position: Vector2) -> String:
+	if _boss_mode:
+		var slots := _boss_slots()
+		var boss_effects := _visible_effects()
+		for i in slots.size():
+			if slots[i].has_point(at_position):
+				return str(boss_effects[i].tooltip)
+		return ""
 	var slot := int(at_position.x / SLOT)
 	var offset := 0 if _boss_mode else 2
 	if not _boss_mode and slot < 2:
@@ -133,6 +162,14 @@ func _get_tooltip(at_position: Vector2) -> String:
 	return ""
 
 func _draw() -> void:
+	if _boss_mode:
+		var slots := _boss_slots()
+		var boss_effects := _visible_effects()
+		for i in slots.size():
+			var rect := slots[i]
+			_draw_icon(boss_effects[i].icon, rect.position + Vector2((rect.size.x - SLOT) * 0.5, 0), true)
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 32), str(boss_effects[i].label), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 10, Color.WHITE)
+		return
 	if not _boss_mode:
 		for i in 2:
 			_draw_icon("crown", Vector2(i * SLOT, 0), i < _wins)

@@ -115,6 +115,67 @@ test("minion stun and poison expire independently without affecting the other mi
   expect(result.events.filter((e: any) => e.kind === "minion_attack").map((e: any) => e.actor)).toEqual(["minion_1"]);
 });
 
+test("poison ticks once for each living fighter even while boss is protected", () => {
+  const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_rare" }, selection, catalogs);
+  let state = createCombatState(setup);
+  for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
+  state.boss.status.poison = 1;
+  state.player.status.poison = 1;
+  state.minions[0].status.poison = 1;
+  state.minions[1].status.poison = 1;
+  state.minions[0].hp = 1;
+  state.boss.hp = 1;
+  state.boss.status.stun = 1;
+  state.minions[0].status.stun = 1;
+  state.minions[1].status.stun = 1;
+  const original = structuredClone(state);
+  const decision = { turn: 4, spell_id: "cinder_fist", target: "minion_1" };
+  const result = resolveCombatTurn(state, decision, () => 0.99);
+  const ticks = result.events.filter((e: any) => e.kind === "status_tick");
+  expect(ticks.map((e: any) => e.target)).toEqual(["player", "boss", "minion_0", "minion_1"]);
+  expect(ticks.map((e: any) => e.damage)).toEqual([2, 1, 1, 2]);
+  expect(ticks.every((e: any) => e.remaining === 0)).toBe(true);
+  expect(result.terminal_result).toBeNull();
+  expect(result.next_state.minions[1].hp).toBeGreaterThan(0);
+  expect(result.events.some((e: any) => e.kind === "minion_defeated" && e.actor === "minion_0")).toBe(true);
+  expect(result.events.some((e: any) => e.kind === "status_snapshot" && e.target === "boss" && e.status.poison === 0)).toBe(true);
+  expect(state).toEqual(original);
+  expect(resolveCombatTurn(state, decision, () => 0.99)).toEqual(result);
+  const unprotected = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+  unprotected.boss.status = { stun: 1, poison: 1 };
+  const before = structuredClone(unprotected);
+  delete before.boss.status.poison;
+  let ticksDraws = 0, baselineDraws = 0;
+  const poisonResult = resolveCombatTurn(unprotected, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => { ticksDraws++; return 0.99; });
+  resolveCombatTurn(before, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => { baselineDraws++; return 0.99; });
+  expect(poisonResult.events.filter((e: any) => e.kind === "status_tick" && e.target === "boss")).toMatchObject([{ damage: 2, remaining: 0 }]);
+  expect(ticksDraws).toBe(baselineDraws);
+});
+
+test("reflection poison transitions reflect changes and ignored effects", () => {
+  const make = () => {
+    const state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+    state.boss.status = { stun: 1, reflect_pct: 0.2, poison_on_reflect: 2 };
+    return state;
+  };
+  const decision = { turn: 1, spell_id: "cinder_fist", target: "boss" };
+  const state = make();
+  const hit = resolveCombatTurn(state, decision, () => 0.5);
+  expect(hit.events.filter((e: any) => e.kind === "status_applied" && e.source === "poison_on_reflect")).toMatchObject([{ target: "player", previous: 0, value: 2 }]);
+  expect(hit.events.filter((e: any) => e.kind === "status_consumed" && e.status === "poison_on_reflect")).toMatchObject([{ target: "boss", previous: 2, value: 0, ignored: false }]);
+  expect(resolveCombatTurn(state, decision, () => 0.5)).toEqual(hit);
+  const ignored = make(); ignored.item_effects.ignore_reflect_chance = 1;
+  const skipped = resolveCombatTurn(ignored, decision, () => 0.5);
+  expect(skipped.events.some((e: any) => e.kind === "status_applied" && e.source === "poison_on_reflect")).toBe(false);
+  expect(skipped.events.find((e: any) => e.status === "poison_on_reflect" && e.kind === "status_consumed").ignored).toBe(true);
+  const stronger = make(); stronger.player.status.poison = 3;
+  expect(resolveCombatTurn(stronger, decision, () => 0.5).events.some((e: any) => e.kind === "status_applied" && e.source === "poison_on_reflect")).toBe(false);
+  const unarmed = make(); delete unarmed.boss.status.reflect_pct;
+  const noReflection = resolveCombatTurn(unarmed, decision, () => 0.5);
+  expect(noReflection.next_state.boss.status.poison_on_reflect).toBe(2);
+  expect(noReflection.events.some((e: any) => e.kind === "status_consumed" && e.status === "poison_on_reflect")).toBe(false);
+});
+
 test("deterministic complete encounters terminate for every tier", () => {
   for (const boss of catalogs.bosses) {
     const simulate = () => {
@@ -679,6 +740,7 @@ test("precision, shields, leech and initiative have observable effects", () => {
   const toxic = fixture("toxic_mirror", "mercury_01");
   const reflected = cast(toxic, "toxic_mirror", rng);
   expect(reflected.events.some((e: any) => e.kind === "reflect")).toBe(true);
+  expect(reflected.events.some((e: any) => e.kind === "status_applied" && e.status === "poison_on_reflect" && e.target === "player" && e.value === 1)).toBe(true);
   expect(reflected.next_state.boss.status.poison).toBe(0);
   expect(reflected.next_state.player.status.poison_on_reflect).toBeUndefined();
   const miss = fixture("toxic_mirror", "mercury_01"); miss.boss.status.stun = 1;
@@ -803,7 +865,17 @@ test("synergy damage, neutralization, corrosion and incoming reduction", () => {
   expect(m.events.find((e: any) => e.kind === "damage").damage).toBe(14);
   const pyritc = fixture("vitriol_01", "pyritc", "sodium_01"); pyritc.boss.status.stun = 1;
   const p = resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng);
-  expect(p.events.find((e: any) => e.kind === "hom_corrosion").damage).toBe(3);
+  expect(p.events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 3, actual_damage: 3, hp: p.next_state.boss.hp });
+  const partial = structuredClone(pyritc); partial.boss.hp = p.events.find((e: any) => e.kind === "damage" && e.actor === "player").actual_damage + 2;
+  expect(resolveCombatTurn(partial, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng).events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 3, actual_damage: 2, hp: 0 });
+  const lethal = structuredClone(pyritc); lethal.boss.hp = 1;
+  expect(resolveCombatTurn(lethal, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng).events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 3, actual_damage: 0, hp: 0 });
+  const guarded = structuredClone(pyritc);
+  guarded.minions = [{ id: "minion_0", hp: 2, max_hp: 20, atk: 1, def: 0, type: "", status: {} }, { id: "minion_1", hp: 20, max_hp: 20, atk: 1, def: 0, type: "", status: { stun: 1 } }];
+  guarded.summoned = true;
+  const minionHit = resolveCombatTurn(guarded, { turn: 1, spell_id: "etching_fang", target: "minion_0" }, rng);
+  expect(minionHit.events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "minion_0", damage: 3, actual_damage: 0, hp: 0 });
+  expect(minionHit.next_state.minions[1].hp).toBe(20);
   expect(resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, () => 0.99).events.some((e: any) => e.kind === "hom_corrosion")).toBe(false);
   const silk = fixture("sodium_01", "silphide", "sodium_01");
   const reduced = resolveCombatTurn(silk, { turn: 1, spell_id: "salt_barrier", target: "boss" }, (_t, i) => [0, 0, 0.99][i % 3]);
