@@ -15063,13 +15063,17 @@ async function startServer() {
                 if (!player || typeof player !== "object" || !player.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some((id) => !Number.isSafeInteger(player.wallet[id] ?? 0)))
                   throw new HttpError(409, "Invalid player wallet.");
                 const before = { ...player.wallet };
-                applyWalletGrant(player.wallet, grants);
+                assertWalletInvariant(player.wallet);
+                const credited = {};
+                for (const [id, amount] of Object.entries(grants))
+                  credited[id] = Math.min(amount, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+                applyWalletGrant(player.wallet, credited);
                 assertWalletInvariant(player.wallet);
                 player.updated_at = now;
                 if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1)
                   throw new HttpError(409, "Player unavailable.");
                 auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "SOLO_HUNT_REWARD", row.session_id, now);
-                metadata = JSON.stringify({ pve_reward: { grants, source, tier } });
+                metadata = JSON.stringify({ pve_reward: { grants: credited, source, tier } });
               }
               const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ?, result_metadata_json = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, metadata, row.session_id, playerId, row.combat_revision, now);
               if (updated.changes !== 1)

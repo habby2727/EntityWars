@@ -77,6 +77,36 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     expect(wallet(b.data.player_id).essence).toBe(beforeB + 6);
     expect(wallet(a.data.player_id).essence).toBe(beforeA);
     expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(common.data.session_id, "SOLO_HUNT_REWARD") as any).n).toBe(1);
+    const balance = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance;
+    const cap = balance.wallet_caps?.essence ?? balance.wallet_max_per_resource;
+    for (const remaining of [0, 1]) {
+      const account = await request("/auth/dev_login", { name: `guardian_cap_${remaining}` });
+      const state = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(account.data.player_id) as any).state_json);
+      state.wallet.essence = cap - remaining;
+      db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(state), account.data.player_id);
+      const current = (await request("/world/boss-hunts")).data;
+      const hunt = await request("/world/boss-hunts/start", { client_action_id: `cap-start-${remaining}`, hunt_id: "hunt_common", rotation_key: current.rotation_key }, account.data.token);
+      expect(hunt.status).toBe(200);
+      expect((await request("/world/boss-hunts/loadout", { session_id: hunt.data.session_id, client_action_id: `cap-load-${remaining}`, entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" }, account.data.token)).status).toBe(200);
+      const combat = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(hunt.data.session_id) as any).combat_state_json);
+      combat.boss.hp = 1; combat.boss.status.stun = 100;
+      db.query("UPDATE solo_hunt_sessions SET combat_state_json = ? WHERE session_id = ?").run(JSON.stringify(combat), hunt.data.session_id);
+      let terminal: any;
+      for (let turn = 1; turn <= 10; turn++) {
+        const action = { session_id: hunt.data.session_id, client_action_id: `cap-turn-${remaining}-${turn}`, expected_revision: turn, decision: { turn, spell_id: "cinder_fist", target: "boss", hom_action: "hold" } };
+        const response = await request("/world/boss-hunts/turn", action, account.data.token);
+        expect(response.status).toBe(200);
+        terminal = response.data;
+        if (terminal.status === "VERIFIED_WIN") {
+          expect((await request("/world/boss-hunts/turn", action, account.data.token)).data).toEqual(terminal);
+          break;
+        }
+      }
+      expect(terminal.status).toBe("VERIFIED_WIN");
+      expect(terminal.pve_reward.grants.essence).toBe(remaining);
+      expect(wallet(account.data.player_id).essence).toBe(cap);
+      expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(hunt.data.session_id, "SOLO_HUNT_REWARD") as any).n).toBe(remaining);
+    }
     expect((await request("/world/boss-hunts/guardians?zone_id=zone_chaos&hunt_id=hunt_rare")).status).toBe(401);
     for (const zone of ["zone_chaos", "zone_corrupted", "zone_crystal"]) {
       for (const [hunt, count] of [["hunt_common", 0], ["hunt_mythic", 2], ["hunt_rare", 3], ["hunt_epic", 4], ["hunt_legendary", 5]] as const) {
@@ -103,6 +133,34 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     const start = (id: string, guardian?: string) => request("/world/boss-hunts/start", { client_action_id: id, hunt_id: special.id, rotation_key: schedule.rotation_key, zone_id: zone, ...(guardian ? { guardian_id: guardian } : {}) }, a.data.token);
     expect((await start("locked")).status).toBe(409);
     expect((await start("forged", "not-a-guardian")).status).toBe(409);
+    for (const remaining of [0, 1]) {
+      const account = await request("/auth/dev_login", { name: `guardian_win_cap_${remaining}` });
+      const player = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(account.data.player_id) as any).state_json);
+      player.wallet.essence = cap - remaining;
+      db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(player), account.data.player_id);
+      const opened = await request("/world/boss-hunts/start", { client_action_id: `guardian-cap-start-${remaining}`, hunt_id: special.id, rotation_key: schedule.rotation_key, zone_id: zone, guardian_id: guardians[0].guardian_id }, account.data.token);
+      expect(opened.status).toBe(200);
+      const sessionId = opened.data.session_id;
+      expect((await request("/world/boss-hunts/loadout", { session_id: sessionId, client_action_id: `guardian-cap-load-${remaining}`, entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" }, account.data.token)).status).toBe(200);
+      const combat = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId) as any).combat_state_json);
+      combat.boss.hp = 1; combat.boss.status.stun = 100;
+      db.query("UPDATE solo_hunt_sessions SET combat_state_json = ? WHERE session_id = ?").run(JSON.stringify(combat), sessionId);
+      let terminal: any;
+      for (let turn = 1; turn <= 10; turn++) {
+        const action = { session_id: sessionId, client_action_id: `guardian-cap-turn-${remaining}-${turn}`, expected_revision: turn, decision: { turn, spell_id: "cinder_fist", target: "boss", hom_action: "hold" } };
+        const responses = await Promise.all([request("/world/boss-hunts/turn", action, account.data.token), request("/world/boss-hunts/turn", action, account.data.token)]);
+        expect(responses.map(r => r.status)).toEqual([200, 200]);
+        expect(responses[0].data).toEqual(responses[1].data);
+        terminal = responses[0].data;
+        if (terminal.status === "VERIFIED_WIN") break;
+      }
+      expect(terminal.status).toBe("VERIFIED_WIN");
+      expect(terminal.pve_reward.grants.essence).toBe(remaining);
+      expect(wallet(account.data.player_id).essence).toBe(cap);
+      expect((db.query("SELECT COUNT(*) AS n FROM solo_guardian_victories WHERE player_id = ? AND session_id = ?").get(account.data.player_id, sessionId) as any).n).toBe(1);
+      expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(sessionId, "SOLO_HUNT_REWARD") as any).n).toBe(remaining);
+      expect((await request(listPath, undefined, account.data.token)).data.defeated_count).toBe(1);
+    }
     const forfeit = await start("forfeit-start", guardians[0].guardian_id);
     expect(forfeit.status).toBe(200);
     expect((await request("/world/boss-hunts/forfeit", { session_id: forfeit.data.session_id, client_action_id: "forfeit-guardian" }, a.data.token)).data.status).toBe("FORFEIT");
