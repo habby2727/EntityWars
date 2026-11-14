@@ -28,6 +28,41 @@ func _run() -> void:
 		push_error("World boss visuals unavailable")
 		quit(1)
 		return
+	if OS.has_environment("COMBAT_MINION_CASE"):
+		var case_name := OS.get_environment("COMBAT_MINION_CASE")
+		scene._solo_def.minions = 1 if case_name == "one" else 2
+		scene._solo_summon()
+		if case_name in ["one_dead", "none"]:
+			scene._solo_minions[0].hp = 0
+		if case_name == "none":
+			scene._solo_minions[1].hp = 0
+		scene._update_ui()
+		var expected := 0 if case_name == "none" else 1 if case_name in ["one", "one_dead"] else 2
+		var shown := 0
+		for view in scene._solo_minion_views:
+			if view.visible:
+				shown += 1
+				if view.get_node("Portrait").texture.resource_path != "res://assets/lab/bosses/summoned-boss.png" or not view.get_node("HP").visible:
+					push_error("Summoned minion texture or HP missing")
+					quit(1)
+					return
+		if shown != expected or scene.enemy_entity.texture != scene._solo_texture:
+			push_error("Summoned minion visibility or boss texture mismatch")
+			quit(1)
+			return
+		if expected > 0:
+			var survivor: Dictionary = scene._solo_minions[1] if case_name == "one_dead" else scene._solo_minions[0]
+			var original_hp: int = survivor.hp
+			survivor.hp = int(survivor.max_hp / 2)
+			scene._update_solo_panel()
+			var width: float = scene._solo_minion_views[0].get_node("HP/Fill").size.x
+			if not is_equal_approx(width, 90.0 * float(survivor.hp) / float(survivor.max_hp)):
+				push_error("Summoned minion HP bar did not update")
+				quit(1)
+				return
+			survivor.hp = original_hp
+			scene._update_solo_panel()
+		await process_frame
 	if OS.has_environment("COMBAT_MULTI_STATUS"):
 		scene._solo_fury_pending = true
 		scene._solo_shield_turns = 2

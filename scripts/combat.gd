@@ -87,6 +87,7 @@ var _solo_def := {}
 var _solo_texture: Texture2D
 var _solo_minion_texture: Texture2D
 var _solo_minions: Array = []
+var _solo_minion_views: Array[Control] = []
 var _solo_target_index := 0
 var _solo_base_hp := 1
 var _solo_base_atk := 1
@@ -614,6 +615,7 @@ func _setup_solo_boss() -> bool:
 	return true
 
 func _create_solo_panel() -> void:
+	_create_solo_minion_views()
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	panel.offset_left = -270
@@ -679,9 +681,60 @@ func _create_solo_panel() -> void:
 	enemy_item1.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	enemy_item2.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+func _create_solo_minion_views() -> void:
+	var texture := load("res://assets/lab/bosses/summoned-boss.png") as Texture2D
+	for i in 2:
+		var view := Control.new()
+		view.name = "SummonedMinion%d" % i
+		view.size = Vector2(110, 126)
+		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.visible = false
+		enemy_entity.add_child(view)
+		var portrait := TextureRect.new()
+		portrait.name = "Portrait"
+		portrait.texture = texture
+		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait.position = Vector2(0, 10)
+		portrait.size = Vector2(110, 106)
+		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.add_child(portrait)
+		var hp := ColorRect.new()
+		hp.name = "HP"
+		hp.position = Vector2(10, 0)
+		hp.size = Vector2(90, 4)
+		hp.color = Color("182028")
+		hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var fill := ColorRect.new()
+		fill.name = "Fill"
+		fill.color = Color("45d477")
+		fill.size = Vector2(90, 4)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hp.add_child(fill)
+		view.add_child(hp)
+		_solo_minion_views.append(view)
+
+func _update_solo_minion_views() -> void:
+	var alive: Array = []
+	for minion in _solo_minions:
+		if int(minion.get("hp", 0)) > 0:
+			alive.append(minion)
+	for i in _solo_minion_views.size():
+		var view := _solo_minion_views[i]
+		view.visible = i < alive.size()
+		if not view.visible:
+			continue
+		var x := (enemy_entity.size.x - view.size.x) * 0.5
+		if alive.size() > 1:
+			x += -75.0 if i == 0 else 75.0
+		view.position = Vector2(x, enemy_entity.size.y + 72.0)
+		var fill := view.get_node("HP/Fill") as ColorRect
+		fill.size.x = 90.0 * clampf(float(alive[i].hp) / maxf(1.0, float(alive[i].max_hp)), 0.0, 1.0)
+
 func _update_solo_panel() -> void:
 	if not is_instance_valid(_solo_status):
 		return
+	_update_solo_minion_views()
 	_solo_power_label.visible = _solo_power_active or _solo_fury_pending
 	_solo_power_label.text = "POWER TURN x2 - DIRECT BOSS DAMAGE\nWARNING: SURVIVAL TRIGGERS FURY x%.1f" % float(_solo_def.fury_mult) if _solo_power_active else "FURY PENDING x%.1f" % float(_solo_def.fury_mult)
 	var intent_name := str(_solo_signature.get("name", "Special")) if _solo_intent == "Special" else _solo_intent
@@ -787,7 +840,6 @@ func _solo_summon() -> void:
 		minion.atk = maxi(1, roundi(_solo_base_atk * 0.25))
 		minion.status = {"poison": 0, "stun": 0, "shield_pct": 0.0, "atk_boost": 0.0, "vuln_pct": 0.0, "atk_down": 0.0, "hom_stun": 0, "reflect_pct": 0.0, "tempo_bonus": 0.0}
 		_solo_minions.append(minion)
-		_append_combat_log("%s: %d / %d HP. Acts next exchange." % [minion.name, minion.hp, minion.max_hp], {"ability_id": "Summon", "category": "debuff"})
 	_solo_target_index = 0
 
 func _solo_boss_action() -> void:
@@ -802,7 +854,7 @@ func _solo_boss_action() -> void:
 	if int(enemy.status.stun) > 0:
 		_log_step("%s is stunned." % enemy.name, func(): enemy.status.stun -= 1)
 	elif intent == "Summon":
-		_log_step("%s summons %d minions. Defeat them to expose the boss; they attack next exchange." % [enemy.name, int(_solo_def.minions)], _solo_summon, {"ability_id": "Summon", "category": "debuff"})
+		_log_step("%s summons %d minions." % [enemy.name, int(_solo_def.minions)], _solo_summon, {"ability_id": "Summon", "category": "debuff"})
 	elif intent == "Shield":
 		_log_step("%s raises Alchemical Shield: %d%% mitigation, %d exchanges, %d%% healing." % [enemy.name, roundi(float(_solo_def.shield_reduction) * 100), int(_solo_def.shield_turns), roundi(float(_solo_def.shield_heal_ratio) * 100)], func():
 			_solo_shield_turns = int(_solo_def.shield_turns)
@@ -825,9 +877,12 @@ func _solo_boss_action() -> void:
 func _solo_player_action(action: Dictionary) -> void:
 	var target := _solo_target()
 	var was_protected := _solo_has_minions()
+	var target_was_alive := int(target.get("hp", 0)) > 0
 	await _resolve_spell_action(player, target, action)
 	if player.hp > 0 and (target.hp > 0 or action.get("hom", "hold") == "sacrifice"):
 		await _resolve_hom_choice(player, target, str(action.get("hom", "hold")))
+	if was_protected and target_was_alive and int(target.get("hp", 0)) <= 0:
+		_append_combat_log("%s defeated." % str(target.get("name", "Minion")), {"ability_id": "Summon", "category": "damage"})
 	if was_protected and not _solo_has_minions():
 		_append_combat_log("Boss exposed - protection broken.", {"ability_id": "Summon", "category": "advantage"})
 

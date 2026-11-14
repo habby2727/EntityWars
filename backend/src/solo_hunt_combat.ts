@@ -44,7 +44,7 @@ export function deterministicDraw(secret: Uint8Array, sessionId: string, turn: n
 
 // The caller must obtain snapshot and catalogs from trusted server storage. B4.1
 // does not persist validated selections or the boss entity; B4.2B must do so.
-export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs: any): any {
+export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs: any, options: { independentLoadout?: boolean } = {}): any {
   if (!snapshot || typeof snapshot.player_id !== "string" || !Number.isSafeInteger(snapshot.state_revision) || snapshot.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some(k => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k))) return { error: "UNTRUSTED_SETUP" };
   const entity = catalogs.entities?.find((v: any) => v.id === selection.entity_id);
   const bossEntity = catalogs.entities?.find((v: any) => v.id === snapshot.boss_entity_id);
@@ -56,7 +56,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const defaults = catalogs.spells.filter((s: any) => s.type === entity.type).map((s: any) => s.id);
   const learned = snapshot.spell_progress?.learned_by_entity?.[entity.id] ?? [];
   const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
-  if (!Array.isArray(learned) || !Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids) || selection.spell_ids.some((id: string) => !catalogs.spells.some((s: any) => s.id === id && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))) return { error: "UNTRUSTED_SETUP" };
+  if (!Array.isArray(learned) || (!options.independentLoadout && (!Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids))) || selection.spell_ids.some((id: string) => !catalogs.spells.some((s: any) => s.id === id && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))) return { error: "UNTRUSTED_SETUP" };
   if (selection.spell_ids.some((id: string) => !castableSpell(catalogs.spells.find((s: any) => s.id === id), entity.type))) return { error: "UNSUPPORTED_MECHANIC" };
   if (selection.weapon_ids[0] && selection.weapon_ids[0] === selection.weapon_ids[1]) return { error: "UNTRUSTED_SETUP" };
   const seenCandidates = new Set<string>();
@@ -67,9 +67,9 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   });
   if (inspirationCatalog.length < 3) return { error: "UNSUPPORTED_MECHANIC" };
   if (selection.weapon_ids[1]) {
-    const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs);
+    const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs, options);
     if (first.error) return first;
-    const second = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs);
+    const second = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs, options);
     if (second.error) return second;
     const base = validated.get(first), other = validated.get(second);
     const combined = { ...base, weapons: [{ id: base.item_id, effects: base.itemEffects }, { id: other.item_id, effects: other.itemEffects }] };

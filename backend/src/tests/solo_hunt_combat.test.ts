@@ -9,6 +9,20 @@ const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common",
 const selection = { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
 const rng = (_turn: number, draw: number) => draw % 2 === 0 ? 0 : 0.99;
 
+test("independent hunt selection validates unlocks without changing PvP equipment", () => {
+  const ids = ["steady_script", ...selection.spell_ids.slice(1)];
+  const progress = { learned_by_entity: { sulfur_01: ["steady_script"] }, equipped_by_mode: { attack: { sulfur_01: [...selection.spell_ids] } } };
+  const trusted = { ...snapshot, spell_progress: progress };
+  const chosen = { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"], spell_ids: ids };
+  const before = structuredClone(trusted);
+  expect(buildTrustedCombatSetup(trusted, chosen, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+  expect(buildTrustedCombatSetup(trusted, chosen, catalogs, { independentLoadout: true }).error).toBeUndefined();
+  expect(trusted).toEqual(before);
+  expect(buildTrustedCombatSetup({ ...trusted, spell_progress: {} }, chosen, catalogs, { independentLoadout: true })).toEqual({ error: "UNTRUSTED_SETUP" });
+  expect(buildTrustedCombatSetup(trusted, { ...chosen, spell_ids: ["steady_script", "steady_script", ...ids.slice(2)] }, catalogs, { independentLoadout: true })).toEqual({ error: "UNTRUSTED_SETUP" });
+  expect(buildTrustedCombatSetup(trusted, { ...chosen, atk: 999 }, catalogs, { independentLoadout: true })).toEqual({ error: "UNTRUSTED_SETUP" });
+});
+
 test("tier HP progression, strike thresholds and boss catalog validation", () => {
   expect(catalogs.bosses.map((boss: any) => boss.hp_mult)).toEqual([1, 1.22, 1.525, 1.83, 2.2692]);
   expect(catalogs.bosses.map((boss: any) => boss.attack_mult)).toEqual([1, 1.15, 1.35, 1.55, 1.8]);
