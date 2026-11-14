@@ -11,6 +11,7 @@ const SETTINGS_BUTTON_PATH := NodePath("LowerButtons/SettingsButton")
 @onready var settings_btn: Button = _get_button(SETTINGS_BUTTON_PATH)
 
 func _ready() -> void:
+	preload("res://scripts/ui/settings_screen.gd").apply_saved_display_mode()
 	UIThemeFactory.apply_theme_to(self)
 	if combat_btn:
 		combat_btn.pressed.connect(_on_combat_pressed)

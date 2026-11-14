@@ -1,5 +1,7 @@
 extends Control
 
+signal effect_clicked(description: String)
+
 const SLOT := 24.0
 const DEFINITIONS := [
 	["poison", "poison", "Veneno: daño periódico", "turns"],
@@ -18,6 +20,23 @@ const DEFINITIONS := [
 
 var _wins := 0
 var _effects: Array = []
+var _boss_mode := false
+var _extra_effects: Array = []
+
+func set_boss_effects(enabled: bool, effects: Array) -> void:
+	_boss_mode = enabled
+	_extra_effects = effects.duplicate(true)
+	mouse_filter = Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+	queue_redraw()
+
+func _visible_effects() -> Array:
+	return _extra_effects + _effects
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var description := _get_tooltip(event.position)
+		if not description.is_empty():
+			effect_clicked.emit(description)
 var _previous_status := {}
 var _status_initialized := false
 var _feedback := ""
@@ -99,27 +118,32 @@ func _queue_feedback(message: String, icon: String = "type") -> void:
 
 func _get_tooltip(at_position: Vector2) -> String:
 	var slot := int(at_position.x / SLOT)
-	if slot < 2:
+	var offset := 0 if _boss_mode else 2
+	if not _boss_mode and slot < 2:
 		return "Victoria %d: %s" % [slot + 1, "conseguida" if slot < _wins else "pendiente"]
-	var index := slot - 2
-	if index < mini(_effects.size(), 5):
-		return _effects[index].tooltip
-	if index == 5 and _effects.size() > 5:
+	var effects := _visible_effects()
+	var index := slot - offset
+	if index >= 0 and index < effects.size() and (_boss_mode or index < 5):
+		return effects[index].tooltip
+	if not _boss_mode and index == 5 and effects.size() > 5:
 		var extra: Array[String] = []
-		for effect in _effects.slice(5):
+		for effect in effects.slice(5):
 			extra.append(effect.tooltip)
 		return "\n".join(extra)
 	return ""
 
 func _draw() -> void:
-	for i in 2:
-		_draw_icon("crown", Vector2(i * SLOT, 0), i < _wins)
-	for i in mini(_effects.size(), 5):
-		_draw_icon(_effects[i].icon, Vector2((i + 2) * SLOT, 0), true)
-		_draw_label(_effects[i].label, (i + 2) * SLOT)
-	if _effects.size() > 5:
-		_draw_label("+%d" % (_effects.size() - 5), 7 * SLOT, 15)
-	if not _feedback.is_empty():
+	if not _boss_mode:
+		for i in 2:
+			_draw_icon("crown", Vector2(i * SLOT, 0), i < _wins)
+	var effects := _visible_effects()
+	var offset := 0 if _boss_mode else 2
+	for i in (effects.size() if _boss_mode else mini(effects.size(), 5)):
+		_draw_icon(effects[i].icon, Vector2((i + offset) * SLOT, 0), true)
+		_draw_label(effects[i].label, (i + offset) * SLOT)
+	if not _boss_mode and effects.size() > 5:
+		_draw_label("+%d" % (effects.size() - 5), 7 * SLOT, 15)
+	if not _boss_mode and not _feedback.is_empty():
 		_draw_icon(_feedback_icon, Vector2(200, 0), true)
 		draw_string(ThemeDB.fallback_font, Vector2(226, 14), _feedback, HORIZONTAL_ALIGNMENT_LEFT, 150, 13, Color("e4d39b"))
 
@@ -130,6 +154,18 @@ func _draw_icon(kind: String, offset: Vector2, enabled: bool) -> void:
 	draw_set_transform(offset)
 	var c := Color.WHITE
 	match kind:
+		"fury":
+			c = Color("fa7440")
+			draw_colored_polygon(PackedVector2Array([Vector2(12, 2), Vector2(17, 9), Vector2(19, 14), Vector2(16, 20), Vector2(8, 20), Vector2(5, 15), Vector2(9, 8), Vector2(10, 13)]), c)
+		"minions":
+			c = Color("d5b968")
+			draw_circle(Vector2(8, 8), 4, c)
+			draw_circle(Vector2(16, 8), 4, c)
+			draw_line(Vector2(4, 19), Vector2(6, 14), c, 3, true)
+			draw_line(Vector2(20, 19), Vector2(18, 14), c, 3, true)
+		"power":
+			c = Color("8de8f2")
+			draw_colored_polygon(PackedVector2Array([Vector2(13, 1), Vector2(5, 12), Vector2(11, 12), Vector2(9, 22), Vector2(20, 8), Vector2(14, 8)]), c)
 		"crown":
 			c = Color("e9bb51") if enabled else Color("65645b")
 			draw_colored_polygon(PackedVector2Array([Vector2(3, 5), Vector2(6, 17), Vector2(19, 17), Vector2(22, 5), Vector2(16, 10), Vector2(12, 3), Vector2(8, 10)]), c)

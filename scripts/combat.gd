@@ -107,8 +107,6 @@ var _solo_power_active := false
 var _solo_power_eligible := 0
 var _solo_fury_pending := false
 var _solo_power_label: Label
-var _solo_player_badge: Button
-var _solo_enemy_badges: Dictionary = {}
 var _solo_intent_button: Button
 
 func _boss_ability_description(ability: String) -> String:
@@ -666,24 +664,13 @@ func _create_solo_panel() -> void:
 		panel.tooltip_text = help.text
 		help.visible = false
 	_solo_panel.add_child(help)
-	_solo_player_badge = Button.new()
-	_solo_player_badge.position = Vector2(0, 46)
-	_solo_player_badge.custom_minimum_size = Vector2(200, 24)
-	_solo_player_badge.add_theme_font_size_override("font_size", 13)
-	_solo_player_badge.pressed.connect(_show_boss_ability.bind("Power"))
-	$PlayerHealthGroup.add_child(_solo_player_badge)
-	var status_row := HFlowContainer.new()
-	status_row.position = Vector2(-40, 46)
-	status_row.size = Vector2(280, 80)
-	status_row.add_theme_constant_override("h_separation", 3)
-	status_row.add_theme_constant_override("v_separation", 3)
-	$EnemyHealthGroup.add_child(status_row)
-	for kind in ["Fury", "Shield", "Summon", "Poison", "Stun"]:
-		var badge := Button.new()
-		badge.add_theme_font_size_override("font_size", 16)
-		badge.pressed.connect(_show_boss_ability.bind(kind))
-		status_row.add_child(badge)
-		_solo_enemy_badges[kind] = badge
+	for icons in [player_indicators, enemy_indicators]:
+		icons.effect_clicked.connect(func(description: String):
+			_spell_detail.title = "Combat Status"
+			_spell_detail.dialog_text = description
+			_spell_detail.popup_centered(Vector2i(440, 260))
+		)
+		icons.size = Vector2(300, 32)
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
 	enemy_name.modulate.a = 0.0
@@ -700,20 +687,23 @@ func _update_solo_panel() -> void:
 	var intent_name := str(_solo_signature.get("name", "Special")) if _solo_intent == "Special" else _solo_intent
 	_solo_intent_button.text = "NEXT: " + intent_name
 	_solo_status.text = "%s | %s\nShield: %d%% | %d turns\n%s" % [str(_solo_def.get("name", "Boss")), str(_solo_def.get("tier", "")).to_upper(), roundi(float(_solo_def.shield_reduction) * 100.0) if _solo_shield_turns > 0 else 0, _solo_shield_turns, "Boss Protected - Kill Minions" if _solo_has_minions() else "Boss vulnerable"]
-	_solo_player_badge.visible = _solo_power_active and not _battle_over
-	_solo_player_badge.text = "POWER x2 | THIS TURN"
-	_solo_player_badge.tooltip_text = _boss_ability_description("Power")
+	var player_effects: Array = []
+	if _solo_power_active and not _battle_over:
+		player_effects.append({"icon": "power", "label": "x2", "tooltip": _boss_ability_description("Power")})
+	player_indicators.set_boss_effects(true, player_effects)
 	var alive_minions := 0
 	for minion in _solo_minions:
 		if int(minion.hp) > 0:
 			alive_minions += 1
-	var status: Dictionary = enemy.get("status", {})
-	var labels := {"Fury": "FURY x%.1f" % float(_solo_def.fury_mult) if _solo_fury_pending else "", "Shield": "SHIELD %d%% | %dT" % [roundi(float(_solo_def.shield_reduction) * 100), _solo_shield_turns] if _solo_shield_turns > 0 else "", "Summon": "MINIONS %d | PROTECTED" % alive_minions if alive_minions > 0 else "", "Poison": "POISON | %dT" % int(status.get("poison", 0)) if int(status.get("poison", 0)) > 0 else "", "Stun": "STUN | %dT" % int(status.get("stun", 0)) if int(status.get("stun", 0)) > 0 else ""}
-	for kind in _solo_enemy_badges:
-		var badge: Button = _solo_enemy_badges[kind]
-		badge.text = labels[kind]
-		badge.visible = not badge.text.is_empty() and not _battle_over
-		badge.tooltip_text = _boss_ability_description(kind)
+	var boss_effects: Array = []
+	if not _battle_over:
+		if _solo_fury_pending:
+			boss_effects.append({"icon": "fury", "label": "x%.1f" % float(_solo_def.fury_mult), "tooltip": _boss_ability_description("Fury")})
+		if _solo_shield_turns > 0:
+			boss_effects.append({"icon": "shield", "label": "%d%% %dT" % [roundi(float(_solo_def.shield_reduction) * 100), _solo_shield_turns], "tooltip": _boss_ability_description("Shield") + " Remaining: %d exchanges." % _solo_shield_turns})
+		if alive_minions > 0:
+			boss_effects.append({"icon": "minions", "label": str(alive_minions), "tooltip": _boss_ability_description("Summon")})
+	enemy_indicators.set_boss_effects(true, boss_effects)
 	for child in _solo_targets.get_children():
 		_solo_targets.remove_child(child)
 		child.queue_free()
@@ -1004,7 +994,7 @@ func _update_ui() -> void:
 		enemy_entity.texture = _solo_texture
 		enemy_name.text = "BOSS - %s" % str(_solo_def.get("tier", "")).to_upper()
 		turn_label.text = "Boss Hunt\nTurn %d" % _display_turn()
-		enemy_indicators.visible = false
+		enemy_indicators.visible = not _battle_over
 		_update_solo_panel()
 	_set_item_icon(player_item1, player.get("equip_1", {}))
 	_set_item_icon(player_item2, player.get("equip_2", {}))

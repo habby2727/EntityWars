@@ -107,7 +107,10 @@ test("minion stun and poison expire independently without affecting the other mi
   const result = resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "minion_1" }, () => 0.99);
   expect(result.next_state.minions[0].hp).toBe(20);
   expect(result.next_state.minions[0].status.stun).toBe(0);
+  expect(result.events.filter((e: any) => e.kind === "status_consumed" && e.target === "minion_0" && e.status === "stun")).toHaveLength(1);
   expect(result.next_state.minions[0].status.poison).toBe(1);
+  expect(result.events.some((e: any) => e.kind === "status_tick" && e.target === "minion_0" && e.damage === 2 && e.hp === 20 && e.remaining === 1)).toBe(true);
+  expect(result.events.find((e: any) => e.kind === "status_snapshot" && e.target === "minion_0").status).toEqual({ stun: 0, poison: 1 });
   expect(result.next_state.minions[1].hp).toBe(22);
   expect(result.events.filter((e: any) => e.kind === "minion_attack").map((e: any) => e.actor)).toEqual(["minion_1"]);
 });
@@ -136,6 +139,77 @@ test("deterministic complete encounters terminate for every tier", () => {
     };
     expect(simulate()).toEqual(simulate());
   }
+});
+
+test("seeded combat matrix across tiers and equipment", () => {
+  const summary: Record<string, any[]> = {};
+  for (const boss of catalogs.bosses) {
+    summary[boss.tier] = [];
+    for (const weaponIds of [[null, null], ["bismuth_talisman", "wind_amulet"]]) for (const seed of [7, 17, 29]) {
+      const run = () => {
+        const random = (turn: number, draw: number) => deterministicDraw(new Uint8Array(32).fill(seed), boss.id, turn, draw);
+        const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: boss.id }, { ...selection, weapon_ids: weaponIds }, catalogs);
+        expect(setup.error).toBeUndefined();
+        let state = createCombatState(setup, random);
+        const counts: Record<string, number> = {};
+        let prevented = 0, healing = 0;
+        for (let i = 0; i < 100 && !state.terminal_result; i++) {
+          if (state.player.inspiration_pending) {
+            const decision = resolveInspirationDecision(state, { kind: "decline" }, random);
+            expect(decision.error).toBeUndefined();
+            state = decision.next_state;
+            continue;
+          }
+          const target = state.minions.find((m: any) => m.hp > 0)?.id ?? "boss";
+          const result = resolveCombatTurn(state, { turn: state.turn + 1, spell_id: "cinder_fist", target }, random);
+          expect(result.error).toBeUndefined();
+          for (const event of result.events) {
+            const key = event.kind === "boss_action" ? `action_${event.action}` : event.kind;
+            counts[key] = (counts[key] ?? 0) + 1;
+            if (event.kind === "boss_shield") { prevented += event.prevented; healing += event.heal; }
+          }
+          state = result.next_state;
+          expect(state.boss.hp).toBeLessThanOrEqual(state.boss.max_hp);
+          expect(new Set(state.boss_shield_phases).size).toBe(state.boss_shield_phases.length);
+          expect(counts.boss_summon ?? 0).toBeLessThanOrEqual(1);
+        }
+        expect(["WIN", "LOSS"]).toContain(state.terminal_result);
+        return { seed, weapon: weaponIds[0], turns: state.turn, result: state.terminal_result, counts, prevented, healing };
+      };
+      const result = run();
+      expect(run()).toEqual(result);
+      summary[boss.tier].push(result);
+    }
+  }
+  console.log("Solo hunt seeded matrix:", JSON.stringify(summary));
+});
+
+test("progressed server-owned build can finish seeded hunts", () => {
+  const progress = { item_progress: { bismuth_talisman: { level: 10, specialization: "aggressive", traits: [{ id: "power_flat", points: 4 }, { id: "true_on_hit", points: 4 }, { id: "dot_true", points: 2 }] } }, homunculus_progress: { cinder: { level: 10, mutation_id: "vitality" } } };
+  const results: Record<string, string[]> = {};
+  for (const boss of catalogs.bosses) {
+    results[boss.tier] = [];
+    for (const seed of [7, 17, 29]) {
+      const random = (turn: number, draw: number) => deterministicDraw(new Uint8Array(32).fill(seed), boss.id, turn, draw);
+      const setup = buildTrustedCombatSetup({ ...snapshot, ...progress, boss_id: boss.id }, { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder" }, catalogs);
+      expect(setup.error).toBeUndefined();
+      let state = createCombatState(setup, random);
+      for (let i = 0; i < 100 && !state.terminal_result; i++) {
+        if (state.player.inspiration_pending) { state = resolveInspirationDecision(state, { kind: "decline" }, random).next_state; continue; }
+        const target = state.minions.find((m: any) => m.hp > 0)?.id ?? "boss";
+        const spell_id = state.cooldowns.brimstone_crash > 0 ? "cinder_fist" : "brimstone_crash";
+        const decision: any = { turn: state.turn + 1, spell_id, target };
+        if (state.hom_energy >= 3) decision.hom_action = "attack";
+        const result = resolveCombatTurn(state, decision, random);
+        expect(result.error).toBeUndefined();
+        state = result.next_state;
+      }
+      expect(["WIN", "LOSS"]).toContain(state.terminal_result);
+      results[boss.tier].push(`${state.terminal_result}@${state.turn}`);
+    }
+    expect(results[boss.tier].some(outcome => outcome.startsWith("WIN@"))).toBe(true);
+  }
+  console.log("Progressed build outcomes:", JSON.stringify(results));
 });
 
 test("tactical intent respects Fury, summoning, shield, cooldown and weak player", () => {
@@ -182,6 +256,22 @@ test("tactical intent values a useful signature debuff and avoids repeating it",
   expect(selectBossIntent(state, 0)).toBe("Special");
   state.player.status.atk_down = 0.12;
   expect(selectBossIntent(state, 0)).toBe("Strike");
+});
+
+test("special events report only applied effects and misses do not apply debuffs", () => {
+  const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_epic" }, selection, catalogs);
+  const state = createCombatState(setup, () => 0.99);
+  state.boss_intent = "Special";
+  state.player.status.stun = 1;
+  const decision = { turn: 1, spell_id: "cinder_fist", target: "boss" };
+  const landed = resolveCombatTurn(state, decision, () => 0);
+  const event = landed.events.find((e: any) => e.kind === "boss_special_cast");
+  expect(event.spell_id).toBe("brimstone_crash");
+  expect(event.applied_effects).toEqual([{ kind: "atk_down", target: "player", value: 0.12 }]);
+  expect(landed.next_state.player.status.atk_down).toBe(0.12);
+  const missed = resolveCombatTurn(state, decision, () => 0.99);
+  expect(missed.events.find((e: any) => e.kind === "boss_special_cast").applied_effects).toEqual([]);
+  expect(missed.next_state.player.status.atk_down).toBeUndefined();
 });
 
 test("Common signature resolves once, preserves replay and does not loop", () => {
@@ -287,7 +377,10 @@ test("Common power opportunity and Fury survive invalid decisions and stun", () 
   expect(powered.next_state.boss_intent).toBe("Fury Strike");
   expect(resolveCombatTurn(state, decision, () => 0.2)).toEqual(powered);
   const stunned = powered.next_state; stunned.boss.status.stun = 1;
-  const delayed = resolveCombatTurn(stunned, { turn: 6, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
+  const delayedResult = resolveCombatTurn(stunned, { turn: 6, spell_id: "cinder_fist", target: "boss" }, () => 0.99);
+  expect(delayedResult.events.some((event: any) => event.kind === "fury_delayed" && event.multiplier === 2)).toBe(true);
+  expect(delayedResult.events.some((event: any) => event.kind === "boss_action")).toBe(false);
+  const delayed = delayedResult.next_state;
   expect(delayed.fury_pending).toBe(true);
   const fired = resolveCombatTurn(delayed, { turn: 7, spell_id: "cinder_fist", target: "boss" }, () => 0.99);
   expect(fired.events.find((event: any) => event.kind === "fury_strike_resolved")).toMatchObject({ multiplier: 2, landed: false });
@@ -554,7 +647,18 @@ test("precision, shields, leech and initiative have observable effects", () => {
   const focused = cast(focus, "quiet_focus").next_state;
   expect(focused.player.status.focus_next).toBe(0.12);
   focused.boss.status.stun = 1;
-  expect(cast(focused, "furnace_rush", () => 0.99).next_state.player.status.focus_next).toBeUndefined();
+  const focusMiss = cast(focused, "furnace_rush", () => 0.99);
+  expect(focusMiss.next_state.player.status.focus_next).toBeUndefined();
+  const focusEvent = focusMiss.events.findIndex((e: any) => e.kind === "status_consumed" && e.status === "focus_next" && e.target === "player");
+  const missEvent = focusMiss.events.findIndex((e: any) => e.kind === "miss" && e.actor === "player");
+  expect(focusEvent).toBeGreaterThanOrEqual(0);
+  expect(missEvent).toBeGreaterThan(focusEvent);
+  const misalign = fixture("quiet_focus"); misalign.boss.status.stun = 1; misalign.player.status.misalign_next = 0.1;
+  const misalignHit = cast(misalign, "cinder_fist", () => 0);
+  const consumedMisalign = misalignHit.events.findIndex((e: any) => e.kind === "status_consumed" && e.status === "misalign_next");
+  const hitAfter = misalignHit.events.findIndex((e: any) => e.kind === "damage" && e.actor === "player");
+  expect(consumedMisalign).toBeGreaterThanOrEqual(0);
+  expect(hitAfter).toBeGreaterThan(consumedMisalign);
   const crooked = fixture("crooked_rune"); crooked.boss.status.stun = 1;
   expect(cast(crooked, "crooked_rune").next_state.boss.status.misalign_next).toBe(0.1);
   const misaligned = cast(fixture("crooked_rune"), "crooked_rune", (_turn, draw) => [0, 0.99, 0.84][draw % 3]);
@@ -566,12 +670,12 @@ test("precision, shields, leech and initiative have observable effects", () => {
   expect(cast(recoil, "last_axiom").terminal_result).toBe("LOSS");
   const second = fixture("fluid_anchor", "mercury_01"); second.player.status.tempo_bonus = -2;
   const result = cast(second, "fluid_anchor");
-  expect(result.events[0].actor).toBe("boss");
+  expect(result.events.find((e: any) => ["boss_action", "damage", "miss"].includes(e.kind)).actor).toBe("boss");
   expect(result.next_state.player.status.shield_pct).toBe(0.18);
   const first = fixture("fluid_anchor", "mercury_01"); first.boss.status.stun = 1;
   expect(cast(first, "fluid_anchor").next_state.player.status.shield_pct).toBe(0.08);
   const killed = fixture("fluid_anchor", "mercury_01"); killed.player.status.tempo_bonus = -2; killed.player.hp = 1;
-  expect(cast(killed, "fluid_anchor").events.some((e: any) => e.actor === "player")).toBe(false);
+  expect(cast(killed, "fluid_anchor").events.some((e: any) => e.actor === "player" && e.kind !== "status_consumed")).toBe(false);
   const toxic = fixture("toxic_mirror", "mercury_01");
   const reflected = cast(toxic, "toxic_mirror", rng);
   expect(reflected.events.some((e: any) => e.kind === "reflect")).toBe(true);
@@ -637,7 +741,7 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   expect(resolveCombatTurn(sodium, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "hold" }, rng).next_state.hom_energy).toBe(1);
   const silphide = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, homunculus_id: "silphide" }, catalogs));
   silphide.boss.status.tempo_bonus = 1;
-  expect(resolveCombatTurn(silphide, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events[0].actor).toBe("player");
+  expect(resolveCombatTurn(silphide, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events.find((e: any) => ["boss_action", "damage", "miss"].includes(e.kind)).actor).toBe("player");
   const catalyst = { ...snapshot, homunculus_progress: { cinder: { level: 5, mutation_id: "catalyst" } } };
   expect(createCombatState(buildTrustedCombatSetup(catalyst, selected, catalogs)).player.atk).toBe(29);
   expect(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { cinder: { level: 99 } } }, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
@@ -866,8 +970,8 @@ test("switch consumes action, preserves independent defenses and recalculates st
   const withoutTempo = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"] }, catalogs));
   const withTempo = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["wind_amulet", "bismuth_talisman"] }, catalogs));
   withoutTempo.boss.status.tempo_bonus = 1; withTempo.boss.status.tempo_bonus = 1;
-  expect(resolveCombatTurn(withoutTempo, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events[0].actor).toBe("boss");
-  expect(resolveCombatTurn(withTempo, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events[0].actor).toBe("player");
+  expect(resolveCombatTurn(withoutTempo, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events.find((e: any) => ["boss_action", "damage", "miss"].includes(e.kind)).actor).toBe("boss");
+  expect(resolveCombatTurn(withTempo, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events.find((e: any) => ["boss_action", "damage", "miss"].includes(e.kind)).actor).toBe("player");
 });
 
 test("each slot retains its own Forge traits and fusion through switching", () => {
@@ -902,10 +1006,14 @@ test("marks are owned, expire on actions and are consumed on hybrid hit", () => 
   const progress = { learned_by_entity: { aether_01: ids.slice(0, 2) }, equipped_by_mode: { attack: { aether_01: ids } } };
   const make = () => createCombatState(buildTrustedCombatSetup({ ...snapshot, spell_progress: progress }, { ...selection, entity_id: "aether_01", spell_ids: ids }, catalogs));
   const state = make(); state.boss.status.stun = 1;
-  const marked = resolveCombatTurn(state, { turn: 1, spell_id: "paradox_edict", target: "boss" }, rng).next_state;
+  const markedResult = resolveCombatTurn(state, { turn: 1, spell_id: "paradox_edict", target: "boss" }, rng);
+  expect(markedResult.events.some((e: any) => e.kind === "status_applied" && e.status === "hybrid_mark" && e.target === "boss" && e.value.remaining === 2)).toBe(true);
+  const marked = markedResult.next_state;
   expect(marked.boss.status.hybrid_mark).toEqual({ owner: "player", remaining: 2 });
   marked.boss.status.stun = 1;
-  const consumed = resolveCombatTurn(marked, { turn: 2, spell_id: "gilded_exception", target: "boss" }, rng).next_state;
+  const consumedResult = resolveCombatTurn(marked, { turn: 2, spell_id: "gilded_exception", target: "boss" }, rng);
+  expect(consumedResult.events.some((e: any) => e.kind === "status_consumed" && e.status === "hybrid_mark" && e.target === "boss")).toBe(true);
+  const consumed = consumedResult.next_state;
   expect(consumed.boss.status.hybrid_mark).toBeUndefined();
   const foreign = make(); foreign.boss.status.stun = 1; foreign.boss.status.hybrid_mark = { owner: "enemy", remaining: 2 };
   const other = resolveCombatTurn(foreign, { turn: 1, spell_id: "gilded_exception", target: "boss" }, rng).next_state;

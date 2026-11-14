@@ -209,7 +209,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   const healBossShield = (heal: number, prevented: number) => {
     const actual = next.boss.hp > 0 ? Math.min(heal, next.boss.max_hp - next.boss.hp) : 0;
     next.boss.hp += actual;
-    events.push({ actor: "boss", kind: "boss_shield", prevented, heal: actual });
+    events.push({ actor: "boss", target: "boss", kind: "boss_shield", prevented, heal: actual, hp: next.boss.hp, remaining: next.boss_shield_turns });
   };
   next.weapon_defenses ??= {};
   next.other_defenses ??= {};
@@ -241,12 +241,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     }
   };
   const hit = (a: any, d: any, accuracy: number, power: number, actor: string, signatureType?: string) => {
-    if ((actor === "boss" || actor === "minion") && (next.item_effects?.evasion_pct ?? 0) > 0 && draw() < next.item_effects.evasion_pct) { events.push({ actor: "player", kind: "evade" }); return false; }
+    if ((actor === "boss" || actor === "minion") && (next.item_effects?.evasion_pct ?? 0) > 0 && draw() < next.item_effects.evasion_pct) { events.push({ actor: "player", target: actor === "minion" ? a.id : actor, kind: "evade" }); return false; }
     let acc = accuracy - (a.atk > d.def * 1.6 ? 0.08 : 0);
     if (a.max_hp > d.max_hp) acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
     if (accuracyFocus > 0) acc = Math.min(0.99, acc + accuracyFocus);
     if (accuracyMisalign > 0) acc = Math.max(0.55, acc - accuracyMisalign);
-    if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor, kind: "miss" }); return false; }
+    const actorId = actor === "minion" ? a.id : actor;
+    const targetId = d === next.player ? "player" : d === next.boss ? "boss" : d.id;
+    if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor: actorId, target: targetId, kind: "miss" }); return false; }
     const relation = next.types?.effectiveness?.[signatureType ?? a.type]?.[d.type] ?? 1;
     let baseMult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
     if (actor === "player" && spell.type === a.type && relation < 1) baseMult = Math.min(1, baseMult + (next.item_effects?.disadvantage_reduction ?? 0));
@@ -259,48 +261,54 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     const neutralize = Math.max(a.spell_neutralize_active ?? 0, d.spell_neutralize_active ?? 0, next.hom_spent ? 0 : next.hom_synergy?.type_neutralize ?? 0);
     const mult = actor === "player" && spell.type === "universal" ? 1 : 1 + (baseMult - 1) * (1 - neutralize);
     let atk = a.atk;
-    if (a.status.atk_down > 0) { atk = Math.round(atk * (1 - a.status.atk_down)); delete a.status.atk_down; }
-    if (a.status.atk_boost > 0) { atk = Math.round(atk * (1 + a.status.atk_boost)); delete a.status.atk_boost; }
+    if (a.status.atk_down > 0) { atk = Math.round(atk * (1 - a.status.atk_down)); events.push({ kind: "status_consumed", target: actorId, status: "atk_down", previous: a.status.atk_down }); delete a.status.atk_down; }
+    if (a.status.atk_boost > 0) { atk = Math.round(atk * (1 + a.status.atk_boost)); events.push({ kind: "status_consumed", target: actorId, status: "atk_boost", previous: a.status.atk_boost }); delete a.status.atk_boost; }
     let damage = Math.max(1, Math.round((atk - Math.trunc(d.def * 0.5)) * mult * power));
     if (actor === "player" && d === next.boss && next.power_turn_active) damage *= 2;
     if ((actor === "boss" || actor === "minion") && !next.hom_spent) damage = Math.max(1, Math.round(damage * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1))));
-    if (d.status.vuln_pct > 0) { damage = Math.round(damage * (1 + d.status.vuln_pct)); delete d.status.vuln_pct; }
+    if (d.status.vuln_pct > 0) { damage = Math.round(damage * (1 + d.status.vuln_pct)); events.push({ kind: "status_consumed", target: targetId, status: "vuln_pct", previous: d.status.vuln_pct }); delete d.status.vuln_pct; }
     if (d.status.shield_pct > 0) {
       const dispel = actor === "player" ? Math.max(0, Math.min(1, spell.effects.find((e: any) => e.kind === "ward_dispel")?.value ?? 0)) : 0;
       const pierce = actor === "player" ? Math.max(0, Math.min(1, spell.effects.find((e: any) => e.kind === "pierce_ward")?.value ?? 0)) : 0;
       damage = Math.round(damage * (1 - d.status.shield_pct * (1 - dispel) * (1 - pierce)));
+      events.push({ kind: "status_consumed", target: targetId, status: "shield_pct", previous: d.status.shield_pct });
       clearDefense(d, "shield_pct");
     }
     const shielded = actor === "player" && d === next.boss && next.boss_shield_turns > 0;
     const shieldResult = shielded ? reduceBossDamage(damage) : { damage, heal: 0 };
     const prevented = damage - shieldResult.damage;
     damage = shieldResult.damage;
-    if (actor === "player") actualDamage = Math.min(d.hp, damage);
+    const dealt = Math.min(d.hp, damage);
+    if (actor === "player") actualDamage = dealt;
     d.hp = Math.max(0, d.hp - damage);
     if (shielded) healBossShield(shieldResult.heal, prevented);
     if (damage > 0) d.spell_hit_this_exchange = true;
-    events.push({ actor, kind: "damage", damage });
+    events.push({ actor: actorId, target: targetId, kind: "damage", damage, actual_damage: dealt, hp: d.hp });
     if (d.status.reflect_pct > 0) {
       const ignored = actor === "player" && (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < next.item_effects.ignore_reflect_chance;
       const reflected = ignored ? 0 : Math.round(damage * d.status.reflect_pct);
+      const actualReflected = Math.min(a.hp, reflected);
       a.hp = Math.max(0, a.hp - reflected);
       if (reflected > 0) a.spell_hit_this_exchange = true;
+      events.push({ kind: "status_consumed", target: targetId, status: "reflect_pct", previous: d.status.reflect_pct });
       clearDefense(d, "reflect_pct");
       if (!ignored && (d.status.poison_on_reflect ?? 0) > 0) a.status.poison = Math.max(a.status.poison ?? 0, d.status.poison_on_reflect);
       delete d.status.poison_on_reflect;
-      events.push({ actor: actor === "player" ? "boss" : "player", kind: "reflect", damage: reflected });
+      events.push({ actor: targetId, target: actorId, kind: "reflect", damage: reflected, actual_damage: actualReflected, hp: a.hp });
     }
     if (actor === "player" && (next.item_effects?.true_on_hit ?? 0) > 0) {
       const bonus = Math.trunc(next.item_effects.true_on_hit);
-      actualDamage += Math.min(d.hp, bonus);
+      const dealtBonus = Math.min(d.hp, bonus);
+      actualDamage += dealtBonus;
       d.hp = Math.max(0, d.hp - bonus);
-      events.push({ actor, kind: "true_damage", damage: bonus });
+      events.push({ actor, target: targetId, kind: "true_damage", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
     }
     if (actor === "player" && (next.item_effects?.dot_true ?? 0) > 0) {
       const bonus = Math.trunc(next.item_effects.dot_true);
-      actualDamage += Math.min(d.hp, bonus);
+      const dealtBonus = Math.min(d.hp, bonus);
+      actualDamage += dealtBonus;
       d.hp = Math.max(0, d.hp - bonus);
-      events.push({ actor, kind: "corrosion", damage: bonus });
+      events.push({ actor, target: targetId, kind: "corrosion", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
       if ((next.item_effects.vuln_on_hit ?? 0) > 0) d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, next.item_effects.vuln_on_hit);
     }
     if (actor === "player" && !next.hom_spent && (next.hom_synergy?.dot_true ?? 0) > 0) {
@@ -322,11 +330,17 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   };
   try {
     const playerFirst = (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.status.tempo_bonus ?? 0);
-    delete next.player.status.tempo_bonus;
-    delete next.boss.status.tempo_bonus;
+  for (const [id, fighter] of [["player", next.player], ["boss", next.boss]] as [string, any][]) {
+    if (fighter.status.tempo_bonus) events.push({ actor: id, kind: "status_consumed", target: id, status: "tempo_bonus", previous: fighter.status.tempo_bonus });
+    delete fighter.status.tempo_bonus;
+  }
     const bossAction = () => {
       for (const key of Object.keys(next.boss_cooldowns ?? {})) next.boss_cooldowns[key] = Math.max(0, next.boss_cooldowns[key] - 1);
-      if (next.boss.status.stun > 0) next.boss.status.stun--;
+      if (next.boss.status.stun > 0) {
+        next.boss.status.stun--;
+        events.push({ kind: "status_consumed", target: "boss", status: "stun", remaining: next.boss.status.stun });
+        if (next.fury_pending) events.push({ actor: "boss", kind: "fury_delayed", multiplier: next.fury_mult, remaining_stun: next.boss.status.stun });
+      }
       else {
         next.boss_actions_taken = (next.boss_actions_taken ?? 0) + 1;
         events.push({ actor: "boss", kind: "boss_action", action: next.fury_pending ? "Fury Strike" : next.boss_intent, tier: next.boss_tier, hp: next.boss.hp });
@@ -338,7 +352,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
           next.minions = Array.from({ length: c.count }, (_, i) => ({ id: `minion_${i}`, hp: c.hp, max_hp: c.hp, atk: c.atk, def: c.def, type: "", status: {}, spell_hit_this_exchange: false }));
           next.summoned = true;
           next.last_boss_action = "Summon";
-          events.push({ actor: "boss", kind: "boss_summon", minion_ids: next.minions.map((m: any) => m.id) });
+          events.push({ actor: "boss", kind: "boss_summon", minion_ids: next.minions.map((m: any) => m.id), count: next.minions.length, minions: next.minions.map((m: any) => ({ id: m.id, hp: m.hp, max_hp: m.max_hp })) });
           return;
         }
         if (!fury && next.boss_intent === "Shield") {
@@ -358,13 +372,16 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
             if (effect.kind === "bonus_if_hit_last_exchange" && next.boss.spell_hit_last_exchange) power *= 1 + effect.value;
           }
           const landed = hit(next.boss, next.player, signature.accuracy, power, "boss", signature.type);
-          events.push({ actor: "boss", kind: "boss_special_cast", spell_id: signature.id, landed });
+          const applied: any[] = [];
           if (landed) for (const effect of signature.effects) {
             if (["bonus_if_poisoned", "bonus_if_hit_last_exchange"].includes(effect.kind)) continue;
             const recipient = effect.target === "self" ? next.boss : next.player;
             const field = effect.kind === "vuln" ? "vuln_pct" : effect.kind;
-            recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+            const previous = recipient.status[field] ?? 0;
+            recipient.status[field] = Math.max(previous, effect.value);
+            if (recipient.status[field] > previous) applied.push({ kind: effect.kind, target: recipient === next.boss ? "boss" : "player", value: recipient.status[field] });
           }
+          events.push({ actor: "boss", target: "player", kind: "boss_special_cast", spell_id: signature.id, landed, applied_effects: applied });
           return;
         }
         const multiplier = (fury ? next.fury_mult : bossStrikeMultiplier(next.boss.hp, next.boss.max_hp)) * (next.minions.some((m: any) => m.hp > 0) ? 0.5 : 1);
@@ -380,7 +397,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (next.player.hp > 0 && (next.boss.hp > 0 || next.minions.some((m: any) => m.hp > 0))) {
     for (const key of Object.keys(next.cooldowns)) next.cooldowns[key] = Math.max(0, next.cooldowns[key] - 1);
     if (switching) {
-      if (next.player.status.stun > 0) next.player.status.stun--;
+      if (next.player.status.stun > 0) { next.player.status.stun--; events.push({ kind: "status_consumed", target: "player", status: "stun", remaining: next.player.status.stun }); }
       else {
         for (const field of ["shield_pct", "reflect_pct"]) if (next.weapon_defenses[field] !== undefined) {
           next.player.status[field] = next.other_defenses[field] ?? 0;
@@ -404,11 +421,17 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     const poisonedBefore = (target.status.poison ?? 0) > 0;
     const mark = target.status.hybrid_mark;
     const marked = mark?.owner === "player" && mark.remaining > 0;
-    if (marked && --mark.remaining <= 0) delete target.status.hybrid_mark;
-    if (next.player.status.stun > 0) { next.player.status.stun--; }
+    if (marked) {
+      const previous = mark.remaining;
+      if (--mark.remaining <= 0) delete target.status.hybrid_mark;
+      events.push({ kind: "status_changed", target: target === next.boss ? "boss" : target.id, status: "hybrid_mark", previous, remaining: Math.max(0, mark.remaining) });
+    }
+    if (next.player.status.stun > 0) { next.player.status.stun--; events.push({ kind: "status_consumed", target: "player", status: "stun", remaining: next.player.status.stun }); }
     else if (spell.category === "attack" && spell.power_mult > 0) {
       accuracyFocus = next.player.status.focus_next ?? 0;
       accuracyMisalign = next.player.status.misalign_next ?? 0;
+      if (accuracyFocus > 0) events.push({ actor: "player", target: "player", kind: "status_consumed", status: "focus_next", previous: accuracyFocus });
+      if (accuracyMisalign > 0) events.push({ actor: "player", target: "player", kind: "status_consumed", status: "misalign_next", previous: accuracyMisalign });
       delete next.player.status.focus_next;
       delete next.player.status.misalign_next;
       let power = spell.power_mult;
@@ -424,18 +447,18 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (target.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0))) success = hit(next.player, target, spell.accuracy, power, "player");
     }
     else success = draw() < spell.accuracy;
-    if (success && spell.type === "hybrid" && marked) delete target.status.hybrid_mark;
+    if (success && spell.type === "hybrid" && marked && target.status.hybrid_mark) { delete target.status.hybrid_mark; events.push({ kind: "status_consumed", target: target === next.boss ? "boss" : target.id, status: "hybrid_mark" }); }
     if (success) for (const effect of spell.effects) {
       const recipient = effect.target === "self" ? next.player : target;
       if (recipient === next.boss && next.minions.some((m: any) => m.hp > 0)) continue;
       if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(effect.kind)) continue;
-      if (effect.kind === "hybrid_mark") { const before = JSON.stringify(recipient.status.hybrid_mark ?? {}); recipient.status.hybrid_mark = { owner: "player", remaining: Math.trunc(effect.value) }; if (recipient === target && before !== JSON.stringify(recipient.status.hybrid_mark)) award(effect.kind); continue; }
-      if (effect.kind === "tempo_shift") { const before = recipient.status.tempo_bonus ?? 0; recipient.status.tempo_bonus = effect.value; if (recipient === target && effect.value < 0 && effect.value < before) award(effect.kind); continue; }
+      if (effect.kind === "hybrid_mark") { const before = JSON.stringify(recipient.status.hybrid_mark ?? {}); recipient.status.hybrid_mark = { owner: "player", remaining: Math.trunc(effect.value) }; if (before !== JSON.stringify(recipient.status.hybrid_mark)) { events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "hybrid_mark", value: structuredClone(recipient.status.hybrid_mark), spell_id: spell.id }); if (recipient === target) award(effect.kind); } continue; }
+      if (effect.kind === "tempo_shift") { const before = recipient.status.tempo_bonus ?? 0; recipient.status.tempo_bonus = effect.value; if (before !== effect.value) events.push({ kind: "status_changed", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "tempo_bonus", previous: before, value: effect.value, spell_id: spell.id }); if (recipient === target && effect.value < 0 && effect.value < before) award(effect.kind); continue; }
       if (effect.kind === "shield_by_order") { otherDefense(recipient, "shield_pct", playerFirst ? effect.value : effect.second_value ?? effect.value); continue; }
       if (effect.kind === "poison_on_reflect") { recipient.status.poison_on_reflect = Math.trunc(effect.value); continue; }
       if (effect.kind === "life_leech") { if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value))); continue; }
       if (effect.kind === "cleanse_one") {
-        for (const field of ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { recipient.status[field] = 0; break; }
+        for (const field of ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { events.push({ kind: "status_cleansed", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: field, previous: recipient.status[field], spell_id: spell.id }); recipient.status[field] = 0; break; }
         continue;
       }
       if (effect.kind === "recoil") { if (recipient.hp > 0 && effect.value > 0) recipient.spell_hit_this_exchange = true; recipient.hp = Math.max(0, recipient.hp - Math.trunc(effect.value)); continue; }
@@ -449,6 +472,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         const before = recipient.status[field] ?? 0;
         if (["shield_pct", "reflect_pct"].includes(field)) otherDefense(recipient, field, effect.value);
         else recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+        if (recipient.status[field] > before) events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: field, value: recipient.status[field], previous: before, spell_id: spell.id });
         if (recipient === target && ["atk_down", "vuln", "poison", "hom_stun", "misalign_next"].includes(effect.kind) && recipient.status[field] > before) award(effect.kind);
       }
     }
@@ -476,7 +500,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     } else if (next.player.hp > 0 && target?.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0)) && decision.hom_action === "attack" && !next.hom_spent) {
       const boosted = next.hom_energy >= 6;
       next.hom_energy = 0;
-      if (next.player.status.hom_stun > 0) next.player.status.hom_stun--;
+      if (next.player.status.hom_stun > 0) { next.player.status.hom_stun--; events.push({ kind: "status_consumed", target: "player", status: "hom_stun", remaining: next.player.status.hom_stun }); }
       else {
         let accuracy = 0.95 - (next.player.atk > target.def * 1.6 ? 0.08 : 0);
         if (next.player.max_hp > target.max_hp) accuracy -= Math.min(0.15, (next.player.max_hp - target.max_hp) / next.player.max_hp * 0.2);
@@ -485,11 +509,12 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
           const shielded = target === next.boss && next.boss_shield_turns > 0;
           const shieldResult = shielded ? reduceBossDamage(rawDamage) : { damage: rawDamage, heal: 0 };
           const damage = shieldResult.damage;
+          const actualHomDamage = Math.min(target.hp, damage);
           target.hp = Math.max(0, target.hp - damage);
           if (shielded) healBossShield(shieldResult.heal, rawDamage - damage);
           target.spell_hit_this_exchange = true;
-          events.push({ actor: "player", kind: "hom_damage", damage });
-        } else events.push({ actor: "player", kind: "hom_miss" });
+          events.push({ actor: "player", target: target === next.boss ? "boss" : target.id, kind: "hom_damage", damage, actual_damage: actualHomDamage, hp: target.hp });
+        } else events.push({ actor: "player", target: target === next.boss ? "boss" : target.id, kind: "hom_miss" });
       }
     }
     }
@@ -497,11 +522,11 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     for (const id of minionsAtStart) {
       const minion = next.minions.find((m: any) => m.id === id);
       if (!minion || minion.hp <= 0 || next.player.hp <= 0) continue;
-      if (minion.status.stun > 0) { minion.status.stun--; continue; }
+      if (minion.status.stun > 0) { minion.status.stun--; events.push({ kind: "status_consumed", target: id, status: "stun", remaining: minion.status.stun }); continue; }
       hit(minion, next.player, 0.9, 1, "minion");
       events.push({ actor: id, kind: "minion_attack" });
     }
-    if (next.player.hp > 0) for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { fighter.status.poison--; if (fighter !== next.boss || !next.minions.some((m: any) => m.hp > 0)) { fighter.hp = Math.max(0, fighter.hp - 2); fighter.spell_hit_this_exchange = true; } }
+    if (next.player.hp > 0) for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { fighter.status.poison--; if (fighter !== next.boss || !next.minions.some((m: any) => m.hp > 0)) { const damage = Math.min(2, fighter.hp); fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id, damage, hp: fighter.hp, remaining: fighter.status.poison }); } }
     if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   next.turn++;
@@ -569,7 +594,13 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   const recentDamage = Math.max(0, state.boss.hp - next.boss.hp);
   next.boss_intent = next.fury_pending ? "Fury Strike" : (next.boss_actions_taken === state.boss_actions_taken ? state.boss_intent : selectBossIntent(next, recentDamage));
   if (!next.terminal_result) events.push({ actor: "boss", kind: "boss_intent", intent: next.boss_intent, tier: next.boss_tier });
+  const beforeFighters: Record<string, any> = { player: state.player, boss: state.boss, ...Object.fromEntries((state.minions ?? []).map((m: any) => [m.id, m])) };
+  for (const [id, fighter] of Object.entries({ player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m: any) => [m.id, m])) }) as [string, any][]) {
+    const previous = beforeFighters[id]?.status ?? {};
+    if (JSON.stringify(previous) !== JSON.stringify(fighter.status ?? {})) events.push({ kind: "status_snapshot", target: id, status: structuredClone(fighter.status ?? {}) });
+  }
   next.rng_counter = counter;
+  for (const event of events) event.turn = next.turn;
   return { next_state: next, events, terminal_result: next.terminal_result };
 }
 

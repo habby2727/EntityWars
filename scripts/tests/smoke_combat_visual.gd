@@ -35,11 +35,31 @@ func _run() -> void:
 		scene.enemy.status.poison = 2
 		scene.enemy.status.stun = 1
 		scene._update_solo_panel()
-		for kind in ["Fury", "Shield", "Summon", "Poison", "Stun"]:
-			if not scene._solo_enemy_badges[kind].visible:
+		scene.enemy_indicators.set_fighter(0, scene.enemy)
+		var icons: Array = scene.enemy_indicators._visible_effects().map(func(effect): return effect.icon)
+		for kind in ["fury", "shield", "minions", "poison", "stun"]:
+			if not icons.has(kind):
 				push_error("Boss status missing: " + kind)
 				quit(1)
 				return
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = true
+		click.position = Vector2(10, 10)
+		scene.enemy_indicators._gui_input(click)
+		if not scene._spell_detail.visible or not scene._spell_detail.dialog_text.contains("Fury"):
+			push_error("Boss status click did not open details")
+			quit(1)
+			return
+		scene._spell_detail.hide()
+		scene._solo_power_active = true
+		scene._update_solo_panel()
+		if scene.player_indicators._extra_effects.is_empty() or scene.player_indicators._extra_effects[0].icon != "power":
+			push_error("Power Turn icon missing")
+			quit(1)
+			return
+		scene._solo_power_active = false
+		scene._update_solo_panel()
 		await process_frame
 	if OS.has_environment("COMBAT_ENERGY"):
 		scene.player.hom_energy = int(OS.get_environment("COMBAT_ENERGY"))
