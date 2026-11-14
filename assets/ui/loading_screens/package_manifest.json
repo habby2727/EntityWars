@@ -1,0 +1,46 @@
+{
+  "variants": [
+    {
+      "id": "portal",
+      "display": "Portal alquímico",
+      "bar": [
+        553,
+        930,
+        814,
+        55
+      ],
+      "size": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "id": "chaos",
+      "display": "Convergencia de zonas",
+      "bar": [
+        585,
+        827,
+        755,
+        55
+      ],
+      "size": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "id": "laboratory",
+      "display": "Laboratorio arcano",
+      "bar": [
+        670,
+        924,
+        626,
+        55
+      ],
+      "size": [
+        1920,
+        1080
+      ]
+    }
+  ]
+}

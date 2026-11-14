@@ -1,0 +1,18 @@
+; Standalone preview project. Do not overwrite your Entity Wars project.godot.
+config_version=5
+
+[application]
+config/name="Entity Wars — Loading Screens Preview"
+run/main_scene="res://entity_wars_loading/demo/loading_demo.tscn"
+
+[display]
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

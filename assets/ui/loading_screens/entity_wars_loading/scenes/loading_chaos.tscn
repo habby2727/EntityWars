@@ -1,0 +1,45 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://assets/ui/loading_screens/entity_wars_loading/scripts/loading_screen.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/ui/loading_screens/entity_wars_loading/backgrounds/chaos_1920x1080.png" id="2_background"]
+[ext_resource type="Shader" path="res://assets/ui/loading_screens/entity_wars_loading/shaders/loading_fill.gdshader" id="3_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_fill"]
+shader = ExtResource("3_shader")
+shader_parameter/progress = 0.0
+shader_parameter/energy_left = Color(0.156863, 0.705882, 1.000000, 1)
+shader_parameter/energy_right = Color(0.882353, 0.235294, 0.949020, 1)
+
+[node name="LoadingScreen_chaos" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="ProgressFill" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_fill")
+layout_mode = 1
+anchor_left = 0.3135417
+anchor_top = 0.7787037
+anchor_right = 0.6890625
+anchor_bottom = 0.8037037
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)

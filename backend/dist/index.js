@@ -9602,7 +9602,7 @@ var require_built3 = __commonJS((exports, module) => {
 
 // src/index.ts
 import { Database } from "bun:sqlite";
-import { createHash, createHmac } from "crypto";
+import { createHash, createHmac as createHmac2 } from "crypto";
 import { existsSync, mkdirSync, readFileSync as readFileSync2 } from "fs";
 import { dirname, resolve as resolve2 } from "path";
 
@@ -12348,7 +12348,184 @@ function claimVerifiedCombatReward(db, matchId, playerId, apply) {
   }).immediate();
 }
 
+// src/solo_hunt_combat.ts
+import { createHmac } from "crypto";
+var validated = new WeakMap;
+var SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order"]);
+function castableSpell(spell, element) {
+  if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || !(spell.type === element || ["universal", "hybrid"].includes(spell.type) && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(element)) || !["attack", "support"].includes(spell.category) || typeof spell.power_mult !== "number" || !Number.isFinite(spell.power_mult) || spell.power_mult < 0 || typeof spell.accuracy !== "number" || !Number.isFinite(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !Array.isArray(spell.effects))
+    return false;
+  const elements = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"];
+  if (spell.type === "hybrid" && (!elements.includes(spell.primary_type) || !elements.includes(spell.secondary_type) || spell.primary_type === spell.secondary_type))
+    return false;
+  if (spell.category === "attack" && spell.power_mult <= 0 || spell.category === "support" && spell.power_mult !== 0)
+    return false;
+  return spell.effects.every((e) => e && SUPPORTED_EFFECTS.has(e.kind) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every((key) => e[key] === undefined || typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0) && (e.threshold === undefined || e.threshold <= 1));
+}
+function validBossCatalogEntry(boss, spells2) {
+  const tiers = {
+    common: { hp: 1, attack: 1, minions: 0 },
+    mythic: { hp: 1.22, attack: 1.15, minions: 1 },
+    rare: { hp: 1.525, attack: 1.35, minions: 2 },
+    epic: { hp: 1.83, attack: 1.55, minions: 2 },
+    legendary: { hp: 2.2692, attack: 1.8, minions: 2 }
+  };
+  const expected = tiers[boss?.tier];
+  if (!expected || boss.hp_mult !== expected.hp || boss.attack_mult !== expected.attack || boss.minions !== expected.minions || !Array.isArray(boss.signature_pool) || boss.signature_pool.length === 0 || new Set(boss.signature_pool).size !== boss.signature_pool.length)
+    return false;
+  if (!["shield_reduction", "shield_heal_ratio"].every((key) => typeof boss[key] === "number" && Number.isFinite(boss[key]) && boss[key] >= 0 && boss[key] <= 1) || !Number.isInteger(boss.shield_turns) || boss.shield_turns < 1 || typeof boss.fury_mult !== "number" || !Number.isFinite(boss.fury_mult) || boss.fury_mult < 1)
+    return false;
+  return boss.signature_pool.every((id) => {
+    if (typeof id !== "string")
+      return false;
+    const spell = spells2.find((entry) => entry.id === id);
+    return !!spell && castableSpell(spell, spell.type);
+  });
+}
+function deterministicDraw(secret, sessionId, turn, draw) {
+  if (secret.length < 32 || !sessionId || !Number.isSafeInteger(turn) || turn < 0 || !Number.isSafeInteger(draw) || draw < 0)
+    throw new Error("Invalid server RNG input");
+  return createHmac("sha256", secret).update(JSON.stringify(["solo-hunt-v1", sessionId, turn, draw])).digest().readUInt32BE(0) / 4294967296;
+}
+function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
+  if (!snapshot || typeof snapshot.player_id !== "string" || !Number.isSafeInteger(snapshot.state_revision) || snapshot.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some((k) => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)))
+    return { error: "UNTRUSTED_SETUP" };
+  const entity = catalogs.entities?.find((v) => v.id === selection.entity_id);
+  const bossEntity = catalogs.entities?.find((v) => v.id === snapshot.boss_entity_id);
+  const boss = catalogs.bosses?.find((v) => v.id === snapshot.boss_id);
+  if (!entity || !bossEntity || !boss || !Array.isArray(selection.weapon_ids) || selection.weapon_ids.length !== 2 || !Array.isArray(selection.spell_ids) || selection.spell_ids.length !== 4 || new Set(selection.spell_ids).size !== 4 || !["attack", "defense"].includes(selection.mode))
+    return { error: "UNTRUSTED_SETUP" };
+  if (!Array.isArray(catalogs.spells) || !validBossCatalogEntry(boss, catalogs.spells))
+    return { error: "UNTRUSTED_SETUP" };
+  for (const id of selection.weapon_ids)
+    if (id != null && id !== "" && !catalogs.items?.some((v) => v.id === id && v.slot === "build"))
+      return { error: "UNTRUSTED_SETUP" };
+  if (selection.homunculus_id && !catalogs.homunculi?.some((v) => v.id === selection.homunculus_id))
+    return { error: "UNTRUSTED_SETUP" };
+  const defaults = catalogs.spells.filter((s) => s.type === entity.type).map((s) => s.id);
+  const learned = snapshot.spell_progress?.learned_by_entity?.[entity.id] ?? [];
+  const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
+  if (!Array.isArray(learned) || !options.independentLoadout && (!Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids)) || selection.spell_ids.some((id) => !catalogs.spells.some((s) => s.id === id && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))
+    return { error: "UNTRUSTED_SETUP" };
+  if (selection.spell_ids.some((id) => !castableSpell(catalogs.spells.find((s) => s.id === id), entity.type)))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  if (selection.weapon_ids[0] && selection.weapon_ids[0] === selection.weapon_ids[1])
+    return { error: "UNTRUSTED_SETUP" };
+  const seenCandidates = new Set;
+  const inspirationCatalog = catalogs.spells.filter((spell) => {
+    if (!(spell?.type === entity.type || spell?.type === "hybrid" && spell.primary_type === entity.type) || !castableSpell(spell, entity.type) || selection.spell_ids.includes(spell.id) || seenCandidates.has(spell.id))
+      return false;
+    seenCandidates.add(spell.id);
+    return true;
+  });
+  if (inspirationCatalog.length < 3)
+    return { error: "UNSUPPORTED_MECHANIC" };
+  if (selection.weapon_ids[1]) {
+    const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs, options);
+    if (first.error)
+      return first;
+    const second = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs, options);
+    if (second.error)
+      return second;
+    const base = validated.get(first), other = validated.get(second);
+    const combined = { ...base, weapons: [{ id: base.item_id, effects: base.itemEffects }, { id: other.item_id, effects: other.itemEffects }] };
+    validated.set(combined, structuredClone(combined));
+    return Object.freeze(combined);
+  }
+  const item = selection.weapon_ids[0] ? catalogs.items.find((v) => v.id === selection.weapon_ids[0]) : null;
+  const itemProgress = snapshot.item_progress?.[selection.weapon_ids[0]] ?? {};
+  const homProgress = snapshot.homunculus_progress?.[selection.homunculus_id] ?? {};
+  if (typeof itemProgress !== "object" || Array.isArray(itemProgress) || typeof homProgress !== "object" || Array.isArray(homProgress))
+    return { error: "UNTRUSTED_SETUP" };
+  const validLevel = (v) => v === undefined || Number.isInteger(v) && v >= 0 && v <= 10;
+  if (!validLevel(itemProgress.level) || !validLevel(homProgress.level))
+    return { error: "UNTRUSTED_SETUP" };
+  const itemLevel = Math.max(0, Math.min(10, Number.isFinite(Number(itemProgress.level)) ? Math.trunc(Number(itemProgress.level)) : 0));
+  const homLevel = Math.max(0, Math.min(10, Number.isFinite(Number(homProgress.level)) ? Math.trunc(Number(homProgress.level)) : 0));
+  const itemEffects = {};
+  if (item)
+    for (const [key, value] of Object.entries(item.effects)) {
+      if (!["power_flat", "guard_flat", "tempo_flat", "true_on_hit", "dot_true", "vuln_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"].includes(key) || !Array.isArray(value) || !value.length || value.some((v) => typeof v !== "number" || !Number.isFinite(v)))
+        return { error: "UNSUPPORTED_MECHANIC" };
+      itemEffects[key] = itemLevel === 0 && value.length === 10 && key in (item.base_effects ?? {}) ? item.base_effects[key] : value[Math.max(0, Math.min(itemLevel - 1, value.length - 1))];
+    }
+  if (item && itemProgress.traits !== undefined && !Array.isArray(itemProgress.traits))
+    return { error: "UNTRUSTED_SETUP" };
+  if (item && (itemProgress.specialization || itemProgress.traits?.length)) {
+    const pool = catalogs.balance?.forge_trait_pool?.[itemProgress.specialization];
+    const traits = itemProgress.traits;
+    if (!pool || !Array.isArray(traits) || traits.length !== 3 || new Set(traits.map((t) => t?.id)).size !== 3)
+      return { error: "UNTRUSTED_SETUP" };
+    let allocated = 0;
+    for (const trait of traits) {
+      if (!trait || !Object.hasOwn(pool, trait.id) || !Number.isInteger(trait.points) || trait.points < 0 || trait.points > 4 || (allocated += trait.points) > itemLevel)
+        return { error: "UNTRUSTED_SETUP" };
+      if (!["power_flat", "guard_flat", "tempo_flat", "true_on_hit", "dot_true", "vuln_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"].includes(trait.id) || typeof pool[trait.id] !== "number" || !Number.isFinite(pool[trait.id]) || pool[trait.id] <= 0)
+        return { error: "UNSUPPORTED_MECHANIC" };
+      if (trait.points > 0)
+        itemEffects[trait.id] = (itemEffects[trait.id] ?? 0) + pool[trait.id] * trait.points;
+    }
+  }
+  if (item && itemProgress.fusion) {
+    const donor = itemProgress.fusion.donor_id;
+    const imprint = catalogs.balance?.forge_fusion_imprints?.[donor];
+    const donorLevel = snapshot.item_progress?.[donor]?.level;
+    if (typeof itemProgress.fusion !== "object" || Array.isArray(itemProgress.fusion) || Object.keys(itemProgress.fusion).some((key) => key !== "donor_id") || typeof donor !== "string" || donor === item.id || !catalogs.items.some((entry) => entry.id === donor) || itemLevel < 3 || !Number.isInteger(donorLevel) || donorLevel < 3 || donorLevel > 10 || !imprint || Object.keys(imprint).length !== 1)
+      return { error: "UNTRUSTED_SETUP" };
+    for (const [key, amount] of Object.entries(imprint)) {
+      if (!["true_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "dot_true", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"].includes(key) || typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0)
+        return { error: "UNSUPPORTED_MECHANIC" };
+      itemEffects[key] = (itemEffects[key] ?? 0) + amount;
+    }
+  }
+  for (const key of ["ward_pct", "reflect_pct", "evasion_pct", "disadvantage_reduction", "ignore_reflect_chance", "vuln_on_hit"])
+    if (key in itemEffects)
+      itemEffects[key] = Math.max(0, Math.min(1, itemEffects[key]));
+  const hom = selection.homunculus_id ? catalogs.homunculi.find((v) => v.id === selection.homunculus_id) : null;
+  if (homProgress.mutation_id !== undefined && typeof homProgress.mutation_id !== "string")
+    return { error: "UNTRUSTED_SETUP" };
+  const mutation = homProgress.mutation_id ? catalogs.mutations?.find((v) => v.id === homProgress.mutation_id) : null;
+  if (homProgress.mutation_id && !mutation)
+    return { error: "UNTRUSTED_SETUP" };
+  if (mutation && Object.entries(mutation.effects ?? {}).some(([key, value]) => !["hp_flat", "power_flat", "guard_flat", "favorable_type_bonus"].includes(key) || typeof value !== "number" || !Number.isFinite(value)))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const synergy = hom?.per_type?.[entity.type] ?? {};
+  if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value)))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
+  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  validated.set(result, structuredClone(result));
+  return Object.freeze(result);
+}
+function createCombatState(setup, serverRng) {
+  if (!setup || !validated.has(setup))
+    return { error: "UNTRUSTED_SETUP" };
+  setup = validated.get(setup);
+  const fighter = (e, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
+  const player = fighter(setup.entity);
+  const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
+  const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
+  const active = weapons[activeSlot - 1];
+  const activeEffects = scaleWeapon(active.effects, setup.hom_id ? setup.hom_synergy.item_effect_mult : 1);
+  player.atk += setup.bonuses.atk + Math.trunc(activeEffects.power_flat ?? 0);
+  player.def += setup.bonuses.def + Math.trunc(activeEffects.guard_flat ?? 0);
+  player.max_hp += setup.bonuses.hp;
+  player.hp = player.max_hp;
+  const signatureDraw = serverRng ? serverRng(0, 0) : 0;
+  if (!Number.isFinite(signatureDraw) || signatureDraw < 0 || signatureDraw >= 1)
+    throw new Error("Invalid RNG draw");
+  const signature = setup.boss_signatures[Math.floor(signatureDraw * setup.boss_signatures.length)];
+  const minionRatios = { common: 0, mythic: 0.18, rare: 0.2, epic: 0.25, legendary: 0.3 };
+  const minionConfig = { count: setup.boss.minions, hp: Math.max(1, Math.round(setup.bossEntity.base_stats.hp * minionRatios[setup.boss.tier])), atk: Math.max(1, Math.round(setup.bossEntity.base_stats.power * 0.25)), type: setup.bossEntity.type, def: setup.bossEntity.base_stats.guard };
+  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
+}
+function scaleWeapon(effects, multiplier = 1) {
+  const factor = Math.max(0, Math.min(2, multiplier ?? 1));
+  return Object.fromEntries(Object.entries(effects).map(([key, value]) => [key, value * factor]));
+}
+
 // src/index.ts
+var SOLO_HUNT_BOSS_ENTITIES = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
 var IS_PRODUCTION = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some((value) => value?.toLowerCase() == "production" || value?.toLowerCase() == "prod");
 function economicSecret(name, developmentDefault) {
   const secret = Bun.env[name];
@@ -13043,7 +13220,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     if (isChoose && (!pending || pending.slot !== slot || !Array.isArray(pending.options) || pending.options.length !== 3 || new Set(pending.options).size !== 3 || pending.options.some((option) => typeof option !== "string" || !ids.includes(option) || traits.some((t) => t.id === option)) || typeof payload?.trait_id !== "string" || !pending.options.includes(payload.trait_id)))
       return { state: next, error: "Invalid or stale reroll selection." };
     const chooseTrait = (candidates, slotIndex) => {
-      const digest = createHmac("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
+      const digest = createHmac2("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
       return candidates[digest.readUInt32BE(0) % candidates.length];
     };
     if (isReroll && ids.filter((candidate) => !traits.some((t) => t.id === candidate)).length < 3)
@@ -13069,7 +13246,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const options = [];
       for (let i = 0;i < 3; i++) {
         const candidates = ids.filter((candidate) => !traits.some((t) => t.id === candidate) && !options.includes(candidate));
-        const digest = createHmac("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
+        const digest = createHmac2("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
         options.push(candidates[digest.readUInt32BE(0) % candidates.length]);
       }
       next.item_progress[id] = { ...current, specialization: path, traits, pending_reroll: { slot, options } };
@@ -13156,7 +13333,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const outcomes = staticData.balance.anomaly_investigate_outcomes;
       if (!Array.isArray(outcomes) || !outcomes.length || outcomes.some((entry) => !entry || typeof entry.weight !== "number" || !Number.isFinite(entry.weight) || entry.weight < 0 || !validReward2(entry.reward)) || Math.abs(outcomes.reduce((sum, entry) => sum + entry.weight, 0) - 1) > 0.000001)
         return { state: next, error: "Invalid anomaly outcome configuration." };
-      const digest = createHmac("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
+      const digest = createHmac2("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
       const roll = digest.readUInt32BE(0) / 4294967296;
       let cumulative = 0;
       reward = outcomes[outcomes.length - 1].reward;
@@ -14081,6 +14258,50 @@ async function startServer() {
               return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now });
             }).immediate();
           }
+          if (req.method == "POST" && url.pathname == "/world/boss-hunts/loadout") {
+            const playerId = await requireAuth(req, ctx);
+            await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+            const body = await readJson(req, config.maxBodyBytes);
+            const allowed = ["session_id", "client_action_id", "entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"];
+            if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => !allowed.includes(key)) || typeof body.session_id !== "string" || !body.session_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64)
+              throw new HttpError(400, "Invalid hunt loadout request.");
+            if (typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || typeof body.homunculus_id === "string" && body.homunculus_id.length > 0) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id) => typeof id !== "string" || !id) || !["attack", "defense"].includes(body.mode))
+              throw new HttpError(400, "Invalid hunt loadout selection.");
+            const actionId = body.client_action_id.trim();
+            const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
+            const payload = { session_id: body.session_id, ...selection };
+            const dataDir = resolve2(import.meta.dir, "..", "..", "data");
+            const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve2(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance };
+            db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
+            return db.transaction(() => {
+              const now = Date.now();
+              expireSoloHunts(playerId, now);
+              const prior = getActionStmt.get(playerId, actionId);
+              if (prior && (prior.action_type !== "SOLO_HUNT_LOADOUT" || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)))
+                throw new HttpError(409, "Action ID already used with different content.");
+              const row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(body.session_id, playerId);
+              if (!row)
+                throw new HttpError(404, "Session not found.");
+              if (prior)
+                return jsonResponse({ ...soloHuntResponse(row), duplicate: true });
+              if (row.status !== "ACTIVE" || row.expires_at <= now || row.combat_state_json)
+                throw new HttpError(409, "Session unavailable for initialization.");
+              const boss = JSON.parse(row.boss_snapshot_json);
+              const saved = JSON.parse(row.player_snapshot_json);
+              const trusted = { ...saved, player_id: playerId, state_revision: Number.isSafeInteger(saved.state_revision) ? saved.state_revision : 0, boss_id: row.hunt_id, boss_entity_id: SOLO_HUNT_BOSS_ENTITIES[row.hunt_id] };
+              const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
+              if (setup.error)
+                throw new HttpError(400, "Invalid or unsupported hunt loadout.");
+              const seed = createHmac2("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const combat = createCombatState(setup, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
+              if (combat.error)
+                throw new HttpError(400, "Unable to initialize combat.");
+              db.query("UPDATE solo_hunt_sessions SET combat_loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_state_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), row.session_id, playerId);
+              insertActionStmt.run(playerId, actionId, "SOLO_HUNT_LOADOUT", JSON.stringify(payload), JSON.stringify({ session_id: row.session_id }), now);
+              const updated = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId);
+              return jsonResponse(soloHuntResponse(updated));
+            }).immediate();
+          }
           if (req.method == "POST" && (url.pathname == "/world/boss-hunts/start" || url.pathname == "/world/boss-hunts/forfeit")) {
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
@@ -14122,7 +14343,7 @@ async function startServer() {
                 if (db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId))
                   throw new HttpError(409, "An active boss hunt already exists.");
                 const state = ensurePlayerState(playerId);
-                const snapshot = { item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
+                const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
                 const sessionId = crypto.randomUUID();
                 db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at) VALUES (?,?,?,?,'ACTIVE',?,?,?,?)").run(sessionId, playerId, boss.id, schedule.rotation_key, JSON.stringify(boss), JSON.stringify(snapshot), now, now + 2700000);
                 row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId);
@@ -14274,6 +14495,7 @@ async function startServer() {
 }
 function loadStaticData() {
   const staticDir = resolve2(import.meta.dir, "..", "..", "data", "static");
+  const entitiesRaw = JSON.parse(readFileSync2(resolve2(staticDir, "..", "entities.json"), "utf8"));
   const itemsRaw = JSON.parse(readFileSync2(resolve2(staticDir, "..", "items.json"), "utf8"));
   const homunculiRaw = JSON.parse(readFileSync2(resolve2(staticDir, "..", "homunculi.json"), "utf8"));
   const mutationsRaw = JSON.parse(readFileSync2(resolve2(staticDir, "mutations.json"), "utf8"));
@@ -14285,6 +14507,9 @@ function loadStaticData() {
   const researchData = loadResearch(resolve2(staticDir, "research.json"));
   const zones = loadZones(resolve2(staticDir, "zones.json"));
   const bosses = loadBosses(resolve2(staticDir, "bosses.json"));
+  const soloBosses = loadSoloBossCatalog(resolve2(staticDir, "solo_bosses.json"), resolve2(staticDir, "..", "spells.json"));
+  if (!Array.isArray(entitiesRaw.entities) || Object.keys(SOLO_HUNT_BOSS_ENTITIES).length !== soloBosses.bosses.length || soloBosses.bosses.some((boss) => !entitiesRaw.entities.some((entity) => entity.id === SOLO_HUNT_BOSS_ENTITIES[boss.id])))
+    throw new Error("Invalid solo boss entity mapping.");
   return {
     itemIds,
     homunculusIds: new Set((homunculiRaw.homunculi ?? []).map((entry) => entry.id).filter((id) => typeof id === "string")),
@@ -14298,7 +14523,7 @@ function loadStaticData() {
     researchFlags: researchData.flags,
     zones,
     bosses,
-    soloBosses: loadSoloBossCatalog(resolve2(staticDir, "solo_bosses.json"), resolve2(staticDir, "..", "spells.json"))
+    soloBosses
   };
 }
 function loadSoloBossCatalog(path, spellsPath) {
@@ -14325,13 +14550,13 @@ function expireSoloHunts(playerId, now) {
   db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
 }
 function soloHuntResponse(row) {
-  return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, boss_definition: JSON.parse(row.boss_snapshot_json) };
+  return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: JSON.parse(row.combat_state_json), combat_revision: row.combat_revision } : {} };
 }
 function soloBossSchedule(now) {
   const { rotation, bosses } = staticData.soloBosses;
   const interval = rotation.interval_seconds * 1000, window2 = rotation.window_seconds * 1000;
   const key = Math.floor(now / interval), start = key * interval, end = start + window2;
-  const roll = createHmac("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
+  const roll = createHmac2("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
   let cumulative = 0, chosen = "legendary";
   for (const tier of ["mythic", "rare", "epic", "legendary"]) {
     cumulative += rotation.weights[tier];

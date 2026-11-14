@@ -11,9 +11,9 @@ config_version=5
 [application]
 
 config/name="EntityWars"
-run/main_scene="res://scenes/MainMenu.tscn"
+run/main_scene="res://assets/ui/loading_screens/entity_wars_loading/scenes/loading_startup.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
-config/icon="res://icon.svg"
+config/icon="res://assets/ui/ew-icon.png"
 
 [autoload]
 

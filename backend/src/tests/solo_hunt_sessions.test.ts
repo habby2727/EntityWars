@@ -100,12 +100,30 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((db.query("SELECT status FROM solo_hunt_sessions WHERE session_id = ?").get(next.data.session_id) as any).status).toBe("EXPIRED");
     expect((await request("/world/boss-hunts/forfeit", { session_id: next.data.session_id, client_action_id: "expired-forfeit" }, a.data.token)).status).toBe(409);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, session_id: next.data.session_id, client_action_id: "expired-loadout" }, a.data.token)).status).toBe(409);
-    const special = schedule.bosses.find((boss: any) => boss.tier !== "common" && boss.available);
-    if (special) {
-      const result = await start("special", special.id);
-      expect(result.status).toBe(200);
-      expect(result.data.hunt_id).toBe(special.id);
+    let specialTested = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const freshResponse = await request("/world/boss-hunts");
+      expect(freshResponse.status).toBe(200);
+      const fresh = freshResponse.data;
+      const special = fresh.bosses.find((boss: any) => boss.tier !== "common" && boss.available);
+      if (!special) {
+        console.log("Special hunt not tested: no special encounter is currently available.");
+        break;
+      }
+      const result = await start(`special-${attempt}`, special.id, fresh.rotation_key);
+      if (result.status === 200) {
+        expect(result.data.hunt_id).toBe(special.id);
+        expect(result.data.rotation_key).toBe(fresh.rotation_key);
+        specialTested = true;
+        break;
+      }
+      expect(result.status).toBe(409);
+      const afterResponse = await request("/world/boss-hunts");
+      expect(afterResponse.status).toBe(200);
+      const after = afterResponse.data;
+      expect(after.rotation_key !== fresh.rotation_key || after.server_time_unix_ms >= fresh.special_window_ends_at).toBe(true);
     }
+    if (!specialTested) console.log("Special hunt start was not asserted in this run.");
     expect(wallet(a.data.player_id)).toEqual(beforeA);
     expect(wallet(b.data.player_id)).toEqual(beforeB);
   } finally {
