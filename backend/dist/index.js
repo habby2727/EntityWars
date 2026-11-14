@@ -15042,7 +15042,36 @@ async function startServer() {
               const status = result.terminal_result === "WIN" ? "VERIFIED_WIN" : result.terminal_result === "LOSS" ? "VERIFIED_LOSS" : "ACTIVE";
               if (result.terminal_result && !["WIN", "LOSS"].includes(result.terminal_result))
                 throw new HttpError(409, "Unsupported combat result.");
-              const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, row.session_id, playerId, row.combat_revision, now);
+              let metadata = null;
+              if (status === "VERIFIED_WIN") {
+                if (row.result_metadata_json)
+                  throw new HttpError(409, "Hunt settlement already exists.");
+                const source = row.guardian_id ? "guardian" : "boss";
+                const tier = JSON.parse(row.boss_snapshot_json).tier;
+                const grants = staticData.balance.solo_hunt_rewards?.[source]?.[tier];
+                if (!grants || typeof grants !== "object" || Array.isArray(grants) || Object.keys(grants).length === 0 || Object.entries(grants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || amount < 0))
+                  throw new HttpError(500, "Invalid hunt reward configuration.");
+                const playerRow = getPlayerByIdStmt.get(playerId);
+                if (!playerRow)
+                  throw new HttpError(404, "Player not found.");
+                let player;
+                try {
+                  player = JSON.parse(playerRow.state_json);
+                } catch {
+                  throw new HttpError(409, "Invalid player state.");
+                }
+                if (!player || typeof player !== "object" || !player.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some((id) => !Number.isSafeInteger(player.wallet[id] ?? 0)))
+                  throw new HttpError(409, "Invalid player wallet.");
+                const before = { ...player.wallet };
+                applyWalletGrant(player.wallet, grants);
+                assertWalletInvariant(player.wallet);
+                player.updated_at = now;
+                if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1)
+                  throw new HttpError(409, "Player unavailable.");
+                auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "SOLO_HUNT_REWARD", row.session_id, now);
+                metadata = JSON.stringify({ pve_reward: { grants, source, tier } });
+              }
+              const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ?, result_metadata_json = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, metadata, row.session_id, playerId, row.combat_revision, now);
               if (updated.changes !== 1)
                 throw new HttpError(409, "Combat session changed.");
               if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
@@ -15448,7 +15477,7 @@ function publicHuntCombat(state) {
   };
 }
 function soloHuntResponse(row) {
-  return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}, ...row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
+  return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}, ...row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}, ...row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
 }
 function soloBossSchedule(now) {
   const { rotation, bosses } = staticData.soloBosses;

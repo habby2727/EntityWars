@@ -2096,7 +2096,27 @@ async function startServer(): Promise<void> {
 						if (result.error) throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
 						const status = result.terminal_result === "WIN" ? "VERIFIED_WIN" : result.terminal_result === "LOSS" ? "VERIFIED_LOSS" : "ACTIVE";
 						if (result.terminal_result && !["WIN", "LOSS"].includes(result.terminal_result)) throw new HttpError(409, "Unsupported combat result.");
-						const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, row.session_id, playerId, row.combat_revision, now);
+						let metadata: string | null = null;
+						if (status === "VERIFIED_WIN") {
+							if (row.result_metadata_json) throw new HttpError(409, "Hunt settlement already exists.");
+							const source = row.guardian_id ? "guardian" : "boss";
+							const tier = JSON.parse(row.boss_snapshot_json).tier;
+							const grants = staticData.balance.solo_hunt_rewards?.[source]?.[tier];
+							if (!grants || typeof grants !== "object" || Array.isArray(grants) || Object.keys(grants).length === 0 || Object.entries(grants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) < 0)) throw new HttpError(500, "Invalid hunt reward configuration.");
+							const playerRow = getPlayerByIdStmt.get(playerId) as { state_json: string } | null;
+							if (!playerRow) throw new HttpError(404, "Player not found.");
+							let player: PlayerState;
+							try { player = JSON.parse(playerRow.state_json); } catch { throw new HttpError(409, "Invalid player state."); }
+							if (!player || typeof player !== "object" || !player.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
+							const before = { ...player.wallet };
+							applyWalletGrant(player.wallet, grants);
+							assertWalletInvariant(player.wallet);
+							player.updated_at = now;
+							if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+							auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "SOLO_HUNT_REWARD", row.session_id, now);
+							metadata = JSON.stringify({ pve_reward: { grants, source, tier } });
+						}
+						const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ?, result_metadata_json = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, metadata, row.session_id, playerId, row.combat_revision, now);
 						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
 						if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
 							db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
@@ -2452,7 +2472,7 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 	return catalog as SoloBossCatalog;
 }
 
-type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
+type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
 
 function expireSoloHunts(playerId: string, now: number): void {
 	db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
@@ -2487,7 +2507,7 @@ function publicHuntCombat(state: any) {
 }
 
 function soloHuntResponse(row: SoloHuntRow) {
-	return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
+	return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
 }
 
 function soloBossSchedule(now: number) {

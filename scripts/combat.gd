@@ -471,6 +471,14 @@ func _present_online_terminal() -> void:
 	if status not in ["VERIFIED_WIN", "VERIFIED_LOSS"]:
 		return
 	_online_hunt_info.text = "Server result: " + ("VICTORY" if status == "VERIFIED_WIN" else "DEFEAT")
+	if status == "VERIFIED_WIN":
+		var reward: Variant = _online_hunt_session.get("pve_reward", {})
+		if reward is Dictionary and reward.get("grants") is Dictionary:
+			var parts: Array[String] = []
+			for resource in reward.grants:
+				parts.append("+%s %s" % [str(reward.grants[resource]), str(resource).replace("_", " ").capitalize()])
+			if not parts.is_empty():
+				_online_hunt_info.text += " | " + ", ".join(parts)
 	if not _online_terminal_shown:
 		_online_terminal_shown = true
 		_log_immediate(_online_hunt_info.text)

@@ -29,6 +29,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect([a.status, b.status]).toEqual([200, 200]);
     const wallet = (id: string) => JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(id) as any).state_json).wallet;
     const beforeA = wallet(a.data.player_id), beforeB = wallet(b.data.player_id);
+    const commonReward = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance.solo_hunt_rewards.boss.common;
     const fixture = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json);
     fixture.spell_progress = { learned_by_entity: { sulfur_01: ["steady_script"] }, active_research: null, equipped_by_mode: { attack: { sulfur_01: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] } } };
     db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(fixture), a.data.player_id);
@@ -229,6 +230,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((await request("/world/boss-hunts/loadout", { ...loadout, session_id: next.data.session_id, client_action_id: "expired-loadout" }, a.data.token)).status).toBe(409);
     expect((await request("/world/boss-hunts/turn", { session_id: next.data.session_id, client_action_id: "expired-turn", expected_revision: 1, decision: { turn: 1, spell_id: "steady_script", target: "boss" } }, a.data.token)).status).toBe(409);
     for (const outcome of ["WIN", "LOSS"]) {
+      const walletBeforeBattle = wallet(a.data.player_id);
       const current = (await request("/world/boss-hunts")).data;
       const hunt = await start(`terminal-start-${outcome}`, "hunt_common", current.rotation_key);
       expect(hunt.status).toBe(200);
@@ -249,8 +251,16 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         if (response.data.status !== "ACTIVE") { finalResponse = response.data; finalRequest = input; }
       }
       expect(finalResponse?.status).toBe(`VERIFIED_${outcome}`);
+      const expectedWallet = { ...walletBeforeBattle };
+      if (outcome === "WIN") {
+        for (const [resource, amount] of Object.entries(commonReward)) expectedWallet[resource] = (expectedWallet[resource] ?? 0) + Number(amount);
+        expect(finalResponse.pve_reward).toEqual({ grants: commonReward, source: "boss", tier: "common" });
+      } else expect(finalResponse.pve_reward).toBeUndefined();
+      expect(wallet(a.data.player_id)).toEqual(expectedWallet);
       expect(finalResponse.events.filter((e: any) => e.kind === "combat_terminal")).toHaveLength(1);
       expect((await request("/world/boss-hunts/turn", finalRequest, a.data.token)).data).toEqual(finalResponse);
+      expect(wallet(a.data.player_id)).toEqual(expectedWallet);
+      expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(sessionId, "SOLO_HUNT_REWARD") as any).n).toBe(outcome === "WIN" ? 1 : 0);
       expect((await request("/world/boss-hunts/turn", { ...finalRequest, client_action_id: `closed-${outcome}` }, a.data.token)).status).toBe(409);
       const terminal = (await request(`/world/boss-hunts/session?session_id=${sessionId}`, undefined, a.data.token)).data.session;
       expect(terminal.status).toBe(`VERIFIED_${outcome}`);
@@ -277,7 +287,9 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
       expect((await start("special-without-zone", special.id, fresh.rotation_key)).status).toBe(409);
       expect((await request("/world/boss-hunts/start", { client_action_id: "special-locked", hunt_id: special.id, rotation_key: fresh.rotation_key, zone_id: "zone_chaos" }, a.data.token)).status).toBe(409);
     } else console.log("Special authorization not tested: outside appearance window.");
-    expect(wallet(a.data.player_id)).toEqual(beforeA);
+    const expectedFinalWallet = { ...beforeA };
+    for (const [resource, amount] of Object.entries(commonReward)) expectedFinalWallet[resource] = (expectedFinalWallet[resource] ?? 0) + Number(amount);
+    expect(wallet(a.data.player_id)).toEqual(expectedFinalWallet);
     expect(wallet(b.data.player_id)).toEqual(beforeB);
     expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json).spell_progress).toEqual(fixture.spell_progress);
   } finally {
