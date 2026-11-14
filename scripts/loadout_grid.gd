@@ -88,6 +88,10 @@ var _hunt_mode := false
 var _hunt_spells: Dictionary = {}
 var _hunt_backend: BackendClient
 var _hunt_recovery_request := ""
+var _hunt_submit_request := ""
+var _hunt_identity := ""
+var _hunt_payload: Dictionary = {}
+var _hunt_recovered := false
 var _spell_debug := DebugFlags.new()
 
 func _exit_tree() -> void:
@@ -238,15 +242,47 @@ func _ready() -> void:
 	if _hunt_mode and lbl_mode != null:
 		lbl_mode.text = "Boss Hunt"
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
+		_hunt_identity = str(SceneRouter._solo_hunt_context.get("loadout_identity", ""))
+		var saved_payload: Variant = SceneRouter._solo_hunt_context.get("pending_loadout", {})
+		if saved_payload is Dictionary:
+			_hunt_payload = saved_payload.duplicate(true)
 		_hunt_backend = BackendClient.new()
 		_hunt_backend.base_url = spell_backend_url
 		_hunt_backend.auto_dev_login = false
 		_hunt_backend.api_completed.connect(_on_hunt_recovery_completed)
+		_hunt_backend.state_updated.connect(_on_hunt_identity_updated)
+		_hunt_backend.auth_changed.connect(_on_hunt_auth_changed)
 		add_child(_hunt_backend)
-		call_deferred("_recover_hunt_session")
+		_set_build_error("Verifying account for Boss Hunt...")
+
+func _on_hunt_auth_changed(_token: String) -> void:
+	_hunt_recovered = false
+	_hunt_submit_request = ""
+	_hunt_recovery_request = ""
+	if btn_play:
+		btn_play.disabled = false
+	SceneRouter._solo_hunt_context.erase("recovered_session")
+	_set_build_error("Account changed. Return to World Zone to reopen the Boss Hunt.")
+
+func _on_hunt_identity_updated(state: Dictionary) -> void:
+	if _hunt_backend == null or state.is_empty():
+		_hunt_recovered = false
+		return
+	var identity := str(state.get("player_id", ""))
+	if identity.is_empty() or identity != _hunt_backend._verified_player_id:
+		return
+	if not _hunt_identity.is_empty() and identity != _hunt_identity:
+		_hunt_recovered = false
+		_set_build_error("Account changed. Return to World Zone to reopen the Boss Hunt.")
+		return
+	if _hunt_identity.is_empty():
+		_hunt_identity = identity
+		SceneRouter._solo_hunt_context["loadout_identity"] = identity
+	if not _hunt_recovered and _hunt_recovery_request.is_empty() and _hunt_submit_request.is_empty():
+		_recover_hunt_session()
 
 func _recover_hunt_session() -> void:
-	if _hunt_backend == null or _hunt_backend.token.is_empty():
+	if _hunt_backend == null or _hunt_backend.token.is_empty() or _hunt_identity.is_empty() or _hunt_backend._verified_player_id != _hunt_identity:
 		_set_build_error("Sign in to recover this Boss Hunt. Your session remains active.")
 		return
 	var session_id := str(SceneRouter._solo_hunt_context.get("session_id", ""))
@@ -257,15 +293,62 @@ func _recover_hunt_session() -> void:
 		_set_build_error("Recovering Boss Hunt session...")
 
 func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id == _hunt_submit_request and not request_id.is_empty():
+		_hunt_submit_request = ""
+		if btn_play:
+			btn_play.disabled = false
+		if _hunt_backend._verified_player_id != _hunt_identity or _hunt_identity.is_empty():
+			_hunt_recovered = false
+			_set_build_error("Account changed. Return to World Zone.")
+			return
+		if ok and _accept_hunt_session(data) and int(data.get("combat_revision", 0)) >= 1 and data.get("combat_state") is Dictionary and _hunt_loadout_matches(data):
+			_hunt_payload.clear()
+			SceneRouter._solo_hunt_context.erase("pending_loadout")
+			_set_build_error("Combat ready; connection pending.")
+			return
+		if not ok and str(data.get("error", "")) in ["Invalid or unsupported hunt loadout.", "Invalid hunt loadout selection.", "Invalid hunt loadout request."]:
+			_hunt_payload.clear()
+			SceneRouter._solo_hunt_context.erase("pending_loadout")
+			_set_build_error("Loadout rejected: " + str(data.get("error")))
+			return
+		_hunt_recovered = false
+		_set_build_error("Response uncertain; recovering session before retry.")
+		_recover_hunt_session()
+		return
 	if request_id != _hunt_recovery_request or request_id.is_empty():
 		return
 	_hunt_recovery_request = ""
 	var session: Variant = data.get("session")
-	if not ok or not session is Dictionary or str(session.get("session_id", "")) != str(SceneRouter._solo_hunt_context.get("session_id", "")) or str(session.get("status", "")) != "ACTIVE":
+	if not ok or not session is Dictionary or not _accept_hunt_session(session):
+		_hunt_recovered = false
 		_set_build_error("Boss Hunt unavailable or connection failed. Return to World Zone and retry.")
 		return
+	_hunt_recovered = true
+	if int(session.get("combat_revision", 0)) >= 1:
+		if not _hunt_payload.is_empty() and not _hunt_loadout_matches(session):
+			_hunt_recovered = false
+			_set_build_error("Recovered loadout differs from the submitted selection. Return to World Zone.")
+			return
+		_hunt_payload.clear()
+		SceneRouter._solo_hunt_context.erase("pending_loadout")
+		_set_build_error("Combat ready; connection pending.")
+	else:
+		_set_build_error("Session recovered. Retry the same loadout." if not _hunt_payload.is_empty() else "Session recovered. Select your loadout.")
+
+func _accept_hunt_session(session: Dictionary) -> bool:
+	if _hunt_identity.is_empty() or _hunt_backend == null or _hunt_backend._verified_player_id != _hunt_identity or str(session.get("session_id", "")) != str(SceneRouter._solo_hunt_context.get("session_id", "")) or str(session.get("status", "")) != "ACTIVE":
+		return false
 	SceneRouter._solo_hunt_context["recovered_session"] = session.duplicate(true)
-	_set_build_error("Boss Hunt recovered, but online combat synchronization is unavailable. Your session remains active.")
+	return true
+
+func _hunt_loadout_matches(session: Dictionary) -> bool:
+	var saved: Variant = session.get("combat_loadout", {})
+	if not saved is Dictionary:
+		return false
+	for key in ["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"]:
+		if saved.get(key) != _hunt_payload.get(key):
+			return false
+	return true
 
 func _setup_build_dialog() -> void:
 	var card: VBoxContainer = $RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox
@@ -1313,7 +1396,7 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 
 func _on_play_pressed() -> void:
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
-		_set_build_error("Online Boss Hunt synchronization is unavailable. Return to World Zone; your session remains active.")
+		_submit_hunt_loadout()
 		return
 	if _spell_pending_id != "":
 		_set_build_error("Wait for spell loadout confirmation.")
@@ -1335,6 +1418,50 @@ func _on_play_pressed() -> void:
 		get_tree().change_scene_to_file("res://scenes/Combat.tscn")
 	else:
 		_on_ready()
+
+func _submit_hunt_loadout() -> void:
+	if not _hunt_submit_request.is_empty() or not _hunt_recovery_request.is_empty():
+		return
+	if not _hunt_recovered or _hunt_backend == null or _hunt_identity.is_empty() or _hunt_backend._verified_player_id != _hunt_identity or _hunt_backend.token.is_empty():
+		_set_build_error("Recover the authenticated Boss Hunt before submitting a loadout.")
+		if _hunt_backend != null and not _hunt_identity.is_empty() and _hunt_backend._verified_player_id == _hunt_identity and not _hunt_backend.token.is_empty():
+			_recover_hunt_session()
+		return
+	var session: Variant = SceneRouter._solo_hunt_context.get("recovered_session", {})
+	if not session is Dictionary or not _accept_hunt_session(session):
+		_hunt_recovered = false
+		_set_build_error("Boss Hunt session is unavailable. Return to World Zone.")
+		return
+	if int(session.get("combat_revision", 0)) >= 1:
+		_set_build_error("Combat ready; connection pending.")
+		return
+	if _hunt_payload.is_empty():
+		if _has_duplicate_build_items() or _current_entity_id.is_empty():
+			_set_build_error("Choose an entity and two different weapons.")
+			return
+		var spells: Array = _equipped_spells(_mode, _current_entity_id)
+		var unique := {}
+		for id in spells:
+			if not id is String or id.is_empty() or unique.has(id):
+				_set_build_error("Choose four distinct spells.")
+				return
+			unique[id] = true
+		if spells.size() != 4:
+			_set_build_error("Choose four distinct spells.")
+			return
+		var first := _idx_to_id(_items, dd_item1)
+		var second := _idx_to_id(_items, dd_item2)
+		_hunt_payload = {"session_id": str(session.session_id), "client_action_id": _hunt_backend._make_uuid(), "entity_id": _current_entity_id, "weapon_ids": [null if first.is_empty() else first, null if second.is_empty() else second], "homunculus_id": null if _current_homunculus_id.is_empty() else _current_homunculus_id, "spell_ids": spells.duplicate(), "mode": _mode}
+		SceneRouter._solo_hunt_context["pending_loadout"] = _hunt_payload.duplicate(true)
+	_hunt_submit_request = _hunt_backend.request_api("POST", "/world/boss-hunts/loadout", _hunt_payload.duplicate(true), false)
+	if _hunt_submit_request.is_empty():
+		_hunt_recovered = false
+		_set_build_error("Request not sent; recover the session before retrying.")
+		_recover_hunt_session()
+		return
+	if btn_play:
+		btn_play.disabled = true
+	_set_build_error("Confirming Boss Hunt loadout...")
 
 func _has_duplicate_build_items() -> bool:
 	var e1 := _idx_to_id(_items, dd_item1)
