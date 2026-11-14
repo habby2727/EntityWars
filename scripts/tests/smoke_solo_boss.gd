@@ -111,7 +111,7 @@ func _run() -> void:
 	var log_before: String = scene.log_box.get_parsed_text()
 	await scene._resolve_solo_exchange({"kind": "switch", "slot": 1, "hom": "hold"})
 	var log_after: String = scene.log_box.get_parsed_text().substr(log_before.length())
-	_check(scene._solo_minions.size() == 2 and not log_after.contains("Minion 1") and not log_after.contains("Minion 2"), "summoned minions wait until next exchange")
+	_check(scene._solo_minions.size() == 2 and not log_after.contains("Minion 1 hits") and not log_after.contains("Minion 1 misses") and not log_after.contains("Minion 2 hits") and not log_after.contains("Minion 2 misses"), "summoned minions wait until next exchange")
 	scene._solo_intent = "Strike"
 	log_before = scene.log_box.get_parsed_text()
 	await scene._resolve_solo_exchange({"kind": "switch", "slot": 1, "hom": "hold"})

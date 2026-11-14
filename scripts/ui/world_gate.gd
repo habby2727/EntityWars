@@ -7,9 +7,6 @@ class_name WorldGate
 @export var tabs_path: NodePath
 @export var top_info_label_path: NodePath
 @export var top_session_label_path: NodePath
-var embedded_encounters := false
-var initial_encounter_tab := "Boss Hunts"
-var initial_boss_id := ""
 var visual_zone_id := ""
 
 @export var zone_list_path: NodePath
@@ -133,107 +130,20 @@ func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
 	_debug.reload()
 	_resolve_nodes()
-	_requested_boss_id = initial_boss_id if embedded_encounters else SceneRouter.consume_world_boss_id()
-	if _requested_boss_id != "" and _tabs != null:
-		for i in _tabs.get_tab_count():
-			if _tabs.get_child(i).name == "Boss":
-				_tabs.current_tab = i
-				break
+	SceneRouter.consume_world_boss_id()
 	_apply_panel_background()
 	_connect_backend()
 	_connect_buttons()
-	_build_hunt_tab()
 	_tabs.tabs_visible = false
-	if embedded_encounters:
-		_setup_embedded_encounters()
+	_tabs.current_tab = 0
+	for index in _tabs.get_tab_count():
+		if _tabs.get_child(index).name == "Boss":
+			_tabs.set_tab_hidden(index, true)
 	_setup_farm_options()
 	_load_state()
 	_build_zone_cards()
 	_request_world_state()
-	_request_boss_state()
-	_request_hunt_schedule()
-	_send_api_request("GET", "/world/boss-hunts/session", null, "hunt_session", false)
 	_schedule_poll()
-
-func _setup_embedded_encounters() -> void:
-	var header := _back_button.get_parent() as HBoxContainer
-	var title := header.get_node_or_null("Title") as Label
-	if title != null:
-		title.text = "GLOBAL ENCOUNTERS"
-	_back_button.text = "Close"
-	for tab_name in ["Boss Hunts", "Boss"]:
-		var button := Button.new()
-		button.text = "Boss Hunts" if tab_name == "Boss Hunts" else "Global Boss"
-		button.pressed.connect(func(): _select_encounter_tab(tab_name))
-		header.add_child(button)
-		MenuArt.button(button)
-	_select_encounter_tab(initial_encounter_tab)
-
-func _select_encounter_tab(tab_name: String) -> void:
-	for index in _tabs.get_tab_count():
-		if _tabs.get_child(index).name == tab_name:
-			_tabs.current_tab = index
-			return
-
-func _build_hunt_tab() -> void:
-	if _tabs == null:
-		return
-	var layout := VBoxContainer.new()
-	layout.name = "Boss Hunts"
-	layout.add_theme_constant_override("separation", 8)
-	_tabs.add_child(layout)
-	var title := Label.new()
-	title.text = "BOSS HUNTS"
-	title.add_theme_font_size_override("font_size", 22)
-	layout.add_child(title)
-	var note := Label.new()
-	note.text = "Common bosses are regularly farmable. Special bosses rotate periodically."
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	layout.add_child(note)
-	var top := HBoxContainer.new()
-	layout.add_child(top)
-	_hunt_status = Label.new()
-	_hunt_status.text = "Connection required."
-	_hunt_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(_hunt_status)
-	var refresh := Button.new()
-	refresh.text = "Refresh"
-	MenuArt.button(refresh)
-	refresh.pressed.connect(_request_hunt_schedule)
-	top.add_child(refresh)
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 18)
-	layout.add_child(body)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	body.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.name = "HuntList"
-	_hunt_list = list
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 6)
-	scroll.add_child(list)
-	var details := VBoxContainer.new()
-	details.custom_minimum_size.x = 340
-	body.add_child(details)
-	_hunt_portrait = TextureRect.new()
-	_hunt_portrait.custom_minimum_size = Vector2(180, 180)
-	_hunt_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_hunt_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	details.add_child(_hunt_portrait)
-	_hunt_details = Label.new()
-	_hunt_details.text = "Select a boss hunt."
-	_hunt_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	details.add_child(_hunt_details)
-	_hunt_fight = Button.new()
-	_hunt_fight.text = "Fight (Unverified Preview)"
-	_hunt_fight.disabled = true
-	_hunt_fight.pressed.connect(_on_hunt_fight)
-	MenuArt.button(_hunt_fight)
-	details.add_child(_hunt_fight)
 
 func _on_hunt_fight() -> void:
 	_update_hunt_fight()
@@ -538,10 +448,7 @@ func _build_zone_cards() -> void:
 	_update_session_panel()
 
 func _on_back_pressed() -> void:
-	if embedded_encounters:
-		get_parent().queue_free()
-	else:
-		SceneRouter.go_to_lab()
+	SceneRouter.go_to_lab()
 
 func _on_refresh_zones_pressed() -> void:
 	_request_world_state()
@@ -1236,7 +1143,6 @@ func _on_poll_timeout() -> void:
 		_schedule_poll()
 		return
 	_request_world_state()
-	_request_boss_state()
 	_schedule_poll()
 	_hide_session_panel()
 

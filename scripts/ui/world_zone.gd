@@ -82,6 +82,7 @@ var _hunt_action_key := ""
 var _hunt_fight: Button
 var _hunt_boundary := 0
 var _debug_visual: Dictionary = {}
+var _central_visual: Dictionary = {}
 
 func _exit_tree() -> void:
 	_clear_guardian_preview()
@@ -233,7 +234,6 @@ func _setup_zone_view() -> void:
 	_boss_open.disabled = true
 	_boss_open.custom_minimum_size.y = 42
 	MenuArt.button(_boss_open)
-	_boss_open.pressed.connect(_open_boss)
 	content.add_child(_boss_open)
 	_hunt_fight = Button.new()
 	_hunt_fight.text = "Fight (unverified preview)"
@@ -283,6 +283,8 @@ func _setup_world_art() -> void:
 	_world_sprite.mouse_filter = Control.MOUSE_FILTER_STOP
 	_world_sprite.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_debug_visual = _central_visual.duplicate(true)
+			_debug_hunt_id = "hunt_common"
 			_show_common_details())
 	stage.add_child(_world_sprite)
 	for x in [0.32, 0.68]:
@@ -368,7 +370,7 @@ func show_guardian_preview(main: Dictionary, guardians: Array) -> void:
 	_add_preview_actor(main, 0.5, 0.59, true, required)
 	var count := mini(remaining.size(), 5)
 	for i in count:
-		var x := 0.5 if count == 1 else 0.27 + 0.46 * float(i) / float(count - 1)
+		var x := 0.5 if count == 1 else 0.24 + 0.52 * float(i) / float(count - 1)
 		_add_preview_actor(remaining[i], x, 0.75, false, PackedStringArray())
 
 func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, required: PackedStringArray) -> void:
@@ -411,7 +413,7 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 	title.bbcode_enabled = true
 	title.fit_content = true
 	title.scroll_active = false
-	title.add_theme_font_size_override("normal_font_size", 20)
+	title.add_theme_font_size_override("normal_font_size", 18)
 	title.add_theme_constant_override("outline_size", 5)
 	title.add_theme_color_override("font_outline_color", Color.BLACK)
 	var tier := str(entry.get("tier", "common")).to_lower()
@@ -502,7 +504,8 @@ func _change_world_art(direction: int) -> void:
 	if id == "chaos_astral_alchemist_variant":
 		display_name = "Astral Alchemist"
 	_debug_hunt_id = "hunt_common"
-	_debug_visual = {"id": id, "tier": "common", "texture": path, "name": display_name}
+	_central_visual = {"id": id, "tier": "common", "texture": path, "name": display_name}
+	_debug_visual = _central_visual.duplicate(true)
 	_world_name.text = "[center][b][color=#%s][lb]Common[rb][/color] %s[/b][/center]" % [TIER_COLORS["common"], display_name]
 	if _world_idle != null:
 		_world_idle.kill()
@@ -564,8 +567,12 @@ func _show_map_hunt(boss: Dictionary) -> void:
 		required.append("Server-verified guardians")
 	_add_preview_actor(entry, 0.5, 0.59, true, required)
 	for i in guardians.size():
-		var x := 0.5 if guardians.size() == 1 else 0.27 + 0.46 * float(i) / float(guardians.size() - 1)
+		var x := 0.5 if guardians.size() == 1 else 0.24 + 0.52 * float(i) / float(guardians.size() - 1)
 		_add_preview_actor(guardians[i], x, 0.75, false, PackedStringArray())
+	for other in _hunt_schedule:
+		if other is Dictionary and str(other.get("id", "")) != str(entry.id) and not str(other.get("id", "")).is_empty():
+			_add_nearby_hunt(other)
+			break
 	var reroll := Button.new()
 	reroll.text = "Reroll"
 	reroll.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -576,6 +583,35 @@ func _show_map_hunt(boss: Dictionary) -> void:
 	reroll.pressed.connect(_reroll_world_art)
 	_preview_stage.add_child(reroll)
 	MenuArt.button(reroll)
+
+func _add_nearby_hunt(boss: Dictionary) -> void:
+	var texture_id := str(boss.get("display_texture_id", boss.get("texture_id", "")))
+	if not _catalog.has(texture_id):
+		return
+	var button := TextureButton.new()
+	button.name = "NearbyHunt"
+	button.anchor_left = 0.80
+	button.anchor_right = 0.80
+	button.anchor_top = 0.58
+	button.anchor_bottom = 0.58
+	button.offset_left = -75
+	button.offset_right = 75
+	button.offset_top = -150
+	button.texture_normal = _catalog.get_tex(texture_id)
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	button.tooltip_text = "%s [%s]" % [str(boss.get("name", boss.get("id", "Boss"))), str(boss.get("tier", ""))]
+	button.pressed.connect(func(): _show_map_hunt(boss))
+	_preview_stage.add_child(button)
+	var label := Label.new()
+	label.text = "[%s] %s%s" % [str(boss.get("tier", "")).capitalize(), str(boss.get("name", boss.get("id", "Boss"))), "" if bool(boss.get("available", false)) else " (Unavailable)"]
+	label.position = Vector2(-25, -28)
+	label.size = Vector2(200, 28)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 16)
+	label.add_theme_constant_override("outline_size", 5)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(label)
 
 func _start_map_hunt() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
@@ -617,20 +653,48 @@ func _enter_map_hunt(session: Dictionary) -> void:
 	var boss: Dictionary = session.get("boss_definition", {})
 	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), str(session.get("session_id", "")), _get_zone_id())
 
-func _show_debug_boss(index: int) -> void:
+func _show_debug_boss(index: int, group_id: String = "") -> void:
 	_debug_rotation = index
 	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
 	var textures := ["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
+	if group_id.is_empty():
+		group_id = "debug_" + tiers[index]
 	var guardians: Array = []
 	if index > 1:
-		guardians.append({"id": "preview_higher", "name": "Guardian", "tier": tiers[index - 1], "texture_id": textures[index - 1], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, "preview_higher"))})
+		var guardian_id := group_id + "|preview_higher"
+		guardians.append({"id": guardian_id, "name": "Guardian", "tier": tiers[index - 1], "texture_id": textures[index - 1], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, guardian_id))})
 	var commons := 2 if index <= 2 else index
 	var zone := _get_zone_id()
 	var entries: Array = WORLD_ART.get(zone, [])
 	for i in mini(commons, entries.size()):
-		var guardian_id := "preview_common_%d" % i
+		var guardian_id := group_id + "|preview_common_%d" % i
 		guardians.append({"id": guardian_id, "name": "Guardian %d" % (i + 1), "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), entries[i]], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(zone, index, guardian_id))})
-	show_guardian_preview({"id": "preview_main", "name": "Boss (preview)", "tier": tiers[index], "texture_id": textures[index]}, guardians)
+	show_guardian_preview({"id": group_id, "name": "Boss (preview)", "tier": tiers[index], "texture_id": textures[index]}, guardians)
+	var nearby_index := 1 if index == 4 else index + 1
+	var other := TextureButton.new()
+	other.name = "NearbyDebugBoss"
+	other.anchor_left = 0.80
+	other.anchor_right = 0.80
+	other.anchor_top = 0.58
+	other.anchor_bottom = 0.58
+	other.offset_left = -75
+	other.offset_right = 75
+	other.offset_top = -150
+	other.texture_normal = _catalog.get_tex(textures[nearby_index])
+	other.ignore_texture_size = true
+	other.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	other.tooltip_text = "%s Boss (debug preview)" % tiers[nearby_index].capitalize()
+	other.pressed.connect(func(): _show_debug_boss(nearby_index))
+	_preview_stage.add_child(other)
+	var other_label := Label.new()
+	other_label.text = "[%s] Boss" % tiers[nearby_index].capitalize()
+	other_label.position = Vector2(-25, -28)
+	other_label.size = Vector2(200, 28)
+	other_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	other_label.add_theme_font_size_override("font_size", 16)
+	other_label.add_theme_constant_override("outline_size", 5)
+	other_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	other.add_child(other_label)
 	var reroll := Button.new()
 	reroll.text = "Reroll"
 	reroll.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -681,37 +745,6 @@ func _on_boss_selected(index: int) -> void:
 	_boss_hp.value = hp
 	_boss_hp.visible = true
 	_boss_status.text = "Global encounter  |  HP: %s / %s" % [int(hp), int(max_hp)]
-
-func _open_boss() -> void:
-	if _boss_picker.selected < 0:
-		return
-	var boss: Dictionary = _boss_picker.get_item_metadata(_boss_picker.selected)
-	_world_modal.visible = false
-	_open_encounters("Boss", str(boss.get("boss_id", "")))
-
-func _open_encounters(tab_name: String, boss_id: String = "") -> void:
-	if has_node("GlobalEncounterOverlay"):
-		return
-	var overlay := Control.new()
-	overlay.name = "GlobalEncounterOverlay"
-	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	overlay.z_index = 10
-	add_child(overlay)
-	var gate := (load("res://scenes/ui/WorldGate.tscn") as PackedScene).instantiate()
-	gate.embedded_encounters = true
-	gate.initial_encounter_tab = tab_name
-	gate.initial_boss_id = boss_id
-	gate.visual_zone_id = _get_zone_id()
-	overlay.add_child(gate)
-	gate.anchor_left = 0.08
-	gate.anchor_right = 0.92
-	gate.anchor_top = 0.08
-	gate.anchor_bottom = 0.92
-	gate.offset_left = 0
-	gate.offset_right = 0
-	gate.offset_top = 0
-	gate.offset_bottom = 0
 
 func _on_auth_changed(token: String) -> void:
 	_hunt_active.clear()

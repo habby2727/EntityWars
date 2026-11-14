@@ -58,7 +58,7 @@ func _run() -> void:
 	assert(str(combat.player.equip_2.get("id", "")) == weapon2)
 	assert(combat.player.spell_ids == spells)
 	assert(not FileAccess.file_exists("user://seal_attack.json"))
-	var key := SceneRouter.debug_guardian_key("zone_chaos", 2, "preview_common_0")
+	var key := SceneRouter.debug_guardian_key("zone_chaos", 2, "debug_rare|preview_common_0")
 	combat.player.hp = 0
 	combat._handle_battle_end()
 	assert(not SceneRouter._debug_guardian_wins.has(key))
@@ -73,15 +73,35 @@ func _run() -> void:
 	assert(current_scene is WorldZone and current_scene.zone_id_override == "zone_chaos")
 	current_scene._show_debug_boss(2)
 	await process_frame
-	assert(current_scene._preview_stage.get_child_count() == 4)
+	assert(current_scene._preview_stage.get_child_count() == 5)
+	current_scene._show_debug_boss(2, "another_rare")
+	await process_frame
+	assert(current_scene._preview_stage.get_child_count() == 6)
+	current_scene._show_debug_boss(2)
+	await process_frame
 	current_scene._preview_stage.get_child(0).get_child(0).gui_input.emit(click)
 	assert(current_scene._debug_fight.disabled)
 	current_scene._world_modal.visible = false
-	SceneRouter._debug_guardian_wins[SceneRouter.debug_guardian_key("zone_chaos", 2, "preview_higher")] = true
-	SceneRouter._debug_guardian_wins[SceneRouter.debug_guardian_key("zone_chaos", 2, "preview_common_1")] = true
+	SceneRouter._debug_guardian_wins[SceneRouter.debug_guardian_key("zone_chaos", 2, "debug_rare|preview_higher")] = true
+	SceneRouter._debug_guardian_wins[SceneRouter.debug_guardian_key("zone_chaos", 2, "debug_rare|preview_common_1")] = true
 	current_scene._show_debug_boss(2)
 	await process_frame
 	current_scene._preview_stage.get_child(0).get_child(0).gui_input.emit(click)
 	assert(not current_scene._debug_fight.disabled)
+	current_scene._world_modal.visible = false
+	current_scene._clear_guardian_preview()
+	current_scene._world_companions[0].gui_input.emit(click)
+	current_scene._world_modal.visible = false
+	current_scene._world_sprite.gui_input.emit(click)
+	var central_path: String = current_scene._central_visual.texture
+	assert(current_scene._debug_visual.texture == central_path)
+	current_scene._start_debug_hunt()
+	await process_frame
+	await process_frame
+	assert(current_scene._hunt_mode)
+	current_scene._on_play_pressed()
+	await process_frame
+	await process_frame
+	assert(current_scene._solo_texture.resource_path == central_path)
 	print("PASS hunt loadout, boss session and selections")
 	quit(0)

@@ -51,7 +51,11 @@ func append(label: RichTextLabel, turn: int, message: String, event: Dictionary 
 			label.pop()
 	else:
 		label.push_color(color)
+		if event.has("ability_id"):
+			label.push_meta({"ability": str(event.ability_id)})
 		label.add_text(message)
+		if event.has("ability_id"):
+			label.pop()
 		label.pop()
 	label.add_text("\n")
 

@@ -22,7 +22,11 @@ func _run() -> void:
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
 		click.pressed = true
+		zone._world_companions[0].gui_input.emit(click)
+		assert(zone._debug_visual.id != zone._central_visual.id)
+		zone._world_modal.visible = false
 		zone._world_sprite.gui_input.emit(click)
+		assert(zone._debug_visual == zone._central_visual)
 		assert(zone._world_modal.visible)
 		var close_button: Button = null
 		for button in zone._world_modal.find_children("*", "Button", true, false):
@@ -67,36 +71,33 @@ func _run() -> void:
 				await create_timer(0.3).timeout
 				root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("stage_" + world + ".png"))
 		zone._clear_guardian_preview()
-		zone._show_map_hunt({"id": "hunt_rare", "name": "QA Hunt", "tier": "rare", "texture_id": "boss_leviathan", "available": true})
+		var rare := {"id": "hunt_rare", "name": "Rare Boss", "tier": "rare", "texture_id": "boss_leviathan", "available": true}
+		var mythic := {"id": "hunt_mythic", "name": "Mythic Boss", "tier": "mythic", "texture_id": "boss_colossus", "available": true}
+		zone._hunt_schedule = [rare, mythic]
+		zone._show_map_hunt(rare)
 		await process_frame
 		if OS.has_environment("EW_CAPTURE_DIR"):
 			await create_timer(0.3).timeout
 			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("map_hunt_" + world + ".png"))
-		assert(zone._preview_stage.get_child_count() == 5)
+		assert(zone._preview_stage.get_child_count() == 6)
 		var map_actor: Control = zone._preview_stage.get_child(0)
 		map_actor.get_child(0).gui_input.emit(click)
 		assert(zone._preview_selection == "hunt_rare" and zone._hunt_fight.visible)
 		zone._world_modal.visible = false
+		zone._preview_stage.get_node("NearbyHunt").pressed.emit()
+		assert(zone._hunt_selected.id == "hunt_mythic")
 		zone._clear_guardian_preview()
 		zone._debug.unlock_all_buildings = true
 		zone._reroll_world_art()
 		assert(is_instance_valid(zone._preview_stage))
 		assert(zone._preview_stage.get_child_count() >= 3)
+		zone._show_debug_boss(4)
+		await process_frame
+		assert(zone._preview_stage.get_child_count() == 8)
+		if OS.has_environment("EW_CAPTURE_DIR"):
+			await create_timer(0.3).timeout
+			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("legendary_" + world + ".png"))
 		zone._clear_guardian_preview()
-		zone._open_encounters("Boss Hunts")
-		await process_frame
-		var overlay: Control = zone.get_node("GlobalEncounterOverlay")
-		var gate = overlay.get_child(0)
-		assert(not gate._tabs.tabs_visible)
-		assert(gate._tabs.get_child(gate._tabs.current_tab).name == "Boss Hunts")
-		if OS.has_environment("EW_CAPTURE_DIR") and world == "Chaos":
-			await create_timer(0.5).timeout
-			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("encounters.png"))
-		gate._select_encounter_tab("Boss")
-		assert(gate._tabs.get_child(gate._tabs.current_tab).name == "Boss")
-		gate._on_back_pressed()
-		await process_frame
-		assert(not zone.has_node("GlobalEncounterOverlay"))
 		zone.queue_free()
 		await process_frame
 		print("PASS ", world, " ", entries.size())

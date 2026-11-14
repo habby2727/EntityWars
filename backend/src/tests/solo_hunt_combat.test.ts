@@ -1,13 +1,276 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildTrustedCombatSetup, createCombatState, resolveCombatTurn, deterministicDraw, resolveInspirationDecision, restoreInspiration } from "../solo_hunt_combat";
+import { buildTrustedCombatSetup, createCombatState, resolveCombatTurn, deterministicDraw, resolveInspirationDecision, restoreInspiration, bossStrikeMultiplier, selectBossIntent } from "../solo_hunt_combat";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
 const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} };
 const selection = { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
 const rng = (_turn: number, draw: number) => draw % 2 === 0 ? 0 : 0.99;
+
+test("tier HP progression, strike thresholds and boss catalog validation", () => {
+  expect(catalogs.bosses.map((boss: any) => boss.hp_mult)).toEqual([1, 1.22, 1.525, 1.83, 2.2692]);
+  expect(catalogs.bosses.map((boss: any) => boss.attack_mult)).toEqual([1, 1.15, 1.35, 1.55, 1.8]);
+  expect([71, 70, 41, 40, 16, 15, 0].map(hp => bossStrikeMultiplier(hp, 100))).toEqual([1, 1.2, 1.2, 1.4, 1.4, 1.6, 1.6]);
+  expect(() => bossStrikeMultiplier(101, 100)).toThrow();
+  const malformed = structuredClone(catalogs);
+  malformed.bosses[0].shield_reduction = 1.1;
+  expect(buildTrustedCombatSetup(snapshot, selection, malformed)).toEqual({ error: "UNTRUSTED_SETUP" });
+  malformed.bosses[0] = { ...catalogs.bosses[0], signature_pool: ["not_a_spell"] };
+  expect(buildTrustedCombatSetup(snapshot, selection, malformed)).toEqual({ error: "UNTRUSTED_SETUP" });
+});
+
+test("all five tiers initialize with scaled stats and eligible tiers summon", () => {
+  for (const boss of catalogs.bosses) {
+    const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: boss.id }, selection, catalogs);
+    expect(setup.error).toBeUndefined();
+    let state = createCombatState(setup);
+    expect([state.boss_tier, state.boss.hp, state.boss.atk]).toEqual([boss.tier, Math.round(112 * boss.hp_mult), Math.round(16 * boss.attack_mult)]);
+    for (let turn = 1; turn <= 2; turn++) {
+      const before = structuredClone(state);
+      const decision = { turn, spell_id: "cinder_fist", target: "boss" };
+      const result = resolveCombatTurn(state, decision, () => 0.99);
+      expect(result.error).toBeUndefined();
+      expect(resolveCombatTurn(state, decision, () => 0.99)).toEqual(result);
+      expect(state).toEqual(before);
+      state = result.next_state;
+    }
+    if (boss.tier !== "common") {
+      expect(state.boss_intent).toBe("Summon");
+      const result = resolveCombatTurn(state, { turn: 3, spell_id: "cinder_fist", target: "boss" }, () => 0.99);
+      expect(result.next_state.minions.length).toBe(boss.minions);
+      expect(result.events.some((e: any) => e.kind === "minion_attack")).toBe(false);
+    }
+  }
+});
+
+test("signature selection uses deterministic injected server draws and official catalogs", () => {
+  for (const boss of catalogs.bosses) {
+    const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: boss.id }, selection, catalogs);
+    const first = createCombatState(setup, () => 0);
+    const second = createCombatState(setup, () => 0.99);
+    expect(first.selected_signature).toBe(boss.signature_pool[0]);
+    expect(second.selected_signature).toBe(boss.signature_pool[1]);
+    expect([first.boss_signature.id, first.rng_counter]).toEqual([first.selected_signature, 1]);
+    expect(createCombatState(setup, () => 0.99)).toEqual(second);
+    expect(() => createCombatState(setup, () => 1)).toThrow("Invalid RNG draw");
+  }
+});
+
+test("summoned minions protect their boss, have independent HP and attack on later exchanges", () => {
+  const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_rare" }, selection, catalogs);
+  let state = createCombatState(setup);
+  for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
+  expect(state.minions.map((m: any) => [m.id, m.hp, m.atk])).toEqual([["minion_0", 22, 4], ["minion_1", 22, 4]]);
+  const before = structuredClone(state);
+  let draws = 0;
+  expect(resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "boss" }, () => { draws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
+  expect(draws).toBe(0);
+  expect(state).toEqual(before);
+  const decision = { turn: 4, spell_id: "cinder_fist", target: "minion_0" };
+  const result = resolveCombatTurn(state, decision, () => 0);
+  expect(result.error).toBeUndefined();
+  expect(result.next_state.boss.hp).toBe(state.boss.hp);
+  expect(result.next_state.minions[0].hp).toBeLessThan(22);
+  expect(result.next_state.minions[1].hp).toBe(22);
+  expect(result.events.filter((e: any) => e.kind === "minion_attack").length).toBe(result.next_state.minions.filter((m: any) => m.hp > 0).length);
+  expect(resolveCombatTurn(state, decision, () => 0)).toEqual(result);
+  state.minions[0].hp = 1;
+  const killed = resolveCombatTurn(state, decision, () => 0);
+  expect(killed.next_state.minions[0].hp).toBe(0);
+  expect(killed.next_state.minions[1].hp).toBe(22);
+  let staleDraws = 0;
+  expect(resolveCombatTurn(killed.next_state, { ...decision, turn: 5 }, () => { staleDraws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
+  expect(staleDraws).toBe(0);
+});
+
+test("summon before player initiative protects boss without redirecting the chosen attack", () => {
+  const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_mythic" }, selection, catalogs);
+  const state = createCombatState(setup);
+  state.boss_actions_taken = 2;
+  state.boss_intent = "Summon";
+  state.boss.status.tempo_bonus = 1;
+  const result = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0);
+  expect(result.next_state.boss.hp).toBe(state.boss.hp);
+  expect(result.next_state.minions[0].hp).toBe(result.next_state.minions[0].max_hp);
+  expect(result.events.some((e: any) => e.kind === "minion_attack")).toBe(false);
+});
+
+test("minion stun and poison expire independently without affecting the other minion", () => {
+  const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_rare" }, selection, catalogs);
+  let state = createCombatState(setup);
+  for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
+  state.minions[0].status = { stun: 1, poison: 2 };
+  const result = resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "minion_1" }, () => 0.99);
+  expect(result.next_state.minions[0].hp).toBe(20);
+  expect(result.next_state.minions[0].status.stun).toBe(0);
+  expect(result.next_state.minions[0].status.poison).toBe(1);
+  expect(result.next_state.minions[1].hp).toBe(22);
+  expect(result.events.filter((e: any) => e.kind === "minion_attack").map((e: any) => e.actor)).toEqual(["minion_1"]);
+});
+
+test("deterministic complete encounters terminate for every tier", () => {
+  for (const boss of catalogs.bosses) {
+    const simulate = () => {
+      const random = (turn: number, draw: number) => deterministicDraw(new Uint8Array(32).fill(7), boss.id, turn, draw);
+      let state = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_id: boss.id }, selection, catalogs), random);
+      const actions: string[] = [];
+      for (let i = 0; i < 100 && !state.terminal_result; i++) {
+        if (state.player.inspiration_pending) {
+          const declined = resolveInspirationDecision(state, { kind: "decline" }, random);
+          expect(declined.error).toBeUndefined();
+          state = declined.next_state;
+          continue;
+        }
+        const target = state.minions.find((m: any) => m.hp > 0)?.id ?? "boss";
+        const result = resolveCombatTurn(state, { turn: state.turn + 1, spell_id: "cinder_fist", target }, random);
+        expect(result.error).toBeUndefined();
+        actions.push(...result.events.map((e: any) => e.kind));
+        state = result.next_state;
+      }
+      expect(["WIN", "LOSS"]).toContain(state.terminal_result);
+      return { turn: state.turn, result: state.terminal_result, actions };
+    };
+    expect(simulate()).toEqual(simulate());
+  }
+});
+
+test("tactical intent respects Fury, summoning, shield, cooldown and weak player", () => {
+  const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_mythic" }, selection, catalogs));
+  state.boss_actions_taken = 2;
+  expect(selectBossIntent(state, 0)).toBe("Summon");
+  state.fury_pending = true;
+  expect(selectBossIntent(state, 99)).toBe("Fury Strike");
+  state.fury_pending = false;
+  state.summoned = true;
+  state.boss.hp = Math.floor(state.boss.max_hp * 0.4);
+  expect(selectBossIntent(state, 20)).toBe("Shield");
+  state.boss_shield_cooldown = 3;
+  state.boss_cooldowns[state.selected_signature] = 1;
+  state.player.hp = 1;
+  expect(selectBossIntent(state, 0)).toBe("Strike");
+});
+
+test("tactical intent values a useful signature debuff and avoids repeating it", () => {
+  const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_epic" }, selection, catalogs), () => 0.99);
+  state.boss_actions_taken = 2;
+  state.summoned = true;
+  expect(state.selected_signature).toBe("brimstone_crash");
+  expect(selectBossIntent(state, 0)).toBe("Special");
+  state.player.status.atk_down = 0.12;
+  expect(selectBossIntent(state, 0)).toBe("Strike");
+});
+
+test("Common signature resolves once, preserves replay and does not loop", () => {
+  let state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs), () => 0);
+  for (let turn = 1; turn <= 2; turn++) {
+    state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
+  }
+  expect(state.boss_intent).toBe("Special");
+  const before = structuredClone(state);
+  const decision = { turn: 3, spell_id: "cinder_fist", target: "boss" };
+  const result = resolveCombatTurn(state, decision, () => 0);
+  expect(result.error).toBeUndefined();
+  expect(result.events.some((event: any) => event.kind === "boss_special_cast" && event.spell_id === "cinder_fist" && event.landed)).toBe(true);
+  expect(result.next_state.player.hp).toBeLessThan(state.player.hp);
+  expect(result.next_state.boss_intent).toBe("Strike");
+  expect(state).toEqual(before);
+  expect(resolveCombatTurn(state, decision, () => 0)).toEqual(result);
+});
+
+test("a stunned boss retains its committed Special without spending its cooldown", () => {
+  const state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs), () => 0);
+  state.boss_intent = "Special";
+  state.boss.status.stun = 1;
+  const result = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0.99);
+  expect(result.error).toBeUndefined();
+  expect(result.next_state.boss_intent).toBe("Special");
+  expect(result.next_state.boss_cooldowns.cinder_fist ?? 0).toBe(0);
+  expect(result.events.some((event: any) => event.kind === "boss_special_cast")).toBe(false);
+});
+
+test("Common boss shield protects a full subsequent exchange and then cools down", () => {
+  const state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+  state.boss.hp -= 1;
+  state.boss_intent = "Shield";
+  const first = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0);
+  expect(first.error).toBeUndefined();
+  expect(first.next_state.boss_shield_turns).toBe(1);
+  expect(first.events.some((e: any) => e.kind === "boss_shield_activated")).toBe(true);
+  const second = resolveCombatTurn(first.next_state, { turn: 2, spell_id: "cinder_fist", target: "boss" }, () => 0);
+  const shield = second.events.find((e: any) => e.kind === "boss_shield");
+  expect(shield.prevented).toBeGreaterThan(0);
+  expect(shield.heal).toBe(0);
+  expect(second.next_state.boss_shield_turns).toBe(0);
+  expect(second.next_state.boss_shield_cooldown).toBe(3);
+});
+
+test("Epic shield heals prevented damage after the hit without exceeding maximum HP", () => {
+  const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_epic" }, selection, catalogs);
+  const state = createCombatState(setup);
+  state.boss.hp--;
+  state.boss_shield_turns = 2;
+  const result = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0);
+  expect(result.error).toBeUndefined();
+  const shield = result.events.find((e: any) => e.kind === "boss_shield");
+  const hit = result.events.find((e: any) => e.actor === "player" && e.kind === "damage");
+  expect(shield.prevented).toBeGreaterThan(0);
+  expect(shield.heal).toBe(Math.floor(shield.prevented * 0.2));
+  expect(result.next_state.boss.hp).toBe(state.boss.hp - hit.damage + shield.heal);
+  expect(result.next_state.boss.hp).toBeLessThanOrEqual(state.boss.max_hp);
+  expect(result.next_state.boss_shield_turns).toBe(1);
+});
+
+test("boss commits a shield after a damaging exchange and does not choose it twice in the same phase", () => {
+  const state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+  state.boss.hp = 49;
+  state.power_turn_used = true;
+  const decision = { turn: 1, spell_id: "cinder_fist", target: "boss" };
+  const first = resolveCombatTurn(state, decision, () => 0.99);
+  expect(first.next_state.boss_intent).toBe("Shield");
+  expect(first.events.some((e: any) => e.kind === "boss_intent" && e.intent === "Shield")).toBe(true);
+  expect(resolveCombatTurn(state, decision, () => 0.99)).toEqual(first);
+  const second = resolveCombatTurn(first.next_state, { ...decision, turn: 2 }, () => 0.99);
+  expect(second.events.some((e: any) => e.kind === "boss_shield_activated")).toBe(true);
+  expect(second.next_state.boss_shield_phases).toEqual(["low"]);
+  expect(second.next_state.boss_intent).not.toBe("Shield");
+});
+
+test("Common power opportunity and Fury survive invalid decisions and stun", () => {
+  let state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
+  state.boss.hp = 55;
+  state.boss_shield_phases = ["low"];
+  for (let turn = 1; turn <= 4; turn++) {
+    const result = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99);
+    expect(result.error).toBeUndefined();
+    state = result.next_state;
+    expect(state.power_turn_active).toBe(turn === 4);
+  }
+  expect(state.power_turn_eligible).toBe(4);
+  const before = structuredClone(state);
+  let invalidDraws = 0;
+  expect(resolveCombatTurn(state, { turn: 5, spell_id: "unknown", target: "boss" }, () => { invalidDraws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
+  expect(invalidDraws).toBe(0);
+  expect(state).toEqual(before);
+  const decision = { turn: 5, spell_id: "cinder_fist", target: "boss" };
+  const baseline = structuredClone(state); baseline.power_turn_active = false;
+  const ordinary = resolveCombatTurn(baseline, decision, () => 0.2);
+  const powered = resolveCombatTurn(state, decision, () => 0.2);
+  const normalDamage = ordinary.events.find((event: any) => event.actor === "player" && event.kind === "damage").damage;
+  const boostedDamage = powered.events.find((event: any) => event.actor === "player" && event.kind === "damage").damage;
+  expect(boostedDamage).toBe(normalDamage * 2);
+  expect(powered.next_state.fury_pending).toBe(true);
+  expect(powered.next_state.boss_intent).toBe("Fury Strike");
+  expect(resolveCombatTurn(state, decision, () => 0.2)).toEqual(powered);
+  const stunned = powered.next_state; stunned.boss.status.stun = 1;
+  const delayed = resolveCombatTurn(stunned, { turn: 6, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
+  expect(delayed.fury_pending).toBe(true);
+  const fired = resolveCombatTurn(delayed, { turn: 7, spell_id: "cinder_fist", target: "boss" }, () => 0.99);
+  expect(fired.events.find((event: any) => event.kind === "fury_strike_resolved")).toMatchObject({ multiplier: 2, landed: false });
+  expect(fired.next_state.fury_pending).toBe(false);
+  expect(fired.next_state.power_turn_used).toBe(true);
+});
 
 test("validated setup and deterministic direct exchange", () => {
   const setup = buildTrustedCombatSetup(snapshot, selection, catalogs);
@@ -712,8 +975,9 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
 
 test("inspiration setup requires three distinct valid eligible candidates", () => {
   const defaults = catalogs.spells.filter((s: any) => s.type === "sulfur");
+  const signature = catalogs.spells.find((s: any) => s.id === "silver_needle");
   const candidates = catalogs.spells.filter((s: any) => s.type === "hybrid" && s.primary_type === "sulfur" && s.eligible_types.includes("sulfur")).slice(0, 3);
-  const minimal = { ...catalogs, spells: structuredClone([...defaults, ...candidates]) };
+  const minimal = { ...catalogs, spells: structuredClone([...defaults, signature, ...candidates]) };
   const original = structuredClone(minimal);
   const accepted = buildTrustedCombatSetup(snapshot, selection, minimal);
   expect(accepted.error).toBeUndefined();
@@ -721,7 +985,7 @@ test("inspiration setup requires three distinct valid eligible candidates", () =
   const offered = resolveCombatTurn(state, { turn: 1, spell_id: "brimstone_crash", target: "boss" }, rng).next_state;
   expect(new Set(offered.inspiration_offers)).toEqual(new Set(candidates.map((spell: any) => spell.id)));
   expect(minimal).toEqual(original);
-  const noThird = { ...minimal, spells: [...defaults, candidates[0], candidates[1], candidates[1]] };
+  const noThird = { ...minimal, spells: [...defaults, signature, candidates[0], candidates[1], candidates[1]] };
   expect(buildTrustedCombatSetup(snapshot, selection, noThird)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
   const ineligible = structuredClone(minimal); ineligible.spells[ineligible.spells.length - 1].eligible_types = ["gold"];
   expect(buildTrustedCombatSetup(snapshot, selection, ineligible)).toEqual({ error: "UNSUPPORTED_MECHANIC" });

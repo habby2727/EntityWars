@@ -107,6 +107,25 @@ var _solo_power_active := false
 var _solo_power_eligible := 0
 var _solo_fury_pending := false
 var _solo_power_label: Label
+var _solo_player_badge: Button
+var _solo_enemy_badge: Button
+var _solo_intent_button: Button
+
+func _boss_ability_description(ability: String) -> String:
+	match ability:
+		"Strike": return "Strike: 90% base accuracy. Damage scales with boss HP: above 70% x1, above 40% x1.2, above 15% x1.4, otherwise x1.6. Normal defenses apply; living minions halve ordinary Strike damage."
+		"Summon": return "Summon creates independent minions once per battle. Defeat all living minions to expose the boss. Each surviving minion attacks once per exchange, starting next exchange."
+		"Shield": return "Alchemical Shield: %d%% direct damage mitigation for %d exchanges. Restores %d%% of prevented damage. One activation above 50%% HP and one at or below 50%%, subject to cooldown." % [roundi(float(_solo_def.get("shield_reduction", 0)) * 100), int(_solo_def.get("shield_turns", 0)), roundi(float(_solo_def.get("shield_heal_ratio", 0)) * 100)]
+		"Power": return "Power Turn doubles direct spell and homunculus damage against the boss for this exchange. Poison, damage over time and reflection are not doubled. It happens once per battle; if the boss survives, Fury follows."
+		"Fury": return "Fury is a retaliatory Strike x%.1f after the boss survives your Power Turn. It replaces ordinary Strike scaling and is not an extra turn. Stun delays it without consuming it." % float(_solo_def.get("fury_mult", 1.0))
+	return ""
+
+func _show_boss_ability(ability: String) -> void:
+	var description := _boss_ability_description(ability)
+	if not description.is_empty() and is_instance_valid(_spell_detail):
+		_spell_detail.title = "Boss Action Details"
+		_spell_detail.dialog_text = description
+		_spell_detail.popup_centered(Vector2i(440, 260))
 
 var player := {}
 var enemy := {}
@@ -229,12 +248,16 @@ func _setup_combat_log() -> void:
 	add_child(_spell_detail)
 
 func _on_log_spell_clicked(meta: Variant) -> void:
+	if meta is Dictionary and meta.has("ability"):
+		_show_boss_ability(str(meta.ability))
+		return
 	if _reg == null:
 		return
 	var spell_id := str(meta.get("id", "")) if meta is Dictionary else str(meta)
 	var spell: Dictionary = _reg.get_spell_by_id(spell_id)
 	if spell.is_empty():
 		return
+	_spell_detail.title = "Spell Details"
 	_spell_detail.dialog_text = _spell_description(spell)
 	if meta is Dictionary and meta.get("context") is Dictionary:
 		var damage := int(meta.context.get("actual_damage", 0))
@@ -243,6 +266,9 @@ func _on_log_spell_clicked(meta: Variant) -> void:
 	_spell_detail.popup_centered(Vector2i(440, 260))
 
 func _on_log_spell_hovered(meta: Variant) -> void:
+	if meta is Dictionary and meta.has("ability"):
+		log_box.tooltip_text = _boss_ability_description(str(meta.ability))
+		return
 	if _reg != null:
 		var spell_id := str(meta.get("id", "")) if meta is Dictionary else str(meta)
 		var spell: Dictionary = _reg.get_spell_by_id(spell_id)
@@ -619,6 +645,15 @@ func _create_solo_panel() -> void:
 	_solo_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_solo_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_solo_panel.add_child(_solo_status)
+	_solo_intent_button = Button.new()
+	_solo_intent_button.add_theme_font_size_override("font_size", 13)
+	_solo_intent_button.pressed.connect(func():
+		if _solo_intent == "Special":
+			_on_log_spell_clicked(str(_solo_signature.get("id", "")))
+		else:
+			_show_boss_ability("Fury" if _solo_intent == "FURY STRIKE" else _solo_intent)
+	)
+	_solo_panel.add_child(_solo_intent_button)
 	_solo_targets = VBoxContainer.new()
 	_solo_panel.add_child(_solo_targets)
 	var help := Label.new()
@@ -629,6 +664,18 @@ func _create_solo_panel() -> void:
 		panel.tooltip_text = help.text
 		help.visible = false
 	_solo_panel.add_child(help)
+	_solo_player_badge = Button.new()
+	_solo_player_badge.position = Vector2(0, 46)
+	_solo_player_badge.custom_minimum_size = Vector2(200, 24)
+	_solo_player_badge.add_theme_font_size_override("font_size", 13)
+	_solo_player_badge.pressed.connect(_show_boss_ability.bind("Power"))
+	$PlayerHealthGroup.add_child(_solo_player_badge)
+	_solo_enemy_badge = Button.new()
+	_solo_enemy_badge.position = Vector2(0, 46)
+	_solo_enemy_badge.custom_minimum_size = Vector2(200, 24)
+	_solo_enemy_badge.add_theme_font_size_override("font_size", 13)
+	_solo_enemy_badge.pressed.connect(func(): _show_boss_ability("Fury" if _solo_fury_pending else "Summon" if _solo_has_minions() else "Shield"))
+	$EnemyHealthGroup.add_child(_solo_enemy_badge)
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
 	enemy_name.modulate.a = 0.0
@@ -641,8 +688,16 @@ func _update_solo_panel() -> void:
 	if not is_instance_valid(_solo_status):
 		return
 	_solo_power_label.visible = _solo_power_active or _solo_fury_pending
-	_solo_power_label.text = "POWER TURN x2\nDEFEAT BOSS NOW OR FACE FURY x%.1f" % float(_solo_def.fury_mult) if _solo_power_active else "FURY PENDING x%.1f" % float(_solo_def.fury_mult)
-	_solo_status.text = "%s | %s\nBoss Intent: %s\nShield: %d%% | %d turns\n%s" % [str(_solo_def.get("name", "Boss")), str(_solo_def.get("tier", "")).to_upper(), _solo_intent, roundi(float(_solo_def.shield_reduction) * 100.0) if _solo_shield_turns > 0 else 0, _solo_shield_turns, "Boss Protected - Kill Minions" if _solo_has_minions() else "Boss vulnerable"]
+	_solo_power_label.text = "POWER TURN x2 - DIRECT BOSS DAMAGE\nWARNING: SURVIVAL TRIGGERS FURY x%.1f" % float(_solo_def.fury_mult) if _solo_power_active else "FURY PENDING x%.1f" % float(_solo_def.fury_mult)
+	var intent_name := str(_solo_signature.get("name", "Special")) if _solo_intent == "Special" else _solo_intent
+	_solo_intent_button.text = "NEXT: " + intent_name
+	_solo_status.text = "%s | %s\nShield: %d%% | %d turns\n%s" % [str(_solo_def.get("name", "Boss")), str(_solo_def.get("tier", "")).to_upper(), roundi(float(_solo_def.shield_reduction) * 100.0) if _solo_shield_turns > 0 else 0, _solo_shield_turns, "Boss Protected - Kill Minions" if _solo_has_minions() else "Boss vulnerable"]
+	_solo_player_badge.visible = _solo_power_active and not _battle_over
+	_solo_player_badge.text = "POWER x2 | THIS TURN"
+	_solo_player_badge.tooltip_text = _boss_ability_description("Power")
+	_solo_enemy_badge.visible = (_solo_fury_pending or _solo_has_minions() or _solo_shield_turns > 0) and not _battle_over
+	_solo_enemy_badge.text = "FURY x%.1f | PENDING" % float(_solo_def.fury_mult) if _solo_fury_pending else "PROTECTED - MINIONS" if _solo_has_minions() else "SHIELD %d%% | %dT" % [roundi(float(_solo_def.shield_reduction) * 100), _solo_shield_turns]
+	_solo_enemy_badge.tooltip_text = _boss_ability_description("Fury" if _solo_fury_pending else "Summon" if _solo_has_minions() else "Shield")
 	for child in _solo_targets.get_children():
 		_solo_targets.remove_child(child)
 		child.queue_free()
@@ -697,7 +752,7 @@ func _prepare_solo_power_turn(roll: float = -1.0) -> void:
 		_solo_power_used = true
 		_solo_power_active = true
 		_solo_events.append({"turn": _turn + 1, "power_turn": true})
-		_log_immediate("POWER TURN x2 - Defeat the boss now or face Fury x%.1f." % float(_solo_def.fury_mult))
+		_append_combat_log("POWER TURN x2 - Defeat the boss now or face Fury x%.1f." % float(_solo_def.fury_mult), {"ability_id": "Power", "category": "buff"})
 
 func _prepare_solo_intent() -> void:
 	var ratio := float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
@@ -726,6 +781,7 @@ func _solo_summon() -> void:
 		minion.atk = maxi(1, roundi(_solo_base_atk * 0.25))
 		minion.status = {"poison": 0, "stun": 0, "shield_pct": 0.0, "atk_boost": 0.0, "vuln_pct": 0.0, "atk_down": 0.0, "hom_stun": 0, "reflect_pct": 0.0, "tempo_bonus": 0.0}
 		_solo_minions.append(minion)
+		_append_combat_log("%s: %d / %d HP. Acts next exchange." % [minion.name, minion.hp, minion.max_hp], {"ability_id": "Summon", "category": "debuff"})
 	_solo_target_index = 0
 
 func _solo_boss_action() -> void:
@@ -740,15 +796,15 @@ func _solo_boss_action() -> void:
 	if int(enemy.status.stun) > 0:
 		_log_step("%s is stunned." % enemy.name, func(): enemy.status.stun -= 1)
 	elif intent == "Summon":
-		_log_step("%s summons minions." % enemy.name, _solo_summon)
+		_log_step("%s summons %d minions. Defeat them to expose the boss; they attack next exchange." % [enemy.name, int(_solo_def.minions)], _solo_summon, {"ability_id": "Summon", "category": "debuff"})
 	elif intent == "Shield":
-		_log_step("%s raises a shield." % enemy.name, func():
+		_log_step("%s raises Alchemical Shield: %d%% mitigation, %d exchanges, %d%% healing." % [enemy.name, roundi(float(_solo_def.shield_reduction) * 100), int(_solo_def.shield_turns), roundi(float(_solo_def.shield_heal_ratio) * 100)], func():
 			_solo_shield_turns = int(_solo_def.shield_turns)
 			if float(enemy.hp) > float(enemy.max_hp) * 0.5:
 				_solo_shield_high = true
 			else:
 				_solo_shield_low = true
-		)
+		, {"ability_id": "Shield", "category": "shield"})
 	else:
 		var ratio := float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
 		var fury := float(_solo_def.fury_mult) if intent == "FURY STRIKE" and _solo_fury_pending else (1.0 if ratio > 0.7 else 1.2 if ratio > 0.4 else 1.4 if ratio > 0.15 else 1.6)
@@ -756,14 +812,18 @@ func _solo_boss_action() -> void:
 			_solo_fury_pending = false
 		elif _solo_has_minions():
 			fury *= 0.5
+		_append_combat_log("%s: %s x%.1f, 90%% base accuracy." % [enemy.name, intent, fury], {"ability_id": "Fury" if intent == "FURY STRIKE" else "Strike", "category": "damage"})
 		_attack_entity(enemy, player, fury, 0.9, true)
 	await _flush_steps()
 
 func _solo_player_action(action: Dictionary) -> void:
 	var target := _solo_target()
+	var was_protected := _solo_has_minions()
 	await _resolve_spell_action(player, target, action)
 	if player.hp > 0 and (target.hp > 0 or action.get("hom", "hold") == "sacrifice"):
 		await _resolve_hom_choice(player, target, str(action.get("hom", "hold")))
+	if was_protected and not _solo_has_minions():
+		_append_combat_log("Boss exposed - protection broken.", {"ability_id": "Summon", "category": "advantage"})
 
 func _resolve_solo_exchange(action: Dictionary) -> void:
 	_turn += 1
@@ -809,6 +869,7 @@ func _resolve_solo_exchange(action: Dictionary) -> void:
 		_solo_shield_turns -= 1
 		if _solo_shield_turns == 0:
 			_solo_shield_cooldown = 3
+			_append_combat_log("Alchemical Shield expired; cooldown: 3 exchanges.", {"ability_id": "Shield", "category": "shield"})
 	elif _solo_shield_turns == 0 and _solo_shield_cooldown > 0:
 		_solo_shield_cooldown -= 1
 	if player.hp <= 0 or (enemy.hp <= 0 and not _solo_has_minions()):
@@ -2013,7 +2074,9 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			context.actual_damage += mini(int(defender.hp), dmg)
 		defender.hp = max(0, defender.hp - dmg)
 		if boss_prevented > 0:
+			var before_heal := int(defender.hp)
 			defender.hp = mini(int(defender.max_hp), int(defender.hp) + floori(boss_prevented * float(_solo_def.shield_heal_ratio)))
+			_append_combat_log("Alchemical Shield prevented %d damage and restored %d HP." % [boss_prevented, int(defender.hp) - before_heal], {"ability_id": "Shield", "category": "shield"})
 		_animate_hit(_fighter_sprite(defender), dmg, defender.max_hp)
 		if spell_attack and dmg > 0:
 			defender.spell_hit_this_exchange = true
