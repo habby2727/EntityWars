@@ -43,6 +43,11 @@ func _run() -> void:
 	loadout._confirm_spell_dialog()
 	assert(loadout._equipped_spells("attack", entity_id) == spells)
 	assert(loadout._spell_debug.load_lab_state() == before)
+	SceneRouter._solo_hunt_context["session_id"] = "test-session"
+	loadout._on_play_pressed()
+	assert(current_scene == loadout and SceneRouter._hunt_loadout_active)
+	assert("synchronization is unavailable" in loadout.lbl_build_error.text)
+	SceneRouter._solo_hunt_context["session_id"] = ""
 	loadout._on_play_pressed()
 	await process_frame
 	await process_frame

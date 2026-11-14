@@ -86,6 +86,8 @@ var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
 var _hunt_mode := false
 var _hunt_spells: Dictionary = {}
+var _hunt_backend: BackendClient
+var _hunt_recovery_request := ""
 var _spell_debug := DebugFlags.new()
 
 func _exit_tree() -> void:
@@ -235,6 +237,35 @@ func _ready() -> void:
 	_update_save_button_label()
 	if _hunt_mode and lbl_mode != null:
 		lbl_mode.text = "Boss Hunt"
+	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
+		_hunt_backend = BackendClient.new()
+		_hunt_backend.base_url = spell_backend_url
+		_hunt_backend.auto_dev_login = false
+		_hunt_backend.api_completed.connect(_on_hunt_recovery_completed)
+		add_child(_hunt_backend)
+		call_deferred("_recover_hunt_session")
+
+func _recover_hunt_session() -> void:
+	if _hunt_backend == null or _hunt_backend.token.is_empty():
+		_set_build_error("Sign in to recover this Boss Hunt. Your session remains active.")
+		return
+	var session_id := str(SceneRouter._solo_hunt_context.get("session_id", ""))
+	_hunt_recovery_request = _hunt_backend.request_api("GET", "/world/boss-hunts/session?session_id=" + session_id.uri_encode(), null, false)
+	if _hunt_recovery_request.is_empty():
+		_set_build_error("Could not recover this Boss Hunt. Return to World Zone and retry.")
+	else:
+		_set_build_error("Recovering Boss Hunt session...")
+
+func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id != _hunt_recovery_request or request_id.is_empty():
+		return
+	_hunt_recovery_request = ""
+	var session: Variant = data.get("session")
+	if not ok or not session is Dictionary or str(session.get("session_id", "")) != str(SceneRouter._solo_hunt_context.get("session_id", "")) or str(session.get("status", "")) != "ACTIVE":
+		_set_build_error("Boss Hunt unavailable or connection failed. Return to World Zone and retry.")
+		return
+	SceneRouter._solo_hunt_context["recovered_session"] = session.duplicate(true)
+	_set_build_error("Boss Hunt recovered, but online combat synchronization is unavailable. Your session remains active.")
 
 func _setup_build_dialog() -> void:
 	var card: VBoxContainer = $RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox
@@ -1281,6 +1312,9 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
+		_set_build_error("Online Boss Hunt synchronization is unavailable. Return to World Zone; your session remains active.")
+		return
 	if _spell_pending_id != "":
 		_set_build_error("Wait for spell loadout confirmation.")
 		return
