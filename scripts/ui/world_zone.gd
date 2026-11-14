@@ -80,6 +80,10 @@ var _hunt_progress_owner := ""
 var _hunt_guardian_id := ""
 var _guardian_request_key := ""
 var _guardian_request_owner := ""
+var _hunt_wants_schedule := false
+var _hunt_wants_session := false
+var _hunt_wants_guardians := false
+var _hunt_pending_start_payload: Dictionary = {}
 var _hunt_active: Dictionary = {}
 var _hunt_active_owner := ""
 var _hunt_requests: Dictionary = {}
@@ -559,18 +563,54 @@ func _reroll_world_art() -> void:
 	_change_world_art(1)
 
 func _request_map_hunts() -> void:
+	_hunt_wants_schedule = true
+	_drain_hunt_requests()
+
+func _drain_hunt_requests() -> void:
 	if _backend == null or _backend.token.is_empty():
 		return
-	var id := _backend.request_api("GET", "/world/boss-hunts", null, false)
-	if not id.is_empty():
-		_hunt_requests[id] = "schedule"
+	if not _hunt_pending_start_payload.is_empty():
+		var current_key := "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
+		if _hunt_action_owner != _backend._verified_player_id or _hunt_action_key != current_key:
+			return
+		var start_id := _backend.request_api("POST", "/world/boss-hunts/start", _hunt_pending_start_payload.duplicate(true), false)
+		if not start_id.is_empty():
+			_hunt_pending_start_payload.clear()
+			_hunt_requests[start_id] = "start"
+			_hunt_fight.disabled = true
+			_preview_status.text = "Starting encounter..."
+		elif _backend._api_in_flight.is_empty():
+			_hunt_fight.disabled = false
+			_preview_status.text = "Could not send encounter request. Retry."
+		return
+	var kind := ""
+	var path := ""
+	if _hunt_wants_schedule:
+		kind = "schedule"
+		path = "/world/boss-hunts"
+	elif _hunt_wants_session:
+		kind = "session"
+		path = "/world/boss-hunts/session"
+	elif _hunt_wants_guardians and not _hunt_selected.is_empty() and not _backend._verified_player_id.is_empty():
+		kind = "guardians"
+		path = "/world/boss-hunts/guardians?zone_id=" + _get_zone_id().uri_encode() + "&hunt_id=" + str(_hunt_selected.get("id", "")).uri_encode()
+	if kind.is_empty() or _hunt_requests.values().has(kind):
+		return
+	var id := _backend.request_api("GET", path, null, false)
+	if id.is_empty():
+		return
+	_hunt_requests[id] = kind
+	match kind:
+		"schedule": _hunt_wants_schedule = false
+		"session": _hunt_wants_session = false
+		"guardians":
+			_hunt_wants_guardians = false
+			_guardian_request_key = _guardian_key()
+			_guardian_request_owner = _backend._verified_player_id
 
 func _request_hunt_session() -> void:
-	if _backend == null or _backend.token.is_empty():
-		return
-	var id := _backend.request_api("GET", "/world/boss-hunts/session", null, false)
-	if not id.is_empty():
-		_hunt_requests[id] = "session"
+	_hunt_wants_session = true
+	_drain_hunt_requests()
 
 func _guardian_key() -> String:
 	return _get_zone_id() + "|" + str(_hunt_selected.get("id", ""))
@@ -582,14 +622,10 @@ func _active_hunt_matches(guardian_id: String) -> bool:
 	return parent == str(_hunt_selected.get("id", "")) and str(_hunt_active.get("zone_id", "")) == _get_zone_id() and str(_hunt_active.get("guardian_id", "")) == guardian_id
 
 func _request_guardian_progress() -> void:
-	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or _hunt_selected.is_empty() or _hunt_requests.values().has("guardians"):
+	if _hunt_requests.values().has("guardians") and _guardian_request_key == _guardian_key() and _backend != null and _guardian_request_owner == _backend._verified_player_id:
 		return
-	var key := _guardian_key()
-	var id := _backend.request_api("GET", "/world/boss-hunts/guardians?zone_id=" + _get_zone_id().uri_encode() + "&hunt_id=" + str(_hunt_selected.get("id", "")).uri_encode(), null, false)
-	if not id.is_empty():
-		_guardian_request_key = key
-		_guardian_request_owner = _backend._verified_player_id
-		_hunt_requests[id] = "guardians"
+	_hunt_wants_guardians = true
+	_drain_hunt_requests()
 
 func _show_map_hunt(boss: Dictionary) -> void:
 	_hunt_selected = boss.duplicate(true)
@@ -697,11 +733,10 @@ func _start_map_hunt() -> void:
 	var payload := {"client_action_id": _hunt_action_id, "hunt_id": str(_hunt_selected.get("id", "")), "rotation_key": _hunt_rotation, "zone_id": _get_zone_id()}
 	if not _hunt_guardian_id.is_empty():
 		payload["guardian_id"] = _hunt_guardian_id
-	var id := _backend.request_api("POST", "/world/boss-hunts/start", payload, false)
-	if not id.is_empty():
-		_hunt_requests[id] = "start"
-		_hunt_fight.disabled = true
-		_preview_status.text = "Starting encounter..."
+	_hunt_pending_start_payload = payload.duplicate(true)
+	_hunt_fight.disabled = true
+	_preview_status.text = "Waiting to start encounter..."
+	_drain_hunt_requests()
 
 func _enter_map_hunt(session: Dictionary) -> void:
 	if str(session.get("session_id", "")).is_empty() or str(session.get("status", "")) != "ACTIVE":
@@ -814,6 +849,11 @@ func _on_auth_changed(token: String) -> void:
 	_hunt_action_id = ""
 	_hunt_action_key = ""
 	_hunt_action_owner = ""
+	_hunt_wants_schedule = false
+	_hunt_wants_session = false
+	_hunt_wants_guardians = false
+	_hunt_requests.clear()
+	_hunt_pending_start_payload.clear()
 	if not _hunt_selected.is_empty():
 		_clear_guardian_preview()
 		_hunt_selected.clear()
@@ -875,6 +915,7 @@ func _request_world_state() -> void:
 		_set_error("Logging in...")
 
 func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
+	call_deferred("_drain_hunt_requests")
 	if _hunt_requests.has(_request_id):
 		var kind: String = _hunt_requests[_request_id]
 		_hunt_requests.erase(_request_id)
