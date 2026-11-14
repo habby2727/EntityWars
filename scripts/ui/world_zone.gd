@@ -74,11 +74,18 @@ var _debug_rotation := 0
 var _hunt_schedule: Array = []
 var _hunt_rotation := -1
 var _hunt_selected: Dictionary = {}
+var _hunt_progress: Dictionary = {}
+var _hunt_progress_key := ""
+var _hunt_progress_owner := ""
+var _hunt_guardian_id := ""
+var _guardian_request_key := ""
+var _guardian_request_owner := ""
 var _hunt_active: Dictionary = {}
 var _hunt_active_owner := ""
 var _hunt_requests: Dictionary = {}
 var _hunt_action_id := ""
 var _hunt_action_key := ""
+var _hunt_action_owner := ""
 var _hunt_fight: Button
 var _hunt_boundary := 0
 var _debug_visual: Dictionary = {}
@@ -189,7 +196,7 @@ func _setup_zone_view() -> void:
 	panel.offset_left = -330
 	panel.offset_right = -30
 	panel.offset_top = 125
-	panel.offset_bottom = 420
+	panel.offset_bottom = 330
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.02, 0.06, 0.07, 0.9)
 	style.border_color = Color(0.58, 0.5, 0.3, 0.9)
@@ -376,7 +383,7 @@ func show_guardian_preview(main: Dictionary, guardians: Array) -> void:
 func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, required: PackedStringArray) -> void:
 	var texture: Texture2D = null
 	var texture_id := str(entry.get("texture_id", ""))
-	if texture_id.begins_with("res://"):
+	if texture_id.begins_with("res://assets/lab/bosses/") and texture_id.ends_with(".png") and not ".." in texture_id and not "\\" in texture_id and ResourceLoader.exists(texture_id):
 		texture = load(texture_id) as Texture2D
 	elif _catalog.has(texture_id):
 		texture = _catalog.get_tex(texture_id)
@@ -417,7 +424,7 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 	title.add_theme_constant_override("outline_size", 5)
 	title.add_theme_color_override("font_outline_color", Color.BLACK)
 	var tier := str(entry.get("tier", "common")).to_lower()
-	title.text = "[center][color=#%s][lb]%s[rb][/color] %s%s[/center]" % [TIER_COLORS.get(tier, TIER_COLORS["common"]), tier.capitalize(), str(entry.get("name", "Boss")), " - LOCKED" if main and not required.is_empty() else ""]
+	title.text = "[center][color=#%s][lb]%s[rb][/color] %s%s[/center]" % [TIER_COLORS.get(tier, TIER_COLORS["common"]), tier.capitalize(), "🔒 " if main and not required.is_empty() else "", str(entry.get("name", "Boss"))]
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	actor.add_child(title)
 	var actor_id := str(entry.get("id", ""))
@@ -427,7 +434,10 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 			_debug_hunt_id = "hunt_" + str(entry.get("tier", "common"))
 			_debug_visual = {"id": texture_id.get_file().get_basename() if texture_id.begins_with("res://") else actor_id, "tier": str(entry.get("tier", "common")), "texture": texture_id, "name": str(entry.get("name", "Boss")), "guardian": not main, "parent_index": _debug_rotation, "encounter_id": actor_id}
 			_preview_selected_encounter = {"id": actor_id, "texture_id": texture_id, "zone_id": _get_zone_id(), "preview": true}
-			var real_hunt := not _hunt_selected.is_empty() and actor_id == str(_hunt_selected.get("id", ""))
+			var online_guardian := str(entry.get("guardian_id", ""))
+			var real_hunt := not _hunt_selected.is_empty() and (actor_id == str(_hunt_selected.get("id", "")) or not online_guardian.is_empty())
+			if real_hunt:
+				_hunt_guardian_id = online_guardian
 			_preview_status.text = ("Boss Hunt: %s\nUnverified preview: no rewards." % str(entry.get("name", actor_id))) if real_hunt else ("Unverified debug preview: %s\n%s" % [str(entry.get("name", actor_id)), "Locked: " + ", ".join(required) if main and not required.is_empty() else "No rewards or persistent victories."])
 			_preview_status.visible = true
 			_boss_picker.visible = false
@@ -438,18 +448,36 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 			_debug_fight.visible = _debug.unlock_all_buildings
 			_debug_fight.disabled = main and not required.is_empty()
 			if real_hunt:
-				var active := _backend != null and not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and str(_hunt_active.get("hunt_id", "")) == actor_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms()
-				var needs_guardians := str(_hunt_selected.get("tier", "common")) != "common"
-				_hunt_fight.disabled = _backend == null or _backend.token.is_empty() or (not active and (needs_guardians or not bool(_hunt_selected.get("available", false))))
-				if needs_guardians and not active:
-					_preview_status.text += "\nLocked: guardian progress requires server verification."
-				_hunt_fight.text = "Resume Hunt" if active else "Fight (unverified preview)"
-			_world_modal.visible = true)
+				var active := _active_hunt_matches(online_guardian)
+				var verified := _hunt_progress_key == _guardian_key() and _backend != null and _hunt_progress_owner == _backend._verified_player_id and not _hunt_progress_owner.is_empty()
+				var unlocked := not online_guardian.is_empty() or bool(_hunt_progress.get("boss_unlocked", false))
+				if not verified:
+					call_deferred("_request_guardian_progress")
+				_hunt_fight.disabled = not verified or _backend.token.is_empty() or (not active and (not unlocked or not bool(_hunt_selected.get("available", false))))
+				_preview_status.text = "%s\nGuardians: %d/%d defeated%s" % [str(entry.get("name", "Boss")), int(_hunt_progress.get("defeated_count", 0)), int(_hunt_progress.get("total_count", 0)), "" if verified else "\nProgress unavailable; retry."]
+				_hunt_fight.text = "Resume Hunt" if active else "Fight"
+			_world_modal.visible = true
+			call_deferred("_fit_encounter_card"))
 	var tween := create_tween().set_loops()
 	tween.tween_property(sprite, "scale", Vector2(1.01, 1.01), 1.2).set_trans(Tween.TRANS_SINE)
 	tween.tween_property(sprite, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_SINE)
 	tween.tween_interval(1.0)
 	_preview_tweens.append(tween)
+
+func _fit_encounter_card() -> void:
+	if not is_instance_valid(_world_modal):
+		return
+	var panel := _world_modal.get_node_or_null("WorldBossPanel") as Control
+	if panel == null:
+		return
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -330
+	panel.offset_right = -30
+	panel.offset_top = 125
+	panel.offset_bottom = 390
 
 func _clear_guardian_preview() -> void:
 	_preview_selected_encounter.clear()
@@ -533,14 +561,39 @@ func _reroll_world_art() -> void:
 func _request_map_hunts() -> void:
 	if _backend == null or _backend.token.is_empty():
 		return
-	for kind in ["schedule", "session"]:
-		var path := "/world/boss-hunts" if kind == "schedule" else "/world/boss-hunts/session"
-		var id := _backend.request_api("GET", path, null, false)
-		if not id.is_empty():
-			_hunt_requests[id] = kind
+	var id := _backend.request_api("GET", "/world/boss-hunts", null, false)
+	if not id.is_empty():
+		_hunt_requests[id] = "schedule"
+
+func _request_hunt_session() -> void:
+	if _backend == null or _backend.token.is_empty():
+		return
+	var id := _backend.request_api("GET", "/world/boss-hunts/session", null, false)
+	if not id.is_empty():
+		_hunt_requests[id] = "session"
+
+func _guardian_key() -> String:
+	return _get_zone_id() + "|" + str(_hunt_selected.get("id", ""))
+
+func _active_hunt_matches(guardian_id: String) -> bool:
+	if _backend == null or _hunt_active.is_empty() or _hunt_active_owner != _backend._verified_player_id or _hunt_active_owner.is_empty() or int(_hunt_active.get("expires_at", 0)) <= _backend.get_server_time_unix_ms():
+		return false
+	var parent := str(_hunt_active.get("parent_hunt_id", _hunt_active.get("hunt_id", "")))
+	return parent == str(_hunt_selected.get("id", "")) and str(_hunt_active.get("zone_id", "")) == _get_zone_id() and str(_hunt_active.get("guardian_id", "")) == guardian_id
+
+func _request_guardian_progress() -> void:
+	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or _hunt_selected.is_empty() or _hunt_requests.values().has("guardians"):
+		return
+	var key := _guardian_key()
+	var id := _backend.request_api("GET", "/world/boss-hunts/guardians?zone_id=" + _get_zone_id().uri_encode() + "&hunt_id=" + str(_hunt_selected.get("id", "")).uri_encode(), null, false)
+	if not id.is_empty():
+		_guardian_request_key = key
+		_guardian_request_owner = _backend._verified_player_id
+		_hunt_requests[id] = "guardians"
 
 func _show_map_hunt(boss: Dictionary) -> void:
 	_hunt_selected = boss.duplicate(true)
+	_hunt_guardian_id = ""
 	_clear_guardian_preview()
 	_world_stage.visible = false
 	_preview_stage = Control.new()
@@ -550,20 +603,16 @@ func _show_map_hunt(boss: Dictionary) -> void:
 	add_child(_preview_stage)
 	move_child(_world_modal, get_child_count() - 1)
 	var entry := {"id": str(boss.get("id", "")), "name": str(boss.get("name", "Boss")), "tier": str(boss.get("tier", "common")), "texture_id": str(boss.get("display_texture_id", boss.get("texture_id", "")))}
-	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
-	var textures := ["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
-	var rank := tiers.find(str(entry.tier))
 	var guardians: Array = []
-	if rank > 1:
-		guardians.append({"id": "visual_higher", "name": "Visual guardian", "tier": tiers[rank - 1], "texture_id": textures[rank - 1]})
-	var commons := 0 if rank <= 0 else (2 if rank <= 2 else rank)
-	var zone := _get_zone_id()
-	var appearances: Array = WORLD_ART.get(zone, [])
-	for i in mini(commons, appearances.size()):
-		guardians.append({"id": "visual_common_%d" % i, "name": "Visual guardian", "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), appearances[i]]})
+	var verified := _hunt_progress_key == _guardian_key() and _backend != null and not _backend._verified_player_id.is_empty() and _hunt_progress_owner == _backend._verified_player_id
+	if verified:
+		for guardian in _hunt_progress.get("guardians", []):
+			if guardian is Dictionary and not bool(guardian.get("defeated", false)):
+				var actor: Dictionary = guardian.duplicate(true)
+				actor["id"] = str(guardian.get("guardian_id", ""))
+				guardians.append(actor)
 	var required := PackedStringArray()
-	var resumed := _backend != null and not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and str(_hunt_active.get("hunt_id", "")) == str(entry.id) and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms()
-	if rank > 0 and not resumed:
+	if not verified or (not bool(_hunt_progress.get("boss_unlocked", false)) and not _active_hunt_matches("")):
 		required.append("Server-verified guardians")
 	_add_preview_actor(entry, 0.5, 0.59, true, required)
 	for i in guardians.size():
@@ -583,6 +632,8 @@ func _show_map_hunt(boss: Dictionary) -> void:
 	reroll.pressed.connect(_reroll_world_art)
 	_preview_stage.add_child(reroll)
 	MenuArt.button(reroll)
+	if not verified:
+		_request_guardian_progress()
 
 func _add_nearby_hunt(boss: Dictionary) -> void:
 	var texture_id := str(boss.get("display_texture_id", boss.get("texture_id", "")))
@@ -590,10 +641,10 @@ func _add_nearby_hunt(boss: Dictionary) -> void:
 		return
 	var button := TextureButton.new()
 	button.name = "NearbyHunt"
-	button.anchor_left = 0.80
-	button.anchor_right = 0.80
-	button.anchor_top = 0.58
-	button.anchor_bottom = 0.58
+	button.anchor_left = 0.72
+	button.anchor_right = 0.72
+	button.anchor_top = 0.39
+	button.anchor_bottom = 0.39
 	button.offset_left = -75
 	button.offset_right = 75
 	button.offset_top = -150
@@ -604,7 +655,7 @@ func _add_nearby_hunt(boss: Dictionary) -> void:
 	button.pressed.connect(func(): _show_map_hunt(boss))
 	_preview_stage.add_child(button)
 	var label := Label.new()
-	label.text = "[%s] %s%s" % [str(boss.get("tier", "")).capitalize(), str(boss.get("name", boss.get("id", "Boss"))), "" if bool(boss.get("available", false)) else " (Unavailable)"]
+	label.text = "Next: [%s] %s%s" % [str(boss.get("tier", "")).capitalize(), str(boss.get("name", boss.get("id", "Boss"))), "" if bool(boss.get("available", false)) else " (Unavailable)"]
 	label.position = Vector2(-25, -28)
 	label.size = Vector2(200, 28)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -617,29 +668,35 @@ func _start_map_hunt() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
 		return
 	if not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms():
-		if str(_hunt_active.get("hunt_id", "")) == str(_hunt_selected.get("id", "")):
+		if _active_hunt_matches(_hunt_guardian_id):
 			_enter_map_hunt(_hunt_active)
 		else:
 			_preview_status.text = "Resume your active encounter before starting another."
 		return
 	_hunt_active.clear()
-	if str(_hunt_selected.get("tier", "common")) != "common":
-		_preview_status.text = "Locked: guardian victories require server verification."
+	if _hunt_progress_key != _guardian_key() or _hunt_progress_owner != _backend._verified_player_id or (_hunt_guardian_id.is_empty() and not bool(_hunt_progress.get("boss_unlocked", false))):
+		_preview_status.text = "Guardian progress unavailable or boss locked."
 		return
 	if not bool(_hunt_selected.get("available", false)) or _hunt_rotation < 0 or (_hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary):
 		_preview_status.text = "Encounter expired. Refreshing..."
 		_request_map_hunts()
 		return
-	var key := "%s:%d" % [str(_hunt_selected.get("id", "")), _hunt_rotation]
+	var key := "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
 	if not _hunt_action_id.is_empty() and _hunt_action_key != key:
 		_preview_status.text = "Previous request unresolved. Retry the same encounter."
 		return
 	if _hunt_action_id.is_empty():
 		_hunt_action_id = _backend._make_uuid()
 		_hunt_action_key = key
+		_hunt_action_owner = _backend._verified_player_id
+	if _hunt_action_owner != _backend._verified_player_id:
+		_preview_status.text = "Account changed. Reopen the encounter."
+		return
 	if _hunt_requests.values().has("start"):
 		return
-	var payload := {"client_action_id": _hunt_action_id, "hunt_id": str(_hunt_selected.get("id", "")), "rotation_key": _hunt_rotation}
+	var payload := {"client_action_id": _hunt_action_id, "hunt_id": str(_hunt_selected.get("id", "")), "rotation_key": _hunt_rotation, "zone_id": _get_zone_id()}
+	if not _hunt_guardian_id.is_empty():
+		payload["guardian_id"] = _hunt_guardian_id
 	var id := _backend.request_api("POST", "/world/boss-hunts/start", payload, false)
 	if not id.is_empty():
 		_hunt_requests[id] = "start"
@@ -654,6 +711,7 @@ func _enter_map_hunt(session: Dictionary) -> void:
 	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), str(session.get("session_id", "")), _get_zone_id())
 
 func _show_debug_boss(index: int, group_id: String = "") -> void:
+	_hunt_selected.clear()
 	_debug_rotation = index
 	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
 	var textures := ["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
@@ -750,6 +808,15 @@ func _on_auth_changed(token: String) -> void:
 	_hunt_active.clear()
 	_hunt_active_owner = ""
 	_hunt_schedule.clear()
+	_hunt_progress.clear()
+	_hunt_progress_key = ""
+	_hunt_progress_owner = ""
+	_hunt_action_id = ""
+	_hunt_action_key = ""
+	_hunt_action_owner = ""
+	if not _hunt_selected.is_empty():
+		_clear_guardian_preview()
+		_hunt_selected.clear()
 	if token != "":
 		_auth_refresh_needed = true
 		_request_world_state()
@@ -811,10 +878,19 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 	if _hunt_requests.has(_request_id):
 		var kind: String = _hunt_requests[_request_id]
 		_hunt_requests.erase(_request_id)
+		if kind == "schedule":
+			call_deferred("_request_hunt_session")
+		if kind == "guardians" and (_guardian_request_key != _guardian_key() or _backend == null or _guardian_request_owner.is_empty() or _guardian_request_owner != _backend._verified_player_id):
+			call_deferred("_request_guardian_progress")
+			return
 		if not ok:
 			if kind == "start":
 				_preview_status.text = str(data.get("error", "Encounter unavailable."))
 				_hunt_fight.disabled = false
+			elif kind == "guardians":
+				_hunt_progress.clear()
+				_hunt_progress_key = ""
+				_preview_status.text = "Guardian progress unavailable. Select the boss to retry."
 			return
 		match kind:
 			"schedule":
@@ -829,9 +905,31 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			"session":
 				_hunt_active = data.get("session", {}) if data.get("session") is Dictionary else {}
 				_hunt_active_owner = _backend._verified_player_id
+				if not _hunt_selected.is_empty():
+					call_deferred("_request_guardian_progress")
+			"guardians":
+				if _guardian_request_key != _guardian_key() or _guardian_request_owner.is_empty() or _guardian_request_owner != _backend._verified_player_id or str(data.get("zone_id", "")) != _get_zone_id() or str(data.get("hunt_id", "")) != str(_hunt_selected.get("id", "")):
+					call_deferred("_request_guardian_progress")
+					return
+				_hunt_progress = data.duplicate(true)
+				_hunt_progress_key = _guardian_key()
+				_hunt_progress_owner = _backend._verified_player_id
+				_show_map_hunt(_hunt_selected.duplicate(true))
 			"start":
+				var current_key := "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
+				if _hunt_action_owner.is_empty() or _hunt_action_owner != _backend._verified_player_id:
+					return
+				if _hunt_action_key != current_key:
+					_hunt_active = data.duplicate(true)
+					_hunt_active_owner = _hunt_action_owner
+					_hunt_action_id = ""
+					_hunt_action_key = ""
+					_hunt_action_owner = ""
+					_preview_status.text = "Another encounter started. Select it to resume."
+					return
 				_hunt_action_id = ""
 				_hunt_action_key = ""
+				_hunt_action_owner = ""
 				_enter_map_hunt(data)
 		return
 	_gate_clock.sync(int(data.get("server_time_unix_ms", 0)))
@@ -854,6 +952,8 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			call_deferred("_request_world_state")
 		elif pw is Dictionary:
 			_clear_error()
+			if _hunt_schedule.is_empty():
+				call_deferred("_request_map_hunts")
 		return
 	# world_enter response
 	if data.has("session_id"):
@@ -862,6 +962,11 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 
 func _on_state_updated(state: Dictionary) -> void:
 	_update_from_state(state)
+	if _backend != null and not _backend._verified_player_id.is_empty():
+		if _hunt_active_owner != _backend._verified_player_id:
+			call_deferred("_request_hunt_session")
+		elif not _hunt_selected.is_empty() and _hunt_progress_key != _guardian_key():
+			call_deferred("_request_guardian_progress")
 
 func _on_enter_pressed() -> void:
 	_clear_error()

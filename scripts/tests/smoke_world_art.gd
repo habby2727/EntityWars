@@ -74,15 +74,50 @@ func _run() -> void:
 		var rare := {"id": "hunt_rare", "name": "Rare Boss", "tier": "rare", "texture_id": "boss_leviathan", "available": true}
 		var mythic := {"id": "hunt_mythic", "name": "Mythic Boss", "tier": "mythic", "texture_id": "boss_colossus", "available": true}
 		zone._hunt_schedule = [rare, mythic]
+		zone._backend.token = "fixture"
+		zone._backend._verified_player_id = "fixture-player"
+		zone._hunt_selected = rare.duplicate(true)
+		zone._hunt_progress_key = zone._guardian_key()
+		zone._hunt_progress_owner = "fixture-player"
+		var online_guardians: Array = []
+		for i in 3:
+			online_guardians.append({"guardian_id": "guardian_%d" % i, "name": "Guardian %d" % i, "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [world.to_lower(), entries[i]], "defeated": false})
+		zone._hunt_progress = {"guardians": online_guardians, "defeated_count": 0, "total_count": 3, "boss_unlocked": false}
 		zone._show_map_hunt(rare)
 		await process_frame
 		if OS.has_environment("EW_CAPTURE_DIR"):
 			await create_timer(0.3).timeout
 			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("map_hunt_" + world + ".png"))
 		assert(zone._preview_stage.get_child_count() == 6)
+		var guard: Control = zone._preview_stage.get_child(1)
+		guard.get_child(0).gui_input.emit(click)
+		assert(zone._hunt_guardian_id == "guardian_0" and zone._hunt_fight.visible)
+		zone._world_modal.visible = false
+		var previous_rotation: int = zone._debug_rotation
+		var rightmost: Control = zone._preview_stage.get_child(3)
+		rightmost.get_child(0).gui_input.emit(click)
+		assert(zone._hunt_guardian_id == "guardian_2" and zone._debug_rotation == previous_rotation and zone._hunt_selected.id == "hunt_rare")
+		zone._world_modal.visible = false
+		zone._hunt_active_owner = "fixture-player"
+		zone._hunt_active = {"hunt_id": "hunt_common", "parent_hunt_id": "hunt_rare", "guardian_id": "guardian_2", "zone_id": zone._get_zone_id(), "expires_at": 9999999999999}
+		assert(zone._active_hunt_matches("guardian_2") and not zone._active_hunt_matches("guardian_0") and not zone._active_hunt_matches(""))
+		zone._hunt_active.clear()
 		var map_actor: Control = zone._preview_stage.get_child(0)
 		map_actor.get_child(0).gui_input.emit(click)
-		assert(zone._preview_selection == "hunt_rare" and zone._hunt_fight.visible)
+		assert(zone._preview_selection == "hunt_rare" and zone._hunt_fight.visible and zone._hunt_fight.disabled)
+		zone._world_modal.visible = false
+		online_guardians[0].defeated = true
+		zone._hunt_progress.defeated_count = 1
+		zone._show_map_hunt(rare)
+		await process_frame
+		assert(zone._preview_stage.get_child_count() == 5)
+		for guardian in online_guardians:
+			guardian.defeated = true
+		zone._hunt_progress.boss_unlocked = true
+		zone._hunt_progress.defeated_count = 3
+		zone._show_map_hunt(rare)
+		await process_frame
+		assert(zone._preview_stage.get_child_count() == 3)
 		zone._world_modal.visible = false
 		zone._preview_stage.get_node("NearbyHunt").pressed.emit()
 		assert(zone._hunt_selected.id == "hunt_mythic")
@@ -94,6 +129,22 @@ func _run() -> void:
 		zone._show_debug_boss(4)
 		await process_frame
 		assert(zone._preview_stage.get_child_count() == 8)
+		if OS.has_environment("EW_GUARDIAN_CAPTURE") and world == "Chaos":
+			zone._debug.unlock_all_buildings = false
+			var legendary := {"id": "hunt_legendary", "name": "Eternal Warden Titan", "tier": "legendary", "texture_id": "ghost_boss", "available": true}
+			zone._hunt_selected = legendary
+			zone._hunt_progress_key = zone._guardian_key()
+			zone._hunt_progress_owner = "fixture-player"
+			var group: Array = []
+			for i in 5:
+				group.append({"guardian_id": "guardian_%d" % i, "name": "Guardian %d" % (i + 1), "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [world.to_lower(), entries[i]], "defeated": false})
+			zone._hunt_progress = {"guardians": group, "defeated_count": 0, "total_count": 5, "boss_unlocked": false}
+			zone._show_map_hunt(legendary)
+			await process_frame
+			zone._preview_stage.get_child(0).get_child(0).gui_input.emit(click)
+			await process_frame
+			await RenderingServer.frame_post_draw
+			assert(root.get_texture().get_image().save_png(OS.get_environment("EW_GUARDIAN_CAPTURE")) == OK)
 		if OS.has_environment("EW_CAPTURE_DIR"):
 			await create_timer(0.3).timeout
 			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("legendary_" + world + ".png"))

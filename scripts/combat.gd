@@ -566,7 +566,10 @@ func _render_online_hunt(session: Dictionary) -> bool:
 	var requested := str(_solo_context.get("display_texture_id", ""))
 	if requested == texture_id or requested in boss_def.get("texture_variants", []):
 		texture_id = requested
-	enemy_entity.texture = assets.get_tex(texture_id)
+	if texture_id.begins_with("res://assets/lab/bosses/") and texture_id.ends_with(".png") and not ".." in texture_id and not "\\" in texture_id and ResourceLoader.exists(texture_id):
+		enemy_entity.texture = load(texture_id) as Texture2D
+	else:
+		enemy_entity.texture = assets.get_tex(texture_id)
 	assets.free()
 	var weapons: Variant = loadout.get("weapon_ids", [])
 	for i in 2:
