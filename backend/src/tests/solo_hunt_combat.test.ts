@@ -79,6 +79,8 @@ test("summoned minions protect their boss, have independent HP and attack on lat
   state.minions[0].hp = 1;
   const killed = resolveCombatTurn(state, decision, () => 0);
   expect(killed.next_state.minions[0].hp).toBe(0);
+  expect(killed.events.some((e: any) => e.kind === "minion_defeated" && e.actor === "minion_0")).toBe(true);
+  expect(killed.events.some((e: any) => e.kind === "boss_exposed")).toBe(false);
   expect(killed.next_state.minions[1].hp).toBe(22);
   let staleDraws = 0;
   expect(resolveCombatTurn(killed.next_state, { ...decision, turn: 5 }, () => { staleDraws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
@@ -152,6 +154,26 @@ test("tactical intent respects Fury, summoning, shield, cooldown and weak player
   expect(selectBossIntent(state, 0)).toBe("Strike");
 });
 
+test("boss signature uses its own element and protected bosses do not choose shield", () => {
+  for (const draw of [0, 0.99]) {
+    const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_mythic", boss_entity_id: "gold_01" }, selection, catalogs), () => draw);
+    expect(state.boss.type).not.toBe(state.boss_signature.type);
+    state.player.status.stun = 1;
+    state.boss_intent = "Special";
+    const result = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, () => 0);
+    expect(result.error).toBeUndefined();
+    const relation = catalogs.types.effectiveness[state.boss_signature.type][state.player.type];
+    const mult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
+    const expected = Math.max(1, Math.round((state.boss.atk - Math.trunc(state.player.def * 0.5)) * mult * state.boss_signature.power_mult));
+    expect(result.events.find((e: any) => e.actor === "boss" && e.kind === "damage").damage).toBe(expected);
+  }
+  const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_mythic" }, selection, catalogs));
+  state.summoned = true;
+  state.boss.hp = 30;
+  state.minions = [{ id: "minion_0", hp: 10 }];
+  expect(selectBossIntent(state, 30)).not.toBe("Shield");
+});
+
 test("tactical intent values a useful signature debuff and avoids repeating it", () => {
   const state = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_epic" }, selection, catalogs), () => 0.99);
   state.boss_actions_taken = 2;
@@ -204,6 +226,7 @@ test("Common boss shield protects a full subsequent exchange and then cools down
   expect(shield.heal).toBe(0);
   expect(second.next_state.boss_shield_turns).toBe(0);
   expect(second.next_state.boss_shield_cooldown).toBe(3);
+  expect(second.events.some((e: any) => e.kind === "boss_shield_expired" && e.cooldown === 3)).toBe(true);
 });
 
 test("Epic shield heals prevented damage after the hit without exceeding maximum HP", () => {

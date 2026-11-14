@@ -108,7 +108,7 @@ var _solo_power_eligible := 0
 var _solo_fury_pending := false
 var _solo_power_label: Label
 var _solo_player_badge: Button
-var _solo_enemy_badge: Button
+var _solo_enemy_badges: Dictionary = {}
 var _solo_intent_button: Button
 
 func _boss_ability_description(ability: String) -> String:
@@ -118,6 +118,8 @@ func _boss_ability_description(ability: String) -> String:
 		"Shield": return "Alchemical Shield: %d%% direct damage mitigation for %d exchanges. Restores %d%% of prevented damage. One activation above 50%% HP and one at or below 50%%, subject to cooldown." % [roundi(float(_solo_def.get("shield_reduction", 0)) * 100), int(_solo_def.get("shield_turns", 0)), roundi(float(_solo_def.get("shield_heal_ratio", 0)) * 100)]
 		"Power": return "Power Turn doubles direct spell and homunculus damage against the boss for this exchange. Poison, damage over time and reflection are not doubled. It happens once per battle; if the boss survives, Fury follows."
 		"Fury": return "Fury is a retaliatory Strike x%.1f after the boss survives your Power Turn. It replaces ordinary Strike scaling and is not an extra turn. Stun delays it without consuming it." % float(_solo_def.get("fury_mult", 1.0))
+		"Poison": return "Poison deals periodic damage at the end of an exchange while active. Remaining duration: %d turns." % int(enemy.get("status", {}).get("poison", 0))
+		"Stun": return "Stun prevents the boss from acting. Fury remains pending until an offensive action executes. Remaining duration: %d turns." % int(enemy.get("status", {}).get("stun", 0))
 	return ""
 
 func _show_boss_ability(ability: String) -> void:
@@ -670,12 +672,18 @@ func _create_solo_panel() -> void:
 	_solo_player_badge.add_theme_font_size_override("font_size", 13)
 	_solo_player_badge.pressed.connect(_show_boss_ability.bind("Power"))
 	$PlayerHealthGroup.add_child(_solo_player_badge)
-	_solo_enemy_badge = Button.new()
-	_solo_enemy_badge.position = Vector2(0, 46)
-	_solo_enemy_badge.custom_minimum_size = Vector2(200, 24)
-	_solo_enemy_badge.add_theme_font_size_override("font_size", 13)
-	_solo_enemy_badge.pressed.connect(func(): _show_boss_ability("Fury" if _solo_fury_pending else "Summon" if _solo_has_minions() else "Shield"))
-	$EnemyHealthGroup.add_child(_solo_enemy_badge)
+	var status_row := HFlowContainer.new()
+	status_row.position = Vector2(-40, 46)
+	status_row.size = Vector2(280, 80)
+	status_row.add_theme_constant_override("h_separation", 3)
+	status_row.add_theme_constant_override("v_separation", 3)
+	$EnemyHealthGroup.add_child(status_row)
+	for kind in ["Fury", "Shield", "Summon", "Poison", "Stun"]:
+		var badge := Button.new()
+		badge.add_theme_font_size_override("font_size", 16)
+		badge.pressed.connect(_show_boss_ability.bind(kind))
+		status_row.add_child(badge)
+		_solo_enemy_badges[kind] = badge
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
 	enemy_name.modulate.a = 0.0
@@ -695,9 +703,17 @@ func _update_solo_panel() -> void:
 	_solo_player_badge.visible = _solo_power_active and not _battle_over
 	_solo_player_badge.text = "POWER x2 | THIS TURN"
 	_solo_player_badge.tooltip_text = _boss_ability_description("Power")
-	_solo_enemy_badge.visible = (_solo_fury_pending or _solo_has_minions() or _solo_shield_turns > 0) and not _battle_over
-	_solo_enemy_badge.text = "FURY x%.1f | PENDING" % float(_solo_def.fury_mult) if _solo_fury_pending else "PROTECTED - MINIONS" if _solo_has_minions() else "SHIELD %d%% | %dT" % [roundi(float(_solo_def.shield_reduction) * 100), _solo_shield_turns]
-	_solo_enemy_badge.tooltip_text = _boss_ability_description("Fury" if _solo_fury_pending else "Summon" if _solo_has_minions() else "Shield")
+	var alive_minions := 0
+	for minion in _solo_minions:
+		if int(minion.hp) > 0:
+			alive_minions += 1
+	var status: Dictionary = enemy.get("status", {})
+	var labels := {"Fury": "FURY x%.1f" % float(_solo_def.fury_mult) if _solo_fury_pending else "", "Shield": "SHIELD %d%% | %dT" % [roundi(float(_solo_def.shield_reduction) * 100), _solo_shield_turns] if _solo_shield_turns > 0 else "", "Summon": "MINIONS %d | PROTECTED" % alive_minions if alive_minions > 0 else "", "Poison": "POISON | %dT" % int(status.get("poison", 0)) if int(status.get("poison", 0)) > 0 else "", "Stun": "STUN | %dT" % int(status.get("stun", 0)) if int(status.get("stun", 0)) > 0 else ""}
+	for kind in _solo_enemy_badges:
+		var badge: Button = _solo_enemy_badges[kind]
+		badge.text = labels[kind]
+		badge.visible = not badge.text.is_empty() and not _battle_over
+		badge.tooltip_text = _boss_ability_description(kind)
 	for child in _solo_targets.get_children():
 		_solo_targets.remove_child(child)
 		child.queue_free()

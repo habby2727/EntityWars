@@ -28,6 +28,19 @@ func _run() -> void:
 		push_error("World boss visuals unavailable")
 		quit(1)
 		return
+	if OS.has_environment("COMBAT_MULTI_STATUS"):
+		scene._solo_fury_pending = true
+		scene._solo_shield_turns = 2
+		scene._solo_summon()
+		scene.enemy.status.poison = 2
+		scene.enemy.status.stun = 1
+		scene._update_solo_panel()
+		for kind in ["Fury", "Shield", "Summon", "Poison", "Stun"]:
+			if not scene._solo_enemy_badges[kind].visible:
+				push_error("Boss status missing: " + kind)
+				quit(1)
+				return
+		await process_frame
 	if OS.has_environment("COMBAT_ENERGY"):
 		scene.player.hom_energy = int(OS.get_environment("COMBAT_ENERGY"))
 		scene._update_ui()

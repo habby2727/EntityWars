@@ -160,7 +160,7 @@ export function selectBossIntent(state: any, recentDamage: number): string {
   const scores: { action: string; score: number }[] = [{ action: "Strike", score: 20 + (playerRatio <= 0.3 ? 35 : 0) }];
   if (!state.power_turn_active && !state.summoned && state.minion_config.count > 0 && (state.boss_actions_taken >= 2 || hpRatio < 0.7))
     scores.push({ action: "Summon", score: 35 + tierRank * 3 + (hpRatio < 0.7 ? 15 : 0) });
-  if (!state.power_turn_active && state.boss.hp > 0 && hpRatio < 1 && !state.boss_shield_turns && !state.boss_shield_cooldown && !state.boss_shield_phases.includes(phase)) {
+  if (!state.power_turn_active && !state.minions.some((m: any) => m.hp > 0) && state.boss.hp > 0 && hpRatio < 1 && !state.boss_shield_turns && !state.boss_shield_cooldown && !state.boss_shield_phases.includes(phase)) {
     const score = 10 + (recentDamage >= 15 ? 30 : 0) + (hpRatio < 0.45 ? 35 : 0) + Math.max(0, tierRank) * 2;
     scores.push({ action: "Shield", score });
   }
@@ -240,14 +240,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       events.push({ actor: "player", kind: "inspiration", source: kind, value: next.player.inspiration });
     }
   };
-  const hit = (a: any, d: any, accuracy: number, power: number, actor: string) => {
+  const hit = (a: any, d: any, accuracy: number, power: number, actor: string, signatureType?: string) => {
     if ((actor === "boss" || actor === "minion") && (next.item_effects?.evasion_pct ?? 0) > 0 && draw() < next.item_effects.evasion_pct) { events.push({ actor: "player", kind: "evade" }); return false; }
     let acc = accuracy - (a.atk > d.def * 1.6 ? 0.08 : 0);
     if (a.max_hp > d.max_hp) acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
     if (accuracyFocus > 0) acc = Math.min(0.99, acc + accuracyFocus);
     if (accuracyMisalign > 0) acc = Math.max(0.55, acc - accuracyMisalign);
     if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor, kind: "miss" }); return false; }
-    const relation = next.types?.effectiveness?.[a.type]?.[d.type] ?? 1;
+    const relation = next.types?.effectiveness?.[signatureType ?? a.type]?.[d.type] ?? 1;
     let baseMult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
     if (actor === "player" && spell.type === a.type && relation < 1) baseMult = Math.min(1, baseMult + (next.item_effects?.disadvantage_reduction ?? 0));
     if (actor === "player" && spell.type === "universal") baseMult = 1;
@@ -329,6 +329,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (next.boss.status.stun > 0) next.boss.status.stun--;
       else {
         next.boss_actions_taken = (next.boss_actions_taken ?? 0) + 1;
+        events.push({ actor: "boss", kind: "boss_action", action: next.fury_pending ? "Fury Strike" : next.boss_intent, tier: next.boss_tier, hp: next.boss.hp });
         accuracyFocus = 0;
         accuracyMisalign = 0;
         const fury = !!next.fury_pending;
@@ -344,7 +345,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
           next.boss_shield_turns = next.boss_shield_config.turns;
           next.boss_shield_phases.push(next.boss.hp * 2 > next.boss.max_hp ? "high" : "low");
           next.last_boss_action = "Shield";
-          events.push({ actor: "boss", kind: "boss_shield_activated", turns: next.boss_shield_turns });
+          events.push({ actor: "boss", kind: "boss_shield_activated", turns: next.boss_shield_turns, reduction: next.boss_shield_config.reduction, heal_ratio: next.boss_shield_config.heal_ratio, tier: next.boss_tier });
           return;
         }
         if (!fury && next.boss_intent === "Special") {
@@ -356,7 +357,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
             if (effect.kind === "bonus_if_poisoned" && (next.player.status.poison ?? 0) > 0) power *= 1 + effect.value;
             if (effect.kind === "bonus_if_hit_last_exchange" && next.boss.spell_hit_last_exchange) power *= 1 + effect.value;
           }
-          const landed = hit(next.boss, next.player, signature.accuracy, power, "boss");
+          const landed = hit(next.boss, next.player, signature.accuracy, power, "boss", signature.type);
           events.push({ actor: "boss", kind: "boss_special_cast", spell_id: signature.id, landed });
           if (landed) for (const effect of signature.effects) {
             if (["bonus_if_poisoned", "bonus_if_hit_last_exchange"].includes(effect.kind)) continue;
@@ -504,7 +505,12 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   next.turn++;
-  if (shieldAtStart && --next.boss_shield_turns === 0) next.boss_shield_cooldown = 3;
+  for (const id of minionsAtStart) {
+    const minion = next.minions.find((m: any) => m.id === id);
+    if (minion && minion.hp <= 0) events.push({ actor: id, kind: "minion_defeated", hp: 0 });
+  }
+  if (minionsAtStart.length > 0 && !next.minions.some((m: any) => m.hp > 0)) events.push({ actor: "boss", kind: "boss_exposed", hp: next.boss.hp });
+  if (shieldAtStart && --next.boss_shield_turns === 0) { next.boss_shield_cooldown = 3; events.push({ actor: "boss", kind: "boss_shield_expired", cooldown: 3 }); }
   else if (!shieldAtStart && next.boss_shield_cooldown > 0) next.boss_shield_cooldown--;
   if (next.player.hp > 0 && next.boss.hp > 0 && next.turn % 2 === 1) {
     const homReflect = next.hom_spent ? 0 : Math.max(0, Math.min(1, next.hom_synergy?.reflect_pct ?? 0));
@@ -535,6 +541,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (furyQueued) events.push({ actor: "boss", kind: "fury_queued", multiplier: next.fury_mult });
   }
   if (next.terminal_result) {
+    events.push({ kind: "combat_terminal", result: next.terminal_result, player_hp: next.player.hp, boss_hp: next.boss.hp });
     next.fury_pending = false;
     Object.assign(next, restoreInspiration(next));
   }
