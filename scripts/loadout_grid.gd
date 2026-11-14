@@ -1433,7 +1433,11 @@ func _submit_hunt_loadout() -> void:
 		_set_build_error("Boss Hunt session is unavailable. Return to World Zone.")
 		return
 	if int(session.get("combat_revision", 0)) >= 1:
-		_set_build_error("Combat ready; connection pending.")
+		if not _hunt_payload.is_empty() or SceneRouter._solo_hunt_context.has("pending_loadout") or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
+			_set_build_error("Combat session is not ready. Recover it and retry.")
+			return
+		SceneRouter._hunt_loadout_active = false
+		SceneRouter.go_to_combat()
 		return
 	if _hunt_payload.is_empty():
 		if _has_duplicate_build_items() or _current_entity_id.is_empty():

@@ -173,9 +173,45 @@ func _run_online() -> void:
 		quit(1)
 		return
 	loadout._on_play_pressed()
-	if current_scene != loadout or not loadout._hunt_payload.is_empty():
-		push_error("Initialized session was resubmitted")
+	await process_frame
+	await process_frame
+	var combat = current_scene
+	if combat == null or not combat._online_hunt_guard:
+		push_error("Initialized session did not enter protected combat")
 		quit(1)
 		return
-	print("PASS real HTTP hunt recovery and loadout initialization")
+	deadline = Time.get_ticks_msec() + 20000
+	while combat._online_hunt_session.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if combat._online_hunt_revision != 1 or combat._combat_started or not combat._combat_session_invalid:
+		push_error("Server combat recovery failed or local combat started")
+		quit(1)
+		return
+	var recovered: Dictionary = combat._online_hunt_session.duplicate(true)
+	combat._online_hunt_session.clear()
+	var server_url: String = combat._combat_backend.base_url
+	combat._combat_backend.base_url = "http://127.0.0.1:1"
+	combat._on_online_hunt_identity({"player_id": combat._combat_identity})
+	deadline = Time.get_ticks_msec() + 20000
+	while combat.next_turn_btn.text != "Retry" and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	combat._combat_backend.base_url = server_url
+	if combat.next_turn_btn.text != "Retry" or combat._combat_started:
+		push_error("Network failure did not leave a safe retry: button=%s request=%s started=%s" % [combat.next_turn_btn.text, combat._online_hunt_request, combat._combat_started])
+		quit(1)
+		return
+	combat._on_next_turn()
+	deadline = Time.get_ticks_msec() + 20000
+	while combat._online_hunt_session.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if combat._online_hunt_session != recovered or combat._combat_started:
+		push_error("HTTP retry did not recover the same session")
+		quit(1)
+		return
+	combat._on_online_hunt_identity({"player_id": "different-player"})
+	if not combat._online_hunt_session.is_empty() or combat.next_turn_btn.text != "Return" or not combat._combat_session_invalid or combat._combat_started:
+		push_error("Identity mismatch did not fail closed")
+		quit(1)
+		return
+	print("PASS real HTTP hunt loadout, combat recovery and local isolation")
 	quit(0)

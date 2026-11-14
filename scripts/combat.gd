@@ -80,6 +80,10 @@ var _player_inspiration: Control
 var _enemy_inspiration: Control
 var _ultra_armed := false
 var _solo_boss_mode := false
+var _online_hunt_guard := false
+var _online_hunt_request := ""
+var _online_hunt_session: Dictionary = {}
+var _online_hunt_revision := 0
 var _solo_context := {}
 var _solo_forfeit_request := ""
 var _solo_forfeit_action := ""
@@ -292,6 +296,29 @@ func _status_effect_text(kind: String, value: float) -> String:
 	return "%s %d%%" % [label, roundi(value * 100.0)]
 
 func _begin_combat_initialization() -> void:
+	if not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
+		_online_hunt_guard = true
+		_solo_context = SceneRouter.consume_solo_hunt_context()
+		_combat_identity = str(_solo_context.get("loadout_identity", ""))
+		_combat_session_invalid = true
+		spell_panel.hide()
+		switch_weapon_btn.disabled = true
+		ultra_button.disabled = true
+		for path in ["PlayerPanel", "EnemyPanel", "HomDecision"]:
+			var panel := get_node_or_null(path) as CanvasItem
+			if panel:
+				panel.hide()
+		next_turn_btn.hide()
+		_combat_backend = BackendClient.new()
+		_combat_backend.base_url = backend_url
+		_combat_backend.auto_dev_login = false
+		_combat_backend.state_updated.connect(_on_online_hunt_identity)
+		_combat_backend.api_completed.connect(_on_online_hunt_response)
+		_combat_backend.auth_changed.connect(_on_online_hunt_auth_changed)
+		add_child(_combat_backend)
+		_log_immediate("Recovering server combat...")
+		_wait_for_combat_state()
+		return
 	var debug := DebugFlags.new()
 	_combat_debug = debug.unlock_all_buildings
 	if debug.unlock_all_buildings:
@@ -313,6 +340,43 @@ func _begin_combat_initialization() -> void:
 	_log_immediate("Loading authenticated player state...")
 	_wait_for_combat_state()
 
+func _on_online_hunt_auth_changed(_token: String) -> void:
+	_online_hunt_session.clear()
+	_online_hunt_request = ""
+	next_turn_btn.text = "Return"
+	next_turn_btn.show()
+	_log_immediate("Account changed. Return to World Zone; the session remains active.")
+
+func _on_online_hunt_identity(state: Dictionary) -> void:
+	if state.is_empty() or _combat_backend._verified_player_id.is_empty():
+		return
+	if _combat_identity.is_empty() or str(state.get("player_id", "")) != _combat_identity or _combat_backend._verified_player_id != _combat_identity:
+		_on_online_hunt_auth_changed("")
+		return
+	if _online_hunt_request.is_empty():
+		_online_hunt_request = _combat_backend.request_api("GET", "/world/boss-hunts/session?session_id=" + str(_solo_context.get("session_id", "")).uri_encode(), null, false)
+		if _online_hunt_request.is_empty():
+			_on_combat_state_timeout()
+		elif _combat_wait_timer:
+			_combat_wait_timer.start(10.0)
+
+func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id.is_empty() or request_id != _online_hunt_request:
+		return
+	_online_hunt_request = ""
+	var session: Variant = data.get("session")
+	if not ok or not session is Dictionary or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(session.get("session_id", "")) != str(_solo_context.get("session_id", "")) or str(session.get("status", "")) != "ACTIVE" or int(session.get("combat_revision", 0)) < 1 or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
+		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
+		next_turn_btn.text = "Retry"
+		next_turn_btn.show()
+		return
+	if _combat_wait_timer:
+		_combat_wait_timer.stop()
+	_online_hunt_session = session.duplicate(true)
+	_online_hunt_revision = int(session.combat_revision)
+	next_turn_btn.hide()
+	_log_immediate("Server combat synchronized. Server actions pending.")
+
 func _wait_for_combat_state() -> void:
 	if _combat_wait_timer == null:
 		_combat_wait_timer = Timer.new()
@@ -323,6 +387,15 @@ func _wait_for_combat_state() -> void:
 	_combat_backend.refresh_state()
 
 func _on_combat_state_timeout() -> void:
+	if _online_hunt_guard:
+		if not _online_hunt_request.is_empty() and _combat_backend != null:
+			_combat_backend._api_http.cancel_request()
+			_combat_backend._api_in_flight.clear()
+			_online_hunt_request = ""
+		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
+		next_turn_btn.text = "Retry"
+		next_turn_btn.show()
+		return
 	if not _combat_started:
 		_log_immediate("Player state unavailable. Press Retry or leave combat.")
 		next_turn_btn.text = "Retry"
@@ -422,6 +495,9 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 	_align_health_panels()
 
 func _on_back_pressed() -> void:
+	if _online_hunt_guard:
+		_return_from_solo_hunt()
+		return
 	if confirm_popup == null:
 		push_warning("Combat: ConfirmLeave popup missing, leaving combat directly.")
 		_leave_combat()
@@ -437,6 +513,9 @@ func _on_confirm_stay() -> void:
 func _on_confirm_leave() -> void:
 	if confirm_popup:
 		confirm_popup.hide()
+	if _online_hunt_guard:
+		_return_from_solo_hunt()
+		return
 	if _solo_boss_mode and not str(_solo_context.get("session_id", "")).is_empty():
 		if _resolving_exchange or _processing_steps:
 			_log_immediate("Wait for the current exchange before forfeiting.")
@@ -1385,6 +1464,8 @@ func _finish_inspiration_exchange() -> void:
 	_update_ui()
 
 func _choose_inspiration(index: int) -> void:
+	if _online_hunt_guard:
+		return
 	if not _inspiration_panel.visible or index < 0 or index >= _inspiration_options.size() or not bool(player.get("inspiration_pending", false)):
 		return
 	var choice: Dictionary = _inspiration_options[index]
@@ -1395,6 +1476,8 @@ func _choose_inspiration(index: int) -> void:
 	_refresh_spell_buttons()
 
 func _on_inspiration_cancel() -> void:
+	if _online_hunt_guard:
+		return
 	if not _inspiration_panel.visible or not bool(player.get("inspiration_pending", false)) or _inspiration_options.size() != 3 or bool(player.get("inspiration_used_this_battle", false)):
 		return
 	_inspiration_panel.hide()
@@ -1473,6 +1556,13 @@ func _apply_hp_color(bar: ProgressBar, f: Dictionary) -> void:
 	bar.add_theme_stylebox_override("fill", fill)
 
 func _on_next_turn() -> void:
+	if _online_hunt_guard:
+		if next_turn_btn.text == "Retry" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity and not _combat_identity.is_empty():
+			next_turn_btn.hide()
+			_on_online_hunt_identity({"player_id": _combat_identity})
+		else:
+			_return_from_solo_hunt()
+		return
 	if not _combat_started and _combat_backend != null:
 		next_turn_btn.hide()
 		_log_immediate("Retrying player state...")
@@ -1485,6 +1575,8 @@ func _on_next_turn() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _on_spell_chosen(index: int) -> void:
+	if _online_hunt_guard:
+		return
 	if _resolving_exchange or _processing_steps or _battle_over or not _solo_forfeit_request.is_empty() or _inspiration_panel.visible:
 		return
 	var options := _fighter_spell_options(player)
@@ -1528,6 +1620,8 @@ func _hom_ready(fighter: Dictionary) -> bool:
 	return not bool(fighter.get("hom_spent", true)) and int(fighter.get("hom_energy", 0)) >= int(fighter.get("hom_ready_at", 3))
 
 func _queue_combat_action(action: Dictionary) -> void:
+	if _online_hunt_guard:
+		return
 	if not _pending_hom_action.is_empty():
 		return
 	if _hom_ready(player):
@@ -1541,6 +1635,8 @@ func _queue_combat_action(action: Dictionary) -> void:
 	await _start_weapon_exchange(action)
 
 func _on_hom_choice(choice: String) -> void:
+	if _online_hunt_guard:
+		return
 	if _pending_hom_action.is_empty() or _resolving_exchange:
 		return
 	var action := _pending_hom_action
