@@ -13221,6 +13221,38 @@ function resolveInspirationDecision(state, decision, rng) {
   return { next_state: next };
 }
 
+// src/solo_guardians.ts
+var ZONE_ART = {
+  zone_chaos: ["chaos_astral_alchemist", "chaos_astral_alchemist_variant", "chaos_astral_eagle", "chaos_cyber_warrior", "chaos_lion_warrior"],
+  zone_corrupted: ["corrupted_cocodragon", "corrupted_cybermantis", "corrupted_doctor", "corrupted_hipovenom", "corrupted_medusa", "corrupted_sphinx"],
+  zone_crystal: ["crystal_bear", "crystal_golem", "crystal_hydra", "crystal_mage", "crystal_sentinel", "crystal_wolf"]
+};
+var GROUPS = {
+  hunt_common: [],
+  hunt_mythic: ["common", "common"],
+  hunt_rare: ["mythic", "common", "common"],
+  hunt_epic: ["rare", "common", "common", "common"],
+  hunt_legendary: ["epic", "common", "common", "common", "common"]
+};
+function guardiansFor(zoneId, parentId, bosses) {
+  if (!Object.hasOwn(ZONE_ART, zoneId) || !Object.hasOwn(GROUPS, parentId) || !Array.isArray(bosses))
+    return null;
+  const art = ZONE_ART[zoneId];
+  const groups = GROUPS[parentId];
+  const result = [];
+  let commonIndex = 0;
+  for (let index = 0;index < groups.length; index++) {
+    const tier = groups[index];
+    const templateId = `hunt_${tier}`;
+    const template = bosses.find((boss) => boss?.id === templateId && boss?.tier === tier);
+    if (!template || typeof template.name !== "string" || typeof template.texture_id !== "string")
+      return null;
+    const textureId = tier === "common" ? `res://assets/lab/bosses/${zoneId.slice(5)}_zone_common/${art[commonIndex++]}.png` : template.texture_id;
+    result.push({ guardian_id: `${zoneId}:${parentId}:${index}`, tier, name: `${template.name} Guardian ${index + 1}`, template_id: templateId, texture_id: textureId });
+  }
+  return result;
+}
+
 // src/index.ts
 var SOLO_HUNT_BOSS_ENTITIES = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
 var IS_PRODUCTION = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some((value) => value?.toLowerCase() == "production" || value?.toLowerCase() == "prod");
@@ -14958,6 +14990,18 @@ async function startServer() {
               return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now });
             }).immediate();
           }
+          if (req.method == "GET" && url.pathname == "/world/boss-hunts/guardians") {
+            const playerId = await requireAuth(req, ctx);
+            const zoneId = url.searchParams.get("zone_id") ?? "";
+            const huntId = url.searchParams.get("hunt_id") ?? "";
+            const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses);
+            if (!definitions)
+              throw new HttpError(400, "Invalid zone or boss hunt.");
+            const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId);
+            const defeated = new Set(rows.map((row) => row.guardian_id));
+            const guardians = definitions.map((definition) => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
+            return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter((g) => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every((g) => g.defeated) });
+          }
           if (req.method == "POST" && url.pathname == "/world/boss-hunts/turn") {
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
@@ -15001,6 +15045,9 @@ async function startServer() {
               const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, row.session_id, playerId, row.combat_revision, now);
               if (updated.changes !== 1)
                 throw new HttpError(409, "Combat session changed.");
+              if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
+                db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
+              }
               const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId);
               const response = { ...soloHuntResponse(current), events: result.events };
               insertActionStmt.run(playerId, actionId, "SOLO_HUNT_TURN", JSON.stringify(payload), JSON.stringify(response), now);
@@ -15105,7 +15152,7 @@ async function startServer() {
             if (!actionId || actionId.length > 64)
               throw new HttpError(400, "Invalid client_action_id.");
             const start = url.pathname.endsWith("/start");
-            const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key } : { session_id: body?.session_id };
+            const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}, ...body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {} } : { session_id: body?.session_id };
             if (start ? typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key) : typeof payload.session_id !== "string" || !payload.session_id)
               throw new HttpError(400, "Invalid hunt request.");
             const actionType = start ? "SOLO_HUNT_START" : "SOLO_HUNT_FORFEIT";
@@ -15135,12 +15182,35 @@ async function startServer() {
                 const boss = schedule.bosses.find((candidate) => candidate.id === payload.hunt_id);
                 if (payload.rotation_key !== schedule.rotation_key || !boss || !boss.available)
                   throw new HttpError(409, "Boss hunt is not available for this rotation.");
+                const zoneId = payload.zone_id;
+                const guardianId = payload.guardian_id;
+                if (zoneId !== undefined && typeof zoneId !== "string" || guardianId !== undefined && (typeof guardianId !== "string" || !guardianId))
+                  throw new HttpError(400, "Invalid guardian selection.");
+                const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses);
+                if (zoneId !== undefined && !definitions || guardianId !== undefined && !definitions)
+                  throw new HttpError(400, "Invalid guardian zone.");
+                if (boss.tier !== "common" && !definitions)
+                  throw new HttpError(409, "Guardian zone required.");
+                let encounter = boss;
+                if (guardianId !== undefined) {
+                  const guardian = definitions.find((entry) => entry.guardian_id === guardianId);
+                  if (!guardian)
+                    throw new HttpError(409, "Guardian not found.");
+                  if (db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardianId))
+                    throw new HttpError(409, "Guardian already defeated.");
+                  const template = staticData.soloBosses.bosses.find((entry) => entry.id === guardian.template_id);
+                  if (!template)
+                    throw new HttpError(409, "Guardian template unavailable.");
+                  encounter = { ...template, name: guardian.name, texture_id: guardian.texture_id };
+                } else if (definitions && definitions.some((guardian) => !db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id))) {
+                  throw new HttpError(409, "Defeat all guardians first.");
+                }
                 if (db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId))
                   throw new HttpError(409, "An active boss hunt already exists.");
                 const state = ensurePlayerState(playerId);
                 const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
                 const sessionId = crypto.randomUUID();
-                db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at) VALUES (?,?,?,?,'ACTIVE',?,?,?,?)").run(sessionId, playerId, boss.id, schedule.rotation_key, JSON.stringify(boss), JSON.stringify(snapshot), now, now + 2700000);
+                db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,guardian_zone_id,guardian_parent_id,guardian_id) VALUES (?,?,?,?,'ACTIVE',?,?,?,?,?,?,?)").run(sessionId, playerId, encounter.id, schedule.rotation_key, JSON.stringify(encounter), JSON.stringify(snapshot), now, now + 2700000, zoneId ?? null, guardianId ? boss.id : null, guardianId ?? null);
                 row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId);
               } else {
                 const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(payload.session_id, playerId);
@@ -15305,6 +15375,9 @@ function loadStaticData() {
   const soloBosses = loadSoloBossCatalog(resolve2(staticDir, "solo_bosses.json"), resolve2(staticDir, "..", "spells.json"));
   if (!Array.isArray(entitiesRaw.entities) || Object.keys(SOLO_HUNT_BOSS_ENTITIES).length !== soloBosses.bosses.length || soloBosses.bosses.some((boss) => !entitiesRaw.entities.some((entity) => entity.id === SOLO_HUNT_BOSS_ENTITIES[boss.id])))
     throw new Error("Invalid solo boss entity mapping.");
+  const soloBossEntityTypes = Object.fromEntries(soloBosses.bosses.map((boss) => [boss.id, entitiesRaw.entities.find((entity) => entity.id === SOLO_HUNT_BOSS_ENTITIES[boss.id]).type]));
+  if (Object.values(soloBossEntityTypes).some((type) => typeof type !== "string" || !type))
+    throw new Error("Invalid solo boss entity type.");
   return {
     itemIds,
     homunculusIds: new Set((homunculiRaw.homunculi ?? []).map((entry) => entry.id).filter((id) => typeof id === "string")),
@@ -15318,7 +15391,8 @@ function loadStaticData() {
     researchFlags: researchData.flags,
     zones,
     bosses,
-    soloBosses
+    soloBosses,
+    soloBossEntityTypes
   };
 }
 function loadSoloBossCatalog(path, spellsPath) {
@@ -15374,7 +15448,7 @@ function publicHuntCombat(state) {
   };
 }
 function soloHuntResponse(row) {
-  return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
+  return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}, ...row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
 }
 function soloBossSchedule(now) {
   const { rotation, bosses } = staticData.soloBosses;

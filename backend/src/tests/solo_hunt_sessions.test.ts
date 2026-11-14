@@ -271,30 +271,12 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         expect((await request("/world/boss-hunts/turn", finalRequest, a.data.token)).data).toEqual(finalResponse);
       }
     }
-    let specialTested = false;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const freshResponse = await request("/world/boss-hunts");
-      expect(freshResponse.status).toBe(200);
-      const fresh = freshResponse.data;
-      const special = fresh.bosses.find((boss: any) => boss.tier !== "common" && boss.available);
-      if (!special) {
-        console.log("Special hunt not tested: no special encounter is currently available.");
-        break;
-      }
-      const result = await start(`special-${attempt}`, special.id, fresh.rotation_key);
-      if (result.status === 200) {
-        expect(result.data.hunt_id).toBe(special.id);
-        expect(result.data.rotation_key).toBe(fresh.rotation_key);
-        specialTested = true;
-        break;
-      }
-      expect(result.status).toBe(409);
-      const afterResponse = await request("/world/boss-hunts");
-      expect(afterResponse.status).toBe(200);
-      const after = afterResponse.data;
-      expect(after.rotation_key !== fresh.rotation_key || after.server_time_unix_ms >= fresh.special_window_ends_at).toBe(true);
-    }
-    if (!specialTested) console.log("Special hunt start was not asserted in this run.");
+    const fresh = (await request("/world/boss-hunts")).data;
+    const special = fresh.bosses.find((boss: any) => boss.tier !== "common" && boss.available);
+    if (special) {
+      expect((await start("special-without-zone", special.id, fresh.rotation_key)).status).toBe(409);
+      expect((await request("/world/boss-hunts/start", { client_action_id: "special-locked", hunt_id: special.id, rotation_key: fresh.rotation_key, zone_id: "zone_chaos" }, a.data.token)).status).toBe(409);
+    } else console.log("Special authorization not tested: outside appearance window.");
     expect(wallet(a.data.player_id)).toEqual(beforeA);
     expect(wallet(b.data.player_id)).toEqual(beforeB);
     expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json).spell_progress).toEqual(fixture.spell_progress);
