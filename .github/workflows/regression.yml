@@ -31,3 +31,8 @@ jobs:
           export XDG_DATA_HOME="$UI_CAPTURE_DIR"
           mkdir -p "$UI_CAPTURE_DIR"
           /tmp/godot/Godot_v4.6-stable_linux.x86_64 --headless --path "$GITHUB_WORKSPACE" --script res://scripts/tests/smoke_ui_navigation.gd
+      - name: Check loading startup with isolated user data
+        run: |
+          export XDG_DATA_HOME="$RUNNER_TEMP/entitywars-loading"
+          mkdir -p "$XDG_DATA_HOME"
+          /tmp/godot/Godot_v4.6-stable_linux.x86_64 --headless --path "$GITHUB_WORKSPACE" --script res://scripts/tests/smoke_loading_startup.gd

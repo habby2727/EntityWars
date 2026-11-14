@@ -22,7 +22,7 @@ import { logError, logInfo, logWarn } from "./observability/logger";
 import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
-import { buildTrustedCombatSetup, createCombatState, deterministicDraw } from "./solo_hunt_combat";
+import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
 
@@ -2051,8 +2051,78 @@ async function startServer(): Promise<void> {
 					return db.transaction(() => {
 						const now = Date.now();
 						expireSoloHunts(playerId, now);
-						const row = db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId) as SoloHuntRow | null;
+						const requested = url.searchParams.get("session_id");
+						const row = (requested ? db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND session_id = ?").get(playerId, requested) : db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) as SoloHuntRow | null;
+						if (requested && !row) throw new HttpError(404, "Session not found.");
 						return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now });
+					}).immediate();
+				}
+				if (req.method == "POST" && url.pathname == "/world/boss-hunts/turn") {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(key => !["session_id", "client_action_id", "expected_revision", "decision"].includes(key)) || typeof body.session_id !== "string" || !body.session_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || !body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)) throw new HttpError(400, "Invalid hunt turn request.");
+					const actionId = body.client_action_id.trim();
+					const payload = { session_id: body.session_id, expected_revision: body.expected_revision, decision: body.decision };
+					return db.transaction(() => {
+						const now = Date.now();
+						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
+						if (prior) {
+							let previous: unknown, response: any;
+							try { previous = JSON.parse(prior.payload_json); response = JSON.parse(prior.result_state_json ?? "null"); } catch { throw new HttpError(409, "Invalid stored action."); }
+							if (prior.action_type !== "SOLO_HUNT_TURN" || canonicalActionPayload(previous) !== canonicalActionPayload(payload) || !response) throw new HttpError(409, "Action ID already used with different content.");
+							return jsonResponse(response);
+						}
+						const row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(body.session_id, playerId) as SoloHuntRow | null;
+						if (!row) throw new HttpError(404, "Session not found.");
+						if (row.status !== "ACTIVE" || row.expires_at <= now || !row.combat_state_json) throw new HttpError(409, "Session unavailable for turn.");
+						if (row.combat_revision !== body.expected_revision) throw new HttpError(409, "Stale combat revision.");
+						const state = JSON.parse(row.combat_state_json);
+						if (state.player?.inspiration_pending) throw new HttpError(409, "Inspiration decision pending.");
+						const seed = createHmac("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+						const result = resolveCombatTurn(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
+						if (result.error) throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
+						const status = result.terminal_result === "WIN" ? "VERIFIED_WIN" : result.terminal_result === "LOSS" ? "VERIFIED_LOSS" : "ACTIVE";
+						if (result.terminal_result && !["WIN", "LOSS"].includes(result.terminal_result)) throw new HttpError(409, "Unsupported combat result.");
+						const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, row.session_id, playerId, row.combat_revision, now);
+						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
+						const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId) as SoloHuntRow;
+						const response = { ...soloHuntResponse(current), events: result.events };
+						insertActionStmt.run(playerId, actionId, "SOLO_HUNT_TURN", JSON.stringify(payload), JSON.stringify(response), now);
+						return jsonResponse(response);
+					}).immediate();
+				}
+				if (req.method == "POST" && url.pathname == "/world/boss-hunts/inspiration") {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(key => !["session_id", "client_action_id", "expected_revision", "decision"].includes(key)) || typeof body.session_id !== "string" || !body.session_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || !body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)) throw new HttpError(400, "Invalid hunt inspiration request.");
+					const actionId = body.client_action_id.trim();
+					const payload = { session_id: body.session_id, expected_revision: body.expected_revision, decision: body.decision };
+					return db.transaction(() => {
+						const now = Date.now();
+						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
+						if (prior) {
+							let previous: unknown, response: any;
+							try { previous = JSON.parse(prior.payload_json); response = JSON.parse(prior.result_state_json ?? "null"); } catch { throw new HttpError(409, "Invalid stored action."); }
+							if (prior.action_type !== "SOLO_HUNT_INSPIRATION" || canonicalActionPayload(previous) !== canonicalActionPayload(payload) || !response) throw new HttpError(409, "Action ID already used with different content.");
+							return jsonResponse(response);
+						}
+						const row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(body.session_id, playerId) as SoloHuntRow | null;
+						if (!row) throw new HttpError(404, "Session not found.");
+						if (row.status !== "ACTIVE" || row.expires_at <= now || !row.combat_state_json) throw new HttpError(409, "Session unavailable for inspiration.");
+						if (row.combat_revision !== body.expected_revision) throw new HttpError(409, "Stale combat revision.");
+						const state = JSON.parse(row.combat_state_json);
+						if (!state.player?.inspiration_pending) throw new HttpError(409, "No inspiration decision pending.");
+						const seed = createHmac("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+						const result = resolveInspirationDecision(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
+						if (result.error) throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
+						const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1 WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), row.session_id, playerId, row.combat_revision, now);
+						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
+						const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId) as SoloHuntRow;
+						const response = soloHuntResponse(current);
+						insertActionStmt.run(playerId, actionId, "SOLO_HUNT_INSPIRATION", JSON.stringify(payload), JSON.stringify(response), now);
+						return jsonResponse(response);
 					}).immediate();
 				}
 				if (req.method == "POST" && url.pathname == "/world/boss-hunts/loadout") {
@@ -2352,8 +2422,36 @@ function expireSoloHunts(playerId: string, now: number): void {
 	db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
 }
 
+function publicHuntCombat(state: any) {
+	const publicStatus = (raw: any) => {
+		const result: Record<string, unknown> = {};
+		for (const key of ["poison", "stun", "shield_pct", "reflect_pct", "atk_boost", "atk_down", "vuln_pct", "hom_stun", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"]) {
+			if (typeof raw?.[key] === "number" && Number.isFinite(raw[key]) && raw[key] !== 0) result[key] = raw[key];
+		}
+		if (typeof raw?.hybrid_mark?.remaining === "number" && raw.hybrid_mark.remaining > 0) result.hybrid_mark = { owner: raw.hybrid_mark.owner, remaining: raw.hybrid_mark.remaining };
+		return result;
+	};
+	const fighter = (entry: any) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status) });
+	const moves = (state.spell_ids ?? []).map((id: string) => {
+		const spell = (state.spells ?? []).find((entry: any) => entry.id === id);
+		return { id, name: spell?.name, type: spell?.type, category: spell?.category, power_mult: spell?.power_mult, accuracy: spell?.accuracy, cooldown_remaining: state.cooldowns?.[id] ?? 0 };
+	});
+	return {
+		turn: state.turn,
+		player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
+		boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...(state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {}) },
+		minions: (state.minions ?? []).map(fighter),
+		moves,
+		shield: { turns: state.boss_shield_turns, reduction: state.boss_shield_turns > 0 ? state.boss_shield_config?.reduction : 0 },
+		fury: { pending: state.fury_pending, multiplier: state.fury_pending ? state.fury_mult : null },
+		power_turn: { active: state.power_turn_active, used: state.power_turn_used },
+		inspiration: { pending: !!state.player.inspiration_pending, offers: state.player.inspiration_pending ? [...(state.inspiration_offers ?? [])] : [] },
+		terminal_result: state.terminal_result
+	};
+}
+
 function soloHuntResponse(row: SoloHuntRow) {
-	return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: JSON.parse(row.combat_state_json), combat_revision: row.combat_revision } : {}) };
+	return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
 }
 
 function soloBossSchedule(now: number) {
