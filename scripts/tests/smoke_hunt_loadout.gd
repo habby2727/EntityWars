@@ -10,6 +10,9 @@ func _run() -> void:
 		quit(1)
 		return
 	if OS.get_environment("EW_HUNT_E2E") == "1":
+		if not OS.get_environment("EW_TERMINAL_EXPECT").is_empty():
+			await _run_terminal()
+			return
 		await _run_online()
 		return
 	var flags := FileAccess.open("user://debug.json", FileAccess.WRITE)
@@ -78,6 +81,20 @@ func _run() -> void:
 	loadout._hunt_submit_request = "test-rejection"
 	loadout._on_hunt_recovery_completed("test-rejection", false, {"error": "Invalid or unsupported hunt loadout."})
 	assert(loadout._hunt_payload.is_empty() and "rejected" in loadout.lbl_build_error.text)
+	for result in ["WIN", "LOSS"]:
+		var terminal := approved.duplicate(true)
+		terminal.status = "VERIFIED_" + result
+		terminal.combat_state.terminal_result = result
+		assert(loadout._accept_hunt_session(terminal))
+		terminal.combat_state.terminal_result = "LOSS" if result == "WIN" else "WIN"
+		assert(not loadout._accept_hunt_session(terminal))
+	for status in ["EXPIRED", "FORFEIT"]:
+		var closed := approved.duplicate(true)
+		closed.status = status
+		assert(not loadout._accept_hunt_session(closed))
+	var foreign := approved.duplicate(true)
+	foreign.session_id = "foreign-session"
+	assert(not loadout._accept_hunt_session(foreign))
 	loadout._hunt_backend = null
 	backend._debug_flags.free()
 	backend.free()
@@ -164,9 +181,10 @@ func _run_online() -> void:
 		push_error("Recovery failed: " + loadout.lbl_build_error.text)
 		quit(1)
 		return
-	loadout._on_play_pressed()
-	while int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1 and Time.get_ticks_msec() < deadline:
-		await create_timer(0.1).timeout
+	if int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1:
+		loadout._on_play_pressed()
+		while int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1 and Time.get_ticks_msec() < deadline:
+			await create_timer(0.1).timeout
 	var session: Dictionary = SceneRouter._solo_hunt_context.get("recovered_session", {})
 	if int(session.get("combat_revision", 0)) != 1 or current_scene != loadout:
 		push_error("Initialization failed: " + loadout.lbl_build_error.text)
@@ -187,7 +205,93 @@ func _run_online() -> void:
 		push_error("Server combat recovery failed or local combat started")
 		quit(1)
 		return
+	if not OS.get_environment("EW_C3_E2E").is_empty():
+		var mode := OS.get_environment("EW_C3_E2E")
+		var initial_turn := int(combat._online_hunt_session.combat_state.turn)
+		assert(combat._inspiration_panel.visible and combat._inspiration_options.size() == 3)
+		var chosen_id := str(combat._inspiration_options[0].id)
+		if mode == "lost":
+			combat._combat_backend.api_completed.disconnect(combat._on_online_hunt_response)
+		if mode == "decline":
+			combat._on_inspiration_cancel()
+		else:
+			combat._choose_inspiration(0)
+		if mode == "lost":
+			var original: Dictionary = combat._online_turn_payload.duplicate(true)
+			deadline = Time.get_ticks_msec() + 20000
+			while combat.next_turn_btn.text != "Recover" and Time.get_ticks_msec() < deadline:
+				await create_timer(0.1).timeout
+			combat._combat_backend.api_completed.connect(combat._on_online_hunt_response)
+			assert(not original.is_empty() and combat._online_turn_payload == original)
+			combat._on_next_turn()
+		deadline = Time.get_ticks_msec() + 20000
+		while combat._online_hunt_revision < 2 and Time.get_ticks_msec() < deadline:
+			await create_timer(0.1).timeout
+		if combat._online_hunt_revision != 2 or int(combat._online_hunt_session.combat_state.turn) != initial_turn or combat._inspiration_panel.visible:
+			push_error("Inspiration response failed")
+			quit(1)
+			return
+		if mode != "decline":
+			var spell_index := -1
+			for i in 4:
+				if str(combat._online_hunt_session.combat_state.moves[i].id) == chosen_id:
+					spell_index = i
+			assert(spell_index >= 0)
+			combat._on_spell_chosen(spell_index)
+			assert(combat.hom_decision.visible and not combat._online_hom_payload.is_empty())
+			combat._on_hom_choice("sacrifice" if mode == "sacrifice" else "attack")
+			deadline = Time.get_ticks_msec() + 20000
+			while combat._online_hunt_revision < 3 and Time.get_ticks_msec() < deadline:
+				await create_timer(0.1).timeout
+			assert(combat._online_hunt_revision == 3 and int(combat._online_hunt_session.combat_state.turn) == initial_turn + 1)
+			if mode == "sacrifice":
+				assert(combat._online_hunt_session.combat_state.player.homunculus_spent)
+			else:
+				for event in combat._online_hunt_session.get("events", []):
+					if event.get("kind", "") == "hom_damage":
+						print("HOM_DAMAGE ", mode, " ", event.get("damage", 0))
+		print("PASS real C3 ", mode)
+		quit(0)
+		return
+	if OS.get_environment("EW_SWITCH_E2E") == "1":
+		var baseline: Dictionary = combat._online_hunt_session.duplicate(true)
+		var invalid: Dictionary = baseline.duplicate(true)
+		invalid.combat_loadout.weapon_ids[1] = null
+		combat._online_hunt_session = invalid
+		assert(combat._online_switch_decision().is_empty())
+		invalid = baseline.duplicate(true)
+		invalid.combat_state.inspiration.pending = true
+		combat._online_hunt_session = invalid
+		assert(combat._online_switch_decision().is_empty())
+		combat._online_hunt_session = baseline
+		for target in [2, 1]:
+			var rev: int = combat._online_hunt_revision
+			combat._on_switch_weapon()
+			var submitted: Dictionary = combat._online_turn_payload.duplicate(true)
+			combat._on_switch_weapon()
+			assert(not submitted.is_empty() and combat._online_turn_payload == submitted and submitted.decision.switch_slot == target)
+			deadline = Time.get_ticks_msec() + 20000
+			while combat._online_hunt_revision == rev and Time.get_ticks_msec() < deadline:
+				await create_timer(0.1).timeout
+			if combat._online_hunt_revision != rev + 1 or int(combat._online_hunt_session.combat_state.player.active_weapon_slot) != target or combat._combat_started:
+				push_error("Online switch failed")
+				quit(1)
+				return
+		print("PASS real online switch 1 -> 2 -> 1")
+		quit(0)
+		return
 	var recovered: Dictionary = combat._online_hunt_session.duplicate(true)
+	combat._online_hunt_session.combat_state.player.homunculus_energy = 3
+	combat._on_spell_chosen(0)
+	var hom_choice: Dictionary = combat._online_hom_payload.duplicate(true)
+	assert(not hom_choice.is_empty() and combat.hom_decision.visible)
+	assert(combat._online_turn_payload.is_empty() and combat._online_switch_decision().is_empty())
+	combat._on_spell_chosen(0)
+	assert(combat._online_hom_payload == hom_choice)
+	combat._online_hom_payload.clear()
+	combat.hom_decision.hide()
+	combat._online_hunt_session = recovered.duplicate(true)
+	combat._refresh_online_spell_buttons()
 	assert(int(combat.player_hp.value) == int(recovered.combat_state.player.hp))
 	assert(int(combat.enemy_hp.value) == int(recovered.combat_state.boss.hp))
 	assert(not combat.spell_buttons[0].disabled)
@@ -324,4 +428,80 @@ func _run_online() -> void:
 		quit(1)
 		return
 	print("PASS real HTTP hunt loadout, combat recovery and local isolation")
+	quit(0)
+
+func _run_terminal() -> void:
+	var auth := FileAccess.open("user://auth.json", FileAccess.WRITE)
+	auth.store_string(JSON.stringify({"token": OS.get_environment("EW_HUNT_TOKEN")}))
+	auth.close()
+	var session_id := OS.get_environment("EW_HUNT_SESSION")
+	var expected := OS.get_environment("EW_TERMINAL_EXPECT")
+	SceneRouter._solo_hunt_context = {"session_id": session_id, "hunt_id": "hunt_common", "rotation_key": 0}
+	SceneRouter._hunt_loadout_active = true
+	change_scene_to_file("res://scenes/LoadoutGrid.tscn")
+	await process_frame
+	await process_frame
+	var loadout = current_scene
+	var deadline := Time.get_ticks_msec() + 20000
+	while not loadout._hunt_recovered and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if not loadout._hunt_recovered:
+		push_error("Terminal loadout recovery failed: " + loadout.lbl_build_error.text)
+		quit(1)
+		return
+	loadout._on_play_pressed()
+	await process_frame
+	await process_frame
+	var combat = current_scene
+	if combat == null or not combat._online_hunt_guard:
+		push_error("Terminal combat entry failed")
+		quit(1)
+		return
+	deadline = Time.get_ticks_msec() + 20000
+	while combat._online_hunt_session.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if combat._online_hunt_session.is_empty():
+		push_error("Terminal session GET failed")
+		quit(1)
+		return
+	var attempts := 0
+	while str(combat._online_hunt_session.get("status", "")) == "ACTIVE" and attempts < 12:
+		var available := -1
+		for i in 4:
+			if not combat._online_spell_decision(i).is_empty():
+				available = i
+				break
+		if available < 0:
+			break
+		var revision: int = combat._online_hunt_revision
+		var simulate_lost := OS.get_environment("EW_TERMINAL_LOST") == "1"
+		if simulate_lost:
+			combat._combat_backend.api_completed.disconnect(combat._on_online_hunt_response)
+		combat._on_spell_chosen(available)
+		var pending: Dictionary = combat._online_turn_payload.duplicate(true)
+		if simulate_lost:
+			deadline = Time.get_ticks_msec() + 20000
+			while combat.next_turn_btn.text != "Recover" and Time.get_ticks_msec() < deadline:
+				await create_timer(0.1).timeout
+			combat._combat_backend.api_completed.connect(combat._on_online_hunt_response)
+			assert(combat._online_turn_payload == pending and combat.next_turn_btn.text == "Recover")
+			combat._on_next_turn()
+		deadline = Time.get_ticks_msec() + 20000
+		while combat._online_hunt_revision == revision and Time.get_ticks_msec() < deadline:
+			await create_timer(0.1).timeout
+		attempts += 1
+	if str(combat._online_hunt_session.get("status", "")) != "VERIFIED_" + expected or combat._online_hunt_revision < 2 or combat._combat_started:
+		push_error("Unexpected terminal result: " + str(combat._online_hunt_session.get("status", "")))
+		quit(1)
+		return
+	for button in combat.spell_buttons:
+		assert(button.disabled)
+	assert(combat.next_turn_btn.text == "Return")
+	assert(int(combat.player_hp.value) == int(combat._online_hunt_session.combat_state.player.hp))
+	assert(int(combat.enemy_hp.value) == int(combat._online_hunt_session.combat_state.boss.hp))
+	var final_revision: int = combat._online_hunt_revision
+	combat._on_spell_chosen(0)
+	assert(combat._online_hunt_revision == final_revision and combat._online_turn_payload.is_empty())
+	assert(combat.log_box.get_parsed_text().count("Server result: ") == 1)
+	print("PASS real terminal ", expected, " revision ", combat._online_hunt_revision)
 	quit(0)

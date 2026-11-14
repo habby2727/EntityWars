@@ -336,8 +336,16 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 		_set_build_error("Session recovered. Retry the same loadout." if not _hunt_payload.is_empty() else "Session recovered. Select your loadout.")
 
 func _accept_hunt_session(session: Dictionary) -> bool:
-	if _hunt_identity.is_empty() or _hunt_backend == null or _hunt_backend._verified_player_id != _hunt_identity or str(session.get("session_id", "")) != str(SceneRouter._solo_hunt_context.get("session_id", "")) or str(session.get("status", "")) != "ACTIVE":
+	if _hunt_identity.is_empty() or _hunt_backend == null or _hunt_backend._verified_player_id != _hunt_identity or str(session.get("session_id", "")) != str(SceneRouter._solo_hunt_context.get("session_id", "")):
 		return false
+	var status := str(session.get("status", ""))
+	if status != "ACTIVE":
+		if status not in ["VERIFIED_WIN", "VERIFIED_LOSS"] or int(session.get("combat_revision", 0)) < 1 or not _hunt_payload.is_empty() or not _hunt_submit_request.is_empty() or SceneRouter._solo_hunt_context.has("pending_loadout"):
+			return false
+		var state: Variant = session.get("combat_state")
+		var loadout: Variant = session.get("combat_loadout")
+		if not state is Dictionary or state.is_empty() or not loadout is Dictionary or loadout.is_empty() or str(state.get("terminal_result", "")) != ("WIN" if status == "VERIFIED_WIN" else "LOSS"):
+			return false
 	SceneRouter._solo_hunt_context["recovered_session"] = session.duplicate(true)
 	return true
 
