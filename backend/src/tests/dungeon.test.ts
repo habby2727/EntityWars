@@ -11,6 +11,26 @@ import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } f
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
 
+test("two supported real weapons switch without stacking and consume a turn", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const setup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", item_progress: { bismuth_talisman: { level: 5 }, vitriol_vial: { level: 5 } }, spell_progress: {} }, { entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "vitriol_vial"], homunculus_id: null, spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+  expect(setup.error).toBeUndefined();
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ids };
+  const state = createDungeonCombatState(setup, enemy, all);
+  expect(state.error).toBeUndefined();
+  expect(state.item_id).toBe("bismuth_talisman");
+  const switched = resolveDungeonTurn(state, { turn: 1, switch_slot: 2 }, () => 0);
+  expect(switched.next_state.item_id).toBe("vitriol_vial");
+  expect(switched.next_state.active_weapon_slot).toBe(2);
+  expect(switched.next_state.player.atk).toBe(state.player.atk - Math.trunc(state.item_effects.power_flat ?? 0) + Math.trunc(switched.next_state.item_effects.power_flat ?? 0));
+  expect(switched.events.some((e: any) => e.kind === "switch" && e.slot === 2)).toBe(true);
+  expect(switched.events.some((e: any) => e.kind === "spell" && e.actor === "npc")).toBe(true);
+  expect(resolveDungeonTurn(state, { turn: 1, switch_slot: 2 }, () => 0)).toEqual(switched);
+  expect(resolveDungeonTurn(state, { turn: 1, switch_slot: 2, spell_id: ids[0] }, () => 0).error).toBe("INVALID_DECISION");
+  expect(state.active_weapon_slot).toBe(1);
+});
+
 test("generated advanced floors select legal two-step combinations deterministically", () => {
   const seed = new Uint8Array(32).fill(7);
   for (let floor = 8; floor <= 16; floor++) {
@@ -343,6 +363,97 @@ test("dungeon AI respects cooldowns and recognizes poison combinations", () => {
   expect(chooseDungeonNpcSpell(9, ids, catalogs.spells, { rot_harvest: 2 }, npc, { status: { poison: 2 } }, 0)).not.toBe("rot_harvest");
   expect(() => chooseDungeonNpcSpell(9, ids, catalogs.spells, Object.fromEntries(ids.map(id => [id, 1])), npc, target, 0)).toThrow("NO_AVAILABLE_DUNGEON_SPELL");
 });
+
+test("Dungeon anomaly choice considers the proposed types and lethal attacks", () => {
+  const ids = ["aurum_edge", "quicksilver_tempest", "toxic_smog", "ward_glyph"];
+  const npc = { type: "gold", hp: 100, max_hp: 100, atk: 20, status: {} };
+  const target = { type: "mercury", hp: 100, max_hp: 100, def: 5, status: {} };
+  const bad = catalogs.spells.find((s: any) => s.id === "quicksilver_tempest");
+  const selected = chooseDungeonNpcSpell(15, ids, catalogs.spells, {}, npc, target, 0, { anomaly: { id: "old", favored_type: "mercury", weakened_type: "sodium" } });
+  expect(selected).not.toBe(bad.id);
+  const lethal = chooseDungeonNpcSpell(15, ids, catalogs.spells, {}, npc, { ...target, hp: 1 }, 0, { anomaly: { id: "old", favored_type: "mercury", weakened_type: "sodium" } });
+  expect(lethal).toBe("aurum_edge");
+  const alreadyFavored = chooseDungeonNpcSpell(15, ids, catalogs.spells, {}, npc, target, 0, { anomaly: { id: "different", favored_type: "gold", weakened_type: "mercury" } });
+  expect(["quicksilver_tempest", "toxic_smog"]).not.toContain(alreadyFavored);
+});
+
+test("floor 8 and 1000 change repeated NPC spell sets without breaking the selected pair", () => {
+  const seed = new Uint8Array(32).fill(7);
+  for (const floor of [8, 1000]) {
+    const original = generateDungeonEnemy(seed, "same-spells", floor, catalogs);
+    const previous = { hp: 0, attack: 0, defense: 0, spell_ids: [...original.spell_ids] };
+    const varied = generateDungeonEnemy(seed, "same-spells", floor, catalogs, undefined, previous);
+    expect(varied.spell_ids.some((id: string) => !previous.spell_ids.includes(id))).toBe(true);
+    expect(varied.spell_ids.slice(0, 3)).toEqual(original.spell_ids.slice(0, 3));
+    expect(new Set(varied.spell_ids).size).toBe(4);
+    expect(generateDungeonEnemy(seed, "same-spells", floor, catalogs, undefined, previous)).toEqual(varied);
+  }
+});
+
+test("local Dungeon preparation is guarded and supports a real authenticated run", async () => {
+  const port = await new Promise<number>(done => { const socket = createServer().listen(0, "127.0.0.1", () => { const p = (socket.address() as { port: number }).port; socket.close(() => done(p)); }); });
+  const dir = mkdtempSync(join(tmpdir(), "entitywars-dungeon-debug-")), dbPath = join(dir, "test.sqlite"), db = new Database(dbPath);
+  const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
+  for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
+  const secrets = { TOKEN_SIGNING_SECRET: "test-signing-secret-01234567890123456789", EXPERIMENT_SECRET: "test-experiment-secret-0123456789012345", TRADE_SECRET: "test-trade-secret-01234567890123456789", WORLD_SECRET: "test-world-secret-01234567890123456789" };
+  const env = { ...process.env, ...secrets, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", DEV_DOCKER_LOCAL_LOGIN: "1", DUNGEON_DEBUG_PREPARE: "1" };
+  const spawn = (extra: Record<string, string> = {}) => Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env: { ...env, ...extra }, stdout: "ignore", stderr: "ignore" });
+  let server = spawn();
+  const request = async (path: string, body?: unknown, token?: string, origin?: string) => { const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...(origin ? { origin } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.status, data: await r.json() as any }; };
+  const ready = async () => { for (let i = 0; i < 100; i++) { try { if ((await request("/health")).status === 200) return; } catch {} await Bun.sleep(100); } throw new Error("Server not ready"); };
+  try {
+    await ready();
+    const normal = (await request("/auth/dev_login", { name: "normal_dungeon_player" })).data;
+    const debug = (await request("/auth/dev_login", { name: "dungeon_debug_local" })).data;
+    expect((await request("/debug/dungeons/prepare", {})).status).toBe(401);
+    expect((await request("/debug/dungeons/prepare", {}, normal.token)).status).toBe(403);
+    expect((await request("/debug/dungeons/prepare", {}, debug.token, "https://example.com")).status).toBe(404);
+    expect((await request("/debug/dungeons/prepare", { floor: 1000 }, debug.token)).status).toBe(400);
+    const prepared = await request("/debug/dungeons/prepare", {}, debug.token);
+    expect(prepared.status).toBe(200);
+    const state = prepared.data.updated_player_state;
+    expect(state.lab.hqLevel).toBeGreaterThanOrEqual(4);
+    expect(state.lab.buildings.sync_nexus.level).toBeGreaterThanOrEqual(1);
+    expect(state.spell_progress.learned_by_entity.sulfur_01).toContain("nuclear_fallout");
+    expect(state.spell_progress.learned_by_entity.sulfur_01).toContain("pyrolytic_fuse");
+    expect(state.homunculus_progress.cinder.level).toBe(10);
+    expect((await request("/debug/dungeons/prepare", {}, debug.token)).data.updated_player_state).toEqual(state);
+    const started = await request("/dungeon/start", { client_action_id: "debug-start" }, debug.token);
+    expect(started.status).toBe(200);
+    const selected = { run_id: started.data.run_id, client_action_id: "debug-loadout", entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "vitriol_vial"], homunculus_id: "cinder", spell_ids: ["nuclear_fallout", "cinder_fist", "ash_temper", "brimstone_crash"], mode: "attack" };
+    const initialized = await request("/dungeon/loadout", selected, debug.token);
+    expect(initialized.status).toBe(200);
+    expect(initialized.data.combat_ready).toBe(true);
+    expect((await request("/debug/dungeons/prepare", {}, debug.token)).status).toBe(200);
+    expect((await request("/dungeon/session", undefined, debug.token)).data.session.run_id).toBe(started.data.run_id);
+    expect(initialized.data.combat_state.item_id).toBe("bismuth_talisman");
+    const swap = { run_id: started.data.run_id, client_action_id: "debug-swap", expected_revision: 1, decision: { turn: 1, switch_slot: 2 } };
+    const switched = await request("/dungeon/turn", swap, debug.token);
+    expect(switched.status).toBe(200);
+    expect(switched.data.combat_state.item_id).toBe("vitriol_vial");
+    expect(switched.data.combat_state.active_weapon_slot).toBe(2);
+    expect(switched.data.combat_state.player.atk).toBe(initialized.data.combat_state.player.atk - Math.trunc(initialized.data.combat_state.item_effects.power_flat ?? 0) + Math.trunc(switched.data.combat_state.item_effects.power_flat ?? 0));
+    expect(switched.data.combat_state.turn).toBe(1);
+    expect(switched.data.events.some((event: any) => event.kind === "spell" && event.actor === "npc")).toBe(true);
+    expect((await request("/dungeon/turn", swap, debug.token)).data).toEqual(switched.data);
+    expect((await request("/dungeon/session", undefined, debug.token)).data.session.combat_state.item_id).toBe("vitriol_vial");
+    const turn = await request("/dungeon/turn", { run_id: started.data.run_id, client_action_id: "debug-turn", expected_revision: 2, decision: { turn: 2, spell_id: "nuclear_fallout" } }, debug.token);
+    expect(turn.status).toBe(200);
+    expect(turn.data.events.some((event: any) => event.kind === "physical_anomaly_cast" && event.actor === "player" && event.anomaly.id === "nuclear_fallout")).toBe(true);
+    server.kill(); await server.exited;
+    server = spawn({ NODE_ENV: "production", BUN_ENV: "development" });
+    await ready();
+    expect((await request("/debug/dungeons/prepare", {}, debug.token)).status).toBe(404);
+    server.kill(); await server.exited;
+    server = spawn({ DUNGEON_DEBUG_PREPARE: "0", DEBUG_BYPASS: "1" });
+    await ready();
+    const bypass = await fetch(`http://127.0.0.1:${port}/debug/dungeons/prepare`, { method: "POST", headers: { "content-type": "application/json", "x-debug-bypass": "1", authorization: `Bearer ${debug.token}` }, body: "{}" });
+    expect(bypass.status).toBe(404);
+  } finally {
+    server.kill(); await server.exited; db.close();
+    for (let i = 0; i < 10; i++) { try { rmSync(dir, { recursive: true, force: true }); break; } catch { await Bun.sleep(100); } }
+  }
+}, 60000);
 
 test("authenticated dungeon sessions recover, isolate owners and replay atomically", async () => {
   const port = await new Promise<number>(done => { const socket = createServer().listen(0, "127.0.0.1", () => { const p = (socket.address() as { port: number }).port; socket.close(() => done(p)); }); });

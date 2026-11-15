@@ -58,7 +58,7 @@ export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: num
   if (chosen.length === 1) chosen.push(advancedChoices[draw("advanced") % advancedChoices.length]);
   const remaining = unique.filter(s => !chosen.some(c => c.id === s.id));
   while (chosen.length < 4) chosen.push(remaining.splice(draw(`spell-${chosen.length}`) % remaining.length, 1)[0]);
-  if (floor < 8 && previous?.spell_ids && chosen.every(s => previous.spell_ids!.includes(s.id))) {
+  if (previous?.spell_ids && chosen.every(s => previous.spell_ids!.includes(s.id))) {
     const alternatives = remaining.filter(s => !previous.spell_ids!.includes(s.id));
     if (alternatives.length) chosen[3] = alternatives[draw("variety") % alternatives.length];
   }
@@ -102,7 +102,16 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
       if (floor >= 8 && ["bonus_if_shielded", "ward_convert"].includes(effect.kind) && ownStatus.shield > 0) score += 90;
       if (effect.kind === "counter_trap") score += npc.strategic_trap ? -100 : 20;
       if (effect.kind === "hom_energy_siphon") score += npc.hom_id && target.hom_id && target.hom_energy > 0 && npc.hom_energy < 6 ? 25 : -60;
-      if (effect.kind === "physical_anomaly") { const anomaly = context.anomaly; score += anomaly?.id === spell.id ? -120 : anomaly?.favored_type === target.type ? 45 : effect.favored_type === npc.type ? 30 : -10; }
+      if (effect.kind === "physical_anomaly") {
+        const anomaly = context.anomaly;
+        const proposed = effect.favored_type === undefined ? spell : effect;
+        score += proposed.favored_type === npc.type ? 30 : 0;
+        score += proposed.weakened_type === target.type ? 30 : 0;
+        score -= proposed.favored_type === target.type ? 60 : 0;
+        score -= proposed.weakened_type === npc.type ? 60 : 0;
+        if (anomaly?.favored_type === proposed.favored_type && anomaly?.weakened_type === proposed.weakened_type) score -= 120;
+        else if (anomaly?.favored_type === npc.type || anomaly?.weakened_type === target.type) score -= 80;
+      }
       if (effect.kind === "cooldown_jam" && floor >= 15) score += (target.spell_ids ?? []).some((id: string) => (target.cooldowns?.[id] ?? 0) === 0 && spells.some(s => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1)) ? 35 : 0;
       if (floor >= 15 && effect.kind === "atk_down" && !(enemyStatus.atk_down > 0)) score += 25;
     }
@@ -117,15 +126,17 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
 
 const DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
 const validEffect = (e: any) => e && DUNGEON_EFFECTS.has(e.kind) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
-const DUNGEON_ITEMS = new Set(["power_flat", "guard_flat"]);
+const DUNGEON_ITEMS = new Set(["power_flat", "guard_flat", "true_on_hit", "dot_true", "vuln_on_hit"]);
 
 // setup must be the result of server-side loadout validation, never client input.
 export function createDungeonCombatState(setup: any, enemy: any, catalogs: any): any {
   if (!setup?.entity?.base_stats || !Array.isArray(setup.spell_ids) || setup.spell_ids.length !== 4 || new Set(setup.spell_ids).size !== 4 || !enemy || !catalogs || !Array.isArray(enemy.spell_ids) || enemy.spell_ids.length !== 4 || !Array.isArray(catalogs.spells) || !Array.isArray(catalogs.homunculi) || !catalogs.types?.effectiveness) return { error: "UNTRUSTED_SETUP" };
-  const equipment = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects ?? {} }];
-  if (equipment.filter((w: any) => w.id).length > 1) return { error: "UNSUPPORTED_MECHANIC" };
-  const effects = equipment.find((w: any) => w.id)?.effects ?? setup.itemEffects ?? {};
-  if (Object.entries(effects).some(([key, value]) => !DUNGEON_ITEMS.has(key) && value !== 0)) return { error: "UNSUPPORTED_MECHANIC" };
+  const equipment = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects ?? {} }, { id: null, effects: {} }];
+  if (!Array.isArray(equipment) || equipment.length !== 2 || equipment.some((w: any) => !w || !w.effects || Object.entries(w.effects).some(([key, value]) => !DUNGEON_ITEMS.has(key) && value !== 0))) return { error: "UNSUPPORTED_MECHANIC" };
+  const factor = Math.max(0, Math.min(2, setup.hom_id ? setup.hom_synergy?.item_effect_mult ?? 1 : 1));
+  const weapons = equipment.map((w: any) => ({ id: w.id ?? null, effects: Object.fromEntries(Object.entries(w.effects).map(([key, value]) => [key, (value as number) * factor])) }));
+  const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 0;
+  const effects = activeSlot ? weapons[activeSlot - 1].effects : {};
   const spells = [...setup.spell_ids, ...enemy.spell_ids].map(id => catalogs.spells.find((s: any) => s.id === id));
   if (spells.some(s => !s || !Array.isArray(s.effects) || s.effects.some((e: any) => !validEffect(e) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))) return { error: "UNSUPPORTED_MECHANIC" };
   if (spells.some((s, i) => !(s.type === (i < 4 ? setup.entity.type : enemy.type) || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(i < 4 ? setup.entity.type : enemy.type))))) return { error: "UNTRUSTED_SETUP" };
@@ -135,13 +146,15 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any):
   const npcHp = enemy.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level;
   const player = { id: setup.entity.id, type: setup.entity.type, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + (effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + (effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
   const npc = { id: enemy.entity_id, type: enemy.type, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
-  return { player, npc, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+  return { player, npc, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 
 export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
-  if (!state || state.terminal_result || !decision || typeof decision !== "object" || Object.keys(decision).some(k => !["turn", "spell_id", "hom_action"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function") return { error: "INVALID_DECISION" };
-  const spell = state.spells.find((s: any) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
-  if (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || (decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3))) return { error: "INVALID_DECISION" };
+  if (!state || state.terminal_result || !decision || typeof decision !== "object" || Object.keys(decision).some(k => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  const switching = decision.switch_slot !== undefined;
+  if (switching && (decision.spell_id !== undefined || decision.hom_action !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id)) return { error: "INVALID_DECISION" };
+  const spell = switching ? null : state.spells.find((s: any) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
+  if (!switching && (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || (decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3)))) return { error: "INVALID_DECISION" };
   if (state.spells.some((s: any) => !Array.isArray(s.effects) || s.effects.some((e: any) => !validEffect(e) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
   const pendingJams: { target: any; actor: string; targetId: string }[] = [];
@@ -175,6 +188,13 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       if (target.status.shield > 0) { damage = Math.max(0, Math.round(damage * (1 - target.status.shield))); delete target.status.shield; }
       directDamage = Math.min(target.hp, damage);
       target.hp = Math.max(0, target.hp - damage); events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp });
+      if (who === "player") {
+        for (const key of ["true_on_hit", "dot_true"]) {
+          const amount = Math.min(target.hp, Math.max(0, Math.trunc(next.item_effects?.[key] ?? 0)));
+          if (amount > 0) { target.hp -= amount; events.push({ kind: key, actor: who, target: "npc", amount, hp: target.hp }); }
+        }
+        if ((next.item_effects?.dot_true ?? 0) > 0 && (next.item_effects?.vuln_on_hit ?? 0) > 0) target.status.vuln = Math.max(target.status.vuln ?? 0, Math.min(1, next.item_effects.vuln_on_hit));
+      }
       if (poisonBonus && target.status.poison > 0 && directDamage > baseline) events.push({ kind: "combo_trigger", actor: who, target: who === "player" ? "npc" : "player", source_spell_id: chosen.id, prerequisite: "poison", actual_bonus_damage: directDamage - baseline, resulting_status: { poison: target.status.poison } });
     }
     const conversion = chosen.effects.find((e: any) => e.kind === "ward_convert");
@@ -208,7 +228,13 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     if (chosen.category === "attack") strategicCounter(target, actor, who === "player" ? "npc" : "player", who, directDamage, decision.turn, events);
     if (actor.hom_id) actor.hom_energy = Math.min(6, actor.hom_energy + 1);
   };
-  act(next.player, next.npc, spell, "player");
+  if (switching) {
+    const old = next.item_effects ?? {}, weapon = next.weapons[decision.switch_slot - 1];
+    next.player.atk += Math.trunc(weapon.effects.power_flat ?? 0) - Math.trunc(old.power_flat ?? 0);
+    next.player.def += Math.trunc(weapon.effects.guard_flat ?? 0) - Math.trunc(old.guard_flat ?? 0);
+    next.active_weapon_slot = decision.switch_slot; next.item_id = weapon.id; next.item_effects = weapon.effects;
+    events.push({ kind: "switch", actor: "player", slot: decision.switch_slot, item_id: weapon.id });
+  } else act(next.player, next.npc, spell, "player");
   if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) { if (draw() < 0.95) { let damage = Math.max(1, Math.round(next.player.atk * (next.player.hom_energy >= 6 ? 0.6 : 0.4))); if (next.npc.status.shield > 0) { damage = Math.max(0, Math.round(damage * (1 - next.npc.status.shield))); delete next.npc.status.shield; } next.npc.hp = Math.max(0, next.npc.hp - damage); events.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp }); } else events.push({ kind: "hom_miss", actor: "player" }); next.player.hom_energy = 0; }
   act(next.npc, next.player, npcSpell, "npc");
   if (next.npc.hom_id && next.npc.hom_energy >= 3 && next.npc.hp > 0 && next.player.hp > 0) {

@@ -4,6 +4,9 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	if OS.get_environment("EW_DUNGEON_DEBUG_E2E") == "1":
+		await _run_debug_entry()
+		return
 	if OS.get_environment("EW_DUNGEON_E2E") == "1":
 		await _run_e2e()
 		return
@@ -60,7 +63,9 @@ func _run() -> void:
 	var loadout = current_scene
 	assert(loadout._dungeon_mode and not loadout._hunt_mode)
 	assert(not loadout.btn_save.visible)
-	assert(not loadout.get_node("RootMargin/MainHSplit/LeftPanel/ModeRow").visible)
+	assert(not loadout.get_node("RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol").visible)
+	assert(not loadout.get_node("RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol").visible)
+	assert(loadout.get_node("RootMargin/MainHSplit/LeftPanel/TabButtons").visible)
 	assert(loadout._idx_to_id(loadout._items, loadout.dd_item1).is_empty())
 	assert(loadout._idx_to_id(loadout._items, loadout.dd_item2).is_empty())
 	loadout._on_play_pressed()
@@ -85,6 +90,93 @@ func _run() -> void:
 		UIThemeFactory._catalog.free()
 		UIThemeFactory._catalog = null
 	print("PASS Dungeon ranking and Sync Nexus calibration controls")
+	quit(0)
+
+func _run_debug_entry() -> void:
+	var test_root := OS.get_environment("DUNGEON_TEST_ROOT").replace("\\", "/").to_lower()
+	if test_root.is_empty() or not OS.get_user_data_dir().replace("\\", "/").to_lower().begins_with(test_root + "/"):
+		push_error("Isolated user directory required")
+		quit(1)
+		return
+	var backend := BackendClient.new()
+	backend.auto_dev_login = false
+	root.add_child(backend)
+	await process_frame
+	var registry := DataRegistry.new()
+	var panel = load("res://scripts/ui/lab_specialized_panel.gd").new()
+	root.add_child(panel)
+	panel.setup(registry, backend, true, 20, 10)
+	panel.show_building("sync_nexus", {"lab": {"hqLevel": 4, "buildings": {"sync_nexus": {"level": 1}}, "runtime": {}}}, {}, {}, true)
+	panel._update_sync_status()
+	if panel._dungeon_entry_button.disabled or not backend.token.is_empty():
+		push_error("Local debug entry unavailable before login")
+		quit(1)
+		return
+	backend.token = "existing-token"
+	panel._enter_dungeon()
+	if not is_instance_valid(panel._dungeon_debug_confirm) or not panel._dungeon_debug_confirm.visible or backend.token != "existing-token" or not panel._dungeon_entry_request.is_empty():
+		push_error("Existing identity was not protected by confirmation")
+		quit(1)
+		return
+	panel._dungeon_debug_confirm.hide()
+	backend.token = ""
+	panel._enter_dungeon()
+	var deadline := Time.get_ticks_msec() + 30000
+	while (current_scene == null or not current_scene.has_method("_submit_dungeon_loadout")) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if current_scene == null or not current_scene.has_method("_submit_dungeon_loadout"):
+		push_error("Debug account did not reach loadout: " + panel._dungeon_entry_status.text)
+		quit(1)
+		return
+	var loadout = current_scene
+	while not loadout._dungeon_recovered and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if not loadout._dungeon_recovered:
+		push_error("Debug Dungeon session recovery failed")
+		quit(1)
+		return
+	loadout._set_button_selection(loadout.dd_item1, loadout._items, "bismuth_talisman")
+	loadout._set_button_selection(loadout.dd_item2, loadout._items, "vitriol_vial")
+	loadout._hunt_spells[loadout._current_entity_id] = ["pyrolytic_fuse", "cinder_fist", "ash_temper", "brimstone_crash"]
+	loadout._on_play_pressed()
+	deadline = Time.get_ticks_msec() + 30000
+	while current_scene == loadout and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if current_scene == loadout or not bool(SceneRouter._dungeon_context.get("session", {}).get("combat_ready", false)):
+		push_error("Debug loadout was not confirmed by server")
+		quit(1)
+		return
+	var combat = current_scene
+	deadline = Time.get_ticks_msec() + 30000
+	while combat._dungeon_session.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if combat._dungeon_session.is_empty() or not is_instance_valid(combat._dungeon_floor_label) or not combat._dungeon_floor_label.text.begins_with("DUNGEONS — FLOOR ") or combat.spell_buttons[0].get_node_or_null("DungeonSpellType0") == null or not combat.spell_buttons[0].get_node("DungeonSpellType1").visible:
+		push_error("Dungeon header or spell icons unavailable")
+		quit(1)
+		return
+	while not combat._dungeon_request.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	combat._dungeon_brief.hide()
+	combat._dungeon_refresh_controls()
+	var revision := int(combat._dungeon_session.combat_revision)
+	if combat.switch_weapon_btn.disabled or not combat.switch_weapon_btn.visible:
+		push_error("Dungeon switch unavailable with two supported weapons")
+		quit(1)
+		return
+	combat._on_switch_weapon()
+	deadline = Time.get_ticks_msec() + 30000
+	while int(combat._dungeon_session.combat_revision) == revision and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if int(combat._dungeon_session.combat_revision) != revision + 1 or int(combat._dungeon_session.combat_state.active_weapon_slot) != 2:
+		push_error("Dungeon server switch failed")
+		quit(1)
+		return
+	print("PASS authenticated local debug entry, preparation and Dungeon loadout")
+	panel.queue_free()
+	backend.queue_free()
+	current_scene.queue_free()
+	registry.free()
+	await process_frame
 	quit(0)
 
 func _run_e2e() -> void:
@@ -159,6 +251,10 @@ func _run_e2e() -> void:
 		await create_timer(0.1).timeout
 	if combat._dungeon_session.is_empty() or combat.player_entity.texture == null or combat.enemy_entity.texture == null:
 		push_error("Dungeon server fighters not rendered")
+		quit(1)
+		return
+	if not is_instance_valid(combat._dungeon_floor_label) or not combat._dungeon_floor_label.text.begins_with("DUNGEONS — FLOOR ") or combat.spell_buttons[0].get_node_or_null("DungeonSpellType0") == null:
+		push_error("Dungeon floor header or spell icon missing")
 		quit(1)
 		return
 	while not combat._dungeon_request.is_empty() and Time.get_ticks_msec() < deadline:

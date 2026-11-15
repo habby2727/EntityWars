@@ -18,6 +18,7 @@ services:
       TRADE_SECRET: ${TRADE_SECRET:?Set TRADE_SECRET in .env.local}
       WORLD_SECRET: ${WORLD_SECRET:?Set WORLD_SECRET in .env.local}
       DEV_DOCKER_LOCAL_LOGIN: "1"
+      DUNGEON_DEBUG_PREPARE: "1"
       DEBUG_BYPASS: "0"
     ports:
       - "127.0.0.1:8787:8787"

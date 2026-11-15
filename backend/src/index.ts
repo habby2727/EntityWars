@@ -2045,6 +2045,43 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (req.method == "POST" && url.pathname == "/debug/dungeons/prepare") {
+					const development = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some(value => value?.toLowerCase() === "development");
+					if (IS_PRODUCTION || !development || Bun.env.DEV_DOCKER_LOCAL_LOGIN !== "1" || Bun.env.DUNGEON_DEBUG_PREPARE !== "1" || !developmentLoginAllowed(server.requestIP(req)?.address, req.headers.get("origin"))) throw new HttpError(404, "Not found.");
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 0) throw new HttpError(400, "Invalid preparation payload.");
+					return db.transaction(() => {
+						const row = getPlayerByIdStmt.get(playerId) as { display_name: string } | undefined;
+						if (!row?.display_name.startsWith("dungeon_debug_")) throw new HttpError(403, "Dedicated Dungeon debug account required.");
+						const state = ensurePlayerState(playerId);
+						const before = JSON.stringify(state);
+						const dataDir = resolve(import.meta.dir, "..", "..", "data");
+						const entities = readJsonFile(resolve(dataDir, "entities.json"))?.entities;
+						const spells = readJsonFile(resolve(dataDir, "spells.json"))?.spells;
+						const items = readJsonFile(resolve(dataDir, "items.json"))?.items;
+						if (!Array.isArray(entities) || !Array.isArray(spells) || !Array.isArray(items)) throw new HttpError(503, "Dungeon debug catalogs unavailable.");
+						state.lab.hqLevel = Math.max(4, state.lab.hqLevel);
+						state.lab.buildings.lab_th ??= { level: state.lab.hqLevel, route: state.lab.hqPath, runtime: { stored_output: 0, last_tick: Date.now() } };
+						state.lab.buildings.lab_th.level = Math.max(state.lab.buildings.lab_th.level, state.lab.hqLevel);
+						state.lab.buildings.sync_nexus ??= { level: 0, route: "", runtime: { stored_output: 0, last_tick: Date.now() } };
+						state.lab.buildings.sync_nexus.level = Math.max(1, state.lab.buildings.sync_nexus.level);
+						for (const id of staticData.homunculusIds) state.homunculus_progress[id] = { ...state.homunculus_progress[id], level: 10 };
+						for (const item of items) if (item?.slot === "build" && staticData.itemIds.has(item.id)) state.item_progress[item.id] = { ...state.item_progress[item.id], level: 10 };
+						for (const entity of entities) {
+							if (typeof entity?.id !== "string" || typeof entity.type !== "string") continue;
+							const learned = spells.filter((spell: any) => ["universal", "hybrid"].includes(spell?.type) && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(entity.type)).map((spell: any) => spell.id);
+							state.spell_progress.learned_by_entity[entity.id] = [...new Set([...(state.spell_progress.learned_by_entity[entity.id] ?? []), ...learned])];
+						}
+						state.spell_progress = normalizeSpellProgress(state.spell_progress);
+						if (JSON.stringify(state) !== before) {
+							state.state_revision++;
+							state.updated_at = Date.now();
+							if (updatePlayerStmt.run(JSON.stringify(state), state.updated_at, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+						}
+						return stateResponse(state);
+					}).immediate();
+				}
 				if (req.method == "GET" && url.pathname == "/dungeon/leaderboard") {
 					const playerId = await requireAuth(req, ctx);
 					const month = url.searchParams.get("month") ?? dungeonSeason(Date.now());
@@ -2616,7 +2653,7 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
 
 function publicDungeonCombat(combat: any) {
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [] };
+	return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {

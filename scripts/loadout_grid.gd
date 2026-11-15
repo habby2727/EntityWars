@@ -198,7 +198,11 @@ func _ready() -> void:
 	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
 	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
 	if _hunt_mode or _dungeon_mode:
-		$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
+		if _dungeon_mode:
+			$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol.hide()
+			$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol.hide()
+		else:
+			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 		btn_save.hide()
 		var back := $BackButton as Button
 		var original_back := Callable(back, "_on_pressed")
@@ -261,7 +265,7 @@ func _ready() -> void:
 		_dungeon_backend.state_updated.connect(_on_dungeon_identity)
 		_dungeon_backend.api_completed.connect(_on_dungeon_loadout_response)
 		add_child(_dungeon_backend)
-		_set_build_error("Dungeons: choose zero or one supported weapon. Verifying account...")
+		_set_build_error("Dungeons: verifying account...")
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
 		_hunt_identity = str(SceneRouter._solo_hunt_context.get("loadout_identity", ""))
 		var saved_payload: Variant = SceneRouter._solo_hunt_context.get("pending_loadout", {})
@@ -1480,7 +1484,7 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 		if message in ["Invalid or unsupported dungeon loadout.", "Invalid dungeon loadout.", "UNSUPPORTED_MECHANIC", "UNTRUSTED_SETUP"]:
 			_dungeon_payload.clear()
 			SceneRouter._dungeon_context.erase("pending_loadout")
-			_set_build_error("Unsupported build: choose zero or one supported weapon and supported spells.")
+			_set_build_error("Unsupported weapon effects or spells for Dungeons.")
 		else:
 			_dungeon_recovered = false
 			_recover_dungeon()
@@ -1504,7 +1508,7 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 		SceneRouter._dungeon_context["session"] = session.duplicate(true)
 		SceneRouter.go_to_dungeon_combat()
 	else:
-		_set_build_error("Select zero or one supported weapon and four spells; retry the same selection if needed.")
+		_set_build_error("Select two different weapons and four spells; retry the same selection if needed.")
 
 func _submit_dungeon_loadout() -> void:
 	if not _dungeon_request.is_empty():
@@ -1515,8 +1519,8 @@ func _submit_dungeon_loadout() -> void:
 	if _dungeon_payload.is_empty():
 		var first := _idx_to_id(_items, dd_item1)
 		var second := _idx_to_id(_items, dd_item2)
-		if _current_entity_id.is_empty() or (not first.is_empty() and not second.is_empty()):
-			_set_build_error("Choose an entity and zero or one supported weapon.")
+		if _current_entity_id.is_empty() or (not first.is_empty() and first == second):
+			_set_build_error("Choose an entity and different weapons.")
 			return
 		var spells: Array = _equipped_spells("attack", _current_entity_id)
 		var unique := {}

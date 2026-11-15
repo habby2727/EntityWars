@@ -90,6 +90,7 @@ var _dungeon_pending: Dictionary = {}
 var _dungeon_hom_choice: Dictionary = {}
 var _dungeon_identity := ""
 var _dungeon_brief: ConfirmationDialog
+var _dungeon_floor_label: Label
 var _dungeon_brief_floor := 0
 var _dungeon_seen_actions := {}
 var _dungeon_rank_loaded := false
@@ -541,9 +542,43 @@ func _dungeon_render() -> void:
 		var id := str(p.spell_ids[i])
 		var spell: Dictionary = _reg.get_spell_by_id(id)
 		var cd := int(p.get("cooldowns", {}).get(id, 0))
-		spell_buttons[i].text = str(spell.get("name", id)) + (" | CD: %d" % cd if cd > 0 else "")
+		var power := "Support" if float(spell.get("power_mult", 0)) == 0 else "x%.2f" % float(spell.power_mult)
+		spell_buttons[i].text = "%s\n%s  |  %d%%%s" % [str(spell.get("name", id)), power, roundi(float(spell.get("accuracy", 0)) * 100), "  |  CD: %d" % cd if cd > 0 else ""]
+		spell_buttons[i].tooltip_text = _spell_description(spell)
+		var types: Array = [str(spell.get("primary_type", "")), str(spell.get("secondary_type", ""))] if spell.get("type") == "hybrid" else [str(spell.get("type", "universal"))]
+		for icon_index in 2:
+			var icon_name := "DungeonSpellType%d" % icon_index
+			var icon: Control = spell_buttons[i].get_node_or_null(icon_name)
+			if icon == null:
+				icon = CombatTypeIcon.new()
+				icon.name = icon_name
+				icon.position = Vector2(5 + icon_index * 25, 5)
+				icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				spell_buttons[i].add_child(icon)
+			icon.visible = icon_index < types.size()
+			if icon.visible:
+				icon.call("configure", types[icon_index])
 	var floor_id := int(state.get("floor", 1))
-	turn_label.text = "DUNGEONS — FLOOR %d | Cleared: %d" % [floor_id, int(_dungeon_session.get("cleared_floor", 0))]
+	if _dungeon_floor_label == null:
+		_dungeon_floor_label = Label.new()
+		_dungeon_floor_label.name = "DungeonFloorHeader"
+		_dungeon_floor_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_dungeon_floor_label.add_theme_font_size_override("font_size", 20)
+		_dungeon_floor_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		spell_panel.get_parent().add_child(_dungeon_floor_label)
+		spell_panel.resized.connect(_layout_dungeon_floor_header)
+		spell_panel.item_rect_changed.connect(_layout_dungeon_floor_header)
+	_dungeon_floor_label.text = "DUNGEONS — FLOOR %d" % floor_id
+	_dungeon_floor_label.show()
+	_layout_dungeon_floor_header()
+	turn_label.text = "Cleared: %d" % int(_dungeon_session.get("cleared_floor", 0))
+	var weapons: Array = state.get("weapons", [])
+	var active_slot := int(state.get("active_weapon_slot", 0))
+	for i in 2:
+		var weapon_id := str(weapons[i].get("id", "")) if i < weapons.size() and weapons[i] is Dictionary and weapons[i].get("id") != null else ""
+		var slot_icon: TextureRect = [player_item1, player_item2][i]
+		_set_item_icon(slot_icon, _find_by_id(_items, weapon_id))
+		slot_icon.modulate.a = 1.0 if i + 1 == active_slot else 0.5
 	var phase := str(_dungeon_session.get("phase", "COMBAT"))
 	if phase == "FLOOR_CLEARED":
 		_log_immediate("FLOOR %d CLEARED | HP %d / %d" % [floor_id, int(p.hp), int(p.max_hp)])
@@ -576,8 +611,23 @@ func _dungeon_refresh_controls() -> void:
 	var blocked := not _dungeon_synchronized or _dungeon_session.is_empty() or str(_dungeon_session.get("status", "")) != "ACTIVE" or str(_dungeon_session.get("phase", "")) != "COMBAT" or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty() or (_dungeon_brief != null and _dungeon_brief.visible) or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
 	for i in spell_buttons.size():
 		spell_buttons[i].disabled = blocked or i >= ids.size() or int(p.get("cooldowns", {}).get(str(ids[i]), 0)) > 0
-	switch_weapon_btn.disabled = true
+	var weapons: Array = state.get("weapons", [])
+	var active_slot := int(state.get("active_weapon_slot", 0))
+	var other := 2 if active_slot == 1 else 1
+	var available := active_slot in [1, 2] and weapons.size() == 2 and weapons[other - 1] is Dictionary and not str(weapons[other - 1].get("id", "")).is_empty() and weapons[other - 1].get("id") != null
+	switch_weapon_btn.visible = available
+	switch_weapon_btn.disabled = blocked or not available
+	if available:
+		var item_id := str(weapons[other - 1].id)
+		var item := _find_by_id(_items, item_id)
+		switch_weapon_btn.text = "Switch to: " + str(item.get("name", item_id))
 	ultra_button.disabled = true
+
+func _layout_dungeon_floor_header() -> void:
+	if not is_instance_valid(_dungeon_floor_label) or not is_instance_valid(spell_panel):
+		return
+	_dungeon_floor_label.position = spell_panel.position + Vector2(0, -28)
+	_dungeon_floor_label.size = Vector2(spell_panel.size.x, 26)
 
 func _begin_combat_initialization() -> void:
 	if not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
@@ -2390,6 +2440,15 @@ func _commit_ultra(fighter: Dictionary, action: Dictionary) -> void:
 	_append_combat_log("", _combat_event(fighter, "inspiration", " activates ULTRATURN x2; consumed for this battle.", {}))
 
 func _on_switch_weapon() -> void:
+	if _dungeon_guard:
+		if switch_weapon_btn.disabled or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
+			return
+		var state: Dictionary = _dungeon_session.get("combat_state", {})
+		var slot := 2 if int(state.get("active_weapon_slot", 0)) == 1 else 1
+		_dungeon_pending = {"kind": "turn", "payload": {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": int(_dungeon_session.get("combat_revision", 0)), "decision": {"turn": int(state.get("turn", 0)) + 1, "switch_slot": slot}}}
+		SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
+		_dungeon_send_pending()
+		return
 	if _online_hunt_guard:
 		var decision := _online_switch_decision()
 		if decision.is_empty():

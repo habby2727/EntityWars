@@ -57,6 +57,10 @@ var _dungeon_entry_status: Label
 var _dungeon_entry_request := ""
 var _dungeon_entry_kind := ""
 var _dungeon_entry_owner := ""
+var _dungeon_debug_waiting := false
+var _dungeon_debug_expected_player := ""
+var _dungeon_debug_login_token := ""
+var _dungeon_debug_confirm: ConfirmationDialog
 
 func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cost: int, cost_per_level: int) -> void:
 	_registry = registry
@@ -70,6 +74,7 @@ func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cos
 		_backend.action_uncertain.connect(_forge_uncertain)
 		_backend.api_completed.connect(_on_dungeon_api_completed)
 		_backend.auth_changed.connect(func(_token): _update_forge_button())
+		_backend.state_updated.connect(_on_dungeon_debug_state)
 	custom_minimum_size.y = 210
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_theme_constant_override("separation", 8)
@@ -263,15 +268,73 @@ func _update_sync_status() -> void:
 	if is_instance_valid(_dungeon_ranking_button):
 		_dungeon_ranking_button.disabled = _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty()
 	if is_instance_valid(_dungeon_entry_button):
-		_dungeon_entry_button.disabled = _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or not _dungeon_entry_request.is_empty()
+		var debug_local := _dungeon_local_debug()
+		_dungeon_entry_button.disabled = _backend == null or (not debug_local and (_backend.token.is_empty() or _backend._verified_player_id.is_empty())) or not _dungeon_entry_request.is_empty() or _dungeon_debug_waiting
+
+func _dungeon_local_debug() -> bool:
+	if not _forge_debug or _backend == null:
+		return false
+	var local := RegEx.new()
+	local.compile("^http://(127\\.0\\.0\\.1|localhost|\\[::1\\])(?::[0-9]{1,5})?/?$")
+	return local.search(_backend.base_url.to_lower()) != null
 
 func _enter_dungeon() -> void:
-	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or not _dungeon_entry_request.is_empty():
+	if _backend == null or not _dungeon_entry_request.is_empty() or _dungeon_debug_waiting:
 		return
+	if _dungeon_local_debug():
+		var cached: Dictionary = _backend.load_cached_state()
+		var dedicated := not _backend._verified_player_id.is_empty() and str(cached.get("player_id", "")) == _backend._verified_player_id and str(cached.get("display_name", "")) == "dungeon_debug_local"
+		if dedicated:
+			_dungeon_debug_prepare()
+		elif not _backend.token.is_empty():
+			if not is_instance_valid(_dungeon_debug_confirm):
+				_dungeon_debug_confirm = ConfirmationDialog.new()
+				_dungeon_debug_confirm.title = "Switch account?"
+				_dungeon_debug_confirm.dialog_text = "Switch to the dedicated local Dungeon debug account?"
+				_dungeon_debug_confirm.confirmed.connect(_dungeon_debug_login)
+				add_child(_dungeon_debug_confirm)
+			_dungeon_debug_confirm.popup_centered()
+		else:
+			_dungeon_debug_login()
+		return
+	if _backend.token.is_empty() or _backend._verified_player_id.is_empty():
+		return
+	_dungeon_check_session()
+
+func _dungeon_check_session() -> void:
 	_dungeon_entry_owner = _backend._verified_player_id
 	_dungeon_entry_kind = "session"
 	_dungeon_entry_request = _backend.request_api("GET", "/dungeon/session", null)
 	_dungeon_entry_status.text = "Checking Dungeon session..." if not _dungeon_entry_request.is_empty() else "Connection busy. Try again."
+	_update_sync_status()
+
+func _dungeon_debug_login() -> void:
+	if not _dungeon_local_debug() or not _dungeon_entry_request.is_empty():
+		return
+	_dungeon_debug_login_token = _backend.token
+	_dungeon_entry_kind = "debug_login"
+	_dungeon_entry_request = _backend.request_api("POST", "/auth/dev_login", {"name": "dungeon_debug_local"})
+	_dungeon_entry_status.text = "Connecting local Dungeon test account..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
+	_update_sync_status()
+
+func _on_dungeon_debug_state(state: Dictionary) -> void:
+	if not _dungeon_debug_waiting or state.is_empty() or not is_instance_valid(_dungeon_entry_status):
+		return
+	if not _dungeon_local_debug() or _backend._verified_player_id != _dungeon_debug_expected_player or str(state.get("player_id", "")) != _dungeon_debug_expected_player or str(state.get("display_name", "")) != "dungeon_debug_local":
+		_dungeon_debug_waiting = false
+		_dungeon_entry_status.text = "Account verification failed. Retry."
+		_update_sync_status()
+		return
+	_dungeon_debug_waiting = false
+	_dungeon_debug_prepare()
+
+func _dungeon_debug_prepare() -> void:
+	if not _dungeon_local_debug() or _backend._verified_player_id.is_empty():
+		return
+	_dungeon_entry_owner = _backend._verified_player_id
+	_dungeon_entry_kind = "debug_prepare"
+	_dungeon_entry_request = _backend.request_api("POST", "/debug/dungeons/prepare", {}, true)
+	_dungeon_entry_status.text = "Preparing local Dungeon account..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
 	_update_sync_status()
 
 func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary) -> void:
@@ -280,13 +343,34 @@ func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary)
 	_dungeon_entry_request = ""
 	if not is_instance_valid(_dungeon_entry_status):
 		return
+	if _dungeon_entry_kind == "debug_login":
+		if not ok or _backend == null or not _dungeon_local_debug() or _backend.token != _dungeon_debug_login_token or str(data.get("token", "")).is_empty() or str(data.get("player_id", "")).is_empty():
+			_dungeon_entry_status.text = "Local debug login failed. Check the local Docker API and retry."
+			_update_sync_status()
+			return
+		_dungeon_debug_expected_player = str(data.player_id)
+		_dungeon_debug_waiting = true
+		_backend.set_token(str(data.token))
+		_dungeon_entry_status.text = "Verifying local Dungeon account..."
+		var expected := _dungeon_debug_expected_player
+		get_tree().create_timer(10.0).timeout.connect(func():
+			if _dungeon_debug_waiting and _dungeon_debug_expected_player == expected and is_instance_valid(_dungeon_entry_status):
+				_dungeon_debug_waiting = false
+				_dungeon_entry_status.text = "Account verification timed out. Check the local Docker API and retry."
+				_update_sync_status()
+		)
+		_update_sync_status()
+		return
 	if _backend == null or _dungeon_entry_owner.is_empty() or _backend._verified_player_id != _dungeon_entry_owner:
 		_dungeon_entry_status.text = "Account changed. Reopen Sync Nexus."
 		_update_sync_status()
 		return
 	if not ok:
-		_dungeon_entry_status.text = str(data.get("error", "Connection unavailable. Retry."))
+		_dungeon_entry_status.text = "Debug preparation unavailable. Check the local Docker API configuration and retry." if _dungeon_entry_kind == "debug_prepare" else str(data.get("error", "Connection unavailable. Retry."))
 		_update_sync_status()
+		return
+	if _dungeon_entry_kind == "debug_prepare":
+		_dungeon_check_session()
 		return
 	var session: Variant = data.get("session") if _dungeon_entry_kind == "session" else data
 	if session is Dictionary and str(session.get("status", "")) == "ACTIVE" and not str(session.get("run_id", "")).is_empty():
