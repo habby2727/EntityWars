@@ -26,6 +26,16 @@ func _run() -> void:
 	assert(panel._lab_buttons.size() == 1)
 	assert(panel._lab_buttons[0].text == "START")
 	assert(is_instance_valid(panel._dungeon_entry_button) and panel._dungeon_entry_button.text == "ENTER DUNGEON")
+	var dungeon_dialog := ConfirmationDialog.new()
+	panel.add_child(dungeon_dialog)
+	var new_run := dungeon_dialog.add_button("NEW TEST RUN", false, "new_test_run")
+	panel._style_dungeon_dialog(dungeon_dialog, [new_run])
+	var dialog_frame := dungeon_dialog.get_theme_stylebox("panel") as StyleBoxTexture
+	assert(dialog_frame != null and dialog_frame.texture.resource_path.ends_with("marco-horizontal-popup.png"))
+	assert(dungeon_dialog.get_label().horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER)
+	for choice in [dungeon_dialog.get_ok_button(), dungeon_dialog.get_cancel_button(), new_run]:
+		assert(choice.get_theme_stylebox("normal") is StyleBoxTexture and choice.alignment == HORIZONTAL_ALIGNMENT_CENTER)
+	dungeon_dialog.queue_free()
 	assert(not panel._dungeon_ranking_button.disabled)
 	panel._dungeon_request = "fixture-request"
 	panel._dungeon_request_owner = "fixture-player"
@@ -70,7 +80,20 @@ func _run() -> void:
 	assert(not loadout.get_node("RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter").visible)
 	assert(loadout._spell_button.text == "Change Spells")
 	var disabled_style = loadout._spell_button.get_theme_stylebox("disabled")
-	assert(disabled_style is StyleBoxTexture and disabled_style.texture.resource_path.ends_with("boton-bloqueado-off.png"))
+	assert(disabled_style is StyleBoxTexture)
+	assert(loadout._spell_button.get_theme_stylebox("normal") != disabled_style)
+	assert(loadout._build_warning.visible and not loadout._spell_warning.visible)
+	loadout._on_equip_button_pressed(loadout.dd_item1)
+	assert(not loadout._build_warning.visible)
+	loadout._set_button_selection(loadout.dd_item1, loadout._items, "")
+	assert(loadout._build_warning.visible)
+	loadout._dungeon_spell_progress = {"learned_by_entity": {"sulfur_01": ["steady_script"], "sodium_01": []}}
+	loadout._on_spell_state_updated({})
+	loadout._on_card_picked("entity", "sulfur_01")
+	assert(loadout._spell_warning.visible and not loadout._spell_button.disabled)
+	loadout._on_card_picked("entity", "sodium_01")
+	assert(not loadout._spell_warning.visible and not loadout._spell_button.disabled)
+	loadout._on_card_picked("entity", "sulfur_01")
 	loadout._dungeon_spell_progress = {"learned_by_entity": {"sulfur_01": ["fixture_snapshot"]}}
 	loadout._on_spell_state_updated({"spell_progress": {"learned_by_entity": {"sulfur_01": ["fixture_late"]}}})
 	assert(loadout._spell_state.spell_progress.learned_by_entity.sulfur_01 == ["fixture_snapshot"])

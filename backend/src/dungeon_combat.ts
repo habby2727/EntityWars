@@ -271,7 +271,7 @@ export function createDungeonBlessing(seed: Uint8Array, runId: string, floor: nu
 
 export function publicDungeonBlessing(blessing: any): any {
   if (!blessing) return null;
-  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * tier);
+  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * (tier - 1));
   const metadata: Record<string, any> = {
     elemental_surge: { id: "elemental_surge", name: "Elemental Surge", description: `Direct elemental spell damage +${pct}%.` },
     homunculus_resonance: { id: "homunculus_resonance", name: "Homunculus Resonance", description: `+1 hom energy after ${tier < 3 ? 3 : 2} successful spells, up to ${tier < 5 ? 1 : 2} times this floor.` },
@@ -505,7 +505,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   delete next.player.status.tempo_bonus; delete next.npc.status.tempo_bonus;
   if (playerFirst) { playerAction(); npcAction(); } else { npcAction(); if (next.player.hp > 0 && next.npc.hp > 0) playerAction(); }
   for (const fighter of [next.player, next.npc]) {
-    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 2; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * b.tier) + b.poison_remainder; const prevented = Math.min(1, Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: fighter === next.player ? "player" : "npc", amount, hp: fighter.hp, remaining: fighter.status.poison }); }
+    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 2; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder; const prevented = Math.min(1, Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: fighter === next.player ? "player" : "npc", amount, hp: fighter.hp, remaining: fighter.status.poison }); }
     for (const id of Object.keys(fighter.cooldowns)) fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   }
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);

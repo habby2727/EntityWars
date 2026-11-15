@@ -281,6 +281,20 @@ func _dungeon_local_debug() -> bool:
 	local.compile("^http://(127\\.0\\.0\\.1|localhost|\\[::1\\])(?::[0-9]{1,5})?/?$")
 	return local.search(_backend.base_url.to_lower()) != null
 
+func _style_dungeon_dialog(dialog: ConfirmationDialog, extra_buttons: Array = []) -> void:
+	dialog.min_size = Vector2i(620, 300)
+	dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(55, 50, 55, 40)))
+	var message := dialog.get_label()
+	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message.add_theme_font_size_override("font_size", 18)
+	for button in [dialog.get_ok_button(), dialog.get_cancel_button()] + extra_buttons:
+		button.custom_minimum_size = Vector2(160, 52)
+		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		button.add_theme_font_size_override("font_size", 16)
+		MenuArt.button(button)
+
 func _enter_dungeon() -> void:
 	if _backend == null or not _dungeon_entry_request.is_empty() or _dungeon_debug_waiting:
 		return
@@ -296,6 +310,7 @@ func _enter_dungeon() -> void:
 				_dungeon_debug_confirm.dialog_text = "Switch to the dedicated local Dungeon debug account?"
 				_dungeon_debug_confirm.confirmed.connect(_dungeon_debug_login)
 				add_child(_dungeon_debug_confirm)
+				_style_dungeon_dialog(_dungeon_debug_confirm)
 			_dungeon_debug_confirm.popup_centered()
 		else:
 			_dungeon_debug_login()
@@ -395,10 +410,11 @@ func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary)
 				_dungeon_debug_run_choice.title = "Dungeon test run"
 				_dungeon_debug_run_choice.dialog_text = "Resume the active run or start a new test run."
 				_dungeon_debug_run_choice.get_ok_button().text = "RESUME RUN"
-				_dungeon_debug_run_choice.add_button("NEW TEST RUN", false, "new_test_run")
+				var new_run_button := _dungeon_debug_run_choice.add_button("NEW TEST RUN", false, "new_test_run")
 				_dungeon_debug_run_choice.confirmed.connect(_dungeon_debug_resume)
 				_dungeon_debug_run_choice.custom_action.connect(_dungeon_debug_run_action)
 				add_child(_dungeon_debug_run_choice)
+				_style_dungeon_dialog(_dungeon_debug_run_choice, [new_run_button])
 			_dungeon_debug_run_choice.popup_centered()
 		else:
 			_dungeon_open_session(session)
@@ -437,6 +453,7 @@ func _dungeon_debug_run_action(action: StringName) -> void:
 		_dungeon_debug_abandon_confirm.dialog_text = "The current Dungeon run will end before starting a new test run."
 		_dungeon_debug_abandon_confirm.confirmed.connect(_dungeon_debug_abandon)
 		add_child(_dungeon_debug_abandon_confirm)
+		_style_dungeon_dialog(_dungeon_debug_abandon_confirm)
 	_dungeon_debug_abandon_confirm.popup_centered()
 
 func _dungeon_debug_abandon() -> void:

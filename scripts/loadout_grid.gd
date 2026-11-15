@@ -107,6 +107,8 @@ func _exit_tree() -> void:
 var _spell_backend: BackendClient
 var _spell_state := {}
 var _dungeon_spell_progress: Variant = null
+var _build_warning: Label
+var _spell_warning: Label
 var _spell_synced := false
 var _spell_pending_id := ""
 var _spell_pending_mode := ""
@@ -256,6 +258,7 @@ func _ready() -> void:
 	_wire_buttons()
 	_wire_build_tooltips()
 	_populate_dropdowns()
+	_refresh_build_warning()
 	_build_cards()
 	_refresh_details()
 	_update_save_button_label()
@@ -447,6 +450,8 @@ func _setup_build_dialog() -> void:
 	center.alignment = BoxContainer.ALIGNMENT_CENTER
 	center.get_node("BuildCenterSpacer").hide()
 	center.add_child(button)
+	if _dungeon_mode:
+		_build_warning = _create_dungeon_warning(button, "No weapon selected")
 	button.pressed.connect(overlay.show)
 	for action_path in ["RootMargin/MainHSplit/RightPanel/BottomRow/Save", "RootMargin/MainHSplit/RightPanel/BottomRow/Play"]:
 		var action := get_node_or_null(action_path) as Button
@@ -465,6 +470,32 @@ func _setup_build_dialog() -> void:
 	row.add_child(info_panel)
 	info.reparent(info_panel)
 	info.get_node("InfoSpacer").custom_minimum_size.y = 0
+
+func _create_dungeon_warning(button: Button, hint: String) -> Label:
+	var badge := Label.new()
+	badge.name = "DungeonWarning"
+	badge.text = "!"
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	badge.offset_left = -24
+	badge.offset_top = 3
+	badge.offset_right = -4
+	badge.offset_bottom = 23
+	badge.add_theme_font_size_override("font_size", 16)
+	badge.add_theme_color_override("font_color", Color.WHITE)
+	var background := StyleBoxFlat.new()
+	background.bg_color = Color("cf2936")
+	background.set_corner_radius_all(10)
+	badge.add_theme_stylebox_override("normal", background)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(badge)
+	button.tooltip_text = hint
+	return badge
+
+func _refresh_build_warning() -> void:
+	if is_instance_valid(_build_warning):
+		_build_warning.visible = _dungeon_mode and _idx_to_id(_items, dd_item1).is_empty() and _idx_to_id(_items, dd_item2).is_empty()
 
 func _load_registry_safe() -> void:
 	if ResourceLoader.exists(REG_PATH):
@@ -578,11 +609,8 @@ func _refresh_spell_button() -> void:
 	var extra := available.any(func(id): return id not in equipped)
 	_spell_button.tooltip_text = "Change spells for this entity" if extra else "No additional spells unlocked for this entity"
 	MenuArt.button(_spell_button)
-	if not extra:
-		var off := StyleBoxTexture.new()
-		off.texture = load("res://assets/ui/new-elements/boton-bloqueado-off.png")
-		off.texture_margin_left = 20; off.texture_margin_right = 20; off.texture_margin_top = 15; off.texture_margin_bottom = 15
-		for state in ["normal", "hover", "pressed", "disabled"]: _spell_button.add_theme_stylebox_override(state, off)
+	if is_instance_valid(_spell_warning):
+		_spell_warning.visible = _dungeon_mode and _dungeon_spell_progress is Dictionary and extra
 
 func _build_spell_dialog() -> void:
 	_spell_button = get_node_or_null("SpellConfig") as Button
@@ -593,6 +621,8 @@ func _build_spell_dialog() -> void:
 	_spell_button.custom_minimum_size = Vector2(190, 72)
 	_spell_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	$RootMargin/MainHSplit/RightPanel/BottomRow.move_child(_spell_button, 0)
+	if _dungeon_mode:
+		_spell_warning = _create_dungeon_warning(_spell_button, "Additional spells available")
 	_spell_button.pressed.connect(_open_spell_dialog)
 	_spell_dialog = Control.new()
 	_spell_dialog.name = "SpellOverlay"
@@ -803,7 +833,8 @@ func _confirm_spell_dialog() -> void:
 			_set_build_error("Server state is unavailable.")
 			return
 		_hunt_spells[_current_entity_id] = _spell_draft.duplicate()
-		_set_build_error("Dungeon spells selected." if _dungeon_mode else "Boss Hunt spells selected.")
+		_refresh_spell_button()
+		_set_build_error("" if _dungeon_mode else "Boss Hunt spells selected.")
 		return
 	if _spell_debug.unlock_all_buildings:
 		var next := _spell_debug.load_lab_state()
@@ -960,6 +991,7 @@ func _on_equip_button_pressed(btn: Button) -> void:
 	btn.set_meta("selected_idx", sidx)
 	btn.text = _label_for_item(items[sidx], "None")
 	_refresh_build_slot_icon(btn)
+	_refresh_build_warning()
 	if tooltip_panel and tooltip_panel.visible:
 		var mouse_pos := get_viewport().get_mouse_position()
 		if btn.get_global_rect().has_point(mouse_pos):
@@ -1560,7 +1592,7 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 		SceneRouter._dungeon_context["session"] = session.duplicate(true)
 		SceneRouter.go_to_dungeon_combat()
 	else:
-		_set_build_error("Select two different weapons and four spells; retry the same selection if needed.")
+		_set_build_error("")
 
 func _submit_dungeon_loadout() -> void:
 	if not _dungeon_request.is_empty():
@@ -1738,6 +1770,7 @@ func _set_button_selection(btn: Button, items: Array, desired) -> void:
 	btn.set_meta("selected_idx", idx)
 	btn.text = _label_for_item(items[idx], "None")
 	_refresh_build_slot_icon(btn)
+	_refresh_build_warning()
 
 func _refresh_build_slot_icon(btn: Button) -> void:
 	if btn not in [dd_item1, dd_item2, dd_side1, dd_side2]:

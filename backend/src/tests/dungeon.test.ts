@@ -52,7 +52,14 @@ test("blessing damage, poison remainder and energy are bounded", () => {
   expect(b.events.find((e: any) => e.kind === "reflect").amount).toBe(a.events.find((e: any) => e.kind === "reflect").amount);
   let ward = make("toxin_ward"); ward.player.status.poison = 4;
   const ticks = []; for (let i = 0; i < 4; i++) { const r = turn(ward); ticks.push(r.events.find((e: any) => e.kind === "poison" && e.side === "player").amount); ward = r.next_state; }
-  expect(ticks).toEqual([2, 1, 2, 1]);
+  expect(ticks).toEqual([2, 2, 1, 2]);
+  for (const [floor, percentage] of [[3, 20], [6, 25], [9, 30], [21, 50], [30, 50]] as const) {
+    const info = publicDungeonBlessing(createDungeonBlessing(new Uint8Array(32).fill(2), "run", floor, true));
+    expect(info.offers.find((offer: any) => offer.id === "toxin_ward").description).toContain(`${percentage}%`);
+    let state = make("toxin_ward", floor); state.player.status.poison = 5;
+    let damage = 0; for (let i = 0; i < 5; i++) { const result = turn(state); damage += result.events.find((event: any) => event.kind === "poison" && event.side === "player").amount; state = result.next_state; }
+    expect(damage).toBe(10 - Math.floor(10 * percentage / 100));
+  }
   let resonance = make("homunculus_resonance", 15); resonance.player.hom_energy = 0;
   for (let i = 0; i < 6; i++) resonance = turn(resonance).next_state;
   expect(resonance.blessing.procs).toBe(2); expect(resonance.player.hom_energy).toBe(6);
@@ -1155,6 +1162,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect(afterSpecial.data.combat_state.player.status.vuln).toBeUndefined(); expect(afterSpecial.data.combat_state.player.status.atk_boost).toBeUndefined();
     expect((await request("/dungeon/abandon", { run_id: eliteRun.data.run_id, client_action_id: "close-special" }, token)).status).toBe(200);
     env.DUNGEON_BLESSINGS_ENABLED = "1";
+    env.DUNGEON_ELITES_ENABLED = "1";
     server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     const blessingRun = await request("/dungeon/start", { client_action_id: "blessing-start" }, token);
@@ -1163,7 +1171,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     const beforeBlessing = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(blessingRun.data.run_id) as any).combat_state_json);
     expect(beforeBlessing.blessings_enabled).toBe(true); beforeBlessing.floor = 2; beforeBlessing.terminal_result = "WIN";
     db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = 2 WHERE run_id = ?").run(JSON.stringify(beforeBlessing), blessingRun.data.run_id);
-    env.DUNGEON_BLESSINGS_ENABLED = "0"; server.kill(); await server.exited; server = spawn(); await ready();
+    env.DUNGEON_BLESSINGS_ENABLED = "0"; env.DUNGEON_ELITES_ENABLED = "0"; server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     b.token = (await request("/auth/dev_login", { name: "dungeon_test_b" })).data.token;
     const floorThree = await request("/dungeon/next", { run_id: blessingRun.data.run_id, client_action_id: "blessing-floor3", expected_revision: 1 }, token);
@@ -1182,6 +1190,52 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     afterBlessing.terminal_result = "WIN"; db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = 3 WHERE run_id = ?").run(JSON.stringify(afterBlessing), blessingRun.data.run_id);
     const floorFour = await request("/dungeon/next", { run_id: blessingRun.data.run_id, client_action_id: "blessing-floor4", expected_revision: 3 }, token);
     expect(floorFour.status).toBe(200); expect(floorFour.data.combat_state.blessing).toBeNull();
+    // Jump only the already-cleared floors; exercise each blessing floor through HTTP.
+    let blessingRevision = floorFour.data.combat_revision;
+    const blessingSeed = createHmac("sha256", env.WORLD_SECRET).update("dungeon:" + blessingRun.data.run_id).digest();
+    for (const [floor, tier] of [[6, 2], [9, 3], [30, 7]] as const) {
+      const priorFloor = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(blessingRun.data.run_id) as any).combat_state_json);
+      priorFloor.floor = floor - 1; priorFloor.terminal_result = "WIN";
+      db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = ? WHERE run_id = ?").run(JSON.stringify(priorFloor), floor - 1, blessingRun.data.run_id);
+      const nextAction = { run_id: blessingRun.data.run_id, client_action_id: `blessing-next-${floor}`, expected_revision: blessingRevision };
+      const entry = await request("/dungeon/next", nextAction, token);
+      expect(entry.status).toBe(200);
+      expect(entry.data.floor).toBe(floor);
+      expect(entry.data.combat_state.blessing).toMatchObject({ tier, pending: true, selected: null });
+      expect(entry.data.combat_state.blessing.offers.map((offer: any) => offer.id)).toEqual(createDungeonBlessing(blessingSeed, blessingRun.data.run_id, floor, true).offers);
+      expect(new Set(entry.data.combat_state.blessing.offers.map((offer: any) => offer.id)).size).toBe(3);
+      if (floor === 30) expect(entry.data.combat_state.elite.label).toMatch(/^(BULWARK|REAVER|ALCHEMIST)$/);
+      expect((await request("/dungeon/next", nextAction, token)).data).toEqual(entry.data);
+      blessingRevision = entry.data.combat_revision;
+      const persisted = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(blessingRun.data.run_id) as any).combat_state_json);
+      expect(persisted.blessing).toMatchObject({ tier, pending: true, selected: null, spell_count: 0, procs: 0, poison_remainder: 0, shield_used: false });
+      const blockedAction = { run_id: blessingRun.data.run_id, client_action_id: `blessing-blocked-${floor}`, expected_revision: blessingRevision, decision: { turn: 1, spell_id: "cinder_fist" } };
+      expect((await request("/dungeon/turn", blockedAction, token)).status).toBe(400);
+      expect((await request("/dungeon/inspiration", { ...blockedAction, client_action_id: `inspiration-blocked-${floor}`, decision: { kind: "decline" } }, token)).status).toBe(400);
+      if (floor === 30) {
+        server.kill(); await server.exited; server = spawn(); await ready();
+        token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+      }
+      expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.blessing).toEqual(entry.data.combat_state.blessing);
+      const choiceAction = { run_id: blessingRun.data.run_id, client_action_id: `blessing-select-${floor}`, expected_revision: blessingRevision, decision: { blessing_id: entry.data.combat_state.blessing.offers[0].id } };
+      const [selection, replay] = await Promise.all([request("/dungeon/blessing", choiceAction, token), request("/dungeon/blessing", choiceAction, token)]);
+      expect(selection.status).toBe(200); expect(replay.data).toEqual(selection.data);
+      expect(selection.data.combat_state.turn).toBe(0);
+      expect(selection.data.combat_state.blessing).toMatchObject({ tier, pending: false, selected: { id: choiceAction.decision.blessing_id } });
+      blessingRevision = selection.data.combat_revision;
+      const played = await request("/dungeon/turn", { ...blockedAction, client_action_id: `blessing-play-${floor}`, expected_revision: blessingRevision }, token);
+      expect(played.status).toBe(200); expect(played.data.combat_state.turn).toBe(1);
+      blessingRevision = played.data.combat_revision;
+      const completed = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(blessingRun.data.run_id) as any).combat_state_json);
+      completed.terminal_result = "WIN";
+      db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = ? WHERE run_id = ?").run(JSON.stringify(completed), floor, blessingRun.data.run_id);
+      const following = await request("/dungeon/next", { run_id: blessingRun.data.run_id, client_action_id: `blessing-after-${floor}`, expected_revision: blessingRevision }, token);
+      expect(following.status).toBe(200); expect(following.data.floor).toBe(floor + 1);
+      expect(following.data.combat_state.blessing).toBeNull();
+      const fresh = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(blessingRun.data.run_id) as any).combat_state_json);
+      expect(fresh.blessing).toBeNull();
+      blessingRevision = following.data.combat_revision;
+    }
     expect((await request("/dungeon/abandon", { run_id: blessingRun.data.run_id, client_action_id: "blessing-close" }, token)).status).toBe(200);
     delete (env as Record<string, string | undefined>).DUNGEON_SPECIAL_ENCOUNTERS_ENABLED;
     server.kill(); await server.exited; server = spawn(); await ready();
