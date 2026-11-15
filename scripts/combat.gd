@@ -93,6 +93,8 @@ var _dungeon_brief: ConfirmationDialog
 var _dungeon_floor_label: Label
 var _dungeon_brief_floor := 0
 var _dungeon_seen_actions := {}
+var _dungeon_playing_events := false
+var _dungeon_presentation_turn := -1
 var _dungeon_rank_loaded := false
 var _dungeon_best := -1
 var _dungeon_rank_floor := -1
@@ -424,18 +426,15 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		return
 	var action_id := str(_dungeon_pending.get("payload", {}).get("client_action_id", ""))
 	if not _dungeon_seen_actions.has(action_id):
-		for event in data.get("events", []):
-			if event is Dictionary:
-				var combo := _dungeon_strategic_event(event)
-				if not combo.is_empty():
-					_log_immediate(combo)
-					continue
-				var spell_name := ""
-				if event.has("spell_id"):
-					var spell: Dictionary = _reg.get_spell_by_id(str(event.spell_id))
-					spell_name = " " + str(spell.get("name", event.spell_id))
-				_log_immediate("%s: %s%s%s" % [str(event.get("actor", "Combat")).capitalize(), str(event.get("kind", "event")).replace("_", " "), spell_name, " " + str(event.get("amount")) if event.has("amount") else ""])
 		_dungeon_seen_actions[action_id] = true
+		_dungeon_playing_events = true
+		_dungeon_presentation_turn = int(data.get("combat_state", {}).get("turn", 0))
+		_dungeon_refresh_controls()
+		await _dungeon_present_events(data.get("events", []), _dungeon_identity)
+		_dungeon_playing_events = false
+		_dungeon_presentation_turn = -1
+		if not is_inside_tree() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
+			return
 	_dungeon_pending.clear()
 	SceneRouter._dungeon_context.erase("pending_action")
 	if int(data.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
@@ -444,6 +443,57 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_render()
 	else:
 		_dungeon_recover()
+
+func _dungeon_present_events(events: Array, owner: String) -> void:
+	var view: Dictionary = _dungeon_session.get("combat_state", {}).duplicate(true)
+	for event in events:
+		if not is_inside_tree() or _combat_backend == null or _combat_backend._verified_player_id != owner:
+			return
+		if not event is Dictionary:
+			continue
+		var kind := str(event.get("kind", ""))
+		var actor := str(event.get("actor", ""))
+		var target := str(event.get("side", event.get("target", "")))
+		if target not in ["player", "npc"] and actor in ["player", "npc"] and kind in ["damage", "hom_attack"]:
+			target = "npc" if actor == "player" else "player"
+		var combo := _dungeon_strategic_event(event)
+		var category := "combo" if not combo.is_empty() else "switch" if kind == "switch" else "damage" if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison"] else "heal" if kind == "heal" else "debuff" if kind == "status_applied" else "system"
+		var actor_id := actor if actor in ["player", "npc"] else target
+		var fighter: Dictionary = view.get(actor_id, {})
+		var entity: Dictionary = _find_by_id(_entities, str(fighter.get("id", "")))
+		var actor_name := str(entity.get("name", fighter.get("id", "Combat")))
+		var formatted := {"category": category, "actor": actor_name, "actor_kind": "entity", "actor_side": "player" if actor_id == "player" else "enemy", "actor_color": "69d7e8" if actor_id == "player" else "f2a078", "verb": " " + kind.replace("_", " ")}
+		if target in ["player", "npc"] and target != actor_id and view.get(target) is Dictionary:
+			var target_entity: Dictionary = _find_by_id(_entities, str(view[target].get("id", "")))
+			formatted["target"] = " " + str(target_entity.get("name", view[target].get("id", "")))
+			formatted["target_color"] = "69d7e8" if target == "player" else "f2a078"
+		if event.has("spell_id"):
+			var spell: Dictionary = _reg.get_spell_by_id(str(event.spell_id))
+			formatted["verb"] = " uses " if kind == "spell" else " " + kind.replace("_", " ") + " with "
+			formatted["spell_id"] = str(event.spell_id)
+			formatted["spell_name"] = str(spell.get("name", event.spell_id))
+		if event.has("amount"):
+			formatted["suffix"] = " %d" % int(event.amount)
+		_append_combat_log(combo, {"category": "combo"} if not combo.is_empty() else formatted)
+		if target in ["player", "npc"] and view.get(target) is Dictionary:
+			var target_view: Dictionary = view[target]
+			if event.has("hp"):
+				target_view.hp = int(event.hp)
+				var bar: ProgressBar = player_hp if target == "player" else enemy_hp
+				bar.value = float(target_view.hp)
+				bar.get_node("HealthValue").text = "%d / %d" % [int(target_view.hp), int(target_view.max_hp)]
+				_apply_hp_color(bar, target_view)
+				if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison"] and int(event.get("amount", 1)) > 0:
+					_animate_hit(player_entity if target == "player" else enemy_entity, int(event.get("amount", 0)), int(target_view.max_hp))
+			if kind == "status_applied":
+				target_view.status[str(event.get("status", ""))] = event.get("value", 0)
+			elif kind == "poison":
+				target_view.status.poison = int(event.get("remaining", 0))
+			var display_status: Dictionary = target_view.get("status", {}).duplicate(true)
+			display_status["shield_pct"] = display_status.get("shield", 0)
+			display_status["vuln_pct"] = display_status.get("vuln", 0)
+			(player_indicators if target == "player" else enemy_indicators).set_fighter(0, {"status": display_status})
+		await get_tree().create_timer(1.35 if category == "combo" else 1.25 if category == "debuff" else 0.8 if category == "system" else LOG_STEP_SECONDS).timeout
 
 func _dungeon_strategic_event(event: Dictionary) -> String:
 	var kind := str(event.get("kind", ""))
@@ -528,16 +578,35 @@ func _dungeon_render() -> void:
 	for pair in [[player_hp, p], [enemy_hp, n]]:
 		pair[0].max_value = float(pair[1].max_hp)
 		pair[0].value = float(pair[1].hp)
+		_apply_hp_color(pair[0], pair[1])
 		pair[0].get_node("HealthValue").text = "%d / %d" % [int(pair[1].hp), int(pair[1].max_hp)]
-	for pair in [[player_indicators, p], [enemy_indicators, n]]:
+	for pair in [[player_indicators, p, "player"], [enemy_indicators, n, "npc"]]:
 		var status: Dictionary = pair[1].get("status", {}).duplicate(true)
 		status["shield_pct"] = status.get("shield", 0)
 		status["vuln_pct"] = status.get("vuln", 0)
+		var effects: Array = []
+		for delayed in state.get("strategic_delayed", []):
+			if str(delayed.get("target", "")) == str(pair[2]):
+				effects.append({"icon": "poison", "label": str(delayed.get("amount", 0)), "tooltip": "Delayed damage: %d at the end of exchange %d." % [int(delayed.get("amount", 0)), int(delayed.get("due_turn", 0))]})
+		if pair[1].has("strategic_trap"):
+			var trap: Dictionary = pair[1].strategic_trap
+			var remaining := maxi(0, int(trap.get("expires_turn", 0)) - int(state.get("turn", 0)))
+			effects.append({"icon": "shield", "label": "%dT" % remaining, "tooltip": "Counter trap: %d%% of direct spell damage, capped at 20%% of attacker HP; %d exchanges remaining." % [roundi(float(trap.get("value", 0)) * 100), remaining]})
+		if pair[1].has("strategic_heal_suppression"):
+			var remaining := maxi(0, int(pair[1].strategic_heal_suppression.get("expires_turn", 0)) - int(state.get("turn", 0)))
+			effects.append({"icon": "chain", "label": "%dT" % remaining, "tooltip": "Healing reduced by 50%%; %d exchanges remaining." % remaining})
+		pair[0].set_boss_effects(true, effects)
+		if not pair[0].effect_clicked.is_connected(_show_dungeon_status):
+			pair[0].effect_clicked.connect(_show_dungeon_status)
 		pair[0].set_fighter(0, {"status": status})
 	_player_hom_status.visible = not ph.is_empty()
 	_enemy_hom_status.visible = not nh.is_empty()
 	_player_hom_status.call("set_fighter", {"hom_name": str(ph.get("name", "")), "hom_energy": int(p.get("hom_energy", 0)), "hom_spent": false})
 	_enemy_hom_status.call("set_fighter", {"hom_name": str(nh.get("name", "")), "hom_energy": int(n.get("hom_energy", 0)), "hom_spent": false})
+	_player_inspiration.show()
+	_enemy_inspiration.show()
+	_player_inspiration.call("set_fighter", {"inspiration": int(p.get("inspiration", 0)), "inspiration_used_this_battle": bool(p.get("inspiration_used", false))})
+	_enemy_inspiration.call("set_fighter", {"inspiration": int(n.get("inspiration", 0)), "inspiration_used_this_battle": bool(n.get("inspiration_used", false))})
 	for i in 4:
 		var id := str(p.spell_ids[i])
 		var spell: Dictionary = _reg.get_spell_by_id(id)
@@ -598,6 +667,7 @@ func _dungeon_render() -> void:
 			_dungeon_brief.dialog_text = "Floor %d\n%s (%s)\nHomunculus: %s\nCleared: %d" % [floor_id, str(ne.get("name", n.id)), str(n.get("type", "")).capitalize(), str(nh.get("name", "None")), int(_dungeon_session.get("cleared_floor", 0))]
 			_dungeon_brief.popup_centered()
 	_dungeon_refresh_controls()
+	_refresh_dungeon_inspiration()
 	if _dungeon_request.is_empty() and _dungeon_pending.is_empty() and (not _dungeon_rank_loaded or ((phase == "FLOOR_CLEARED" or str(_dungeon_session.get("status", "")) == "LOSS") and _dungeon_rank_floor != floor_id)):
 		_dungeon_rank_floor = floor_id
 		_dungeon_kind = "ranking"
@@ -608,7 +678,7 @@ func _dungeon_refresh_controls() -> void:
 	var state: Dictionary = _dungeon_session.get("combat_state", {})
 	var p: Dictionary = state.get("player", {})
 	var ids: Array = p.get("spell_ids", [])
-	var blocked := not _dungeon_synchronized or _dungeon_session.is_empty() or str(_dungeon_session.get("status", "")) != "ACTIVE" or str(_dungeon_session.get("phase", "")) != "COMBAT" or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty() or (_dungeon_brief != null and _dungeon_brief.visible) or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
+	var blocked := _dungeon_playing_events or bool(p.get("inspiration_pending", false)) or not _dungeon_synchronized or _dungeon_session.is_empty() or str(_dungeon_session.get("status", "")) != "ACTIVE" or str(_dungeon_session.get("phase", "")) != "COMBAT" or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty() or (_dungeon_brief != null and _dungeon_brief.visible) or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
 	for i in spell_buttons.size():
 		spell_buttons[i].disabled = blocked or i >= ids.size() or int(p.get("cooldowns", {}).get(str(ids[i]), 0)) > 0
 	var weapons: Array = state.get("weapons", [])
@@ -622,6 +692,60 @@ func _dungeon_refresh_controls() -> void:
 		var item := _find_by_id(_items, item_id)
 		switch_weapon_btn.text = "Switch to: " + str(item.get("name", item_id))
 	ultra_button.disabled = true
+
+func _show_dungeon_status(description: String) -> void:
+	_spell_detail.title = "Combat Status"
+	_spell_detail.dialog_text = description
+	_spell_detail.popup_centered(Vector2i(440, 260))
+
+func _refresh_dungeon_inspiration() -> void:
+	if not _dungeon_guard or _inspiration_panel == null:
+		return
+	var p: Dictionary = _dungeon_session.get("combat_state", {}).get("player", {})
+	var offers: Variant = p.get("inspiration_offers", [])
+	if not bool(p.get("inspiration_pending", false)) or str(_dungeon_session.get("status", "")) != "ACTIVE" or not offers is Array or offers.size() != 3:
+		_inspiration_panel.hide()
+		_inspiration_options.clear()
+		return
+	var options: Array = []
+	var seen := {}
+	for id in offers:
+		var spell: Dictionary = _reg.get_spell_by_id(str(id))
+		if spell.is_empty() or seen.has(str(id)):
+			_inspiration_panel.hide()
+			return
+		seen[str(id)] = true
+		options.append(spell)
+	_inspiration_options = options
+	var locked := _dungeon_playing_events or not _dungeon_synchronized or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
+	for i in 3:
+		var spell: Dictionary = options[i]
+		_inspiration_cards[i].text = _spell_description(spell)
+		_inspiration_cards[i].tooltip_text = _spell_description(spell)
+		_inspiration_cards[i].disabled = locked
+		_inspiration_cards[i].get_node("TypeIcon").call("configure", str(spell.get("primary_type", spell.get("type", ""))))
+		var secondary: Control = _inspiration_cards[i].get_node_or_null("DungeonSecondaryType")
+		if secondary == null:
+			secondary = CombatTypeIcon.new()
+			secondary.name = "DungeonSecondaryType"
+			secondary.position = Vector2(35, 4)
+			secondary.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_inspiration_cards[i].add_child(secondary)
+		secondary.visible = spell.get("type") == "hybrid"
+		if secondary.visible: secondary.call("configure", str(spell.get("secondary_type", "")))
+	(_inspiration_panel.get_node("Content/Cancel") as Button).disabled = locked
+	_inspiration_panel.show()
+
+func _send_dungeon_inspiration(decision: Dictionary) -> void:
+	var p: Dictionary = _dungeon_session.get("combat_state", {}).get("player", {})
+	if not _dungeon_synchronized or _dungeon_playing_events or not _dungeon_pending.is_empty() or not _dungeon_request.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or not bool(p.get("inspiration_pending", false)):
+		return
+	if decision.get("kind") == "choose" and str(decision.get("spell_id", "")) not in p.get("inspiration_offers", []):
+		return
+	_dungeon_pending = {"kind": "inspiration", "payload": {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": int(_dungeon_session.get("combat_revision", 0)), "decision": decision.duplicate(true)}}
+	SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
+	_refresh_dungeon_inspiration()
+	_dungeon_send_pending()
 
 func _layout_dungeon_floor_header() -> void:
 	if not is_instance_valid(_dungeon_floor_label) or not is_instance_valid(spell_panel):
@@ -2200,8 +2324,8 @@ func _inspiration_candidates(fighter: Dictionary) -> Array:
 	if _reg == null:
 		return candidates
 	var element := str(fighter.get("type", ""))
-	for spell in _reg.get_spells_for_type(element) + _reg.get_spells_for_type("hybrid"):
-		if (spell.get("type") == element or (spell.get("type") == "hybrid" and spell.get("primary_type") == element)) and spell.id not in fighter.get("spell_ids", []):
+	for spell in _reg.get_spells_for_type(element) + _reg.get_spells_for_type("universal") + _reg.get_spells_for_type("hybrid"):
+		if (spell.get("type") == element or (spell.get("type") in ["universal", "hybrid"] and element in spell.get("eligible_types", []))) and spell.id not in fighter.get("spell_ids", []):
 			candidates.append(spell)
 	candidates.shuffle()
 	return candidates.slice(0, 3)
@@ -2246,6 +2370,10 @@ func _finish_inspiration_exchange() -> void:
 	_update_ui()
 
 func _choose_inspiration(index: int) -> void:
+	if _dungeon_guard:
+		if index >= 0 and index < _inspiration_options.size():
+			_send_dungeon_inspiration({"kind": "choose", "spell_id": str(_inspiration_options[index].get("id", ""))})
+		return
 	if _online_hunt_guard:
 		if index >= 0 and index < _inspiration_options.size():
 			_send_online_inspiration({"kind": "choose", "spell_id": str(_inspiration_options[index].get("id", ""))})
@@ -2260,6 +2388,9 @@ func _choose_inspiration(index: int) -> void:
 	_refresh_spell_buttons()
 
 func _on_inspiration_cancel() -> void:
+	if _dungeon_guard:
+		_send_dungeon_inspiration({"kind": "decline"})
+		return
 	if _online_hunt_guard:
 		_send_online_inspiration({"kind": "decline"})
 		return
@@ -4234,6 +4365,8 @@ func _flush_steps() -> void:
 	_processing_steps = false
 
 func _display_turn() -> int:
+	if _dungeon_guard:
+		return _dungeon_presentation_turn if _dungeon_presentation_turn >= 0 else int(_dungeon_session.get("combat_state", {}).get("turn", 0))
 	if _online_hunt_guard:
 		if _online_event_turn >= 0:
 			return _online_event_turn

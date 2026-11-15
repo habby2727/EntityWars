@@ -23,7 +23,7 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
-import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, createDungeonCombatState, resolveDungeonTurn } from "./dungeon_combat";
+import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
@@ -2124,12 +2124,12 @@ async function startServer(): Promise<void> {
 						return jsonResponse(response);
 					}).immediate();
 				}
-				if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next")) {
+				if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next" || url.pathname == "/dungeon/inspiration")) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
-					const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn");
-					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !["run_id", "client_action_id", "expected_revision", ...(isTurn ? ["decision"] : [])].includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || (isTurn && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))) throw new HttpError(400, "Invalid dungeon action.");
-					const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...(isTurn ? { decision: body.decision } : {}) };
+					const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn"), isInspiration = url.pathname.endsWith("/inspiration"), hasDecision = isTurn || isInspiration;
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !["run_id", "client_action_id", "expected_revision", ...(hasDecision ? ["decision"] : [])].includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || (hasDecision && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))) throw new HttpError(400, "Invalid dungeon action.");
+					const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : isInspiration ? "DUNGEON_INSPIRATION" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...(hasDecision ? { decision: body.decision } : {}) };
 					return db.transaction(() => {
 						const now = Date.now();
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
@@ -2141,6 +2141,10 @@ async function startServer(): Promise<void> {
 						if (!row) throw new HttpError(404, "Dungeon run not found.");
 						if (row.status !== "ACTIVE" || row.expires_at <= now || !row.combat_state_json || row.combat_revision !== body.expected_revision) throw new HttpError(409, "Dungeon run unavailable or stale.");
 						const current = JSON.parse(row.combat_state_json), seed = createHmac("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
+						if ((isTurn || isInspiration) && current.inspiration_catalog_version !== 2) {
+							const spells = readJsonFile(resolve(import.meta.dir, "..", "..", "data", "spells.json"))?.spells;
+							if (!hydrateDungeonInspiration(current, spells)) throw new HttpError(409, "Dungeon Inspiration catalog unavailable.");
+						}
 						let combat: any, events: any[] = [], cleared = row.cleared_floor, turns = row.total_turns, status = "ACTIVE";
 						if (isTurn) {
 							const result = resolveDungeonTurn(current, body.decision, (turn, draw) => deterministicDraw(seed, `${row.run_id}:${current.floor}`, turn, draw));
@@ -2151,6 +2155,10 @@ async function startServer(): Promise<void> {
 								cleared = combat.floor; turns += combat.turn;
 								db.query("INSERT INTO dungeon_monthly_best (season, player_id, cleared_floor, total_turns, achieved_at, run_id) VALUES (?,?,?,?,?,?) ON CONFLICT(season,player_id) DO UPDATE SET cleared_floor=excluded.cleared_floor,total_turns=excluded.total_turns,achieved_at=excluded.achieved_at,run_id=excluded.run_id WHERE excluded.cleared_floor > dungeon_monthly_best.cleared_floor OR (excluded.cleared_floor = dungeon_monthly_best.cleared_floor AND excluded.total_turns < dungeon_monthly_best.total_turns)").run(row.season, playerId, cleared, turns, now, row.run_id);
 							} else if (result.terminal_result === "LOSS") status = "LOSS";
+						} else if (isInspiration) {
+							const result = resolveDungeonInspiration(current, body.decision, (turn, draw) => deterministicDraw(seed, `${row.run_id}:${current.floor}`, turn, draw));
+							if (result.error) throw new HttpError(400, result.error);
+							combat = result.next_state; events = result.events;
 						} else {
 							if (current.terminal_result !== "WIN" || current.floor !== cleared) throw new HttpError(409, "Floor not cleared.");
 							if (cleared >= 1000 || [current.npc.max_hp, current.npc.atk, current.npc.def].some((value: unknown) => !Number.isSafeInteger(value) || (value as number) >= 100000)) throw new HttpError(409, "Dungeon difficulty limit reached.");
@@ -2159,7 +2167,7 @@ async function startServer(): Promise<void> {
 							const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
 							if (setup.error) throw new HttpError(409, "Dungeon loadout unavailable.");
 							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }), floor: cleared + 1 };
-							combat = createDungeonCombatState(setup, enemy, catalogs);
+							combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
 							if (combat.error) throw new HttpError(409, combat.error);
 							combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
 						}

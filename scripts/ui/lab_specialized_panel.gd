@@ -61,6 +61,9 @@ var _dungeon_debug_waiting := false
 var _dungeon_debug_expected_player := ""
 var _dungeon_debug_login_token := ""
 var _dungeon_debug_confirm: ConfirmationDialog
+var _dungeon_debug_run_choice: ConfirmationDialog
+var _dungeon_debug_abandon_confirm: ConfirmationDialog
+var _dungeon_debug_session: Dictionary = {}
 
 func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cost: int, cost_per_level: int) -> void:
 	_registry = registry
@@ -372,13 +375,33 @@ func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary)
 	if _dungeon_entry_kind == "debug_prepare":
 		_dungeon_check_session()
 		return
+	if _dungeon_entry_kind == "debug_abandon":
+		SceneRouter._dungeon_context.erase("pending_debug_abandon")
+		_dungeon_check_session()
+		return
 	var session: Variant = data.get("session") if _dungeon_entry_kind == "session" else data
+	var pending: Variant = SceneRouter._dungeon_context.get("pending_debug_abandon")
+	if _dungeon_entry_kind == "session" and _dungeon_local_debug() and pending is Dictionary and str(pending.get("owner", "")) == _dungeon_entry_owner:
+		_dungeon_entry_kind = "debug_abandon"
+		_dungeon_entry_request = _backend.request_api("POST", "/dungeon/abandon", pending.get("payload", {}).duplicate(true))
+		_dungeon_entry_status.text = "Resolving previous test run..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
+		_update_sync_status()
+		return
 	if session is Dictionary and str(session.get("status", "")) == "ACTIVE" and not str(session.get("run_id", "")).is_empty():
-		SceneRouter._dungeon_context = {"run_id": str(session.run_id), "player_id": _dungeon_entry_owner, "session": session.duplicate(true)}
-		if bool(session.get("combat_ready", false)) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
-			SceneRouter.go_to_dungeon_combat()
+		if _dungeon_entry_kind == "session" and _dungeon_local_debug():
+			_dungeon_debug_session = session.duplicate(true)
+			if not is_instance_valid(_dungeon_debug_run_choice):
+				_dungeon_debug_run_choice = ConfirmationDialog.new()
+				_dungeon_debug_run_choice.title = "Dungeon test run"
+				_dungeon_debug_run_choice.dialog_text = "Resume the active run or start a new test run."
+				_dungeon_debug_run_choice.get_ok_button().text = "RESUME RUN"
+				_dungeon_debug_run_choice.add_button("NEW TEST RUN", false, "new_test_run")
+				_dungeon_debug_run_choice.confirmed.connect(_dungeon_debug_resume)
+				_dungeon_debug_run_choice.custom_action.connect(_dungeon_debug_run_action)
+				add_child(_dungeon_debug_run_choice)
+			_dungeon_debug_run_choice.popup_centered()
 		else:
-			SceneRouter.go_to_dungeon_loadout(str(session.run_id), _dungeon_entry_owner)
+			_dungeon_open_session(session)
 		return
 	if _dungeon_entry_kind != "session" or session != null:
 		_dungeon_entry_status.text = "Dungeon session unavailable. Retry."
@@ -391,6 +414,41 @@ func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary)
 	_dungeon_entry_kind = "start"
 	_dungeon_entry_request = _backend.request_api("POST", "/dungeon/start", {"client_action_id": action_id})
 	_dungeon_entry_status.text = "Starting Dungeon..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
+	_update_sync_status()
+
+func _dungeon_open_session(session: Dictionary) -> void:
+	SceneRouter._dungeon_context = {"run_id": str(session.run_id), "player_id": _dungeon_entry_owner, "session": session.duplicate(true)}
+	if bool(session.get("combat_ready", false)) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
+		SceneRouter.go_to_dungeon_combat()
+	else:
+		SceneRouter.go_to_dungeon_loadout(str(session.run_id), _dungeon_entry_owner)
+
+func _dungeon_debug_resume() -> void:
+	if _dungeon_local_debug() and _backend._verified_player_id == _dungeon_entry_owner and not _dungeon_debug_session.is_empty():
+		_dungeon_open_session(_dungeon_debug_session)
+
+func _dungeon_debug_run_action(action: StringName) -> void:
+	if action != "new_test_run" or not _dungeon_local_debug() or _backend._verified_player_id != _dungeon_entry_owner:
+		return
+	_dungeon_debug_run_choice.hide()
+	if not is_instance_valid(_dungeon_debug_abandon_confirm):
+		_dungeon_debug_abandon_confirm = ConfirmationDialog.new()
+		_dungeon_debug_abandon_confirm.title = "Abandon current run?"
+		_dungeon_debug_abandon_confirm.dialog_text = "The current Dungeon run will end before starting a new test run."
+		_dungeon_debug_abandon_confirm.confirmed.connect(_dungeon_debug_abandon)
+		add_child(_dungeon_debug_abandon_confirm)
+	_dungeon_debug_abandon_confirm.popup_centered()
+
+func _dungeon_debug_abandon() -> void:
+	if not _dungeon_local_debug() or _backend._verified_player_id != _dungeon_entry_owner or not _dungeon_entry_request.is_empty() or _dungeon_debug_session.is_empty():
+		return
+	var pending: Variant = SceneRouter._dungeon_context.get("pending_debug_abandon")
+	if not pending is Dictionary or str(pending.get("owner", "")) != _dungeon_entry_owner or str(pending.get("payload", {}).get("run_id", "")) != str(_dungeon_debug_session.get("run_id", "")):
+		pending = {"owner": _dungeon_entry_owner, "payload": {"run_id": str(_dungeon_debug_session.run_id), "client_action_id": _backend._make_uuid()}}
+		SceneRouter._dungeon_context["pending_debug_abandon"] = pending.duplicate(true)
+	_dungeon_entry_kind = "debug_abandon"
+	_dungeon_entry_request = _backend.request_api("POST", "/dungeon/abandon", pending.payload.duplicate(true))
+	_dungeon_entry_status.text = "Ending previous test run..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
 	_update_sync_status()
 
 func _open_dungeon_ranking() -> void:

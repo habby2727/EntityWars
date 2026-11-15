@@ -165,10 +165,75 @@ func _run_debug_entry() -> void:
 		return
 	combat._on_switch_weapon()
 	deadline = Time.get_ticks_msec() + 30000
+	while not combat._dungeon_playing_events and int(combat._dungeon_session.combat_revision) == revision and Time.get_ticks_msec() < deadline:
+		await create_timer(0.05).timeout
+	if not combat._dungeon_playing_events or int(combat._dungeon_session.combat_revision) != revision or not combat.switch_weapon_btn.disabled:
+		push_error("Dungeon playback did not lock actions before applying the final state")
+		quit(1)
+		return
 	while int(combat._dungeon_session.combat_revision) == revision and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
 	if int(combat._dungeon_session.combat_revision) != revision + 1 or int(combat._dungeon_session.combat_state.active_weapon_slot) != 2:
 		push_error("Dungeon server switch failed")
+		quit(1)
+		return
+	var db_path := OS.get_environment("DUNGEON_TEST_DB").replace("\\", "/").to_lower()
+	if not db_path.begins_with(test_root + "/") or not db_path.ends_with("test.sqlite"):
+		push_error("Unsafe Inspiration fixture database")
+		quit(1)
+		return
+	OS.set_environment("DUNGEON_TEST_RUN_ID", str(SceneRouter._dungeon_context.get("run_id", "")))
+	var fixture := "const {Database}=require('bun:sqlite');const db=new Database(process.env.DUNGEON_TEST_DB);const row=db.query('SELECT combat_state_json FROM dungeon_runs WHERE run_id=?').get(process.env.DUNGEON_TEST_RUN_ID);const s=JSON.parse(row.combat_state_json);s.player.inspiration=2;s.player.hp=s.player.max_hp=1000;s.npc.hp=s.npc.max_hp=1000;s.npc.status.atk_down=0;s.spells.find(x=>x.id==='brimstone_crash').accuracy=1;db.query('UPDATE dungeon_runs SET combat_state_json=? WHERE run_id=?').run(JSON.stringify(s),process.env.DUNGEON_TEST_RUN_ID);db.close();"
+	var output := []
+	if OS.execute("bun", ["-e", fixture], output, true) != 0:
+		push_error("Inspiration fixture failed")
+		quit(1)
+		return
+	combat._dungeon_recover()
+	deadline = Time.get_ticks_msec() + 30000
+	while not combat._dungeon_request.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	revision = int(combat._dungeon_session.combat_revision)
+	combat._on_spell_chosen(3)
+	if not combat._dungeon_hom_choice.is_empty(): combat._on_hom_choice("hold")
+	deadline = Time.get_ticks_msec() + 30000
+	while int(combat._dungeon_session.combat_revision) == revision and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if not combat._inspiration_panel.visible or combat._inspiration_options.size() != 3:
+		push_error("Dungeon Inspiration offers were not displayed")
+		quit(1)
+		return
+	var turn_before := int(combat._dungeon_session.combat_state.turn)
+	revision = int(combat._dungeon_session.combat_revision)
+	var chosen_id := str(combat._inspiration_options[0].id)
+	combat._choose_inspiration(0)
+	deadline = Time.get_ticks_msec() + 30000
+	while int(combat._dungeon_session.combat_revision) == revision and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if int(combat._dungeon_session.combat_revision) != revision + 1 or int(combat._dungeon_session.combat_state.turn) != turn_before or chosen_id not in combat._dungeon_session.combat_state.player.spell_ids:
+		push_error("Dungeon Inspiration choice was not confirmed")
+		quit(1)
+		return
+	var prior_run := str(SceneRouter._dungeon_context.get("run_id", ""))
+	panel._enter_dungeon()
+	deadline = Time.get_ticks_msec() + 30000
+	while (not is_instance_valid(panel._dungeon_debug_run_choice) or not panel._dungeon_debug_run_choice.visible) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if not is_instance_valid(panel._dungeon_debug_run_choice) or not panel._dungeon_debug_run_choice.visible or str(panel._dungeon_debug_session.get("run_id", "")) != prior_run:
+		push_error("Debug run choice did not preserve the active run")
+		quit(1)
+		return
+	panel._dungeon_debug_run_action("new_test_run")
+	if not panel._dungeon_debug_abandon_confirm.visible or not panel._dungeon_entry_request.is_empty():
+		push_error("New test run did not require confirmation")
+		quit(1)
+		return
+	panel._dungeon_debug_abandon()
+	deadline = Time.get_ticks_msec() + 30000
+	while (current_scene == combat or not current_scene.has_method("_submit_dungeon_loadout")) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if current_scene == combat or str(SceneRouter._dungeon_context.get("run_id", "")) == prior_run:
+		push_error("New test run did not reach a fresh Loadout")
 		quit(1)
 		return
 	print("PASS authenticated local debug entry, preparation and Dungeon loadout")

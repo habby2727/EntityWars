@@ -1333,7 +1333,7 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
   expect(new Set(offered.inspiration_offers).size).toBe(3);
   for (const id of offered.inspiration_offers) {
     const s = offered.inspiration_catalog.find((entry: any) => entry.id === id);
-    expect(s.type === "sulfur" || (s.type === "hybrid" && s.primary_type === "sulfur")).toBe(true);
+    expect(s.type === "sulfur" || (["universal", "hybrid"].includes(s.type) && s.eligible_types.includes("sulfur"))).toBe(true);
     expect(offered.spell_ids.includes(id)).toBe(false);
     const candidate = resolveInspirationDecision(offered, { kind: "choose", spell_id: id }, () => 0).next_state;
     candidate.boss.status.stun = 1;
@@ -1396,4 +1396,16 @@ test("inspiration setup requires three distinct valid eligible candidates", () =
   expect(buildTrustedCombatSetup(snapshot, selection, invalid)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
   const invalidNumber = structuredClone(minimal); invalidNumber.spells[invalidNumber.spells.length - 1].accuracy = 2;
   expect(buildTrustedCombatSetup(snapshot, selection, invalidNumber)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+});
+
+test("inspiration catalog includes compatible new universal and secondary hybrids", () => {
+  const setup = buildTrustedCombatSetup(snapshot, selection, catalogs);
+  expect(setup.error).toBeUndefined();
+  const state = createCombatState(setup);
+  expect(state.inspiration_catalog.some((spell: any) => spell.id === "nuclear_fallout")).toBe(true);
+  expect(state.inspiration_catalog.some((spell: any) => spell.id === "golden_crucible")).toBe(true);
+  expect(state.inspiration_catalog.some((spell: any) => spell.id === "crystal_dividend")).toBe(false);
+  const vitriol = { ...selection, entity_id: "vitriol_01", spell_ids: ["etching_fang", "caustic_mark", "bitter_haze", "rot_harvest"] };
+  const other = createCombatState(buildTrustedCombatSetup(snapshot, vitriol, catalogs));
+  expect(other.inspiration_catalog.some((spell: any) => spell.id === "septic_echo")).toBe(true);
 });

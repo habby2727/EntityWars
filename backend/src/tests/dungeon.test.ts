@@ -4,12 +4,92 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { Database } from "bun:sqlite";
-import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy } from "../dungeon_combat";
+import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy } from "../dungeon_combat";
 import { buildTrustedCombatSetup } from "../solo_hunt_combat";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } from "../physical_anomaly";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
+
+test("all eight real Dungeon weapons are validated and defenses do not leak across switches", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ids };
+  const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {}, item_progress: Object.fromEntries(all.items.filter((item: any) => item.slot === "build").map((item: any) => [item.id, { level: 10 }])) };
+  const select = (weapons: any[]) => ({ entity_id: "sulfur_01", weapon_ids: weapons, homunculus_id: null, spell_ids: ids, mode: "attack" });
+  for (const item of all.items.filter((entry: any) => entry.slot === "build")) {
+    const setup = buildTrustedCombatSetup(snapshot, select([item.id, null]), all, { independentLoadout: true });
+    expect(setup.error).toBeUndefined();
+    const state = createDungeonCombatState(setup, enemy, all);
+    expect(state.error).toBeUndefined();
+    expect(state.item_id).toBe(item.id);
+    expect(resolveDungeonTurn(state, { turn: 1, spell_id: "cinder_fist" }, () => 0).error).toBeUndefined();
+  }
+  const wind = createDungeonCombatState(buildTrustedCombatSetup(snapshot, select(["wind_amulet", null]), all, { independentLoadout: true }), enemy, all);
+  const evasion = resolveDungeonTurn(wind, { turn: 1, spell_id: "ash_temper" }, () => 0);
+  expect(evasion.events.some((event: any) => event.kind === "evade" && event.actor === "player")).toBe(true);
+  const mirror = createDungeonCombatState(buildTrustedCombatSetup(snapshot, select(["mirror_sigel", "bismuth_talisman"]), all, { independentLoadout: true }), enemy, all);
+  const armed = resolveDungeonTurn(mirror, { turn: 1, spell_id: "ash_temper" }, () => 0.99);
+  expect(armed.next_state.weapon_defenses.shield).toBeGreaterThan(0);
+  expect(armed.next_state.weapon_defenses.reflect).toBeGreaterThan(0);
+  const reflectState = structuredClone(armed.next_state);
+  for (const id of reflectState.npc.spell_ids) if (id !== "cinder_fist") reflectState.npc.cooldowns[id] = 9;
+  const reflected = resolveDungeonTurn(reflectState, { turn: 2, spell_id: "cinder_fist" }, () => 0.5);
+  expect(reflected.events.some((event: any) => event.kind === "reflect" && event.actor === "player" && event.amount > 0)).toBe(true);
+  const switched = resolveDungeonTurn(armed.next_state, { turn: 2, switch_slot: 2 }, () => 0.99);
+  expect(switched.next_state.weapon_defenses.shield).toBeUndefined();
+  expect(switched.next_state.weapon_defenses.reflect).toBeUndefined();
+  const forged = structuredClone(snapshot);
+  forged.item_progress.bismuth_talisman = { level: 10, specialization: "defensive", traits: [{ id: "guard_flat", points: 2 }, { id: "ward_pct", points: 2 }, { id: "reflect_pct", points: 1 }], fusion: { donor_id: "aether_knot" } };
+  const forgedSetup = buildTrustedCombatSetup(forged, select(["bismuth_talisman", null]), all, { independentLoadout: true });
+  const forgedState = createDungeonCombatState(forgedSetup, enemy, all);
+  expect(forgedState.error).toBeUndefined();
+  expect(forgedState.item_effects.ward_pct).toBeGreaterThan(0);
+  expect(forgedState.item_effects.ignore_reflect_chance).toBeGreaterThan(0);
+});
+
+test("Dungeon Inspiration offers valid temporary spells and resolves without a turn", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["etching_fang", "caustic_mark", "bitter_haze", "rot_harvest"];
+  const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} };
+  const setup = buildTrustedCombatSetup(snapshot, { entity_id: "vitriol_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  const state = createDungeonCombatState(setup, enemy, all);
+  const older = structuredClone(state);
+  delete older.inspiration_catalog; delete older.inspiration_catalog_version;
+  for (const fighter of [older.player, older.npc]) { delete fighter.inspiration; delete fighter.original_spell_ids; }
+  expect(hydrateDungeonInspiration(older, all.spells)).toBe(true);
+  expect(older.inspiration_catalog_version).toBe(2);
+  expect(older.player.original_spell_ids).toEqual(ids);
+  expect(older.inspiration_catalog.player.some((s: any) => s.id === "toxic_smog")).toBe(true);
+  expect(state.inspiration_catalog.player.some((s: any) => s.id === "toxic_smog")).toBe(true);
+  expect(state.inspiration_catalog.player.some((s: any) => s.id === "septic_echo")).toBe(true);
+  state.player.inspiration = 2;
+  const earned = resolveDungeonTurn(state, { turn: 1, spell_id: "caustic_mark" }, () => 0);
+  expect(earned.next_state.player.inspiration_pending).toBe(true);
+  expect(new Set(earned.next_state.player.inspiration_offers).size).toBe(3);
+  expect(resolveDungeonTurn(earned.next_state, { turn: 2, spell_id: "etching_fang" }, () => 0)).toEqual({ error: "INVALID_DECISION" });
+  const offer = earned.next_state.player.inspiration_offers[0];
+  const chosen = resolveDungeonInspiration(earned.next_state, { kind: "choose", spell_id: offer }, () => 0);
+  expect(chosen.next_state.turn).toBe(1);
+  expect(chosen.next_state.player.spell_ids[0]).toBe(offer);
+  expect(resolveDungeonInspiration(chosen.next_state, { kind: "decline" }, () => 0)).toEqual({ error: "INVALID_DECISION" });
+  expect(resolveDungeonTurn(chosen.next_state, { turn: 2, spell_id: offer }, () => 0).error).toBeUndefined();
+  const declined = resolveDungeonInspiration(earned.next_state, { kind: "decline" }, () => 0);
+  expect(declined.next_state.player.spell_ids).toEqual(ids);
+  expect(declined.next_state.rng_counter).toBe(earned.next_state.rng_counter);
+  const winning = structuredClone(chosen.next_state); winning.npc.hp = 1;
+  const won = resolveDungeonTurn(winning, { turn: 2, spell_id: "rot_harvest" }, () => 0);
+  expect(won.terminal_result).toBe("WIN");
+  expect(won.next_state.player.spell_ids).toEqual(ids);
+  expect(won.next_state.player.temporary_spell_id).toBeNull();
+  expect(won.next_state.spells.some((s: any) => s.id === offer && !winning.npc.spell_ids.includes(offer))).toBe(false);
+  const losing = structuredClone(chosen.next_state); losing.player.hp = 1; losing.npc.atk = 1000;
+  for (const id of losing.npc.spell_ids) if (id !== "cinder_fist") losing.npc.cooldowns[id] = 9;
+  const lost = resolveDungeonTurn(losing, { turn: 2, spell_id: "bitter_haze" }, () => 0);
+  expect(lost.terminal_result).toBe("LOSS");
+  expect(lost.next_state.player.spell_ids).toEqual(ids);
+});
 
 test("two supported real weapons switch without stacking and consume a turn", () => {
   const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
@@ -29,6 +109,10 @@ test("two supported real weapons switch without stacking and consume a turn", ()
   expect(resolveDungeonTurn(state, { turn: 1, switch_slot: 2 }, () => 0)).toEqual(switched);
   expect(resolveDungeonTurn(state, { turn: 1, switch_slot: 2, spell_id: ids[0] }, () => 0).error).toBe("INVALID_DECISION");
   expect(state.active_weapon_slot).toBe(1);
+  const nextFloor = createDungeonCombatState(setup, { ...enemy, floor: 2 }, all, switched.next_state.active_weapon_slot);
+  expect(nextFloor.active_weapon_slot).toBe(2);
+  expect(nextFloor.item_id).toBe("vitriol_vial");
+  expect(nextFloor.player.atk).toBe(switched.next_state.player.atk);
 });
 
 test("generated advanced floors select legal two-step combinations deterministically", () => {
@@ -274,11 +358,91 @@ test("pure dungeon combat resolves damage, effects, cooldowns, homunculus and te
   expect(poisonResult.events.some((e: any) => e.kind === "poison" && e.target === "sulfur_01")).toBe(true);
   const sodiumIds = ["crystal_ram", "salt_barrier", "brine_mend", "bastion_return"];
   const sodiumSetup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "sodium_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: sodiumIds, mode: "attack" }, all);
-  expect(createDungeonCombatState(sodiumSetup, enemy, all).error).toBe("UNSUPPORTED_MECHANIC");
+  const sodiumState = createDungeonCombatState(sodiumSetup, enemy, all);
+  expect(sodiumState.error).toBeUndefined();
+  for (const id of sodiumState.npc.spell_ids) if (id !== "cinder_fist") sodiumState.npc.cooldowns[id] = 9;
+  const reflection = resolveDungeonTurn(sodiumState, { turn: 1, spell_id: "bastion_return" }, () => 0.5);
+  expect(reflection.events.some((event: any) => event.kind === "reflect" && event.actor === "player" && event.amount > 0)).toBe(true);
   const npcHom = structuredClone(state); npcHom.npc.hom_energy = 2;
   expect(resolveDungeonTurn(npcHom, { turn: 1, spell_id: "cinder_fist" }, random).events.some((e: any) => e.kind === "hom_attack" && e.actor === "npc")).toBe(true);
   const unsupported = { ...enemy, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "mercury_snare"] };
-  expect(createDungeonCombatState(setup, unsupported, all).error).toBe("UNSUPPORTED_MECHANIC");
+  expect(createDungeonCombatState(setup, unsupported, all).error).toBe("UNTRUSTED_SETUP");
+});
+
+test("every catalog spell can be offered and cast as temporary Dungeon Inspiration", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  expect(all.spells.length).toBe(94);
+  const types = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"];
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 1000, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  for (const spell of all.spells) {
+    const type = types.find(t => spell.type === t || (["universal", "hybrid"].includes(spell.type) && spell.eligible_types?.includes(t)))!;
+    const ids = all.spells.filter((s: any) => s.type === type).slice(0, 4).map((s: any) => s.id);
+    const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} };
+    const setup = buildTrustedCombatSetup(snapshot, { entity_id: `${type}_01`, weapon_ids: [null, null], homunculus_id: null, spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+    const state = createDungeonCombatState(setup, enemy, all);
+    expect(state.error).toBeUndefined();
+    if (!ids.includes(spell.id)) {
+      const options = state.inspiration_catalog.player.map((s: any) => s.id);
+      expect(options).toContain(spell.id);
+      state.player.inspiration = 3; state.player.inspiration_pending = true;
+      state.player.inspiration_offers = [spell.id, ...options.filter((id: string) => id !== spell.id).slice(0, 2)];
+      const choice = resolveDungeonInspiration(state, { kind: "choose", spell_id: spell.id }, () => 0);
+      expect(choice.error).toBeUndefined();
+      Object.assign(state, choice.next_state);
+    }
+    const result = resolveDungeonTurn(state, { turn: 1, spell_id: spell.id }, () => 0);
+    expect(result.error).toBeUndefined();
+    expect(result.events.some((event: any) => event.kind === "spell" && event.actor === "player" && event.spell_id === spell.id && event.hit)).toBe(true);
+  }
+});
+
+test("Dungeon Inspiration effects change real combat state and consume the correct statuses", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} };
+  const setup = buildTrustedCombatSetup(snapshot, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 1000, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ids };
+  const base = createDungeonCombatState(setup, enemy, all);
+  const cast = (id: string, configure: (state: any) => void = () => {}) => {
+    const state = structuredClone(base);
+    const spell = all.spells.find((s: any) => s.id === id);
+    state.player.spell_ids[0] = id; state.spells.push(spell);
+    for (const npcId of state.npc.spell_ids) state.npc.cooldowns[npcId] = 9;
+    configure(state);
+    return resolveDungeonTurn(state, { turn: 1, spell_id: id }, () => 0);
+  };
+  const focus = cast("quiet_focus");
+  expect(focus.next_state.player.status.focus_next).toBe(0.12);
+  const missState = structuredClone(focus.next_state);
+  const afterFocus = resolveDungeonTurn(missState, { turn: 2, spell_id: "brimstone_crash" }, () => 0.999);
+  expect(afterFocus.next_state.player.status.focus_next).toBeUndefined();
+  const cleanse = cast("clear_thread", s => { s.player.status.poison = 2; s.player.status.atk_down = 0.1; });
+  expect(cleanse.next_state.player.status.poison).toBeUndefined();
+  expect(cleanse.next_state.player.status.atk_down).toBe(0.1);
+  const pierced = cast("needle_etch", s => { s.npc.status.shield = 0.5; });
+  const ordinary = cast("cinder_fist", s => { s.npc.status.shield = 0.5; });
+  expect(pierced.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount).toBeGreaterThan(ordinary.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount);
+  const leech = cast("echo_siphon", s => { s.player.hp = 30; });
+  expect(leech.events.some((e: any) => e.kind === "heal" && e.actor === "player" && e.amount > 0)).toBe(true);
+  const tempo = cast("salt_circuit");
+  expect(tempo.next_state.npc.status.tempo_bonus).toBe(-2);
+  expect(tempo.next_state.player.inspiration).toBe(1);
+  const mark = cast("paradox_edict");
+  expect(mark.next_state.npc.status.hybrid_mark).toEqual({ owner: "player", remaining: 2 });
+  expect(mark.next_state.player.inspiration).toBe(1);
+  const neutralize = cast("paradox_fold");
+  expect(neutralize.next_state.player.spell_neutralize_pending).toBe(0.5);
+  expect(neutralize.next_state.player.spell_neutralize_active).toBe(0);
+  const stun = cast("mercury_snare", s => { s.npc.hom_energy = 2; });
+  expect(stun.events.some((e: any) => e.kind === "status_consumed" && e.target === "npc" && e.status === "hom_stun")).toBe(true);
+  expect(stun.events.some((e: any) => e.kind === "hom_attack" && e.actor === "npc")).toBe(false);
+  expect(stun.next_state.player.inspiration).toBe(1);
+  expect(cast("crooked_rune").next_state.player.inspiration).toBe(1);
+  expect(cast("brimstone_crash").next_state.player.inspiration).toBe(1);
+  expect(cast("caustic_mark").next_state.player.inspiration).toBe(1);
+  expect(cast("caustic_mark", s => { s.npc.status.poison = 5; }).next_state.player.inspiration).toBe(0);
+  expect(cast("brimstone_crash", s => { s.npc.status.atk_down = 0.9; }).next_state.player.inspiration).toBe(0);
+  expect(cast("furnace_rush").next_state.player.inspiration).toBe(0);
 });
 
 test("dungeon enemy generation is deterministic, bounded and catalog-based", () => {
@@ -440,6 +604,43 @@ test("local Dungeon preparation is guarded and supports a real authenticated run
     const turn = await request("/dungeon/turn", { run_id: started.data.run_id, client_action_id: "debug-turn", expected_revision: 2, decision: { turn: 2, spell_id: "nuclear_fallout" } }, debug.token);
     expect(turn.status).toBe(200);
     expect(turn.data.events.some((event: any) => event.kind === "physical_anomaly_cast" && event.actor === "player" && event.anomaly.id === "nuclear_fallout")).toBe(true);
+    const fixture = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id=?").get(started.data.run_id) as any).combat_state_json);
+    fixture.player.inspiration = 2; fixture.player.hp = fixture.player.max_hp = 1000; fixture.npc.hp = fixture.npc.max_hp = 1000; fixture.npc.status.atk_down = 0;
+    fixture.spells.find((s: any) => s.id === "brimstone_crash").accuracy = 1;
+    db.query("UPDATE dungeon_runs SET combat_state_json=? WHERE run_id=?").run(JSON.stringify(fixture), started.data.run_id);
+    const earn = await request("/dungeon/turn", { run_id: started.data.run_id, client_action_id: "earn-inspiration", expected_revision: 3, decision: { turn: 3, spell_id: "brimstone_crash" } }, debug.token);
+    expect(earn.status).toBe(200);
+    expect(earn.data.combat_state.player.inspiration_pending).toBe(true);
+    const offers = earn.data.combat_state.player.inspiration_offers;
+    expect(new Set(offers).size).toBe(3);
+    expect((await request("/dungeon/turn", { run_id: started.data.run_id, client_action_id: "blocked-turn", expected_revision: 4, decision: { turn: 4, spell_id: "cinder_fist" } }, debug.token)).status).toBe(400);
+    const choice = { run_id: started.data.run_id, client_action_id: "choose-inspiration", expected_revision: 4, decision: { kind: "choose", spell_id: offers[0] } };
+    expect((await request("/dungeon/inspiration", { ...choice, decision: { kind: "choose", spell_id: "forged" } }, debug.token)).status).toBe(400);
+    expect((await request("/dungeon/inspiration", choice, normal.token)).status).toBe(404);
+    const [chosen, duplicateChoice] = await Promise.all([request("/dungeon/inspiration", choice, debug.token), request("/dungeon/inspiration", choice, debug.token)]);
+    expect(chosen.status).toBe(200);
+    expect(duplicateChoice.data).toEqual(chosen.data);
+    expect(chosen.data.combat_state.turn).toBe(3);
+    expect(chosen.data.combat_state.player.spell_ids).toContain(offers[0]);
+    expect((await request("/dungeon/inspiration", choice, debug.token)).data).toEqual(chosen.data);
+    server.kill(); await server.exited; server = spawn(); await ready();
+    const recovered = (await request("/auth/dev_login", { name: "dungeon_debug_local" })).data.token;
+    expect((await request("/dungeon/session", undefined, recovered)).data.session.combat_state.player.spell_ids).toEqual(chosen.data.combat_state.player.spell_ids);
+    expect((await request("/dungeon/inspiration", choice, recovered)).data).toEqual(chosen.data);
+    const temporary = await request("/dungeon/turn", { run_id: started.data.run_id, client_action_id: "temporary-spell", expected_revision: 5, decision: { turn: 4, spell_id: offers[0] } }, recovered);
+    expect(temporary.status).toBe(200);
+    const ending = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id=?").get(started.data.run_id) as any).combat_state_json);
+    const finisher = ending.player.spell_ids.find((id: string) => ending.spells.some((s: any) => s.id === id && s.category === "attack"));
+    expect(finisher).toBeDefined();
+    ending.spells.find((s: any) => s.id === finisher).accuracy = 1; ending.player.cooldowns[finisher] = 0;
+    ending.player.hp = ending.player.max_hp = 1000; ending.npc.hp = 1; ending.npc.status = {};
+    db.query("UPDATE dungeon_runs SET combat_state_json=? WHERE run_id=?").run(JSON.stringify(ending), started.data.run_id);
+    const win = await request("/dungeon/turn", { run_id: started.data.run_id, client_action_id: "finish-inspiration-floor", expected_revision: 6, decision: { turn: 5, spell_id: finisher } }, recovered);
+    expect(win.status).toBe(200);
+    expect(win.data.phase).toBe("FLOOR_CLEARED");
+    expect(win.data.combat_state.player.spell_ids).toEqual(selected.spell_ids);
+    expect(win.data.combat_state.player.temporary_spell_id).toBeNull();
+    expect((await request("/player/state", undefined, recovered)).data.updated_player_state.spell_progress).toEqual(state.spell_progress);
     server.kill(); await server.exited;
     server = spawn({ NODE_ENV: "production", BUN_ENV: "development" });
     await ready();

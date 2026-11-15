@@ -63,7 +63,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   if (selection.weapon_ids[0] && selection.weapon_ids[0] === selection.weapon_ids[1]) return { error: "UNTRUSTED_SETUP" };
   const seenCandidates = new Set<string>();
   const inspirationCatalog = catalogs.spells.filter((spell: any) => {
-    if (!(spell?.type === entity.type || (spell?.type === "hybrid" && spell.primary_type === entity.type)) || !castableSpell(spell, entity.type) || selection.spell_ids.includes(spell.id) || seenCandidates.has(spell.id)) return false;
+    if (!(spell?.type === entity.type || (["universal", "hybrid"].includes(spell?.type) && spell.eligible_types?.includes(entity.type))) || !castableSpell(spell, entity.type) || selection.spell_ids.includes(spell.id) || seenCandidates.has(spell.id)) return false;
     seenCandidates.add(spell.id);
     return true;
   });
@@ -697,7 +697,7 @@ export function resolveInspirationDecision(state: any, decision: any, rng: (turn
   const next = structuredClone(state);
   if (decision.kind === "choose") {
     const spell = next.inspiration_catalog.find((entry: any) => entry.id === decision.spell_id);
-    if (!spell || !castableSpell(spell, next.player.type) || !(spell.type === next.player.type || (spell.type === "hybrid" && spell.primary_type === next.player.type)) || next.spell_ids.includes(spell.id)) return { error: "INVALID_DECISION" };
+    if (!spell || !castableSpell(spell, next.player.type) || !(spell.type === next.player.type || (["universal", "hybrid"].includes(spell.type) && spell.eligible_types?.includes(next.player.type))) || next.spell_ids.includes(spell.id)) return { error: "INVALID_DECISION" };
     const random = rng(next.turn, next.rng_counter);
     if (!Number.isFinite(random) || random < 0 || random >= 1) throw new Error("Invalid RNG draw");
     const slot = Math.floor(random * 4);
