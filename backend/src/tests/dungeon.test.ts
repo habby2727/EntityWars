@@ -11,6 +11,129 @@ import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } f
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
 
+test("generated advanced floors select legal two-step combinations deterministically", () => {
+  const seed = new Uint8Array(32).fill(7);
+  for (let floor = 8; floor <= 16; floor++) {
+    const enemy = generateDungeonEnemy(seed, "combo-test", floor, catalogs);
+    expect(generateDungeonEnemy(seed, "combo-test", floor, catalogs)).toEqual(enemy);
+    expect(new Set(enemy.spell_ids).size).toBe(4);
+    const spells = enemy.spell_ids.map((id: string) => catalogs.spells.find((s: any) => s.id === id));
+    expect(spells.every((s: any) => s.type === enemy.type || s.eligible_types?.includes(enemy.type))).toBe(true);
+    expect(spells.some((s: any) => s.category === "attack" && s.cooldown_turns === 0)).toBe(true);
+    const has = (kind: string, target?: string) => spells.some((s: any) => s.effects.some((e: any) => e.kind === kind && (!target || e.target === target)));
+    if (enemy.type !== "mercury") expect((has("poison", "enemy") && has("bonus_if_poisoned")) || (has("shield", "self") && has("ward_convert")) || (has("vuln", "enemy") && spells.some((s: any) => s.category === "attack" && s.power_mult >= 0.9))).toBe(true);
+  }
+});
+
+test("NPC executes poison then Pyrolytic Fuse as an authoritative two-turn combo", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const setup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 8, entity_id: "vitriol_01", type: "vitriol", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["etching_fang", "caustic_mark", "pyrolytic_fuse", "bitter_haze"] };
+  const initial = createDungeonCombatState(setup, enemy, all); initial.player.hp = initial.player.max_hp = 1000;
+  const first = resolveDungeonTurn(initial, { turn: 1, spell_id: "ash_temper" }, () => 0);
+  expect(first.events.find((e: any) => e.kind === "spell" && e.actor === "npc").spell_id).toBe("caustic_mark");
+  expect(first.next_state.player.status.poison).toBe(1);
+  const second = resolveDungeonTurn(first.next_state, { turn: 2, spell_id: "cinder_fist" }, () => 0);
+  expect(second.events.find((e: any) => e.kind === "spell" && e.actor === "npc").spell_id).toBe("pyrolytic_fuse");
+  expect(second.events.find((e: any) => e.kind === "combo_trigger")).toMatchObject({ actor: "npc", target: "player", source_spell_id: "pyrolytic_fuse", prerequisite: "poison" });
+  expect(second.events.find((e: any) => e.kind === "combo_trigger").actual_bonus_damage).toBeGreaterThan(0);
+  expect(resolveDungeonTurn(first.next_state, { turn: 2, spell_id: "cinder_fist" }, () => 0)).toEqual(second);
+});
+
+test("all twenty strategic catalog spells resolve in Dungeon", () => {
+  const ids = ["septic_echo", "void_purge", "paradox_ledger", "sovereign_hack", "signal_jam", "echo_ambush", "crystal_dividend", "null_quarantine", "gilded_lien", "auric_retort", "caustic_quarantine", "osmotic_rebound", "catalytic_mirror", "toxic_extraction", "pyrolytic_fuse", "scorched_antidote", "overclock_drain", "reactor_feedback", "ashen_patent", "debt_bomb"];
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  for (const id of ids) {
+    const spell = catalogs.spells.find((s: any) => s.id === id);
+    const entity = catalogs.entities.find((e: any) => e.type === spell.primary_type);
+    const native = catalogs.spells.find((s: any) => s.type === spell.primary_type && s.effects.length === 0).id;
+    const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: { learned_by_entity: { [entity.id]: [id, "steady_script", "ward_glyph"] } } };
+    const selected = { entity_id: entity.id, weapon_ids: [null, null], homunculus_id: null, spell_ids: [id, native, "steady_script", "ward_glyph"], mode: "attack" };
+    const setup = buildTrustedCombatSetup(snapshot, selected, all, { independentLoadout: true });
+    expect(setup.error).toBeUndefined();
+    const combat = createDungeonCombatState(setup, enemy, all);
+    expect(combat.error).toBeUndefined();
+    const result = resolveDungeonTurn(combat, { turn: 1, spell_id: id }, () => 0);
+    expect(result.error).toBeUndefined();
+    expect(result.events.some((e: any) => e.kind === "spell" && e.actor === "player" && e.spell_id === id && e.hit)).toBe(true);
+  }
+});
+
+test("Dungeon delayed damage, trap, ward conversion and healing suppression affect combat", () => {
+  const make = (id: string, kind: string, value: number, attack: boolean) => ({ id, name: id, type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: attack ? "attack" : "support", power_mult: attack ? 1 : 0, accuracy: 1, cooldown_turns: 1, effects: [{ kind, target: kind === "counter_trap" ? "self" : "enemy", value }] });
+  const spells = [make("d_delay", "delayed_damage", 0.5, true), make("d_ward", "ward_convert", 1, true), make("d_trap", "counter_trap", 0.5, false), make("d_suppress", "heal_suppression", 0.5, false)];
+  const heal = { ...make("d_heal", "heal", 20, false), effects: [{ kind: "heal", target: "self", value: 20 }] };
+  const all = { ...catalogs, spells: [...catalogs.spells, ...spells, heal], items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const setup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: { learned_by_entity: { sulfur_01: spells.map(s => s.id) } } }, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: spells.map(s => s.id), mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  const initial = () => { const state = createDungeonCombatState(setup, enemy, all); state.player.hp = state.player.max_hp = 1000; return state; };
+  const delayed = resolveDungeonTurn(initial(), { turn: 1, spell_id: "d_delay" }, () => 0);
+  const queued = delayed.events.find((e: any) => e.kind === "delayed_damage_queued");
+  expect(queued.amount).toBeGreaterThan(0);
+  const resumed = JSON.parse(JSON.stringify(delayed.next_state));
+  const tick = resolveDungeonTurn(resumed, { turn: 2, spell_id: "d_trap" }, () => 0);
+  expect(tick.events.filter((e: any) => e.kind === "delayed_damage")).toHaveLength(1);
+  expect(tick.events.find((e: any) => e.kind === "delayed_damage").amount).toBe(queued.amount);
+  expect(resolveDungeonTurn(JSON.parse(JSON.stringify(delayed.next_state)), { turn: 2, spell_id: "d_trap" }, () => 0)).toEqual(tick);
+  const armed = resolveDungeonTurn(initial(), { turn: 1, spell_id: "d_trap" }, () => 0);
+  expect(armed.events.some((e: any) => e.kind === "counter_trap_triggered")).toBe(false);
+  const retaliation = resolveDungeonTurn(armed.next_state, { turn: 2, spell_id: "d_suppress" }, () => 0);
+  expect(retaliation.events.filter((e: any) => e.kind === "counter_trap_triggered")).toHaveLength(1);
+  const ward = initial(); ward.player.status.shield = 0.5;
+  const converted = resolveDungeonTurn(ward, { turn: 1, spell_id: "d_ward" }, () => 0);
+  expect(converted.events.find((e: any) => e.kind === "ward_convert").amount).toBe(Math.floor(ward.npc.max_hp * 0.2));
+  expect(resolveDungeonTurn(initial(), { turn: 1, spell_id: "d_ward" }, () => 0).events.some((e: any) => e.kind === "ward_convert")).toBe(false);
+  const healed = createDungeonCombatState(setup, { ...enemy, spell_ids: ["d_heal", "furnace_rush", "ash_temper", "brimstone_crash"] }, all); healed.npc.hp -= 50;
+  for (const id of ["furnace_rush", "ash_temper", "brimstone_crash"]) healed.npc.cooldowns[id] = 5;
+  const suppressed = resolveDungeonTurn(healed, { turn: 1, spell_id: "d_suppress" }, () => 0);
+  expect(suppressed.next_state.npc.hp).toBe(healed.npc.hp + 10);
+  expect(suppressed.next_state.npc.strategic_heal_suppression.expires_turn).toBe(3);
+  const second = resolveDungeonTurn(suppressed.next_state, { turn: 2, spell_id: "d_delay" }, () => 0);
+  const third = resolveDungeonTurn(second.next_state, { turn: 3, spell_id: "d_ward" }, () => 0);
+  expect(third.next_state.npc.strategic_heal_suppression).toBeUndefined();
+  expect(third.events.filter((e: any) => e.kind === "heal_suppression_expired")).toHaveLength(1);
+  const invalid = initial(); invalid.spells.find((s: any) => s.id === "d_trap").effects[0].value = 0.6;
+  const original = structuredClone(invalid);
+  expect(resolveDungeonTurn(invalid, { turn: 1, spell_id: "d_trap" }, () => 0)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+  expect(invalid).toEqual(original);
+});
+
+test("Dungeon transfers debuffs and steals bounded buffs", () => {
+  const fixture = (id: string, kind: string, value: number) => ({ id, name: id, type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: "support", power_mult: 0, accuracy: 1, cooldown_turns: 4, effects: [{ kind, target: "enemy", value }] });
+  const transfer = fixture("transfer_fixture", "debuff_transfer", 1), steal = fixture("steal_fixture", "buff_steal", 0.5);
+  const all = { ...catalogs, spells: [...catalogs.spells, transfer, steal], items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: { learned_by_entity: { sulfur_01: [transfer.id, steal.id] } } };
+  const setup = buildTrustedCombatSetup(snapshot, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: [transfer.id, steal.id, "cinder_fist", "ash_temper"], mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  const state = createDungeonCombatState(setup, enemy, all);
+  state.player.status.poison = 2;
+  const result = resolveDungeonTurn(state, { turn: 1, spell_id: transfer.id }, () => 0);
+  expect(result.events.find((e: any) => e.kind === "debuff_transfer")).toMatchObject({ source: "player", target: "npc", status: "poison", value: 2 });
+  const state2 = createDungeonCombatState(setup, enemy, all);
+  state2.npc.status.atk_boost = 0.8;
+  const result2 = resolveDungeonTurn(state2, { turn: 1, spell_id: steal.id }, () => 0);
+  expect(result2.events.find((e: any) => e.kind === "buff_steal")).toMatchObject({ source: "npc", target: "player", status: "atk_boost", value: 0.2 });
+  const empty = createDungeonCombatState(setup, enemy, all);
+  expect(resolveDungeonTurn(empty, { turn: 1, spell_id: transfer.id }, () => 0).events.some((e: any) => e.kind === "debuff_transfer")).toBe(false);
+});
+
+test("Dungeon jams an eligible spell and siphons bounded homunculus energy", () => {
+  const fixture = (id: string, kind: string, value: number) => ({ id, name: id, type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: "support", power_mult: 0, accuracy: 1, cooldown_turns: 4, effects: [{ kind, target: "enemy", value }] });
+  const jam = fixture("jam_fixture", "cooldown_jam", 1), siphon = fixture("siphon_fixture", "hom_energy_siphon", 2);
+  const all = { ...catalogs, spells: [...catalogs.spells, jam, siphon], items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: { learned_by_entity: { sulfur_01: [jam.id, siphon.id] } } };
+  const setup = buildTrustedCombatSetup(snapshot, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: [jam.id, siphon.id, "cinder_fist", "ash_temper"], mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  const state = createDungeonCombatState(setup, enemy, all);
+  const jammed = resolveDungeonTurn(state, { turn: 1, spell_id: jam.id }, () => 0);
+  expect(jammed.events.find((e: any) => e.kind === "cooldown_jam")).toMatchObject({ actor: "player", target: "npc", value: 1 });
+  const energy = createDungeonCombatState(setup, enemy, all);
+  energy.player.hom_energy = 5; energy.npc.hom_energy = 2;
+  const stolen = resolveDungeonTurn(energy, { turn: 1, spell_id: siphon.id }, () => 0);
+  expect(stolen.events.find((e: any) => e.kind === "hom_energy_siphon")).toMatchObject({ amount: 1, actor_energy: 6, target_energy: 1 });
+});
+
 test("all ten catalog anomalies cast in Dungeon combat", () => {
   const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
   const anomalies = catalogs.spells.filter((s: any) => s.effects.some((e: any) => e.kind === "physical_anomaly"));
@@ -337,6 +460,40 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.physical_anomaly).toEqual(anomalyResponse.data.combat_state.physical_anomaly);
     expect((await request("/dungeon/turn", anomalyAction, token)).data).toEqual(anomalyResponse.data);
+    const delayedFixture = { id: "fixture_delay", name: "Delayed", type: "universal", eligible_types: fixture.eligible_types, category: "attack", power_mult: 1, accuracy: 1, cooldown_turns: 1, effects: [{ kind: "delayed_damage", target: "enemy", value: 0.5 }] };
+    const delayedState = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(another.data.run_id) as any).combat_state_json);
+    delayedState.spells.push(delayedFixture); delayedState.player.spell_ids[0] = delayedFixture.id; delayedState.npc.hp = delayedState.npc.max_hp = 1000;
+    db.query("UPDATE dungeon_runs SET combat_state_json = ? WHERE run_id = ?").run(JSON.stringify(delayedState), another.data.run_id);
+    const delayAction = { run_id: another.data.run_id, client_action_id: "fixture-delay", expected_revision: 2, decision: { turn: 2, spell_id: delayedFixture.id } };
+    const delayResponse = await request("/dungeon/turn", delayAction, token);
+    expect(delayResponse.status).toBe(200);
+    expect(delayResponse.data.combat_state.strategic_delayed).toHaveLength(1);
+    server.kill(); await server.exited; server = spawn(); await ready();
+    token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+    expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.strategic_delayed).toEqual(delayResponse.data.combat_state.strategic_delayed);
+    expect((await request("/dungeon/turn", delayAction, token)).data).toEqual(delayResponse.data);
+    const tickAction = { run_id: another.data.run_id, client_action_id: "fixture-delay-tick", expected_revision: 3, decision: { turn: 3, spell_id: "furnace_rush" } };
+    const tickResponse = await request("/dungeon/turn", tickAction, token);
+    expect(tickResponse.status).toBe(200);
+    expect(tickResponse.data.events.filter((e: any) => e.kind === "delayed_damage")).toHaveLength(1);
+    expect(tickResponse.data.combat_state.strategic_delayed).toEqual([]);
+    expect((await request("/dungeon/turn", tickAction, token)).data).toEqual(tickResponse.data);
+    const comboState = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(another.data.run_id) as any).combat_state_json);
+    const poisonSpell = structuredClone(catalogs.spells.find((s: any) => s.id === "caustic_mark")); poisonSpell.accuracy = 1;
+    const comboSpell = structuredClone(catalogs.spells.find((s: any) => s.id === "pyrolytic_fuse")); comboSpell.accuracy = 1;
+    comboState.player.type = "vitriol"; comboState.player.hp = comboState.player.max_hp = 1000;
+    comboState.npc.hp = comboState.npc.max_hp = 1000; comboState.npc.status = {};
+    comboState.player.spell_ids[0] = poisonSpell.id; comboState.player.spell_ids[1] = comboSpell.id;
+    comboState.spells.push(poisonSpell, comboSpell);
+    db.query("UPDATE dungeon_runs SET combat_state_json = ? WHERE run_id = ?").run(JSON.stringify(comboState), another.data.run_id);
+    const poisonAction = { run_id: another.data.run_id, client_action_id: "fixture-poison", expected_revision: 4, decision: { turn: 4, spell_id: poisonSpell.id } };
+    expect((await request("/dungeon/turn", poisonAction, token)).status).toBe(200);
+    const comboAction = { run_id: another.data.run_id, client_action_id: "fixture-combo", expected_revision: 5, decision: { turn: 5, spell_id: comboSpell.id } };
+    const comboResponse = await request("/dungeon/turn", comboAction, token);
+    expect(comboResponse.status).toBe(200);
+    expect(comboResponse.data.events.find((e: any) => e.kind === "combo_trigger")).toMatchObject({ actor: "player", target: "npc", source_spell_id: "pyrolytic_fuse", prerequisite: "poison" });
+    expect(comboResponse.data.events.find((e: any) => e.kind === "combo_trigger").actual_bonus_damage).toBeGreaterThan(0);
+    expect((await request("/dungeon/turn", comboAction, token)).data).toEqual(comboResponse.data);
     const abandon = { client_action_id: "abandon", run_id: another.data.run_id };
     const closed = await request("/dungeon/abandon", abandon, token);
     expect(closed.data.status).toBe("ABANDONED");

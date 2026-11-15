@@ -5,8 +5,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var registry := DataRegistry.new()
-	if registry.spells.size() != 74:
-		push_error("Expected 74 validated spells; got %d" % registry.spells.size())
+	if registry.spells.size() != 94:
+		push_error("Expected 94 validated spells; got %d" % registry.spells.size())
 		quit(1)
 		return
 	var debug := FileAccess.open("user://debug.json", FileAccess.WRITE)
@@ -58,7 +58,7 @@ func _run() -> void:
 		push_error("Wrong direct or indirect damage: %s" % str([baseline, favored, weakened, indirect_base, indirect]))
 		quit(1)
 		return
-	print("PASS: 74 spells; 10 anomaly casts and expiration; damage %s" % str([baseline, favored, weakened]))
+	print("PASS: 94 spells; 10 anomaly casts and expiration; damage %s" % str([baseline, favored, weakened]))
 	scene.queue_free()
 	registry.free()
 	await process_frame

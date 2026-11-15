@@ -56,11 +56,14 @@ func _load_spells(path: String) -> void:
 			push_warning("DataRegistry: Invalid spell statistics: %s" % id)
 			return
 		for effect in spell.effects:
-			if not effect is Dictionary or effect.get("kind") not in ["vuln", "atk_boost", "atk_down", "shield", "hom_stun", "heal", "reflect", "type_neutralize", "poison", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "shield_by_order", "ward_dispel", "poison_on_reflect", "physical_anomaly"] or effect.get("target") not in ["self", "enemy"] or not (effect.get("value") is int or effect.get("value") is float) or (effect.value < 0 and effect.kind != "tempo_shift"):
+			if not effect is Dictionary or effect.get("kind") not in ["vuln", "atk_boost", "atk_down", "shield", "hom_stun", "heal", "reflect", "type_neutralize", "poison", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "shield_by_order", "ward_dispel", "poison_on_reflect", "physical_anomaly", "delayed_damage", "debuff_transfer", "buff_steal", "cooldown_jam", "counter_trap", "ward_convert", "heal_suppression", "hom_energy_siphon"] or effect.get("target") not in ["self", "enemy"] or not (effect.get("value") is int or effect.get("value") is float) or (effect.value < 0 and effect.kind != "tempo_shift"):
 				push_warning("DataRegistry: Invalid spell effect: %s" % id)
 				return
 			if effect.kind == "physical_anomaly" and (spell_type != "universal" or spell.category != "support" or power != 0 or effect.target != "self" or effect.value != 1 or not counts.has(effect.get("favored_type")) or not counts.has(effect.get("weakened_type")) or effect.favored_type == effect.weakened_type or effect.get("outgoing_bonus") != 0.15 or effect.get("outgoing_penalty") != 0.15 or effect.get("duration_exchanges") != 3):
 				push_warning("DataRegistry: Invalid physical anomaly: %s" % id)
+				return
+			if (effect.kind in ["delayed_damage", "ward_convert"] and effect.value > 1) or (effect.kind == "counter_trap" and effect.value > 0.5) or (effect.kind in ["debuff_transfer", "cooldown_jam"] and effect.value != 1) or (effect.kind in ["buff_steal", "heal_suppression"] and effect.value != 0.5) or (effect.kind == "hom_energy_siphon" and effect.value != 2):
+				push_warning("DataRegistry: Invalid strategic effect: %s" % id)
 				return
 		if counts.has(spell_type):
 			counts[spell_type] += 1
@@ -98,8 +101,8 @@ func _load_spells(path: String) -> void:
 		push_warning("DataRegistry: Invalid universal or hybrid spell count")
 		return
 	for pair in pairs:
-		if pairs[pair] != 2:
-			push_warning("DataRegistry: Expected two spells per hybrid pair")
+		if pairs[pair] < 2:
+			push_warning("DataRegistry: Expected at least two spells per hybrid pair")
 			return
 	spells = loaded
 

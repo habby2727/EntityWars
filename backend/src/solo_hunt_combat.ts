@@ -1,17 +1,18 @@
 import { createHmac } from "node:crypto";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "./physical_anomaly";
+import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "./strategic_effects";
 
 export const PARITY_GAPS = ["Normal Bo3 Ultraturn", "Boss tactical AI and complete minion/status parity require further verification", "Authoritative selection persistence, turn concurrency and settlement"] as const;
 export type CombatError = { error: "UNTRUSTED_SETUP" | "UNSUPPORTED_MECHANIC" | "INVALID_DECISION" };
 const validated = new WeakMap<object, any>();
-const SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order", "physical_anomaly"]);
+const SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order", "physical_anomaly", ...STRATEGIC_EFFECTS]);
 
 function castableSpell(spell: any, element: string): boolean {
   if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || !(spell.type === element || (["universal", "hybrid"].includes(spell.type) && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(element))) || !["attack", "support"].includes(spell.category) || typeof spell.power_mult !== "number" || !Number.isFinite(spell.power_mult) || spell.power_mult < 0 || typeof spell.accuracy !== "number" || !Number.isFinite(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !Array.isArray(spell.effects)) return false;
   const elements = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"];
   if (spell.type === "hybrid" && (!elements.includes(spell.primary_type) || !elements.includes(spell.secondary_type) || spell.primary_type === spell.secondary_type)) return false;
   if ((spell.category === "attack" && spell.power_mult <= 0) || (spell.category === "support" && spell.power_mult !== 0)) return false;
-  return spell.effects.every((e: any) => e && SUPPORTED_EFFECTS.has(e.kind) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(spell)) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every(key => e[key] === undefined || (typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0)) && (e.threshold === undefined || e.threshold <= 1));
+  return spell.effects.every((e: any) => e && SUPPORTED_EFFECTS.has(e.kind) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(spell)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e)) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every(key => e[key] === undefined || (typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0)) && (e.threshold === undefined || e.threshold <= 1));
 }
 
 function validBossCatalogEntry(boss: any, spells: any[]): boolean {
@@ -234,7 +235,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     return { damage: reduced, heal };
   };
   const healBossShield = (heal: number, prevented: number) => {
-    const actual = next.boss.hp > 0 ? Math.min(heal, next.boss.max_hp - next.boss.hp) : 0;
+    const actual = next.boss.hp > 0 ? Math.min(strategicHeal(next.boss, heal), next.boss.max_hp - next.boss.hp) : 0;
     next.boss.hp += actual;
     events.push({ actor: "boss", target: "boss", kind: "boss_shield", prevented, heal: actual, hp: next.boss.hp, remaining: next.boss_shield_turns });
   };
@@ -249,6 +250,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     delete fighter.status[field];
     if (fighter === next.player) { delete next.weapon_defenses[field]; delete next.other_defenses[field]; }
     if (fighter === next.player && field === "reflect_pct") { delete next.hom_reflect_active; delete next.hom_other_reflect; }
+    if (fighter === next.player && field === "shield_pct") { delete next.player_spell_ward; delete next.player_spell_ward_baseline; }
   };
   for (const fighter of [next.player, next.boss, ...next.minions]) {
     fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
@@ -258,6 +260,9 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   }
   let counter = next.rng_counter;
   let actualDamage = 0;
+  let playerDirectDamage = 0;
+  let bossDirectDamage = 0;
+  let pendingBossJam = false;
   let accuracyFocus = 0, accuracyMisalign = 0;
   const draw = () => { const n = rng(next.turn + 1, counter++); if (!Number.isFinite(n) || n < 0 || n >= 1) throw new Error("Invalid RNG draw"); return n; };
   const award = (kind: string) => {
@@ -306,7 +311,8 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     const prevented = damage - shieldResult.damage;
     damage = shieldResult.damage;
     const dealt = Math.min(d.hp, damage);
-    if (actor === "player") actualDamage = dealt;
+    if (actor === "player") { actualDamage = dealt; playerDirectDamage = dealt; }
+    if (actor === "boss" && signatureType !== undefined) bossDirectDamage = dealt;
     d.hp = Math.max(0, d.hp - damage);
     if (shielded) healBossShield(shieldResult.heal, prevented);
     if (damage > 0) d.spell_hit_this_exchange = true;
@@ -357,7 +363,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (a.type === "sodium") otherDefense(a, "shield_pct", 0.12);
       if (a.type === "aether") d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, 0.12);
       if (a.type === "vitriol") d.status.poison = 2;
-      if (a.type === "gold" && a.hp > 0) a.hp = Math.min(a.max_hp, a.hp + 3);
+      if (a.type === "gold" && a.hp > 0) a.hp = Math.min(a.max_hp, a.hp + strategicHeal(a, 3));
       events.push({ actor, kind: "elemental_proc", type: a.type });
     }
     return true;
@@ -416,6 +422,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
             if (recipient.status[field] > previous) applied.push({ kind: effect.kind, target: recipient === next.boss ? "boss" : "player", value: recipient.status[field] });
           }
           events.push({ actor: "boss", target: "player", kind: "boss_special_cast", spell_id: signature.id, landed, applied_effects: applied });
+          if (landed) strategicCounter(next.player, next.boss, "player", "boss", bossDirectDamage, next.turn + 1, events);
           return;
         }
         const multiplier = (fury ? next.fury_mult : bossStrikeMultiplier(next.boss.hp, next.boss.max_hp)) * (next.minions.some((m: any) => m.hp > 0) ? 0.5 : 1);
@@ -481,17 +488,40 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (target.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0))) success = hit(next.player, target, spell.accuracy, power, "player");
     }
     else success = draw() < spell.accuracy;
+    const targetId = target === next.boss ? "boss" : target.id;
+    const conversion = spell.effects.find((effect: any) => effect.kind === "ward_convert");
+    if (success && spell.category === "attack" && conversion && (next.player_spell_ward ?? 0) > 0) {
+      const shield = next.player_spell_ward;
+      const baseline = next.player_spell_ward_baseline ?? 0;
+      const amount = Math.min(target.hp, Math.floor(target.max_hp * 0.2), Math.floor(next.player.max_hp * shield * conversion.value));
+      target.hp -= amount;
+      delete next.player_spell_ward; delete next.player_spell_ward_baseline;
+      const retained = Math.max(baseline, next.weapon_defenses.shield_pct ?? 0);
+      if (retained > 0) next.player.status.shield_pct = retained; else delete next.player.status.shield_pct;
+      if (next.weapon_defenses.shield_pct !== undefined) next.other_defenses.shield_pct = baseline;
+      events.push({ kind: "ward_convert", actor: "player", target: targetId, shield, amount, hp: target.hp });
+    }
     if (success && spell.type === "hybrid" && marked && target.status.hybrid_mark) { delete target.status.hybrid_mark; events.push({ kind: "status_consumed", target: target === next.boss ? "boss" : target.id, status: "hybrid_mark" }); }
     if (success) for (const effect of spell.effects) {
       const recipient = effect.target === "self" ? next.player : target;
       if (effect.kind === "physical_anomaly") { next.physical_anomaly = castPhysicalAnomaly(spell, next.turn + 1); events.push({ kind: "physical_anomaly_cast", actor: "player", anomaly: structuredClone(next.physical_anomaly) }); continue; }
+      if (effect.kind === "delayed_damage") { if (spell.category === "attack") queueDelayedDamage(next, "player", targetId, effect.value, playerDirectDamage, next.turn + 1, events); continue; }
+      if (effect.kind === "ward_convert") continue;
+      if (effect.kind === "counter_trap") { next.player.strategic_trap = { value: effect.value, activated_turn: next.turn + 1, expires_turn: next.turn + 3 }; events.push({ kind: "counter_trap_armed", actor: "player", target: "player", value: effect.value, expires_turn: next.turn + 3 }); continue; }
+      if (effect.kind === "heal_suppression") { target.strategic_heal_suppression = { expires_turn: next.turn + 3 }; events.push({ kind: "heal_suppression_applied", actor: "player", target: targetId, value: effect.value, expires_turn: next.turn + 3 }); continue; }
+      if (effect.kind === "cooldown_jam") { if (target === next.boss) pendingBossJam = true; continue; }
+      if (effect.kind === "hom_energy_siphon") continue;
+      if (effect.kind === "debuff_transfer" || effect.kind === "buff_steal") {
+        transferStrategicStatus(effect.kind, next.player, target, "player", target === next.boss ? "boss" : target.id, { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }, events, (fighter, field) => { if (["shield_pct", "reflect_pct"].includes(field)) clearDefense(fighter, field); else delete fighter.status[field]; }, (fighter, field, value) => { if (["shield_pct", "reflect_pct"].includes(field)) otherDefense(fighter, field, value); else fighter.status[field] = Math.max(fighter.status[field] ?? 0, value); });
+        continue;
+      }
       if (recipient === next.boss && next.minions.some((m: any) => m.hp > 0)) continue;
       if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(effect.kind)) continue;
       if (effect.kind === "hybrid_mark") { const before = JSON.stringify(recipient.status.hybrid_mark ?? {}); recipient.status.hybrid_mark = { owner: "player", remaining: Math.trunc(effect.value) }; if (before !== JSON.stringify(recipient.status.hybrid_mark)) { events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "hybrid_mark", value: structuredClone(recipient.status.hybrid_mark), spell_id: spell.id }); if (recipient === target) award(effect.kind); } continue; }
       if (effect.kind === "tempo_shift") { const before = recipient.status.tempo_bonus ?? 0; recipient.status.tempo_bonus = effect.value; if (before !== effect.value) events.push({ kind: "status_changed", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "tempo_bonus", previous: before, value: effect.value, spell_id: spell.id }); if (recipient === target && effect.value < 0 && effect.value < before) award(effect.kind); continue; }
-      if (effect.kind === "shield_by_order") { otherDefense(recipient, "shield_pct", playerFirst ? effect.value : effect.second_value ?? effect.value); continue; }
+      if (effect.kind === "shield_by_order") { const ward = playerFirst ? effect.value : effect.second_value ?? effect.value; if (recipient === next.player) { next.player_spell_ward_baseline ??= next.player.status.shield_pct ?? 0; next.player_spell_ward = Math.max(next.player_spell_ward ?? 0, ward); } otherDefense(recipient, "shield_pct", ward); continue; }
       if (effect.kind === "poison_on_reflect") { const previous = recipient.status.poison_on_reflect ?? 0; recipient.status.poison_on_reflect = Math.trunc(effect.value); if (previous !== recipient.status.poison_on_reflect) events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "poison_on_reflect", previous, value: recipient.status.poison_on_reflect, source: spell.id, spell_id: spell.id }); continue; }
-      if (effect.kind === "life_leech") { if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value))); continue; }
+      if (effect.kind === "life_leech") { if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value)))); continue; }
       if (effect.kind === "cleanse_one") {
         for (const field of ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { events.push({ kind: "status_cleansed", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: field, previous: recipient.status[field], spell_id: spell.id }); recipient.status[field] = 0; break; }
         continue;
@@ -501,16 +531,18 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (effect.kind === "type_neutralize") {
         recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, effect.value);
       } else if (effect.kind === "heal") {
-        if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.trunc(effect.value));
+        if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, Math.trunc(effect.value)));
       } else {
         const field = ({ vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" } as Record<string, string>)[effect.kind] ?? effect.kind;
         const before = recipient.status[field] ?? 0;
+        if (field === "shield_pct" && recipient === next.player) { next.player_spell_ward_baseline ??= next.player.status.shield_pct ?? 0; next.player_spell_ward = Math.max(next.player_spell_ward ?? 0, effect.value); }
         if (["shield_pct", "reflect_pct"].includes(field)) otherDefense(recipient, field, effect.value);
         else recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
         if (recipient.status[field] > before) events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: field, value: recipient.status[field], previous: before, spell_id: spell.id });
         if (recipient === target && ["atk_down", "vuln", "poison", "hom_stun", "misalign_next"].includes(effect.kind) && recipient.status[field] > before) award(effect.kind);
       }
     }
+    if (success && spell.category === "attack") strategicCounter(target, next.player, targetId, "player", playerDirectDamage, next.turn + 1, events);
     }
     if (next.player.hp > 0 && decision.hom_action === "sacrifice" && !next.hom_spent) {
       if (next.hom_reflect_active !== undefined) {
@@ -530,7 +562,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       next.player.atk -= next.hom_bonuses.atk;
       next.player.def -= next.hom_bonuses.def;
       next.player.max_hp -= next.hom_bonuses.hp;
-      next.player.hp = Math.min(next.player.max_hp, Math.min(next.player.hp, next.player.max_hp) + 30);
+      next.player.hp = Math.min(next.player.max_hp, Math.min(next.player.hp, next.player.max_hp) + strategicHeal(next.player, 30));
       events.push({ actor: "player", kind: "hom_sacrifice" });
     } else if (next.player.hp > 0 && target?.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0)) && decision.hom_action === "attack" && !next.hom_spent) {
       const boosted = next.hom_energy >= 6;
@@ -564,6 +596,8 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { fighter.status.poison--; const damage = Math.min(2, fighter.hp); fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id, damage, hp: fighter.hp, remaining: fighter.status.poison }); }
     if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
+  finishStrategicExchange(next, { player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m: any) => [m.id, m])) }, next.turn + 1, events);
+  if (pendingBossJam) jamStrategicCooldown([next.boss_signature], next.boss_cooldowns, "player", "boss", events);
   next.turn++;
   for (const id of minionsAtStart) {
     const minion = next.minions.find((m: any) => m.id === id);
@@ -602,6 +636,8 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (furyQueued) events.push({ actor: "boss", kind: "fury_queued", multiplier: next.fury_mult });
   }
   if (next.terminal_result) {
+    next.strategic_delayed = [];
+    for (const fighter of [next.player, next.boss, ...next.minions]) { delete fighter.strategic_trap; delete fighter.strategic_heal_suppression; }
     events.push({ kind: "combat_terminal", result: next.terminal_result, player_hp: next.player.hp, boss_hp: next.boss.hp });
     next.fury_pending = false;
     Object.assign(next, restoreInspiration(next));

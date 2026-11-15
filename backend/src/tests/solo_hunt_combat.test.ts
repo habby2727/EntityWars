@@ -10,6 +10,102 @@ const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common",
 const selection = { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
 const rng = (_turn: number, draw: number) => draw % 2 === 0 ? 0 : 0.99;
 
+test("twenty strategic hybrids research and equip for both eligible types", () => {
+  const ids = ["septic_echo", "void_purge", "paradox_ledger", "sovereign_hack", "signal_jam", "echo_ambush", "crystal_dividend", "null_quarantine", "gilded_lien", "auric_retort", "caustic_quarantine", "osmotic_rebound", "catalytic_mirror", "toxic_extraction", "pyrolytic_fuse", "scorched_antidote", "overclock_drain", "reactor_feedback", "ashen_patent", "debt_bomb"];
+  for (const id of ids) {
+    const spell = catalogs.spells.find((s: any) => s.id === id);
+    expect(spell.eligible_types).toHaveLength(2);
+    for (const type of spell.eligible_types) {
+      const entity = catalogs.entities.find((e: any) => e.type === type);
+      const state: any = { spell_progress: normalizeSpellProgress({}), lab: { buildings: { ultrahit_tower: { level: 10 } } }, wallet: { essence: 100000, core: 100000, arcane_shard: 100000, time_crystal: 100000 } };
+      const payload = { entity_id: entity.id, spell_id: id };
+      expect(startSpellResearch(state, payload, 100000, new Set(Object.keys(state.wallet)))).toBeNull();
+      expect(claimSpellResearch(state, payload, state.spell_progress.active_research.completes_at)).toBeNull();
+      const native = catalogs.spells.filter((s: any) => s.type === type).slice(0, 3).map((s: any) => s.id);
+      expect(setSpellLoadout(state, { entity_id: entity.id, mode: "attack", spell_ids: [id, ...native] })).toBeNull();
+    }
+  }
+});
+
+test("Hunt delayed damage, trap, ward conversion and healing suppression affect combat", () => {
+  const make = (id: string, kind: string, value: number, attack: boolean) => ({ id, name: id, type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: attack ? "attack" : "support", power_mult: attack ? 1 : 0, accuracy: 1, cooldown_turns: 1, effects: [{ kind, target: kind === "counter_trap" ? "self" : "enemy", value }] });
+  const spells = [make("h_delay", "delayed_damage", 0.5, true), make("h_ward", "ward_convert", 1, true), make("h_trap", "counter_trap", 0.5, false), make("h_suppress", "heal_suppression", 0.5, false)];
+  const all = { ...catalogs, spells: [...catalogs.spells, ...spells] };
+  const setup = buildTrustedCombatSetup({ ...snapshot, spell_progress: { learned_by_entity: { sulfur_01: spells.map(s => s.id) } } }, { ...selection, spell_ids: spells.map(s => s.id) }, all, { independentLoadout: true });
+  const initial = () => { const state = createCombatState(setup); state.player.hp = state.player.max_hp = 1000; state.boss.hp = state.boss.max_hp = 1000; return state; };
+  const delayed = resolveCombatTurn(initial(), { turn: 1, spell_id: "h_delay", target: "boss" }, () => 0);
+  const queued = delayed.events.find((e: any) => e.kind === "delayed_damage_queued");
+  expect(queued.amount).toBeGreaterThan(0);
+  const tick = resolveCombatTurn(JSON.parse(JSON.stringify(delayed.next_state)), { turn: 2, spell_id: "h_trap", target: "boss" }, () => 0);
+  expect(tick.events.filter((e: any) => e.kind === "delayed_damage")).toHaveLength(1);
+  expect(tick.events.find((e: any) => e.kind === "delayed_damage").amount).toBe(queued.amount);
+  expect(resolveCombatTurn(JSON.parse(JSON.stringify(delayed.next_state)), { turn: 2, spell_id: "h_trap", target: "boss" }, () => 0)).toEqual(tick);
+  const armed = resolveCombatTurn(initial(), { turn: 1, spell_id: "h_trap", target: "boss" }, () => 0);
+  const special = armed.next_state;
+  special.boss_intent = "Special"; special.boss_signature = catalogs.spells.find((s: any) => s.id === "cinder_fist"); special.selected_signature = "cinder_fist"; special.boss_cooldowns = {};
+  const retaliation = resolveCombatTurn(special, { turn: 2, spell_id: "h_suppress", target: "boss" }, () => 0);
+  expect(retaliation.events.filter((e: any) => e.kind === "counter_trap_triggered")).toHaveLength(1);
+  const ward = initial(); ward.player_spell_ward = 0.5; ward.player_spell_ward_baseline = 0; ward.player.status.shield_pct = 0.5;
+  const converted = resolveCombatTurn(ward, { turn: 1, spell_id: "h_ward", target: "boss" }, () => 0);
+  expect(converted.events.find((e: any) => e.kind === "ward_convert").amount).toBe(200);
+  expect(resolveCombatTurn(initial(), { turn: 1, spell_id: "h_ward", target: "boss" }, () => 0).events.some((e: any) => e.kind === "ward_convert")).toBe(false);
+  const shieldSpell = { ...make("h_shield", "shield", 0.5, false), effects: [{ kind: "shield", target: "self", value: 0.5 }] };
+  const shieldSetup = buildTrustedCombatSetup({ ...snapshot, spell_progress: { learned_by_entity: { sulfur_01: [shieldSpell.id, ...spells.map(s => s.id)] } } }, { ...selection, spell_ids: [shieldSpell.id, "h_ward", "h_delay", "h_suppress"] }, { ...all, spells: [...all.spells, shieldSpell] }, { independentLoadout: true });
+  const shieldState = createCombatState(shieldSetup); shieldState.boss.status.stun = 2; shieldState.boss.hp = shieldState.boss.max_hp = 1000;
+  const castShield = resolveCombatTurn(shieldState, { turn: 1, spell_id: shieldSpell.id, target: "boss" }, () => 0);
+  expect(castShield.next_state.player_spell_ward).toBe(0.5);
+  const castConversion = resolveCombatTurn(castShield.next_state, { turn: 2, spell_id: "h_ward", target: "boss" }, () => 0);
+  expect(castConversion.events.find((e: any) => e.kind === "ward_convert").shield).toBe(0.5);
+  expect(castConversion.next_state.player_spell_ward).toBeUndefined();
+  const suppressed = resolveCombatTurn(initial(), { turn: 1, spell_id: "h_suppress", target: "boss" }, () => 0);
+  expect(suppressed.next_state.boss.strategic_heal_suppression.expires_turn).toBe(3);
+  const protectedBoss = structuredClone(suppressed.next_state);
+  protectedBoss.boss_shield_turns = 2; protectedBoss.boss_shield_config = { reduction: 0.5, turns: 2, heal_ratio: 0.5 }; protectedBoss.boss.hp -= 200;
+  const plainBoss = structuredClone(protectedBoss); delete plainBoss.boss.strategic_heal_suppression;
+  const protectedHit = resolveCombatTurn(protectedBoss, { turn: 2, spell_id: "h_delay", target: "boss" }, () => 0);
+  const plainHit = resolveCombatTurn(plainBoss, { turn: 2, spell_id: "h_delay", target: "boss" }, () => 0);
+  const healing = (r: any) => r.events.find((e: any) => e.kind === "boss_shield").heal;
+  expect(healing(plainHit)).toBeGreaterThan(0);
+  expect(healing(protectedHit)).toBe(Math.floor(healing(plainHit) * 0.5));
+  const invalid = initial(); invalid.spells.find((s: any) => s.id === "h_trap").effects[0].value = 0.6;
+  const original = structuredClone(invalid);
+  expect(resolveCombatTurn(invalid, { turn: 1, spell_id: "h_trap", target: "boss" }, () => 0)).toEqual({ error: "UNSUPPORTED_MECHANIC" });
+  expect(invalid).toEqual(original);
+});
+
+test("Hunt transfers debuffs and steals bounded buffs", () => {
+  const fixture = (id: string, kind: string, value: number) => ({ id, name: id, type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: "support", power_mult: 0, accuracy: 1, cooldown_turns: 4, effects: [{ kind, target: "enemy", value }] });
+  const transfer = fixture("transfer_fixture", "debuff_transfer", 1), steal = fixture("steal_fixture", "buff_steal", 0.5);
+  const all = { ...catalogs, spells: [...catalogs.spells, transfer, steal] };
+  const trusted = { ...snapshot, spell_progress: { learned_by_entity: { sulfur_01: [transfer.id, steal.id] } } };
+  const setup = buildTrustedCombatSetup(trusted, { ...selection, spell_ids: [transfer.id, steal.id, "cinder_fist", "ash_temper"] }, all, { independentLoadout: true });
+  const state = createCombatState(setup);
+  state.player.status.poison = 2;
+  const result = resolveCombatTurn(state, { turn: 1, spell_id: transfer.id, target: "boss" }, () => 0.99);
+  expect(result.events.find((e: any) => e.kind === "debuff_transfer")).toMatchObject({ source: "player", target: "boss", status: "poison", value: 2 });
+  const state2 = createCombatState(setup);
+  state2.boss.status.shield_pct = 0.8;
+  const result2 = resolveCombatTurn(state2, { turn: 1, spell_id: steal.id, target: "boss" }, () => 0.99);
+  expect(result2.events.find((e: any) => e.kind === "buff_steal")).toMatchObject({ source: "boss", target: "player", status: "shield_pct", value: 0.2 });
+  const empty = createCombatState(setup);
+  expect(resolveCombatTurn(empty, { turn: 1, spell_id: transfer.id, target: "boss" }, () => 0.99).events.some((e: any) => e.kind === "debuff_transfer")).toBe(false);
+});
+
+test("Hunt jams its signature and cannot siphon nonexistent boss energy", () => {
+  const fixture = (id: string, kind: string, value: number) => ({ id, name: id, type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: "support", power_mult: 0, accuracy: 1, cooldown_turns: 4, effects: [{ kind, target: "enemy", value }] });
+  const jam = fixture("jam_fixture", "cooldown_jam", 1), siphon = fixture("siphon_fixture", "hom_energy_siphon", 2);
+  const all = { ...catalogs, spells: [...catalogs.spells, jam, siphon] };
+  const trusted = { ...snapshot, spell_progress: { learned_by_entity: { sulfur_01: [jam.id, siphon.id] } } };
+  const setup = buildTrustedCombatSetup(trusted, { ...selection, spell_ids: [jam.id, siphon, "cinder_fist", "ash_temper"].map(s => typeof s === "string" ? s : s.id) }, all, { independentLoadout: true });
+  const state = createCombatState(setup);
+  state.boss_signature = catalogs.spells.find((s: any) => s.id === "brimstone_crash");
+  state.selected_signature = state.boss_signature.id;
+  const jammed = resolveCombatTurn(state, { turn: 1, spell_id: jam.id, target: "boss" }, () => 0.99);
+  expect(jammed.events.find((e: any) => e.kind === "cooldown_jam")).toMatchObject({ actor: "player", target: "boss", spell_id: state.boss_signature.id, value: 1 });
+  const result = resolveCombatTurn(state, { turn: 1, spell_id: siphon.id, target: "boss" }, () => 0.99);
+  expect(result.events.some((e: any) => e.kind === "hom_energy_siphon")).toBe(false);
+});
+
 test("all catalog anomalies can be researched and equipped", () => {
   const ids = ["toxic_smog", "nuclear_fallout", "quicksilver_tempest", "cryosalt_squall", "vacuum_shear", "aureate_eclipse", "corrosive_rain", "plasma_tide", "quantum_static", "crystalline_dawn"];
   const state: any = { spell_progress: normalizeSpellProgress({}), lab: { buildings: { ultrahit_tower: { level: 10 } } }, wallet: { essence: 100000, core: 100000, arcane_shard: 100000, time_crystal: 100000 } };
@@ -761,7 +857,7 @@ test("researchable catalog spells resolve or fail closed", () => {
     expect(state).toEqual(before);
   }
   console.log("Researchable spells supported:", JSON.stringify(counts));
-  expect(counts).toEqual({ universal: 20, hybrid: 30 });
+  expect(counts).toEqual({ universal: 20, hybrid: 50 });
 });
 
 test("universal is neutral and hybrid uses both catalog types", () => {
@@ -776,7 +872,7 @@ test("universal is neutral and hybrid uses both catalog types", () => {
   expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "void_etching", target: "boss" }, rng).next_state.boss.hp).toBe(91);
 });
 
-test("catalog sweep includes all 74 equipped spells", () => {
+test("catalog sweep includes all 94 equipped spells", () => {
   let passed = 0;
   for (const spell of catalogs.spells) {
     const entity = catalogs.entities.find((e: any) => spell.type === e.type || spell.eligible_types?.includes(e.type));
@@ -790,7 +886,7 @@ test("catalog sweep includes all 74 equipped spells", () => {
     expect(result.next_state.turn).toBe(1);
     passed++;
   }
-  expect(passed).toBe(74);
+  expect(passed).toBe(94);
 });
 
 test("precision, shields, leech and initiative have observable effects", () => {

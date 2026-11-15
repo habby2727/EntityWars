@@ -12389,9 +12389,90 @@ function tickPhysicalAnomaly(anomaly, exchange) {
   return anomaly.remaining_exchanges <= 1 ? null : { ...anomaly, remaining_exchanges: anomaly.remaining_exchanges - 1 };
 }
 
+// src/strategic_effects.ts
+function transferStrategicStatus(kind, actor, target, actorId, targetId, fields, events, clear, apply) {
+  const negative = ["poison", fields.vuln, "atk_down"];
+  const positive = ["atk_boost", fields.shield, fields.reflect];
+  const source = kind === "debuff_transfer" ? actor : target;
+  const destination = kind === "debuff_transfer" ? target : actor;
+  const sourceId = kind === "debuff_transfer" ? actorId : targetId;
+  const destinationId = kind === "debuff_transfer" ? targetId : actorId;
+  const field = (kind === "debuff_transfer" ? negative : positive).find((key) => (source.status[key] ?? 0) > 0);
+  if (!field)
+    return;
+  const old = source.status[field];
+  const value = kind === "debuff_transfer" ? old : Math.min(0.2, old * 0.5);
+  const previous = destination.status[field] ?? 0;
+  clear(source, field);
+  apply(destination, field, value);
+  events.push({ kind, actor: actorId, source: sourceId, target: destinationId, status: field, removed: old, previous, value: destination.status[field] ?? 0 });
+}
+function validStrategicStatusEffect(effect) {
+  return effect && (["debuff_transfer", "cooldown_jam"].includes(effect.kind) && effect.value === 1 || ["buff_steal", "heal_suppression"].includes(effect.kind) && effect.value === 0.5 || effect.kind === "hom_energy_siphon" && effect.value === 2 || ["delayed_damage", "ward_convert", "counter_trap"].includes(effect.kind) && typeof effect.value === "number" && Number.isFinite(effect.value) && effect.value >= 0 && effect.value <= (effect.kind === "counter_trap" ? 0.5 : 1));
+}
+var STRATEGIC_EFFECTS = ["debuff_transfer", "buff_steal", "cooldown_jam", "hom_energy_siphon", "delayed_damage", "counter_trap", "ward_convert", "heal_suppression"];
+function queueDelayedDamage(state, actor, target, value, damage, turn, events) {
+  if (damage <= 0)
+    return;
+  const amount = Math.floor(damage * value);
+  state.strategic_delayed ??= [];
+  state.strategic_delayed = state.strategic_delayed.filter((entry) => entry.actor !== actor || entry.target !== target);
+  if (amount > 0)
+    state.strategic_delayed.push({ actor, target, amount, due_turn: turn + 1 });
+  events.push({ kind: "delayed_damage_queued", actor, target, amount, due_turn: turn + 1 });
+}
+function strategicCounter(defender, attacker, defenderId, attackerId, damage, turn, events) {
+  const trap = defender.strategic_trap;
+  if (!trap || turn <= trap.activated_turn || turn > trap.expires_turn || damage <= 0)
+    return;
+  delete defender.strategic_trap;
+  const amount = Math.min(attacker.hp, Math.floor(attacker.max_hp * 0.2), Math.floor(damage * trap.value));
+  attacker.hp -= amount;
+  events.push({ kind: "counter_trap_triggered", actor: defenderId, target: attackerId, amount, hp: attacker.hp });
+}
+function strategicHeal(fighter, amount) {
+  return fighter.strategic_heal_suppression ? Math.floor(amount * 0.5) : amount;
+}
+function finishStrategicExchange(state, fighters, turn, events) {
+  const remaining = [];
+  for (const entry of state.strategic_delayed ?? []) {
+    if (entry.due_turn > turn) {
+      remaining.push(entry);
+      continue;
+    }
+    const target = fighters[entry.target];
+    if (target && target.hp > 0) {
+      const amount = Math.min(target.hp, entry.amount);
+      target.hp -= amount;
+      events.push({ kind: "delayed_damage", actor: entry.actor, target: entry.target, amount, hp: target.hp });
+    }
+  }
+  state.strategic_delayed = remaining;
+  for (const [id, fighter] of Object.entries(fighters)) {
+    for (const [field, kind] of [["strategic_trap", "counter_trap_expired"], ["strategic_heal_suppression", "heal_suppression_expired"]]) {
+      if (fighter[field]?.expires_turn <= turn) {
+        delete fighter[field];
+        events.push({ kind, target: id });
+      }
+    }
+  }
+}
+function jamStrategicCooldown(spells2, cooldowns, actor, target, events) {
+  const eligible = spells2.filter((s) => s && s.id !== "basic_attack" && Number.isFinite(s.power_mult) && s.power_mult >= 0 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns > 0).sort((a, b2) => b2.power_mult - a.power_mult || a.id.localeCompare(b2.id));
+  const chosen = eligible[0];
+  if (!chosen)
+    return;
+  const previous = cooldowns[chosen.id] ?? 0;
+  const value = Math.min(4, previous + 1);
+  if (value <= previous)
+    return;
+  cooldowns[chosen.id] = value;
+  events.push({ kind: "cooldown_jam", actor, target, spell_id: chosen.id, previous, value });
+}
+
 // src/solo_hunt_combat.ts
 var validated = new WeakMap;
-var SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order", "physical_anomaly"]);
+var SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order", "physical_anomaly", ...STRATEGIC_EFFECTS]);
 function castableSpell(spell, element) {
   if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || !(spell.type === element || ["universal", "hybrid"].includes(spell.type) && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(element)) || !["attack", "support"].includes(spell.category) || typeof spell.power_mult !== "number" || !Number.isFinite(spell.power_mult) || spell.power_mult < 0 || typeof spell.accuracy !== "number" || !Number.isFinite(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !Array.isArray(spell.effects))
     return false;
@@ -12400,7 +12481,7 @@ function castableSpell(spell, element) {
     return false;
   if (spell.category === "attack" && spell.power_mult <= 0 || spell.category === "support" && spell.power_mult !== 0)
     return false;
-  return spell.effects.every((e) => e && SUPPORTED_EFFECTS.has(e.kind) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(spell)) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every((key) => e[key] === undefined || typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0) && (e.threshold === undefined || e.threshold <= 1));
+  return spell.effects.every((e) => e && SUPPORTED_EFFECTS.has(e.kind) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(spell)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e)) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every((key) => e[key] === undefined || typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0) && (e.threshold === undefined || e.threshold <= 1));
 }
 function validBossCatalogEntry(boss, spells2) {
   const tiers = {
@@ -12672,7 +12753,7 @@ function resolveCombatTurn(state, decision, rng) {
     return { damage: reduced, heal };
   };
   const healBossShield = (heal, prevented) => {
-    const actual = next.boss.hp > 0 ? Math.min(heal, next.boss.max_hp - next.boss.hp) : 0;
+    const actual = next.boss.hp > 0 ? Math.min(strategicHeal(next.boss, heal), next.boss.max_hp - next.boss.hp) : 0;
     next.boss.hp += actual;
     events.push({ actor: "boss", target: "boss", kind: "boss_shield", prevented, heal: actual, hp: next.boss.hp, remaining: next.boss_shield_turns });
   };
@@ -12695,6 +12776,10 @@ function resolveCombatTurn(state, decision, rng) {
       delete next.hom_reflect_active;
       delete next.hom_other_reflect;
     }
+    if (fighter === next.player && field === "shield_pct") {
+      delete next.player_spell_ward;
+      delete next.player_spell_ward_baseline;
+    }
   };
   for (const fighter of [next.player, next.boss, ...next.minions]) {
     fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
@@ -12704,6 +12789,9 @@ function resolveCombatTurn(state, decision, rng) {
   }
   let counter = next.rng_counter;
   let actualDamage = 0;
+  let playerDirectDamage = 0;
+  let bossDirectDamage = 0;
+  let pendingBossJam = false;
   let accuracyFocus = 0, accuracyMisalign = 0;
   const draw = () => {
     const n = rng(next.turn + 1, counter++);
@@ -12786,8 +12874,12 @@ function resolveCombatTurn(state, decision, rng) {
     const prevented = damage - shieldResult.damage;
     damage = shieldResult.damage;
     const dealt = Math.min(d.hp, damage);
-    if (actor === "player")
+    if (actor === "player") {
       actualDamage = dealt;
+      playerDirectDamage = dealt;
+    }
+    if (actor === "boss" && signatureType !== undefined)
+      bossDirectDamage = dealt;
     d.hp = Math.max(0, d.hp - damage);
     if (shielded)
       healBossShield(shieldResult.heal, prevented);
@@ -12850,7 +12942,7 @@ function resolveCombatTurn(state, decision, rng) {
       if (a.type === "vitriol")
         d.status.poison = 2;
       if (a.type === "gold" && a.hp > 0)
-        a.hp = Math.min(a.max_hp, a.hp + 3);
+        a.hp = Math.min(a.max_hp, a.hp + strategicHeal(a, 3));
       events.push({ actor, kind: "elemental_proc", type: a.type });
     }
     return true;
@@ -12916,6 +13008,8 @@ function resolveCombatTurn(state, decision, rng) {
                 applied.push({ kind: effect.kind, target: recipient === next.boss ? "boss" : "player", value: recipient.status[field] });
             }
           events.push({ actor: "boss", target: "player", kind: "boss_special_cast", spell_id: signature.id, landed: landed2, applied_effects: applied });
+          if (landed2)
+            strategicCounter(next.player, next.boss, "player", "boss", bossDirectDamage, next.turn + 1, events);
           return;
         }
         const multiplier = (fury ? next.fury_mult : bossStrikeMultiplier(next.boss.hp, next.boss.max_hp)) * (next.minions.some((m) => m.hp > 0) ? 0.5 : 1);
@@ -13001,6 +13095,24 @@ function resolveCombatTurn(state, decision, rng) {
             success = hit(next.player, target, spell.accuracy, power, "player");
         } else
           success = draw() < spell.accuracy;
+        const targetId = target === next.boss ? "boss" : target.id;
+        const conversion = spell.effects.find((effect) => effect.kind === "ward_convert");
+        if (success && spell.category === "attack" && conversion && (next.player_spell_ward ?? 0) > 0) {
+          const shield = next.player_spell_ward;
+          const baseline = next.player_spell_ward_baseline ?? 0;
+          const amount = Math.min(target.hp, Math.floor(target.max_hp * 0.2), Math.floor(next.player.max_hp * shield * conversion.value));
+          target.hp -= amount;
+          delete next.player_spell_ward;
+          delete next.player_spell_ward_baseline;
+          const retained = Math.max(baseline, next.weapon_defenses.shield_pct ?? 0);
+          if (retained > 0)
+            next.player.status.shield_pct = retained;
+          else
+            delete next.player.status.shield_pct;
+          if (next.weapon_defenses.shield_pct !== undefined)
+            next.other_defenses.shield_pct = baseline;
+          events.push({ kind: "ward_convert", actor: "player", target: targetId, shield, amount, hp: target.hp });
+        }
         if (success && spell.type === "hybrid" && marked && target.status.hybrid_mark) {
           delete target.status.hybrid_mark;
           events.push({ kind: "status_consumed", target: target === next.boss ? "boss" : target.id, status: "hybrid_mark" });
@@ -13011,6 +13123,44 @@ function resolveCombatTurn(state, decision, rng) {
             if (effect.kind === "physical_anomaly") {
               next.physical_anomaly = castPhysicalAnomaly(spell, next.turn + 1);
               events.push({ kind: "physical_anomaly_cast", actor: "player", anomaly: structuredClone(next.physical_anomaly) });
+              continue;
+            }
+            if (effect.kind === "delayed_damage") {
+              if (spell.category === "attack")
+                queueDelayedDamage(next, "player", targetId, effect.value, playerDirectDamage, next.turn + 1, events);
+              continue;
+            }
+            if (effect.kind === "ward_convert")
+              continue;
+            if (effect.kind === "counter_trap") {
+              next.player.strategic_trap = { value: effect.value, activated_turn: next.turn + 1, expires_turn: next.turn + 3 };
+              events.push({ kind: "counter_trap_armed", actor: "player", target: "player", value: effect.value, expires_turn: next.turn + 3 });
+              continue;
+            }
+            if (effect.kind === "heal_suppression") {
+              target.strategic_heal_suppression = { expires_turn: next.turn + 3 };
+              events.push({ kind: "heal_suppression_applied", actor: "player", target: targetId, value: effect.value, expires_turn: next.turn + 3 });
+              continue;
+            }
+            if (effect.kind === "cooldown_jam") {
+              if (target === next.boss)
+                pendingBossJam = true;
+              continue;
+            }
+            if (effect.kind === "hom_energy_siphon")
+              continue;
+            if (effect.kind === "debuff_transfer" || effect.kind === "buff_steal") {
+              transferStrategicStatus(effect.kind, next.player, target, "player", target === next.boss ? "boss" : target.id, { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }, events, (fighter, field) => {
+                if (["shield_pct", "reflect_pct"].includes(field))
+                  clearDefense(fighter, field);
+                else
+                  delete fighter.status[field];
+              }, (fighter, field, value) => {
+                if (["shield_pct", "reflect_pct"].includes(field))
+                  otherDefense(fighter, field, value);
+                else
+                  fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
+              });
               continue;
             }
             if (recipient === next.boss && next.minions.some((m) => m.hp > 0))
@@ -13037,7 +13187,12 @@ function resolveCombatTurn(state, decision, rng) {
               continue;
             }
             if (effect.kind === "shield_by_order") {
-              otherDefense(recipient, "shield_pct", playerFirst ? effect.value : effect.second_value ?? effect.value);
+              const ward = playerFirst ? effect.value : effect.second_value ?? effect.value;
+              if (recipient === next.player) {
+                next.player_spell_ward_baseline ??= next.player.status.shield_pct ?? 0;
+                next.player_spell_ward = Math.max(next.player_spell_ward ?? 0, ward);
+              }
+              otherDefense(recipient, "shield_pct", ward);
               continue;
             }
             if (effect.kind === "poison_on_reflect") {
@@ -13049,7 +13204,7 @@ function resolveCombatTurn(state, decision, rng) {
             }
             if (effect.kind === "life_leech") {
               if (recipient.hp > 0)
-                recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value)));
+                recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value))));
               continue;
             }
             if (effect.kind === "cleanse_one") {
@@ -13076,10 +13231,14 @@ function resolveCombatTurn(state, decision, rng) {
               recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, effect.value);
             } else if (effect.kind === "heal") {
               if (recipient.hp > 0)
-                recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.trunc(effect.value));
+                recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, Math.trunc(effect.value)));
             } else {
               const field = { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }[effect.kind] ?? effect.kind;
               const before = recipient.status[field] ?? 0;
+              if (field === "shield_pct" && recipient === next.player) {
+                next.player_spell_ward_baseline ??= next.player.status.shield_pct ?? 0;
+                next.player_spell_ward = Math.max(next.player_spell_ward ?? 0, effect.value);
+              }
               if (["shield_pct", "reflect_pct"].includes(field))
                 otherDefense(recipient, field, effect.value);
               else
@@ -13090,6 +13249,8 @@ function resolveCombatTurn(state, decision, rng) {
                 award(effect.kind);
             }
           }
+        if (success && spell.category === "attack")
+          strategicCounter(target, next.player, targetId, "player", playerDirectDamage, next.turn + 1, events);
       }
       if (next.player.hp > 0 && decision.hom_action === "sacrifice" && !next.hom_spent) {
         if (next.hom_reflect_active !== undefined) {
@@ -13110,7 +13271,7 @@ function resolveCombatTurn(state, decision, rng) {
         next.player.atk -= next.hom_bonuses.atk;
         next.player.def -= next.hom_bonuses.def;
         next.player.max_hp -= next.hom_bonuses.hp;
-        next.player.hp = Math.min(next.player.max_hp, Math.min(next.player.hp, next.player.max_hp) + 30);
+        next.player.hp = Math.min(next.player.max_hp, Math.min(next.player.hp, next.player.max_hp) + strategicHeal(next.player, 30));
         events.push({ actor: "player", kind: "hom_sacrifice" });
       } else if (next.player.hp > 0 && target?.hp > 0 && (target !== next.boss || !next.minions.some((m) => m.hp > 0)) && decision.hom_action === "attack" && !next.hom_spent) {
         const boosted = next.hom_energy >= 6;
@@ -13167,6 +13328,9 @@ function resolveCombatTurn(state, decision, rng) {
       return { error: "UNSUPPORTED_MECHANIC" };
     throw error;
   }
+  finishStrategicExchange(next, { player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m) => [m.id, m])) }, next.turn + 1, events);
+  if (pendingBossJam)
+    jamStrategicCooldown([next.boss_signature], next.boss_cooldowns, "player", "boss", events);
   next.turn++;
   for (const id of minionsAtStart) {
     const minion = next.minions.find((m) => m.id === id);
@@ -13214,6 +13378,11 @@ function resolveCombatTurn(state, decision, rng) {
       events.push({ actor: "boss", kind: "fury_queued", multiplier: next.fury_mult });
   }
   if (next.terminal_result) {
+    next.strategic_delayed = [];
+    for (const fighter of [next.player, next.boss, ...next.minions]) {
+      delete fighter.strategic_trap;
+      delete fighter.strategic_heal_suppression;
+    }
     events.push({ kind: "combat_terminal", result: next.terminal_result, player_hp: next.player.hp, boss_hp: next.boss.hp });
     next.fury_pending = false;
     Object.assign(next, restoreInspiration(next));
@@ -13336,7 +13505,7 @@ function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04,
   const homChoices = otherHomunculi.length ? otherHomunculi : homunculi;
   const entity = entityChoices[draw("entity") % entityChoices.length];
   const homunculus = homChoices[draw("homunculus") % homChoices.length];
-  const candidates = catalogs.spells.filter((s) => s && typeof s.id === "string" && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type)) && Array.isArray(s.effects) && s.effects.every((e) => DUNGEON_EFFECTS.has(e.kind)) && Number.isFinite(s.accuracy) && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0).sort((a, b2) => a.id.localeCompare(b2.id));
+  const candidates = catalogs.spells.filter((s) => s && typeof s.id === "string" && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type) && Number.isInteger(s.tower_level_required) && s.research_cost && Number.isInteger(s.research_time_sec) && s.research_time_sec > 0) && Array.isArray(s.effects) && s.effects.every((e) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && Number.isFinite(s.accuracy) && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0).sort((a, b2) => a.id.localeCompare(b2.id));
   const unique = [...new Map(candidates.map((s) => [s.id, s])).values()];
   const advanced = unique.filter((s) => s.type === "universal" || s.type === "hybrid");
   if (unique.length < 4 || !advanced.length)
@@ -13345,16 +13514,29 @@ function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04,
   if (!attack.length)
     throw new Error("INVALID_DUNGEON_CATALOG");
   const chosen = [attack[draw("basic") % attack.length]];
+  if (floor >= 8) {
+    const pairs = [];
+    for (const setup of unique)
+      for (const follow of unique) {
+        if (setup.id === follow.id || setup.id === chosen[0].id || follow.id === chosen[0].id)
+          continue;
+        const has = (s, k, target) => s.effects.some((e) => e.kind === k && (!target || e.target === target));
+        if (has(setup, "poison", "enemy") && has(follow, "bonus_if_poisoned") || has(setup, "shield", "self") && has(follow, "ward_convert") || has(setup, "vuln", "enemy") && follow.category === "attack" && follow.power_mult >= 0.9)
+          pairs.push([setup, follow]);
+      }
+    const usable = pairs.filter((pair) => pair.some((s) => ["universal", "hybrid"].includes(s.type)));
+    if (usable.length)
+      chosen.push(...usable[draw("combo") % usable.length]);
+  }
   const advancedChoices = advanced.filter((s) => s.id !== chosen[0].id);
   if (!advancedChoices.length)
     throw new Error("INVALID_DUNGEON_CATALOG");
-  chosen.push(advancedChoices[draw("advanced") % advancedChoices.length]);
-  const remaining = unique.filter((s) => s.id !== chosen[0].id);
-  const advancedIndex = remaining.findIndex((s) => s.id === chosen[1].id);
-  remaining.splice(advancedIndex, 1);
+  if (chosen.length === 1)
+    chosen.push(advancedChoices[draw("advanced") % advancedChoices.length]);
+  const remaining = unique.filter((s) => !chosen.some((c) => c.id === s.id));
   while (chosen.length < 4)
     chosen.push(remaining.splice(draw(`spell-${chosen.length}`) % remaining.length, 1)[0]);
-  if (previous?.spell_ids && chosen.every((s) => previous.spell_ids.includes(s.id))) {
+  if (floor < 8 && previous?.spell_ids && chosen.every((s) => previous.spell_ids.includes(s.id))) {
     const alternatives = remaining.filter((s) => !previous.spell_ids.includes(s.id));
     if (alternatives.length)
       chosen[3] = alternatives[draw("variety") % alternatives.length];
@@ -13367,42 +13549,70 @@ function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04,
   const defense = Math.max(scale(entity.base_stats.guard, growth.defense), (previous?.defense ?? -1) + 1);
   return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map((s) => s.id), hp, attack: npcAttack, defense };
 }
-function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, target, roll) {
+function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, target, roll, context = {}) {
   if (!Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !Array.isArray(equippedIds) || equippedIds.length !== 4 || new Set(equippedIds).size !== 4 || !Array.isArray(spells2) || !cooldowns || typeof cooldowns !== "object" || !npc || !target || typeof roll !== "number" || !Number.isFinite(roll) || roll < 0 || roll >= 1)
     throw new Error("INVALID_DUNGEON_DECISION");
-  const legal = equippedIds.map((id) => spells2.find((s) => s?.id === id)).filter((s) => s && (s.type === npc.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(npc.type)) && Array.isArray(s.effects) && Number.isFinite(s.power_mult) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Number.isInteger(cooldowns[s.id] ?? 0) && (cooldowns[s.id] ?? 0) === 0);
+  const legal = equippedIds.map((id) => spells2.find((s) => s?.id === id)).filter((s) => s && (s.type === npc.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(npc.type)) && Array.isArray(s.effects) && s.effects.every((e) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && Number.isFinite(s.power_mult) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Number.isInteger(cooldowns[s.id] ?? 0) && (cooldowns[s.id] ?? 0) === 0);
   if (legal.length === 0)
     throw new Error("NO_AVAILABLE_DUNGEON_SPELL");
   if (floor <= 3)
     return legal[Math.floor(roll * legal.length)].id;
   const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
+  const allMoves = equippedIds.map((id) => spells2.find((s) => s?.id === id)).filter(Boolean);
+  const has = (s, kind) => s.effects.some((e) => e.kind === kind);
+  const poisonFollow = allMoves.some((s) => has(s, "bonus_if_poisoned") && (cooldowns[s.id] ?? 0) <= 1);
+  const wardFollow = allMoves.some((s) => has(s, "ward_convert") && (cooldowns[s.id] ?? 0) <= 1);
+  const estimate = (s) => {
+    const relation = context.types?.effectiveness?.[s.type]?.[target.type] ?? 1;
+    const typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+    const poison = s.effects.find((e) => e.kind === "bonus_if_poisoned");
+    const power = s.power_mult * (poison && enemyStatus.poison > 0 ? 1 + poison.value : 1);
+    const base = Math.max(1, Math.round(((npc.atk ?? 0) * (1 + (ownStatus.atk_boost ?? 0) - (ownStatus.atk_down ?? 0)) - Math.trunc((target.def ?? 0) * 0.5)) * typeMultiplier * physicalAnomalyMultiplier(context.anomaly, npc.type) * power * (1 + (enemyStatus.vuln ?? 0))));
+    return enemyStatus.shield > 0 ? Math.max(0, Math.round(base * (1 - enemyStatus.shield))) : base;
+  };
+  const lethalAvailable = legal.some((s) => s.category === "attack" && estimate(s) >= target.hp && s.accuracy > 0);
   const scored = legal.map((spell) => {
     let score = spell.category === "attack" ? spell.power_mult * spell.accuracy * 100 : 20;
+    if (lethalAvailable && spell.category === "attack" && estimate(spell) >= target.hp)
+      score += 1000;
     for (const effect of spell.effects) {
-      if (effect.kind === "heal" && npc.hp < npc.max_hp * 0.6)
-        score += Math.min(effect.value ?? 0, npc.max_hp - npc.hp) * 3;
-      if (effect.kind === "shield" && !(ownStatus.shield_pct > 0))
-        score += 35;
-      if (effect.kind === "poison" && !(enemyStatus.poison > 0))
-        score += 35;
-      if (effect.kind === "vuln" && effect.target === "enemy" && !(enemyStatus.vuln_pct > 0))
+      if (effect.kind === "heal")
+        score += npc.hp < npc.max_hp * 0.6 ? Math.min(effect.value ?? 0, npc.max_hp - npc.hp) * 3 : -70;
+      if (effect.kind === "shield" && !(ownStatus.shield > 0))
+        score += 35 + (floor >= 8 && wardFollow ? 75 : 0);
+      if (effect.kind === "poison" && effect.target === "enemy" && !(enemyStatus.poison > 0))
+        score += 35 + (floor >= 8 && poisonFollow ? 80 : 0);
+      if (effect.kind === "vuln" && effect.target === "enemy" && !(enemyStatus.vuln > 0))
         score += 25;
       if (floor >= 8 && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(effect.kind) && enemyStatus.poison > 0)
         score += 65;
-      if (floor >= 8 && effect.kind === "bonus_if_shielded" && ownStatus.shield_pct > 0)
-        score += 55;
+      if (floor >= 8 && ["bonus_if_shielded", "ward_convert"].includes(effect.kind) && ownStatus.shield > 0)
+        score += 90;
+      if (effect.kind === "counter_trap")
+        score += npc.strategic_trap ? -100 : 20;
+      if (effect.kind === "hom_energy_siphon")
+        score += npc.hom_id && target.hom_id && target.hom_energy > 0 && npc.hom_energy < 6 ? 25 : -60;
+      if (effect.kind === "physical_anomaly") {
+        const anomaly = context.anomaly;
+        score += anomaly?.id === spell.id ? -120 : anomaly?.favored_type === target.type ? 45 : effect.favored_type === npc.type ? 30 : -10;
+      }
+      if (effect.kind === "cooldown_jam" && floor >= 15)
+        score += (target.spell_ids ?? []).some((id) => (target.cooldowns?.[id] ?? 0) === 0 && spells2.some((s) => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1)) ? 35 : 0;
       if (floor >= 15 && effect.kind === "atk_down" && !(enemyStatus.atk_down > 0))
         score += 25;
     }
-    if (floor >= 15 && enemyStatus.vuln_pct > 0 && spell.category === "attack")
+    if (floor >= 15 && enemyStatus.vuln > 0 && spell.category === "attack")
       score += spell.power_mult * 20;
+    if (floor >= 8 && spell.category === "support" && npc.hp < npc.max_hp * 0.3 && !has(spell, "heal"))
+      score -= 35;
     return { id: spell.id, score };
   });
   const best = Math.max(...scored.map((s) => s.score));
   const tied = scored.filter((s) => s.score === best);
   return tied[Math.floor(roll * tied.length)].id;
 }
-var DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned", "physical_anomaly"]);
+var DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
+var validEffect = (e) => e && DUNGEON_EFFECTS.has(e.kind) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
 var DUNGEON_ITEMS = new Set(["power_flat", "guard_flat"]);
 function createDungeonCombatState(setup, enemy, catalogs) {
   if (!setup?.entity?.base_stats || !Array.isArray(setup.spell_ids) || setup.spell_ids.length !== 4 || new Set(setup.spell_ids).size !== 4 || !enemy || !catalogs || !Array.isArray(enemy.spell_ids) || enemy.spell_ids.length !== 4 || !Array.isArray(catalogs.spells) || !Array.isArray(catalogs.homunculi) || !catalogs.types?.effectiveness)
@@ -13414,7 +13624,7 @@ function createDungeonCombatState(setup, enemy, catalogs) {
   if (Object.entries(effects).some(([key, value]) => !DUNGEON_ITEMS.has(key) && value !== 0))
     return { error: "UNSUPPORTED_MECHANIC" };
   const spells2 = [...setup.spell_ids, ...enemy.spell_ids].map((id) => catalogs.spells.find((s) => s.id === id));
-  if (spells2.some((s) => !s || !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
+  if (spells2.some((s) => !s || !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
     return { error: "UNSUPPORTED_MECHANIC" };
   if (spells2.some((s, i) => !(s.type === (i < 4 ? setup.entity.type : enemy.type) || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(i < 4 ? setup.entity.type : enemy.type))))
     return { error: "UNTRUSTED_SETUP" };
@@ -13433,9 +13643,10 @@ function resolveDungeonTurn(state, decision, rng) {
   const spell = state.spells.find((s) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
   if (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3))
     return { error: "INVALID_DECISION" };
-  if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
+  if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
     return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events = [];
+  const pendingJams = [];
   let counter = next.rng_counter;
   const draw = () => {
     const value = rng(decision.turn, counter++);
@@ -13445,7 +13656,7 @@ function resolveDungeonTurn(state, decision, rng) {
   };
   let npcSpell;
   try {
-    const npcId = chooseDungeonNpcSpell(next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw());
+    const npcId = chooseDungeonNpcSpell(next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types });
     npcSpell = next.spells.find((s) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL")
@@ -13460,18 +13671,33 @@ function resolveDungeonTurn(state, decision, rng) {
     events.push({ kind: "spell", actor: who, spell_id: chosen.id, hit });
     if (!hit)
       return;
+    let directDamage = 0;
+    const previousWard = actor.status.shield ?? 0;
     if (chosen.category === "attack") {
       const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
       const mult = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
       const poisonBonus = chosen.effects.find((e) => e.kind === "bonus_if_poisoned");
       const power = chosen.power_mult * (poisonBonus && target.status.poison > 0 ? 1 + poisonBonus.value : 1);
-      let damage = Math.max(1, Math.round((actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * physicalAnomalyMultiplier(next.physical_anomaly, actor.type) * power * (1 + (target.status.vuln ?? 0))));
+      const base = (actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * physicalAnomalyMultiplier(next.physical_anomaly, actor.type) * (1 + (target.status.vuln ?? 0));
+      const shield = target.status.shield ?? 0;
+      const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
+      let damage = Math.max(1, Math.round(base * power));
       if (target.status.shield > 0) {
         damage = Math.max(0, Math.round(damage * (1 - target.status.shield)));
         delete target.status.shield;
       }
+      directDamage = Math.min(target.hp, damage);
       target.hp = Math.max(0, target.hp - damage);
       events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp });
+      if (poisonBonus && target.status.poison > 0 && directDamage > baseline)
+        events.push({ kind: "combo_trigger", actor: who, target: who === "player" ? "npc" : "player", source_spell_id: chosen.id, prerequisite: "poison", actual_bonus_damage: directDamage - baseline, resulting_status: { poison: target.status.poison } });
+    }
+    const conversion = chosen.effects.find((e) => e.kind === "ward_convert");
+    if (chosen.category === "attack" && conversion && previousWard > 0) {
+      delete actor.status.shield;
+      const amount = Math.min(target.hp, Math.floor(target.max_hp * 0.2), Math.floor(actor.max_hp * previousWard * conversion.value));
+      target.hp -= amount;
+      events.push({ kind: "ward_convert", actor: who, target: who === "player" ? "npc" : "player", shield: previousWard, amount, hp: target.hp });
     }
     for (const e of chosen.effects) {
       if (e.kind === "bonus_if_poisoned")
@@ -13481,12 +13707,52 @@ function resolveDungeonTurn(state, decision, rng) {
         events.push({ kind: "physical_anomaly_cast", actor: who, anomaly: structuredClone(next.physical_anomaly) });
         continue;
       }
+      if (e.kind === "debuff_transfer" || e.kind === "buff_steal") {
+        transferStrategicStatus(e.kind, actor, target, who, who === "player" ? "npc" : "player", { vuln: "vuln", shield: "shield", reflect: "reflect" }, events, (fighter, field) => {
+          delete fighter.status[field];
+        }, (fighter, field, value) => {
+          fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
+        });
+        continue;
+      }
+      if (e.kind === "cooldown_jam") {
+        pendingJams.push({ target, actor: who, targetId: who === "player" ? "npc" : "player" });
+        continue;
+      }
+      if (e.kind === "hom_energy_siphon") {
+        const amount = actor.hom_id && target.hom_id ? Math.min(2, target.hom_energy, 6 - actor.hom_energy) : 0;
+        if (amount > 0) {
+          target.hom_energy -= amount;
+          actor.hom_energy += amount;
+          events.push({ kind: "hom_energy_siphon", actor: who, target: who === "player" ? "npc" : "player", amount, actor_energy: actor.hom_energy, target_energy: target.hom_energy });
+        }
+        continue;
+      }
+      if (e.kind === "delayed_damage") {
+        if (chosen.category === "attack")
+          queueDelayedDamage(next, who, who === "player" ? "npc" : "player", e.value, directDamage, decision.turn, events);
+        continue;
+      }
+      if (e.kind === "ward_convert")
+        continue;
+      if (e.kind === "counter_trap") {
+        actor.strategic_trap = { value: e.value, activated_turn: decision.turn, expires_turn: decision.turn + 2 };
+        events.push({ kind: "counter_trap_armed", actor: who, target: who, value: e.value, expires_turn: decision.turn + 2 });
+        continue;
+      }
+      if (e.kind === "heal_suppression") {
+        target.strategic_heal_suppression = { expires_turn: decision.turn + 2 };
+        events.push({ kind: "heal_suppression_applied", actor: who, target: who === "player" ? "npc" : "player", value: e.value, expires_turn: decision.turn + 2 });
+        continue;
+      }
       const recipient = e.target === "self" ? actor : target;
       if (e.kind === "heal")
-        recipient.hp = Math.min(recipient.max_hp, recipient.hp + e.value);
+        recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, e.value));
       else
         recipient.status[e.kind] = Math.max(recipient.status[e.kind] ?? 0, e.value);
     }
+    if (chosen.category === "attack")
+      strategicCounter(target, actor, who === "player" ? "npc" : "player", who, directDamage, decision.turn, events);
     if (actor.hom_id)
       actor.hom_energy = Math.min(6, actor.hom_energy + 1);
   };
@@ -13527,9 +13793,19 @@ function resolveDungeonTurn(state, decision, rng) {
     for (const id of Object.keys(fighter.cooldowns))
       fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   }
+  finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);
+  for (const jam of pendingJams)
+    jamStrategicCooldown(jam.target.spell_ids.map((id) => next.spells.find((s) => s.id === id)), jam.target.cooldowns, jam.actor, jam.targetId, events);
   next.turn++;
   next.rng_counter = counter;
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
+  if (next.terminal_result) {
+    next.strategic_delayed = [];
+    for (const fighter of [next.player, next.npc]) {
+      delete fighter.strategic_trap;
+      delete fighter.strategic_heal_suppression;
+    }
+  }
   next.physical_anomaly = next.terminal_result ? null : tickPhysicalAnomaly(next.physical_anomaly, next.turn);
   return { next_state: next, events, terminal_result: next.terminal_result };
 }
@@ -15931,7 +16207,7 @@ function loadSoloBossCatalog(path, spellsPath) {
   return catalog;
 }
 function publicDungeonCombat(combat) {
-  return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null };
+  return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [] };
 }
 function expireSoloHunts(playerId, now) {
   db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
@@ -15947,7 +16223,7 @@ function publicHuntCombat(state) {
       result.hybrid_mark = { owner: raw.hybrid_mark.owner, remaining: raw.hybrid_mark.remaining };
     return result;
   };
-  const fighter = (entry) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status) });
+  const fighter = (entry) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status), ...entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}, ...entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {} });
   const moves = (state.spell_ids ?? []).map((id) => {
     const spell = (state.spells ?? []).find((entry) => entry.id === id);
     return { id, name: spell?.name, type: spell?.type, category: spell?.category, power_mult: spell?.power_mult, accuracy: spell?.accuracy, cooldown_remaining: state.cooldowns?.[id] ?? 0 };
@@ -15955,6 +16231,7 @@ function publicHuntCombat(state) {
   return {
     turn: state.turn,
     physical_anomaly: state.physical_anomaly ?? null,
+    strategic_delayed: (state.strategic_delayed ?? []).map((entry) => ({ actor: entry.actor, target: entry.target, amount: entry.amount, due_turn: entry.due_turn })),
     player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
     boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {} },
     minions: (state.minions ?? []).map(fighter),

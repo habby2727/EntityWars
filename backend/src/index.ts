@@ -2616,7 +2616,7 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
 
 function publicDungeonCombat(combat: any) {
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null };
+	return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [] };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {
@@ -2632,7 +2632,7 @@ function publicHuntCombat(state: any) {
 		if (typeof raw?.hybrid_mark?.remaining === "number" && raw.hybrid_mark.remaining > 0) result.hybrid_mark = { owner: raw.hybrid_mark.owner, remaining: raw.hybrid_mark.remaining };
 		return result;
 	};
-	const fighter = (entry: any) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status) });
+	const fighter = (entry: any) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status), ...(entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}), ...(entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {}) });
 	const moves = (state.spell_ids ?? []).map((id: string) => {
 		const spell = (state.spells ?? []).find((entry: any) => entry.id === id);
 		return { id, name: spell?.name, type: spell?.type, category: spell?.category, power_mult: spell?.power_mult, accuracy: spell?.accuracy, cooldown_remaining: state.cooldowns?.[id] ?? 0 };
@@ -2640,6 +2640,7 @@ function publicHuntCombat(state: any) {
 	return {
 		turn: state.turn,
 		physical_anomaly: state.physical_anomaly ?? null,
+		strategic_delayed: (state.strategic_delayed ?? []).map((entry: any) => ({ actor: entry.actor, target: entry.target, amount: entry.amount, due_turn: entry.due_turn })),
 		player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
 		boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...(state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {}) },
 		minions: (state.minions ?? []).map(fighter),

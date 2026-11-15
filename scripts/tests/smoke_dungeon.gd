@@ -76,6 +76,8 @@ func _run() -> void:
 	var combat = current_scene
 	assert(combat._combat_session_invalid and not combat._combat_started)
 	assert(not combat.spell_panel.visible)
+	var combo_text: String = combat._dungeon_strategic_event({"kind": "combo_trigger", "source_spell_id": "pyrolytic_fuse", "prerequisite": "poison", "actual_bonus_damage": 8})
+	assert(combo_text.contains("ALCHEMICAL COMBO") and combo_text.contains("Pyrolytic Fuse") and combo_text.contains("+8 damage"))
 	SceneRouter._dungeon_context.clear()
 	current_scene.queue_free()
 	await process_frame
@@ -232,6 +234,62 @@ func _run_e2e() -> void:
 		quit(1)
 		return
 	OS.set_environment("DUNGEON_TEST_RUN_ID", run_id)
+	var strategic_fixture := "const {Database}=require('bun:sqlite');const db=new Database(process.env.DUNGEON_TEST_DB);const row=db.query('SELECT combat_state_json FROM dungeon_runs WHERE run_id=?').get(process.env.DUNGEON_TEST_RUN_ID);const s=JSON.parse(row.combat_state_json);const catalog=require('./data/spells.json').spells;s.fixture_original_spell_ids=s.player.spell_ids;s.player.type='vitriol';s.player.hp=s.player.max_hp=10000;s.player.atk=100;s.player.status={};s.player.cooldowns={};s.npc.hp=s.npc.max_hp=10000;s.npc.atk=1;s.npc.status={};s.npc.hom_energy=0;s.npc.cooldowns=Object.fromEntries(s.npc.spell_ids.map(id=>[id,1000]));for(const id of ['nuclear_fallout','etching_fang','caustic_mark','pyrolytic_fuse']){let x=structuredClone(catalog.find(x=>x.id===id));x.accuracy=1;s.spells=s.spells.filter(y=>y.id!==id);s.spells.push(x)}s.player.spell_ids=['nuclear_fallout','etching_fang','caustic_mark','pyrolytic_fuse'];db.query('UPDATE dungeon_runs SET combat_state_json=? WHERE run_id=?').run(JSON.stringify(s),process.env.DUNGEON_TEST_RUN_ID);db.close();"
+	var strategic_output := []
+	if OS.execute("bun", ["-e", strategic_fixture], strategic_output, true) != 0:
+		push_error("Dungeon strategic fixture update failed")
+		quit(1)
+		return
+	combat._dungeon_recover()
+	deadline = Time.get_ticks_msec() + 30000
+	while not combat._dungeon_request.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	var combo_payload: Dictionary = {}
+	var anomaly_steps := 0
+	for index in [0, 1, 1, 1, 2, 3]:
+		var rev := int(combat._dungeon_session.combat_revision)
+		combat._on_spell_chosen(index)
+		if not combat._dungeon_hom_choice.is_empty(): combat._on_hom_choice("hold")
+		if index == 3: combo_payload = combat._dungeon_pending.duplicate(true)
+		deadline = Time.get_ticks_msec() + 30000
+		while int(combat._dungeon_session.get("combat_revision", 0)) == rev and Time.get_ticks_msec() < deadline:
+			await create_timer(0.1).timeout
+		if int(combat._dungeon_session.get("combat_revision", 0)) != rev + 1:
+			push_error("Dungeon strategic turn failed")
+			quit(1)
+			return
+		var anomaly: Variant = combat._dungeon_session.combat_state.get("physical_anomaly")
+		if index == 0 and (not anomaly is Dictionary or int(anomaly.remaining_exchanges) != 3 or not combat._physical_anomaly_label.text.contains("Nuclear Fallout") or not combat._physical_anomaly_label.text.contains("Sulfur +15%") or not combat._physical_anomaly_label.text.contains("Gold -15%")):
+			push_error("Dungeon online anomaly display mismatch")
+			quit(1)
+			return
+		if index == 1:
+			anomaly_steps += 1
+			var remaining := 3 - anomaly_steps
+			if (remaining > 0 and (not anomaly is Dictionary or int(anomaly.get("remaining_exchanges", -1)) != remaining or not combat._physical_anomaly_label.text.contains("%d exchanges" % remaining))) or (remaining == 0 and (anomaly != null or combat._physical_anomaly_label.visible)):
+				push_error("Dungeon online anomaly countdown mismatch")
+				quit(1)
+				return
+	if combat._physical_anomaly_label.visible or not combat.log_box.get_parsed_text().contains("ALCHEMICAL COMBO | Poison + Pyrolytic Fuse"):
+		push_error("Dungeon anomaly expiry or verified combo feedback missing")
+		quit(1)
+		return
+	var combo_log: String = combat.log_box.get_parsed_text()
+	var combo_revision := int(combat._dungeon_session.combat_revision)
+	combat._dungeon_pending = combo_payload
+	combat._dungeon_send_pending()
+	deadline = Time.get_ticks_msec() + 30000
+	while not combat._dungeon_request.is_empty() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if not combat._dungeon_pending.is_empty() or int(combat._dungeon_session.combat_revision) != combo_revision or combat.log_box.get_parsed_text() != combo_log:
+		push_error("Dungeon combo replay duplicated feedback")
+		quit(1)
+		return
+	var restore_fixture := "const {Database}=require('bun:sqlite');const db=new Database(process.env.DUNGEON_TEST_DB);const row=db.query('SELECT combat_state_json FROM dungeon_runs WHERE run_id=?').get(process.env.DUNGEON_TEST_RUN_ID);const s=JSON.parse(row.combat_state_json);s.player.spell_ids=s.fixture_original_spell_ids;delete s.fixture_original_spell_ids;s.player.cooldowns={};db.query('UPDATE dungeon_runs SET combat_state_json=? WHERE run_id=?').run(JSON.stringify(s),process.env.DUNGEON_TEST_RUN_ID);db.close();"
+	if OS.execute("bun", ["-e", restore_fixture], strategic_output, true) != 0:
+		push_error("Dungeon fixture restoration failed")
+		quit(1)
+		return
 	var fixture := "const {Database}=require('bun:sqlite');const db=new Database(process.env.DUNGEON_TEST_DB);const row=db.query('SELECT combat_state_json FROM dungeon_runs WHERE run_id=?').get(process.env.DUNGEON_TEST_RUN_ID);const state=JSON.parse(row.combat_state_json);state.npc.hp=1;state.player.hp=state.player.max_hp;db.query('UPDATE dungeon_runs SET combat_state_json=? WHERE run_id=?').run(JSON.stringify(state),process.env.DUNGEON_TEST_RUN_ID);db.close();"
 	var fixture_output := []
 	if OS.execute("bun", ["-e", fixture], fixture_output, true) != 0:

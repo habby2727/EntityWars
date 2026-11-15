@@ -99,6 +99,8 @@ var _dungeon_synchronized := false
 var _physical_anomaly: Dictionary = {}
 var _physical_anomaly_label: Label
 var _physical_anomaly_display_id := ""
+var _strategic_delays: Array = []
+var _strategic_jams: Array = []
 var _online_hunt_request := ""
 var _online_hunt_session: Dictionary = {}
 var _online_hunt_revision := 0
@@ -314,6 +316,10 @@ func _spell_description(spell: Dictionary) -> String:
 			return SpellPresentation.anomaly_detail(spell, effect)
 	var lines: Array[String] = []
 	for effect in spell.get("effects", []):
+		var strategic := SpellPresentation.strategic_detail(effect)
+		if not strategic.is_empty():
+			lines.append(strategic)
+			continue
 		var extra: Array[String] = []
 		for key in effect:
 			if key not in ["kind", "value", "target"]:
@@ -419,6 +425,10 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 	if not _dungeon_seen_actions.has(action_id):
 		for event in data.get("events", []):
 			if event is Dictionary:
+				var combo := _dungeon_strategic_event(event)
+				if not combo.is_empty():
+					_log_immediate(combo)
+					continue
 				var spell_name := ""
 				if event.has("spell_id"):
 					var spell: Dictionary = _reg.get_spell_by_id(str(event.spell_id))
@@ -433,6 +443,17 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_render()
 	else:
 		_dungeon_recover()
+
+func _dungeon_strategic_event(event: Dictionary) -> String:
+	var kind := str(event.get("kind", ""))
+	match kind:
+		"combo_trigger":
+			var spell: Dictionary = _reg.get_spell_by_id(str(event.get("source_spell_id", "")))
+			return "ALCHEMICAL COMBO | %s + %s | +%d damage" % [str(event.get("prerequisite", "")).capitalize(), str(spell.get("name", event.get("source_spell_id", ""))), int(event.get("actual_bonus_damage", 0))]
+		"ward_convert": return "ALCHEMICAL COMBO | Shield Conversion | +%d damage" % int(event.get("amount", 0)) if int(event.get("amount", 0)) > 0 else ""
+		"counter_trap_triggered": return "ALCHEMICAL COMBO | Counter Trap | %d damage returned" % int(event.get("amount", 0)) if int(event.get("amount", 0)) > 0 else ""
+		"cooldown_jam": return "ALCHEMICAL COMBO | Cooldown Jam | +%d turn" % (int(event.get("value", 0)) - int(event.get("previous", 0)))
+	return ""
 
 func _setup_physical_anomaly_ui() -> void:
 	_physical_anomaly_label = Label.new()
@@ -468,6 +489,15 @@ func _dungeon_render() -> void:
 		return
 	var p: Dictionary = state.player
 	var n: Dictionary = state.npc
+	for pair in [[player_hp, p, "player"], [enemy_hp, n, "npc"]]:
+		var details: Array[String] = []
+		for entry in state.get("strategic_delayed", []):
+			if str(entry.get("target", "")) == str(pair[2]):
+				details.append("Delayed damage: %d at end of exchange %d" % [int(entry.get("amount", 0)), int(entry.get("due_turn", 0))])
+		for field in ["strategic_trap", "strategic_heal_suppression"]:
+			if pair[1].has(field):
+				details.append("%s: %d exchanges remaining" % ["Counter trap" if field == "strategic_trap" else "Healing suppression", maxi(0, int(pair[1][field].get("expires_turn", 0)) - int(state.get("turn", 0)))])
+		pair[0].tooltip_text = "\n".join(details)
 	if int(p.get("max_hp", 0)) <= 0 or int(n.get("max_hp", 0)) <= 0 or not p.get("spell_ids") is Array or p.spell_ids.size() != 4:
 		_dungeon_show_retry("Invalid Dungeon fighters.")
 		return
@@ -498,8 +528,11 @@ func _dungeon_render() -> void:
 		pair[0].max_value = float(pair[1].max_hp)
 		pair[0].value = float(pair[1].hp)
 		pair[0].get_node("HealthValue").text = "%d / %d" % [int(pair[1].hp), int(pair[1].max_hp)]
-	player_indicators.set_fighter(0, {"status": p.get("status", {})})
-	enemy_indicators.set_fighter(0, {"status": n.get("status", {})})
+	for pair in [[player_indicators, p], [enemy_indicators, n]]:
+		var status: Dictionary = pair[1].get("status", {}).duplicate(true)
+		status["shield_pct"] = status.get("shield", 0)
+		status["vuln_pct"] = status.get("vuln", 0)
+		pair[0].set_fighter(0, {"status": status})
 	_player_hom_status.visible = not ph.is_empty()
 	_enemy_hom_status.visible = not nh.is_empty()
 	_player_hom_status.call("set_fighter", {"hom_name": str(ph.get("name", "")), "hom_energy": int(p.get("hom_energy", 0)), "hom_spent": false})
@@ -1885,6 +1918,9 @@ func _clear_defense(fighter: Dictionary, field: String) -> void:
 	fighter.status[field] = 0.0
 	fighter.erase("weapon_" + field)
 	fighter.erase("other_" + field)
+	if field == "shield_pct":
+		fighter.erase("spell_ward")
+		fighter.erase("spell_ward_baseline")
 
 func _refresh_weapon_stats(fighter: Dictionary) -> void:
 	fighter.mods = _item_mods([_get_active_weapon(fighter)])
@@ -2576,8 +2612,8 @@ func _resolve_hom_choice(fighter: Dictionary, target: Dictionary, choice: String
 					fighter.erase("hom_reflect_active")
 					fighter.erase("hom_other_reflect")
 				_refresh_weapon_stats(fighter)
-				var healed := mini(30, int(fighter.max_hp) - int(fighter.hp))
-				fighter.hp = mini(int(fighter.max_hp), int(fighter.hp) + 30)
+				var healed := mini(_strategic_heal(fighter, 30), int(fighter.max_hp) - int(fighter.hp))
+				fighter.hp = mini(int(fighter.max_hp), int(fighter.hp) + healed)
 				_animate_pulse(_fighter_sprite(fighter), Color(0.55, 1.0, 0.65), 1.04)
 				_highlights["sacrifice"] = "%s sacrificed %s, healing %d HP" % [fighter.name, fighter.hom_name, healed]
 			, _combat_event(fighter, "heal", " sacrifices %s: restores up to 30 HP; homunculus unavailable for this combat." % fighter.hom_name, {}))
@@ -2744,6 +2780,21 @@ func _begin_spell_exchange() -> void:
 
 func _end_spell_exchange() -> void:
 	_spell_exchange_active = false
+	for entry in _strategic_delays.duplicate():
+		if int(entry.due_turn) <= _turn:
+			var target: Dictionary = entry.target
+			if int(target.get("hp", 0)) > 0:
+				var damage := mini(int(target.hp), int(entry.amount))
+				target.hp -= damage
+				_append_combat_log("%s takes %d delayed damage." % [target.name, damage])
+			_strategic_delays.erase(entry)
+	for target in _strategic_jams:
+		_strategic_jam(target)
+	_strategic_jams.clear()
+	for fighter in [player, enemy] + _solo_minions:
+		for field in ["strategic_trap", "strategic_heal_suppression"]:
+			if fighter.get(field, {}).get("expires_turn", _turn + 1) <= _turn:
+				fighter.erase(field)
 	if not _physical_anomaly.is_empty() and int(_physical_anomaly.get("activated_exchange", 0)) < _turn:
 		_physical_anomaly.remaining_exchanges = int(_physical_anomaly.remaining_exchanges) - 1
 		if int(_physical_anomaly.remaining_exchanges) <= 0:
@@ -2751,6 +2802,46 @@ func _end_spell_exchange() -> void:
 		_show_physical_anomaly(_physical_anomaly)
 	for fighter in [player, enemy]:
 		fighter.spell_neutralize_active = 0.0
+
+func _strategic_heal(fighter: Dictionary, amount: int) -> int:
+	return floori(amount * 0.5) if fighter.has("strategic_heal_suppression") else amount
+
+func _strategic_jam(target: Dictionary) -> void:
+	var options := _fighter_spell_options(target).filter(func(s): return int(s.get("cooldown_turns", 0)) > 0)
+	if _solo_boss_mode and is_same(target, enemy):
+		options = [_solo_signature] if int(_solo_signature.get("cooldown_turns", 0)) > 0 else []
+	options.sort_custom(func(a, b): return str(a.id) < str(b.id) if float(a.power_mult) == float(b.power_mult) else float(a.power_mult) > float(b.power_mult))
+	if not options.is_empty():
+		var id := str(options[0].id)
+		var old := int(target.spell_cooldowns.get(id, 0))
+		target.spell_cooldowns[id] = mini(4, old + 1) if old < 4 else old
+
+func _strategic_transfer(kind: String, caster: Dictionary, target: Dictionary) -> void:
+	var source := caster if kind == "debuff_transfer" else target
+	var destination := target if kind == "debuff_transfer" else caster
+	var fields := ["poison", "vuln_pct", "atk_down"] if kind == "debuff_transfer" else ["atk_boost", "shield_pct", "reflect_pct"]
+	for field in fields:
+		var previous := float(source.status.get(field, 0.0))
+		if previous <= 0.0:
+			continue
+		var value := previous if kind == "debuff_transfer" else minf(0.2, previous * 0.5)
+		if field in ["shield_pct", "reflect_pct"]:
+			_clear_defense(source, field)
+			_other_defense(destination, field, value)
+		else:
+			source.status[field] = 0
+			destination.status[field] = maxf(float(destination.status.get(field, 0.0)), value)
+		_append_combat_log("%s transfers %s." % [caster.name, str(field).replace("_", " ")])
+		return
+
+func _strategic_counter(defender: Dictionary, attacker: Dictionary, damage: int) -> void:
+	var trap: Dictionary = defender.get("strategic_trap", {})
+	if trap.is_empty() or _turn <= int(trap.activated_turn) or _turn > int(trap.expires_turn) or damage <= 0:
+		return
+	defender.erase("strategic_trap")
+	var amount := mini(int(attacker.hp), mini(floori(float(attacker.max_hp) * 0.2), floori(damage * float(trap.value))))
+	attacker.hp -= amount
+	_append_combat_log("%s's counter trap deals %d damage." % [defender.name, amount])
 
 func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, ultra_active: bool = false) -> bool:
 	var id := str(spell.get("id", ""))
@@ -2776,7 +2867,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 				if current.remaining <= 0:
 					target.status.erase("hybrid_mark")
 		, _combat_event(caster, "debuff", "'s mark approaches expiry.", {}))
-	var attack_context := {"spell": spell, "actual_damage": 0, "pierce": 0.0, "dispel": 0.0, "ultra": ultra_active}
+	var attack_context := {"spell": spell, "actual_damage": 0, "direct_damage": 0, "pierce": 0.0, "dispel": 0.0, "ultra": ultra_active}
 	if ultra_active:
 		_log_step("%s boosts the spell with Ultraturn." % caster.name, Callable(), _combat_event(caster, "inspiration", " boosts this spell with ULTRATURN x2.", {}))
 	var animate_attack: bool = spell.get("category") == "attack" and caster.status.stun <= 0
@@ -2839,6 +2930,23 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 	if spell.get("type") == "hybrid" and marked:
 		_log_step("%s consumes the hybrid mark." % caster.name, func(): target.status.erase("hybrid_mark"), _combat_event(caster, "combo", " consumes the hybrid mark.", {}))
 	for effect in spell.get("effects", []):
+		if effect.get("kind") == "ward_convert" and spell.get("category") == "attack":
+			var conversion_value := float(effect.value)
+			_log_step("%s converts a spell ward." % caster.name, func():
+				var ward := float(caster.get("spell_ward", 0.0))
+				if ward <= 0.0:
+					return
+				var baseline := float(caster.get("spell_ward_baseline", 0.0))
+				caster.erase("spell_ward")
+				caster.erase("spell_ward_baseline")
+				caster.status.shield_pct = maxf(baseline, float(caster.get("weapon_shield_pct", 0.0)))
+				if caster.has("weapon_shield_pct"):
+					caster.other_shield_pct = baseline
+				var amount := mini(int(target.hp), mini(floori(float(target.max_hp) * 0.2), floori(float(caster.max_hp) * ward * conversion_value)))
+				target.hp -= amount
+				_append_combat_log("Ward conversion deals %d damage." % amount)
+			)
+	for effect in spell.get("effects", []):
 		var recipient: Dictionary = caster if effect.target == "self" else target
 		var value := float(effect.value)
 		var kind := str(effect.kind)
@@ -2847,6 +2955,36 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 			if kind in ["atk_boost", "atk_down", "shield", "reflect", "vuln", "focus_next", "misalign_next", "type_neutralize"]:
 				value = clampf(value, 0.0, 0.95 if kind in ["shield", "reflect"] else 1.0)
 		match kind:
+			"delayed_damage":
+				_log_step("%s prepares delayed damage." % caster.name, func():
+					var damage := int(attack_context.get("direct_damage", 0))
+					if damage <= 0:
+						return
+					for pending in _strategic_delays.duplicate():
+						if is_same(pending.caster, caster) and is_same(pending.target, target):
+							_strategic_delays.erase(pending)
+					var amount := floori(damage * value)
+					if amount > 0:
+						_strategic_delays.append({"caster": caster, "target": target, "amount": amount, "due_turn": _turn + 1})
+				)
+			"debuff_transfer", "buff_steal":
+				_log_step("%s transfers a status." % caster.name, func(): _strategic_transfer(kind, caster, target))
+			"cooldown_jam":
+				_log_step("%s jams a cooldown." % caster.name, func(): _strategic_jams.append(target))
+			"counter_trap":
+				_log_step("%s arms a counter trap." % caster.name, func(): caster.strategic_trap = {"value": value, "activated_turn": _turn, "expires_turn": _turn + 2})
+			"ward_convert":
+				pass
+			"heal_suppression":
+				_log_step("%s suppresses healing." % caster.name, func(): target.strategic_heal_suppression = {"expires_turn": _turn + 2})
+			"hom_energy_siphon":
+				_log_step("%s siphons homunculus energy." % caster.name, func():
+					if str(caster.get("hom_id", "")).is_empty() or str(target.get("hom_id", "")).is_empty() or bool(caster.get("hom_spent", true)) or bool(target.get("hom_spent", true)):
+						return
+					var amount := mini(2, mini(int(target.hom_energy), int(caster.hom_max_energy) - int(caster.hom_energy)))
+					target.hom_energy -= amount
+					caster.hom_energy += amount
+				)
 			"physical_anomaly":
 				_log_step("Phisical Anomaly: %s replaces the previous anomaly." % str(spell.get("name", id)), func():
 					_physical_anomaly = {"id": id, "favored_type": str(effect.favored_type), "weakened_type": str(effect.weakened_type), "remaining_exchanges": 3, "activated_exchange": _turn}
@@ -2886,7 +3024,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 				var cap := int(effect.get("max_heal", 0)) * (2 if ultra_active else 1)
 				_log_step("%s siphons health." % recipient.name, func():
 					if recipient.hp > 0:
-						var recovered := mini(cap, int(floor(float(attack_context.actual_damage) * value)))
+						var recovered := _strategic_heal(recipient, mini(cap, int(floor(float(attack_context.actual_damage) * value))))
 						var actual := mini(recovered, int(recipient.max_hp) - int(recipient.hp))
 						recipient.hp = mini(recipient.max_hp, recipient.hp + recovered)
 						_append_combat_log("", _combat_event(recipient, "heal", " restores %d HP from life leech." % actual, {}))
@@ -2905,15 +3043,21 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 				var shield_value := float(effect.get("second_value", value)) if _spell_acts_second else value
 				if ultra_active:
 					shield_value = minf(shield_value * 2.0, 0.95)
-				_log_step("%s gains a shield." % recipient.name, func(): _other_defense(recipient, "shield_pct", shield_value), _combat_event(recipient, "shield", " gains shield %d%%." % roundi(shield_value * 100), {}))
+				_log_step("%s gains a shield." % recipient.name, func():
+					if not recipient.has("spell_ward_baseline"):
+						recipient.spell_ward_baseline = float(recipient.status.get("shield_pct", 0.0))
+					recipient.spell_ward = maxf(float(recipient.get("spell_ward", 0.0)), shield_value)
+					_other_defense(recipient, "shield_pct", shield_value)
+				, _combat_event(recipient, "shield", " gains shield %d%%." % roundi(shield_value * 100), {}))
 			"poison_on_reflect":
 				_log_step("%s prepares a toxic reflection." % recipient.name, func(): recipient.status.poison_on_reflect = int(value), _combat_event(recipient, "shield", " prepares a reflection with %d poison turns." % int(value), {}))
 			"heal":
 				_log_step("%s restores %d HP." % [recipient.name, int(value)], func():
 					if recipient.hp < recipient.max_hp:
 						_animate_pulse(_fighter_sprite(recipient), Color(0.55, 1.0, 0.65), 1.04)
-					var healed := mini(int(value), int(recipient.max_hp) - int(recipient.hp))
-					recipient.hp = min(recipient.max_hp, recipient.hp + int(value))
+					var recovered := _strategic_heal(recipient, int(value))
+					var healed := mini(recovered, int(recipient.max_hp) - int(recipient.hp))
+					recipient.hp = min(recipient.max_hp, recipient.hp + recovered)
 					if ultra_active:
 						_append_combat_log("", _combat_event(recipient, "heal", " restores %d HP from the boosted spell." % healed, {}))
 				, _combat_event(recipient, "heal", " restores up to %d HP." % int(value), {}))
@@ -2925,6 +3069,10 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 					if kind in ["shield", "reflect", "atk_boost"] and value > float(recipient.status.get(field, 0)):
 						_animate_pulse(_fighter_sprite(recipient), Color(0.62, 0.7, 1.0), 1.04)
 					if kind in ["shield", "reflect"]:
+						if kind == "shield":
+							if not recipient.has("spell_ward_baseline"):
+								recipient.spell_ward_baseline = float(recipient.status.get("shield_pct", 0.0))
+							recipient.spell_ward = maxf(float(recipient.get("spell_ward", 0.0)), value)
 						_other_defense(recipient, field, value)
 					else:
 						recipient.status[field] = max(recipient.status.get(field, 0), value)
@@ -2937,6 +3085,8 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 						_animate_pulse(_fighter_sprite(recipient), Color(0.8, 0.65, 1.0), 1.04)
 					recipient.spell_neutralize_pending = max(recipient.get("spell_neutralize_pending", 0.0), value)
 				, _combat_event(recipient, "buff", " prepares %d%% type neutralization." % roundi(value * 100), {}))
+	if spell.get("category") == "attack" and target.has("strategic_trap"):
+		_log_step("", func(): _strategic_counter(target, caster, int(attack_context.direct_damage)))
 	return true
 
 func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: float = 1.0, accuracy: float = 0.9, spell_attack: bool = false, context: Dictionary = {}, accuracy_focus: float = 0.0, accuracy_misalign: float = 0.0) -> bool:
@@ -3016,11 +3166,12 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		_record_highlight("damage", mini(int(defender.hp), dmg), "%s to %s" % [attacker.name, defender.name])
 		if not context.is_empty():
 			_record_spell_damage(context.get("spell", {}), mini(int(defender.hp), dmg))
+			context.direct_damage = mini(int(defender.hp), dmg)
 			context.actual_damage += mini(int(defender.hp), dmg)
 		defender.hp = max(0, defender.hp - dmg)
 		if boss_prevented > 0:
 			var before_heal := int(defender.hp)
-			defender.hp = mini(int(defender.max_hp), int(defender.hp) + floori(boss_prevented * float(_solo_def.shield_heal_ratio)))
+			defender.hp = mini(int(defender.max_hp), int(defender.hp) + _strategic_heal(defender, floori(boss_prevented * float(_solo_def.shield_heal_ratio))))
 			_append_combat_log("Alchemical Shield prevented %d damage and restored %d HP." % [boss_prevented, int(defender.hp) - before_heal], {"ability_id": "Shield", "category": "shield"})
 		_animate_hit(_fighter_sprite(defender), dmg, defender.max_hp)
 		if spell_attack and dmg > 0:
@@ -3106,7 +3257,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		_log_step("%s mints 3 HP." % attacker.name, func():
 			if attacker.hp < attacker.max_hp:
 				_animate_pulse(_fighter_sprite(attacker), Color(0.55, 1.0, 0.65), 1.04)
-			attacker.hp = min(attacker.max_hp, attacker.hp + 3)
+			attacker.hp = min(attacker.max_hp, attacker.hp + _strategic_heal(attacker, 3))
 		, _combat_event(attacker, "heal", " mints up to 3 HP.", {}))
 
 	if not spell_attack and defender.status.poison > 0:
@@ -3143,7 +3294,7 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 		_animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false)
 		defender.hp = max(0, defender.hp - hom_dmg)
 		if boss_prevented > 0:
-			defender.hp = mini(int(defender.max_hp), int(defender.hp) + floori(boss_prevented * float(_solo_def.shield_heal_ratio)))
+			defender.hp = mini(int(defender.max_hp), int(defender.hp) + _strategic_heal(defender, floori(boss_prevented * float(_solo_def.shield_heal_ratio))))
 		_animate_hit(_fighter_sprite(defender), hom_dmg, defender.max_hp)
 		if track_hit:
 			defender.spell_hit_this_exchange = true
@@ -3273,6 +3424,8 @@ func _handle_battle_end() -> void:
 	next_turn_btn.disabled = false
 
 func _reset_battle_state() -> void:
+	_strategic_delays.clear()
+	_strategic_jams.clear()
 	_reset_animations()
 	_physical_anomaly.clear()
 	_show_physical_anomaly(null)
@@ -3405,6 +3558,8 @@ func _show_highlights() -> void:
 
 func _reset_fighter(f: Dictionary) -> void:
 	_restore_inspiration(f)
+	for field in ["strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline"]:
+		f.erase(field)
 	f.hom_energy = 0
 	f.erase("hom_reflect_active")
 	f.erase("hom_other_reflect")
