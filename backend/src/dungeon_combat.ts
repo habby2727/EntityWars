@@ -246,6 +246,10 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     if (chosen.category === "attack") {
       const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
       let mult = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+      if (chosen.type === "hybrid") {
+        const factor = (type: string) => { const value = next.types.effectiveness[type]?.[target.type] ?? 1; return value > 1 ? 1.25 : value < 1 ? 0.8 : 1; };
+        mult = Math.max(0.8, Math.min(1.25, Math.pow(factor(chosen.primary_type), 0.65) * Math.pow(factor(chosen.secondary_type), 0.35)));
+      } else if (chosen.type === "universal") mult = 1;
       if (who === "player" && chosen.type === actor.type && relation < 1) mult = Math.min(1, mult + (next.item_effects?.disadvantage_reduction ?? 0));
       mult = 1 + (mult - 1) * (1 - Math.max(actor.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0));
       const poisonBonus = chosen.effects.find((e: any) => e.kind === "bonus_if_poisoned");
@@ -264,7 +268,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         damage = Math.max(0, Math.round(damage * (1 - target.status.shield * (1 - dispel) * (1 - pierce)))); clearDefense(target, "shield");
       }
       directDamage = Math.min(target.hp, damage);
-      target.hp = Math.max(0, target.hp - damage); if (directDamage > 0) target.spell_hit_this_exchange = true; events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp });
+      target.hp = Math.max(0, target.hp - damage); if (directDamage > 0) target.spell_hit_this_exchange = true; events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp, target_status: structuredClone(target.status) });
       if ((target.status.reflect ?? 0) > 0) {
         const ignored = who === "player" && (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < Math.min(1, next.item_effects.ignore_reflect_chance);
         const amount = ignored ? 0 : Math.min(actor.hp, Math.round(damage * target.status.reflect));

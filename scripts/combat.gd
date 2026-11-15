@@ -460,6 +460,39 @@ func _dungeon_present_events(events: Array, owner: String) -> void:
 		var category := "combo" if not combo.is_empty() else "switch" if kind == "switch" else "damage" if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison"] else "heal" if kind == "heal" else "debuff" if kind == "status_applied" else "system"
 		var actor_id := actor if actor in ["player", "npc"] else target
 		var fighter: Dictionary = view.get(actor_id, {})
+		var actor_sprite: Control = player_entity if actor_id == "player" else enemy_entity
+		var target_sprite: Control = player_entity if target == "player" else enemy_entity
+		if kind == "spell":
+			var action_spell: Dictionary = _reg.get_spell_by_id(str(event.get("spell_id", "")))
+			if str(action_spell.get("category", "")) == "attack":
+				_animate_lunge(actor_sprite, 20.0 if actor_id == "player" else -20.0, true)
+				if not bool(event.get("hit", true)):
+					_animate_lunge(enemy_entity if actor_id == "player" else player_entity, 8.0 if actor_id == "player" else -8.0, false)
+			else:
+				_animate_pulse(actor_sprite, Color(0.68, 0.85, 1.0), 1.04)
+		elif kind in ["hom_attack", "hom_miss"] and actor in ["player", "npc"]:
+			_animate_lunge(player_hom if actor == "player" else enemy_hom, 12.0 if actor == "player" else -12.0, false)
+		elif kind in ["evade", "miss"] and actor_id in ["player", "npc"]:
+			_animate_lunge(actor_sprite, -8.0 if actor_id == "player" else 8.0, false)
+			if kind == "evade" and actor_id == "player":
+				var active_slot := int(view.get("active_weapon_slot", 0))
+				if active_slot in [1, 2]: _animate_pulse(player_item1 if active_slot == 1 else player_item2, Color.WHITE, 1.12)
+		elif kind == "physical_anomaly_cast":
+			_show_physical_anomaly(event.get("anomaly"))
+			_animate_pulse(player_entity, Color(0.76, 0.72, 1.0), 1.03)
+			_animate_pulse(enemy_entity, Color(0.76, 0.72, 1.0), 1.03)
+		elif kind in ["switch", "true_on_hit", "dot_true", "evade"] and actor_id == "player":
+			var slot := int(event.get("slot", view.get("active_weapon_slot", 0)))
+			if slot in [1, 2]:
+				_animate_pulse(player_item1 if slot == 1 else player_item2, Color.WHITE, 1.12)
+			if kind == "switch":
+				view["active_weapon_slot"] = slot
+		elif kind in ["status_applied", "heal", "buff_steal", "debuff_transfer", "cooldown_jam", "ward_convert", "hom_energy_siphon"] and target in ["player", "npc"]:
+			_animate_pulse(target_sprite, Color(0.72, 0.9, 0.84), 1.03)
+		elif kind == "inspiration" and actor_id in ["player", "npc"]:
+			var meter: Control = _player_inspiration if actor_id == "player" else _enemy_inspiration
+			meter.call("set_fighter", {"inspiration": int(event.get("value", 0)), "inspiration_used_this_battle": false})
+			_animate_pulse(meter, Color(0.78, 0.7, 1.0), 1.05)
 		var entity: Dictionary = _find_by_id(_entities, str(fighter.get("id", "")))
 		var actor_name := str(entity.get("name", fighter.get("id", "Combat")))
 		var formatted := {"category": category, "actor": actor_name, "actor_kind": "entity", "actor_side": "player" if actor_id == "player" else "enemy", "actor_color": "69d7e8" if actor_id == "player" else "f2a078", "verb": " " + kind.replace("_", " ")}
@@ -477,23 +510,67 @@ func _dungeon_present_events(events: Array, owner: String) -> void:
 		_append_combat_log(combo, {"category": "combo"} if not combo.is_empty() else formatted)
 		if target in ["player", "npc"] and view.get(target) is Dictionary:
 			var target_view: Dictionary = view[target]
+			if event.get("target_status") is Dictionary:
+				target_view.status = event.target_status.duplicate(true)
 			if event.has("hp"):
 				target_view.hp = int(event.hp)
 				var bar: ProgressBar = player_hp if target == "player" else enemy_hp
 				bar.value = float(target_view.hp)
 				bar.get_node("HealthValue").text = "%d / %d" % [int(target_view.hp), int(target_view.max_hp)]
 				_apply_hp_color(bar, target_view)
-				if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison"] and int(event.get("amount", 1)) > 0:
+				if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison", "reflect", "counter_trap_triggered", "ward_convert"] and int(event.get("amount", 1)) > 0:
 					_animate_hit(player_entity if target == "player" else enemy_entity, int(event.get("amount", 0)), int(target_view.max_hp))
 			if kind == "status_applied":
 				target_view.status[str(event.get("status", ""))] = event.get("value", 0)
+			elif kind in ["status_consumed", "status_cleansed"]:
+				target_view.status[str(event.get("status", ""))] = event.get("remaining", 0)
 			elif kind == "poison":
 				target_view.status.poison = int(event.get("remaining", 0))
 			var display_status: Dictionary = target_view.get("status", {}).duplicate(true)
-			display_status["shield_pct"] = display_status.get("shield", 0)
-			display_status["vuln_pct"] = display_status.get("vuln", 0)
+			display_status["shield_pct"] = display_status.get("shield", display_status.get("shield_pct", 0))
+			display_status["vuln_pct"] = display_status.get("vuln", display_status.get("vuln_pct", 0))
+			display_status["reflect_pct"] = display_status.get("reflect", display_status.get("reflect_pct", 0))
 			(player_indicators if target == "player" else enemy_indicators).set_fighter(0, {"status": display_status})
+		_dungeon_event_effects(view, event, target)
 		await get_tree().create_timer(1.35 if category == "combo" else 1.25 if category == "debuff" else 0.8 if category == "system" else LOG_STEP_SECONDS).timeout
+
+func _dungeon_event_effects(view: Dictionary, event: Dictionary, target: String) -> void:
+	var kind := str(event.get("kind", ""))
+	if kind == "physical_anomaly_cast" and event.get("anomaly") is Dictionary:
+		view["physical_anomaly"] = event.anomaly.duplicate(true)
+	elif kind == "delayed_damage_queued" and target in ["player", "npc"]:
+		var delayed: Array = view.get("strategic_delayed", [])
+		delayed = delayed.filter(func(entry): return not (str(entry.get("target", "")) == target and str(entry.get("actor", "")) == str(event.get("actor", ""))))
+		delayed.append({"actor": event.get("actor", ""), "target": target, "amount": event.get("amount", 0), "due_turn": event.get("due_turn", 0)})
+		view["strategic_delayed"] = delayed
+	elif kind == "delayed_damage" and target in ["player", "npc"]:
+		var delayed: Array = view.get("strategic_delayed", [])
+		view["strategic_delayed"] = delayed.filter(func(entry): return not (str(entry.get("target", "")) == target and str(entry.get("actor", "")) == str(event.get("actor", ""))))
+	elif target in ["player", "npc"] and view.get(target) is Dictionary:
+		if kind == "counter_trap_armed": view[target]["strategic_trap"] = {"value": event.get("value", 0), "expires_turn": event.get("expires_turn", 0)}
+		elif kind == "heal_suppression_applied": view[target]["strategic_heal_suppression"] = {"expires_turn": event.get("expires_turn", 0)}
+		elif kind == "counter_trap_expired": view[target].erase("strategic_trap")
+		elif kind == "heal_suppression_expired": view[target].erase("strategic_heal_suppression")
+	if kind == "counter_trap_triggered" and str(event.get("actor", "")) in ["player", "npc"]:
+		view[str(event.actor)].erase("strategic_trap")
+	for pair in [[player_indicators, "player"], [enemy_indicators, "npc"]]:
+		var fighter: Dictionary = view.get(pair[1], {})
+		var effects: Array = []
+		for entry in view.get("strategic_delayed", []):
+			if str(entry.get("target", "")) == pair[1]: effects.append({"icon": "hourglass", "label": str(entry.get("amount", 0)), "tooltip": "Delayed damage: %d at exchange %d." % [int(entry.get("amount", 0)), int(entry.get("due_turn", 0))]})
+		if fighter.has("strategic_trap"):
+			var trap: Dictionary = fighter.strategic_trap
+			var remaining := maxi(0, int(trap.get("expires_turn", 0)) - maxi(int(view.get("turn", 0)), _dungeon_presentation_turn))
+			effects.append({"icon": "trap", "label": "%dT" % remaining, "tooltip": "Counter trap: %d%% of direct damage; %d exchanges remaining." % [roundi(float(trap.get("value", 0)) * 100), remaining]})
+		if fighter.has("strategic_heal_suppression"):
+			var remaining := maxi(0, int(fighter.strategic_heal_suppression.get("expires_turn", 0)) - maxi(int(view.get("turn", 0)), _dungeon_presentation_turn))
+			effects.append({"icon": "heal_block", "label": "%dT" % remaining, "tooltip": "Healing reduced by 50%%; %d exchanges remaining." % remaining})
+		var anomaly: Variant = view.get("physical_anomaly")
+		if anomaly is Dictionary and not anomaly.is_empty():
+			var affinity := str(fighter.get("type", ""))
+			var modifier := 15 if affinity == str(anomaly.get("favored_type", "")) else -15 if affinity == str(anomaly.get("weakened_type", "")) else 0
+			if modifier != 0: effects.append({"icon": "type", "label": ("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip": "Phisical Anomaly: %s +15%%, %s -15%% direct spell damage; %d exchanges remaining." % [str(anomaly.get("favored_type", "")).capitalize(), str(anomaly.get("weakened_type", "")).capitalize(), int(anomaly.get("remaining_exchanges", 0))]})
+		pair[0].set_boss_effects(true, effects)
 
 func _dungeon_strategic_event(event: Dictionary) -> String:
 	var kind := str(event.get("kind", ""))
@@ -582,19 +659,26 @@ func _dungeon_render() -> void:
 		pair[0].get_node("HealthValue").text = "%d / %d" % [int(pair[1].hp), int(pair[1].max_hp)]
 	for pair in [[player_indicators, p, "player"], [enemy_indicators, n, "npc"]]:
 		var status: Dictionary = pair[1].get("status", {}).duplicate(true)
-		status["shield_pct"] = status.get("shield", 0)
-		status["vuln_pct"] = status.get("vuln", 0)
+		status["shield_pct"] = status.get("shield", status.get("shield_pct", 0))
+		status["vuln_pct"] = status.get("vuln", status.get("vuln_pct", 0))
+		status["reflect_pct"] = status.get("reflect", status.get("reflect_pct", 0))
 		var effects: Array = []
 		for delayed in state.get("strategic_delayed", []):
 			if str(delayed.get("target", "")) == str(pair[2]):
-				effects.append({"icon": "poison", "label": str(delayed.get("amount", 0)), "tooltip": "Delayed damage: %d at the end of exchange %d." % [int(delayed.get("amount", 0)), int(delayed.get("due_turn", 0))]})
+				effects.append({"icon": "hourglass", "label": str(delayed.get("amount", 0)), "tooltip": "Delayed damage: %d at the end of exchange %d." % [int(delayed.get("amount", 0)), int(delayed.get("due_turn", 0))]})
 		if pair[1].has("strategic_trap"):
 			var trap: Dictionary = pair[1].strategic_trap
 			var remaining := maxi(0, int(trap.get("expires_turn", 0)) - int(state.get("turn", 0)))
-			effects.append({"icon": "shield", "label": "%dT" % remaining, "tooltip": "Counter trap: %d%% of direct spell damage, capped at 20%% of attacker HP; %d exchanges remaining." % [roundi(float(trap.get("value", 0)) * 100), remaining]})
+			effects.append({"icon": "trap", "label": "%dT" % remaining, "tooltip": "Counter trap: %d%% of direct spell damage, capped at 20%% of attacker HP; %d exchanges remaining." % [roundi(float(trap.get("value", 0)) * 100), remaining]})
 		if pair[1].has("strategic_heal_suppression"):
 			var remaining := maxi(0, int(pair[1].strategic_heal_suppression.get("expires_turn", 0)) - int(state.get("turn", 0)))
-			effects.append({"icon": "chain", "label": "%dT" % remaining, "tooltip": "Healing reduced by 50%%; %d exchanges remaining." % remaining})
+			effects.append({"icon": "heal_block", "label": "%dT" % remaining, "tooltip": "Healing reduced by 50%%; %d exchanges remaining." % remaining})
+		var anomaly: Variant = state.get("physical_anomaly")
+		if anomaly is Dictionary and not anomaly.is_empty():
+			var affinity := str(pair[1].get("type", ""))
+			var modifier := 15 if affinity == str(anomaly.get("favored_type", "")) else -15 if affinity == str(anomaly.get("weakened_type", "")) else 0
+			if modifier != 0:
+				effects.append({"icon": "type", "label": ("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip": "Phisical Anomaly: %s gains 15%% and %s loses 15%% direct spell damage; %d exchanges remaining." % [str(anomaly.get("favored_type", "")).capitalize(), str(anomaly.get("weakened_type", "")).capitalize(), int(anomaly.get("remaining_exchanges", 0))]})
 		pair[0].set_boss_effects(true, effects)
 		if not pair[0].effect_clicked.is_connected(_show_dungeon_status):
 			pair[0].effect_clicked.connect(_show_dungeon_status)

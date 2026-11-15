@@ -516,6 +516,8 @@ func _setup_spell_state() -> void:
 		_spell_synced = true
 		return
 	_spell_backend = BackendClient.new()
+	if _dungeon_mode:
+		_spell_backend.auto_dev_login = false
 	_spell_backend.base_url = spell_backend_url
 	_spell_backend.state_updated.connect(_on_spell_state_updated)
 	_spell_backend.auth_changed.connect(_on_spell_auth_changed)
@@ -561,7 +563,7 @@ func _refresh_spell_button() -> void:
 	if _spell_button == null or _reg == null:
 		return
 	var available := SpellLoadout.available_ids(_reg, _current_entity_id, _spell_state.get("spell_progress", {}))
-	_spell_button.visible = available.size() > 4
+	_spell_button.visible = _dungeon_mode or available.size() > 4
 	_spell_button.disabled = _spell_pending_id != ""
 
 func _build_spell_dialog() -> void:
@@ -1459,6 +1461,9 @@ func _on_dungeon_identity(state: Dictionary) -> void:
 	if _dungeon_backend == null or state.is_empty() or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")):
 		_dungeon_recovered = false
 		return
+	_spell_state = state.duplicate(true)
+	_spell_synced = true
+	_refresh_spell_button()
 	if _dungeon_request.is_empty() and not _dungeon_recovered:
 		_recover_dungeon()
 
@@ -1484,7 +1489,7 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 		if message in ["Invalid or unsupported dungeon loadout.", "Invalid dungeon loadout.", "UNSUPPORTED_MECHANIC", "UNTRUSTED_SETUP"]:
 			_dungeon_payload.clear()
 			SceneRouter._dungeon_context.erase("pending_loadout")
-			_set_build_error("Unsupported weapon effects or spells for Dungeons.")
+			_set_build_error("The server rejected this loadout. Check your entity, homunculus, weapons and learned spells; verify the backend is up to date.")
 		else:
 			_dungeon_recovered = false
 			_recover_dungeon()

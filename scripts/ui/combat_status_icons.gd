@@ -191,6 +191,20 @@ func _draw_icon(kind: String, offset: Vector2, enabled: bool) -> void:
 	draw_set_transform(offset)
 	var c := Color.WHITE
 	match kind:
+		"hourglass":
+			c = Color("e9c77e")
+			draw_line(Vector2(5, 3), Vector2(19, 3), c, 2, true)
+			draw_line(Vector2(5, 19), Vector2(19, 19), c, 2, true)
+			draw_polyline(PackedVector2Array([Vector2(7, 4), Vector2(17, 18), Vector2(7, 18), Vector2(17, 4)]), c, 2, true)
+		"trap":
+			c = Color("e7a868")
+			draw_arc(Vector2(12, 11), 8, 0.3, 5.5, 20, c, 2, true)
+			draw_line(Vector2(7, 15), Vector2(17, 6), c, 2, true)
+		"heal_block":
+			c = Color("eb7884")
+			draw_line(Vector2(12, 4), Vector2(12, 19), c, 3, true)
+			draw_line(Vector2(5, 11), Vector2(19, 11), c, 3, true)
+			draw_line(Vector2(5, 19), Vector2(19, 3), c, 2, true)
 		"fury":
 			c = Color("fa7440")
 			draw_colored_polygon(PackedVector2Array([Vector2(12, 2), Vector2(17, 9), Vector2(19, 14), Vector2(16, 20), Vector2(8, 20), Vector2(5, 15), Vector2(9, 8), Vector2(10, 13)]), c)

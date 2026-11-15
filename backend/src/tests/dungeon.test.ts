@@ -11,6 +11,31 @@ import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } f
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
 
+test("Dungeon hybrid damage uses both elements for player and NPC", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const setup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 1000, attack: 30, defense: 10, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ids };
+  const spell = structuredClone(all.spells.find((s: any) => s.type === "hybrid" && s.category === "attack" && s.eligible_types.includes("sulfur")));
+  spell.effects = []; spell.power_mult = 1; spell.accuracy = 1;
+  for (const [primary, secondary] of [[2, 2], [0.5, 1]]) {
+    const state = createDungeonCombatState(setup, enemy, all);
+    state.player.atk = state.npc.atk = 30; state.player.def = state.npc.def = 10;
+    state.player.hp = state.player.max_hp = state.npc.hp = state.npc.max_hp = 1000;
+    state.player.hom_id = state.npc.hom_id = null;
+    state.player.spell_ids[0] = state.npc.spell_ids[0] = spell.id;
+    state.spells.push(spell);
+    for (const id of state.npc.spell_ids.slice(1)) state.npc.cooldowns[id] = 9;
+    state.types.effectiveness[spell.primary_type].sulfur = primary;
+    state.types.effectiveness[spell.secondary_type].sulfur = secondary;
+    const result = resolveDungeonTurn(state, { turn: 1, spell_id: spell.id }, () => 0.5);
+    const damage = result.events.filter((event: any) => event.kind === "damage");
+    const expected = Math.round(25 * Math.max(0.8, Math.min(1.25, Math.pow(primary > 1 ? 1.25 : 0.8, 0.65) * Math.pow(secondary > 1 ? 1.25 : 1, 0.35))));
+    expect(damage.find((event: any) => event.actor === "player").amount).toBe(expected);
+    expect(damage.find((event: any) => event.actor === "npc").amount).toBe(expected);
+  }
+});
+
 test("all eight real Dungeon weapons are validated and defenses do not leak across switches", () => {
   const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
   const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
@@ -420,6 +445,7 @@ test("Dungeon Inspiration effects change real combat state and consume the corre
   expect(cleanse.next_state.player.status.poison).toBeUndefined();
   expect(cleanse.next_state.player.status.atk_down).toBe(0.1);
   const pierced = cast("needle_etch", s => { s.npc.status.shield = 0.5; });
+  expect(pierced.events.find((e: any) => e.kind === "damage" && e.actor === "player").target_status.shield).toBeUndefined();
   const ordinary = cast("cinder_fist", s => { s.npc.status.shield = 0.5; });
   expect(pierced.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount).toBeGreaterThan(ordinary.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount);
   const leech = cast("echo_siphon", s => { s.player.hp = 30; });

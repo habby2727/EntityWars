@@ -13778,6 +13778,14 @@ function resolveDungeonTurn(state, decision, rng) {
     if (chosen.category === "attack") {
       const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
       let mult = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+      if (chosen.type === "hybrid") {
+        const factor = (type) => {
+          const value = next.types.effectiveness[type]?.[target.type] ?? 1;
+          return value > 1 ? 1.25 : value < 1 ? 0.8 : 1;
+        };
+        mult = Math.max(0.8, Math.min(1.25, Math.pow(factor(chosen.primary_type), 0.65) * Math.pow(factor(chosen.secondary_type), 0.35)));
+      } else if (chosen.type === "universal")
+        mult = 1;
       if (who === "player" && chosen.type === actor.type && relation < 1)
         mult = Math.min(1, mult + (next.item_effects?.disadvantage_reduction ?? 0));
       mult = 1 + (mult - 1) * (1 - Math.max(actor.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0));
