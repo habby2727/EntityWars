@@ -3,6 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "node:net";
+import { createHmac } from "node:crypto";
 import { Database } from "bun:sqlite";
 import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy } from "../dungeon_combat";
 import { buildTrustedCombatSetup } from "../solo_hunt_combat";
@@ -10,6 +11,32 @@ import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } f
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
+
+test("Dungeon elites are deterministic, scheduled, bounded and do not compound", () => {
+  const seed = new Uint8Array(32).fill(7), seen = new Set<string>();
+  for (let i = 0; i < 100; i++) {
+    const run = `elite-${i}`;
+    for (const floor of [9, 10, 11, 19, 20, 21]) {
+      const normal = generateDungeonEnemy(seed, run, floor, catalogs);
+      const enemy = generateDungeonEnemy(seed, run, floor, catalogs, undefined, undefined, true);
+      expect(generateDungeonEnemy(seed, run, floor, catalogs, undefined, undefined, true)).toEqual(enemy);
+      expect(enemy.base_stats).toEqual({ hp: normal.hp, attack: normal.attack, defense: normal.defense });
+      if (floor % 10) expect(enemy.elite).toBeNull();
+      else {
+        seen.add(enemy.elite!.kind);
+        for (const key of ["hp", "attack", "defense"] as const) expect(enemy[key]).toBe(Math.min(99999, Math.round(enemy.base_stats![key] * enemy.elite!.modifiers[key])));
+        const previous = { ...enemy.base_stats!, entity_id: enemy.entity_id, homunculus_id: enemy.homunculus_id, spell_ids: enemy.spell_ids };
+        const after = generateDungeonEnemy(seed, run, floor + 1, catalogs, undefined, previous, true);
+        const expected = generateDungeonEnemy(seed, run, floor + 1, catalogs, undefined, previous);
+        expect(after.base_stats).toEqual({ hp: expected.hp, attack: expected.attack, defense: expected.defense });
+      }
+      expect(normal).not.toHaveProperty("elite");
+    }
+  }
+  expect([...seen].sort()).toEqual(["alchemist", "bulwark", "reaver"]);
+  const capped = generateDungeonEnemy(seed, "limit", 1000, catalogs, undefined, { hp: 99998, attack: 99998, defense: 99998 }, true);
+  expect([capped.hp, capped.attack, capped.defense]).toEqual([99999, 99999, 99999]);
+});
 
 test("Dungeon direct hits consume damage statuses once for both fighters", () => {
   const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
@@ -724,7 +751,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
   const dir = mkdtempSync(join(tmpdir(), "entitywars-dungeon-")), dbPath = join(dir, "test.sqlite"), db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", DUNGEON_ELITES_ENABLED: "0", WORLD_SECRET: "dev_world_secret" };
   const spawn = () => Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   let server = spawn();
   const request = async (path: string, body?: unknown, token?: string) => { const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.status, data: await r.json() as any }; };
@@ -762,6 +789,10 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect((await request("/dungeon/loadout", loadout, token)).data).toEqual(initialized.data);
     expect((await request("/dungeon/loadout", { ...loadout, client_action_id: "other" }, token)).status).toBe(409);
     expect((await request("/dungeon/session", undefined, token)).data.session.loadout).toEqual(initialized.data.loadout);
+    const legacy = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(started.data.run_id) as any).combat_state_json);
+    delete legacy.elites_enabled; delete legacy.npc_base_stats;
+    db.query("UPDATE dungeon_runs SET combat_state_json = ? WHERE run_id = ?").run(JSON.stringify(legacy), started.data.run_id);
+    env.DUNGEON_ELITES_ENABLED = "1";
     server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     expect((await request("/dungeon/session", undefined, token)).data.session.loadout).toEqual(initialized.data.loadout);
@@ -796,6 +827,8 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
         const next = { run_id: started.data.run_id, client_action_id: `next-${floor}`, expected_revision: revision };
         const advanced = await request("/dungeon/next", next, token);
         expect(advanced.status).toBe(200); revision = advanced.data.combat_revision;
+        expect(advanced.data.combat_state.elite).toBeUndefined();
+        expect(JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(started.data.run_id) as any).combat_state_json).elites_enabled).toBe(false);
         for (const key of ["max_hp", "atk", "def"]) expect(advanced.data.combat_state.npc[key]).toBeGreaterThan(previousNpc[key]);
         previousNpc = advanced.data.combat_state.npc;
         expect((await request("/dungeon/next", next, token)).data).toEqual(advanced.data);
@@ -850,8 +883,8 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     const tickAction = { run_id: another.data.run_id, client_action_id: "fixture-delay-tick", expected_revision: 3, decision: { turn: 3, spell_id: "furnace_rush" } };
     const tickResponse = await request("/dungeon/turn", tickAction, token);
     expect(tickResponse.status).toBe(200);
-    expect(tickResponse.data.events.filter((e: any) => e.kind === "delayed_damage")).toHaveLength(1);
-    expect(tickResponse.data.combat_state.strategic_delayed).toEqual([]);
+    expect(tickResponse.data.events.filter((e: any) => e.kind === "delayed_damage" && e.actor === "player")).toHaveLength(1);
+    expect(tickResponse.data.combat_state.strategic_delayed.filter((entry: any) => entry.actor === "player")).toEqual([]);
     expect((await request("/dungeon/turn", tickAction, token)).data).toEqual(tickResponse.data);
     const comboState = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(another.data.run_id) as any).combat_state_json);
     const poisonSpell = structuredClone(catalogs.spells.find((s: any) => s.id === "caustic_mark")); poisonSpell.accuracy = 1;
@@ -874,6 +907,37 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect(closed.data.status).toBe("ABANDONED");
     expect((await request("/dungeon/abandon", abandon, token)).data).toEqual(closed.data);
     expect((await request("/dungeon/session", undefined, token)).data.session).toBeNull();
+    const eliteRun = await request("/dungeon/start", { client_action_id: "elite-start" }, token);
+    const eliteLoadout = await request("/dungeon/loadout", { ...loadout, run_id: eliteRun.data.run_id, client_action_id: "elite-loadout" }, token);
+    expect(eliteLoadout.status).toBe(200);
+    const savedElite = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(eliteRun.data.run_id) as any).combat_state_json);
+    expect(savedElite.elites_enabled).toBe(true);
+    savedElite.floor = 9; savedElite.terminal_result = "WIN";
+    db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = 9 WHERE run_id = ?").run(JSON.stringify(savedElite), eliteRun.data.run_id);
+    env.DUNGEON_ELITES_ENABLED = "0";
+    server.kill(); await server.exited; server = spawn(); await ready();
+    token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+    const eliteNext = { run_id: eliteRun.data.run_id, client_action_id: "elite-next", expected_revision: 1 };
+    const eliteFloor = await request("/dungeon/next", eliteNext, token);
+    expect(eliteFloor.status).toBe(200);
+    expect(eliteFloor.data.combat_state.elite.label).toMatch(/^(BULWARK|REAVER|ALCHEMIST)$/);
+    expect((await request("/dungeon/next", eliteNext, token)).data).toEqual(eliteFloor.data);
+    server.kill(); await server.exited; server = spawn(); await ready();
+    token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+    expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.elite).toEqual(eliteFloor.data.combat_state.elite);
+    expect((await request("/dungeon/next", eliteNext, token)).data).toEqual(eliteFloor.data);
+    const floorTen = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(eliteRun.data.run_id) as any).combat_state_json);
+    const seed = createHmac("sha256", env.WORLD_SECRET).update("dungeon:" + eliteRun.data.run_id).digest();
+    const expectedEleven = generateDungeonEnemy(seed, eliteRun.data.run_id, 11, catalogs, undefined, { ...floorTen.npc_base_stats, entity_id: floorTen.npc.id, homunculus_id: floorTen.npc.hom_id, spell_ids: floorTen.npc.spell_ids }, true);
+    floorTen.terminal_result = "WIN";
+    db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = 10 WHERE run_id = ?").run(JSON.stringify(floorTen), eliteRun.data.run_id);
+    const floorEleven = await request("/dungeon/next", { run_id: eliteRun.data.run_id, client_action_id: "after-elite", expected_revision: 2 }, token);
+    expect(floorEleven.status).toBe(200);
+    expect(floorEleven.data.combat_state.elite).toBeUndefined();
+    const hom = catalogs.homunculi.find((h: any) => h.id === expectedEleven.homunculus_id);
+    expect(floorEleven.data.combat_state.npc.max_hp).toBe(expectedEleven.hp + (hom.buff_hp ?? 0) + expectedEleven.homunculus_level);
+    expect(floorEleven.data.combat_state.npc.atk).toBe(expectedEleven.attack + (hom.buff_atk ?? 0) + Math.floor(expectedEleven.homunculus_level / 5));
+    expect(floorEleven.data.combat_state.npc.def).toBe(expectedEleven.defense + (hom.buff_def ?? 0) + Math.floor(expectedEleven.homunculus_level / 3));
   } finally {
     server.kill(); await server.exited; db.close();
     for (let i = 0; i < 10; i++) { try { rmSync(dir, { recursive: true, force: true }); break; } catch { await Bun.sleep(100); } }

@@ -722,6 +722,9 @@ func _dungeon_render() -> void:
 		spell_panel.resized.connect(_layout_dungeon_floor_header)
 		spell_panel.item_rect_changed.connect(_layout_dungeon_floor_header)
 	_dungeon_floor_label.text = "DUNGEONS — FLOOR %d" % floor_id
+	var elite: Variant = state.get("elite")
+	if elite is Dictionary:
+		_dungeon_floor_label.text += " | ELITE: %s" % str(elite.get("label", ""))
 	_dungeon_floor_label.show()
 	_layout_dungeon_floor_header()
 	turn_label.text = "Cleared: %d" % int(_dungeon_session.get("cleared_floor", 0))
