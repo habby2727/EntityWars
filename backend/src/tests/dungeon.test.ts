@@ -11,6 +11,43 @@ import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } f
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
 
+test("Dungeon direct hits consume damage statuses once for both fighters", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const setup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 1000, attack: 30, defense: 10, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ids };
+  const initial = () => {
+    const state = createDungeonCombatState(setup, enemy, all);
+    const attack = state.spells.find((s: any) => s.id === "cinder_fist");
+    Object.assign(attack, { type: "universal", eligible_types: ["sulfur"], accuracy: 1, power_mult: 1, cooldown_turns: 0, effects: [] });
+    for (const fighter of [state.player, state.npc]) {
+      fighter.atk = 30; fighter.def = 10; fighter.hp = fighter.max_hp = 1000; fighter.hom_id = null;
+      fighter.status = { atk_boost: 0.5, atk_down: 0.1, vuln: 0.2 };
+      for (const id of fighter.spell_ids) if (id !== attack.id) fighter.cooldowns[id] = 9;
+    }
+    return state;
+  };
+  const hit = resolveDungeonTurn(initial(), { turn: 1, spell_id: "cinder_fist" }, () => 0.5);
+  for (const id of ["player", "npc"]) {
+    const damage = hit.events.find((e: any) => e.kind === "damage" && e.actor === id);
+    expect(damage.amount).toBe(44);
+    expect(damage.target_status.vuln).toBeUndefined();
+    for (const [status, previous] of [["atk_boost", 0.5], ["atk_down", 0.1], ["vuln", 0.2]])
+      expect(hit.events.filter((e: any) => e.kind === "status_consumed" && e.target === id && e.status === status)).toEqual([{ kind: "status_consumed", target: id, status, previous, remaining: 0 }]);
+  }
+  const second = resolveDungeonTurn(hit.next_state, { turn: 2, spell_id: "cinder_fist" }, () => 0.5);
+  expect(second.events.filter((e: any) => e.kind === "damage").map((e: any) => e.amount)).toEqual([25, 25]);
+  expect(second.events.some((e: any) => e.kind === "status_consumed")).toBe(false);
+  const missState = initial(); missState.spells.find((s: any) => s.id === "cinder_fist").accuracy = 0;
+  const miss = resolveDungeonTurn(missState, { turn: 1, spell_id: "cinder_fist" }, () => 0.5);
+  expect(miss.events.some((e: any) => e.kind === "status_consumed")).toBe(false);
+  for (const id of ["player", "npc"]) expect(miss.next_state[id].status).toMatchObject({ atk_boost: 0.5, atk_down: 0.1, vuln: 0.2 });
+  const reapplied = initial();
+  reapplied.spells.find((s: any) => s.id === "cinder_fist").effects = [{ kind: "atk_boost", target: "self", value: 0.3 }, { kind: "vuln", target: "enemy", value: 0.3 }];
+  const result = resolveDungeonTurn(reapplied, { turn: 1, spell_id: "cinder_fist" }, () => 0.5);
+  for (const id of ["player", "npc"]) expect(result.next_state[id].status).toMatchObject({ atk_boost: 0.3, vuln: 0.3 });
+});
+
 test("Dungeon hybrid damage uses both elements for player and NPC", () => {
   const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
   const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
@@ -360,7 +397,7 @@ test("pure dungeon combat resolves damage, effects, cooldowns, homunculus and te
   expect(resolveDungeonTurn(state, action, random)).toEqual(result);
   expect(result.next_state.npc.hp).toBeLessThan(state.npc.hp);
   expect(result.events.some((e: any) => e.kind === "spell" && e.actor === "npc")).toBe(true);
-  expect(result.next_state.player.status.vuln).toBe(0.12);
+  expect(result.events).toContainEqual({ kind: "status_consumed", target: "player", status: "vuln", previous: 0.12, remaining: 0 });
   expect(resolveDungeonTurn(result.next_state, { turn: 2, spell_id: "furnace_rush" }, random).error).toBe("INVALID_DECISION");
   const strike = structuredClone(state); strike.player.hom_energy = 3;
   expect(resolveDungeonTurn(strike, { turn: 1, spell_id: "cinder_fist", hom_action: "attack" }, random).events.some((e: any) => e.kind === "hom_attack")).toBe(true);

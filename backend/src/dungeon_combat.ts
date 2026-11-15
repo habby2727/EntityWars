@@ -259,6 +259,12 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         if ((effect.kind === "bonus_power_if_poisoned" && poisonedBefore) || (effect.kind === "bonus_if_shielded" && actor.status.shield > 0) || (effect.kind === "bonus_if_low_hp" && actor.hp < actor.max_hp * (effect.threshold ?? 0.4)) || (effect.kind === "bonus_power_if_hit_last_exchange" && actor.spell_hit_last_exchange) || (effect.kind === "bonus_if_marked" && marked)) power += effect.value;
       }
       const base = (actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * physicalAnomalyMultiplier(next.physical_anomaly, actor.type) * (1 + (target.status.vuln ?? 0));
+      for (const [fighter, id, fields] of [[actor, who, ["atk_boost", "atk_down"]], [target, who === "player" ? "npc" : "player", ["vuln"]]] as const) {
+        for (const status of fields) {
+          const previous = fighter.status[status] ?? 0;
+          if (previous > 0) { delete fighter.status[status]; events.push({ kind: "status_consumed", target: id, status, previous, remaining: 0 }); }
+        }
+      }
       const shield = target.status.shield ?? 0;
       const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
       let damage = Math.max(1, Math.round(base * power));
