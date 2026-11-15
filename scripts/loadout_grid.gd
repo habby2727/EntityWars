@@ -204,11 +204,11 @@ func _ready() -> void:
 	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
 	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
 	if _hunt_mode or _dungeon_mode:
+		$RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter.hide()
 		if _dungeon_mode:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol.hide()
-			$RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter.hide()
 			if btn_play: btn_play.text = "Start Run"
 		else:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()

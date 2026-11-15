@@ -20,6 +20,7 @@ config/icon="res://assets/ui/ew-icon.png"
 DropdownStyle="*res://scripts/ui/dropdown_style.gd"
 WindowModeManager="*res://scripts/ui/window_mode_manager.gd"
 GameTypography="*res://scripts/ui/game_typography.gd"
+ScrollbarStyle="*res://scripts/ui/scrollbar_style.gd"
 
 [display]
 

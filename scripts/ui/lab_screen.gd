@@ -400,6 +400,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 	card.toggle_mode = true
 	var content := card.get_node_or_null("HBox") as HBoxContainer
 	if content:
+		content.alignment = BoxContainer.ALIGNMENT_CENTER
 		content.offset_left = 4
 		content.offset_right = -4
 		content.offset_top = 4
@@ -410,6 +411,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 	var icon_frame := card.get_node_or_null("HBox/IconFrame") as TextureRect
 	if icon_frame != null:
 		icon_frame.custom_minimum_size = Vector2(68, 68) * _ui_scale
+		icon_frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var name_label := card.get_node_or_null("HBox/Text/Name") as Label
 	if name_label != null:
 		name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
@@ -889,7 +891,7 @@ func _update_cards() -> void:
 		var display_name = _get_building_name(id)
 		var level = _get_building_level(id)
 		var icon = _get_building_icon(id)
-		card.set_icon_frame(load(MenuArt.DIR + "marco-slot-small.png"))
+		card.set_icon_frame(null)
 		card.set_icon(icon)
 		card.set_title(display_name)
 		card.set_level(level)

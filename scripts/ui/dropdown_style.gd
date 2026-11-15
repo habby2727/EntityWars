@@ -19,6 +19,25 @@ func _on_node_added(node: Node) -> void:
 		call_deferred("_configure_popup", node)
 	elif node is OptionButton:
 		call_deferred("_configure_button", node)
+	elif node is Panel or node is PanelContainer or node is PopupPanel or node is AcceptDialog:
+		call_deferred("_configure_default_panel", node)
+
+func _configure_default_panel(panel: Node) -> void:
+	if not is_instance_valid(panel) or not panel.is_inside_tree() or panel.has_theme_stylebox_override("panel"):
+		return
+	var current: StyleBox = panel.get_theme_stylebox("panel")
+	if not current is StyleBoxFlat:
+		return
+	var color: Color = current.bg_color
+	if color.a < 0.5 or maxf(color.r, maxf(color.g, color.b)) < 0.09 or maxf(color.r, maxf(color.g, color.b)) - minf(color.r, minf(color.g, color.b)) > 0.16:
+		return
+	var padding := Vector4(26, 30, 26, 24) if panel is AcceptDialog else Vector4(10, 10, 10, 10)
+	panel.add_theme_stylebox_override("panel", _style(_frame_texture, Vector4(32, 45, 32, 30), padding))
+	if panel is AcceptDialog:
+		var art = preload("res://scripts/ui/menu_art.gd")
+		for button in [panel.get_ok_button(), panel.get_cancel_button() if panel is ConfirmationDialog else null]:
+			if button != null and not button.has_theme_stylebox_override("normal"):
+				art.button(button)
 
 func _resize_texture(texture: Texture2D, width: int) -> ImageTexture:
 	var image := texture.get_image()

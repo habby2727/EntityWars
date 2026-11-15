@@ -327,7 +327,7 @@ func _send_request(method: String, path: String, body: Variant, meta: Dictionary
 	_ensure_http()
 	meta["session_generation"] = _session_generation
 	var action: Dictionary = meta.get("action", {})
-	_http.timeout = 8.0 if str(meta.get("kind", "")) == "action" else 0.0
+	_http.timeout = 8.0 if str(meta.get("kind", "")) == "action" else 10.0
 	_load_debug_flags()
 	var url = base_url + path
 	var headers: PackedStringArray = ["Content-Type: application/json"]
@@ -374,6 +374,7 @@ func _ensure_api_http() -> void:
 	if _api_http != null:
 		return
 	_api_http = HTTPRequest.new()
+	_api_http.timeout = 10.0
 	add_child(_api_http)
 	_api_http.request_completed.connect(_on_api_request_completed)
 
@@ -464,9 +465,10 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 	if response_code < 200 or response_code >= 300:
 		var err_data = _parse_json(body)
 		if typeof(err_data) == TYPE_DICTIONARY and err_data.has("error"):
+			err_data["http_status"] = response_code
 			emit_signal("api_completed", request_id, false, err_data)
 		else:
-			emit_signal("api_completed", request_id, false, {"error": "http_%s" % response_code})
+			emit_signal("api_completed", request_id, false, {"error": "http_%s" % response_code, "http_status": response_code})
 		return
 	var data = _parse_json(body)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -534,11 +536,11 @@ func _schedule_recovery(action_id: String) -> void:
 
 func _parse_json(body: PackedByteArray) -> Variant:
 	if body.is_empty():
-		return {}
+		return null
 	var text = body.get_string_from_utf8()
 	var parsed = JSON.parse_string(text)
 	if parsed == null:
-		return {}
+		return null
 	if typeof(parsed) == TYPE_OBJECT:
 		if parsed.error != OK:
 			return {}

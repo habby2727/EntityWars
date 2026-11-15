@@ -1,7 +1,7 @@
 extends RefCounted
 
 static func available(id: String, state: Dictionary, db: StaticDB, now: int, pending: bool) -> bool:
-	if pending:
+	if pending or id == "essence_reactor":
 		return false
 	var lab: Dictionary = state.get("lab", {})
 	var hq := int(lab.get("hqLevel", 1))

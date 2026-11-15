@@ -36,6 +36,7 @@ func _run() -> void:
 	var loadout = current_scene
 	assert(loadout != null and loadout._hunt_mode)
 	assert(loadout.btn_play.text == "Ready")
+	assert(not loadout.get_node("RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter").visible)
 	assert(loadout._spell_button.is_visible_in_tree() and loadout._spell_button.text == "Change Spells")
 	loadout._open_spell_dialog()
 	assert(loadout._spell_slots.size() == 4 and not loadout._spell_picker.visible)

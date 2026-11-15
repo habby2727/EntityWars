@@ -281,6 +281,7 @@ func _run() -> void:
 	snapshot.combat_state.moves[0] = {"id": "cinder_fist", "name": "Cinder Fist", "power_mult": 1.0, "accuracy": 0.9, "cooldown_remaining": 0}
 	snapshot.combat_state.player.status = {"poison": 2}
 	_check(scene._render_online_hunt(snapshot) and not scene._solo_power_label.visible, "online hunt renders when inactive fury multiplier is null")
+	_check(scene._online_hunt_event_delay({"kind": "damage"}) == scene.LOG_STEP_SECONDS and scene._online_hunt_event_delay({"kind": "status_applied"}) == 1.25 and scene._online_hunt_event_delay({"kind": "status_snapshot"}) == 0.0, "online combat log uses normal pacing and skips hidden events")
 	_check(scene.player_hp.get_theme_stylebox("fill") == scene._hp_fill_green and scene.enemy_hp.get_theme_stylebox("fill") == scene._hp_fill_green, "online hunt colors health bars")
 	_check(scene.spell_buttons[0].get_node("OnlineSpellType0").visible and not scene.spell_buttons[0].tooltip_text.is_empty() and scene.spell_buttons[0].text.contains("90%"), "online spells show type and details")
 	_check(scene._spell_description({"name": "Test", "type": "sulfur", "category": "attack", "power_mult": 0.9, "accuracy": 1.0, "effects": [{"kind": "shield", "value": 0.5, "target": "self"}]}).contains("Power: 90%"), "combat spell power is shown as a percentage")

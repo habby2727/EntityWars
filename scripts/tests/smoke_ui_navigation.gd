@@ -15,6 +15,22 @@ func _run() -> void:
 	var file := FileAccess.open("user://debug.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify({"unlock_all_buildings": true}))
 	file.close()
+	var default_panel := PanelContainer.new()
+	root.add_child(default_panel)
+	var custom_panel := PanelContainer.new()
+	var custom_style := StyleBoxFlat.new()
+	custom_panel.add_theme_stylebox_override("panel", custom_style)
+	root.add_child(custom_panel)
+	var dialog := ConfirmationDialog.new()
+	root.add_child(dialog)
+	await process_frame
+	await process_frame
+	if not default_panel.get_theme_stylebox("panel") is StyleBoxTexture or not dialog.get_theme_stylebox("panel") is StyleBoxTexture or custom_panel.get_theme_stylebox("panel") != custom_style:
+		_fail("Default panels should use the frame without replacing custom styles")
+		return
+	default_panel.queue_free()
+	custom_panel.queue_free()
+	dialog.queue_free()
 	change_scene_to_file("res://scenes/MainMenu.tscn")
 	await process_frame
 	await process_frame
@@ -26,6 +42,9 @@ func _run() -> void:
 		return
 	current_scene.get_node("LowerButtons/CombatButton").pressed.emit()
 	if not await _expect("res://scenes/LoadoutGrid.tscn"):
+		return
+	if not current_scene.get_node("RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter").visible:
+		_fail("Normal combat loadout should retain techniques")
 		return
 	SceneRouter.go_to_main_menu()
 	if not await _expect("res://scenes/MainMenu.tscn"):
@@ -41,6 +60,37 @@ func _run() -> void:
 		return
 	if current_scene._selected_id != "build_forge":
 		_fail("Forge focus missing")
+		return
+	for card in current_scene._cards.values():
+		if card.get_node("HBox/IconFrame").texture != null:
+			_fail("Building navigation has a duplicate slot")
+			return
+		var icon_center: Vector2 = card.get_node("HBox/IconFrame").get_global_rect().get_center()
+		if absf(icon_center.x - card.get_global_rect().get_center().x) > 1.0:
+			_fail("Building navigation icon is not centered")
+			return
+	var forge_area: Control = current_scene._specialized_panel.find_child("CatalogStatsArea", true, false)
+	if not forge_area is HBoxContainer or forge_area.get_node_or_null("PreviewSlot") == null or forge_area.get_node_or_null("StatsScroll") == null:
+		_fail("Forge preview must sit next to its statistics")
+		return
+	var forge_panel = current_scene._specialized_panel
+	var has_weapons_title := false
+	for label in forge_panel.find_children("*", "Label", true, false):
+		if label.text == "WEAPONS CATALOG":
+			has_weapons_title = true
+	if not has_weapons_title:
+		_fail("Forge catalog title is missing")
+		return
+	forge_panel._forge_state["item_progress"] = {forge_panel._forge_item: {"level": 3, "specialization": "defensive", "traits": [{"id": "ward_pct", "points": 1}, {"id": "reflect_pct", "points": 1}, {"id": "evasion_pct", "points": 1}], "fusion": {"donor_id": "wind_amulet"}}}
+	forge_panel._update_forge_button()
+	if not forge_panel._forge_info.text.contains("Current:") or not forge_panel._fusion_info.text.contains("Preview:") or forge_panel._forge_info.text.split("\n").size() > 11:
+		_fail("Forge effects should stay compact when a fusion is present")
+		return
+	current_scene._select_building("homunculus_vat")
+	await process_frame
+	var vat_area: Control = current_scene._specialized_panel.find_child("CatalogStatsArea", true, false)
+	if not vat_area is VBoxContainer or vat_area.get_node_or_null("PreviewSlot") == null or vat_area.get_node("PreviewSlot").get_child(0).texture == null:
+		_fail("Homunculus preview needs a framed slot above its statistics")
 		return
 	for building_id in current_scene.BUILDING_ORDER:
 		current_scene._select_building(building_id)

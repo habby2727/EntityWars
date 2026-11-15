@@ -680,7 +680,7 @@ func _unconfigured(title: String, tabs: Array) -> void:
 
 func _catalog(homunculi: bool) -> void:
 	var title := Label.new()
-	title.text = "HOMUNCULUS CATALOG" if homunculi else "TALISMAN CATALOG"
+	title.text = "HOMUNCULUS CATALOG" if homunculi else "WEAPONS CATALOG"
 	title.add_theme_font_size_override("font_size", 18)
 	if not homunculi:
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -721,26 +721,6 @@ func _catalog(homunculi: bool) -> void:
 	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if homunculi:
-		preview.custom_minimum_size = Vector2(120, 120)
-		row.add_child(preview)
-	else:
-		var preview_center := CenterContainer.new()
-		preview_center.custom_minimum_size = Vector2(190, 190)
-		row.add_child(preview_center)
-		var frame := TextureRect.new()
-		frame.custom_minimum_size = Vector2(190, 190)
-		frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
-		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		preview_center.add_child(frame)
-		frame.add_child(preview)
-		preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		preview.offset_left = 18
-		preview.offset_top = 18
-		preview.offset_right = -18
-		preview.offset_bottom = -18
 	var details := VBoxContainer.new()
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if not homunculi:
@@ -751,10 +731,36 @@ func _catalog(homunculi: bool) -> void:
 	if not homunculi:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.add_child(heading)
+	var stats_area: BoxContainer = VBoxContainer.new() if homunculi else HBoxContainer.new()
+	stats_area.name = "CatalogStatsArea"
+	stats_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stats_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stats_area.add_theme_constant_override("separation", 12)
+	details.add_child(stats_area)
+	var preview_center := CenterContainer.new()
+	preview_center.name = "PreviewSlot"
+	preview_center.custom_minimum_size = Vector2(150, 150) if homunculi else Vector2(190, 190)
+	stats_area.add_child(preview_center)
+	var frame := TextureRect.new()
+	frame.custom_minimum_size = preview_center.custom_minimum_size
+	frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
+	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview_center.add_child(frame)
+	frame.add_child(preview)
+	preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	preview.offset_left = 18
+	preview.offset_top = 18
+	preview.offset_right = -18
+	preview.offset_bottom = -18
 	var scroll := ScrollContainer.new()
+	scroll.name = "StatsScroll"
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size.y = 135
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	details.add_child(scroll)
+	stats_area.add_child(scroll)
 	var info := Label.new()
 	info.add_theme_font_size_override("font_size", 19)
 	if not homunculi:
@@ -763,8 +769,6 @@ func _catalog(homunculi: bool) -> void:
 		_vat_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	if not homunculi:
-		info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	scroll.add_child(info)
 	var actions := HBoxContainer.new()
 	if not homunculi:
@@ -995,7 +999,7 @@ func _update_forge_button() -> void:
 		var base: Dictionary = helper.effective_item(item, {_forge_item: {"level": 0}})
 		var level_one: Dictionary = helper.effective_item(item, {_forge_item: {"level": 1}})
 		var level_two: Dictionary = helper.effective_item(item, {_forge_item: {"level": 2}})
-		_forge_info.text = "%s\nSpecialization: %s | Unspent points: %d\n%s\nBase (Lv 0): %s\nLv 1: %s\nLv 2: %s\nCurrent: %s\nNext: %s" % [item.get("desc", ""), specialization.capitalize() if specialization != "" else "None", maxi(0, level - allocated), "\n".join(trait_lines), _format_values(base.get("effects", {})), _format_values(level_one.get("effects", {})), _format_values(level_two.get("effects", {})), _format_values(current.get("effects", {})), _format_values(next.get("effects", {}))]
+		_forge_info.text = "%s\nSpecialization: %s | Unspent points: %d\n%s\nBase (Lv 0): %s\nLv 1: %s\nLv 2: %s\nCurrent: %s\nNext: %s" % [item.get("desc", ""), specialization.capitalize() if specialization != "" else "None", maxi(0, level - allocated), "\n".join(trait_lines), _format_values(base.get("effects", {})).replace("\n", ", "), _format_values(level_one.get("effects", {})).replace("\n", ", "), _format_values(level_two.get("effects", {})).replace("\n", ", "), _format_values(current.get("effects", {})).replace("\n", ", "), _format_values(next.get("effects", {})).replace("\n", ", ")]
 	var forge_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("build_forge", {}).get("level", 0))
 	var cost := maxi(0, _forge_base_cost + level * _forge_cost_per_level)
 	var essence := int(_forge_state.get("wallet", {}).get("essence", 0))
