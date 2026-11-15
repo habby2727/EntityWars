@@ -41,6 +41,7 @@ var _reroll_owner := ""
 var _reroll_restored := false
 var _world_synced := false
 var _world_requests: Dictionary = {}
+const DEBUG_REROLL_PATH := "user://world_zone_debug_rerolls.json"
 var _debug_reroll_until := 0
 var _claim_request := ""
 var _claim_action := ""
@@ -71,6 +72,10 @@ var _world_sprite: TextureRect
 var _world_name: RichTextLabel
 var _world_companions: Array[TextureRect] = []
 var _world_art_index := 0
+var _world_art_order: Array = []
+var _appearance_seed := 0
+var _debug_rare_index := 0
+const DEBUG_APPEARANCE_PATH := "user://world_zone_debug_appearances.json"
 var _world_idle: Tween
 var _world_modal: Control
 var _world_stage: Control
@@ -85,6 +90,7 @@ var _nearby_debug_index := -1
 var _debug_hunt_id := "hunt_common"
 var _debug_rotation := 0
 var _hunt_schedule: Array = []
+var _display_hunts: Array = []
 var _hunt_rotation := -1
 var _hunt_selected: Dictionary = {}
 var _map_displayed_boss: Dictionary = {}
@@ -108,6 +114,12 @@ var _hunt_fight: Button
 var _hunt_boundary := 0
 var _debug_visual: Dictionary = {}
 var _central_visual: Dictionary = {}
+var _global_event: Dictionary = {}
+var _global_actor: Control
+var _global_wants_refresh := false
+var _global_request_owner := ""
+var _global_poll_timer := 0.0
+var _global_connection_lost := false
 
 func _exit_tree() -> void:
 	_clear_guardian_preview()
@@ -120,8 +132,12 @@ func _exit_tree() -> void:
 func _ready() -> void:
 	_debug.reload()
 	_resolve_nodes()
+	if _debug.unlock_all_buildings:
+		_debug_reroll_until = int(_load_debug_rerolls().get(_get_zone_id(), 0))
 	_apply_background()
 	_setup_zone_view()
+	if _debug.unlock_all_buildings:
+		_restore_debug_appearance()
 	_setup_buttons()
 	_enter_confirm = ConfirmationDialog.new()
 	_enter_confirm.title = "Enter zone"
@@ -131,8 +147,12 @@ func _ready() -> void:
 	_load_state()
 	_request_world_state()
 	_request_map_hunts()
+	_request_global_boss()
 
 func _process(_delta: float) -> void:
+	_global_poll_timer += _delta
+	if _global_poll_timer >= 20.0:
+		_request_global_boss()
 	_update_reroll_button()
 	var remaining := _gate_remaining()
 	if remaining != _gate_display_seconds:
@@ -304,7 +324,7 @@ func _setup_zone_view() -> void:
 	panel.reparent(_world_modal)
 	panel.visible = true
 	var close := Button.new()
-	close.text = "X"
+	close.text = "Close"
 	close.custom_minimum_size = Vector2(40, 40)
 	close.pressed.connect(func(): _world_modal.visible = false)
 	content.add_child(close)
@@ -584,7 +604,7 @@ func _common_display_name(id: String, zone: String) -> String:
 
 func _change_world_art(direction: int) -> void:
 	var zone := _get_zone_id()
-	var entries: Array = WORLD_ART.get(zone, [])
+	var entries: Array = _world_art_order if not _world_art_order.is_empty() else WORLD_ART.get(zone, [])
 	if entries.is_empty():
 		return
 	_world_art_index = posmod(_world_art_index + direction, entries.size())
@@ -617,9 +637,39 @@ func _change_world_art(direction: int) -> void:
 
 func _reroll_world_art() -> void:
 	if _debug.unlock_all_buildings:
-		if Time.get_ticks_msec() < _debug_reroll_until:
+		if _reroll_remaining() > 0:
 			return
-		_debug_reroll_until = Time.get_ticks_msec() + 60000
+		var deadlines := _load_debug_rerolls()
+		deadlines[_get_zone_id()] = int(Time.get_unix_time_from_system() * 1000) + 60000
+		var file := FileAccess.open(DEBUG_REROLL_PATH, FileAccess.WRITE)
+		if file == null:
+			_set_error("Unable to save reroll cooldown.")
+			return
+		file.store_string(JSON.stringify(deadlines))
+		var save_error := file.get_error()
+		file.close()
+		if save_error != OK:
+			_set_error("Unable to save reroll cooldown.")
+			return
+		_debug_reroll_until = int(deadlines[_get_zone_id()])
+		var appearance := _load_debug_appearances()
+		var random := RandomNumberGenerator.new()
+		random.randomize()
+		var new_seed := random.randi_range(1, 2147483647)
+		while new_seed == int(appearance.get(_get_zone_id(), 0)):
+			new_seed = random.randi_range(1, 2147483647)
+		appearance[_get_zone_id()] = new_seed
+		var appearance_file := FileAccess.open(DEBUG_APPEARANCE_PATH, FileAccess.WRITE)
+		if appearance_file == null:
+			_set_error("Unable to save encounter appearance.")
+			return
+		appearance_file.store_string(JSON.stringify(appearance))
+		var appearance_error := appearance_file.get_error()
+		appearance_file.close()
+		if appearance_error != OK:
+			_set_error("Unable to save encounter appearance.")
+			return
+		_appearance_seed = new_seed
 		_apply_reroll()
 		return
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or not _reroll_request.is_empty() or _reroll_remaining() != 0:
@@ -627,16 +677,22 @@ func _reroll_world_art() -> void:
 	if _reroll_action.is_empty():
 		_reroll_action = _make_client_id()
 	_reroll_owner = _backend._verified_player_id
-	_reroll_request = _backend.request_api("POST", "/world/reroll", {"client_action_id": _reroll_action}, true)
+	_reroll_request = _backend.request_api("POST", "/world/reroll", {"client_action_id": _reroll_action, "zone_id": _get_zone_id()}, true)
 	if _reroll_request.is_empty():
 		_set_error("Connection busy. Retry reroll.")
 
+func _load_debug_rerolls() -> Dictionary:
+	if not FileAccess.file_exists(DEBUG_REROLL_PATH):
+		return {}
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(DEBUG_REROLL_PATH))
+	return data if data is Dictionary else {}
+
 func _reroll_remaining() -> int:
 	if _debug.unlock_all_buildings:
-		return maxi(0, ceili(float(_debug_reroll_until - Time.get_ticks_msec()) / 1000.0))
+		return maxi(0, ceili(float(_debug_reroll_until - int(Time.get_unix_time_from_system() * 1000)) / 1000.0))
 	if not _world_synced or _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
 		return -1
-	var now := _backend.get_server_time_unix_ms()
+	var now := _gate_clock.now_ms()
 	if now < 0:
 		return -1
 	var last := int(_player_world.get("last_reroll_at", 0))
@@ -649,43 +705,167 @@ func _update_reroll_button() -> void:
 	_reroll_button.text = "%02d:%02d" % [remaining / 60, remaining % 60] if remaining > 0 else "REROLL"
 	_reroll_button.disabled = remaining != 0 or not _reroll_request.is_empty()
 
-func _apply_reroll() -> void:
-	if _debug.unlock_all_buildings:
-		_debug_rotation = (_debug_rotation + 1) % 5
-		if _debug_rotation > 0:
-			_show_debug_boss(_debug_rotation)
-			return
-	else:
-		_restore_reroll(true)
-		return
-	_clear_guardian_preview()
-	_change_world_art(1)
+func _load_debug_appearances() -> Dictionary:
+	if not FileAccess.file_exists(DEBUG_APPEARANCE_PATH):
+		return {}
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(DEBUG_APPEARANCE_PATH))
+	return data if data is Dictionary else {}
 
-func _restore_reroll(force: bool = false) -> void:
-	if _debug.unlock_all_buildings or not _world_synced or _hunt_schedule.is_empty() or (_reroll_restored and not force):
-		return
-	_reroll_restored = true
-	var count := int(_player_world.get("reroll_count", 0))
-	var cycle := _hunt_schedule.size() + 1
-	_debug_rotation = count % cycle
+func _restore_debug_appearance() -> void:
+	var appearances := _load_debug_appearances()
+	_appearance_seed = int(appearances.get(_get_zone_id(), 0))
+	if _appearance_seed <= 0:
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		_appearance_seed = rng.randi_range(1, 2147483647)
+		appearances[_get_zone_id()] = _appearance_seed
+		var file := FileAccess.open(DEBUG_APPEARANCE_PATH, FileAccess.WRITE)
+		if file != null:
+			file.store_string(JSON.stringify(appearances))
+			file.close()
+	_apply_appearance_seed(_appearance_seed)
+
+func _apply_appearance_seed(value: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = value
+	_world_art_order = WORLD_ART.get(_get_zone_id(), []).duplicate()
+	for i in range(_world_art_order.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var swap = _world_art_order[i]
+		_world_art_order[i] = _world_art_order[j]
+		_world_art_order[j] = swap
+	_world_art_index = 0
+	_debug_rare_index = rng.randi_range(0, 2)
+	_display_hunts = _hunt_schedule.duplicate()
+	for i in range(_display_hunts.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var swap = _display_hunts[i]
+		_display_hunts[i] = _display_hunts[j]
+		_display_hunts[j] = swap
+	var count := 4 if _debug.unlock_all_buildings else _display_hunts.size()
+	_debug_rotation = rng.randi_range(0, count)
 	if _debug_rotation > 0:
-		_show_map_hunt(_hunt_schedule[_debug_rotation - 1])
+		if _debug.unlock_all_buildings:
+			_show_debug_boss(_debug_rotation)
+		else:
+			_show_map_hunt(_display_hunts[_debug_rotation - 1])
 	else:
 		_clear_guardian_preview()
-		var entries: Array = WORLD_ART.get(_get_zone_id(), [])
-		if not entries.is_empty():
-			_world_art_index = int(count / cycle) % entries.size()
-			_change_world_art(0)
+		_change_world_art(0)
+
+func _apply_reroll() -> void:
+	if _debug.unlock_all_buildings:
+		_apply_appearance_seed(_appearance_seed)
+	else:
+		_restore_reroll(true)
+	_request_global_boss()
+
+func _restore_reroll(force: bool = false) -> void:
+	if _debug.unlock_all_buildings or not _world_synced or _hunt_schedule.is_empty() or _backend == null or _backend._verified_player_id.is_empty() or (_reroll_restored and not force):
+		return
+	_reroll_restored = true
+	var seeds: Dictionary = _player_world.get("reroll_seeds", {})
+	var seed_value := int(seeds.get(_get_zone_id(), 0))
+	if seed_value <= 0:
+		seed_value = absi((str(_backend._verified_player_id) + ":" + _get_zone_id()).hash()) + 1
+	_appearance_seed = seed_value
+	_apply_appearance_seed(seed_value)
 
 func _request_map_hunts() -> void:
 	_hunt_wants_schedule = true
 	_drain_hunt_requests()
 
+func _hunt_action_context_key() -> String:
+	var global_id := str(_hunt_selected.get("global_event_id", ""))
+	if not global_id.is_empty():
+		return _get_zone_id() + ":" + global_id
+	return "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
+
+func _request_global_boss() -> void:
+	_global_poll_timer = 0.0
+	_global_wants_refresh = true
+	_drain_hunt_requests()
+
+func _render_global_boss() -> void:
+	if is_instance_valid(_global_actor):
+		_global_actor.queue_free()
+		_global_actor = null
+	if str(_global_event.get("status", "")) != "ACTIVE":
+		return
+	var boss: Dictionary = _global_event.get("boss", {})
+	var texture_id := str(boss.get("texture_id", ""))
+	if not _catalog.has(texture_id):
+		return
+	_global_actor = Control.new()
+	_global_actor.name = "GlobalBoss"
+	_global_actor.anchor_left = 0.84
+	_global_actor.anchor_right = 0.84
+	_global_actor.anchor_top = 0.61
+	_global_actor.anchor_bottom = 0.61
+	_global_actor.offset_left = -75
+	_global_actor.offset_right = 75
+	_global_actor.offset_top = -150
+	_global_actor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_global_actor)
+	move_child(_global_actor, _world_modal.get_index())
+	var sprite := TextureButton.new()
+	sprite.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sprite.texture_normal = _catalog.get_tex(texture_id)
+	sprite.ignore_texture_size = true
+	sprite.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	sprite.pressed.connect(_open_global_boss)
+	_global_actor.add_child(sprite)
+	var label := Label.new()
+	label.text = "%s [%s]  %d/5" % [str(boss.get("name", "Boss")), str(boss.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0))]
+	label.position = Vector2(-35, -28)
+	label.size = Vector2(220, 26)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_constant_override("outline_size", 5)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_global_actor.add_child(label)
+	var icon := Button.new()
+	icon.text = "🌐"
+	icon.tooltip_text = "Global Boss"
+	icon.position = Vector2(-37, -29)
+	icon.size = Vector2(30, 28)
+	_global_actor.add_child(icon)
+	var bubble := Label.new()
+	bubble.text = "Global Boss"
+	bubble.position = Vector2(-40, -56)
+	bubble.visible = false
+	bubble.add_theme_constant_override("outline_size", 5)
+	_global_actor.add_child(bubble)
+	icon.pressed.connect(func(): bubble.visible = not bubble.visible)
+
+func _open_global_boss() -> void:
+	if str(_global_event.get("status", "")) != "ACTIVE":
+		return
+	_hunt_wants_guardians = false
+	_hunt_selected = (_global_event.get("boss", {}) as Dictionary).duplicate(true)
+	_hunt_selected["global_event_id"] = str(_global_event.get("event_id", ""))
+	_hunt_guardian_id = ""
+	var texture_id := str(_hunt_selected.get("texture_id", ""))
+	_boss_portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
+	_boss_portrait.visible = _boss_portrait.texture != null
+	_preview_status.text = "%s [%s]\n%d/5\n%s" % [str(_hunt_selected.get("name", "Boss")), str(_hunt_selected.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0)), "Already defeated" if _global_event.get("reward_status") != null else "Reward delivered after five victories."]
+	_preview_status.visible = true
+	_boss_picker.visible = false
+	_boss_hp.visible = false
+	_boss_status.visible = false
+	_boss_open.visible = false
+	_view_guardians.visible = false
+	_debug_fight.visible = false
+	_hunt_fight.visible = true
+	_hunt_fight.disabled = _backend == null or _backend.token.is_empty() or _global_event.get("reward_status") != null
+	_hunt_fight.text = "Resume Hunt" if _active_hunt_matches("") else "Fight"
+	_world_modal.visible = true
+	call_deferred("_fit_encounter_card")
+
 func _drain_hunt_requests() -> void:
 	if _backend == null or _backend.token.is_empty():
 		return
 	if not _hunt_pending_start_payload.is_empty():
-		var current_key := "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
+		var current_key := _hunt_action_context_key()
 		if _hunt_action_owner != _backend._verified_player_id or _hunt_action_key != current_key:
 			return
 		var start_id := _backend.request_api("POST", "/world/boss-hunts/start", _hunt_pending_start_payload.duplicate(true), false)
@@ -709,6 +889,9 @@ func _drain_hunt_requests() -> void:
 	elif _hunt_wants_guardians and not _hunt_selected.is_empty() and not _backend._verified_player_id.is_empty():
 		kind = "guardians"
 		path = "/world/boss-hunts/guardians?zone_id=" + _get_zone_id().uri_encode() + "&hunt_id=" + str(_hunt_selected.get("id", "")).uri_encode()
+	elif _global_wants_refresh and not _backend._verified_player_id.is_empty():
+		kind = "global"
+		path = "/world/global-bosses"
 	if kind.is_empty() or _hunt_requests.values().has(kind):
 		return
 	var id := _backend.request_api("GET", path, null, false)
@@ -718,6 +901,9 @@ func _drain_hunt_requests() -> void:
 	match kind:
 		"schedule": _hunt_wants_schedule = false
 		"session": _hunt_wants_session = false
+		"global":
+			_global_wants_refresh = false
+			_global_request_owner = _backend._verified_player_id
 		"guardians":
 			_hunt_wants_guardians = false
 			_guardian_request_key = _guardian_key()
@@ -728,15 +914,19 @@ func _request_hunt_session() -> void:
 	_drain_hunt_requests()
 
 func _guardian_key() -> String:
-	return _get_zone_id() + "|" + str(_hunt_selected.get("id", ""))
+	return _get_zone_id() + "|" + str(_hunt_selected.get("id", "")) + "|" + str(_appearance_seed)
 
 func _active_hunt_matches(guardian_id: String) -> bool:
 	if _backend == null or _hunt_active.is_empty() or _hunt_active_owner != _backend._verified_player_id or _hunt_active_owner.is_empty() or int(_hunt_active.get("expires_at", 0)) <= _backend.get_server_time_unix_ms():
 		return false
+	if _hunt_selected.has("global_event_id"):
+		return str(_hunt_active.get("global_event_id", "")) == str(_hunt_selected.get("global_event_id", ""))
 	var parent := str(_hunt_active.get("parent_hunt_id", _hunt_active.get("hunt_id", "")))
 	return parent == str(_hunt_selected.get("id", "")) and str(_hunt_active.get("zone_id", "")) == _get_zone_id() and str(_hunt_active.get("guardian_id", "")) == guardian_id
 
 func _request_guardian_progress() -> void:
+	if _hunt_selected.has("global_event_id"):
+		return
 	if _hunt_requests.values().has("guardians") and _guardian_request_key == _guardian_key() and _backend != null and _guardian_request_owner == _backend._verified_player_id:
 		return
 	_hunt_wants_guardians = true
@@ -767,10 +957,17 @@ func _show_map_hunt(boss: Dictionary) -> void:
 	if not verified or (not bool(_hunt_progress.get("boss_unlocked", false)) and not _active_hunt_matches("")):
 		required.append("Server-verified guardians")
 	_add_preview_actor(entry, 0.5, 0.59, true, required)
+	var order_rng := RandomNumberGenerator.new()
+	order_rng.seed = _appearance_seed + absi(str(entry.id).hash())
+	for i in range(guardians.size() - 1, 0, -1):
+		var j := order_rng.randi_range(0, i)
+		var swap = guardians[i]
+		guardians[i] = guardians[j]
+		guardians[j] = swap
 	for i in guardians.size():
 		var x := 0.5 if guardians.size() == 1 else 0.29 + 0.42 * float(i) / float(guardians.size() - 1)
 		_add_preview_actor(guardians[i], x, 0.75, false, PackedStringArray())
-	for other in _hunt_schedule:
+	for other in (_display_hunts if not _display_hunts.is_empty() else _hunt_schedule):
 		if other is Dictionary and str(other.get("id", "")) != str(entry.id) and not str(other.get("id", "")).is_empty():
 			_add_nearby_hunt(other)
 			break
@@ -844,14 +1041,19 @@ func _start_map_hunt() -> void:
 			_preview_status.text = "Resume your active encounter before starting another."
 		return
 	_hunt_active.clear()
-	if _hunt_progress_key != _guardian_key() or _hunt_progress_owner != _backend._verified_player_id or (_hunt_guardian_id.is_empty() and not bool(_hunt_progress.get("boss_unlocked", false))):
+	var global_id := str(_hunt_selected.get("global_event_id", ""))
+	if not global_id.is_empty() and (global_id != str(_global_event.get("event_id", "")) or str(_global_event.get("status", "")) != "ACTIVE" or _global_event.get("reward_status") != null):
+		_preview_status.text = "Global event unavailable. Refreshing..."
+		_request_global_boss()
+		return
+	if global_id.is_empty() and (_hunt_progress_key != _guardian_key() or _hunt_progress_owner != _backend._verified_player_id or (_hunt_guardian_id.is_empty() and not bool(_hunt_progress.get("boss_unlocked", false)))):
 		_preview_status.text = "Guardian progress unavailable or boss locked."
 		return
-	if not bool(_hunt_selected.get("available", false)) or _hunt_rotation < 0 or (_hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary):
+	if global_id.is_empty() and (not bool(_hunt_selected.get("available", false)) or _hunt_rotation < 0 or (_hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary)):
 		_preview_status.text = "Encounter expired. Refreshing..."
 		_request_map_hunts()
 		return
-	var key := "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
+	var key := _hunt_action_context_key()
 	if not _hunt_action_id.is_empty() and _hunt_action_key != key:
 		_preview_status.text = "Previous request unresolved. Retry the same encounter."
 		return
@@ -865,6 +1067,8 @@ func _start_map_hunt() -> void:
 	if _hunt_requests.values().has("start"):
 		return
 	var payload := {"client_action_id": _hunt_action_id, "hunt_id": str(_hunt_selected.get("id", "")), "rotation_key": _hunt_rotation, "zone_id": _get_zone_id()}
+	if not global_id.is_empty():
+		payload["global_event_id"] = global_id
 	if not _hunt_guardian_id.is_empty():
 		payload["guardian_id"] = _hunt_guardian_id
 	_hunt_pending_start_payload = payload.duplicate(true)
@@ -880,11 +1084,12 @@ func _enter_map_hunt(session: Dictionary) -> void:
 	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), str(session.get("session_id", "")), _get_zone_id())
 
 func _show_debug_boss(index: int, group_id: String = "") -> void:
+	_nearby_debug_index = -1
 	_hunt_selected.clear()
 	_debug_rotation = index
 	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
 	var rare_variants := ["boss_leviathan", "tier3boss", "scorpion_boss"]
-	var textures := ["boss_common", "boss_colossus", rare_variants[_world_art_index % rare_variants.size()], "boss_temporal", "ghost_boss"]
+	var textures := ["boss_common", "boss_colossus", rare_variants[_debug_rare_index % rare_variants.size()], "boss_temporal", "ghost_boss"]
 	if group_id.is_empty():
 		group_id = "debug_" + tiers[index]
 	var guardians: Array = []
@@ -893,9 +1098,9 @@ func _show_debug_boss(index: int, group_id: String = "") -> void:
 		guardians.append({"id": guardian_id, "name": "Guardian", "tier": tiers[index - 1], "texture_id": textures[index - 1], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, guardian_id))})
 	var commons := 2 if index <= 2 else index
 	var zone := _get_zone_id()
-	var entries: Array = WORLD_ART.get(zone, [])
+	var entries: Array = _world_art_order if not _world_art_order.is_empty() else WORLD_ART.get(zone, [])
 	for i in mini(commons, entries.size()):
-		var guardian_id := group_id + "|preview_common_%d" % i
+		var guardian_id: String = group_id + "|preview_common_%d" % i
 		guardians.append({"id": guardian_id, "name": _common_display_name(entries[(_world_art_index + i) % entries.size()], zone), "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), entries[(_world_art_index + i) % entries.size()]], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(zone, index, guardian_id))})
 	var names := {"boss_colossus": "Arcane Colossus", "boss_leviathan": "Corrupted Leviathan", "tier3boss": "Dread Sovereign", "scorpion_boss": "Scorpion Overlord", "boss_temporal": "Temporal Warden", "ghost_boss": "Spectral Sovereign"}
 	show_guardian_preview({"id": group_id, "name": names.get(textures[index], "Boss"), "tier": tiers[index], "texture_id": textures[index]}, guardians)
@@ -955,6 +1160,45 @@ func _select_nearby_debug_boss(index: int, tier: String, texture_id: String) -> 
 	call_deferred("_fit_encounter_card")
 
 func _show_selected_guardians() -> void:
+	if _debug.unlock_all_buildings and _hunt_selected.is_empty():
+		var index := _nearby_debug_index if _nearby_debug_index >= 0 else _debug_rotation
+		if _nearby_debug_index >= 0:
+			var tiers := ["common", "mythic", "rare", "epic", "legendary"]
+			var group_id: String = "debug_" + tiers[index]
+			var entries: Array = _world_art_order if not _world_art_order.is_empty() else WORLD_ART.get(_get_zone_id(), [])
+			var guardian: Dictionary = {}
+			if index > 1 and not SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, group_id + "|preview_higher")):
+				var textures := ["boss_common", "boss_colossus", ["boss_leviathan", "tier3boss", "scorpion_boss"][_debug_rare_index % 3], "boss_temporal", "ghost_boss"]
+				guardian = {"id": group_id + "|preview_higher", "tier": tiers[index - 1], "texture": textures[index - 1], "name": "Guardian"}
+			else:
+				var count := 2 if index <= 2 else index
+				for i in mini(count, entries.size()):
+					var guardian_id: String = group_id + "|preview_common_%d" % i
+					if not SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, guardian_id)):
+						var art_id: String = entries[(_world_art_index + i) % entries.size()]
+						guardian = {"id": guardian_id, "tier": "common", "texture": "res://assets/lab/bosses/%s_zone_common/%s.png" % [_get_zone_id().trim_prefix("zone_"), art_id], "name": _common_display_name(art_id, _get_zone_id())}
+						break
+			if guardian.is_empty():
+				_preview_status.text = "All guardians defeated. Boss unlocked."
+				_view_guardians.visible = false
+				return
+			var texture_id := str(guardian.texture)
+			_boss_portrait.texture = load(texture_id) as Texture2D if texture_id.begins_with("res://") and ResourceLoader.exists(texture_id) else (_catalog.get_tex(texture_id) if _catalog.has(texture_id) else null)
+			_boss_portrait.visible = _boss_portrait.texture != null
+			_preview_selection = str(guardian.id)
+			_debug_hunt_id = "hunt_" + str(guardian.tier)
+			_debug_visual = {"id": texture_id.get_file().get_basename() if texture_id.begins_with("res://") else str(guardian.id), "tier": str(guardian.tier), "texture": texture_id, "name": str(guardian.name), "guardian": true, "parent_index": index, "encounter_id": str(guardian.id)}
+			_preview_status.text = "Unverified debug preview: %s\nNo rewards or persistent victories." % str(guardian.name)
+			_view_guardians.visible = false
+			_debug_fight.visible = true
+			_debug_fight.disabled = false
+			return
+		for child in _preview_stage.get_children():
+			if child.has_meta("select_actor") and str(child.name).contains("preview_") and not SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, str(child.name).trim_prefix("Actor_"))):
+				child.get_meta("select_actor").call()
+				return
+		_preview_status.text = "All guardians defeated. Boss unlocked."
+		return
 	if _backend == null or _hunt_progress_key != _guardian_key() or _hunt_progress_owner.is_empty() or _hunt_progress_owner != _backend._verified_player_id:
 		return
 	for guardian in _hunt_progress.get("guardians", []):
@@ -1022,6 +1266,10 @@ func _on_boss_selected(index: int) -> void:
 	_boss_status.text = "Global encounter  |  HP: %s / %s" % [int(hp), int(max_hp)]
 
 func _on_auth_changed(token: String) -> void:
+	_global_event.clear()
+	_global_wants_refresh = false
+	_global_request_owner = ""
+	_render_global_boss()
 	_player_world = {}
 	_world_synced = false
 	_reroll_restored = false
@@ -1031,6 +1279,8 @@ func _on_auth_changed(token: String) -> void:
 	_hunt_active.clear()
 	_hunt_active_owner = ""
 	_hunt_schedule.clear()
+	_display_hunts.clear()
+	_world_art_order.clear()
 	_hunt_progress.clear()
 	_hunt_progress_key = ""
 	_hunt_progress_owner = ""
@@ -1049,6 +1299,7 @@ func _on_auth_changed(token: String) -> void:
 		_auth_refresh_needed = true
 		_request_world_state()
 		_request_map_hunts()
+		_request_global_boss()
 
 func _apply_background() -> void:
 	if _background == null:
@@ -1105,6 +1356,11 @@ func _request_world_state() -> void:
 		_set_error("Logging in...")
 
 func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
+	if not ok and str(data.get("error", "")) == "network_error":
+		_global_connection_lost = true
+	elif ok and _global_connection_lost:
+		_global_connection_lost = false
+		call_deferred("_request_global_boss")
 	if _world_requests.has(_request_id):
 		var request_token := str(_world_requests[_request_id])
 		_world_requests.erase(_request_id)
@@ -1113,12 +1369,16 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 				call_deferred("_request_world_state")
 			return
 	if _request_id == _reroll_request and not _reroll_request.is_empty():
+		_gate_clock.sync(int(data.get("server_time_unix_ms", 0)))
 		_reroll_request = ""
 		if _backend == null or _reroll_owner != _backend._verified_player_id:
 			_reroll_action = ""
 			return
 		if ok:
 			_reroll_action = ""
+			_hunt_progress.clear()
+			_hunt_progress_key = ""
+			_hunt_progress_owner = ""
 			_update_from_state(data.get("updated_player_state", {}))
 			_apply_reroll()
 		else:
@@ -1146,6 +1406,9 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 		if kind == "guardians" and (_guardian_request_key != _guardian_key() or _backend == null or _guardian_request_owner.is_empty() or _guardian_request_owner != _backend._verified_player_id):
 			call_deferred("_request_guardian_progress")
 			return
+		if kind == "global" and (_backend == null or _global_request_owner.is_empty() or _global_request_owner != _backend._verified_player_id):
+			call_deferred("_request_global_boss")
+			return
 		if not ok:
 			if kind == "start":
 				_preview_status.text = str(data.get("error", "Encounter unavailable."))
@@ -1156,6 +1419,19 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 				_preview_status.text = "Guardian progress unavailable. Select the boss to retry."
 			return
 		match kind:
+			"global":
+				_gate_clock.sync(int(data.get("server_time_unix_ms", 0)))
+				for event in data.get("events", []):
+					if event is Dictionary and str(event.get("zone_id", "")) == _get_zone_id():
+						_global_event = event.duplicate(true)
+						_render_global_boss()
+						if _world_modal.visible and _hunt_selected.has("global_event_id"):
+							if str(_hunt_selected.global_event_id) == str(_global_event.get("event_id", "")) and str(_global_event.get("status", "")) == "ACTIVE":
+								_open_global_boss()
+							else:
+								_hunt_fight.disabled = true
+								_preview_status.text = "Global boss defeated. Reward delivered." if _global_event.get("reward_status") == "PAID" else "Global event complete."
+						break
 			"schedule":
 				_hunt_schedule.clear()
 				for boss in data.get("bosses", []):
@@ -1169,7 +1445,7 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			"session":
 				_hunt_active = data.get("session", {}) if data.get("session") is Dictionary else {}
 				_hunt_active_owner = _backend._verified_player_id
-				if not _hunt_selected.is_empty():
+				if not _hunt_selected.is_empty() and not _hunt_selected.has("global_event_id"):
 					call_deferred("_request_guardian_progress")
 			"guardians":
 				if _guardian_request_key != _guardian_key() or _guardian_request_owner.is_empty() or _guardian_request_owner != _backend._verified_player_id or str(data.get("zone_id", "")) != _get_zone_id() or str(data.get("hunt_id", "")) != str(_hunt_selected.get("id", "")):
@@ -1187,7 +1463,7 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 					if reopen_main:
 						_open_main_preview()
 			"start":
-				var current_key := "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
+				var current_key := _hunt_action_context_key()
 				if _hunt_action_owner.is_empty() or _hunt_action_owner != _backend._verified_player_id:
 					return
 				if _hunt_action_key != current_key:
@@ -1235,10 +1511,14 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 
 func _on_state_updated(state: Dictionary) -> void:
 	_update_from_state(state)
+	_restore_reroll()
+	if _global_connection_lost and not state.is_empty():
+		_global_connection_lost = false
+		call_deferred("_request_global_boss")
 	if _backend != null and not _backend._verified_player_id.is_empty():
 		if _hunt_active_owner != _backend._verified_player_id:
 			call_deferred("_request_hunt_session")
-		elif not _hunt_selected.is_empty() and _hunt_progress_key != _guardian_key():
+		elif not _hunt_selected.is_empty() and not _hunt_selected.has("global_event_id") and _hunt_progress_key != _guardian_key():
 			call_deferred("_request_guardian_progress")
 
 func _on_enter_pressed() -> void:

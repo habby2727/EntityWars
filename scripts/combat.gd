@@ -1171,6 +1171,14 @@ func _present_online_terminal() -> void:
 		return
 	_online_hunt_info.text = "Server result: " + ("VICTORY" if status == "VERIFIED_WIN" else "DEFEAT")
 	if status == "VERIFIED_WIN":
+		if _online_hunt_session.has("global_event_id"):
+			var global_status: Dictionary = _online_hunt_session.get("global_status", {})
+			if global_status.get("reward_status") == "WAITING":
+				_online_hunt_info.text = "Victory registered — awaiting other players (%d/5)" % int(global_status.get("winner_count", 0))
+			elif global_status.get("reward_status") == "PAID":
+				_online_hunt_info.text = "Victory registered — reward delivered (5/5)"
+			else:
+				_online_hunt_info.text = "Victory after event completion — no reward registered."
 		var reward: Variant = _online_hunt_session.get("pve_reward", {})
 		if reward is Dictionary and reward.get("grants") is Dictionary:
 			var parts: Array[String] = []

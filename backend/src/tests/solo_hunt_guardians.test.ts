@@ -256,3 +256,64 @@ test("guardian rotations cover every zone portrait without changing identity", (
     expect([...found].sort()).toEqual(expected);
   }
 });
+
+
+test("seeded guardians cover every zone image and preserve progress identities", () => {
+  for (const zone of ["zone_chaos", "zone_corrupted", "zone_crystal"]) {
+    const files = readdirSync(resolve(import.meta.dir, `../../../assets/lab/bosses/${zone.slice(5)}_zone_common`)).filter(name => name.endsWith(".png")).sort();
+    const firstImages = new Set<string>();
+    const orders = new Set<string>();
+    const first = guardiansFor(zone, "hunt_legendary", catalog, 0, 1)!;
+    for (let seed = 1; seed <= 128; seed++) {
+      const group = guardiansFor(zone, "hunt_legendary", catalog, 0, seed)!;
+      const commons = group.filter(g => g.tier === "common");
+      firstImages.add(commons[0].texture_id.split("/").pop()!);
+      orders.add(commons.map(g => g.texture_id).join(","));
+      expect(group.map(g => g.guardian_id)).toEqual(first.map(g => g.guardian_id));
+      expect(guardiansFor(zone, "hunt_legendary", catalog, 999, seed)).toEqual(group);
+    }
+    expect([...firstImages].sort()).toEqual(files);
+    expect(orders.size).toBeGreaterThan(10);
+  }
+});
+
+test("zone reroll and guardians survive backend restart", async () => {
+  const port = await new Promise<number>(done => { const probe = createServer().listen(0, "127.0.0.1", () => { const p = (probe.address() as { port: number }).port; probe.close(() => done(p)); }); });
+  const directory = mkdtempSync(join(tmpdir(), "ew-zone-seed-"));
+  const db = new Database(join(directory, "test.sqlite"));
+  const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
+  for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
+  const env = { ...process.env, DB_PATH: join(directory, "test.sqlite"), NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
+  const spawn = () => Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+  let server = spawn();
+  const req = async (path: string, body?: object, token?: string) => {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status: r.status, data: await r.json() as any };
+  };
+  const ready = async () => { for (let i = 0; i < 100; i++) { try { if ((await req("/health")).status === 200) return; } catch {} await Bun.sleep(100); } throw new Error("backend unavailable"); };
+  try {
+    await ready();
+    let auth = await req("/auth/dev_login", { name: "saved_zone_seed" });
+    const roll = await req("/world/reroll", { client_action_id: "saved-reroll", zone_id: "zone_corrupted" }, auth.data.token);
+    expect(roll.status).toBe(200);
+    const seed = roll.data.updated_player_state.world.reroll_seeds.zone_corrupted;
+    expect(seed).toBeGreaterThan(0);
+    const route = "/world/boss-hunts/guardians?zone_id=zone_corrupted&hunt_id=hunt_legendary";
+    const before = await req(route, undefined, auth.data.token);
+    expect(before.status).toBe(200);
+    expect(before.data.guardians).toEqual(guardiansFor("zone_corrupted", "hunt_legendary", catalog, 0, seed)!.map(g => expect.objectContaining(g)));
+    server.kill();
+    await server.exited;
+    server = spawn();
+    await ready();
+    auth = await req("/auth/dev_login", { name: "saved_zone_seed" });
+    expect((await req("/world/state", undefined, auth.data.token)).data.player_world.reroll_seeds.zone_corrupted).toBe(seed);
+    expect((await req(route, undefined, auth.data.token)).data.guardians).toEqual(before.data.guardians);
+    expect((await req("/world/reroll", { client_action_id: "too-soon", zone_id: "zone_corrupted" }, auth.data.token)).status).toBe(429);
+  } finally {
+    server.kill();
+    await server.exited;
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+}, 30000);

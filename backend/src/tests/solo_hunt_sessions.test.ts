@@ -30,7 +30,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     const a = await request("/auth/dev_login", { name: "hunt_test_a" });
     const b = await request("/auth/dev_login", { name: "hunt_test_b" });
     expect([a.status, b.status]).toEqual([200, 200]);
-    const reroll = { client_action_id: "reroll-a" };
+    const reroll = { client_action_id: "reroll-a", zone_id: "zone_chaos" };
     const simultaneous = await Promise.all([request("/world/reroll", reroll, a.data.token), request("/world/reroll", reroll, a.data.token)]);
     expect(simultaneous.map(r => r.status)).toEqual([200, 200]);
     expect(simultaneous.filter(r => r.data.duplicate).length).toBe(1);
@@ -38,6 +38,8 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     const worldA = await request("/world/state", undefined, a.data.token);
     const worldB = await request("/world/state", undefined, b.data.token);
     expect(worldA.data.player_world.reroll_count).toBe(1);
+    expect(worldA.data.player_world.reroll_seeds.zone_chaos).toBeGreaterThan(0);
+    expect((await request("/world/state", undefined, a.data.token)).data.player_world.reroll_seeds).toEqual(worldA.data.player_world.reroll_seeds);
     expect(worldB.data.player_world.reroll_count).toBe(0);
     expect((await request("/world/reroll", { client_action_id: "reroll-other" }, b.data.token)).status).toBe(200);
     const worldRow = db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any;

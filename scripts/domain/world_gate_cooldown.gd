@@ -8,6 +8,9 @@ func sync(server_ms: int) -> void:
 		_server_ms = server_ms
 		_received_ticks = Time.get_ticks_msec()
 
+func now_ms() -> int:
+	return _server_ms + Time.get_ticks_msec() - _received_ticks if _server_ms > 0 else -1
+
 func remaining_seconds(world: Dictionary, cooldown_seconds: int) -> int:
 	var last_entry := int(world.get("last_gate_entry_at", 0))
 	if last_entry <= 0 or cooldown_seconds <= 0:

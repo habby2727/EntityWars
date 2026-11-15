@@ -25,6 +25,7 @@ import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
 import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
+import { globalBossRoll, globalBossTier } from "./global_boss_rotation";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
 
@@ -169,6 +170,7 @@ type PlayerWorldState = {
 	last_gate_entry_at: number;
 	last_reroll_at: number;
 	reroll_count: number;
+	reroll_seeds: Record<string, number>;
 	stamina: number;
 	last_stamina_at: number;
 	boss_tickets: number;
@@ -1949,7 +1951,7 @@ async function startServer(): Promise<void> {
 					const playerId = await requireAuth(req, ctx);
 					const body = await readJson(req, config.maxBodyBytes);
 					const id = typeof body?.client_action_id === "string" ? body.client_action_id.trim() : "";
-					if (!id || id.length > 64 || Object.keys(body ?? {}).some(key => key !== "client_action_id")) throw new HttpError(400, "Invalid reroll request.");
+					if (!id || id.length > 64 || Object.keys(body ?? {}).some(key => !["client_action_id", "zone_id"].includes(key)) || (body.zone_id !== undefined && (typeof body.zone_id !== "string" || !isValidZoneId(body.zone_id)))) throw new HttpError(400, "Invalid reroll request.");
 					return db.transaction(() => {
 						const duplicate = getIdempotentState(playerId, id, "WORLD_REROLL", body);
 						if (duplicate) return stateResponseExtra(duplicate, { duplicate: true });
@@ -1959,6 +1961,11 @@ async function startServer(): Promise<void> {
 						if (world.last_reroll_at && now < world.last_reroll_at + 60000) throw new HttpError(429, "Reroll is cooling down.");
 						world.last_reroll_at = now;
 						world.reroll_count += 1;
+						if (body.zone_id) {
+							const random = new Uint32Array(1);
+							crypto.getRandomValues(random);
+							world.reroll_seeds[body.zone_id] = random[0] || 1;
+						}
 						state.updated_at = now;
 						updatePlayerStmt.run(JSON.stringify(state), now, playerId);
 						insertActionStmt.run(playerId, id, "WORLD_REROLL", JSON.stringify(body), JSON.stringify(state), now);
@@ -2271,6 +2278,13 @@ async function startServer(): Promise<void> {
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts") {
 					return jsonResponse(soloBossSchedule(Date.now()));
 				}
+				if (req.method == "GET" && url.pathname == "/world/global-bosses") {
+					const playerId = await requireAuth(req, ctx);
+					return db.transaction(() => {
+						const now = Date.now();
+						return jsonResponse({ events: ["zone_chaos", "zone_corrupted", "zone_crystal"].map(zone => globalBossForZone(zone, playerId, now)), server_time_unix_ms: now });
+					}).immediate();
+				}
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts/session") {
 					const playerId = await requireAuth(req, ctx);
 					return db.transaction(() => {
@@ -2286,7 +2300,8 @@ async function startServer(): Promise<void> {
 					const playerId = await requireAuth(req, ctx);
 					const zoneId = url.searchParams.get("zone_id") ?? "";
 					const huntId = url.searchParams.get("hunt_id") ?? "";
-					const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses, soloBossSchedule(Date.now()).rotation_key);
+					const seed = ensurePlayerWorld(ensurePlayerState(playerId), Date.now()).reroll_seeds[zoneId] ?? createHash("sha256").update(`${playerId}:${zoneId}`).digest().readUInt32BE(0);
+					const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses, soloBossSchedule(Date.now()).rotation_key, seed);
 					if (!definitions) throw new HttpError(400, "Invalid zone or boss hunt.");
 					const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId) as { guardian_id: string }[];
 					const defeated = new Set(rows.map(row => row.guardian_id));
@@ -2321,7 +2336,7 @@ async function startServer(): Promise<void> {
 						const status = result.terminal_result === "WIN" ? "VERIFIED_WIN" : result.terminal_result === "LOSS" ? "VERIFIED_LOSS" : "ACTIVE";
 						if (result.terminal_result && !["WIN", "LOSS"].includes(result.terminal_result)) throw new HttpError(409, "Unsupported combat result.");
 						let metadata: string | null = null;
-						if (status === "VERIFIED_WIN") {
+						if (status === "VERIFIED_WIN" && !row.global_event_id) {
 							if (row.result_metadata_json) throw new HttpError(409, "Hunt settlement already exists.");
 							const source = row.guardian_id ? "guardian" : "boss";
 							const tier = JSON.parse(row.boss_snapshot_json).tier;
@@ -2345,6 +2360,7 @@ async function startServer(): Promise<void> {
 						}
 						const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ?, result_metadata_json = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, metadata, row.session_id, playerId, row.combat_revision, now);
 						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
+						if (status === "VERIFIED_WIN" && row.global_event_id) settleGlobalBoss(row, now);
 						if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
 							db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
 						}
@@ -2430,8 +2446,9 @@ async function startServer(): Promise<void> {
 					const actionId = typeof body?.client_action_id === "string" ? body.client_action_id.trim() : "";
 					if (!actionId || actionId.length > 64) throw new HttpError(400, "Invalid client_action_id.");
 					const start = url.pathname.endsWith("/start");
-					const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...(body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}), ...(body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {}) } : { session_id: body?.session_id };
-					if (start ? typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key) : typeof payload.session_id !== "string" || !payload.session_id) throw new HttpError(400, "Invalid hunt request.");
+					const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...(body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}), ...(body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {}), ...(body?.global_event_id !== undefined ? { global_event_id: body.global_event_id } : {}) } : { session_id: body?.session_id };
+					const requestedGlobal = (payload as any).global_event_id;
+					if (start ? (requestedGlobal !== undefined ? typeof requestedGlobal !== "string" || !requestedGlobal : typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key)) : typeof payload.session_id !== "string" || !payload.session_id) throw new HttpError(400, "Invalid hunt request.");
 					const actionType = start ? "SOLO_HUNT_START" : "SOLO_HUNT_FORFEIT";
 					db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
 					return db.transaction(() => {
@@ -2449,14 +2466,18 @@ async function startServer(): Promise<void> {
 						let row: SoloHuntRow;
 						if (start) {
 							const schedule = soloBossSchedule(now);
-							const boss = schedule.bosses.find(candidate => candidate.id === payload.hunt_id);
-							if (payload.rotation_key !== schedule.rotation_key || !boss || !boss.available) throw new HttpError(409, "Boss hunt is not available for this rotation.");
-							const zoneId = (payload as any).zone_id;
+							const globalEvent = requestedGlobal ? db.query("SELECT * FROM global_boss_events WHERE event_id = ? AND status = 'ACTIVE'").get(requestedGlobal) as any : null;
+							if (requestedGlobal && (!globalEvent || (payload as any).guardian_id !== undefined)) throw new HttpError(409, "Global event unavailable.");
+							if (globalEvent && db.query("SELECT 1 FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(requestedGlobal, playerId)) throw new HttpError(409, "Already defeated.");
+							const boss = globalEvent ? { ...JSON.parse(globalEvent.boss_snapshot_json), available: true } : schedule.bosses.find(candidate => candidate.id === payload.hunt_id);
+							if (!globalEvent && (payload.rotation_key !== schedule.rotation_key || !boss || !boss.available)) throw new HttpError(409, "Boss hunt is not available for this rotation.");
+							const zoneId = globalEvent ? undefined : (payload as any).zone_id;
 							const guardianId = (payload as any).guardian_id;
 							if ((zoneId !== undefined && typeof zoneId !== "string") || (guardianId !== undefined && (typeof guardianId !== "string" || !guardianId))) throw new HttpError(400, "Invalid guardian selection.");
-							const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses, schedule.rotation_key);
+							const guardianSeed = zoneId === undefined ? undefined : (ensurePlayerWorld(ensurePlayerState(playerId), now).reroll_seeds[zoneId] ?? createHash("sha256").update(`${playerId}:${zoneId}`).digest().readUInt32BE(0));
+							const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses, schedule.rotation_key, guardianSeed);
 							if ((zoneId !== undefined && !definitions) || (guardianId !== undefined && !definitions)) throw new HttpError(400, "Invalid guardian zone.");
-							if (boss.tier !== "common" && !definitions) throw new HttpError(409, "Guardian zone required.");
+							if (!globalEvent && boss.tier !== "common" && !definitions) throw new HttpError(409, "Guardian zone required.");
 							let encounter = boss;
 							if (guardianId !== undefined) {
 								const guardian = definitions!.find(entry => entry.guardian_id === guardianId);
@@ -2477,7 +2498,7 @@ async function startServer(): Promise<void> {
 							const state = ensurePlayerState(playerId);
 							const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
 							const sessionId = crypto.randomUUID();
-							db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,guardian_zone_id,guardian_parent_id,guardian_id) VALUES (?,?,?,?,'ACTIVE',?,?,?,?,?,?,?)").run(sessionId, playerId, encounter.id, schedule.rotation_key, JSON.stringify(encounter), JSON.stringify(snapshot), now, now + 2700000, zoneId ?? null, guardianId ? boss.id : null, guardianId ?? null);
+							db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,guardian_zone_id,guardian_parent_id,guardian_id,global_event_id) VALUES (?,?,?,?,'ACTIVE',?,?,?,?,?,?,?,?)").run(sessionId, playerId, encounter.id, schedule.rotation_key, JSON.stringify(encounter), JSON.stringify(snapshot), now, now + 2700000, zoneId ?? null, guardianId ? boss.id : null, guardianId ?? null, requestedGlobal ?? null);
 							row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId) as SoloHuntRow;
 						} else {
 							const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(payload.session_id, playerId) as SoloHuntRow | null;
@@ -2704,7 +2725,7 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 	return catalog as SoloBossCatalog;
 }
 
-type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
+type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null; global_event_id: string | null };
 
 function publicDungeonCombat(combat: any) {
 	const trait = dungeonEliteTrait(combat);
@@ -2747,7 +2768,62 @@ function publicHuntCombat(state: any) {
 }
 
 function soloHuntResponse(row: SoloHuntRow) {
-	return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
+	return { ...(row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}), session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
+}
+
+function globalBossStatus(eventId: string, playerId: string) {
+	const event = db.query("SELECT status, winner_count FROM global_boss_events WHERE event_id = ?").get(eventId) as any;
+	const winner = db.query("SELECT status, reward_json FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(eventId, playerId) as any;
+	return event ? { ...event, reward_status: winner?.status ?? null, reward: winner?.reward_json ? JSON.parse(winner.reward_json) : null } : null;
+}
+
+function globalBossForZone(zone: string, playerId: string, now: number) {
+	let event = db.query("SELECT * FROM global_boss_events WHERE zone_id = ? ORDER BY spawned_at DESC, rowid DESC LIMIT 1").get(zone) as any;
+	const interval = staticData.soloBosses.rotation.interval_seconds * 1000;
+	const scheduledAt = event?.status === "COMPLETE" ? Math.ceil((event.completed_at + 43200000) / interval) * interval : now;
+	if (!event || (event.status === "COMPLETE" && now >= scheduledAt)) {
+		const key = Math.floor(scheduledAt / interval);
+		const hash = globalBossRoll(WORLD_SECRET, zone, key);
+		const tier = globalBossTier(hash.readUInt32BE(0) / 0x100000000, staticData.soloBosses.rotation.weights);
+		const template = staticData.soloBosses.bosses.find(b => b.tier === tier)!;
+		const variants = template.texture_variants ?? [template.texture_id];
+		const boss = { ...template, texture_id: variants[hash.readUInt32BE(4) % variants.length] };
+		const id = `global_${crypto.randomUUID()}`;
+		db.query("INSERT INTO global_boss_events(event_id,zone_id,tier,boss_snapshot_json,spawned_at,status) VALUES (?,?,?,?,?,'ACTIVE')").run(id, zone, tier, JSON.stringify(boss), scheduledAt);
+		event = db.query("SELECT * FROM global_boss_events WHERE event_id = ?").get(id);
+	}
+	return { event_id: event.event_id, zone_id: zone, tier: event.tier, boss: JSON.parse(event.boss_snapshot_json), spawned_at: event.spawned_at, completed_at: event.completed_at, ...globalBossStatus(event.event_id, playerId) };
+}
+
+function settleGlobalBoss(row: SoloHuntRow, now: number) {
+	const event = db.query("SELECT * FROM global_boss_events WHERE event_id = ?").get(row.global_event_id) as any;
+	// A battle already in progress may finish after completion, without becoming a sixth winner.
+	if (!event || event.status !== "ACTIVE") return;
+	const inserted = db.query("INSERT INTO global_boss_winners(event_id,player_id,session_id,status,won_at) VALUES (?,?,?,'WAITING',?) ON CONFLICT(event_id,player_id) DO NOTHING").run(event.event_id, row.player_id, row.session_id, now);
+	if (!inserted.changes) return;
+	const count = (db.query("SELECT COUNT(*) AS count FROM global_boss_winners WHERE event_id = ?").get(event.event_id) as any).count;
+	db.query("UPDATE global_boss_events SET winner_count = ?, status = ?, completed_at = ? WHERE event_id = ? AND status = 'ACTIVE'").run(count, count === 5 ? "COMPLETE" : "ACTIVE", count === 5 ? now : null, event.event_id);
+	if (count !== 5) return;
+	const grants = staticData.balance.solo_hunt_rewards?.boss?.[event.tier];
+	if (!grants || typeof grants !== "object" || Array.isArray(grants) || !Object.keys(grants).length || Object.entries(grants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) < 0)) throw new HttpError(500, "Invalid hunt reward configuration.");
+	const winners = db.query("SELECT player_id, session_id FROM global_boss_winners WHERE event_id = ? AND status = 'WAITING'").all(event.event_id) as { player_id: string; session_id: string }[];
+	if (winners.length !== 5) throw new HttpError(409, "Invalid global winner queue.");
+	for (const winner of winners) {
+		const playerRow = getPlayerByIdStmt.get(winner.player_id) as { state_json: string } | null;
+		if (!playerRow) throw new HttpError(404, "Player not found.");
+		const player: PlayerState = JSON.parse(playerRow.state_json);
+		if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
+		const before = { ...player.wallet };
+		assertWalletInvariant(player.wallet);
+		const credited: Record<string, number> = {};
+		for (const [id, amount] of Object.entries(grants)) credited[id] = Math.min(amount as number, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+		applyWalletGrant(player.wallet, credited);
+		assertWalletInvariant(player.wallet);
+		player.updated_at = now;
+		if (updatePlayerStmt.run(JSON.stringify(player), now, winner.player_id).changes !== 1) throw new HttpError(409, "Player unavailable.");
+		auditWalletMutation(winner.player_id, computeWalletDelta(before, player.wallet), "GLOBAL_BOSS_REWARD", winner.session_id, now);
+		db.query("UPDATE global_boss_winners SET status = 'PAID', reward_json = ? WHERE event_id = ? AND player_id = ? AND status = 'WAITING'").run(JSON.stringify(credited), event.event_id, winner.player_id);
+	}
 }
 
 function soloBossSchedule(now: number) {
@@ -3253,7 +3329,7 @@ function normalizeLab(labRaw: any): LabState {
 				level,
 				route,
 				runtime: {
-					stored_output: clampAmount(runtime.stored_output ?? 0),
+					stored_output: typeof runtime.stored_output === "number" && Number.isFinite(runtime.stored_output) ? Math.max(0, Math.min(runtime.stored_output, 1_000_000_000)) : 0,
 					last_tick: clampInt(runtime.last_tick ?? Date.now(), 0, Number.MAX_SAFE_INTEGER)
 				}
 			};
@@ -3445,6 +3521,12 @@ function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
 			}
 		}
 	}
+	const rerollSeeds: Record<string, number> = {};
+	if (worldRaw?.reroll_seeds && typeof worldRaw.reroll_seeds === "object") {
+		for (const [id, value] of Object.entries(worldRaw.reroll_seeds)) {
+			if (isValidZoneId(id) && Number.isSafeInteger(value) && (value as number) > 0 && (value as number) <= 0xffffffff) rerollSeeds[id] = value as number;
+		}
+	}
 	const world: PlayerWorldState = {
 		zone_progress: zoneProgress,
 		daily_entries: dailyEntries,
@@ -3452,6 +3534,7 @@ function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
 		last_gate_entry_at: clampInt(worldRaw?.last_gate_entry_at ?? 0, 0, Number.MAX_SAFE_INTEGER),
 		last_reroll_at: clampInt(worldRaw?.last_reroll_at ?? 0, 0, Number.MAX_SAFE_INTEGER),
 		reroll_count: clampInt(worldRaw?.reroll_count ?? 0, 0, Number.MAX_SAFE_INTEGER),
+		reroll_seeds: rerollSeeds,
 		stamina,
 		last_stamina_at: lastStaminaAt,
 		boss_tickets: bossTickets,
@@ -4425,7 +4508,9 @@ function tickProduction(
 	let produced = 0;
 	for (let i = 1; i < boundaries.length; i++) {
 		const from = boundaries[i - 1], to = boundaries[i], sample = from + (to - from) / 2;
-		produced += computeOutputRate(level, route, storageRoute, hqPath, labRuntime, sample) * (to - from) / 1000 * (directiveActive(labRuntime, "production", sample) ? getBalanceNumber("hq_directive_production_mult", 1.1) : 1);
+		const rawRate = getBalanceNumber("reactor_base_rate", 0) + getBalanceNumber("reactor_rate_per_level", 0.002777777777777778) * Math.max(0, level);
+		const multiplier = directiveActive(labRuntime, "production", sample) ? getBalanceNumber("hq_directive_production_mult", 1.1) : 1;
+		produced += Math.max(0, Math.min(rawRate * 2, computeOutputRate(level, route, storageRoute, hqPath, labRuntime, sample) * multiplier)) * (to - from) / 1000;
 	}
 	runtime.stored_output = Math.max(0, (runtime.stored_output ?? 0) + produced);
 	runtime.last_tick = nowMs;
@@ -4439,8 +4524,8 @@ function computeOutputRate(
 	labRuntime: LabRuntime,
 	nowMs: number
 ): number {
-	const base = getBalanceNumber("reactor_base_rate", 1.0);
-	const perLevel = getBalanceNumber("reactor_rate_per_level", 0.2);
+	const base = getBalanceNumber("reactor_base_rate", 0.0);
+	const perLevel = getBalanceNumber("reactor_rate_per_level", 0.002777777777777778);
 	const routeMults = staticData.balance.reactor_route_output_mult ?? {
 		stable: 0.8,
 		volatile: 1.35,
@@ -4478,7 +4563,7 @@ function claimProduction(
 	const runtime = building.runtime;
 	const available = Math.max(0, runtime.stored_output ?? 0);
 	const cap = Math.max(0, capacity);
-	const claimable = Math.min(available, cap);
+	const claimable = Math.floor(Math.min(available, cap));
 	const boosts = getBoostMultipliers(labRuntime, nowMs);
 	let loss = 0;
 	if (route.toLowerCase() == "volatile" && claimable > 0) {

@@ -382,10 +382,18 @@ func _get_reactor_rate_per_hour() -> float:
 	var hq_path = str(_state.get("lab", {}).get("hqPath", "Scientific"))
 	var engine := ProductionEngine.new()
 	var rate: float = engine._compute_output_rate(level, route, _get_building_route("storage_vault"), hq_path, ProductionEngine.balance_for_server(_db.balance))
-	var overclock = _state.get("lab", {}).get("runtime", {}).get("boosts", {}).get("volatile_overclock", {})
-	if int(overclock.get("expires_at", 0)) > int(Time.get_unix_time_from_system() * 1000):
-		rate *= float(_db.get_balance("overclock_output_mult", 1.25))
-	return rate * 3600.0
+	var runtime: Dictionary = _state.get("lab", {}).get("runtime", {})
+	var now := int(Time.get_unix_time_from_system() * 1000)
+	var multiplier := 1.0
+	for id in ["volatile_overclock", "essence_turbo"]:
+		var boost: Dictionary = runtime.get("boosts", {}).get(id, {})
+		if int(boost.get("started_at", 0)) <= now and now < int(boost.get("expires_at", 0)):
+			multiplier = maxf(multiplier, float(ExperimentCatalog.get_by_id(id).get("effect", {}).get("reactor_output_mult", 1.0)))
+	var directive: Dictionary = runtime.get("directive", {})
+	if str(directive.get("id", "")) == "production" and int(directive.get("starts_at", 0)) <= now and now < int(directive.get("ends_at", 0)):
+		multiplier *= float(_db.get_balance("hq_directive_production_mult", 1.1))
+	var base_hourly: float = 3600.0 * (float(_db.get_balance("reactor_base_rate", 0.0)) + level * float(_db.get_balance("reactor_rate_per_level", 0.002777777777777778)))
+	return minf(rate * multiplier * 3600.0, base_hourly * 2.0)
 
 func _get_mult(map: Variant, key: String, default_value: float) -> float:
 	if typeof(map) != TYPE_DICTIONARY:

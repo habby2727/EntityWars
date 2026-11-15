@@ -1,4 +1,4 @@
-﻿extends RefCounted
+extends RefCounted
 
 static func available(id: String, state: Dictionary, db: StaticDB, now: int, pending: bool) -> bool:
 	if pending:
@@ -17,15 +17,18 @@ static func available(id: String, state: Dictionary, db: StaticDB, now: int, pen
 	for resource in cost:
 		if int(wallet.get(resource, 0)) < int(cost[resource]):
 			affordable = false
-	if HqRules.can_upgrade(id, level, hq) and affordable:
+	if id != "essence_reactor" and HqRules.can_upgrade(id, level, hq) and affordable:
 		return true
 	var runtime: Dictionary = lab.get("runtime", {})
 	if id == "essence_reactor" and level > 0:
-		if float(buildings.get(id, {}).get("runtime", {}).get("stored_output", 0)) >= 1.0:
+		var storage: Dictionary = buildings.get("storage_vault", {})
+		var capacity := Capacity.compute_total_capacity(int(storage.get("level", 0)), str(storage.get("route", "")), str(lab.get("hqPath", "Scientific")), db.balance)
+		var extra: Dictionary = runtime.get("boosts", {}).get("extra_storage", {})
+		if int(extra.get("started_at", 0)) <= now and now < int(extra.get("expires_at", 0)):
+			capacity = int(floor(capacity * float(ExperimentCatalog.get_by_id("extra_storage").get("effect", {}).get("capacity_mult", 1.15))))
+		if capacity > 0 and _reactor_stored(lab, db, now) >= capacity:
 			return true
-		var charge: Dictionary = runtime.get("reactor_overcharge", {})
-		var last := int(charge.get("last_used_at", 0))
-		return int(charge.get("progress", 0)) >= int(db.get_balance("reactor_overcharge_threshold", 300)) and (last == 0 or now >= last + int(db.get_balance("reactor_overcharge_cooldown_seconds", 10800)) * 1000)
+		return false
 	if id == "ultrahit_tower":
 		var spell: Variant = state.get("spell_progress", {}).get("active_research")
 		return spell is Dictionary and not spell.is_empty() and int(spell.get("completes_at", 0)) > 0 and now >= int(spell.completes_at)
@@ -41,6 +44,42 @@ static func available(id: String, state: Dictionary, db: StaticDB, now: int, pen
 				if int(amount) > 0:
 					return true
 	return false
+
+static func _reactor_stored(lab: Dictionary, db: StaticDB, now: int) -> float:
+	var buildings: Dictionary = lab.get("buildings", {})
+	var reactor: Dictionary = buildings.get("essence_reactor", {})
+	var state: Dictionary = reactor.get("runtime", {})
+	var stored := maxf(0.0, float(state.get("stored_output", 0)))
+	var start := mini(now, int(state.get("last_tick", now)))
+	var cap_ms := int(float(db.get_balance("offline_cap_hours", 12)) * 3600000.0)
+	if cap_ms > 0:
+		start = maxi(start, now - cap_ms)
+	var runtime: Dictionary = lab.get("runtime", {})
+	var boosts: Dictionary = runtime.get("boosts", {})
+	var directive: Dictionary = runtime.get("directive", {})
+	var boundaries: Array[int] = [start, now]
+	for interval in [directive, boosts.get("volatile_overclock", {}), boosts.get("essence_turbo", {})]:
+		for point in [int(interval.get("started_at", interval.get("starts_at", 0))), int(interval.get("expires_at", interval.get("ends_at", 0)))]:
+			if point > start and point < now:
+				boundaries.append(point)
+	boundaries.sort()
+	var engine := ProductionEngine.new()
+	var balance := ProductionEngine.balance_for_server(db.balance)
+	var storage: Dictionary = buildings.get("storage_vault", {})
+	for i in range(1, boundaries.size()):
+		var midpoint := int((boundaries[i - 1] + boundaries[i]) / 2.0)
+		var multiplier := 1.0
+		for id in ["volatile_overclock", "essence_turbo"]:
+			var boost: Dictionary = boosts.get(id, {})
+			if int(boost.get("started_at", 0)) <= midpoint and midpoint < int(boost.get("expires_at", 0)):
+				multiplier = maxf(multiplier, float(ExperimentCatalog.get_by_id(id).get("effect", {}).get("reactor_output_mult", 1.0)))
+		if str(directive.get("id", "")) == "production" and int(directive.get("starts_at", 0)) <= midpoint and midpoint < int(directive.get("ends_at", 0)):
+			multiplier *= float(db.get_balance("hq_directive_production_mult", 1.1))
+		balance["_reactor_extra_multiplier"] = multiplier
+		var route := str(reactor.get("route", "stable"))
+		var rate := engine._compute_output_rate(int(reactor.get("level", 0)), "stable" if route.is_empty() else route, str(storage.get("route", "")), str(lab.get("hqPath", "Scientific")), balance)
+		stored += rate * float(boundaries[i] - boundaries[i - 1]) / 1000.0
+	return stored
 
 static func badge(parent: Control) -> Label:
 	var label := Label.new()

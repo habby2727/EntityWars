@@ -3,8 +3,8 @@ class_name ProductionEngine
 
 # Client-side estimates only; backend is authoritative for production/claim.
 const DEFAULT_OFFLINE_CAP_HOURS := 12.0
-const DEFAULT_REACTOR_BASE_RATE := 1.0
-const DEFAULT_REACTOR_RATE_PER_LEVEL := 0.2
+const DEFAULT_REACTOR_BASE_RATE := 0.0
+const DEFAULT_REACTOR_RATE_PER_LEVEL := 0.002777777777777778
 const DEFAULT_REACTOR_ROUTE_OUTPUT_MULT := {
 	"stable": 0.8,
 	"volatile": 1.35,
@@ -123,7 +123,7 @@ func claim(
 	var state = _ensure_building(building_id, 0)
 	var available = max(0.0, float(state.get("stored_output", 0.0)))
 	var cap = max(0.0, float(capacity))
-	var claimable = min(available, cap)
+	var claimable = floor(min(available, cap))
 	var loss := 0.0
 	var volatile_failed := false
 	if _norm_key(route) == "volatile" and claimable > 0.0:
@@ -173,13 +173,15 @@ func _compute_output_rate(
 	var base = _get_number(balance, "reactor_base_rate", DEFAULT_REACTOR_BASE_RATE)
 	var per_level = _get_number(balance, "reactor_rate_per_level", DEFAULT_REACTOR_RATE_PER_LEVEL)
 	var lvl = max(0, int(level))
-	var rate = base + per_level * lvl
+	var base_rate = base + per_level * lvl
+	var rate = base_rate
 	var route_mults = balance.get("reactor_route_output_mult", DEFAULT_REACTOR_ROUTE_OUTPUT_MULT)
 	rate *= _get_mult(route_mults, _norm_key(route), 1.0)
 	var storage_mults = balance.get("storage_route_output_mult", DEFAULT_STORAGE_ROUTE_OUTPUT_MULT)
 	rate *= _get_mult(storage_mults, _norm_key(storage_route), 1.0)
 	rate *= _get_hq_output_mult(hq_path, balance)
-	return max(0.0, rate)
+	rate *= _get_number(balance, "_reactor_extra_multiplier", 1.0)
+	return max(0.0, min(rate, base_rate * 2.0))
 
 func _get_hq_output_mult(hq_path: String, balance: Dictionary) -> float:
 	var key = _norm_key(hq_path)

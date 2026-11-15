@@ -36,9 +36,19 @@ func _run() -> void:
 	current_scene._quick_panel.manage_requested.emit("build_forge")
 	if not await _expect("res://scenes/ui/LabStructures.tscn"):
 		return
+	if current_scene._grid.columns != 2 or current_scene._cards.size() != 12:
+		_fail("Building navigation should have two columns and twelve cards")
+		return
 	if current_scene._selected_id != "build_forge":
 		_fail("Forge focus missing")
 		return
+	for building_id in current_scene.BUILDING_ORDER:
+		current_scene._select_building(building_id)
+		await process_frame
+		if current_scene._selected_id != building_id or not is_instance_valid(current_scene._upgrade_btn):
+			_fail("Building menu unavailable: " + building_id)
+			return
+	current_scene._select_building("build_forge")
 	SceneRouter.go_to_inventory("Builds", true)
 	if not await _expect("res://scenes/ui/Inventory.tscn"):
 		return

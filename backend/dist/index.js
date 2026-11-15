@@ -9602,7 +9602,7 @@ var require_built3 = __commonJS((exports, module) => {
 
 // src/index.ts
 import { Database } from "bun:sqlite";
-import { createHash, createHmac as createHmac3 } from "crypto";
+import { createHash as createHash2, createHmac as createHmac4 } from "crypto";
 import { existsSync, mkdirSync, readFileSync as readFileSync2 } from "fs";
 import { dirname, resolve as resolve2 } from "path";
 
@@ -13816,7 +13816,7 @@ function createDungeonBlessing(seed, runId, floor, hasHom) {
 function publicDungeonBlessing(blessing) {
   if (!blessing)
     return null;
-  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * tier);
+  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * (tier - 1));
   const metadata = {
     elemental_surge: { id: "elemental_surge", name: "Elemental Surge", description: `Direct elemental spell damage +${pct}%.` },
     homunculus_resonance: { id: "homunculus_resonance", name: "Homunculus Resonance", description: `+1 hom energy after ${tier < 3 ? 3 : 2} successful spells, up to ${tier < 5 ? 1 : 2} times this floor.` },
@@ -13929,7 +13929,7 @@ function resolveDungeonTurn(state, decision, rng) {
     events.push({ kind: "spell", actor: who, spell_id: chosen.id, hit });
     if (!hit)
       return;
-    let directDamage = 0;
+    let directDamage = 0, unblessedDirectDamage = 0;
     const previousWard = actor === next.player && next.weapon_defenses.shield !== undefined ? next.other_defenses.shield ?? 0 : actor.status.shield ?? 0;
     if (chosen.category === "attack") {
       const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
@@ -13965,6 +13965,7 @@ function resolveDungeonTurn(state, decision, rng) {
       }
       const shield = target.status.shield ?? 0;
       const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
+      let unblessedDamage = Math.max(1, Math.round(base * power));
       let damage = Math.max(1, Math.round(base * power * (who === "player" && next.blessing?.selected === "elemental_surge" && ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold", "hybrid"].includes(chosen.type) ? 1 + Math.min(10, 4 + next.blessing.tier) / 100 : 1)));
       if (who === "npc" && next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
         damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
@@ -13973,17 +13974,19 @@ function resolveDungeonTurn(state, decision, rng) {
       if (target.status.shield > 0) {
         const dispel = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "ward_dispel")?.value ?? 0));
         const pierce = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "pierce_ward")?.value ?? 0));
+        unblessedDamage = Math.max(0, Math.round(unblessedDamage * (1 - target.status.shield * (1 - dispel) * (1 - pierce))));
         damage = Math.max(0, Math.round(damage * (1 - target.status.shield * (1 - dispel) * (1 - pierce))));
         clearDefense(target, "shield");
       }
       directDamage = Math.min(target.hp, damage);
+      unblessedDirectDamage = who === "player" && next.blessing?.selected === "elemental_surge" ? Math.min(target.hp, unblessedDamage) : directDamage;
       target.hp = Math.max(0, target.hp - damage);
       if (directDamage > 0)
         target.spell_hit_this_exchange = true;
       events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp, target_status: structuredClone(target.status) });
       if ((target.status.reflect ?? 0) > 0) {
         const ignored = who === "player" && (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < Math.min(1, next.item_effects.ignore_reflect_chance);
-        const amount = ignored ? 0 : Math.min(actor.hp, Math.round(damage * target.status.reflect));
+        const amount = ignored ? 0 : Math.min(actor.hp, Math.round((who === "player" && next.blessing?.selected === "elemental_surge" ? unblessedDamage : damage) * target.status.reflect));
         actor.hp -= amount;
         clearDefense(target, "reflect");
         if (amount > 0)
@@ -14056,7 +14059,7 @@ function resolveDungeonTurn(state, decision, rng) {
       }
       if (e.kind === "delayed_damage") {
         if (chosen.category === "attack")
-          queueDelayedDamage(next, who, who === "player" ? "npc" : "player", e.value, directDamage, decision.turn, events);
+          queueDelayedDamage(next, who, who === "player" ? "npc" : "player", e.value, unblessedDirectDamage, decision.turn, events);
         continue;
       }
       if (e.kind === "ward_convert")
@@ -14146,7 +14149,7 @@ function resolveDungeonTurn(state, decision, rng) {
       }
     }
     if (chosen.category === "attack")
-      strategicCounter(target, actor, who === "player" ? "npc" : "player", who, directDamage, decision.turn, events);
+      strategicCounter(target, actor, who === "player" ? "npc" : "player", who, unblessedDirectDamage, decision.turn, events);
     if (who === "npc" && chosen.category === "attack")
       triggerEliteTrait("hit", directDamage);
     if (actor.hom_id)
@@ -14239,7 +14242,7 @@ function resolveDungeonTurn(state, decision, rng) {
     if (fighter.hp > 0 && fighter.status.poison > 0) {
       let tick = 2;
       if (fighter === next.player && next.blessing?.selected === "toxin_ward") {
-        const b2 = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * b2.tier) + b2.poison_remainder;
+        const b2 = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * (b2.tier - 1)) + b2.poison_remainder;
         const prevented = Math.min(1, Math.floor(mitigation / 100));
         b2.poison_remainder = mitigation % 100;
         tick -= prevented;
@@ -14346,6 +14349,7 @@ function resolveDungeonInspiration(state, decision, rng) {
 }
 
 // src/solo_guardians.ts
+import { createHash } from "crypto";
 var ZONE_ART = {
   zone_chaos: ["chaos_astral_alchemist", "chaos_astral_alchemist_variant", "chaos_astral_eagle", "chaos_cyber_warrior", "chaos_lion_warrior"],
   zone_corrupted: ["corrupted_cocodragon", "corrupted_cybermantis", "corrupted_doctor", "corrupted_hipovenom", "corrupted_medusa", "corrupted_sphinx"],
@@ -14358,10 +14362,15 @@ var GROUPS = {
   hunt_epic: ["rare", "common", "common", "common"],
   hunt_legendary: ["epic", "common", "common", "common", "common"]
 };
-function guardiansFor(zoneId, parentId, bosses) {
+function guardiansFor(zoneId, parentId, bosses, rotation = 0, seed) {
   if (!Object.hasOwn(ZONE_ART, zoneId) || !Object.hasOwn(GROUPS, parentId) || !Array.isArray(bosses))
     return null;
-  const art = ZONE_ART[zoneId];
+  const source = ZONE_ART[zoneId];
+  const art = seed === undefined ? source : [...source].sort((a, b2) => {
+    const score = (id) => createHash("sha256").update(`${seed}:${zoneId}:${id}`).digest("hex");
+    return score(a).localeCompare(score(b2));
+  });
+  const offset = seed === undefined ? rotation : 0;
   const groups = GROUPS[parentId];
   const result = [];
   let commonIndex = 0;
@@ -14371,10 +14380,27 @@ function guardiansFor(zoneId, parentId, bosses) {
     const template = bosses.find((boss) => boss?.id === templateId && boss?.tier === tier);
     if (!template || typeof template.name !== "string" || typeof template.texture_id !== "string")
       return null;
-    const textureId = tier === "common" ? `res://assets/lab/bosses/${zoneId.slice(5)}_zone_common/${art[commonIndex++]}.png` : template.texture_id;
-    result.push({ guardian_id: `${zoneId}:${parentId}:${index}`, tier, name: `${template.name} Guardian ${index + 1}`, template_id: templateId, texture_id: textureId });
+    const textureId = tier === "common" ? `res://assets/lab/bosses/${zoneId.slice(5)}_zone_common/${art[(offset + commonIndex++) % art.length]}.png` : template.texture_id;
+    const artId = tier === "common" ? art[(offset + commonIndex - 1) % art.length] : "";
+    const name = tier === "common" ? artId.replace(/^(chaos|corrupted|crystal)_/, "").split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") : `${template.name} Guardian ${index + 1}`;
+    result.push({ guardian_id: `${zoneId}:${parentId}:${index}`, tier, name, template_id: templateId, texture_id: textureId });
   }
   return result;
+}
+
+// src/global_boss_rotation.ts
+import { createHmac as createHmac3 } from "crypto";
+function globalBossRoll(secret, zone, rotationKey) {
+  return createHmac3("sha256", secret).update(`global-boss:${zone}:${rotationKey}`).digest();
+}
+function globalBossTier(roll, weights) {
+  let cumulative = 0;
+  for (const tier of ["mythic", "rare", "epic", "legendary"]) {
+    cumulative += weights[tier];
+    if (roll < cumulative)
+      return tier;
+  }
+  return "legendary";
 }
 
 // src/index.ts
@@ -15073,7 +15099,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     if (isChoose && (!pending || pending.slot !== slot || !Array.isArray(pending.options) || pending.options.length !== 3 || new Set(pending.options).size !== 3 || pending.options.some((option) => typeof option !== "string" || !ids.includes(option) || traits.some((t) => t.id === option)) || typeof payload?.trait_id !== "string" || !pending.options.includes(payload.trait_id)))
       return { state: next, error: "Invalid or stale reroll selection." };
     const chooseTrait = (candidates, slotIndex) => {
-      const digest = createHmac3("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
+      const digest = createHmac4("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
       return candidates[digest.readUInt32BE(0) % candidates.length];
     };
     if (isReroll && ids.filter((candidate) => !traits.some((t) => t.id === candidate)).length < 3)
@@ -15099,7 +15125,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const options = [];
       for (let i = 0;i < 3; i++) {
         const candidates = ids.filter((candidate) => !traits.some((t) => t.id === candidate) && !options.includes(candidate));
-        const digest = createHmac3("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
+        const digest = createHmac4("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
         options.push(candidates[digest.readUInt32BE(0) % candidates.length]);
       }
       next.item_progress[id] = { ...current, specialization: path, traits, pending_reroll: { slot, options } };
@@ -15186,7 +15212,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const outcomes = staticData.balance.anomaly_investigate_outcomes;
       if (!Array.isArray(outcomes) || !outcomes.length || outcomes.some((entry) => !entry || typeof entry.weight !== "number" || !Number.isFinite(entry.weight) || entry.weight < 0 || !validReward2(entry.reward)) || Math.abs(outcomes.reduce((sum, entry) => sum + entry.weight, 0) - 1) > 0.000001)
         return { state: next, error: "Invalid anomaly outcome configuration." };
-      const digest = createHmac3("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
+      const digest = createHmac4("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
       const roll = digest.readUInt32BE(0) / 4294967296;
       let cumulative = 0;
       reward = outcomes[outcomes.length - 1].reward;
@@ -16002,6 +16028,34 @@ async function startServer() {
               });
             }).immediate();
           }
+          if (req.method == "POST" && url.pathname == "/world/reroll") {
+            const playerId = await requireAuth(req, ctx);
+            const body = await readJson(req, config.maxBodyBytes);
+            const id = typeof body?.client_action_id === "string" ? body.client_action_id.trim() : "";
+            if (!id || id.length > 64 || Object.keys(body ?? {}).some((key) => !["client_action_id", "zone_id"].includes(key)) || body.zone_id !== undefined && (typeof body.zone_id !== "string" || !isValidZoneId(body.zone_id)))
+              throw new HttpError(400, "Invalid reroll request.");
+            return db.transaction(() => {
+              const duplicate = getIdempotentState(playerId, id, "WORLD_REROLL", body);
+              if (duplicate)
+                return stateResponseExtra(duplicate, { duplicate: true });
+              const now = Date.now();
+              const state = ensurePlayerState(playerId);
+              const world = ensurePlayerWorld(state, now);
+              if (world.last_reroll_at && now < world.last_reroll_at + 60000)
+                throw new HttpError(429, "Reroll is cooling down.");
+              world.last_reroll_at = now;
+              world.reroll_count += 1;
+              if (body.zone_id) {
+                const random = new Uint32Array(1);
+                crypto.getRandomValues(random);
+                world.reroll_seeds[body.zone_id] = random[0] || 1;
+              }
+              state.updated_at = now;
+              updatePlayerStmt.run(JSON.stringify(state), now, playerId);
+              insertActionStmt.run(playerId, id, "WORLD_REROLL", JSON.stringify(body), JSON.stringify(state), now);
+              return stateResponseExtra(state);
+            }).immediate();
+          }
           if (req.method == "POST" && url.pathname == "/world/enter") {
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, {
@@ -16182,7 +16236,7 @@ async function startServer() {
               const setup = buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
-              const seed = createHmac3("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
+              const seed = createHmac4("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
               const elitesEnabled = Bun.env.DUNGEON_ELITES_ENABLED === "1";
               const tacticsEnabled = Bun.env.DUNGEON_TACTICS_ENABLED === "1";
               const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
@@ -16222,7 +16276,7 @@ async function startServer() {
                 throw new HttpError(404, "Dungeon run not found.");
               if (row.status !== "ACTIVE" || row.expires_at <= now || !row.combat_state_json || row.combat_revision !== body.expected_revision)
                 throw new HttpError(409, "Dungeon run unavailable or stale.");
-              const current = JSON.parse(row.combat_state_json), seed = createHmac3("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
+              const current = JSON.parse(row.combat_state_json), seed = createHmac4("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
               if ((isTurn || isInspiration) && current.inspiration_catalog_version !== 2) {
                 const spells2 = readJsonFile(resolve2(import.meta.dir, "..", "..", "data", "spells.json"))?.spells;
                 if (!hydrateDungeonInspiration(current, spells2))
@@ -16352,6 +16406,13 @@ async function startServer() {
           if (req.method == "GET" && url.pathname == "/world/boss-hunts") {
             return jsonResponse(soloBossSchedule(Date.now()));
           }
+          if (req.method == "GET" && url.pathname == "/world/global-bosses") {
+            const playerId = await requireAuth(req, ctx);
+            return db.transaction(() => {
+              const now = Date.now();
+              return jsonResponse({ events: ["zone_chaos", "zone_corrupted", "zone_crystal"].map((zone) => globalBossForZone(zone, playerId, now)), server_time_unix_ms: now });
+            }).immediate();
+          }
           if (req.method == "GET" && url.pathname == "/world/boss-hunts/session") {
             const playerId = await requireAuth(req, ctx);
             return db.transaction(() => {
@@ -16368,7 +16429,8 @@ async function startServer() {
             const playerId = await requireAuth(req, ctx);
             const zoneId = url.searchParams.get("zone_id") ?? "";
             const huntId = url.searchParams.get("hunt_id") ?? "";
-            const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses);
+            const seed = ensurePlayerWorld(ensurePlayerState(playerId), Date.now()).reroll_seeds[zoneId] ?? createHash2("sha256").update(`${playerId}:${zoneId}`).digest().readUInt32BE(0);
+            const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses, soloBossSchedule(Date.now()).rotation_key, seed);
             if (!definitions)
               throw new HttpError(400, "Invalid zone or boss hunt.");
             const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId);
@@ -16409,7 +16471,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (state.player?.inspiration_pending)
                 throw new HttpError(409, "Inspiration decision pending.");
-              const seed = createHmac3("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac4("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveCombatTurn(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -16417,7 +16479,7 @@ async function startServer() {
               if (result.terminal_result && !["WIN", "LOSS"].includes(result.terminal_result))
                 throw new HttpError(409, "Unsupported combat result.");
               let metadata = null;
-              if (status === "VERIFIED_WIN") {
+              if (status === "VERIFIED_WIN" && !row.global_event_id) {
                 if (row.result_metadata_json)
                   throw new HttpError(409, "Hunt settlement already exists.");
                 const source = row.guardian_id ? "guardian" : "boss";
@@ -16452,6 +16514,8 @@ async function startServer() {
               const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ?, result_metadata_json = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, metadata, row.session_id, playerId, row.combat_revision, now);
               if (updated.changes !== 1)
                 throw new HttpError(409, "Combat session changed.");
+              if (status === "VERIFIED_WIN" && row.global_event_id)
+                settleGlobalBoss(row, now);
               if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
                 db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
               }
@@ -16494,7 +16558,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (!state.player?.inspiration_pending)
                 throw new HttpError(409, "No inspiration decision pending.");
-              const seed = createHmac3("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac4("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveInspirationDecision(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -16541,7 +16605,7 @@ async function startServer() {
               const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported hunt loadout.");
-              const seed = createHmac3("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac4("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const combat = createCombatState(setup, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (combat.error)
                 throw new HttpError(400, "Unable to initialize combat.");
@@ -16559,8 +16623,9 @@ async function startServer() {
             if (!actionId || actionId.length > 64)
               throw new HttpError(400, "Invalid client_action_id.");
             const start = url.pathname.endsWith("/start");
-            const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}, ...body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {} } : { session_id: body?.session_id };
-            if (start ? typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key) : typeof payload.session_id !== "string" || !payload.session_id)
+            const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}, ...body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {}, ...body?.global_event_id !== undefined ? { global_event_id: body.global_event_id } : {} } : { session_id: body?.session_id };
+            const requestedGlobal = payload.global_event_id;
+            if (start ? requestedGlobal !== undefined ? typeof requestedGlobal !== "string" || !requestedGlobal : typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key) : typeof payload.session_id !== "string" || !payload.session_id)
               throw new HttpError(400, "Invalid hunt request.");
             const actionType = start ? "SOLO_HUNT_START" : "SOLO_HUNT_FORFEIT";
             db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
@@ -16586,17 +16651,23 @@ async function startServer() {
               let row;
               if (start) {
                 const schedule = soloBossSchedule(now);
-                const boss = schedule.bosses.find((candidate) => candidate.id === payload.hunt_id);
-                if (payload.rotation_key !== schedule.rotation_key || !boss || !boss.available)
+                const globalEvent = requestedGlobal ? db.query("SELECT * FROM global_boss_events WHERE event_id = ? AND status = 'ACTIVE'").get(requestedGlobal) : null;
+                if (requestedGlobal && (!globalEvent || payload.guardian_id !== undefined))
+                  throw new HttpError(409, "Global event unavailable.");
+                if (globalEvent && db.query("SELECT 1 FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(requestedGlobal, playerId))
+                  throw new HttpError(409, "Already defeated.");
+                const boss = globalEvent ? { ...JSON.parse(globalEvent.boss_snapshot_json), available: true } : schedule.bosses.find((candidate) => candidate.id === payload.hunt_id);
+                if (!globalEvent && (payload.rotation_key !== schedule.rotation_key || !boss || !boss.available))
                   throw new HttpError(409, "Boss hunt is not available for this rotation.");
-                const zoneId = payload.zone_id;
+                const zoneId = globalEvent ? undefined : payload.zone_id;
                 const guardianId = payload.guardian_id;
                 if (zoneId !== undefined && typeof zoneId !== "string" || guardianId !== undefined && (typeof guardianId !== "string" || !guardianId))
                   throw new HttpError(400, "Invalid guardian selection.");
-                const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses);
+                const guardianSeed = zoneId === undefined ? undefined : ensurePlayerWorld(ensurePlayerState(playerId), now).reroll_seeds[zoneId] ?? createHash2("sha256").update(`${playerId}:${zoneId}`).digest().readUInt32BE(0);
+                const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses, schedule.rotation_key, guardianSeed);
                 if (zoneId !== undefined && !definitions || guardianId !== undefined && !definitions)
                   throw new HttpError(400, "Invalid guardian zone.");
-                if (boss.tier !== "common" && !definitions)
+                if (!globalEvent && boss.tier !== "common" && !definitions)
                   throw new HttpError(409, "Guardian zone required.");
                 let encounter = boss;
                 if (guardianId !== undefined) {
@@ -16623,7 +16694,7 @@ async function startServer() {
                 const state = ensurePlayerState(playerId);
                 const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
                 const sessionId = crypto.randomUUID();
-                db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,guardian_zone_id,guardian_parent_id,guardian_id) VALUES (?,?,?,?,'ACTIVE',?,?,?,?,?,?,?)").run(sessionId, playerId, encounter.id, schedule.rotation_key, JSON.stringify(encounter), JSON.stringify(snapshot), now, now + 2700000, zoneId ?? null, guardianId ? boss.id : null, guardianId ?? null);
+                db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,guardian_zone_id,guardian_parent_id,guardian_id,global_event_id) VALUES (?,?,?,?,'ACTIVE',?,?,?,?,?,?,?,?)").run(sessionId, playerId, encounter.id, schedule.rotation_key, JSON.stringify(encounter), JSON.stringify(snapshot), now, now + 2700000, zoneId ?? null, guardianId ? boss.id : null, guardianId ?? null, requestedGlobal ?? null);
                 row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId);
               } else {
                 const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(payload.session_id, playerId);
@@ -16868,13 +16939,73 @@ function publicHuntCombat(state) {
   };
 }
 function soloHuntResponse(row) {
-  return { session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}, ...row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}, ...row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
+  return { ...row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}, session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}, ...row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}, ...row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
+}
+function globalBossStatus(eventId, playerId) {
+  const event = db.query("SELECT status, winner_count FROM global_boss_events WHERE event_id = ?").get(eventId);
+  const winner = db.query("SELECT status, reward_json FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(eventId, playerId);
+  return event ? { ...event, reward_status: winner?.status ?? null, reward: winner?.reward_json ? JSON.parse(winner.reward_json) : null } : null;
+}
+function globalBossForZone(zone, playerId, now) {
+  let event = db.query("SELECT * FROM global_boss_events WHERE zone_id = ? ORDER BY spawned_at DESC, rowid DESC LIMIT 1").get(zone);
+  const interval = staticData.soloBosses.rotation.interval_seconds * 1000;
+  const scheduledAt = event?.status === "COMPLETE" ? Math.ceil((event.completed_at + 43200000) / interval) * interval : now;
+  if (!event || event.status === "COMPLETE" && now >= scheduledAt) {
+    const key = Math.floor(scheduledAt / interval);
+    const hash = globalBossRoll(WORLD_SECRET, zone, key);
+    const tier = globalBossTier(hash.readUInt32BE(0) / 4294967296, staticData.soloBosses.rotation.weights);
+    const template = staticData.soloBosses.bosses.find((b2) => b2.tier === tier);
+    const variants = template.texture_variants ?? [template.texture_id];
+    const boss = { ...template, texture_id: variants[hash.readUInt32BE(4) % variants.length] };
+    const id = `global_${crypto.randomUUID()}`;
+    db.query("INSERT INTO global_boss_events(event_id,zone_id,tier,boss_snapshot_json,spawned_at,status) VALUES (?,?,?,?,?,'ACTIVE')").run(id, zone, tier, JSON.stringify(boss), scheduledAt);
+    event = db.query("SELECT * FROM global_boss_events WHERE event_id = ?").get(id);
+  }
+  return { event_id: event.event_id, zone_id: zone, tier: event.tier, boss: JSON.parse(event.boss_snapshot_json), spawned_at: event.spawned_at, completed_at: event.completed_at, ...globalBossStatus(event.event_id, playerId) };
+}
+function settleGlobalBoss(row, now) {
+  const event = db.query("SELECT * FROM global_boss_events WHERE event_id = ?").get(row.global_event_id);
+  if (!event || event.status !== "ACTIVE")
+    return;
+  const inserted = db.query("INSERT INTO global_boss_winners(event_id,player_id,session_id,status,won_at) VALUES (?,?,?,'WAITING',?) ON CONFLICT(event_id,player_id) DO NOTHING").run(event.event_id, row.player_id, row.session_id, now);
+  if (!inserted.changes)
+    return;
+  const count = db.query("SELECT COUNT(*) AS count FROM global_boss_winners WHERE event_id = ?").get(event.event_id).count;
+  db.query("UPDATE global_boss_events SET winner_count = ?, status = ?, completed_at = ? WHERE event_id = ? AND status = 'ACTIVE'").run(count, count === 5 ? "COMPLETE" : "ACTIVE", count === 5 ? now : null, event.event_id);
+  if (count !== 5)
+    return;
+  const grants = staticData.balance.solo_hunt_rewards?.boss?.[event.tier];
+  if (!grants || typeof grants !== "object" || Array.isArray(grants) || !Object.keys(grants).length || Object.entries(grants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || amount < 0))
+    throw new HttpError(500, "Invalid hunt reward configuration.");
+  const winners = db.query("SELECT player_id, session_id FROM global_boss_winners WHERE event_id = ? AND status = 'WAITING'").all(event.event_id);
+  if (winners.length !== 5)
+    throw new HttpError(409, "Invalid global winner queue.");
+  for (const winner of winners) {
+    const playerRow = getPlayerByIdStmt.get(winner.player_id);
+    if (!playerRow)
+      throw new HttpError(404, "Player not found.");
+    const player = JSON.parse(playerRow.state_json);
+    if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some((id) => !Number.isSafeInteger(player.wallet[id] ?? 0)))
+      throw new HttpError(409, "Invalid player wallet.");
+    const before = { ...player.wallet };
+    assertWalletInvariant(player.wallet);
+    const credited = {};
+    for (const [id, amount] of Object.entries(grants))
+      credited[id] = Math.min(amount, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+    applyWalletGrant(player.wallet, credited);
+    assertWalletInvariant(player.wallet);
+    player.updated_at = now;
+    if (updatePlayerStmt.run(JSON.stringify(player), now, winner.player_id).changes !== 1)
+      throw new HttpError(409, "Player unavailable.");
+    auditWalletMutation(winner.player_id, computeWalletDelta(before, player.wallet), "GLOBAL_BOSS_REWARD", winner.session_id, now);
+    db.query("UPDATE global_boss_winners SET status = 'PAID', reward_json = ? WHERE event_id = ? AND player_id = ? AND status = 'WAITING'").run(JSON.stringify(credited), event.event_id, winner.player_id);
+  }
 }
 function soloBossSchedule(now) {
   const { rotation, bosses } = staticData.soloBosses;
   const interval = rotation.interval_seconds * 1000, window2 = rotation.window_seconds * 1000;
   const key = Math.floor(now / interval), start = key * interval, end = start + window2;
-  const roll = createHmac3("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
+  const roll = createHmac4("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
   let cumulative = 0, chosen = "legendary";
   for (const tier of ["mythic", "rare", "epic", "legendary"]) {
     cumulative += rotation.weights[tier];
@@ -16884,7 +17015,7 @@ function soloBossSchedule(now) {
     }
   }
   const special = bosses.find((boss) => boss.tier === chosen);
-  return { server_time_unix_ms: now, rotation_key: key, current_special_id: special.id, next_rotation_at: start + interval, special_window_ends_at: end, bosses: bosses.map((boss) => ({ ...boss, display_texture_id: boss.texture_variants?.[key % boss.texture_variants.length] ?? boss.texture_id, available: boss.tier === "common" || boss.id === special.id && now < end, appearance_starts_at: boss.tier === "common" ? null : boss.id === special.id ? start : null, appearance_ends_at: boss.tier === "common" ? null : boss.id === special.id ? end : null })) };
+  return { server_time_unix_ms: now, rotation_key: key, current_special_id: special.id, next_rotation_at: start + interval, special_window_ends_at: end, bosses: bosses.map((boss) => ({ ...boss, name: { tier3boss: "Dread Sovereign", scorpion_boss: "Scorpion Overlord" }[boss.texture_variants?.[key % boss.texture_variants.length] ?? boss.texture_id] ?? boss.name, display_texture_id: boss.texture_variants?.[key % boss.texture_variants.length] ?? boss.texture_id, available: boss.tier === "common" || boss.id === special.id && now < end, appearance_starts_at: boss.tier === "common" ? null : boss.id === special.id ? start : null, appearance_ends_at: boss.tier === "common" ? null : boss.id === special.id ? end : null })) };
 }
 function loadResourceIds(path) {
   const fallback = [
@@ -17358,7 +17489,7 @@ function normalizeLab(labRaw) {
         level,
         route,
         runtime: {
-          stored_output: clampAmount(runtime2.stored_output ?? 0),
+          stored_output: typeof runtime2.stored_output === "number" && Number.isFinite(runtime2.stored_output) ? Math.max(0, Math.min(runtime2.stored_output, 1e9)) : 0,
           last_tick: clampInt(runtime2.last_tick ?? Date.now(), 0, Number.MAX_SAFE_INTEGER)
         }
       };
@@ -17564,11 +17695,21 @@ function normalizeWorld(worldRaw, now) {
       }
     }
   }
+  const rerollSeeds = {};
+  if (worldRaw?.reroll_seeds && typeof worldRaw.reroll_seeds === "object") {
+    for (const [id, value] of Object.entries(worldRaw.reroll_seeds)) {
+      if (isValidZoneId(id) && Number.isSafeInteger(value) && value > 0 && value <= 4294967295)
+        rerollSeeds[id] = value;
+    }
+  }
   const world = {
     zone_progress: zoneProgress,
     daily_entries: dailyEntries,
     last_entry_reset_at: lastEntryResetAt,
     last_gate_entry_at: clampInt(worldRaw?.last_gate_entry_at ?? 0, 0, Number.MAX_SAFE_INTEGER),
+    last_reroll_at: clampInt(worldRaw?.last_reroll_at ?? 0, 0, Number.MAX_SAFE_INTEGER),
+    reroll_count: clampInt(worldRaw?.reroll_count ?? 0, 0, Number.MAX_SAFE_INTEGER),
+    reroll_seeds: rerollSeeds,
     stamina,
     last_stamina_at: lastStaminaAt,
     boss_tickets: bossTickets,
@@ -18213,7 +18354,7 @@ function applyClaimResearch(state, payload, nowMs) {
   return { state };
 }
 function seededRandom01(seed) {
-  const hash = createHash("sha256").update(seed).digest();
+  const hash = createHash2("sha256").update(seed).digest();
   const value = hash.readUInt32BE(0);
   return value / 4294967295;
 }
@@ -18373,14 +18514,16 @@ function tickProduction(building, nowMs, level, route, storageRoute, hqPath, lab
   let produced = 0;
   for (let i = 1;i < boundaries.length; i++) {
     const from = boundaries[i - 1], to = boundaries[i], sample = from + (to - from) / 2;
-    produced += computeOutputRate(level, route, storageRoute, hqPath, labRuntime, sample) * (to - from) / 1000 * (directiveActive(labRuntime, "production", sample) ? getBalanceNumber("hq_directive_production_mult", 1.1) : 1);
+    const rawRate = getBalanceNumber("reactor_base_rate", 0) + getBalanceNumber("reactor_rate_per_level", 0.002777777777777778) * Math.max(0, level);
+    const multiplier = directiveActive(labRuntime, "production", sample) ? getBalanceNumber("hq_directive_production_mult", 1.1) : 1;
+    produced += Math.max(0, Math.min(rawRate * 2, computeOutputRate(level, route, storageRoute, hqPath, labRuntime, sample) * multiplier)) * (to - from) / 1000;
   }
   runtime.stored_output = Math.max(0, (runtime.stored_output ?? 0) + produced);
   runtime.last_tick = nowMs;
 }
 function computeOutputRate(level, route, storageRoute, hqPath, labRuntime, nowMs) {
-  const base = getBalanceNumber("reactor_base_rate", 1);
-  const perLevel = getBalanceNumber("reactor_rate_per_level", 0.2);
+  const base = getBalanceNumber("reactor_base_rate", 0);
+  const perLevel = getBalanceNumber("reactor_rate_per_level", 0.002777777777777778);
   const routeMults = staticData.balance.reactor_route_output_mult ?? {
     stable: 0.8,
     volatile: 1.35,
@@ -18409,7 +18552,7 @@ function claimProduction(building, capacity, route, storageRoute, hqPath, labRun
   const runtime = building.runtime;
   const available = Math.max(0, runtime.stored_output ?? 0);
   const cap = Math.max(0, capacity);
-  const claimable = Math.min(available, cap);
+  const claimable = Math.floor(Math.min(available, cap));
   const boosts = getBoostMultipliers(labRuntime, nowMs);
   let loss = 0;
   if (route.toLowerCase() == "volatile" && claimable > 0) {
@@ -18659,7 +18802,7 @@ function createZoneRotation(zone, now, rotationMs) {
   };
 }
 function createZoneSeed(zoneId, now) {
-  return createHash("sha256").update(`${WORLD_SECRET}:${zoneId}:${now}`).digest("hex");
+  return createHash2("sha256").update(`${WORLD_SECRET}:${zoneId}:${now}`).digest("hex");
 }
 function sanitizeModifierIds(raw, zone) {
   const allow = Array.isArray(zone.modifiers) ? zone.modifiers : [];
@@ -18693,7 +18836,7 @@ function rollZoneModifiers(zone, seed) {
 function createBossState(boss, now) {
   const maxHp = getBossMaxHp(boss);
   const window2 = getBossWindowTimes(boss.id, now);
-  const seed = createHash("sha256").update(`${WORLD_SECRET}:boss:${boss.id}:${window2.start}`).digest("hex");
+  const seed = createHash2("sha256").update(`${WORLD_SECRET}:boss:${boss.id}:${window2.start}`).digest("hex");
   const modifiers = rollBossModifiers(boss, seed);
   return {
     boss_id: boss.id,
@@ -18736,7 +18879,7 @@ function getBossWindowTimes(bossId, now) {
   const intervalMs = getBossIntervalMs();
   const windowMs = getBossWindowMs();
   const offsetLimit = Math.max(1, intervalMs - windowMs);
-  const hash = createHash("sha256").update(`${WORLD_SECRET}:boss_offset:${bossId}`).digest();
+  const hash = createHash2("sha256").update(`${WORLD_SECRET}:boss_offset:${bossId}`).digest();
   const offsetRaw = hash.readUInt32BE(0) % offsetLimit;
   const base = Math.floor((now - offsetRaw) / intervalMs) * intervalMs + offsetRaw;
   return { start: base, end: base + windowMs };
@@ -18987,19 +19130,19 @@ function pickWeightedResource(table, seed) {
 }
 function makeWorldSessionId(playerId, clientActionId, zoneId) {
   const seed = `${WORLD_SECRET}:${playerId}:${clientActionId}:${zoneId}:world_session`;
-  return createHash("sha256").update(seed).digest("hex").slice(0, 32);
+  return createHash2("sha256").update(seed).digest("hex").slice(0, 32);
 }
 function makeOrderId(playerId, clientActionId) {
   const seed = `${playerId}:${clientActionId}:order`;
-  return createHash("sha256").update(seed).digest("hex").slice(0, 32);
+  return createHash2("sha256").update(seed).digest("hex").slice(0, 32);
 }
 function makeTradeJobId(providerId, clientActionId) {
   const seed = `${providerId}:${clientActionId}:trade_job`;
-  return createHash("sha256").update(seed).digest("hex").slice(0, 32);
+  return createHash2("sha256").update(seed).digest("hex").slice(0, 32);
 }
 function makeTradeRunId(customerId, clientActionId, jobId) {
   const seed = `${customerId}:${clientActionId}:${jobId}:trade_run`;
-  return createHash("sha256").update(seed).digest("hex").slice(0, 32);
+  return createHash2("sha256").update(seed).digest("hex").slice(0, 32);
 }
 function computeTradeOutput(minValue, maxValue, seed) {
   const min = clampInt(minValue, 0, TRADE_MAX_AMOUNT);
@@ -19162,7 +19305,7 @@ function submitTradeRun(customerId, clientActionId, body) {
   }
   const now = Date.now();
   const completesAt = now + clampInt(job.duration_sec, 0, TRADE_MAX_DURATION_SEC) * 1000;
-  const rngSeed = createHash("sha256").update(`${TRADE_SECRET}:${runId}`).digest("hex");
+  const rngSeed = createHash2("sha256").update(`${TRADE_SECRET}:${runId}`).digest("hex");
   db.transaction(() => {
     const beforeWallet = cloneWallet(customerState.wallet);
     for (const [resId, amount] of Object.entries(required)) {
@@ -19224,7 +19367,7 @@ function claimTradeRun(customerId, clientActionId, body) {
   const outputMin = clampInt(job.output_min, 0, TRADE_MAX_AMOUNT);
   const outputMax = clampInt(job.output_max, 0, TRADE_MAX_AMOUNT);
   let outputAmount = clampInt(run.output_amount, 0, TRADE_MAX_AMOUNT);
-  const seed = run.rng_seed && String(run.rng_seed) != "" ? String(run.rng_seed) : createHash("sha256").update(`${TRADE_SECRET}:${runId}`).digest("hex");
+  const seed = run.rng_seed && String(run.rng_seed) != "" ? String(run.rng_seed) : createHash2("sha256").update(`${TRADE_SECRET}:${runId}`).digest("hex");
   if (outputAmount <= 0) {
     outputAmount = computeTradeOutput(outputMin, outputMax, seed);
   }

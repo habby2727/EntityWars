@@ -86,10 +86,22 @@ static func _test_alerts() -> void:
 	state.wallet = {}
 	_assert_false(helper.available("lab_th", state, db, 10000, false), "unaffordable alert")
 	state.lab.buildings.essence_reactor.runtime = {"stored_output": 2}
+	_assert_false(helper.available("essence_reactor", state, db, 10000, false), "reactor not full")
+	state.lab.hqLevel = 2
+	state.wallet = {"essence": 999999, "core": 999999, "arcane_shard": 999999, "time_crystal": 999999}
+	_assert_false(helper.available("essence_reactor", state, db, 10000, false), "reactor upgrade does not trigger collection alert")
+	state.wallet = {}
+	state.lab.buildings.essence_reactor.runtime.stored_output = Capacity.compute_total_capacity(0, "", "Scientific", db.balance)
 	if not helper.available("essence_reactor", state, db, 10000, false):
 		failures += 1
 		push_error("FAIL: reactor claim alert")
+	state.lab.buildings.essence_reactor.runtime.stored_output = Capacity.compute_total_capacity(0, "", "Scientific", db.balance) - 1
+	state.lab.buildings.essence_reactor.runtime.last_tick = 10000
+	if not helper.available("essence_reactor", state, db, 3610000, false):
+		failures += 1
+		push_error("FAIL: accumulated reactor reaches collection threshold")
 	state.lab.buildings.essence_reactor.runtime.stored_output = 0
+	state.lab.buildings.essence_reactor.runtime.erase("last_tick")
 	state.lab.runtime.reactor_overcharge = {"progress": 300, "last_used_at": 9999}
 	_assert_false(helper.available("essence_reactor", state, db, 10000, false), "overcharge cooldown alert")
 	db.free()

@@ -37,14 +37,36 @@ func _run() -> void:
 		assert(zone._world_modal.visible)
 		var close_button: Button = null
 		for button in zone._world_modal.find_children("*", "Button", true, false):
-			if button.text == "X":
+			if button.text == "Close":
 				close_button = button
 				break
-		assert(close_button != null and close_button.text == "X")
+		assert(close_button != null and close_button.text == "Close")
 		close_button.pressed.emit()
 		assert(not zone._world_modal.visible)
 		var tiers := ["mythic", "rare", "epic", "legendary"]
 		var textures := ["boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
+		for tier_index in tiers.size():
+			zone._global_event = {"event_id": "global-fixture", "status": "ACTIVE", "winner_count": 2, "reward_status": null, "boss": {"id": "hunt_" + tiers[tier_index], "name": "Global fixture", "tier": tiers[tier_index], "texture_id": textures[tier_index]}}
+			zone._render_global_boss()
+			assert(is_instance_valid(zone._global_actor))
+			assert(zone._global_actor.get_child(1).text.contains("2/5"))
+			var icon: Button = zone._global_actor.get_child(2)
+			assert(icon.tooltip_text == "Global Boss")
+			icon.pressed.emit()
+			assert(zone._global_actor.get_child(3).visible and not zone._world_modal.visible)
+			var global_actor = zone._global_actor
+			zone._change_world_art(1)
+			assert(zone._global_actor == global_actor)
+			zone._global_actor.get_child(0).pressed.emit()
+			assert(zone._world_modal.visible and not zone._view_guardians.visible and zone._boss_portrait.texture != null)
+			zone._world_modal.visible = false
+		for variant in ["tier3boss", "scorpion_boss"]:
+			zone._global_event.boss.texture_id = variant
+			zone._render_global_boss()
+			assert(is_instance_valid(zone._global_actor) and zone._global_actor.get_child(0).texture_normal != null)
+		zone._global_event = {"status": "COMPLETE"}
+		zone._render_global_boss()
+		assert(not is_instance_valid(zone._global_actor))
 		for tier_index in tiers.size():
 			var guardians: Array = []
 			if tier_index > 0:
@@ -102,7 +124,7 @@ func _run() -> void:
 		assert(zone._boss_portrait.texture != null and zone._view_guardians.visible)
 		zone._show_selected_guardians()
 		assert(zone._hunt_guardian_id == "guardian_0" and zone._preview_stage == stage_before and zone._preview_stage.get_children() == actors_before)
-		var guard: Control = zone._preview_stage.get_child(1)
+		var guard: Control = zone._preview_stage.get_node("Actor_guardian_0")
 		guard.get_child(0).gui_input.emit(click)
 		assert(zone._hunt_guardian_id == "guardian_0" and zone._hunt_fight.visible)
 		zone._world_modal.visible = false
@@ -117,7 +139,7 @@ func _run() -> void:
 		actual_click.position = root.get_canvas_transform() * rightmost_sprite.get_global_rect().get_center()
 		root.push_input(actual_click, true)
 		await process_frame
-		assert(zone._hunt_guardian_id == "guardian_2" and zone._debug_rotation == previous_rotation and zone._hunt_selected.id == "hunt_rare")
+		assert(zone._hunt_guardian_id == str(rightmost.name).trim_prefix("Actor_") and zone._debug_rotation == previous_rotation and zone._hunt_selected.id == "hunt_rare")
 		zone._world_modal.visible = false
 		zone._hunt_active_owner = "fixture-player"
 		zone._hunt_active = {"hunt_id": "hunt_common", "parent_hunt_id": "hunt_rare", "guardian_id": "guardian_2", "zone_id": zone._get_zone_id(), "expires_at": 9999999999999}
@@ -157,8 +179,6 @@ func _run() -> void:
 		var rotation_before: int = zone._debug_rotation
 		zone._reroll_world_art()
 		assert(zone._debug_rotation == rotation_before)
-		assert(is_instance_valid(zone._preview_stage))
-		assert(zone._preview_stage.get_child_count() >= 3)
 		zone._show_debug_boss(4)
 		await process_frame
 		assert(zone._preview_stage.get_child_count() == 7)
@@ -174,8 +194,14 @@ func _run() -> void:
 		zone._preview_stage.get_node("NearbyDebugBoss").pressed.emit()
 		assert(zone._preview_selection == "debug_epic" and zone._view_guardians.visible)
 		assert(zone._preview_status.text.contains("its 4 guardians"))
+		var unchanged_stage = zone._preview_stage
+		var unchanged_actors = unchanged_stage.get_children()
+		var unchanged_seed: int = zone._appearance_seed
+		var unchanged_rotation: int = zone._debug_rotation
 		zone._view_guardians.pressed.emit()
-		assert(zone._preview_stage == debug_stage or is_instance_valid(zone._preview_stage))
+		assert(zone._world_modal.visible and zone._debug_visual.get("guardian", false))
+		assert(zone._preview_stage == unchanged_stage and unchanged_stage.get_children() == unchanged_actors)
+		assert(zone._appearance_seed == unchanged_seed and zone._debug_rotation == unchanged_rotation)
 		zone._show_debug_boss(4)
 		await process_frame
 		if OS.has_environment("EW_GUARDIAN_CAPTURE") and world == "Chaos":

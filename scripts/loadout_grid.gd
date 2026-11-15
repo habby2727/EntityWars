@@ -1428,6 +1428,10 @@ func _lore_for_entity(ent: Dictionary) -> String:
 	return "An unknown force watches from the edges of the seal."
 
 func _on_seal_attack() -> void:
+	if btn_seal_defense != null:
+		var notice := btn_seal_defense.get_node_or_null("ComingSoon") as Label
+		if notice != null:
+			notice.hide()
 	var changed := _mode != "attack"
 	_mode = "attack"
 	# Visual feedback
@@ -1444,6 +1448,15 @@ func _on_seal_attack() -> void:
 	_update_save_button_label()
 
 func _on_seal_defense() -> void:
+	if not _hunt_mode and not _dungeon_mode:
+		if btn_seal_defense != null:
+			btn_seal_defense.set_pressed_no_signal(false)
+			var notice := btn_seal_defense.get_node_or_null("ComingSoon") as Label
+			if notice != null:
+				notice.show()
+		if btn_seal_attack != null:
+			btn_seal_attack.set_pressed_no_signal(true)
+		return
 	var changed := _mode != "defense"
 	_mode = "defense"
 	# Visual feedback
@@ -1802,7 +1815,7 @@ func _on_build_hover_entered(btn: Button) -> void:
 	var helper = preload("res://scripts/domain/item_progress.gd")
 	var level: int = helper.level_for(str(item.get("id", "")), _spell_state.get("item_progress", {}))
 	var effective: Dictionary = helper.effective_item(item, _spell_state.get("item_progress", {}))
-	tooltip_label.text = "%s  |  Level %d\n%s\n%s" % [_label_for_item(item, "None"), level, _item_desc(item), str(effective.get("effects", {}))]
+	tooltip_label.text = "%s  |  Level %d\n%s\n%s" % [_label_for_item(item, "None"), level, _item_desc(item), _build_effects_text(effective.get("effects", {}))]
 	tooltip_icon.texture = _load_item_icon(item)
 	tooltip_panel.visible = true
 	tooltip_panel.custom_minimum_size = Vector2.ZERO
@@ -1818,7 +1831,39 @@ func _on_build_hover_entered(btn: Button) -> void:
 	tooltip_panel.custom_minimum_size = min_size
 	tooltip_panel.size = min_size
 	var gp := btn.get_global_rect().position
-	tooltip_panel.global_position = gp + Vector2(0, btn.size.y + 6)
+	var bounds := get_viewport_rect().size
+	var tooltip_pos := gp + Vector2(0, btn.size.y + 6)
+	if tooltip_pos.y + min_size.y > bounds.y:
+		tooltip_pos.y = gp.y - min_size.y - 6
+	tooltip_pos.x = clampf(tooltip_pos.x, 0.0, maxf(0.0, bounds.x - min_size.x))
+	tooltip_pos.y = clampf(tooltip_pos.y, 0.0, maxf(0.0, bounds.y - min_size.y))
+	tooltip_panel.global_position = tooltip_pos
+
+func _build_effects_text(effects: Dictionary) -> String:
+	var lines: Array[String] = []
+	var labels := {
+		"power_flat": "Power", "guard_flat": "Guard", "tempo_flat": "Tempo",
+		"true_on_hit": "True damage on hit", "dot_true": "Corrosion damage on hit",
+		"tempo_on_win": "Tempo after winning a round", "ward_pct": "Ward each round",
+		"reflect_pct": "Damage reflected", "evasion_pct": "Evasion",
+		"vuln_on_hit": "Vulnerability on hit", "disadvantage_reduction": "Type disadvantage reduction",
+		"ignore_reflect_chance": "Chance to ignore reflection"
+	}
+	var percentages := ["ward_pct", "reflect_pct", "evasion_pct", "vuln_on_hit", "disadvantage_reduction", "ignore_reflect_chance"]
+	for key in effects:
+		var value: Variant = effects[key]
+		if value is Array:
+			if value.is_empty():
+				continue
+			value = value[0]
+		if not (value is int or value is float) or not is_finite(float(value)):
+			continue
+		var amount := float(value) * (100.0 if str(key) in percentages else 1.0)
+		var formatted := str(snappedf(amount, 0.01))
+		if formatted.ends_with(".0"):
+			formatted = formatted.trim_suffix(".0")
+		lines.append("%s: %s%s" % [str(labels.get(str(key), str(key).replace("_", " ").capitalize())), formatted, "%" if str(key) in percentages else ""])
+	return "\n".join(lines) if not lines.is_empty() else "No active effects."
 
 func _on_build_hover_exited() -> void:
 	if tooltip_panel:

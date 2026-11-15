@@ -23,6 +23,41 @@ func _run() -> void:
 	root.add_child(scene)
 	if not await _wait_for(func(): return not scene._world_state.is_empty() and not scene._backend._verified_player_id.is_empty()):
 		return
+	if not await _wait_for(func(): return not scene._global_event.is_empty() and is_instance_valid(scene._global_actor)):
+		return
+	var global_id: String = scene._global_event.get("event_id", "")
+	var global_actor: Control = scene._global_actor
+	scene._global_poll_timer = 0.0
+	scene._process(1.0)
+	if scene._global_poll_timer != 1.0:
+		_fail("Global polling ran too early")
+		return
+	scene._process(19.0)
+	if scene._global_poll_timer != 0.0:
+		_fail("Global polling did not run at 20 seconds")
+		return
+	if global_id.is_empty() or scene._global_event.get("zone_id") != "zone_corrupted" or not global_actor.get_child(1).text.contains("0/5"):
+		_fail("Global boss not synchronized")
+		return
+	scene._apply_reroll()
+	if scene._global_actor != global_actor or str(scene._global_event.get("event_id", "")) != global_id:
+		_fail("Reroll replaced global boss")
+		return
+	global_actor.get_child(2).pressed.emit()
+	if not global_actor.get_child(3).visible or scene._world_modal.visible:
+		_fail("Global icon opened encounter instead of tooltip")
+		return
+	global_actor.get_child(0).pressed.emit()
+	if not scene._world_modal.visible or scene._view_guardians.visible or scene._hunt_fight.disabled:
+		_fail("Global encounter unavailable")
+		return
+	scene._global_event["reward_status"] = "WAITING"
+	scene._open_global_boss()
+	if not scene._hunt_fight.disabled or not scene._preview_status.text.contains("Already defeated"):
+		_fail("Global victory did not disable replay")
+		return
+	scene._global_event["reward_status"] = null
+	scene._world_modal.visible = false
 	await create_timer(0.4).timeout
 	if scene._session_id != "" or int(scene._backend.load_cached_state().get("wallet", {}).get("essence", -1)) != 100 or int(scene._player_world.get("daily_entries", 0)) != 0:
 		_fail("Viewing zone charged or started a session")

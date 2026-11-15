@@ -186,6 +186,8 @@ func _reactor_controls() -> void:
 	add_child(_lab_status)
 	var button := Button.new()
 	button.text = "Activate Overcharge"
+	button.custom_minimum_size = Vector2(200, 44)
+	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	button.tooltip_text = "Reward: 15 Essence and 1 Core"
 	MenuArt.button(button)
 	button.pressed.connect(func(): lab_action_requested.emit({"action_type": "REACTOR_OVERCHARGE", "payload": {}}, "essence_reactor"))
@@ -196,6 +198,7 @@ func _setup_dungeon_ranking(parent: Control) -> void:
 	_dungeon_entry_button = Button.new()
 	_dungeon_entry_button.text = "ENTER DUNGEON"
 	_dungeon_entry_button.custom_minimum_size = Vector2(165, 52)
+	_dungeon_entry_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_dungeon_entry_button.pressed.connect(_enter_dungeon)
 	MenuArt.button(_dungeon_entry_button)
 	parent.add_child(_dungeon_entry_button)
@@ -205,12 +208,17 @@ func _setup_dungeon_ranking(parent: Control) -> void:
 	_dungeon_ranking_button = Button.new()
 	_dungeon_ranking_button.text = "MONTHLY RANKING"
 	_dungeon_ranking_button.custom_minimum_size = Vector2(165, 52)
+	_dungeon_ranking_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_dungeon_ranking_button.pressed.connect(_open_dungeon_ranking)
 	MenuArt.button(_dungeon_ranking_button)
 	parent.add_child(_dungeon_ranking_button)
 	_dungeon_ranking_dialog = AcceptDialog.new()
 	_dungeon_ranking_dialog.title = "Dungeons - Monthly Ranking"
 	_dungeon_ranking_dialog.min_size = Vector2i(620, 560)
+	_dungeon_ranking_dialog.borderless = true
+	_dungeon_ranking_dialog.transparent_bg = true
+	_dungeon_ranking_dialog.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
+	_dungeon_ranking_dialog.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
 	_dungeon_ranking_dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
 	MenuArt.button(_dungeon_ranking_dialog.get_ok_button())
 	add_child(_dungeon_ranking_dialog)
@@ -238,9 +246,15 @@ func _sync_card(parent: Control, title: String) -> VBoxContainer:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(35, 35, 35, 30)))
 	parent.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	panel.add_child(margin)
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 6)
-	panel.add_child(content)
+	content.add_theme_constant_override("separation", 8)
+	margin.add_child(content)
 	var heading := Label.new()
 	heading.text = title
 	heading.add_theme_color_override("font_color", Color("e5c76d"))
@@ -291,7 +305,7 @@ func _update_sync_status() -> void:
 	var duration := maxi(1, int(project.get("completes_at", 0)) - int(project.get("started_at", 0))) if active else 1
 	_lab_progress.value = clampf(100.0 * (1.0 - float(remaining) / float(duration)), 0.0, 100.0) if active else 0
 	var reward: Dictionary = _lab_metrics.get("sync_reward", {"core": 1, "arcane_shard": 1})
-	_lab_status.text = "%s\nReward: %s" % ["Remaining: " + _clock(remaining) if active and remaining > 0 else ("Ready to claim" if active else "Ready to start"), _format_values(reward).replace("\n", ", ")]
+	_lab_status.text = "%s\nReward: %s" % ["Project in progress" if active and remaining > 0 else ("Ready to claim" if active else "Ready to start"), _format_values(reward).replace("\n", ", ")]
 	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
 	var level := int(_forge_state.get("lab", {}).get("buildings", {}).get("sync_nexus", {}).get("level", 0))
 	var hq := int(_forge_state.get("lab", {}).get("hqLevel", 0))

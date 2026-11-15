@@ -142,6 +142,7 @@ func _ready() -> void:
 	_debug.reload()
 	_resolve_nodes()
 	_setup_compact_navigation()
+	_setup_building_actions_layout()
 	_setup_section_scrolls()
 	_apply_ui_scale()
 	_apply_panel_textures()
@@ -188,33 +189,12 @@ func _on_debug_forge_updated(state: Dictionary) -> void:
 func _setup_compact_navigation() -> void:
 	if _left_panel == null or _right_panel == null or _grid == null:
 		return
-	_left_panel.custom_minimum_size.x = 220
+	_left_panel.custom_minimum_size.x = 48 + 168 * _ui_scale
 	_left_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_grid.columns = 2
 	var scroll := _grid.get_parent() as ScrollContainer
 	if scroll != null:
-		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-		var box := scroll.get_parent() as VBoxContainer
-		var up := Button.new()
-		up.name = "ScrollUp"
-		up.text = "?"
-		up.visible = false
-		box.add_child(up)
-		box.move_child(up, scroll.get_index())
-		var down := Button.new()
-		down.name = "ScrollDown"
-		down.text = "?"
-		box.add_child(down)
-		up.pressed.connect(func():
-			scroll.scroll_vertical = 0
-			up.hide()
-			down.show()
-		)
-		down.pressed.connect(func():
-			scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
-			down.hide()
-			up.show()
-		)
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var overlay := _background_panel.get_node_or_null("ContentMargin/TopOverlay") as Control
 	if overlay != null and _resource_bar_panel != null:
 		_resource_bar_panel.reparent(overlay)
@@ -236,6 +216,36 @@ func _setup_compact_navigation() -> void:
 			button.custom_minimum_size = Vector2(100, 42)
 			MenuArt.button(button)
 
+func _setup_building_actions_layout() -> void:
+	if _right_panel == null or _cost_list == null or _upgrade_btn == null:
+		return
+	var detail := _right_panel.get_node_or_null("Margin/DetailVBox") as VBoxContainer
+	if detail == null:
+		return
+	var heading := detail.get_node_or_null("CostHeader") as Label
+	var buttons := detail.get_node_or_null("Buttons") as HBoxContainer
+	if heading == null or buttons == null:
+		return
+	var index := heading.get_index()
+	var row := HBoxContainer.new()
+	row.name = "BuildingActionsRow"
+	row.add_theme_constant_override("separation", 20)
+	detail.add_child(row)
+	detail.move_child(row, index)
+	var cost_column := VBoxContainer.new()
+	cost_column.custom_minimum_size.x = 145 * _ui_scale
+	cost_column.add_theme_constant_override("separation", 4)
+	row.add_child(cost_column)
+	heading.reparent(cost_column)
+	_cost_list.reparent(cost_column)
+	buttons.reparent(row)
+	buttons.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	buttons.add_theme_constant_override("separation", 10)
+	if _route_option != null:
+		_route_option.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		_route_option.custom_minimum_size.x = 280 * _ui_scale
+
 func _process(delta: float) -> void:
 	_status_refresh_elapsed += delta
 	if _status_refresh_elapsed >= 1.0:
@@ -255,9 +265,6 @@ func _update_lab_status() -> void:
 		return
 	var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
 	var rate := _get_reactor_rate_per_hour() if _selected_id == "essence_reactor" else 0.0
-	var directive: Dictionary = _state.get("lab", {}).get("runtime", {}).get("directive", {})
-	if directive.get("id") == "production" and int(directive.get("starts_at", 0)) <= now and now < int(directive.get("ends_at", 0)):
-		rate *= float(_db.get_balance("hq_directive_production_mult", 1.1))
 	var metrics := {"rate": rate, "stored": _state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("runtime", {}).get("stored_output", 0), "threshold": int(_db.get_balance("reactor_overcharge_threshold", 300)), "cooldown": int(_db.get_balance("reactor_overcharge_cooldown_seconds", 10800)), "reward": _db.get_balance("reactor_overcharge_reward", {"essence": 15, "core": 1}), "sync_reward": _db.get_balance("sync_npc_reward", {"core": 1, "arcane_shard": 1})}
 	_specialized_panel.update_lab_status(_state, now, _is_pending_building(_selected_id), metrics)
 
@@ -389,7 +396,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 	if card == null:
 		return
 	MenuArt.button(card)
-	card.custom_minimum_size = Vector2(96, 96) * _ui_scale
+	card.custom_minimum_size = Vector2(80, 80) * _ui_scale
 	card.toggle_mode = true
 	var content := card.get_node_or_null("HBox") as HBoxContainer
 	if content:
@@ -402,7 +409,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 			labels.hide()
 	var icon_frame := card.get_node_or_null("HBox/IconFrame") as TextureRect
 	if icon_frame != null:
-		icon_frame.custom_minimum_size = Vector2(84, 84) * _ui_scale
+		icon_frame.custom_minimum_size = Vector2(68, 68) * _ui_scale
 	var name_label := card.get_node_or_null("HBox/Text/Name") as Label
 	if name_label != null:
 		name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
@@ -1967,8 +1974,11 @@ func _get_reactor_rate_per_hour() -> float:
 	for id in ["volatile_overclock", "essence_turbo"]:
 		if _debug_boost_active(runtime, id, now):
 			output_mult = maxf(output_mult, float(ExperimentCatalog.get_by_id(id).get("effect", {}).get("reactor_output_mult", 1.0)))
-	rate *= output_mult
-	return rate * 3600.0
+	var directive: Dictionary = runtime.get("directive", {})
+	if directive.get("id") == "production" and int(directive.get("starts_at", 0)) <= now and now < int(directive.get("ends_at", 0)):
+		output_mult *= float(_db.get_balance("hq_directive_production_mult", 1.1))
+	var base_hourly: float = 3600.0 * (float(_db.get_balance("reactor_base_rate", 0.0)) + level * float(_db.get_balance("reactor_rate_per_level", 0.002777777777777778)))
+	return minf(rate * output_mult * 3600.0, base_hourly * 2.0)
 
 func _get_mult(map: Variant, key: String, default_value: float) -> float:
 	if typeof(map) != TYPE_DICTIONARY:

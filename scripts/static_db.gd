@@ -69,8 +69,8 @@ const REQUIRED_BALANCE_KEYS := {
 const DEFAULT_BALANCE := {
 	"tick_seconds": 1,
 	"offline_cap_hours": 12,
-	"reactor_base_rate": 1.0,
-	"reactor_rate_per_level": 0.2,
+	"reactor_base_rate": 0.0,
+	"reactor_rate_per_level": 0.002777777777777778,
 	"reactor_route_output_mult": {
 		"stable": 0.8,
 		"volatile": 1.35,

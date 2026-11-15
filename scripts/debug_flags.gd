@@ -84,8 +84,7 @@ func claim_lab_production(state: Dictionary, db: StaticDB, collect: bool = true)
 		if str(directive.get("id", "")) == "production" and int(directive.get("starts_at", 0)) <= midpoint and midpoint < int(directive.get("ends_at", 0)):
 			multiplier *= float(db.get_balance("hq_directive_production_mult", 1.1))
 		var segment := balance.duplicate(true)
-		segment["reactor_base_rate"] = float(db.get_balance("reactor_base_rate", 1.0)) * multiplier
-		segment["reactor_rate_per_level"] = float(db.get_balance("reactor_rate_per_level", 0.2)) * multiplier
+		segment["_reactor_extra_multiplier"] = multiplier
 		engine.accumulate("essence_reactor", to, level, reactor_route, storage_route, hq_path, segment, to)
 	if not collect:
 		reactor["runtime"] = engine.get_building_state("essence_reactor")

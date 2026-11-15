@@ -158,6 +158,23 @@ stretch_mode = 5
 toggle_mode = true
 focus_mode = 0
 
+[node name="ComingSoon" type="Label" parent="RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseBtn"]
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -32.0
+mouse_filter = 2
+text = "Coming soon"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.91, 0.72, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 15
+
 [node name="DefenseLabel" type="Label" parent="RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol" unique_id=436684504]
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 5
@@ -537,9 +554,13 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -180.0
 mouse_filter = 2
-text = "[X]"
+text = "X"
 horizontal_alignment = 1
 vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.91, 0.72, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 24
 
 [node name="Play" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=2093744421]
 layout_mode = 2

@@ -135,10 +135,10 @@ func _run() -> void:
 	assert(current_scene is WorldZone and current_scene.zone_id_override == "zone_chaos")
 	current_scene._show_debug_boss(2)
 	await process_frame
-	assert(current_scene._preview_stage.get_child_count() == 5)
+	assert(current_scene._preview_stage.get_child_count() == 4)
 	current_scene._show_debug_boss(2, "another_rare")
 	await process_frame
-	assert(current_scene._preview_stage.get_child_count() == 6)
+	assert(current_scene._preview_stage.get_child_count() == 5)
 	current_scene._show_debug_boss(2)
 	await process_frame
 	current_scene._preview_stage.get_child(0).get_child(0).gui_input.emit(click)
