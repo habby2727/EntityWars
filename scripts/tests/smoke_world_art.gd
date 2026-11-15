@@ -22,6 +22,8 @@ func _run() -> void:
 		for index in entries.size():
 			zone._change_world_art(1)
 			assert(zone._world_sprite.texture != null)
+			for companion in zone._world_companions:
+				assert(companion.get_node("EncounterName").text.contains(str(companion.get_meta("appearance_name"))))
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
 		click.pressed = true
@@ -130,8 +132,13 @@ func _run() -> void:
 		await process_frame
 		assert(zone._preview_stage.get_child_count() == 3)
 		zone._world_modal.visible = false
+		var online_stage = zone._preview_stage
+		var online_actors: Array = online_stage.get_children()
 		zone._preview_stage.get_node("NearbyHunt").pressed.emit()
 		assert(zone._hunt_selected.id == "hunt_mythic")
+		assert(zone._world_modal.visible and zone._preview_selection == "hunt_mythic")
+		assert(zone._preview_stage == online_stage and zone._preview_stage.get_children() == online_actors)
+		zone._world_modal.visible = false
 		zone._clear_guardian_preview()
 		zone._debug.unlock_all_buildings = true
 		zone._reroll_world_art()
@@ -140,6 +147,22 @@ func _run() -> void:
 		zone._show_debug_boss(4)
 		await process_frame
 		assert(zone._preview_stage.get_child_count() == 8)
+		var debug_stage = zone._preview_stage
+		var debug_actors: Array = debug_stage.get_children()
+		zone._preview_stage.get_node("NearbyDebugBoss").pressed.emit()
+		assert(zone._world_modal.visible and zone._preview_selection == "debug_mythic")
+		assert(zone._preview_stage == debug_stage and zone._preview_stage.get_children() == debug_actors)
+		zone._world_modal.visible = false
+		zone._show_debug_boss(4)
+		await process_frame
+		zone._show_debug_boss(2)
+		zone._preview_stage.get_node("NearbyDebugBoss").pressed.emit()
+		assert(zone._preview_selection == "debug_epic" and zone._view_guardians.visible)
+		assert(zone._preview_status.text.contains("its 4 guardians"))
+		zone._view_guardians.pressed.emit()
+		assert(not zone._world_modal.visible and zone._preview_stage.get_child_count() == 7)
+		zone._show_debug_boss(4)
+		await process_frame
 		if OS.has_environment("EW_GUARDIAN_CAPTURE") and world == "Chaos":
 			zone._debug.unlock_all_buildings = false
 			var legendary := {"id": "hunt_legendary", "name": "Eternal Warden Titan", "tier": "legendary", "texture_id": "ghost_boss", "available": true}

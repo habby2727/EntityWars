@@ -69,11 +69,14 @@ var _preview_selection := ""
 var _preview_selected_encounter: Dictionary = {}
 var _preview_status: Label
 var _debug_fight: Button
+var _view_guardians: Button
+var _nearby_debug_index := -1
 var _debug_hunt_id := "hunt_common"
 var _debug_rotation := 0
 var _hunt_schedule: Array = []
 var _hunt_rotation := -1
 var _hunt_selected: Dictionary = {}
+var _map_displayed_boss: Dictionary = {}
 var _hunt_progress: Dictionary = {}
 var _hunt_progress_key := ""
 var _hunt_progress_owner := ""
@@ -252,6 +255,12 @@ func _setup_zone_view() -> void:
 	_hunt_fight.pressed.connect(_start_map_hunt)
 	MenuArt.button(_hunt_fight)
 	content.add_child(_hunt_fight)
+	_view_guardians = Button.new()
+	_view_guardians.text = "View this boss's guardians"
+	_view_guardians.visible = false
+	_view_guardians.pressed.connect(_show_selected_guardians)
+	MenuArt.button(_view_guardians)
+	content.add_child(_view_guardians)
 	_debug_fight = Button.new()
 	_debug_fight.text = "Fight (debug preview)"
 	_debug_fight.visible = _debug.unlock_all_buildings
@@ -317,21 +326,32 @@ func _setup_world_art() -> void:
 				_debug_visual = {"id": str(companion.get_meta("appearance_id", "")), "tier": "common", "texture": str(companion.get_meta("appearance_path", "")), "name": str(companion.get_meta("appearance_name", "Common"))}
 				_show_common_details())
 		stage.add_child(companion)
+		var companion_name := RichTextLabel.new()
+		companion_name.name = "EncounterName"
+		companion_name.set_anchors_preset(Control.PRESET_TOP_WIDE)
+		companion_name.offset_left = -35
+		companion_name.offset_right = 35
+		companion_name.offset_top = -38
+		companion_name.offset_bottom = -4
+		companion_name.bbcode_enabled = true
+		companion_name.fit_content = true
+		companion_name.scroll_active = false
+		companion_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		companion_name.add_theme_font_size_override("normal_font_size", 18)
+		companion_name.add_theme_constant_override("outline_size", 5)
+		companion_name.add_theme_color_override("font_outline_color", Color.BLACK)
+		companion.add_child(companion_name)
 		_world_companions.append(companion)
 	var name_panel := PanelContainer.new()
 	name_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	name_panel.anchor_top = 0.79
 	name_panel.anchor_bottom = 0.79
-	name_panel.offset_left = -250
-	name_panel.offset_right = 250
+	name_panel.offset_left = -165
+	name_panel.offset_right = 165
 	name_panel.offset_top = -385
 	name_panel.offset_bottom = -345
 	name_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var name_style := StyleBoxFlat.new()
-	name_style.bg_color = Color(0.025, 0.03, 0.04, 0.94)
-	name_style.set_corner_radius_all(4)
-	name_style.set_content_margin_all(6)
-	name_panel.add_theme_stylebox_override("panel", name_style)
+	name_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	stage.add_child(name_panel)
 	_world_name = RichTextLabel.new()
 	_world_name.bbcode_enabled = true
@@ -381,7 +401,7 @@ func show_guardian_preview(main: Dictionary, guardians: Array) -> void:
 	_add_preview_actor(main, 0.5, 0.59, true, required)
 	var count := mini(remaining.size(), 5)
 	for i in count:
-		var x := 0.5 if count == 1 else 0.24 + 0.52 * float(i) / float(count - 1)
+		var x := 0.5 if count == 1 else 0.29 + 0.42 * float(i) / float(count - 1)
 		_add_preview_actor(remaining[i], x, 0.75, false, PackedStringArray())
 
 func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, required: PackedStringArray) -> void:
@@ -432,8 +452,10 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	actor.add_child(title)
 	var actor_id := str(entry.get("id", ""))
-	sprite.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+	var select_actor := func():
+			_view_guardians.visible = false
+			if not _map_displayed_boss.is_empty():
+				_hunt_selected = _map_displayed_boss.duplicate(true)
 			_preview_selection = actor_id
 			_debug_hunt_id = "hunt_" + str(entry.get("tier", "common"))
 			_debug_visual = {"id": texture_id.get_file().get_basename() if texture_id.begins_with("res://") else actor_id, "tier": str(entry.get("tier", "common")), "texture": texture_id, "name": str(entry.get("name", "Boss")), "guardian": not main, "parent_index": _debug_rotation, "encounter_id": actor_id}
@@ -461,12 +483,24 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 				_preview_status.text = "%s\nGuardians: %d/%d defeated%s" % [str(entry.get("name", "Boss")), int(_hunt_progress.get("defeated_count", 0)), int(_hunt_progress.get("total_count", 0)), "" if verified else "\nProgress unavailable; retry."]
 				_hunt_fight.text = "Resume Hunt" if active else "Fight"
 			_world_modal.visible = true
-			call_deferred("_fit_encounter_card"))
+			call_deferred("_fit_encounter_card")
+	actor.set_meta("select_actor", select_actor)
+	sprite.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			select_actor.call())
 	var tween := create_tween().set_loops()
 	tween.tween_property(sprite, "scale", Vector2(1.01, 1.01), 1.2).set_trans(Tween.TRANS_SINE)
 	tween.tween_property(sprite, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_SINE)
 	tween.tween_interval(1.0)
 	_preview_tweens.append(tween)
+
+func _open_main_preview() -> void:
+	if not is_instance_valid(_preview_stage) or _preview_stage.get_child_count() == 0:
+		return
+	var actor := _preview_stage.get_child(0)
+	if actor.has_meta("select_actor"):
+		var select_actor: Callable = actor.get_meta("select_actor")
+		select_actor.call()
 
 func _fit_encounter_card() -> void:
 	if not is_instance_valid(_world_modal):
@@ -484,6 +518,9 @@ func _fit_encounter_card() -> void:
 	panel.offset_bottom = 390
 
 func _clear_guardian_preview() -> void:
+	_map_displayed_boss.clear()
+	if is_instance_valid(_view_guardians):
+		_view_guardians.visible = false
 	_preview_selected_encounter.clear()
 	_preview_selection = ""
 	for tween in _preview_tweens:
@@ -505,6 +542,7 @@ func _clear_guardian_preview() -> void:
 		_boss_open.visible = false
 
 func _show_common_details() -> void:
+	_view_guardians.visible = false
 	_preview_status.text = "%s\nVisual appearance; no server encounter assigned." % str(_debug_visual.get("name", "Common"))
 	_preview_status.visible = true
 	_boss_picker.visible = false
@@ -515,6 +553,11 @@ func _show_common_details() -> void:
 	_debug_fight.visible = _debug.unlock_all_buildings
 	_debug_fight.disabled = false
 	_world_modal.visible = true
+
+func _common_display_name(id: String, zone: String) -> String:
+	if id == "chaos_astral_alchemist_variant":
+		return "Astral Alchemist"
+	return id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize()
 
 func _change_world_art(direction: int) -> void:
 	var zone := _get_zone_id()
@@ -531,10 +574,11 @@ func _change_world_art(direction: int) -> void:
 		_world_companions[i].texture = load(other_path) as Texture2D
 		_world_companions[i].set_meta("appearance_id", other_id)
 		_world_companions[i].set_meta("appearance_path", other_path)
-		_world_companions[i].set_meta("appearance_name", other_id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize())
-	var display_name := id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize()
-	if id == "chaos_astral_alchemist_variant":
-		display_name = "Astral Alchemist"
+		var other_name := _common_display_name(other_id, zone)
+		_world_companions[i].set_meta("appearance_name", other_name)
+		var companion_name := _world_companions[i].get_node("EncounterName") as RichTextLabel
+		companion_name.text = "[center][color=#%s][lb]Common[rb][/color] %s[/center]" % [TIER_COLORS["common"], other_name]
+	var display_name := _common_display_name(id, zone)
 	_debug_hunt_id = "hunt_common"
 	_central_visual = {"id": id, "tier": "common", "texture": path, "name": display_name}
 	_debug_visual = _central_visual.duplicate(true)
@@ -631,6 +675,7 @@ func _show_map_hunt(boss: Dictionary) -> void:
 	_hunt_selected = boss.duplicate(true)
 	_hunt_guardian_id = ""
 	_clear_guardian_preview()
+	_map_displayed_boss = boss.duplicate(true)
 	_world_stage.visible = false
 	_preview_stage = Control.new()
 	_preview_stage.name = "MapHunt"
@@ -652,7 +697,7 @@ func _show_map_hunt(boss: Dictionary) -> void:
 		required.append("Server-verified guardians")
 	_add_preview_actor(entry, 0.5, 0.59, true, required)
 	for i in guardians.size():
-		var x := 0.5 if guardians.size() == 1 else 0.24 + 0.52 * float(i) / float(guardians.size() - 1)
+		var x := 0.5 if guardians.size() == 1 else 0.29 + 0.42 * float(i) / float(guardians.size() - 1)
 		_add_preview_actor(guardians[i], x, 0.75, false, PackedStringArray())
 	for other in _hunt_schedule:
 		if other is Dictionary and str(other.get("id", "")) != str(entry.id) and not str(other.get("id", "")).is_empty():
@@ -688,7 +733,7 @@ func _add_nearby_hunt(boss: Dictionary) -> void:
 	button.ignore_texture_size = true
 	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	button.tooltip_text = "%s [%s]" % [str(boss.get("name", boss.get("id", "Boss"))), str(boss.get("tier", ""))]
-	button.pressed.connect(func(): _show_map_hunt(boss))
+	button.pressed.connect(func(): _select_nearby_hunt(boss))
 	_preview_stage.add_child(button)
 	var label := Label.new()
 	label.text = "Next: [%s] %s%s" % [str(boss.get("tier", "")).capitalize(), str(boss.get("name", boss.get("id", "Boss"))), "" if bool(boss.get("available", false)) else " (Unavailable)"]
@@ -699,6 +744,30 @@ func _add_nearby_hunt(boss: Dictionary) -> void:
 	label.add_theme_constant_override("outline_size", 5)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button.add_child(label)
+
+func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> void:
+	_nearby_debug_index = -1
+	_hunt_selected = boss.duplicate(true)
+	_hunt_guardian_id = ""
+	_preview_selection = str(boss.get("id", ""))
+	var verified := _hunt_progress_key == _guardian_key() and _backend != null and not _backend._verified_player_id.is_empty() and _hunt_progress_owner == _backend._verified_player_id
+	var active := _active_hunt_matches("")
+	var unlocked := bool(_hunt_progress.get("boss_unlocked", false)) if verified else false
+	_preview_status.text = "%s\nGuardians: %d/%d defeated%s" % [str(boss.get("name", "Boss")), int(_hunt_progress.get("defeated_count", 0)) if verified else 0, int(_hunt_progress.get("total_count", 0)) if verified else 0, "" if verified else "\nChecking guardian progress..."]
+	_preview_status.visible = true
+	_boss_picker.visible = false
+	_boss_hp.visible = false
+	_boss_status.visible = false
+	_boss_open.visible = false
+	_debug_fight.visible = false
+	_hunt_fight.visible = true
+	_hunt_fight.disabled = not verified or _backend == null or _backend.token.is_empty() or (not active and (not unlocked or not bool(boss.get("available", false))))
+	_hunt_fight.text = "Resume Hunt" if active else "Fight"
+	_view_guardians.visible = verified and not unlocked and not active
+	_world_modal.visible = true
+	call_deferred("_fit_encounter_card")
+	if not verified and request_progress:
+		call_deferred("_request_guardian_progress")
 
 func _start_map_hunt() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
@@ -777,7 +846,7 @@ func _show_debug_boss(index: int, group_id: String = "") -> void:
 	other.ignore_texture_size = true
 	other.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	other.tooltip_text = "%s Boss (debug preview)" % tiers[nearby_index].capitalize()
-	other.pressed.connect(func(): _show_debug_boss(nearby_index))
+	other.pressed.connect(func(): _select_nearby_debug_boss(nearby_index, tiers[nearby_index], textures[nearby_index]))
 	_preview_stage.add_child(other)
 	var other_label := Label.new()
 	other_label.text = "[%s] Boss" % tiers[nearby_index].capitalize()
@@ -798,6 +867,39 @@ func _show_debug_boss(index: int, group_id: String = "") -> void:
 	reroll.pressed.connect(_reroll_world_art)
 	_preview_stage.add_child(reroll)
 	MenuArt.button(reroll)
+
+func _select_nearby_debug_boss(index: int, tier: String, texture_id: String) -> void:
+	_nearby_debug_index = index
+	var group_id := "debug_" + tier
+	var remaining := 0
+	if index > 1 and not SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, group_id + "|preview_higher")):
+		remaining += 1
+	var count := 2 if index <= 2 else index
+	for i in mini(count, WORLD_ART.get(_get_zone_id(), []).size()):
+		if not SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(_get_zone_id(), index, group_id + "|preview_common_%d" % i)):
+			remaining += 1
+	_preview_selection = group_id
+	_debug_hunt_id = "hunt_" + tier
+	_debug_visual = {"id": group_id, "tier": tier, "texture": texture_id, "name": "Boss (preview)", "guardian": false, "parent_index": index, "encounter_id": group_id}
+	_preview_status.text = "Unverified debug preview: %s Boss\n%s" % [tier.capitalize(), "Locked: defeat its %d guardians." % remaining if remaining > 0 else "No rewards or persistent victories."]
+	_preview_status.visible = true
+	_boss_picker.visible = false
+	_boss_hp.visible = false
+	_boss_status.visible = false
+	_boss_open.visible = false
+	_hunt_fight.visible = false
+	_debug_fight.visible = _debug.unlock_all_buildings
+	_debug_fight.disabled = remaining > 0
+	_view_guardians.visible = remaining > 0
+	_world_modal.visible = true
+	call_deferred("_fit_encounter_card")
+
+func _show_selected_guardians() -> void:
+	_world_modal.visible = false
+	if _nearby_debug_index >= 0:
+		_show_debug_boss(_nearby_debug_index)
+	elif not _hunt_selected.is_empty():
+		_show_map_hunt(_hunt_selected.duplicate(true))
 
 func _start_debug_hunt() -> void:
 	if not _debug.unlock_all_buildings:
@@ -952,10 +1054,17 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 				if _guardian_request_key != _guardian_key() or _guardian_request_owner.is_empty() or _guardian_request_owner != _backend._verified_player_id or str(data.get("zone_id", "")) != _get_zone_id() or str(data.get("hunt_id", "")) != str(_hunt_selected.get("id", "")):
 					call_deferred("_request_guardian_progress")
 					return
+				var reopen_main := _world_modal.visible and _preview_selection == str(_hunt_selected.get("id", ""))
 				_hunt_progress = data.duplicate(true)
 				_hunt_progress_key = _guardian_key()
 				_hunt_progress_owner = _backend._verified_player_id
-				_show_map_hunt(_hunt_selected.duplicate(true))
+				if str(_map_displayed_boss.get("id", "")) != str(_hunt_selected.get("id", "")):
+					if reopen_main:
+						_select_nearby_hunt(_hunt_selected, false)
+				else:
+					_show_map_hunt(_hunt_selected.duplicate(true))
+					if reopen_main:
+						_open_main_preview()
 			"start":
 				var current_key := "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
 				if _hunt_action_owner.is_empty() or _hunt_action_owner != _backend._verified_player_id:

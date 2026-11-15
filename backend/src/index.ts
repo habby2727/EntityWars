@@ -23,6 +23,7 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
+import { dungeonSeason } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
@@ -2044,6 +2045,82 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (req.method == "POST" && url.pathname == "/dungeon/loadout") {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					const allowed = ["run_id", "client_action_id", "entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"];
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !allowed.includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id: unknown) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || (typeof body.homunculus_id === "string" && body.homunculus_id.length > 0)) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id: unknown) => typeof id !== "string" || !id) || !["attack", "defense"].includes(body.mode)) throw new HttpError(400, "Invalid dungeon loadout.");
+					const actionId = body.client_action_id.trim();
+					const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
+					const payload = { run_id: body.run_id, ...selection };
+					const dataDir = resolve(import.meta.dir, "..", "..", "data");
+					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+					return db.transaction(() => {
+						const now = Date.now();
+						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
+						if (prior) {
+							if (prior.action_type !== "DUNGEON_LOADOUT" || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+							return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
+						}
+						const row = db.query("SELECT status, expires_at, player_snapshot_json, loadout_json FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { status: string; expires_at: number; player_snapshot_json: string; loadout_json: string | null } | null;
+						if (!row) throw new HttpError(404, "Dungeon run not found.");
+						if (row.status !== "ACTIVE" || row.expires_at <= now || row.loadout_json !== null) throw new HttpError(409, "Dungeon loadout unavailable.");
+						const saved = JSON.parse(row.player_snapshot_json);
+						// Reuse hunt loadout validation only; no boss state or result is created.
+						const trusted = { ...saved, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common };
+						if (buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true }).error) throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
+						if (db.query("UPDATE dungeon_runs SET loadout_json = ? WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), body.run_id, playerId, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
+						const response = { run_id: body.run_id, loadout: selection, combat_ready: false };
+						insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
+						return jsonResponse(response);
+					}).immediate();
+				}
+				if (req.method == "GET" && url.pathname == "/dungeon/session") {
+					const playerId = await requireAuth(req, ctx);
+					return db.transaction(() => {
+						const now = Date.now();
+						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
+						const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId) as (Record<string, any> & { loadout_json: string | null }) | null;
+						const session = row ? (({ loadout_json, ...rest }) => ({ ...rest, ...(loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: false } : {}) }))(row) : null;
+						return jsonResponse({ session, server_time_unix_ms: now });
+					}).immediate();
+				}
+				if (req.method == "POST" && (url.pathname == "/dungeon/start" || url.pathname == "/dungeon/abandon")) {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					const start = url.pathname.endsWith("/start");
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !["client_action_id", ...(start ? [] : ["run_id"])].includes(k)) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || (!start && (typeof body.run_id !== "string" || !body.run_id))) throw new HttpError(400, "Invalid dungeon request.");
+					const actionId = body.client_action_id.trim(), actionType = start ? "DUNGEON_START" : "DUNGEON_ABANDON", payload = start ? {} : { run_id: body.run_id };
+					db.transaction(() => db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, Date.now())).immediate();
+					return db.transaction(() => {
+						const now = Date.now();
+						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
+						if (prior) {
+							if (prior.action_type !== actionType || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+							return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
+						}
+						let runId: string;
+						if (start) {
+							const state = ensurePlayerState(playerId);
+							if (state.lab.hqLevel < 4 || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
+							if (db.query("SELECT 1 FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) throw new HttpError(409, "An active dungeon run already exists.");
+							runId = crypto.randomUUID();
+							const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {} };
+							db.query("INSERT INTO dungeon_runs (run_id,player_id,season,status,started_at,expires_at,player_snapshot_json) VALUES (?,?,?,'ACTIVE',?,?,?)").run(runId, playerId, dungeonSeason(now), now, now + 86400000, JSON.stringify(snapshot));
+						} else {
+							runId = body.run_id;
+							const row = db.query("SELECT status FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId) as { status: string } | null;
+							if (!row) throw new HttpError(404, "Dungeon run not found.");
+							if (row.status !== "ACTIVE") throw new HttpError(409, "Dungeon run is closed.");
+							if (db.query("UPDATE dungeon_runs SET status = 'ABANDONED', finished_at = ? WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE'").run(now, runId, playerId).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
+						}
+						const response = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId);
+						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
+						return jsonResponse(response);
+					}).immediate();
+				}
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts") {
 					return jsonResponse(soloBossSchedule(Date.now()));
 				}
