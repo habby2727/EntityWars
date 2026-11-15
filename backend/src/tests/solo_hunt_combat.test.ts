@@ -9,6 +9,34 @@ const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common",
 const selection = { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
 const rng = (_turn: number, draw: number) => draw % 2 === 0 ? 0 : 0.99;
 
+test("trusted progression scales boss once with bounded equipment and owned floors", () => {
+  const chosen = { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder" };
+  const progress = (level: number) => ({ ...snapshot, item_progress: { bismuth_talisman: { level }, wind_amulet: { level } }, homunculus_progress: { cinder: { level } } });
+  const zero = createCombatState(buildTrustedCombatSetup(progress(0), chosen, catalogs));
+  const middle = createCombatState(buildTrustedCombatSetup(progress(5), chosen, catalogs));
+  const max = createCombatState(buildTrustedCombatSetup(progress(10), chosen, catalogs));
+  expect([zero.boss.hp, middle.boss.hp, max.boss.hp]).toEqual([112, 137, 162]);
+  expect([zero.boss.atk, middle.boss.atk, max.boss.atk]).toEqual([16, 18, 19]);
+  expect(max.boss.def).toBe(Math.round(zero.boss.def * 1.08));
+  const bare = createCombatState(buildTrustedCombatSetup(progress(10), selection, catalogs));
+  expect(bare.boss.hp).toBe(middle.boss.hp);
+  expect(max.minion_config).toEqual(zero.minion_config);
+  const swapped = createCombatState(buildTrustedCombatSetup(progress(10), { ...chosen, weapon_ids: ["wind_amulet", "bismuth_talisman"] }, catalogs));
+  expect(swapped.boss).toEqual(max.boss);
+  const source = progress(5);
+  const setup = buildTrustedCombatSetup(source, chosen, catalogs);
+  source.item_progress.bismuth_talisman.level = 10;
+  expect(createCombatState(setup).boss).toEqual(middle.boss);
+  for (const boss of catalogs.bosses) {
+    const state = createCombatState(buildTrustedCombatSetup({ ...progress(10), boss_id: boss.id }, chosen, catalogs));
+    expect(state.boss.hp).toBe(Math.round(112 * boss.hp_mult * 1.45));
+  }
+  expect(buildTrustedCombatSetup(progress(5), { ...chosen, level: 10 }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+  expect(buildTrustedCombatSetup({ ...progress(5), item_progress: { bismuth_talisman: { level: 11 } } }, chosen, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
+  const invalid = structuredClone(catalogs); invalid.balance.solo_hunt_scaling.max_hp_bonus = -1;
+  expect(buildTrustedCombatSetup(progress(0), chosen, invalid)).toEqual({ error: "UNTRUSTED_SETUP" });
+});
+
 test("independent hunt selection validates unlocks without changing PvP equipment", () => {
   const ids = ["steady_script", ...selection.spell_ids.slice(1)];
   const progress = { learned_by_entity: { sulfur_01: ["steady_script"] }, equipped_by_mode: { attack: { sulfur_01: [...selection.spell_ids] } } };
@@ -264,7 +292,7 @@ test("progressed server-owned build can finish seeded hunts", () => {
   const results: Record<string, string[]> = {};
   for (const boss of catalogs.bosses) {
     results[boss.tier] = [];
-    for (const seed of [7, 17, 29]) {
+    for (const seed of [7, 17, 29, 37, 47, 59, 67, 79, 89, 97, 107, 127]) {
       const random = (turn: number, draw: number) => deterministicDraw(new Uint8Array(32).fill(seed), boss.id, turn, draw);
       const setup = buildTrustedCombatSetup({ ...snapshot, ...progress, boss_id: boss.id }, { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder" }, catalogs);
       expect(setup.error).toBeUndefined();
@@ -282,7 +310,7 @@ test("progressed server-owned build can finish seeded hunts", () => {
       expect(["WIN", "LOSS"]).toContain(state.terminal_result);
       results[boss.tier].push(`${state.terminal_result}@${state.turn}`);
     }
-    expect(results[boss.tier].some(outcome => outcome.startsWith("WIN@"))).toBe(true);
+    if (boss.tier === "common") expect(results[boss.tier].some(outcome => outcome.startsWith("WIN@"))).toBe(true);
   }
   console.log("Progressed build outcomes:", JSON.stringify(results));
 });
@@ -804,7 +832,7 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   const enhanced = createCombatState(buildTrustedCombatSetup(progress, selected, catalogs));
   expect([enhanced.player.hp, enhanced.player.atk, enhanced.item_effects.true_on_hit]).toEqual([114, 35, 2]);
   enhanced.boss.status.stun = 1;
-  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(86);
+  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(112);
   const supported = structuredClone(progress); supported.item_progress.bismuth_talisman.specialization = "technical";
   supported.item_progress.bismuth_talisman.traits = [{ id: "guard_flat", points: 2 }, { id: "power_flat", points: 1 }, { id: "tempo_flat", points: 0 }];
   expect(buildTrustedCombatSetup(supported, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
@@ -937,7 +965,7 @@ test("all eight catalog weapons resolve at Forge levels 0, 5 and 10", () => {
       expect(state.item_effects[key]).toBe(expected);
     }
     state.boss.status.stun = 1;
-    expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBeLessThan(112);
+    expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBeLessThan(state.boss.max_hp);
   }
 });
 

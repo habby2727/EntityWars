@@ -2245,6 +2245,11 @@ async function startServer(): Promise<void> {
 								throw new HttpError(409, "Defeat all guardians first.");
 							}
 							if (db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) throw new HttpError(409, "An active boss hunt already exists.");
+							if (boss.id === "hunt_common" && guardianId === undefined) {
+								const latest = db.query("SELECT MAX(CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) AS ended_at FROM solo_hunt_sessions WHERE player_id = ? AND hunt_id = 'hunt_common' AND guardian_id IS NULL AND status IN ('VERIFIED_WIN', 'VERIFIED_LOSS', 'FORFEIT', 'EXPIRED')").get(playerId) as { ended_at: number | null };
+								const remaining = latest.ended_at === null ? 0 : Math.ceil((latest.ended_at + staticData.soloBosses.rotation.common_cooldown_seconds * 1000 - now) / 1000);
+								if (remaining > 0) return jsonResponse({ ok: false, server_time_unix_ms: now, error: "Common boss hunt cooldown active.", cooldown_remaining_seconds: remaining }, 409);
+							}
 							const state = ensurePlayerState(playerId);
 							const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
 							const sessionId = crypto.randomUUID();
@@ -2464,7 +2469,7 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 	const tiers = ["common", "mythic", "rare", "epic", "legendary"];
 	const rotation = catalog?.rotation;
 	const invalid = () => { throw new Error("Invalid solo boss catalog configuration."); };
-	if (!rotation || !Number.isSafeInteger(rotation.interval_seconds) || rotation.interval_seconds !== 900 || !Number.isSafeInteger(rotation.window_seconds) || rotation.window_seconds !== 720 || !Number.isSafeInteger(rotation.common_cooldown_seconds) || rotation.common_cooldown_seconds !== 60 || !rotation.weights || Object.keys(rotation.weights).sort().join(",") !== tiers.slice(1).sort().join(",") || tiers.slice(1).some(tier => typeof rotation.weights[tier] !== "number" || !Number.isFinite(rotation.weights[tier]) || rotation.weights[tier] <= 0) || Math.abs(tiers.slice(1).reduce((sum, tier) => sum + rotation.weights[tier], 0) - 1) > 0.000001 || !Array.isArray(catalog?.bosses) || catalog.bosses.length !== 5 || !Array.isArray(spells?.spells)) return invalid();
+	if (!rotation || !Number.isSafeInteger(rotation.interval_seconds) || rotation.interval_seconds !== 900 || !Number.isSafeInteger(rotation.window_seconds) || rotation.window_seconds !== 720 || !Number.isSafeInteger(rotation.common_cooldown_seconds) || rotation.common_cooldown_seconds < 0 || rotation.common_cooldown_seconds > Math.floor(Number.MAX_SAFE_INTEGER / 1000) || !rotation.weights || Object.keys(rotation.weights).sort().join(",") !== tiers.slice(1).sort().join(",") || tiers.slice(1).some(tier => typeof rotation.weights[tier] !== "number" || !Number.isFinite(rotation.weights[tier]) || rotation.weights[tier] <= 0) || Math.abs(tiers.slice(1).reduce((sum, tier) => sum + rotation.weights[tier], 0) - 1) > 0.000001 || !Array.isArray(catalog?.bosses) || catalog.bosses.length !== 5 || !Array.isArray(spells?.spells)) return invalid();
 	const spellIds = new Set(spells.spells.map((spell: any) => spell.id));
 	const bossTextures = ["boss_common", "boss_colossus", "boss_leviathan", "tier3boss", "scorpion_boss", "boss_temporal", "ghost_boss"];
 	const seenIds = new Set<string>(), seenTiers = new Set<string>();

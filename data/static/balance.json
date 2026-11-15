@@ -1,5 +1,6 @@
 {
   "balance": {
+    "solo_hunt_scaling": {"max_hp_bonus": 0.45, "max_attack_bonus": 0.20, "max_defense_bonus": 0.08},
     "solo_hunt_rewards": {
       "guardian": {"common": {"essence": 3}, "mythic": {"essence": 5}, "rare": {"essence": 8}, "epic": {"essence": 12}},
       "boss": {"common": {"essence": 6}, "mythic": {"essence": 12}, "rare": {"essence": 18}, "epic": {"essence": 24}, "legendary": {"essence": 32}}

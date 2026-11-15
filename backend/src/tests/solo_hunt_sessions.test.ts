@@ -14,8 +14,11 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
   const db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(name => name.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
-  let server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+  const clockOffset = Math.floor(Date.now() / 900000) * 900000 + 120000 - Date.now();
+  const testNow = () => Date.now() + clockOffset;
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", TEST_CLOCK_OFFSET: String(clockOffset) };
+  const spawnServer = () => Bun.spawn([process.execPath, "-e", "const realNow = Date.now.bind(Date); Date.now = () => realNow() + Number(process.env.TEST_CLOCK_OFFSET); await import('./src/index.ts');"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+  let server = spawnServer();
   const request = async (path: string, body?: unknown, token?: string) => {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, data: await response.json() as any };
@@ -56,6 +59,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((await request("/world/boss-hunts/loadout", loadout)).status).toBe(401);
     expect((await request("/world/boss-hunts/loadout", loadout, b.data.token)).status).toBe(404);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, atk: 999 }, a.data.token)).status).toBe(400);
+    expect((await request("/world/boss-hunts/loadout", { ...loadout, level: 10 }, a.data.token)).status).toBe(400);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, entity_id: "fake_entity" }, a.data.token)).status).toBe(400);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, spell_ids: ["needle_etch", ...loadout.spell_ids.slice(1)] }, a.data.token)).status).toBe(400);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, homunculus_id: "unknown" }, a.data.token)).status).toBe(400);
@@ -79,9 +83,13 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     assertPublic(initialized[0].data);
     expect(savedCombat.player.hp).toBeGreaterThan(0);
     expect(savedCombat.moves).toHaveLength(4);
+    const upgraded = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json);
+    const originalProgress = upgraded.item_progress;
+    upgraded.item_progress = { ...upgraded.item_progress, bismuth_talisman: { level: 10 } };
+    db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(upgraded), a.data.player_id);
     server.kill();
     await server.exited;
-    server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+    server = spawnServer();
     ready = false;
     for (let i = 0; i < 100; i++) { try { if ((await request("/health")).status === 200) { ready = true; break; } } catch {} await Bun.sleep(100); }
     expect(ready).toBe(true);
@@ -96,6 +104,9 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect(recovered.combat_state).toEqual(savedCombat);
     expect(recovered.combat_revision).toBe(1);
     expect((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(session.session_id) as any).combat_state_json).toBe(fullStateBefore);
+    const restoredPlayer = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json);
+    restoredPlayer.item_progress = originalProgress;
+    db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(restoredPlayer), a.data.player_id);
     assertPublic(recovered);
     const repeatedAfterRestart = await request("/world/boss-hunts/loadout", loadout, a.data.token);
     expect(repeatedAfterRestart.data.duplicate).toBe(true);
@@ -128,7 +139,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     const afterTwo = turnRace.find(r => r.status === 200)!.data.combat_state;
     server.kill();
     await server.exited;
-    server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+    server = spawnServer();
     ready = false;
     for (let i = 0; i < 100; i++) { try { if ((await request("/health")).status === 200) { ready = true; break; } } catch {} await Bun.sleep(100); }
     expect(ready).toBe(true);
@@ -148,6 +159,40 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((await forfeit()).data.duplicate).toBe(true);
     expect((await start("concurrent")).data.status).toBe("FORFEIT");
     expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.session).toBeNull();
+    const cooldown = await start("cooldown-after-forfeit");
+    expect(cooldown.status).toBe(409);
+    expect(cooldown.data.cooldown_remaining_seconds).toBeGreaterThan(0);
+    expect(cooldown.data.cooldown_remaining_seconds).toBeLessThanOrEqual(60);
+    const duringCooldown = (await request("/world/boss-hunts")).data;
+    const activeSpecial = duringCooldown.bosses.find((boss: any) => boss.tier !== "common" && boss.available);
+    expect(activeSpecial).toBeDefined();
+    if (activeSpecial) {
+      const group = (await request(`/world/boss-hunts/guardians?zone_id=zone_chaos&hunt_id=${activeSpecial.id}`, undefined, a.data.token)).data.guardians;
+      const guardian = group.find((entry: any) => entry.tier === "common") ?? group[0];
+      const guardianStart = await request("/world/boss-hunts/start", { client_action_id: "guardian-during-common-cooldown", hunt_id: activeSpecial.id, rotation_key: duringCooldown.rotation_key, zone_id: "zone_chaos", guardian_id: guardian.guardian_id }, a.data.token);
+      expect(guardianStart.status).toBe(200);
+      expect((await request("/world/boss-hunts/forfeit", { client_action_id: "guardian-cooldown-forfeit", session_id: guardianStart.data.session_id }, a.data.token)).status).toBe(200);
+      const bGuardian = await request("/world/boss-hunts/start", { client_action_id: "guardian-only-b", hunt_id: activeSpecial.id, rotation_key: duringCooldown.rotation_key, zone_id: "zone_chaos", guardian_id: guardian.guardian_id }, b.data.token);
+      expect(bGuardian.status).toBe(200);
+      expect((await request("/world/boss-hunts/forfeit", { client_action_id: "guardian-only-b-end", session_id: bGuardian.data.session_id }, b.data.token)).status).toBe(200);
+      const bCommon = await start("common-after-guardian-b", "hunt_common", duringCooldown.rotation_key, b.data.token);
+      expect(bCommon.status).toBe(200);
+      expect((await request("/world/boss-hunts/forfeit", { client_action_id: "common-b-end", session_id: bCommon.data.session_id }, b.data.token)).status).toBe(200);
+      for (const entry of group) db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?)").run(b.data.player_id, "zone_chaos", activeSpecial.id, entry.guardian_id, `fixture-${entry.guardian_id}`, testNow());
+      const specialWhileCooling = await request("/world/boss-hunts/start", { client_action_id: "special-during-common-cooldown", hunt_id: activeSpecial.id, rotation_key: duringCooldown.rotation_key, zone_id: "zone_chaos" }, b.data.token);
+      expect(specialWhileCooling.status).toBe(200);
+      expect((await request("/world/boss-hunts/forfeit", { client_action_id: "special-b-end", session_id: specialWhileCooling.data.session_id }, b.data.token)).status).toBe(200);
+    }
+    server.kill(); await server.exited;
+    server = spawnServer();
+    ready = false;
+    for (let i = 0; i < 100; i++) { try { if ((await request("/health")).status === 200) { ready = true; break; } } catch {} await Bun.sleep(100); }
+    expect(ready).toBe(true);
+    a.data.token = (await request("/auth/dev_login", { name: "hunt_test_a" })).data.token;
+    b.data.token = (await request("/auth/dev_login", { name: "hunt_test_b" })).data.token;
+    expect((await start("cooldown-after-restart")).data.cooldown_remaining_seconds).toBeGreaterThan(0);
+    expect((await start("concurrent")).data.session_id).toBe(session.session_id);
+    db.query("UPDATE solo_hunt_sessions SET finished_at = ? WHERE session_id = ?").run(testNow() - 61000, session.session_id);
     const competing = await Promise.all([start("next-a"), start("next-b")]);
     expect(competing.map(result => result.status).sort()).toEqual([200, 409]);
     const next = competing.find(result => result.status === 200)!;
@@ -162,7 +207,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     db.query("UPDATE solo_hunt_sessions SET combat_state_json = ? WHERE session_id = ?").run(JSON.stringify(pendingState), next.data.session_id);
     server.kill();
     await server.exited;
-    server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+    server = spawnServer();
     ready = false;
     for (let i = 0; i < 100; i++) { try { if ((await request("/health")).status === 200) { ready = true; break; } } catch {} await Bun.sleep(100); }
     expect(ready).toBe(true);
@@ -186,7 +231,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect(afterChoice.spell_ids.filter((id: string, i: number) => id !== pendingState.spell_ids[i])).toEqual([choice.decision.spell_id]);
     server.kill();
     await server.exited;
-    server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+    server = spawnServer();
     ready = false;
     for (let i = 0; i < 100; i++) { try { if ((await request("/health")).status === 200) { ready = true; break; } } catch {} await Bun.sleep(100); }
     expect(ready).toBe(true);
@@ -221,14 +266,16 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect(afterDecline.turn).toBe(pendingState.turn);
     expect(afterDecline.rng_counter).toBe(pendingState.rng_counter);
     expect(afterDecline.player.inspiration_used_this_battle).toBe(true);
-    db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(Date.now() - 1, next.data.session_id);
+    db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(testNow() - 1, next.data.session_id);
     expect((await request("/world/boss-hunts/inspiration", choice, a.data.token)).data).toEqual(chosen.data);
     expect((await request("/world/boss-hunts/inspiration", { ...decline, client_action_id: "expired-choice", expected_revision: 4 }, a.data.token)).status).toBe(409);
     expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.session).toBeNull();
     expect((db.query("SELECT status FROM solo_hunt_sessions WHERE session_id = ?").get(next.data.session_id) as any).status).toBe("EXPIRED");
+    expect((await start("cooldown-after-expiry")).data.cooldown_remaining_seconds).toBeGreaterThan(0);
     expect((await request("/world/boss-hunts/forfeit", { session_id: next.data.session_id, client_action_id: "expired-forfeit" }, a.data.token)).status).toBe(409);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, session_id: next.data.session_id, client_action_id: "expired-loadout" }, a.data.token)).status).toBe(409);
     expect((await request("/world/boss-hunts/turn", { session_id: next.data.session_id, client_action_id: "expired-turn", expected_revision: 1, decision: { turn: 1, spell_id: "steady_script", target: "boss" } }, a.data.token)).status).toBe(409);
+    db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(testNow() - 61000, next.data.session_id);
     for (const outcome of ["WIN", "LOSS"]) {
       const walletBeforeBattle = wallet(a.data.player_id);
       const current = (await request("/world/boss-hunts")).data;
@@ -251,6 +298,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         if (response.data.status !== "ACTIVE") { finalResponse = response.data; finalRequest = input; }
       }
       expect(finalResponse?.status).toBe(`VERIFIED_${outcome}`);
+      expect((await start(`cooldown-after-${outcome}`)).data.cooldown_remaining_seconds).toBeGreaterThan(0);
       const expectedWallet = { ...walletBeforeBattle };
       if (outcome === "WIN") {
         for (const [resource, amount] of Object.entries(commonReward)) expectedWallet[resource] = (expectedWallet[resource] ?? 0) + Number(amount);
@@ -272,7 +320,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         expect(finalState.spells.some((spell: any) => spell.id === choice.decision.spell_id)).toBe(false);
         server.kill();
         await server.exited;
-        server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+        server = spawnServer();
         ready = false;
         for (let i = 0; i < 100; i++) { try { if ((await request("/health")).status === 200) { ready = true; break; } } catch {} await Bun.sleep(100); }
         expect(ready).toBe(true);
@@ -280,6 +328,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         expect((await request(`/world/boss-hunts/session?session_id=${sessionId}`, undefined, a.data.token)).data.session).toEqual(terminal);
         expect((await request("/world/boss-hunts/turn", finalRequest, a.data.token)).data).toEqual(finalResponse);
       }
+      db.query("UPDATE solo_hunt_sessions SET finished_at = ? WHERE session_id = ?").run(testNow() - 61000, sessionId);
     }
     const fresh = (await request("/world/boss-hunts")).data;
     const special = fresh.bosses.find((boss: any) => boss.tier !== "common" && boss.available);

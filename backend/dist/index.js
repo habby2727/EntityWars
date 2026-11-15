@@ -12426,6 +12426,37 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
   });
   if (inspirationCatalog.length < 3)
     return { error: "UNSUPPORTED_MECHANIC" };
+  const scaling = catalogs.balance?.solo_hunt_scaling;
+  if (!scaling || Object.entries({ max_hp_bonus: 0.45, max_attack_bonus: 0.2, max_defense_bonus: 0.08 }).some(([key, cap]) => typeof scaling[key] !== "number" || !Number.isFinite(scaling[key]) || scaling[key] < 0 || scaling[key] > cap))
+    return { error: "UNTRUSTED_SETUP" };
+  if (!Array.isArray(catalogs.items) || !Array.isArray(catalogs.homunculi))
+    return { error: "UNTRUSTED_SETUP" };
+  const highestLevel = (progress, entries) => {
+    if (progress === undefined)
+      return 0;
+    if (!progress || typeof progress !== "object" || Array.isArray(progress))
+      return null;
+    let highest = 0;
+    for (const entry of entries) {
+      const record = progress[entry.id];
+      if (record === undefined)
+        continue;
+      if (!record || typeof record !== "object" || Array.isArray(record) || record.level !== undefined && (!Number.isInteger(record.level) || record.level < 0 || record.level > 10))
+        return null;
+      highest = Math.max(highest, record.level ?? 0);
+    }
+    return highest;
+  };
+  const ownedWeapon = highestLevel(snapshot.item_progress, catalogs.items.filter((v) => v.slot === "build"));
+  const ownedHom = highestLevel(snapshot.homunculus_progress, catalogs.homunculi);
+  if (ownedWeapon === null || ownedHom === null)
+    return { error: "UNTRUSTED_SETUP" };
+  const selectedWeapon = Math.max(0, ...selection.weapon_ids.map((id) => snapshot.item_progress?.[id]?.level ?? 0));
+  const selectedHom = selection.homunculus_id ? snapshot.homunculus_progress?.[selection.homunculus_id] : null;
+  const mutationBonus = selectedHom?.mutation_id && catalogs.mutations?.some((v) => v.id === selectedHom.mutation_id) ? 0.05 : 0;
+  const rating = 0.65 * Math.max(selectedWeapon / 10, ownedWeapon / 20) + 0.35 * Math.min(1, Math.max((selectedHom?.level ?? 0) / 10, ownedHom / 20) + mutationBonus);
+  if (!Number.isFinite(rating) || rating < 0 || rating > 1)
+    return { error: "UNTRUSTED_SETUP" };
   if (selection.weapon_ids[1]) {
     const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs, options);
     if (first.error)
@@ -12434,7 +12465,7 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
     if (second.error)
       return second;
     const base = validated.get(first), other = validated.get(second);
-    const combined = { ...base, weapons: [{ id: base.item_id, effects: base.itemEffects }, { id: other.item_id, effects: other.itemEffects }] };
+    const combined = { ...base, rating, scaling: structuredClone(scaling), weapons: [{ id: base.item_id, effects: base.itemEffects }, { id: other.item_id, effects: other.itemEffects }] };
     validated.set(combined, structuredClone(combined));
     return Object.freeze(combined);
   }
@@ -12499,7 +12530,7 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
   if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value)))
     return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  const result = { rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -12523,7 +12554,9 @@ function createCombatState(setup, serverRng) {
   const signature = setup.boss_signatures[Math.floor(signatureDraw * setup.boss_signatures.length)];
   const minionRatios = { common: 0, mythic: 0.18, rare: 0.2, epic: 0.25, legendary: 0.3 };
   const minionConfig = { count: setup.boss.minions, hp: Math.max(1, Math.round(setup.bossEntity.base_stats.hp * minionRatios[setup.boss.tier])), atk: Math.max(1, Math.round(setup.bossEntity.base_stats.power * 0.25)), type: setup.bossEntity.type, def: setup.bossEntity.base_stats.guard };
-  return { player, boss: fighter(setup.bossEntity, setup.boss.hp_mult, setup.boss.attack_mult), boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
+  const bossFighter = fighter(setup.bossEntity, setup.boss.hp_mult * (1 + setup.rating * setup.scaling.max_hp_bonus), setup.boss.attack_mult * (1 + setup.rating * setup.scaling.max_attack_bonus));
+  bossFighter.def = Math.round(bossFighter.def * (1 + setup.rating * setup.scaling.max_defense_bonus));
+  return { player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
 }
 function scaleWeapon(effects, multiplier = 1) {
   const factor = Math.max(0, Math.min(2, multiplier ?? 1));
@@ -15240,6 +15273,12 @@ async function startServer() {
                 }
                 if (db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId))
                   throw new HttpError(409, "An active boss hunt already exists.");
+                if (boss.id === "hunt_common" && guardianId === undefined) {
+                  const latest = db.query("SELECT MAX(CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) AS ended_at FROM solo_hunt_sessions WHERE player_id = ? AND hunt_id = 'hunt_common' AND guardian_id IS NULL AND status IN ('VERIFIED_WIN', 'VERIFIED_LOSS', 'FORFEIT', 'EXPIRED')").get(playerId);
+                  const remaining = latest.ended_at === null ? 0 : Math.ceil((latest.ended_at + staticData.soloBosses.rotation.common_cooldown_seconds * 1000 - now) / 1000);
+                  if (remaining > 0)
+                    return jsonResponse({ ok: false, server_time_unix_ms: now, error: "Common boss hunt cooldown active.", cooldown_remaining_seconds: remaining }, 409);
+                }
                 const state = ensurePlayerState(playerId);
                 const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
                 const sessionId = crypto.randomUUID();
@@ -15435,7 +15474,7 @@ function loadSoloBossCatalog(path, spellsPath) {
   const invalid = () => {
     throw new Error("Invalid solo boss catalog configuration.");
   };
-  if (!rotation || !Number.isSafeInteger(rotation.interval_seconds) || rotation.interval_seconds !== 900 || !Number.isSafeInteger(rotation.window_seconds) || rotation.window_seconds !== 720 || !Number.isSafeInteger(rotation.common_cooldown_seconds) || rotation.common_cooldown_seconds !== 60 || !rotation.weights || Object.keys(rotation.weights).sort().join(",") !== tiers.slice(1).sort().join(",") || tiers.slice(1).some((tier) => typeof rotation.weights[tier] !== "number" || !Number.isFinite(rotation.weights[tier]) || rotation.weights[tier] <= 0) || Math.abs(tiers.slice(1).reduce((sum, tier) => sum + rotation.weights[tier], 0) - 1) > 0.000001 || !Array.isArray(catalog?.bosses) || catalog.bosses.length !== 5 || !Array.isArray(spells2?.spells))
+  if (!rotation || !Number.isSafeInteger(rotation.interval_seconds) || rotation.interval_seconds !== 900 || !Number.isSafeInteger(rotation.window_seconds) || rotation.window_seconds !== 720 || !Number.isSafeInteger(rotation.common_cooldown_seconds) || rotation.common_cooldown_seconds < 0 || rotation.common_cooldown_seconds > Math.floor(Number.MAX_SAFE_INTEGER / 1000) || !rotation.weights || Object.keys(rotation.weights).sort().join(",") !== tiers.slice(1).sort().join(",") || tiers.slice(1).some((tier) => typeof rotation.weights[tier] !== "number" || !Number.isFinite(rotation.weights[tier]) || rotation.weights[tier] <= 0) || Math.abs(tiers.slice(1).reduce((sum, tier) => sum + rotation.weights[tier], 0) - 1) > 0.000001 || !Array.isArray(catalog?.bosses) || catalog.bosses.length !== 5 || !Array.isArray(spells2?.spells))
     return invalid();
   const spellIds = new Set(spells2.spells.map((spell) => spell.id));
   const bossTextures = ["boss_common", "boss_colossus", "boss_leviathan", "tier3boss", "scorpion_boss", "boss_temporal", "ghost_boss"];
