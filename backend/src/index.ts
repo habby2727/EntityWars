@@ -23,7 +23,7 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
-import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
+import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
@@ -2120,6 +2120,7 @@ async function startServer(): Promise<void> {
 						const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
 						const combat = createDungeonCombatState(setup, enemy, catalogs);
 						if (combat.error) throw new HttpError(400, combat.error);
+						combat.blessings_enabled = Bun.env.DUNGEON_BLESSINGS_ENABLED === "1";
 						combat.elites_enabled = elitesEnabled;
 						combat.special_encounters_enabled = Bun.env.DUNGEON_SPECIAL_ENCOUNTERS_ENABLED === "1";
 						combat.elite_traits_enabled = Bun.env.DUNGEON_ELITE_TRAITS_ENABLED === "1";
@@ -2131,12 +2132,12 @@ async function startServer(): Promise<void> {
 						return jsonResponse(response);
 					}).immediate();
 				}
-				if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next" || url.pathname == "/dungeon/inspiration")) {
+				if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next" || url.pathname == "/dungeon/inspiration" || url.pathname == "/dungeon/blessing")) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
-					const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn"), isInspiration = url.pathname.endsWith("/inspiration"), hasDecision = isTurn || isInspiration;
+					const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn"), isInspiration = url.pathname.endsWith("/inspiration"), isBlessing = url.pathname.endsWith("/blessing"), hasDecision = isTurn || isInspiration || isBlessing;
 					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !["run_id", "client_action_id", "expected_revision", ...(hasDecision ? ["decision"] : [])].includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || (hasDecision && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))) throw new HttpError(400, "Invalid dungeon action.");
-					const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : isInspiration ? "DUNGEON_INSPIRATION" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...(hasDecision ? { decision: body.decision } : {}) };
+					const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : isInspiration ? "DUNGEON_INSPIRATION" : isBlessing ? "DUNGEON_BLESSING" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...(hasDecision ? { decision: body.decision } : {}) };
 					return db.transaction(() => {
 						const now = Date.now();
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
@@ -2162,6 +2163,10 @@ async function startServer(): Promise<void> {
 								cleared = combat.floor; turns += combat.turn;
 								db.query("INSERT INTO dungeon_monthly_best (season, player_id, cleared_floor, total_turns, achieved_at, run_id) VALUES (?,?,?,?,?,?) ON CONFLICT(season,player_id) DO UPDATE SET cleared_floor=excluded.cleared_floor,total_turns=excluded.total_turns,achieved_at=excluded.achieved_at,run_id=excluded.run_id WHERE excluded.cleared_floor > dungeon_monthly_best.cleared_floor OR (excluded.cleared_floor = dungeon_monthly_best.cleared_floor AND excluded.total_turns < dungeon_monthly_best.total_turns)").run(row.season, playerId, cleared, turns, now, row.run_id);
 							} else if (result.terminal_result === "LOSS") status = "LOSS";
+						} else if (isBlessing) {
+							const result = resolveDungeonBlessing(current, body.decision);
+							if (result.error) throw new HttpError(400, result.error);
+							combat = result.next_state; events = result.events;
 						} else if (isInspiration) {
 							const result = resolveDungeonInspiration(current, body.decision, (turn, draw) => deterministicDraw(seed, `${row.run_id}:${current.floor}`, turn, draw));
 							if (result.error) throw new HttpError(400, result.error);
@@ -2180,6 +2185,8 @@ async function startServer(): Promise<void> {
 							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1, special_encounter: generateDungeonEncounter(seed, row.run_id, cleared + 1, current.special_encounters_enabled === true) };
 							combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
 							if (combat.error) throw new HttpError(409, combat.error);
+							combat.blessings_enabled = current.blessings_enabled === true;
+							combat.blessing = combat.blessings_enabled ? createDungeonBlessing(seed, row.run_id, combat.floor, !!combat.player.hom_id) : null;
 							combat.elites_enabled = current.elites_enabled === true;
 							combat.special_encounters_enabled = current.special_encounters_enabled === true;
 							combat.elite_traits_enabled = current.elite_traits_enabled === true;
@@ -2198,8 +2205,8 @@ async function startServer(): Promise<void> {
 					return db.transaction(() => {
 						const now = Date.now();
 						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
-						const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId) as (Record<string, any> & { loadout_json: string | null; combat_state_json: string | null }) | null;
-						const session = row ? (({ loadout_json, combat_state_json, ...rest }) => { const combat = combat_state_json ? JSON.parse(combat_state_json) : null; return { ...rest, ...(loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}), ...(combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {}) }; })(row) : null;
+						const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId) as (Record<string, any> & { loadout_json: string | null; combat_state_json: string | null }) | null;
+						const session = row ? (({ loadout_json, combat_state_json, player_snapshot_json, ...rest }) => { const combat = combat_state_json ? JSON.parse(combat_state_json) : null; return { ...rest, ...(!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}), ...(loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}), ...(combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {}) }; })(row) : null;
 						return jsonResponse({ session, server_time_unix_ms: now });
 					}).immediate();
 				}
@@ -2679,7 +2686,7 @@ type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rot
 function publicDungeonCombat(combat: any) {
 	const trait = dungeonEliteTrait(combat);
 	const encounter = combat.special_encounter;
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, ...(encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}), ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+	return { player: combat.player, npc: combat.npc, floor: combat.floor, blessing: publicDungeonBlessing(combat.blessing), ...(encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}), ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {

@@ -5,12 +5,58 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { createHmac } from "node:crypto";
 import { Database } from "bun:sqlite";
-import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase } from "../dungeon_combat";
+import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, createDungeonBlessing, resolveDungeonBlessing, publicDungeonBlessing } from "../dungeon_combat";
 import { buildTrustedCombatSetup } from "../solo_hunt_combat";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } from "../physical_anomaly";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
+
+test("floor blessings are deterministic, gated and resolved without a turn", () => {
+  const seed = new Uint8Array(32).fill(11);
+  expect(createDungeonBlessing(seed, "run", 2, true)).toBeNull();
+  expect(createDungeonBlessing(seed, "run", 4, true)).toBeNull();
+  for (const [floor, tier] of [[3, 1], [6, 2], [9, 3], [30, 7]] as const) {
+    const blessing = createDungeonBlessing(seed, "run", floor, true);
+    expect(blessing).toEqual(createDungeonBlessing(seed, "run", floor, true));
+    expect(blessing.tier).toBe(tier); expect(new Set(blessing.offers).size).toBe(3);
+    expect(publicDungeonBlessing(blessing).offers).toHaveLength(3);
+    const state: any = { floor, turn: 0, blessing, player: {} };
+    expect(resolveDungeonTurn(state, { turn: 1 }, () => 0).error).toBe("INVALID_DECISION");
+    expect(resolveDungeonInspiration(state, { kind: "decline" }, () => 0).error).toBe("INVALID_DECISION");
+    expect(resolveDungeonBlessing(state, { blessing_id: "forged" }).error).toBe("INVALID_DECISION");
+    const result = resolveDungeonBlessing(state, { blessing_id: blessing.offers[0] });
+    expect(result.next_state.turn).toBe(0); expect(result.next_state.blessing.pending).toBe(false);
+    expect(resolveDungeonBlessing(result.next_state, { blessing_id: blessing.offers[0] }).error).toBe("INVALID_DECISION");
+  }
+  expect(createDungeonBlessing(seed, "run", 3, false).offers).toContain("player_shield");
+  expect(createDungeonBlessing(seed, "run", 3, false).offers).not.toContain("homunculus_resonance");
+});
+
+test("blessing damage, poison remainder and energy are bounded", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const setup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+  const make = (selected: string, floor = 3) => {
+    const s = createDungeonCombatState(setup, { floor, entity_id: "sulfur_01", type: "sulfur", hp: 10000, attack: 1, defense: 1, homunculus_id: "cinder", homunculus_level: 1, spell_ids: ids }, all);
+    s.player.hp = s.player.max_hp = 10000; s.npc.hp = s.npc.max_hp = 10000; s.npc.hom_id = null;
+    for (const id of ids) if (id !== "cinder_fist") s.npc.cooldowns[id] = 99;
+    const spell = s.spells.find((v: any) => v.id === "cinder_fist"); spell.accuracy = 1; spell.cooldown_turns = 0; spell.effects = [];
+    s.blessing = createDungeonBlessing(new Uint8Array(32).fill(2), "run", floor, true); s.blessing.pending = false; s.blessing.selected = selected;
+    return s;
+  };
+  const turn = (s: any) => resolveDungeonTurn(s, { turn: s.turn + 1, spell_id: "cinder_fist" }, () => 0.5);
+  const base = make("none"), surge = make("elemental_surge", 30); base.npc.status.reflect = surge.npc.status.reflect = 0.5;
+  const a = turn(base), b = turn(surge);
+  expect(b.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount).toBeGreaterThan(a.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount);
+  expect(b.events.find((e: any) => e.kind === "reflect").amount).toBe(a.events.find((e: any) => e.kind === "reflect").amount);
+  let ward = make("toxin_ward"); ward.player.status.poison = 4;
+  const ticks = []; for (let i = 0; i < 4; i++) { const r = turn(ward); ticks.push(r.events.find((e: any) => e.kind === "poison" && e.side === "player").amount); ward = r.next_state; }
+  expect(ticks).toEqual([2, 1, 2, 1]);
+  let resonance = make("homunculus_resonance", 15); resonance.player.hom_energy = 0;
+  for (let i = 0; i < 6; i++) resonance = turn(resonance).next_state;
+  expect(resonance.blessing.procs).toBe(2); expect(resonance.player.hom_energy).toBe(6);
+});
 
 test("Dungeon special encounters are deterministic, gated and distributed", () => {
   const seed = new Uint8Array(32).fill(7), kinds = new Set<string>(); let count = 0;
@@ -872,7 +918,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
   const dir = mkdtempSync(join(tmpdir(), "entitywars-dungeon-")), dbPath = join(dir, "test.sqlite"), db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", DUNGEON_ELITES_ENABLED: "0", DUNGEON_TACTICS_ENABLED: "0", DUNGEON_ELITE_TRAITS_ENABLED: "0", DUNGEON_SPECIAL_ENCOUNTERS_ENABLED: "0", WORLD_SECRET: "dev_world_secret" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", DUNGEON_ELITES_ENABLED: "0", DUNGEON_TACTICS_ENABLED: "0", DUNGEON_ELITE_TRAITS_ENABLED: "0", DUNGEON_SPECIAL_ENCOUNTERS_ENABLED: "0", DUNGEON_BLESSINGS_ENABLED: "0", WORLD_SECRET: "dev_world_secret" };
   const spawn = () => Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   let server = spawn();
   const request = async (path: string, body?: unknown, token?: string) => { const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.status, data: await r.json() as any }; };
@@ -899,8 +945,16 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     server.kill(); await server.exited; server = spawn(); await ready();
     let token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     b.token = (await request("/auth/dev_login", { name: "dungeon_test_b" })).data.token;
-    expect((await request("/dungeon/session", undefined, token)).data.session).toEqual(started.data);
+    const recoveredBeforeLoadout = (await request("/dungeon/session", undefined, token)).data.session;
+    expect(recoveredBeforeLoadout).toMatchObject(started.data);
+    expect(recoveredBeforeLoadout.spell_progress).toEqual(state.spell_progress);
     const loadout = { run_id: started.data.run_id, client_action_id: "loadout", entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
+    const lateSpell = catalogs.spells.find((s: any) => ["hybrid", "universal"].includes(s.type) && s.eligible_types?.includes("sulfur"));
+    const updatedState = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.player_id) as any).state_json);
+    updatedState.spell_progress.learned_by_entity.sulfur_01 = [lateSpell.id];
+    db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(updatedState), a.player_id);
+    expect((await request("/dungeon/session", undefined, token)).data.session.spell_progress.learned_by_entity?.sulfur_01 ?? []).not.toContain(lateSpell.id);
+    expect((await request("/dungeon/loadout", { ...loadout, client_action_id: "late-spell", spell_ids: [lateSpell.id, ...loadout.spell_ids.slice(1)] }, token)).status).toBe(400);
     expect((await request("/dungeon/loadout", loadout, b.token)).status).toBe(404);
     expect((await request("/dungeon/loadout", { ...loadout, atk: 999 }, token)).status).toBe(400);
     expect((await request("/dungeon/loadout", { ...loadout, spell_ids: ["cinder_fist", "cinder_fist", "ash_temper", "brimstone_crash"] }, token)).status).toBe(400);
@@ -1100,6 +1154,35 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect(afterSpecial.status).toBe(200); expect(afterSpecial.data.combat_state.special_encounter).toBeUndefined();
     expect(afterSpecial.data.combat_state.player.status.vuln).toBeUndefined(); expect(afterSpecial.data.combat_state.player.status.atk_boost).toBeUndefined();
     expect((await request("/dungeon/abandon", { run_id: eliteRun.data.run_id, client_action_id: "close-special" }, token)).status).toBe(200);
+    env.DUNGEON_BLESSINGS_ENABLED = "1";
+    server.kill(); await server.exited; server = spawn(); await ready();
+    token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+    const blessingRun = await request("/dungeon/start", { client_action_id: "blessing-start" }, token);
+    const blessingLoadout = await request("/dungeon/loadout", { ...loadout, run_id: blessingRun.data.run_id, client_action_id: "blessing-loadout" }, token);
+    expect(blessingLoadout.status).toBe(200);
+    const beforeBlessing = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(blessingRun.data.run_id) as any).combat_state_json);
+    expect(beforeBlessing.blessings_enabled).toBe(true); beforeBlessing.floor = 2; beforeBlessing.terminal_result = "WIN";
+    db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = 2 WHERE run_id = ?").run(JSON.stringify(beforeBlessing), blessingRun.data.run_id);
+    env.DUNGEON_BLESSINGS_ENABLED = "0"; server.kill(); await server.exited; server = spawn(); await ready();
+    token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+    b.token = (await request("/auth/dev_login", { name: "dungeon_test_b" })).data.token;
+    const floorThree = await request("/dungeon/next", { run_id: blessingRun.data.run_id, client_action_id: "blessing-floor3", expected_revision: 1 }, token);
+    expect(floorThree.status).toBe(200); expect(floorThree.data.combat_state.blessing.pending).toBe(true);
+    const choose = { run_id: blessingRun.data.run_id, client_action_id: "blessing-choice", expected_revision: 2, decision: { blessing_id: floorThree.data.combat_state.blessing.offers[0].id } };
+    expect((await request("/dungeon/turn", { run_id: blessingRun.data.run_id, client_action_id: "blessing-blocked", expected_revision: 2, decision: { turn: 1, spell_id: "cinder_fist" } }, token)).status).toBe(400);
+    expect((await request("/dungeon/blessing", { ...choose, decision: { blessing_id: "forged" } }, token)).status).toBe(400);
+    expect((await request("/dungeon/blessing", choose, b.token)).status).toBe(404);
+    const [chosen, chosenAgain] = await Promise.all([request("/dungeon/blessing", choose, token), request("/dungeon/blessing", choose, token)]);
+    expect(chosen.status).toBe(200); expect(chosenAgain.data).toEqual(chosen.data); expect(chosen.data.combat_state.turn).toBe(0);
+    expect((await request("/dungeon/blessing", { ...choose, client_action_id: "stale-blessing" }, token)).status).toBe(409);
+    server.kill(); await server.exited; server = spawn(); await ready(); token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+    expect((await request("/dungeon/blessing", choose, token)).data).toEqual(chosen.data);
+    expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.blessing.selected.id).toBe(choose.decision.blessing_id);
+    const afterBlessing = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(blessingRun.data.run_id) as any).combat_state_json);
+    afterBlessing.terminal_result = "WIN"; db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = 3 WHERE run_id = ?").run(JSON.stringify(afterBlessing), blessingRun.data.run_id);
+    const floorFour = await request("/dungeon/next", { run_id: blessingRun.data.run_id, client_action_id: "blessing-floor4", expected_revision: 3 }, token);
+    expect(floorFour.status).toBe(200); expect(floorFour.data.combat_state.blessing).toBeNull();
+    expect((await request("/dungeon/abandon", { run_id: blessingRun.data.run_id, client_action_id: "blessing-close" }, token)).status).toBe(200);
     delete (env as Record<string, string | undefined>).DUNGEON_SPECIAL_ENCOUNTERS_ENABLED;
     server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;

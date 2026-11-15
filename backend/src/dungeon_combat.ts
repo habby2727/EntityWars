@@ -258,8 +258,38 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any, 
   return { player, npc, ...(!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}), ...(enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}), ...(enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}), inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 
+export function createDungeonBlessing(seed: Uint8Array, runId: string, floor: number, hasHom: boolean): any {
+  if (floor < 3 || floor % 3 !== 0) return null;
+  const tier = Math.min(7, Math.floor(floor / 3));
+  const offers = ["elemental_surge", hasHom ? "homunculus_resonance" : "player_shield", "toxin_ward"];
+  for (let i = offers.length - 1; i > 0; i--) {
+    const draw = createHmac("sha256", seed).update(JSON.stringify(["dungeon-blessing-v1", runId, floor, i])).digest().readUInt32BE(0);
+    const j = draw % (i + 1); [offers[i], offers[j]] = [offers[j], offers[i]];
+  }
+  return { tier, offers, pending: true, selected: null, spell_count: 0, procs: 0, poison_remainder: 0, shield_used: false };
+}
+
+export function publicDungeonBlessing(blessing: any): any {
+  if (!blessing) return null;
+  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * tier);
+  const metadata: Record<string, any> = {
+    elemental_surge: { id: "elemental_surge", name: "Elemental Surge", description: `Direct elemental spell damage +${pct}%.` },
+    homunculus_resonance: { id: "homunculus_resonance", name: "Homunculus Resonance", description: `+1 hom energy after ${tier < 3 ? 3 : 2} successful spells, up to ${tier < 5 ? 1 : 2} times this floor.` },
+    player_shield: { id: "player_shield", name: "Protective Ward", description: `Reduce one incoming direct hit by ${pct}%.` },
+    toxin_ward: { id: "toxin_ward", name: "Toxin Ward", description: `Poison tick damage reduced by ${ward}%, minimum 1 damage.` },
+  };
+  return { tier, pending: blessing.pending, offers: blessing.pending ? blessing.offers.map((id: string) => metadata[id]) : [], selected: blessing.selected ? metadata[blessing.selected] : null };
+}
+
+export function resolveDungeonBlessing(state: any, decision: any): any {
+  const b = state?.blessing;
+  if (!state || state.terminal_result || !b?.pending || !decision || typeof decision !== "object" || Array.isArray(decision) || Object.keys(decision).sort().join(",") !== "blessing_id" || typeof decision.blessing_id !== "string" || !b.offers.includes(decision.blessing_id)) return { error: "INVALID_DECISION" };
+  const next = structuredClone(state); next.blessing.pending = false; next.blessing.selected = decision.blessing_id;
+  return { next_state: next, events: [{ kind: "blessing_selected", actor: "player", blessing_id: decision.blessing_id }] };
+}
+
 export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
-  if (!state || state.terminal_result || state.player?.inspiration_pending || !decision || typeof decision !== "object" || Object.keys(decision).some(k => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  if (!state || state.terminal_result || state.blessing?.pending || state.player?.inspiration_pending || !decision || typeof decision !== "object" || Object.keys(decision).some(k => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const switching = decision.switch_slot !== undefined;
   if (switching && (decision.spell_id !== undefined || decision.hom_action !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id)) return { error: "INVALID_DECISION" };
   const spell = switching ? null : state.spells.find((s: any) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
@@ -324,7 +354,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     const hit = draw() < accuracy;
     events.push({ kind: "spell", actor: who, spell_id: chosen.id, hit });
     if (!hit) return;
-    let directDamage = 0;
+    let directDamage = 0, unblessedDirectDamage = 0;
     const previousWard = actor === next.player && next.weapon_defenses.shield !== undefined ? next.other_defenses.shield ?? 0 : actor.status.shield ?? 0;
     if (chosen.category === "attack") {
       const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
@@ -350,17 +380,20 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       }
       const shield = target.status.shield ?? 0;
       const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
-      let damage = Math.max(1, Math.round(base * power));
+      let unblessedDamage = Math.max(1, Math.round(base * power));
+      let damage = Math.max(1, Math.round(base * power * (who === "player" && next.blessing?.selected === "elemental_surge" && ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold", "hybrid"].includes(chosen.type) ? 1 + Math.min(10, 4 + next.blessing.tier) / 100 : 1)));
+      if (who === "npc" && next.blessing?.selected === "player_shield" && !next.blessing.shield_used) { damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100))); next.blessing.shield_used = true; }
       if (target.status.shield > 0) {
         const dispel = Math.max(0, Math.min(1, chosen.effects.find((e: any) => e.kind === "ward_dispel")?.value ?? 0));
         const pierce = Math.max(0, Math.min(1, chosen.effects.find((e: any) => e.kind === "pierce_ward")?.value ?? 0));
+        unblessedDamage = Math.max(0, Math.round(unblessedDamage * (1 - target.status.shield * (1 - dispel) * (1 - pierce))));
         damage = Math.max(0, Math.round(damage * (1 - target.status.shield * (1 - dispel) * (1 - pierce)))); clearDefense(target, "shield");
       }
-      directDamage = Math.min(target.hp, damage);
+      directDamage = Math.min(target.hp, damage); unblessedDirectDamage = who === "player" && next.blessing?.selected === "elemental_surge" ? Math.min(target.hp, unblessedDamage) : directDamage;
       target.hp = Math.max(0, target.hp - damage); if (directDamage > 0) target.spell_hit_this_exchange = true; events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp, target_status: structuredClone(target.status) });
       if ((target.status.reflect ?? 0) > 0) {
         const ignored = who === "player" && (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < Math.min(1, next.item_effects.ignore_reflect_chance);
-        const amount = ignored ? 0 : Math.min(actor.hp, Math.round(damage * target.status.reflect));
+        const amount = ignored ? 0 : Math.min(actor.hp, Math.round((who === "player" && next.blessing?.selected === "elemental_surge" ? unblessedDamage : damage) * target.status.reflect));
         actor.hp -= amount;
         clearDefense(target, "reflect");
         if (amount > 0) actor.spell_hit_this_exchange = true;
@@ -403,7 +436,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         if (amount > 0) { target.hom_energy -= amount; actor.hom_energy += amount; events.push({ kind: "hom_energy_siphon", actor: who, target: who === "player" ? "npc" : "player", amount, actor_energy: actor.hom_energy, target_energy: target.hom_energy }); }
         continue;
       }
-      if (e.kind === "delayed_damage") { if (chosen.category === "attack") queueDelayedDamage(next, who, who === "player" ? "npc" : "player", e.value, directDamage, decision.turn, events); continue; }
+      if (e.kind === "delayed_damage") { if (chosen.category === "attack") queueDelayedDamage(next, who, who === "player" ? "npc" : "player", e.value, unblessedDirectDamage, decision.turn, events); continue; }
       if (e.kind === "ward_convert") continue;
       if (e.kind === "counter_trap") { actor.strategic_trap = { value: e.value, activated_turn: decision.turn, expires_turn: decision.turn + 2 }; events.push({ kind: "counter_trap_armed", actor: who, target: who, value: e.value, expires_turn: decision.turn + 2 }); continue; }
       if (e.kind === "heal_suppression") { target.strategic_heal_suppression = { expires_turn: decision.turn + 2 }; events.push({ kind: "heal_suppression_applied", actor: who, target: who === "player" ? "npc" : "player", value: e.value, expires_turn: decision.turn + 2 }); continue; }
@@ -429,9 +462,13 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         if (recipient === target && ["poison", "vuln", "atk_down", "hom_stun", "misalign_next"].includes(e.kind) && recipient.status[e.kind] > previous) awardInspiration(actor, who, e.kind);
       }
     }
-    if (chosen.category === "attack") strategicCounter(target, actor, who === "player" ? "npc" : "player", who, directDamage, decision.turn, events);
+    if (chosen.category === "attack") strategicCounter(target, actor, who === "player" ? "npc" : "player", who, unblessedDirectDamage, decision.turn, events);
     if (who === "npc" && chosen.category === "attack") triggerEliteTrait("hit", directDamage);
     if (actor.hom_id) actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+    if (who === "player" && actor.hom_id && next.blessing?.selected === "homunculus_resonance") {
+      const b = next.blessing, threshold = b.tier < 3 ? 3 : 2, limit = b.tier < 5 ? 1 : 2;
+      if (b.procs < limit && ++b.spell_count >= threshold) { b.spell_count = 0; b.procs++; const before = actor.hom_energy; actor.hom_energy = Math.min(6, actor.hom_energy + 1); events.push({ kind: "blessing_energy", actor: who, amount: actor.hom_energy - before, energy: actor.hom_energy }); }
+    }
   };
   const playerAction = () => {
   if (switching) {
@@ -456,6 +493,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       events.push({ kind: "evade", actor: "player", target: "npc" });
     } else if (draw() < 0.95) {
       let damage = Math.max(1, Math.round(next.npc.atk * (next.npc.hom_energy >= 6 ? 0.6 : 0.4)));
+      if (next.blessing?.selected === "player_shield" && !next.blessing.shield_used) { damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100))); next.blessing.shield_used = true; }
       if (next.player.status.shield > 0) { damage = Math.max(0, Math.round(damage * (1 - next.player.status.shield))); clearDefense(next.player, "shield"); }
       next.player.hp = Math.max(0, next.player.hp - damage);
       events.push({ kind: "hom_attack", actor: "npc", amount: damage, hp: next.player.hp });
@@ -467,7 +505,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   delete next.player.status.tempo_bonus; delete next.npc.status.tempo_bonus;
   if (playerFirst) { playerAction(); npcAction(); } else { npcAction(); if (next.player.hp > 0 && next.npc.hp > 0) playerAction(); }
   for (const fighter of [next.player, next.npc]) {
-    if (fighter.hp > 0 && fighter.status.poison > 0) { const amount = Math.min(2, fighter.hp); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: fighter === next.player ? "player" : "npc", amount, hp: fighter.hp, remaining: fighter.status.poison }); }
+    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 2; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * b.tier) + b.poison_remainder; const prevented = Math.min(1, Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: fighter === next.player ? "player" : "npc", amount, hp: fighter.hp, remaining: fighter.status.poison }); }
     for (const id of Object.keys(fighter.cooldowns)) fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   }
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);
@@ -518,7 +556,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
 
 export function resolveDungeonInspiration(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
   const fighter = state?.player;
-  if (!state || state.terminal_result || !fighter?.inspiration_pending || fighter.inspiration_used || !Array.isArray(fighter.inspiration_offers) || fighter.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  if (!state || state.terminal_result || state.blessing?.pending || !fighter?.inspiration_pending || fighter.inspiration_used || !Array.isArray(fighter.inspiration_offers) || fighter.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const keys = Object.keys(decision).sort().join(",");
   if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && typeof decision.spell_id === "string" && fighter.inspiration_offers.includes(decision.spell_id))) return { error: "INVALID_DECISION" };
   const next = structuredClone(state), p = next.player, events: any[] = [];

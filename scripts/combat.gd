@@ -85,6 +85,9 @@ var _online_hunt_guard := false
 var _dungeon_guard := false
 var _dungeon_session: Dictionary = {}
 var _dungeon_request := ""
+var _blessing_panel: PanelContainer
+var _blessing_cards: Array[Button] = []
+var _dungeon_blessing_log_key := ""
 var _dungeon_kind := ""
 var _dungeon_pending: Dictionary = {}
 var _dungeon_hom_choice: Dictionary = {}
@@ -412,6 +415,7 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 			elif str(_dungeon_session.get("status", "")) == "LOSS" and own is Dictionary:
 				_log_immediate("Monthly best: Floor %d | Rank #%d" % [_dungeon_best, int(own.get("rank", 0))])
 		_dungeon_refresh_controls()
+		_refresh_dungeon_blessing()
 		return
 	if _dungeon_kind == "session":
 		var session: Variant = data.get("session")
@@ -757,6 +761,16 @@ func _dungeon_render() -> void:
 			_dungeon_encounter_log_key = encounter_key
 			_dungeon_encounter_details["dungeon_encounter:" + str(encounter.get("kind", ""))] = encounter.duplicate(true)
 			_append_combat_log("ENCOUNTER: %s" % str(encounter.label), {"category": "advantage", "ability_id": "dungeon_encounter:" + str(encounter.get("kind", ""))})
+	var blessing: Variant = state.get("blessing")
+	if blessing is Dictionary and blessing.get("selected") is Dictionary:
+		var selected: Dictionary = blessing.selected
+		_dungeon_floor_label.text += " | " + str(selected.get("name", "Blessing"))
+		var blessing_key := "%s:%d:%s" % [str(_dungeon_session.get("run_id", "")), floor_id, str(selected.get("id", ""))]
+		if _dungeon_blessing_log_key != blessing_key:
+			_dungeon_blessing_log_key = blessing_key
+			var detail_key := "dungeon_encounter:blessing:" + blessing_key
+			_dungeon_encounter_details[detail_key] = {"label": str(selected.get("name", "Blessing")), "hint": str(selected.get("description", ""))}
+			_append_combat_log("BLESSING: " + str(selected.get("name", "")), {"category": "advantage", "ability_id": detail_key})
 	_dungeon_floor_label.show()
 	_layout_dungeon_floor_header()
 	turn_label.text = "Cleared: %d" % int(_dungeon_session.get("cleared_floor", 0))
@@ -807,6 +821,7 @@ func _dungeon_render() -> void:
 			_dungeon_brief.popup_centered()
 	_dungeon_refresh_controls()
 	_refresh_dungeon_inspiration()
+	_refresh_dungeon_blessing()
 	if _dungeon_request.is_empty() and _dungeon_pending.is_empty() and (not _dungeon_rank_loaded or ((phase == "FLOOR_CLEARED" or str(_dungeon_session.get("status", "")) == "LOSS") and _dungeon_rank_floor != floor_id)):
 		_dungeon_rank_floor = floor_id
 		_dungeon_kind = "ranking"
@@ -817,7 +832,7 @@ func _dungeon_refresh_controls() -> void:
 	var state: Dictionary = _dungeon_session.get("combat_state", {})
 	var p: Dictionary = state.get("player", {})
 	var ids: Array = p.get("spell_ids", [])
-	var blocked := _dungeon_playing_events or bool(p.get("inspiration_pending", false)) or not _dungeon_synchronized or _dungeon_session.is_empty() or str(_dungeon_session.get("status", "")) != "ACTIVE" or str(_dungeon_session.get("phase", "")) != "COMBAT" or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty() or (_dungeon_brief != null and _dungeon_brief.visible) or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
+	var blocked := _dungeon_playing_events or (state.get("blessing") is Dictionary and bool(state.blessing.get("pending", false))) or bool(p.get("inspiration_pending", false)) or not _dungeon_synchronized or _dungeon_session.is_empty() or str(_dungeon_session.get("status", "")) != "ACTIVE" or str(_dungeon_session.get("phase", "")) != "COMBAT" or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty() or (_dungeon_brief != null and _dungeon_brief.visible) or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
 	for i in spell_buttons.size():
 		spell_buttons[i].disabled = blocked or i >= ids.size() or int(p.get("cooldowns", {}).get(str(ids[i]), 0)) > 0
 	var weapons: Array = state.get("weapons", [])
@@ -837,12 +852,73 @@ func _show_dungeon_status(description: String) -> void:
 	_spell_detail.dialog_text = description
 	_spell_detail.popup_centered(Vector2i(440, 260))
 
+func _setup_dungeon_blessing_ui() -> void:
+	_blessing_panel = PanelContainer.new()
+	_blessing_panel.name = "DungeonBlessingSelection"
+	_blessing_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_blessing_panel.position = Vector2(-455, -200)
+	_blessing_panel.custom_minimum_size = Vector2(910, 400)
+	_blessing_panel.z_index = 150
+	_blessing_panel.add_theme_stylebox_override("panel", _inspiration_panel.get_theme_stylebox("panel"))
+	add_child(_blessing_panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	_blessing_panel.add_child(column)
+	var title := Label.new()
+	title.text = "FLOOR BLESSING - Choose one"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color("d4af37"))
+	column.add_child(title)
+	var info := Label.new()
+	info.text = "This blessing lasts only for this floor."
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(info)
+	var cards := HBoxContainer.new()
+	cards.add_theme_constant_override("separation", 8)
+	cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(cards)
+	for i in 3:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(275, 280)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size", 17)
+		button.pressed.connect(_choose_dungeon_blessing.bind(i))
+		cards.add_child(button)
+		_blessing_cards.append(button)
+	_blessing_panel.hide()
+
+func _refresh_dungeon_blessing() -> void:
+	if not _dungeon_guard or _blessing_panel == null:
+		return
+	var blessing: Variant = _dungeon_session.get("combat_state", {}).get("blessing")
+	if not blessing is Dictionary or not bool(blessing.get("pending", false)) or str(_dungeon_session.get("status", "")) != "ACTIVE" or not blessing.get("offers") is Array or blessing.offers.size() != 3 or (_dungeon_brief != null and _dungeon_brief.visible):
+		_blessing_panel.hide()
+		return
+	var locked := _dungeon_playing_events or not _dungeon_synchronized or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
+	for i in 3:
+		var offer: Dictionary = blessing.offers[i]
+		_blessing_cards[i].text = str(offer.get("name", "")) + "\n\n" + str(offer.get("description", ""))
+		_blessing_cards[i].tooltip_text = str(offer.get("description", ""))
+		_blessing_cards[i].disabled = locked
+	_blessing_panel.show()
+
+func _choose_dungeon_blessing(index: int) -> void:
+	var blessing: Variant = _dungeon_session.get("combat_state", {}).get("blessing")
+	if not blessing is Dictionary or not bool(blessing.get("pending", false)) or index < 0 or index >= blessing.get("offers", []).size() or not _dungeon_synchronized or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
+		return
+	_dungeon_pending = {"kind": "blessing", "payload": {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": int(_dungeon_session.get("combat_revision", 0)), "decision": {"blessing_id": str(blessing.offers[index].id)}}}
+	SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
+	_refresh_dungeon_blessing()
+	_dungeon_send_pending()
+
 func _refresh_dungeon_inspiration() -> void:
 	if not _dungeon_guard or _inspiration_panel == null:
 		return
 	var p: Dictionary = _dungeon_session.get("combat_state", {}).get("player", {})
 	var offers: Variant = p.get("inspiration_offers", [])
-	if not bool(p.get("inspiration_pending", false)) or str(_dungeon_session.get("status", "")) != "ACTIVE" or not offers is Array or offers.size() != 3:
+	if (_dungeon_session.get("combat_state", {}).get("blessing") is Dictionary and bool(_dungeon_session.combat_state.blessing.get("pending", false))) or not bool(p.get("inspiration_pending", false)) or str(_dungeon_session.get("status", "")) != "ACTIVE" or not offers is Array or offers.size() != 3:
 		_inspiration_panel.hide()
 		_inspiration_options.clear()
 		return
@@ -911,9 +987,10 @@ func _begin_combat_initialization() -> void:
 		_dungeon_brief.title = "DUNGEONS"
 		_dungeon_brief.get_ok_button().text = "Fight"
 		_dungeon_brief.get_cancel_button().hide()
-		_dungeon_brief.confirmed.connect(func(): call_deferred("_dungeon_refresh_controls"))
+		_dungeon_brief.confirmed.connect(func(): call_deferred("_refresh_dungeon_blessing"); call_deferred("_dungeon_refresh_controls"))
 		_dungeon_brief.canceled.connect(func(): call_deferred("_dungeon_refresh_controls"))
 		add_child(_dungeon_brief)
+		_setup_dungeon_blessing_ui()
 		_combat_backend = BackendClient.new()
 		_combat_backend.base_url = backend_url
 		_combat_backend.auto_dev_login = false

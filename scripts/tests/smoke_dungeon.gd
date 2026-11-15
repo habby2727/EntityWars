@@ -65,6 +65,26 @@ func _run() -> void:
 	assert(not loadout.btn_save.visible)
 	assert(not loadout.get_node("RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol").visible)
 	assert(not loadout.get_node("RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol").visible)
+	assert(not loadout.get_node("RootMargin/MainHSplit/LeftPanel/ModeRow").visible)
+	assert(loadout.btn_play.text == "Start Run")
+	assert(not loadout.get_node("RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter").visible)
+	assert(loadout._spell_button.text == "Change Spells")
+	var disabled_style = loadout._spell_button.get_theme_stylebox("disabled")
+	assert(disabled_style is StyleBoxTexture and disabled_style.texture.resource_path.ends_with("boton-bloqueado-off.png"))
+	loadout._dungeon_spell_progress = {"learned_by_entity": {"sulfur_01": ["fixture_snapshot"]}}
+	loadout._on_spell_state_updated({"spell_progress": {"learned_by_entity": {"sulfur_01": ["fixture_late"]}}})
+	assert(loadout._spell_state.spell_progress.learned_by_entity.sulfur_01 == ["fixture_snapshot"])
+	loadout._dungeon_spell_progress = null
+	loadout._spell_state = {}
+	assert(loadout._spell_button.is_visible_in_tree())
+	assert(loadout._spell_button.get_parent().name == "BottomRow")
+	loadout._open_spell_dialog()
+	assert(loadout._spell_dialog.visible and loadout._spell_slots.size() == 4 and not loadout._spell_picker.visible)
+	assert(loadout._spell_empty_notice.visible)
+	assert(loadout._spell_empty_notice.text == "No additional spells unlocked for this entity")
+	loadout._select_spell_slot(0)
+	assert(loadout._spell_picker.visible)
+	loadout._spell_dialog.hide()
 	assert(loadout.get_node("RootMargin/MainHSplit/LeftPanel/TabButtons").visible)
 	assert(loadout._idx_to_id(loadout._items, loadout.dd_item1).is_empty())
 	assert(loadout._idx_to_id(loadout._items, loadout.dd_item2).is_empty())
@@ -74,6 +94,28 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	assert(current_scene.scene_file_path == "res://scenes/ui/LabStructures.tscn")
+	var normal = load("res://scenes/LoadoutGrid.tscn").instantiate()
+	root.add_child(normal)
+	await process_frame
+	normal._spell_synced = true
+	normal._spell_state = {"spell_progress": {"learned_by_entity": {"sulfur_01": ["steady_script"], "sodium_01": []}}}
+	normal._on_card_picked("entity", "sulfur_01")
+	assert(normal._spell_button.tooltip_text == "Change spells for this entity")
+	normal._open_spell_dialog()
+	assert(normal._spell_catalog.get_children().any(func(row): return row.text.contains("Steady Script")))
+	normal._spell_dialog.hide()
+	normal._on_card_picked("entity", "sodium_01")
+	assert(normal._spell_button.tooltip_text == "No additional spells unlocked for this entity")
+	normal._open_spell_dialog()
+	assert(not normal._spell_catalog.get_children().any(func(row): return row.text.contains("Steady Script")))
+	normal._spell_dialog.hide()
+	assert(normal._spell_button.is_visible_in_tree() and normal._spell_button.text == "Change Spells")
+	normal._open_spell_dialog()
+	assert(normal._spell_slots.size() == 4 and not normal._spell_picker.visible)
+	normal._select_spell_slot(0)
+	assert(normal._spell_picker.visible)
+	normal.queue_free()
+	await process_frame
 	SceneRouter._dungeon_context = {"run_id": "fixture-run", "player_id": "fixture-player"}
 	change_scene_to_file("res://scenes/Combat.tscn")
 	await process_frame
@@ -85,6 +127,16 @@ func _run() -> void:
 	combat._dungeon_rank_loaded = true
 	combat._dungeon_session = {"run_id": "presentation-fixture", "status": "ACTIVE", "phase": "COMBAT", "cleared_floor": 0, "combat_state": {"floor": 1, "turn": 0, "player": fighter.duplicate(true), "npc": fighter.duplicate(true)}}
 	var encounter: Dictionary = combat._dungeon_session.combat_state
+	encounter.floor = 3
+	encounter.blessing = {"pending": true, "offers": [{"id": "a", "name": "A", "description": "First"}, {"id": "b", "name": "B", "description": "Second"}, {"id": "c", "name": "C", "description": "Third"}]}
+	combat._dungeon_render()
+	assert(combat._dungeon_brief.visible and not combat._blessing_panel.visible)
+	combat._dungeon_brief.hide()
+	combat._refresh_dungeon_blessing()
+	assert(combat._blessing_panel.visible and combat._blessing_cards.size() == 3)
+	assert(combat._blessing_cards[0].tooltip_text == "First")
+	combat._blessing_panel.hide()
+	encounter.erase("blessing")
 	var cases := [
 		{"label": "BULWARK", "modifiers": {"hp": 1.2, "attack": 1.0, "defense": 1.12}, "personality": "DEFENSIVE", "hint": "favors protection and healing", "bonus": "HP +20%, DEF +12%"},
 		{"label": "REAVER", "modifiers": {"hp": 1.12, "attack": 1.1, "defense": 1.0}, "personality": "AGGRESSIVE", "hint": "favors attacks and finishers", "bonus": "HP +12%, ATK +10%"},

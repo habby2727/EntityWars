@@ -106,12 +106,15 @@ func _exit_tree() -> void:
 		_reg.free()
 var _spell_backend: BackendClient
 var _spell_state := {}
+var _dungeon_spell_progress: Variant = null
 var _spell_synced := false
 var _spell_pending_id := ""
 var _spell_pending_mode := ""
 var _spell_pending_entity := ""
 var _spell_button: Button
 var _spell_dialog: Control
+var _spell_picker: Control
+var _spell_empty_notice: Label
 var _spell_slots: Array[Button] = []
 var _spell_description: Label
 var _spell_draft: Array = []
@@ -199,8 +202,11 @@ func _ready() -> void:
 	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
 	if _hunt_mode or _dungeon_mode:
 		if _dungeon_mode:
+			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol.hide()
+			$RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter.hide()
+			if btn_play: btn_play.text = "Start Run"
 		else:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 		btn_save.hide()
@@ -531,6 +537,7 @@ func _setup_spell_state() -> void:
 func _on_spell_auth_changed(token: String) -> void:
 	_spell_synced = false
 	_spell_state = {}
+	if _dungeon_mode and _dungeon_spell_progress is Dictionary: _spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
 	_refresh_spell_button()
 	if token != "" and _spell_backend != null:
 		_spell_backend.request_api("GET", "/player/state", null, true)
@@ -539,6 +546,7 @@ func _on_spell_state_updated(state: Dictionary) -> void:
 	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
 		return
 	_spell_state = state.duplicate(true)
+	if _dungeon_mode and _dungeon_spell_progress is Dictionary: _spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
 	_spell_synced = true
 	_refresh_spell_button()
 
@@ -563,13 +571,28 @@ func _refresh_spell_button() -> void:
 	if _spell_button == null or _reg == null:
 		return
 	var available := SpellLoadout.available_ids(_reg, _current_entity_id, _spell_state.get("spell_progress", {}))
-	_spell_button.visible = _dungeon_mode or available.size() > 4
+	_spell_button.visible = true
 	_spell_button.disabled = _spell_pending_id != ""
+	if _dungeon_mode and not _dungeon_spell_progress is Dictionary: _spell_button.disabled = true
+	var equipped := _equipped_spells(_mode, _current_entity_id)
+	var extra := available.any(func(id): return id not in equipped)
+	_spell_button.tooltip_text = "Change spells for this entity" if extra else "No additional spells unlocked for this entity"
+	MenuArt.button(_spell_button)
+	if not extra:
+		var off := StyleBoxTexture.new()
+		off.texture = load("res://assets/ui/new-elements/boton-bloqueado-off.png")
+		off.texture_margin_left = 20; off.texture_margin_right = 20; off.texture_margin_top = 15; off.texture_margin_bottom = 15
+		for state in ["normal", "hover", "pressed", "disabled"]: _spell_button.add_theme_stylebox_override(state, off)
 
 func _build_spell_dialog() -> void:
 	_spell_button = get_node_or_null("SpellConfig") as Button
 	if _spell_button == null:
 		return
+	_spell_button.text = "Change Spells"
+	_spell_button.reparent($RootMargin/MainHSplit/RightPanel/BottomRow)
+	_spell_button.custom_minimum_size = Vector2(190, 72)
+	_spell_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	$RootMargin/MainHSplit/RightPanel/BottomRow.move_child(_spell_button, 0)
 	_spell_button.pressed.connect(_open_spell_dialog)
 	_spell_dialog = Control.new()
 	_spell_dialog.name = "SpellOverlay"
@@ -607,6 +630,12 @@ func _build_spell_dialog() -> void:
 	MenuArt.button(close)
 	close.pressed.connect(_spell_dialog.hide)
 	header.add_child(close)
+	_spell_empty_notice = Label.new()
+	_spell_empty_notice.text = "No additional spells unlocked for this entity"
+	_spell_empty_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_spell_empty_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_spell_empty_notice.hide()
+	content.add_child(_spell_empty_notice)
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 16)
@@ -624,6 +653,7 @@ func _build_spell_dialog() -> void:
 		slots.add_child(slot)
 		_spell_slots.append(slot)
 	var right := VBoxContainer.new()
+	_spell_picker = right
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 6)
 	body.add_child(right)
@@ -679,16 +709,21 @@ func _open_spell_dialog() -> void:
 	if _spell_pending_id != "" or _reg == null:
 		return
 	_spell_draft = _equipped_spells(_mode, _current_entity_id).duplicate()
+	var available := SpellLoadout.available_ids(_reg, _current_entity_id, _spell_state.get("spell_progress", {}))
+	_spell_empty_notice.visible = not available.any(func(id): return id not in _spell_draft)
 	_spell_selected_slot = 0
+	_spell_filter = "All"
 	var entity: Dictionary = _reg.entities.get(_current_entity_id, {})
 	_spell_heading.text = "Configure Spells   |   %s - %s   |   4/4 Equipped" % [entity.get("name", ""), str(entity.get("type", "")).capitalize()]
 	_rebuild_spell_catalog()
 	_refresh_spell_draft(0)
+	_spell_picker.hide()
 	_spell_dialog.show()
 
 func _select_spell_slot(index: int) -> void:
 	_spell_selected_slot = index
 	_refresh_spell_draft(index)
+	_spell_picker.show()
 
 func _filter_spell_catalog(value: String) -> void:
 	_spell_filter = value
@@ -704,8 +739,9 @@ func _rebuild_spell_catalog() -> void:
 		if _spell_filter != "All" and SpellView.group(spell) != _spell_filter:
 			continue
 		var status := SpellView.status(spell, _current_entity_id, entity_type, _spell_state.get("spell_progress", {}), _spell_synced or _spell_debug.unlock_all_buildings)
+		if status not in ["Initial", "Learned"]: continue
 		var row := Button.new()
-		row.text = "%s   |   %s   |   %s" % [spell.name, SpellView.affinity(spell), status]
+		row.text = "%s   |   %s" % [spell.name, SpellView.affinity(spell)]
 		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		row.custom_minimum_size.y = 32
 		if status == "Locked":
@@ -767,7 +803,7 @@ func _confirm_spell_dialog() -> void:
 			_set_build_error("Server state is unavailable.")
 			return
 		_hunt_spells[_current_entity_id] = _spell_draft.duplicate()
-		_set_build_error("Boss Hunt spells selected.")
+		_set_build_error("Dungeon spells selected." if _dungeon_mode else "Boss Hunt spells selected.")
 		return
 	if _spell_debug.unlock_all_buildings:
 		var next := _spell_debug.load_lab_state()
@@ -1066,7 +1102,7 @@ func _refresh_details() -> void:
 		if lbl_mode: lbl_mode.text = "Dungeons — Loadout" if _dungeon_mode else ("Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper())
 		if lbl_homunculus: lbl_homunculus.text = "Homunculus: —"
 		if preview: preview.texture = null
-		if _spell_button: _spell_button.hide()
+		if _spell_button: _spell_button.show()
 		return
 	_refresh_spell_button()
 
@@ -1460,8 +1496,11 @@ func _on_play_pressed() -> void:
 func _on_dungeon_identity(state: Dictionary) -> void:
 	if _dungeon_backend == null or state.is_empty() or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")):
 		_dungeon_recovered = false
+		_dungeon_spell_progress = null
+		_refresh_spell_button()
 		return
 	_spell_state = state.duplicate(true)
+	if _dungeon_spell_progress is Dictionary: _spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
 	_spell_synced = true
 	_refresh_spell_button()
 	if _dungeon_request.is_empty() and not _dungeon_recovered:
@@ -1500,6 +1539,14 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 		_set_build_error("Dungeon unavailable. Retry or return to Sync Nexus.")
 		return
 	_dungeon_recovered = true
+	if _dungeon_kind == "session" and not bool(session.get("combat_ready", false)):
+		if not session.get("spell_progress") is Dictionary:
+			_dungeon_recovered = false
+			_set_build_error("Dungeon spell inventory unavailable. Retry.")
+			return
+		_dungeon_spell_progress = session.spell_progress.duplicate(true)
+		_spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
+		_refresh_spell_button()
 	if bool(session.get("combat_ready", false)) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary and not session.combat_state.is_empty():
 		if not _dungeon_payload.is_empty():
 			var saved: Variant = session.get("loadout", {})

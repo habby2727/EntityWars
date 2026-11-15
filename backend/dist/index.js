@@ -13491,7 +13491,19 @@ function dungeonLeaderboard(db, season, playerId) {
   const player = db.query(`${ranking} SELECT * FROM ranked WHERE player_id = ?`).get(season, playerId) ?? null;
   return { season, leaders, player };
 }
-function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous) {
+function generateDungeonEncounter(seed, runId, floor, enabled) {
+  if (!enabled || floor < 5 || floor % 10 === 0)
+    return null;
+  const draw = (domain) => createHmac2("sha256", seed).update(JSON.stringify(["dungeon-encounter-v1", runId, floor, domain])).digest().readUInt32BE(0);
+  if (draw("chance") >= Math.floor(4294967296 * 0.1))
+    return null;
+  return [
+    { kind: "corrupted_fog", label: "CORRUPTED FOG", hint: "Player starts vulnerable by 10%." },
+    { kind: "crystal_bastion", label: "CRYSTAL BASTION", hint: "Enemy starts with a 15% shield." },
+    { kind: "arcane_instability", label: "ARCANE INSTABILITY", hint: "Both fighters start with 10% attack boost." }
+  ][draw("variant") % 3];
+}
+function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous, elitesEnabled = false, tacticsEnabled = false, trackBase = elitesEnabled) {
   if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1))
     throw new Error("INVALID_DUNGEON_SETUP");
   const draw = (domain) => createHmac2("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
@@ -13541,13 +13553,42 @@ function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04,
     if (alternatives.length)
       chosen[3] = alternatives[draw("variety") % alternatives.length];
   }
-  const scale = (base, rate) => Math.min(90000, Math.round(base * Math.pow(1 + rate, floor - 1)));
+  const scale = (base2, rate) => Math.min(90000, Math.round(base2 * Math.pow(1 + rate, floor - 1)));
   if (previous && [previous.hp, previous.attack, previous.defense].some((v) => !Number.isSafeInteger(v) || v < 0 || v >= 1e5))
     throw new Error("DUNGEON_DIFFICULTY_LIMIT");
   const hp = Math.max(scale(entity.base_stats.hp, growth.hp), (previous?.hp ?? -1) + 1);
   const npcAttack = Math.max(scale(entity.base_stats.power, growth.attack), (previous?.attack ?? -1) + 1);
   const defense = Math.max(scale(entity.base_stats.guard, growth.defense), (previous?.defense ?? -1) + 1);
-  return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map((s) => s.id), hp, attack: npcAttack, defense };
+  const base = { hp, attack: npcAttack, defense };
+  const variants = [
+    { kind: "bulwark", label: "BULWARK", modifiers: { hp: 1.2, attack: 1, defense: 1.12 } },
+    { kind: "reaver", label: "REAVER", modifiers: { hp: 1.12, attack: 1.1, defense: 1 } },
+    { kind: "alchemist", label: "ALCHEMIST", modifiers: { hp: 1.15, attack: 1.05, defense: 1.05 } }
+  ];
+  const elite = elitesEnabled && floor % 10 === 0 ? variants[draw("elite") % variants.length] : null;
+  const effective = elite ? Object.fromEntries(Object.entries(base).map(([key, value]) => [key, Math.min(99999, Math.round(value * elite.modifiers[key]))])) : base;
+  const personalities = ["AGGRESSIVE", "DEFENSIVE", "OPPORTUNIST", "ALCHEMIST"];
+  const npc_personality = elite ? { bulwark: "DEFENSIVE", reaver: "AGGRESSIVE", alchemist: "ALCHEMIST" }[elite.kind] : personalities[draw("personality") % personalities.length];
+  return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map((s) => s.id), ...effective, ...trackBase ? { base_stats: base, elite } : {}, ...tacticsEnabled ? { npc_personality } : {} };
+}
+function dungeonPreviousBase(combat, homunculi) {
+  const base = combat.npc_base_stats;
+  if (!base)
+    return null;
+  if (![base.hp, base.attack, base.defense].every((n) => Number.isSafeInteger(n) && n >= 0))
+    throw new Error("INVALID_DUNGEON_BASE");
+  if (combat.npc_base_stats_version === 2)
+    return { hp: base.hp, attack: base.attack, defense: base.defense };
+  if (combat.npc_base_stats_version !== undefined || !Number.isSafeInteger(combat.floor) || combat.floor < 1 || combat.floor > 1000)
+    throw new Error("INVALID_DUNGEON_BASE");
+  const hom = homunculi.find((h) => h.id === combat.npc?.hom_id);
+  if (!hom)
+    throw new Error("INVALID_DUNGEON_BASE");
+  const level = Math.min(10, Math.floor((combat.floor - 1) / 3));
+  const result = { hp: base.hp - (hom.buff_hp ?? 0) - level, attack: base.attack - (hom.buff_atk ?? 0) - Math.floor(level / 5), defense: base.defense - (hom.buff_def ?? 0) - Math.floor(level / 3) };
+  if (Object.values(result).some((n) => !Number.isSafeInteger(n) || n < 1))
+    throw new Error("INVALID_DUNGEON_BASE");
+  return result;
 }
 function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, target, roll, context = {}) {
   if (!Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !Array.isArray(equippedIds) || equippedIds.length !== 4 || new Set(equippedIds).size !== 4 || !Array.isArray(spells2) || !cooldowns || typeof cooldowns !== "object" || !npc || !target || typeof roll !== "number" || !Number.isFinite(roll) || roll < 0 || roll >= 1)
@@ -13564,7 +13605,15 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, targ
   const wardFollow = allMoves.some((s) => has(s, "ward_convert") && (cooldowns[s.id] ?? 0) <= 1);
   const estimate = (s) => {
     const relation = context.types?.effectiveness?.[s.type]?.[target.type] ?? 1;
-    const typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+    let typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+    if (context.personality && s.type === "hybrid") {
+      const factor = (type) => {
+        const value = context.types?.effectiveness?.[type]?.[target.type] ?? 1;
+        return value > 1 ? 1.25 : value < 1 ? 0.8 : 1;
+      };
+      typeMultiplier = Math.max(0.8, Math.min(1.25, Math.pow(factor(s.primary_type), 0.65) * Math.pow(factor(s.secondary_type), 0.35)));
+    } else if (context.personality && s.type === "universal")
+      typeMultiplier = 1;
     const poison = s.effects.find((e) => e.kind === "bonus_if_poisoned");
     const power = s.power_mult * (poison && enemyStatus.poison > 0 ? 1 + poison.value : 1);
     const base = Math.max(1, Math.round(((npc.atk ?? 0) * (1 + (ownStatus.atk_boost ?? 0) - (ownStatus.atk_down ?? 0)) - Math.trunc((target.def ?? 0) * 0.5)) * typeMultiplier * physicalAnomalyMultiplier(context.anomaly, npc.type) * power * (1 + (enemyStatus.vuln ?? 0))));
@@ -13613,6 +13662,42 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, targ
       score += spell.power_mult * 20;
     if (floor >= 8 && spell.category === "support" && npc.hp < npc.max_hp * 0.3 && !has(spell, "heal"))
       score -= 35;
+    const personality = context.personality;
+    if (personality) {
+      const attack = spell.category === "attack", injured = npc.hp < npc.max_hp, shielded = ownStatus.shield > 0;
+      const usefulHeal = spell.effects.some((e) => e.kind === "heal" && e.target === "self" && injured);
+      const usefulShield = spell.effects.some((e) => e.kind === "shield" && e.target === "self" && !shielded);
+      if (spell.category === "support" && has(spell, "heal") && !injured)
+        score -= 1000;
+      if (personality === "AGGRESSIVE" && attack)
+        score += 35 + Math.round(25 * spell.accuracy);
+      if (personality === "DEFENSIVE") {
+        if (usefulHeal && npc.hp < npc.max_hp * 0.8)
+          score += 60;
+        else if (usefulShield && npc.hp < npc.max_hp * 0.8)
+          score += 45;
+        else if (attack && (!injured || shielded))
+          score += 35;
+      }
+      if (personality === "OPPORTUNIST") {
+        if (attack && (enemyStatus.poison > 0 && spell.effects.some((e) => ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(e.kind)) || enemyStatus.hybrid_mark?.owner === "npc" || enemyStatus.vuln > 0 || target.hp < target.max_hp * 0.35))
+          score += 60;
+        if (spell.category === "support" && spell.effects.some((e) => ["poison", "vuln"].includes(e.kind) && e.target === "enemy") && !allMoves.some((s) => s.id !== spell.id && s.category === "attack" && (cooldowns[s.id] ?? 0) <= 1))
+          score -= 120;
+      }
+      if (personality === "ALCHEMIST") {
+        const availableFollow = (kind) => allMoves.some((s) => s.id !== spell.id && (cooldowns[s.id] ?? 0) <= 1 && has(s, kind));
+        const combo = spell.effects.some((e) => e.kind === "poison" && e.target === "enemy" && !(enemyStatus.poison > 0) && availableFollow("bonus_if_poisoned") || e.kind === "shield" && e.target === "self" && !shielded && availableFollow("ward_convert"));
+        if (spell.category === "support" && spell.effects.some((e) => e.kind === "poison" && e.target === "enemy") && !combo)
+          score -= 120;
+        const strategic = spell.effects.some((e) => ["vuln", "atk_down", "cooldown_jam"].includes(e.kind) && e.target === "enemy" && !(enemyStatus[e.kind] > 0));
+        const anomaly = spell.effects.some((e) => e.kind === "physical_anomaly") && spell.favored_type === npc.type && !(context.anomaly?.favored_type === spell.favored_type && context.anomaly?.weakened_type === spell.weakened_type);
+        if (combo || anomaly)
+          score += 60;
+        else if (strategic)
+          score += 30;
+      }
+    }
     return { id: spell.id, score };
   });
   const best = Math.max(...scored.map((s) => s.score));
@@ -13623,6 +13708,15 @@ var DUNGEON_GENERATED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shiel
 var DUNGEON_EFFECTS = new Set([...DUNGEON_GENERATED_EFFECTS, "hom_stun", "type_neutralize", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "ward_dispel", "shield_by_order", "poison_on_reflect"]);
 var validEffect = (e) => e && DUNGEON_EFFECTS.has(e.kind) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["threshold", "max_heal", "second_value"].every((k) => e[k] === undefined || typeof e[k] === "number" && Number.isFinite(e[k]) && e[k] >= 0) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
 var DUNGEON_ITEMS = new Set(["power_flat", "guard_flat", "true_on_hit", "dot_true", "vuln_on_hit", "tempo_flat", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
+function dungeonEliteTrait(state) {
+  if (state.elite_traits_enabled !== true || state.elites_enabled !== true || !Number.isInteger(state.floor) || state.floor % 10 !== 0)
+    return null;
+  const traits = { bulwark: { trait: "aegis_protocol", label: "AEGIS PROTOCOL", status: "shield", value: 0.15, target: "npc", hint: "At 70% HP or below, gains 15% shield." }, reaver: { trait: "bloodrush", label: "BLOODRUSH", status: "atk_boost", value: 0.15, target: "npc", hint: "At 50% HP or below, gains 15% attack for the next spell hit." }, alchemist: { trait: "catalytic_exposure", label: "CATALYTIC EXPOSURE", status: "vuln", value: 0.12, target: "player", hint: "A damaging spell hit can apply 12% vulnerability." } };
+  const kind = state.elite?.kind, trait = traits[kind];
+  const expected = { bulwark: [1.2, 1, 1.12], reaver: [1.12, 1.1, 1], alchemist: [1.15, 1.05, 1.05] };
+  const modifiers = state.elite?.modifiers;
+  return trait && state.elite?.label === kind.toUpperCase() && modifiers && [modifiers.hp, modifiers.attack, modifiers.defense].every((value, i) => value === expected[kind][i]) ? trait : null;
+}
 function dungeonInspirationCandidates(type, equipped, spells2) {
   const seen = new Set;
   return spells2.filter((s) => s && typeof s.id === "string" && !seen.has(s.id) && !equipped.includes(s.id) && (s.type === type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(type)) && ["attack", "support"].includes(s.category) && Number.isFinite(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && !!seen.add(s.id));
@@ -13681,19 +13775,67 @@ function createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot = 0
   const hom = catalogs.homunculi.find((h) => h.id === enemy.homunculus_id);
   if (!hom || !Number.isInteger(enemy.homunculus_level) || enemy.homunculus_level < 0 || enemy.homunculus_level > 10 || [enemy.hp, enemy.attack, enemy.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
     return { error: "UNTRUSTED_SETUP" };
+  if (enemy.base_stats && [enemy.base_stats.hp, enemy.base_stats.attack, enemy.base_stats.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
+    return { error: "UNTRUSTED_SETUP" };
   const stats = setup.entity.base_stats, bonus = setup.bonuses ?? {};
   const npcHp = enemy.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level;
   const player = { id: setup.entity.id, type: setup.entity.type, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + Math.trunc(effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + Math.trunc(effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
   const npc = { id: enemy.entity_id, type: enemy.type, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
+  if (!enemy.elite && enemy.special_encounter?.kind === "corrupted_fog")
+    Object.assign(player.status, { vuln: 0.1 });
+  if (!enemy.elite && enemy.special_encounter?.kind === "crystal_bastion")
+    Object.assign(npc.status, { shield: 0.15 });
+  if (!enemy.elite && enemy.special_encounter?.kind === "arcane_instability") {
+    Object.assign(player.status, { atk_boost: 0.1 });
+    Object.assign(npc.status, { atk_boost: 0.1 });
+  }
+  if (enemy.elite) {
+    npc.hp = npc.max_hp = Math.min(99999, npc.max_hp);
+    npc.atk = Math.min(99999, npc.atk);
+    npc.def = Math.min(99999, npc.def);
+  }
   const inspirationCatalog = { player: dungeonInspirationCandidates(player.type, player.spell_ids, catalogs.spells), npc: dungeonInspirationCandidates(npc.type, npc.spell_ids, catalogs.spells) };
   if (inspirationCatalog.player.length < 3 || inspirationCatalog.npc.length < 3)
     return { error: "UNSUPPORTED_MECHANIC" };
   for (const fighter of [player, npc])
     Object.assign(fighter, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
-  return { player, npc, inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+  return { player, npc, ...!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}, ...enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}, ...enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}, inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+}
+function createDungeonBlessing(seed, runId, floor, hasHom) {
+  if (floor < 3 || floor % 3 !== 0)
+    return null;
+  const tier = Math.min(7, Math.floor(floor / 3));
+  const offers = ["elemental_surge", hasHom ? "homunculus_resonance" : "player_shield", "toxin_ward"];
+  for (let i = offers.length - 1;i > 0; i--) {
+    const draw = createHmac2("sha256", seed).update(JSON.stringify(["dungeon-blessing-v1", runId, floor, i])).digest().readUInt32BE(0);
+    const j = draw % (i + 1);
+    [offers[i], offers[j]] = [offers[j], offers[i]];
+  }
+  return { tier, offers, pending: true, selected: null, spell_count: 0, procs: 0, poison_remainder: 0, shield_used: false };
+}
+function publicDungeonBlessing(blessing) {
+  if (!blessing)
+    return null;
+  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * tier);
+  const metadata = {
+    elemental_surge: { id: "elemental_surge", name: "Elemental Surge", description: `Direct elemental spell damage +${pct}%.` },
+    homunculus_resonance: { id: "homunculus_resonance", name: "Homunculus Resonance", description: `+1 hom energy after ${tier < 3 ? 3 : 2} successful spells, up to ${tier < 5 ? 1 : 2} times this floor.` },
+    player_shield: { id: "player_shield", name: "Protective Ward", description: `Reduce one incoming direct hit by ${pct}%.` },
+    toxin_ward: { id: "toxin_ward", name: "Toxin Ward", description: `Poison tick damage reduced by ${ward}%, minimum 1 damage.` }
+  };
+  return { tier, pending: blessing.pending, offers: blessing.pending ? blessing.offers.map((id) => metadata[id]) : [], selected: blessing.selected ? metadata[blessing.selected] : null };
+}
+function resolveDungeonBlessing(state, decision) {
+  const b2 = state?.blessing;
+  if (!state || state.terminal_result || !b2?.pending || !decision || typeof decision !== "object" || Array.isArray(decision) || Object.keys(decision).sort().join(",") !== "blessing_id" || typeof decision.blessing_id !== "string" || !b2.offers.includes(decision.blessing_id))
+    return { error: "INVALID_DECISION" };
+  const next = structuredClone(state);
+  next.blessing.pending = false;
+  next.blessing.selected = decision.blessing_id;
+  return { next_state: next, events: [{ kind: "blessing_selected", actor: "player", blessing_id: decision.blessing_id }] };
 }
 function resolveDungeonTurn(state, decision, rng) {
-  if (!state || state.terminal_result || state.player?.inspiration_pending || !decision || typeof decision !== "object" || Object.keys(decision).some((k) => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function")
+  if (!state || state.terminal_result || state.blessing?.pending || state.player?.inspiration_pending || !decision || typeof decision !== "object" || Object.keys(decision).some((k) => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function")
     return { error: "INVALID_DECISION" };
   const switching = decision.switch_slot !== undefined;
   if (switching && (decision.spell_id !== undefined || decision.hom_action !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id))
@@ -13722,7 +13864,7 @@ function resolveDungeonTurn(state, decision, rng) {
   };
   let npcSpell;
   try {
-    const npcId = chooseDungeonNpcSpell(next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types });
+    const npcId = chooseDungeonNpcSpell(next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
     npcSpell = next.spells.find((s) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL")
@@ -13746,6 +13888,20 @@ function resolveDungeonTurn(state, decision, rng) {
       return;
     actor.inspiration = Math.min(3, (actor.inspiration ?? 0) + 1);
     events.push({ kind: "inspiration", actor: who, value: actor.inspiration, source });
+  };
+  const triggerEliteTrait = (timing, directDamage = 0) => {
+    const trait = dungeonEliteTrait(next);
+    if (!trait || next.elite_trait_used || next.player.hp <= 0 || next.npc.hp <= 0)
+      return;
+    if (timing === "hit" ? trait.trait !== "catalytic_exposure" || directDamage <= 0 : trait.trait === "catalytic_exposure" || next.npc.hp > next.npc.max_hp * (trait.trait === "aegis_protocol" ? 0.7 : 0.5))
+      return;
+    const recipient = next[trait.target], previous = recipient.status[trait.status] ?? 0;
+    if (previous >= trait.value)
+      return;
+    recipient.status[trait.status] = trait.value;
+    next.elite_trait_used = true;
+    events.push({ kind: "elite_trait_triggered", actor: "npc", target: trait.target, trait: trait.trait, label: trait.label });
+    events.push({ kind: "status_applied", actor: "npc", target: trait.target, status: trait.status, previous, value: trait.value, source: "elite" });
   };
   const act = (actor, target, chosen, who) => {
     if (actor.hp <= 0 || target.hp <= 0)
@@ -13798,9 +13954,22 @@ function resolveDungeonTurn(state, decision, rng) {
           power += effect.value;
       }
       const base = (actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * physicalAnomalyMultiplier(next.physical_anomaly, actor.type) * (1 + (target.status.vuln ?? 0));
+      for (const [fighter, id, fields] of [[actor, who, ["atk_boost", "atk_down"]], [target, who === "player" ? "npc" : "player", ["vuln"]]]) {
+        for (const status of fields) {
+          const previous = fighter.status[status] ?? 0;
+          if (previous > 0) {
+            delete fighter.status[status];
+            events.push({ kind: "status_consumed", target: id, status, previous, remaining: 0 });
+          }
+        }
+      }
       const shield = target.status.shield ?? 0;
       const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
-      let damage = Math.max(1, Math.round(base * power));
+      let damage = Math.max(1, Math.round(base * power * (who === "player" && next.blessing?.selected === "elemental_surge" && ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold", "hybrid"].includes(chosen.type) ? 1 + Math.min(10, 4 + next.blessing.tier) / 100 : 1)));
+      if (who === "npc" && next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
+        damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
+        next.blessing.shield_used = true;
+      }
       if (target.status.shield > 0) {
         const dispel = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "ward_dispel")?.value ?? 0));
         const pierce = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "pierce_ward")?.value ?? 0));
@@ -13811,7 +13980,7 @@ function resolveDungeonTurn(state, decision, rng) {
       target.hp = Math.max(0, target.hp - damage);
       if (directDamage > 0)
         target.spell_hit_this_exchange = true;
-      events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp });
+      events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp, target_status: structuredClone(target.status) });
       if ((target.status.reflect ?? 0) > 0) {
         const ignored = who === "player" && (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < Math.min(1, next.item_effects.ignore_reflect_chance);
         const amount = ignored ? 0 : Math.min(actor.hp, Math.round(damage * target.status.reflect));
@@ -13978,8 +14147,20 @@ function resolveDungeonTurn(state, decision, rng) {
     }
     if (chosen.category === "attack")
       strategicCounter(target, actor, who === "player" ? "npc" : "player", who, directDamage, decision.turn, events);
+    if (who === "npc" && chosen.category === "attack")
+      triggerEliteTrait("hit", directDamage);
     if (actor.hom_id)
       actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+    if (who === "player" && actor.hom_id && next.blessing?.selected === "homunculus_resonance") {
+      const b2 = next.blessing, threshold = b2.tier < 3 ? 3 : 2, limit = b2.tier < 5 ? 1 : 2;
+      if (b2.procs < limit && ++b2.spell_count >= threshold) {
+        b2.spell_count = 0;
+        b2.procs++;
+        const before = actor.hom_energy;
+        actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+        events.push({ kind: "blessing_energy", actor: who, amount: actor.hom_energy - before, energy: actor.hom_energy });
+      }
+    }
   };
   const playerAction = () => {
     if (switching) {
@@ -14028,6 +14209,10 @@ function resolveDungeonTurn(state, decision, rng) {
         events.push({ kind: "evade", actor: "player", target: "npc" });
       } else if (draw() < 0.95) {
         let damage = Math.max(1, Math.round(next.npc.atk * (next.npc.hom_energy >= 6 ? 0.6 : 0.4)));
+        if (next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
+          damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
+          next.blessing.shield_used = true;
+        }
         if (next.player.status.shield > 0) {
           damage = Math.max(0, Math.round(damage * (1 - next.player.status.shield)));
           clearDefense(next.player, "shield");
@@ -14052,7 +14237,14 @@ function resolveDungeonTurn(state, decision, rng) {
   }
   for (const fighter of [next.player, next.npc]) {
     if (fighter.hp > 0 && fighter.status.poison > 0) {
-      const amount = Math.min(2, fighter.hp);
+      let tick = 2;
+      if (fighter === next.player && next.blessing?.selected === "toxin_ward") {
+        const b2 = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * b2.tier) + b2.poison_remainder;
+        const prevented = Math.min(1, Math.floor(mitigation / 100));
+        b2.poison_remainder = mitigation % 100;
+        tick -= prevented;
+      }
+      const amount = Math.min(tick, fighter.hp);
       fighter.hp -= amount;
       fighter.spell_hit_this_exchange = true;
       fighter.status.poison--;
@@ -14062,6 +14254,7 @@ function resolveDungeonTurn(state, decision, rng) {
       fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   }
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);
+  triggerEliteTrait("end");
   for (const jam of pendingJams)
     jamStrategicCooldown(jam.target.spell_ids.map((id) => next.spells.find((s) => s.id === id)), jam.target.cooldowns, jam.actor, jam.targetId, events);
   next.turn++;
@@ -14123,7 +14316,7 @@ function resolveDungeonTurn(state, decision, rng) {
 }
 function resolveDungeonInspiration(state, decision, rng) {
   const fighter = state?.player;
-  if (!state || state.terminal_result || !fighter?.inspiration_pending || fighter.inspiration_used || !Array.isArray(fighter.inspiration_offers) || fighter.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function")
+  if (!state || state.terminal_result || state.blessing?.pending || !fighter?.inspiration_pending || fighter.inspiration_used || !Array.isArray(fighter.inspiration_offers) || fighter.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function")
     return { error: "INVALID_DECISION" };
   const keys = Object.keys(decision).sort().join(",");
   if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && typeof decision.spell_id === "string" && fighter.inspiration_offers.includes(decision.spell_id)))
@@ -15990,10 +16183,18 @@ async function startServer() {
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
               const seed = createHmac3("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
-              const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs), floor: 1 };
+              const elitesEnabled = Bun.env.DUNGEON_ELITES_ENABLED === "1";
+              const tacticsEnabled = Bun.env.DUNGEON_TACTICS_ENABLED === "1";
+              const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
               const combat = createDungeonCombatState(setup, enemy, catalogs);
               if (combat.error)
                 throw new HttpError(400, combat.error);
+              combat.blessings_enabled = Bun.env.DUNGEON_BLESSINGS_ENABLED === "1";
+              combat.elites_enabled = elitesEnabled;
+              combat.special_encounters_enabled = Bun.env.DUNGEON_SPECIAL_ENCOUNTERS_ENABLED === "1";
+              combat.elite_traits_enabled = Bun.env.DUNGEON_ELITE_TRAITS_ENABLED === "1";
+              combat.elite_trait_used = false;
+              combat.tactics_enabled = tacticsEnabled;
               if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1)
                 throw new HttpError(409, "Dungeon run changed.");
               const response = { run_id: body.run_id, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
@@ -16001,13 +16202,13 @@ async function startServer() {
               return jsonResponse(response);
             }).immediate();
           }
-          if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next" || url.pathname == "/dungeon/inspiration")) {
+          if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next" || url.pathname == "/dungeon/inspiration" || url.pathname == "/dungeon/blessing")) {
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
-            const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn"), isInspiration = url.pathname.endsWith("/inspiration"), hasDecision = isTurn || isInspiration;
+            const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn"), isInspiration = url.pathname.endsWith("/inspiration"), isBlessing = url.pathname.endsWith("/blessing"), hasDecision = isTurn || isInspiration || isBlessing;
             if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !["run_id", "client_action_id", "expected_revision", ...hasDecision ? ["decision"] : []].includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || hasDecision && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))
               throw new HttpError(400, "Invalid dungeon action.");
-            const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : isInspiration ? "DUNGEON_INSPIRATION" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...hasDecision ? { decision: body.decision } : {} };
+            const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : isInspiration ? "DUNGEON_INSPIRATION" : isBlessing ? "DUNGEON_BLESSING" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...hasDecision ? { decision: body.decision } : {} };
             return db.transaction(() => {
               const now = Date.now();
               const prior = getActionStmt.get(playerId, actionId);
@@ -16042,6 +16243,12 @@ async function startServer() {
                   db.query("INSERT INTO dungeon_monthly_best (season, player_id, cleared_floor, total_turns, achieved_at, run_id) VALUES (?,?,?,?,?,?) ON CONFLICT(season,player_id) DO UPDATE SET cleared_floor=excluded.cleared_floor,total_turns=excluded.total_turns,achieved_at=excluded.achieved_at,run_id=excluded.run_id WHERE excluded.cleared_floor > dungeon_monthly_best.cleared_floor OR (excluded.cleared_floor = dungeon_monthly_best.cleared_floor AND excluded.total_turns < dungeon_monthly_best.total_turns)").run(row.season, playerId, cleared, turns, now, row.run_id);
                 } else if (result.terminal_result === "LOSS")
                   status = "LOSS";
+              } else if (isBlessing) {
+                const result = resolveDungeonBlessing(current, body.decision);
+                if (result.error)
+                  throw new HttpError(400, result.error);
+                combat = result.next_state;
+                events = result.events;
               } else if (isInspiration) {
                 const result = resolveDungeonInspiration(current, body.decision, (turn, draw) => deterministicDraw(seed, `${row.run_id}:${current.floor}`, turn, draw));
                 if (result.error)
@@ -16051,17 +16258,33 @@ async function startServer() {
               } else {
                 if (current.terminal_result !== "WIN" || current.floor !== cleared)
                   throw new HttpError(409, "Floor not cleared.");
-                if (cleared >= 1000 || [current.npc.max_hp, current.npc.atk, current.npc.def].some((value) => !Number.isSafeInteger(value) || value >= 1e5))
+                if (cleared >= 1000)
                   throw new HttpError(409, "Dungeon difficulty limit reached.");
                 const dataDir = resolve2(import.meta.dir, "..", "..", "data");
                 const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve2(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+                let base;
+                try {
+                  base = dungeonPreviousBase(current, catalogs.homunculi);
+                } catch {
+                  throw new HttpError(409, "Dungeon base stats unavailable.");
+                }
+                const previousStats = base ?? { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def };
+                if ([previousStats.hp, previousStats.attack, previousStats.defense].some((value) => !Number.isSafeInteger(value) || value < 0 || value >= 1e5))
+                  throw new HttpError(409, "Dungeon difficulty limit reached.");
                 const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
                 if (setup.error)
                   throw new HttpError(409, "Dungeon loadout unavailable.");
-                const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }), floor: cleared + 1 };
+                const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1, special_encounter: generateDungeonEncounter(seed, row.run_id, cleared + 1, current.special_encounters_enabled === true) };
                 combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
                 if (combat.error)
                   throw new HttpError(409, combat.error);
+                combat.blessings_enabled = current.blessings_enabled === true;
+                combat.blessing = combat.blessings_enabled ? createDungeonBlessing(seed, row.run_id, combat.floor, !!combat.player.hom_id) : null;
+                combat.elites_enabled = current.elites_enabled === true;
+                combat.special_encounters_enabled = current.special_encounters_enabled === true;
+                combat.elite_traits_enabled = current.elite_traits_enabled === true;
+                combat.elite_trait_used = false;
+                combat.tactics_enabled = current.tactics_enabled === true;
                 combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
               }
               if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1)
@@ -16076,10 +16299,10 @@ async function startServer() {
             return db.transaction(() => {
               const now = Date.now();
               db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
-              const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId);
-              const session = row ? (({ loadout_json, combat_state_json, ...rest }) => {
+              const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId);
+              const session = row ? (({ loadout_json, combat_state_json, player_snapshot_json, ...rest }) => {
                 const combat = combat_state_json ? JSON.parse(combat_state_json) : null;
-                return { ...rest, ...loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}, ...combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {} };
+                return { ...rest, ...!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}, ...loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}, ...combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {} };
               })(row) : null;
               return jsonResponse({ session, server_time_unix_ms: now });
             }).immediate();
@@ -16606,7 +16829,9 @@ function loadSoloBossCatalog(path, spellsPath) {
   return catalog;
 }
 function publicDungeonCombat(combat) {
-  return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+  const trait = dungeonEliteTrait(combat);
+  const encounter = combat.special_encounter;
+  return { player: combat.player, npc: combat.npc, floor: combat.floor, blessing: publicDungeonBlessing(combat.blessing), ...encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}, ...combat.elite ? { elite: combat.elite } : {}, ...trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}, ...combat.npc_personality ? { npc_personality: combat.npc_personality } : {}, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 function expireSoloHunts(playerId, now) {
   db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);

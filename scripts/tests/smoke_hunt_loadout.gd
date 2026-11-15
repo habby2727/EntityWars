@@ -35,6 +35,12 @@ func _run() -> void:
 	await process_frame
 	var loadout = current_scene
 	assert(loadout != null and loadout._hunt_mode)
+	assert(loadout._spell_button.is_visible_in_tree() and loadout._spell_button.text == "Change Spells")
+	loadout._open_spell_dialog()
+	assert(loadout._spell_slots.size() == 4 and not loadout._spell_picker.visible)
+	loadout._select_spell_slot(0)
+	assert(loadout._spell_picker.visible)
+	loadout._spell_dialog.hide()
 	assert(not loadout.btn_save.is_visible_in_tree() and not loadout.btn_seal_attack.is_visible_in_tree())
 	loadout._current_entity_id = str(loadout._entities[1].id)
 	loadout._current_homunculus_id = str(loadout._homunculi[1].id)
