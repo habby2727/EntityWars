@@ -20,6 +20,7 @@ services:
       DEV_DOCKER_LOCAL_LOGIN: "1"
       DUNGEON_DEBUG_PREPARE: "1"
       DUNGEON_ELITES_ENABLED: "1"
+      DUNGEON_TACTICS_ENABLED: "1"
       DEBUG_BYPASS: "0"
     ports:
       - "127.0.0.1:8787:8787"

@@ -24,7 +24,7 @@ export function dungeonLeaderboard(db: Database, season: string, playerId: strin
 }
 
 // This module only constructs an enemy. It does not verify or settle combat.
-export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: number, catalogs: any, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous?: { hp: number; attack: number; defense: number; entity_id?: string; homunculus_id?: string; spell_ids?: string[] }, elitesEnabled = false) {
+export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: number, catalogs: any, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous?: { hp: number; attack: number; defense: number; entity_id?: string; homunculus_id?: string; spell_ids?: string[] }, elitesEnabled = false, tacticsEnabled = false, trackBase = elitesEnabled) {
   if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some(v => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1)) throw new Error("INVALID_DUNGEON_SETUP");
   const draw = (domain: string) => createHmac("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
   const entities = [...catalogs.entities].filter(e => e && typeof e.id === "string" && typeof e.type === "string" && e.base_stats && [e.base_stats.hp, e.base_stats.power, e.base_stats.guard].every(v => Number.isSafeInteger(v) && v > 0)).sort((a, b) => a.id.localeCompare(b.id));
@@ -75,7 +75,23 @@ export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: num
   ];
   const elite = elitesEnabled && floor % 10 === 0 ? variants[draw("elite") % variants.length] : null;
   const effective = elite ? Object.fromEntries(Object.entries(base).map(([key, value]) => [key, Math.min(99999, Math.round(value * elite.modifiers[key as keyof typeof base]))])) : base;
-  return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map(s => s.id), ...effective, ...(elitesEnabled ? { base_stats: base, elite } : {}) };
+  const personalities = ["AGGRESSIVE", "DEFENSIVE", "OPPORTUNIST", "ALCHEMIST"];
+  const npc_personality = elite ? ({ bulwark: "DEFENSIVE", reaver: "AGGRESSIVE", alchemist: "ALCHEMIST" } as Record<string, string>)[elite.kind] : personalities[draw("personality") % personalities.length];
+  return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map(s => s.id), ...effective, ...(trackBase ? { base_stats: base, elite } : {}), ...(tacticsEnabled ? { npc_personality } : {}) };
+}
+
+export function dungeonPreviousBase(combat: any, homunculi: any[]): { hp: number; attack: number; defense: number } | null {
+  const base = combat.npc_base_stats;
+  if (!base) return null;
+  if (![base.hp, base.attack, base.defense].every((n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0)) throw new Error("INVALID_DUNGEON_BASE");
+  if (combat.npc_base_stats_version === 2) return { hp: base.hp, attack: base.attack, defense: base.defense };
+  if (combat.npc_base_stats_version !== undefined || !Number.isSafeInteger(combat.floor) || combat.floor < 1 || combat.floor > 1000) throw new Error("INVALID_DUNGEON_BASE");
+  const hom = homunculi.find((h: any) => h.id === combat.npc?.hom_id);
+  if (!hom) throw new Error("INVALID_DUNGEON_BASE");
+  const level = Math.min(10, Math.floor((combat.floor - 1) / 3));
+  const result = { hp: base.hp - (hom.buff_hp ?? 0) - level, attack: base.attack - (hom.buff_atk ?? 0) - Math.floor(level / 5), defense: base.defense - (hom.buff_def ?? 0) - Math.floor(level / 3) };
+  if (Object.values(result).some(n => !Number.isSafeInteger(n) || n < 1)) throw new Error("INVALID_DUNGEON_BASE");
+  return result;
 }
 
 // Only public, committed state belongs here; the player's next decision is not an input.
@@ -91,7 +107,11 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
   const wardFollow = allMoves.some(s => has(s, "ward_convert") && (cooldowns[s.id] ?? 0) <= 1);
   const estimate = (s: any) => {
     const relation = context.types?.effectiveness?.[s.type]?.[target.type] ?? 1;
-    const typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+    let typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+    if (context.personality && s.type === "hybrid") {
+      const factor = (type: string) => { const value = context.types?.effectiveness?.[type]?.[target.type] ?? 1; return value > 1 ? 1.25 : value < 1 ? 0.8 : 1; };
+      typeMultiplier = Math.max(0.8, Math.min(1.25, Math.pow(factor(s.primary_type), 0.65) * Math.pow(factor(s.secondary_type), 0.35)));
+    } else if (context.personality && s.type === "universal") typeMultiplier = 1;
     const poison = s.effects.find((e: any) => e.kind === "bonus_if_poisoned");
     const power = s.power_mult * (poison && enemyStatus.poison > 0 ? 1 + poison.value : 1);
     const base = Math.max(1, Math.round(((npc.atk ?? 0) * (1 + (ownStatus.atk_boost ?? 0) - (ownStatus.atk_down ?? 0)) - Math.trunc((target.def ?? 0) * 0.5)) * typeMultiplier * physicalAnomalyMultiplier(context.anomaly, npc.type) * power * (1 + (enemyStatus.vuln ?? 0))));
@@ -125,6 +145,27 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
     }
     if (floor >= 15 && enemyStatus.vuln > 0 && spell.category === "attack") score += spell.power_mult * 20;
     if (floor >= 8 && spell.category === "support" && npc.hp < npc.max_hp * 0.3 && !has(spell, "heal")) score -= 35;
+    const personality = context.personality;
+    if (personality) {
+      const attack = spell.category === "attack", injured = npc.hp < npc.max_hp, shielded = ownStatus.shield > 0;
+      const usefulHeal = spell.effects.some((e: any) => e.kind === "heal" && e.target === "self" && injured);
+      const usefulShield = spell.effects.some((e: any) => e.kind === "shield" && e.target === "self" && !shielded);
+      if (spell.category === "support" && has(spell, "heal") && !injured) score -= 1000;
+      if (personality === "AGGRESSIVE" && attack) score += 35 + Math.round(25 * spell.accuracy);
+      if (personality === "DEFENSIVE") { if (usefulHeal && npc.hp < npc.max_hp * 0.8) score += 60; else if (usefulShield && npc.hp < npc.max_hp * 0.8) score += 45; else if (attack && (!injured || shielded)) score += 35; }
+      if (personality === "OPPORTUNIST") {
+        if (attack && (enemyStatus.poison > 0 && spell.effects.some((e: any) => ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(e.kind)) || enemyStatus.hybrid_mark?.owner === "npc" || enemyStatus.vuln > 0 || target.hp < target.max_hp * 0.35)) score += 60;
+        if (spell.category === "support" && spell.effects.some((e: any) => ["poison", "vuln"].includes(e.kind) && e.target === "enemy") && !allMoves.some((s: any) => s.id !== spell.id && s.category === "attack" && (cooldowns[s.id] ?? 0) <= 1)) score -= 120;
+      }
+      if (personality === "ALCHEMIST") {
+        const availableFollow = (kind: string) => allMoves.some((s: any) => s.id !== spell.id && (cooldowns[s.id] ?? 0) <= 1 && has(s, kind));
+        const combo = spell.effects.some((e: any) => e.kind === "poison" && e.target === "enemy" && !(enemyStatus.poison > 0) && availableFollow("bonus_if_poisoned") || e.kind === "shield" && e.target === "self" && !shielded && availableFollow("ward_convert"));
+        if (spell.category === "support" && spell.effects.some((e: any) => e.kind === "poison" && e.target === "enemy") && !combo) score -= 120;
+        const strategic = spell.effects.some((e: any) => ["vuln", "atk_down", "cooldown_jam"].includes(e.kind) && e.target === "enemy" && !(enemyStatus[e.kind] > 0));
+        const anomaly = spell.effects.some((e: any) => e.kind === "physical_anomaly") && spell.favored_type === npc.type && !(context.anomaly?.favored_type === spell.favored_type && context.anomaly?.weakened_type === spell.weakened_type);
+        if (combo || anomaly) score += 60; else if (strategic) score += 30;
+      }
+    }
     return { id: spell.id, score };
   });
   const best = Math.max(...scored.map(s => s.score));
@@ -192,8 +233,7 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any, 
   const inspirationCatalog = { player: dungeonInspirationCandidates(player.type, player.spell_ids, catalogs.spells), npc: dungeonInspirationCandidates(npc.type, npc.spell_ids, catalogs.spells) };
   if (inspirationCatalog.player.length < 3 || inspirationCatalog.npc.length < 3) return { error: "UNSUPPORTED_MECHANIC" };
   for (const fighter of [player, npc]) Object.assign(fighter, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
-  const npcBaseStats = enemy.base_stats ? { hp: enemy.base_stats.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level, attack: enemy.base_stats.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), defense: enemy.base_stats.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3) } : undefined;
-  return { player, npc, ...(npcBaseStats ? { npc_base_stats: npcBaseStats, elite: enemy.elite ?? null } : {}), inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+  return { player, npc, ...(enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}), ...(enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}), inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 
 export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
@@ -216,7 +256,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   const draw = () => { const value = rng(decision.turn, counter++); if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error("INVALID_RNG"); return value; };
   let npcSpell: any;
   try {
-    const npcId = chooseDungeonNpcSpell(next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types });
+    const npcId = chooseDungeonNpcSpell(next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
     npcSpell = next.spells.find((s: any) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL") throw err;

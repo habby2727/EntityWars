@@ -23,7 +23,7 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
-import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
+import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, dungeonPreviousBase, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
@@ -2116,10 +2116,12 @@ async function startServer(): Promise<void> {
 						if (setup.error) throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
 						const seed = createHmac("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
 						const elitesEnabled = Bun.env.DUNGEON_ELITES_ENABLED === "1";
-						const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs, undefined, undefined, elitesEnabled), floor: 1 };
+						const tacticsEnabled = Bun.env.DUNGEON_TACTICS_ENABLED === "1";
+						const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
 						const combat = createDungeonCombatState(setup, enemy, catalogs);
 						if (combat.error) throw new HttpError(400, combat.error);
 						combat.elites_enabled = elitesEnabled;
+						combat.tactics_enabled = tacticsEnabled;
 						if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
 						const response = { run_id: body.run_id, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
 						insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
@@ -2163,17 +2165,20 @@ async function startServer(): Promise<void> {
 							combat = result.next_state; events = result.events;
 						} else {
 							if (current.terminal_result !== "WIN" || current.floor !== cleared) throw new HttpError(409, "Floor not cleared.");
-							const storedBase = current.npc_base_stats;
-							const previousStats = storedBase && [storedBase.hp, storedBase.attack, storedBase.defense].every((value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0) ? storedBase : { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def };
-							if (cleared >= 1000 || [previousStats.hp, previousStats.attack, previousStats.defense].some((value: unknown) => !Number.isSafeInteger(value) || (value as number) < 0 || (value as number) >= 100000)) throw new HttpError(409, "Dungeon difficulty limit reached.");
+							if (cleared >= 1000) throw new HttpError(409, "Dungeon difficulty limit reached.");
 							const dataDir = resolve(import.meta.dir, "..", "..", "data");
 							const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+							let base: ReturnType<typeof dungeonPreviousBase>;
+							try { base = dungeonPreviousBase(current, catalogs.homunculi); } catch { throw new HttpError(409, "Dungeon base stats unavailable."); }
+							const previousStats = base ?? { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def };
+							if ([previousStats.hp, previousStats.attack, previousStats.defense].some((value: unknown) => !Number.isSafeInteger(value) || (value as number) < 0 || (value as number) >= 100000)) throw new HttpError(409, "Dungeon difficulty limit reached.");
 							const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
 							if (setup.error) throw new HttpError(409, "Dungeon loadout unavailable.");
-							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true), floor: cleared + 1 };
+							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1 };
 							combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
 							if (combat.error) throw new HttpError(409, combat.error);
 							combat.elites_enabled = current.elites_enabled === true;
+							combat.tactics_enabled = current.tactics_enabled === true;
 							combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
 						}
 						if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
@@ -2666,7 +2671,7 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
 
 function publicDungeonCombat(combat: any) {
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, ...(combat.elite ? { elite: combat.elite } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+	return { player: combat.player, npc: combat.npc, floor: combat.floor, ...(combat.elite ? { elite: combat.elite } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {

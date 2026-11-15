@@ -5,12 +5,64 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { createHmac } from "node:crypto";
 import { Database } from "bun:sqlite";
-import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy } from "../dungeon_combat";
+import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, dungeonPreviousBase } from "../dungeon_combat";
 import { buildTrustedCombatSetup } from "../solo_hunt_combat";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } from "../physical_anomaly";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
+
+test("Dungeon personalities are deterministic and mapped to elites", () => {
+  const seed = new Uint8Array(32).fill(4), seen = new Set<string>(), eliteSeen = new Set<string>();
+  const mapping: Record<string, string> = { bulwark: "DEFENSIVE", reaver: "AGGRESSIVE", alchemist: "ALCHEMIST" };
+  for (let i = 0; i < 100; i++) {
+    const run = `personality-${i}`;
+    const normal = generateDungeonEnemy(seed, run, 9, catalogs, undefined, undefined, true, true);
+    expect(generateDungeonEnemy(seed, run, 9, catalogs, undefined, undefined, true, true)).toEqual(normal);
+    seen.add(normal.npc_personality!);
+    const elite = generateDungeonEnemy(seed, run, 10, catalogs, undefined, undefined, true, true);
+    eliteSeen.add(elite.elite!.kind); expect(elite.npc_personality).toBe(mapping[elite.elite!.kind]);
+    expect(generateDungeonEnemy(seed, run, 10, catalogs, undefined, undefined, true).npc_personality).toBeUndefined();
+  }
+  expect([...seen].sort()).toEqual(["AGGRESSIVE", "ALCHEMIST", "DEFENSIVE", "OPPORTUNIST"]);
+  expect(eliteSeen.size).toBe(3);
+});
+
+test("Dungeon tactics choose legal attacks, defense and combinations", () => {
+  const make = (id: string, category: string, power: number, effects: any[] = []) => ({ id, type: "sulfur", category, power_mult: power, accuracy: 1, cooldown_turns: 0, effects });
+  const spells = [make("strike", "attack", 1), make("heal", "support", 0, [{ kind: "heal", target: "self", value: 20 }]), make("poison", "support", 0, [{ kind: "poison", target: "enemy", value: 2 }]), make("finish", "attack", 0.9, [{ kind: "bonus_if_poisoned", target: "enemy", value: 0.5 }])];
+  const ids = spells.map(s => s.id), npc: any = { type: "sulfur", atk: 30, hp: 50, max_hp: 100, status: {} }, target: any = { type: "sulfur", hp: 100, max_hp: 100, def: 10, status: {} };
+  const choose = (personality?: string, cooldowns: any = {}) => chooseDungeonNpcSpell(8, ids, spells, cooldowns, npc, target, 0, { personality });
+  expect(choose("AGGRESSIVE", { poison: 1, heal: 1 })).toBe("strike");
+  expect(choose("DEFENSIVE", { poison: 1 })).toBe("heal");
+  target.status.poison = 2;
+  expect(choose("OPPORTUNIST")).toBe("finish");
+  delete target.status.poison;
+  expect(choose("ALCHEMIST", { heal: 1 })).toBe("poison");
+  target.hp = 1;
+  expect(choose("DEFENSIVE")).toBe("strike");
+  target.hp = 100; npc.hp = 100;
+  expect(choose("DEFENSIVE", { poison: 1, strike: 1, finish: 1 })).toBe("heal");
+  expect(choose("DEFENSIVE", { poison: 1 })).not.toBe("heal");
+  expect(choose(undefined)).toBe(choose(undefined));
+  expect(chooseDungeonNpcSpell(2, ids, spells, {}, npc, target, 0.26, { personality: "AGGRESSIVE" })).toBe("heal");
+});
+
+test("Dungeon hybrid tactical estimates use weighted effectiveness", () => {
+  const attack = (id: string, type: string, power: number, extra: any = {}) => ({ id, type, eligible_types: ["sulfur"], category: "attack", power_mult: power, accuracy: 1, cooldown_turns: 0, effects: [], ...extra });
+  const spells = [attack("hybrid", "hybrid", 1, { primary_type: "sulfur", secondary_type: "sodium" }), attack("plain", "universal", 1.1), attack("weak1", "sulfur", 0.1), attack("weak2", "sulfur", 0.2)];
+  const npc = { type: "sulfur", atk: 100, hp: 100, max_hp: 100, status: {} }, target = { type: "gold", hp: 120, max_hp: 200, def: 0, status: {} }, types = { effectiveness: { sulfur: { gold: 2 }, sodium: { gold: 2 } } };
+  expect(chooseDungeonNpcSpell(8, spells.map(s => s.id), spells, {}, npc, target, 0, { types, personality: "AGGRESSIVE" })).toBe("hybrid");
+  expect(chooseDungeonNpcSpell(8, spells.map(s => s.id), spells, {}, npc, target, 0, { types })).toBe("plain");
+});
+
+test("Dungeon base migration removes prior homunculus bonuses exactly once", () => {
+  const hom = catalogs.homunculi[0], floor = 10, level = 3, base = { hp: 100, attack: 50, defense: 30 };
+  const old = { floor, npc: { hom_id: hom.id }, npc_base_stats: { hp: base.hp + (hom.buff_hp ?? 0) + level, attack: base.attack + (hom.buff_atk ?? 0), defense: base.defense + (hom.buff_def ?? 0) + 1 } };
+  expect(dungeonPreviousBase(old, catalogs.homunculi)).toEqual(base);
+  expect(dungeonPreviousBase({ ...old, npc_base_stats_version: 2, npc_base_stats: base }, catalogs.homunculi)).toEqual(base);
+  expect(dungeonPreviousBase({ npc: old.npc }, catalogs.homunculi)).toBeNull();
+});
 
 test("Dungeon elites are deterministic, scheduled, bounded and do not compound", () => {
   const seed = new Uint8Array(32).fill(7), seen = new Set<string>();
@@ -751,7 +803,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
   const dir = mkdtempSync(join(tmpdir(), "entitywars-dungeon-")), dbPath = join(dir, "test.sqlite"), db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", DUNGEON_ELITES_ENABLED: "0", WORLD_SECRET: "dev_world_secret" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", DUNGEON_ELITES_ENABLED: "0", DUNGEON_TACTICS_ENABLED: "0", WORLD_SECRET: "dev_world_secret" };
   const spawn = () => Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   let server = spawn();
   const request = async (path: string, body?: unknown, token?: string) => { const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.status, data: await r.json() as any }; };
@@ -790,9 +842,10 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect((await request("/dungeon/loadout", { ...loadout, client_action_id: "other" }, token)).status).toBe(409);
     expect((await request("/dungeon/session", undefined, token)).data.session.loadout).toEqual(initialized.data.loadout);
     const legacy = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(started.data.run_id) as any).combat_state_json);
-    delete legacy.elites_enabled; delete legacy.npc_base_stats;
+    delete legacy.elites_enabled; delete legacy.npc_base_stats; delete legacy.tactics_enabled;
     db.query("UPDATE dungeon_runs SET combat_state_json = ? WHERE run_id = ?").run(JSON.stringify(legacy), started.data.run_id);
     env.DUNGEON_ELITES_ENABLED = "1";
+    env.DUNGEON_TACTICS_ENABLED = "1";
     server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     expect((await request("/dungeon/session", undefined, token)).data.session.loadout).toEqual(initialized.data.loadout);
@@ -828,6 +881,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
         const advanced = await request("/dungeon/next", next, token);
         expect(advanced.status).toBe(200); revision = advanced.data.combat_revision;
         expect(advanced.data.combat_state.elite).toBeUndefined();
+        expect(advanced.data.combat_state.npc_personality).toBeUndefined();
         expect(JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(started.data.run_id) as any).combat_state_json).elites_enabled).toBe(false);
         for (const key of ["max_hp", "atk", "def"]) expect(advanced.data.combat_state.npc[key]).toBeGreaterThan(previousNpc[key]);
         previousNpc = advanced.data.combat_state.npc;
@@ -912,19 +966,23 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect(eliteLoadout.status).toBe(200);
     const savedElite = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(eliteRun.data.run_id) as any).combat_state_json);
     expect(savedElite.elites_enabled).toBe(true);
+    expect(savedElite.tactics_enabled).toBe(true);
     savedElite.floor = 9; savedElite.terminal_result = "WIN";
     db.query("UPDATE dungeon_runs SET combat_state_json = ?, cleared_floor = 9 WHERE run_id = ?").run(JSON.stringify(savedElite), eliteRun.data.run_id);
     env.DUNGEON_ELITES_ENABLED = "0";
+    env.DUNGEON_TACTICS_ENABLED = "0";
     server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     const eliteNext = { run_id: eliteRun.data.run_id, client_action_id: "elite-next", expected_revision: 1 };
     const eliteFloor = await request("/dungeon/next", eliteNext, token);
     expect(eliteFloor.status).toBe(200);
     expect(eliteFloor.data.combat_state.elite.label).toMatch(/^(BULWARK|REAVER|ALCHEMIST)$/);
+    expect(eliteFloor.data.combat_state.npc_personality).toBe(({ BULWARK: "DEFENSIVE", REAVER: "AGGRESSIVE", ALCHEMIST: "ALCHEMIST" } as any)[eliteFloor.data.combat_state.elite.label]);
     expect((await request("/dungeon/next", eliteNext, token)).data).toEqual(eliteFloor.data);
     server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.elite).toEqual(eliteFloor.data.combat_state.elite);
+    expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.npc_personality).toBe(eliteFloor.data.combat_state.npc_personality);
     expect((await request("/dungeon/next", eliteNext, token)).data).toEqual(eliteFloor.data);
     const floorTen = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(eliteRun.data.run_id) as any).combat_state_json);
     const seed = createHmac("sha256", env.WORLD_SECRET).update("dungeon:" + eliteRun.data.run_id).digest();
