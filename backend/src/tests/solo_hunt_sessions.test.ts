@@ -30,11 +30,31 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     const a = await request("/auth/dev_login", { name: "hunt_test_a" });
     const b = await request("/auth/dev_login", { name: "hunt_test_b" });
     expect([a.status, b.status]).toEqual([200, 200]);
+    const reroll = { client_action_id: "reroll-a" };
+    const simultaneous = await Promise.all([request("/world/reroll", reroll, a.data.token), request("/world/reroll", reroll, a.data.token)]);
+    expect(simultaneous.map(r => r.status)).toEqual([200, 200]);
+    expect(simultaneous.filter(r => r.data.duplicate).length).toBe(1);
+    expect((await request("/world/reroll", { client_action_id: "reroll-b" }, a.data.token)).status).toBe(429);
+    const worldA = await request("/world/state", undefined, a.data.token);
+    const worldB = await request("/world/state", undefined, b.data.token);
+    expect(worldA.data.player_world.reroll_count).toBe(1);
+    expect(worldB.data.player_world.reroll_count).toBe(0);
+    expect((await request("/world/reroll", { client_action_id: "reroll-other" }, b.data.token)).status).toBe(200);
+    const worldRow = db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any;
+    const worldFixture = JSON.parse(worldRow.state_json);
+    worldFixture.world.sessions["loot-fixture"] = { session_id: "loot-fixture", zone_id: "zone_chaos", started_at: testNow(), last_farm_at: 0, pending_loot: { essence: 7 }, blocks_farmed: 0, modifiers: [] };
+    db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(worldFixture), a.data.player_id);
+    expect((await request("/world/claim", { client_action_id: "loot-other", session_id: "loot-fixture" }, b.data.token)).status).toBe(400);
+    const lootBefore = worldFixture.wallet.essence;
+    const claims = await Promise.all([request("/world/claim", { client_action_id: "loot-claim", session_id: "loot-fixture" }, a.data.token), request("/world/claim", { client_action_id: "loot-claim", session_id: "loot-fixture" }, a.data.token)]);
+    expect(claims.map(c => c.status)).toEqual([200, 200]);
+    expect((await request("/world/claim", { client_action_id: "loot-again", session_id: "loot-fixture" }, a.data.token)).data.claimed).toEqual({});
+    expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json).wallet.essence).toBe(lootBefore + 7);
     const wallet = (id: string) => JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(id) as any).state_json).wallet;
     const beforeA = wallet(a.data.player_id), beforeB = wallet(b.data.player_id);
     const commonReward = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance.solo_hunt_rewards.boss.common;
     const fixture = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json);
-    fixture.spell_progress = { learned_by_entity: { sulfur_01: ["steady_script"] }, active_research: null, equipped_by_mode: { attack: { sulfur_01: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] } } };
+    fixture.spell_progress = { learned_by_entity: { sulfur_01: ["steady_script"] }, active_research: null, equipped_by_mode: { attack: { sulfur_01: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] }, defense: {} } };
     db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(fixture), a.data.player_id);
     const schedule = (await request("/world/boss-hunts")).data;
     const key = schedule.rotation_key;
@@ -305,6 +325,10 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         expect(finalResponse.pve_reward).toEqual({ grants: commonReward, source: "boss", tier: "common" });
       } else expect(finalResponse.pve_reward).toBeUndefined();
       expect(wallet(a.data.player_id)).toEqual(expectedWallet);
+      if (outcome === "WIN") {
+        expect((await request("/world/claim", { client_action_id: "loot-after-boss", session_id: "loot-fixture" }, a.data.token)).data.claimed).toEqual({});
+        expect(wallet(a.data.player_id)).toEqual(expectedWallet);
+      }
       expect(finalResponse.events.filter((e: any) => e.kind === "combat_terminal")).toHaveLength(1);
       expect((await request("/world/boss-hunts/turn", finalRequest, a.data.token)).data).toEqual(finalResponse);
       expect(wallet(a.data.player_id)).toEqual(expectedWallet);

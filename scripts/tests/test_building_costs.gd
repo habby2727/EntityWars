@@ -9,6 +9,7 @@ static func run() -> bool:
 	_test_missing_cost_blocks()
 	_test_path_multiplier_floor()
 	_test_costs_and_lab_display()
+	_test_alerts()
 	return failures == 0
 
 static func _test_cap_blocks_upgrade() -> void:
@@ -74,3 +75,21 @@ static func _assert_eq(value: int, expected: int, label: String) -> void:
 	else:
 		failures += 1
 		push_error("FAIL: %s expected %s got %s" % [label, expected, value])
+
+static func _test_alerts() -> void:
+	var helper := preload("res://scripts/ui/lab_action_alert.gd")
+	var db := StaticDB.new()
+	var state := {"wallet": {"essence": 999999, "core": 999999, "arcane_shard": 999999, "time_crystal": 999999}, "lab": {"hqLevel": 1, "hqPath": "Scientific", "buildings": {"essence_reactor": {"level": 1}}, "runtime": {}}}
+	_assert_false(helper.available("sync_nexus", state, db, 10000, false), "locked alert")
+	_assert_false(helper.available("essence_reactor", state, db, 10000, false), "HQ cap alert")
+	_assert_false(helper.available("lab_th", state, db, 10000, true), "pending alert")
+	state.wallet = {}
+	_assert_false(helper.available("lab_th", state, db, 10000, false), "unaffordable alert")
+	state.lab.buildings.essence_reactor.runtime = {"stored_output": 2}
+	if not helper.available("essence_reactor", state, db, 10000, false):
+		failures += 1
+		push_error("FAIL: reactor claim alert")
+	state.lab.buildings.essence_reactor.runtime.stored_output = 0
+	state.lab.runtime.reactor_overcharge = {"progress": 300, "last_used_at": 9999}
+	_assert_false(helper.available("essence_reactor", state, db, 10000, false), "overcharge cooldown alert")
+	db.free()

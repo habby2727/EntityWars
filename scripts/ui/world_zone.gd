@@ -1,4 +1,4 @@
-﻿extends Control
+extends Control
 class_name WorldZone
 
 @export var backend_path: NodePath
@@ -34,6 +34,17 @@ var _enter_button: Button = null
 var _farm_count: OptionButton = null
 var _farm_button: Button = null
 var _claim_button: Button = null
+var _reroll_button: Button
+var _reroll_request := ""
+var _reroll_action := ""
+var _reroll_owner := ""
+var _reroll_restored := false
+var _world_synced := false
+var _world_requests: Dictionary = {}
+var _debug_reroll_until := 0
+var _claim_request := ""
+var _claim_action := ""
+var _claim_owner := ""
 var _error_label: Label = null
 var _back_button: Button = null
 
@@ -122,6 +133,7 @@ func _ready() -> void:
 	_request_map_hunts()
 
 func _process(_delta: float) -> void:
+	_update_reroll_button()
 	var remaining := _gate_remaining()
 	if remaining != _gate_display_seconds:
 		_gate_display_seconds = remaining
@@ -156,6 +168,7 @@ func _setup_zone_view() -> void:
 	if overlay != null:
 		overlay.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overlay.z_index = 10
 		for control in overlay.find_children("*", "Control", true, false):
 			if not control is BaseButton and not control is OptionButton:
 				control.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -186,6 +199,20 @@ func _setup_zone_view() -> void:
 		_back_button.offset_bottom = 70
 		_back_button.z_index = 5
 		MenuArt.button(_back_button)
+	for legacy in [_header_label, _session_label, _modifier_label, _heat_label, _enter_button, _farm_count, _farm_button]:
+		if legacy != null:
+			legacy.hide()
+	var actions := get_node_or_null("Overlay/Margin/RootVBox/Buttons") as HBoxContainer
+	if actions != null:
+		_reroll_button = Button.new()
+		_reroll_button.name = "RerollButton"
+		_reroll_button.text = "REROLL"
+		_reroll_button.custom_minimum_size = Vector2(130, 42)
+		_reroll_button.pressed.connect(_reroll_world_art)
+		actions.add_child(_reroll_button)
+		actions.move_child(_reroll_button, 0)
+		MenuArt.button(_reroll_button)
+		_reroll_button.add_theme_stylebox_override("disabled", _reroll_button.get_theme_stylebox("normal"))
 	if _enter_button != null:
 		_enter_button.text = "Enter zone"
 	if _farm_button != null:
@@ -228,7 +255,7 @@ func _setup_zone_view() -> void:
 	_boss_picker.item_selected.connect(_on_boss_selected)
 	content.add_child(_boss_picker)
 	_boss_portrait = TextureRect.new()
-	_boss_portrait.custom_minimum_size = Vector2(0, 0)
+	_boss_portrait.custom_minimum_size = Vector2(0, 115)
 	_boss_portrait.visible = false
 	_boss_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_boss_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -365,17 +392,7 @@ func _setup_world_art() -> void:
 	bold_font.font_weight = 700
 	_world_name.add_theme_font_override("bold_font", bold_font)
 	name_panel.add_child(_world_name)
-	var button := Button.new()
-	button.text = "Reroll"
-	button.tooltip_text = "Change encounter appearance"
-	button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	button.offset_left = -80
-	button.offset_right = 80
-	button.offset_top = -70
-	button.offset_bottom = -25
-	button.pressed.connect(_reroll_world_art)
-	stage.add_child(button)
-	MenuArt.button(button)
+
 	_change_world_art(0)
 
 # Isolated presentation only: no selection from this fixture authorizes a fight.
@@ -454,6 +471,8 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 	var actor_id := str(entry.get("id", ""))
 	var select_actor := func():
 			_view_guardians.visible = false
+			_boss_portrait.texture = texture
+			_boss_portrait.visible = true
 			if not _map_displayed_boss.is_empty():
 				_hunt_selected = _map_displayed_boss.duplicate(true)
 			_preview_selection = actor_id
@@ -482,6 +501,7 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 				_hunt_fight.disabled = not verified or _backend.token.is_empty() or (not active and (not unlocked or not bool(_hunt_selected.get("available", false))))
 				_preview_status.text = "%s\nGuardians: %d/%d defeated%s" % [str(entry.get("name", "Boss")), int(_hunt_progress.get("defeated_count", 0)), int(_hunt_progress.get("total_count", 0)), "" if verified else "\nProgress unavailable; retry."]
 				_hunt_fight.text = "Resume Hunt" if active else "Fight"
+				_view_guardians.visible = main and verified and not unlocked and not active
 			_world_modal.visible = true
 			call_deferred("_fit_encounter_card")
 	actor.set_meta("select_actor", select_actor)
@@ -542,6 +562,9 @@ func _clear_guardian_preview() -> void:
 		_boss_open.visible = false
 
 func _show_common_details() -> void:
+	var texture_path := str(_debug_visual.get("texture", ""))
+	_boss_portrait.texture = load(texture_path) as Texture2D if texture_path.begins_with("res://assets/lab/bosses/") and not ".." in texture_path and ResourceLoader.exists(texture_path) else null
+	_boss_portrait.visible = _boss_portrait.texture != null
 	_view_guardians.visible = false
 	_preview_status.text = "%s\nVisual appearance; no server encounter assigned." % str(_debug_visual.get("name", "Common"))
 	_preview_status.visible = true
@@ -556,7 +579,7 @@ func _show_common_details() -> void:
 
 func _common_display_name(id: String, zone: String) -> String:
 	if id == "chaos_astral_alchemist_variant":
-		return "Astral Alchemist"
+		return "Astral Alchemist Ascendant"
 	return id.trim_prefix(zone.trim_prefix("zone_") + "_").replace("_", " ").capitalize()
 
 func _change_world_art(direction: int) -> void:
@@ -594,17 +617,65 @@ func _change_world_art(direction: int) -> void:
 
 func _reroll_world_art() -> void:
 	if _debug.unlock_all_buildings:
+		if Time.get_ticks_msec() < _debug_reroll_until:
+			return
+		_debug_reroll_until = Time.get_ticks_msec() + 60000
+		_apply_reroll()
+		return
+	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or not _reroll_request.is_empty() or _reroll_remaining() != 0:
+		return
+	if _reroll_action.is_empty():
+		_reroll_action = _make_client_id()
+	_reroll_owner = _backend._verified_player_id
+	_reroll_request = _backend.request_api("POST", "/world/reroll", {"client_action_id": _reroll_action}, true)
+	if _reroll_request.is_empty():
+		_set_error("Connection busy. Retry reroll.")
+
+func _reroll_remaining() -> int:
+	if _debug.unlock_all_buildings:
+		return maxi(0, ceili(float(_debug_reroll_until - Time.get_ticks_msec()) / 1000.0))
+	if not _world_synced or _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
+		return -1
+	var now := _backend.get_server_time_unix_ms()
+	if now < 0:
+		return -1
+	var last := int(_player_world.get("last_reroll_at", 0))
+	return maxi(0, ceili(float(last + 60000 - now) / 1000.0)) if last > 0 else 0
+
+func _update_reroll_button() -> void:
+	if not is_instance_valid(_reroll_button):
+		return
+	var remaining := _reroll_remaining()
+	_reroll_button.text = "%02d:%02d" % [remaining / 60, remaining % 60] if remaining > 0 else "REROLL"
+	_reroll_button.disabled = remaining != 0 or not _reroll_request.is_empty()
+
+func _apply_reroll() -> void:
+	if _debug.unlock_all_buildings:
 		_debug_rotation = (_debug_rotation + 1) % 5
 		if _debug_rotation > 0:
 			_show_debug_boss(_debug_rotation)
 			return
 	else:
-		_debug_rotation = (_debug_rotation + 1) % (_hunt_schedule.size() + 1)
-		if _debug_rotation > 0 and _debug_rotation <= _hunt_schedule.size():
-			_show_map_hunt(_hunt_schedule[_debug_rotation - 1])
-			return
+		_restore_reroll(true)
+		return
 	_clear_guardian_preview()
 	_change_world_art(1)
+
+func _restore_reroll(force: bool = false) -> void:
+	if _debug.unlock_all_buildings or not _world_synced or _hunt_schedule.is_empty() or (_reroll_restored and not force):
+		return
+	_reroll_restored = true
+	var count := int(_player_world.get("reroll_count", 0))
+	var cycle := _hunt_schedule.size() + 1
+	_debug_rotation = count % cycle
+	if _debug_rotation > 0:
+		_show_map_hunt(_hunt_schedule[_debug_rotation - 1])
+	else:
+		_clear_guardian_preview()
+		var entries: Array = WORLD_ART.get(_get_zone_id(), [])
+		if not entries.is_empty():
+			_world_art_index = int(count / cycle) % entries.size()
+			_change_world_art(0)
 
 func _request_map_hunts() -> void:
 	_hunt_wants_schedule = true
@@ -703,16 +774,7 @@ func _show_map_hunt(boss: Dictionary) -> void:
 		if other is Dictionary and str(other.get("id", "")) != str(entry.id) and not str(other.get("id", "")).is_empty():
 			_add_nearby_hunt(other)
 			break
-	var reroll := Button.new()
-	reroll.text = "Reroll"
-	reroll.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	reroll.offset_left = -80
-	reroll.offset_right = 80
-	reroll.offset_top = -70
-	reroll.offset_bottom = -25
-	reroll.pressed.connect(_reroll_world_art)
-	_preview_stage.add_child(reroll)
-	MenuArt.button(reroll)
+
 	if not verified:
 		_request_guardian_progress()
 
@@ -750,6 +812,9 @@ func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> voi
 	_hunt_selected = boss.duplicate(true)
 	_hunt_guardian_id = ""
 	_preview_selection = str(boss.get("id", ""))
+	var portrait_id := str(boss.get("display_texture_id", boss.get("texture_id", "")))
+	_boss_portrait.texture = _catalog.get_tex(portrait_id) if _catalog.has(portrait_id) else null
+	_boss_portrait.visible = _boss_portrait.texture != null
 	var verified := _hunt_progress_key == _guardian_key() and _backend != null and not _backend._verified_player_id.is_empty() and _hunt_progress_owner == _backend._verified_player_id
 	var active := _active_hunt_matches("")
 	var unlocked := bool(_hunt_progress.get("boss_unlocked", false)) if verified else false
@@ -818,7 +883,8 @@ func _show_debug_boss(index: int, group_id: String = "") -> void:
 	_hunt_selected.clear()
 	_debug_rotation = index
 	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
-	var textures := ["boss_common", "boss_colossus", "boss_leviathan", "boss_temporal", "ghost_boss"]
+	var rare_variants := ["boss_leviathan", "tier3boss", "scorpion_boss"]
+	var textures := ["boss_common", "boss_colossus", rare_variants[_world_art_index % rare_variants.size()], "boss_temporal", "ghost_boss"]
 	if group_id.is_empty():
 		group_id = "debug_" + tiers[index]
 	var guardians: Array = []
@@ -830,8 +896,9 @@ func _show_debug_boss(index: int, group_id: String = "") -> void:
 	var entries: Array = WORLD_ART.get(zone, [])
 	for i in mini(commons, entries.size()):
 		var guardian_id := group_id + "|preview_common_%d" % i
-		guardians.append({"id": guardian_id, "name": "Guardian %d" % (i + 1), "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), entries[i]], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(zone, index, guardian_id))})
-	show_guardian_preview({"id": group_id, "name": "Boss (preview)", "tier": tiers[index], "texture_id": textures[index]}, guardians)
+		guardians.append({"id": guardian_id, "name": _common_display_name(entries[(_world_art_index + i) % entries.size()], zone), "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [zone.trim_prefix("zone_"), entries[(_world_art_index + i) % entries.size()]], "defeated": SceneRouter._debug_guardian_wins.has(SceneRouter.debug_guardian_key(zone, index, guardian_id))})
+	var names := {"boss_colossus": "Arcane Colossus", "boss_leviathan": "Corrupted Leviathan", "tier3boss": "Dread Sovereign", "scorpion_boss": "Scorpion Overlord", "boss_temporal": "Temporal Warden", "ghost_boss": "Spectral Sovereign"}
+	show_guardian_preview({"id": group_id, "name": names.get(textures[index], "Boss"), "tier": tiers[index], "texture_id": textures[index]}, guardians)
 	var nearby_index := 1 if index == 4 else index + 1
 	var other := TextureButton.new()
 	other.name = "NearbyDebugBoss"
@@ -857,18 +924,11 @@ func _show_debug_boss(index: int, group_id: String = "") -> void:
 	other_label.add_theme_constant_override("outline_size", 5)
 	other_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	other.add_child(other_label)
-	var reroll := Button.new()
-	reroll.text = "Reroll"
-	reroll.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	reroll.offset_left = -80
-	reroll.offset_right = 80
-	reroll.offset_top = -70
-	reroll.offset_bottom = -25
-	reroll.pressed.connect(_reroll_world_art)
-	_preview_stage.add_child(reroll)
-	MenuArt.button(reroll)
+
 
 func _select_nearby_debug_boss(index: int, tier: String, texture_id: String) -> void:
+	_boss_portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
+	_boss_portrait.visible = _boss_portrait.texture != null
 	_nearby_debug_index = index
 	var group_id := "debug_" + tier
 	var remaining := 0
@@ -895,11 +955,29 @@ func _select_nearby_debug_boss(index: int, tier: String, texture_id: String) -> 
 	call_deferred("_fit_encounter_card")
 
 func _show_selected_guardians() -> void:
-	_world_modal.visible = false
-	if _nearby_debug_index >= 0:
-		_show_debug_boss(_nearby_debug_index)
-	elif not _hunt_selected.is_empty():
-		_show_map_hunt(_hunt_selected.duplicate(true))
+	if _backend == null or _hunt_progress_key != _guardian_key() or _hunt_progress_owner.is_empty() or _hunt_progress_owner != _backend._verified_player_id:
+		return
+	for guardian in _hunt_progress.get("guardians", []):
+		if guardian is Dictionary and not bool(guardian.get("defeated", false)):
+			_hunt_guardian_id = str(guardian.get("guardian_id", ""))
+			_preview_selection = _hunt_guardian_id
+			var texture_id := str(guardian.get("texture_id", ""))
+			_boss_portrait.texture = null
+			if texture_id.begins_with("res://assets/lab/bosses/") and not ".." in texture_id and ResourceLoader.exists(texture_id):
+				_boss_portrait.texture = load(texture_id) as Texture2D
+			elif _catalog.has(texture_id):
+				_boss_portrait.texture = _catalog.get_tex(texture_id)
+			_boss_portrait.visible = _boss_portrait.texture != null
+			_preview_status.text = str(guardian.get("name", "Guardian"))
+			_view_guardians.visible = false
+			_hunt_fight.visible = true
+			var active := _active_hunt_matches(_hunt_guardian_id)
+			_hunt_fight.text = "Resume Hunt" if active else "Fight"
+			_hunt_fight.disabled = _backend.token.is_empty() or (not active and not bool(_hunt_selected.get("available", false)))
+			_world_modal.visible = true
+			return
+	_view_guardians.visible = false
+	_preview_status.text = "All guardians defeated. Boss unlocked."
 
 func _start_debug_hunt() -> void:
 	if not _debug.unlock_all_buildings:
@@ -921,7 +999,8 @@ func _refresh_bosses() -> void:
 	_boss_picker.disabled = _boss_picker.item_count == 0
 	_boss_open.disabled = _boss_picker.disabled
 	if _boss_picker.disabled:
-		_boss_portrait.texture = null
+		if not is_instance_valid(_world_modal) or not _world_modal.visible:
+			_boss_portrait.texture = null
 		_boss_hp.visible = false
 		_boss_status.text = "No world boss reported by the server."
 		return
@@ -933,7 +1012,8 @@ func _on_boss_selected(index: int) -> void:
 		return
 	var boss: Dictionary = _boss_picker.get_item_metadata(index)
 	var id := str(boss.get("boss_id", ""))
-	_boss_portrait.texture = _catalog.get_tex(id) if _catalog.has(id) else null
+	if not is_instance_valid(_world_modal) or not _world_modal.visible:
+		_boss_portrait.texture = _catalog.get_tex(id) if _catalog.has(id) else null
 	var hp := float(boss.get("hp", 0))
 	var max_hp := maxf(1, float(boss.get("max_hp", 1)))
 	_boss_hp.max_value = max_hp
@@ -942,6 +1022,12 @@ func _on_boss_selected(index: int) -> void:
 	_boss_status.text = "Global encounter  |  HP: %s / %s" % [int(hp), int(max_hp)]
 
 func _on_auth_changed(token: String) -> void:
+	_player_world = {}
+	_world_synced = false
+	_reroll_restored = false
+	_session_id = ""
+	_claim_action = ""
+	_reroll_action = ""
 	_hunt_active.clear()
 	_hunt_active_owner = ""
 	_hunt_schedule.clear()
@@ -1010,6 +1096,8 @@ func _request_world_state() -> void:
 	if _backend == null:
 		return
 	var request_id := _backend.request_api("GET", "/world/state", null, false)
+	if not request_id.is_empty():
+		_world_requests[request_id] = _backend.token
 	if request_id != "" and _backend.token != "":
 		_auth_refresh_needed = false
 	if _backend.token == "":
@@ -1017,6 +1105,38 @@ func _request_world_state() -> void:
 		_set_error("Logging in...")
 
 func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
+	if _world_requests.has(_request_id):
+		var request_token := str(_world_requests[_request_id])
+		_world_requests.erase(_request_id)
+		if _backend == null or request_token != _backend.token:
+			if _backend != null and not _backend.token.is_empty():
+				call_deferred("_request_world_state")
+			return
+	if _request_id == _reroll_request and not _reroll_request.is_empty():
+		_reroll_request = ""
+		if _backend == null or _reroll_owner != _backend._verified_player_id:
+			_reroll_action = ""
+			return
+		if ok:
+			_reroll_action = ""
+			_update_from_state(data.get("updated_player_state", {}))
+			_apply_reroll()
+		else:
+			_set_error(str(data.get("error", "Reroll failed. Retry.")))
+			_request_world_state()
+		return
+	if _request_id == _claim_request and not _claim_request.is_empty():
+		_claim_request = ""
+		if _backend == null or _claim_owner.is_empty() or _claim_owner != _backend._verified_player_id:
+			return
+		if ok:
+			_claim_action = ""
+			_update_from_state(data.get("updated_player_state", {}))
+			_set_error("Loot claimed.")
+		else:
+			_set_error(str(data.get("error", "Claim failed. Retry.")))
+		_update_labels()
+		return
 	call_deferred("_drain_hunt_requests")
 	if _hunt_requests.has(_request_id):
 		var kind: String = _hunt_requests[_request_id]
@@ -1042,6 +1162,7 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 					if boss is Dictionary:
 						_hunt_schedule.append(boss)
 				_hunt_rotation = int(data.get("rotation_key", -1))
+				_restore_reroll()
 				var now := _backend.get_server_time_unix_ms()
 				var window_end := int(data.get("special_window_ends_at", 0))
 				_hunt_boundary = window_end if window_end > now else int(data.get("next_rotation_at", 0))
@@ -1096,6 +1217,8 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 		var pw = data.get("player_world", null)
 		if typeof(pw) == TYPE_DICTIONARY:
 			_player_world = pw
+			_world_synced = true
+			_restore_reroll()
 		_sync_session()
 		_update_labels()
 		if _auth_refresh_needed:
@@ -1167,10 +1290,18 @@ func _on_claim_pressed() -> void:
 	if _session_id == "":
 		_set_error("No active session.")
 		return
-	var body = {"client_action_id": _make_client_id(), "session_id": _session_id}
-	if _backend != null:
-		if _backend.request_api("POST", "/world/claim", body, true) == "":
-			_set_error("Request in progress. Try again shortly.")
+	if not _claim_request.is_empty() or (_claim_button != null and _claim_button.disabled):
+		return
+	if _claim_action.is_empty():
+		_claim_action = _make_client_id()
+	var body = {"client_action_id": _claim_action, "session_id": _session_id}
+	_claim_owner = _backend._verified_player_id
+	_claim_request = _backend.request_api("POST", "/world/claim", body, true)
+	if _claim_request.is_empty():
+		_set_error("Request in progress. Try again shortly.")
+	else:
+		_set_error("Claiming loot...")
+		_update_labels()
 
 func _get_zone_id() -> String:
 	if zone_id_override != "":
@@ -1192,17 +1323,23 @@ func _get_zone_name(zone_id: String) -> String:
 	return zone_id
 
 func _sync_session() -> void:
+	var previous := _session_id
 	_session_id = ""
 	var sessions = _player_world.get("sessions", {})
 	if typeof(sessions) != TYPE_DICTIONARY:
 		return
 	for sid in sessions.keys():
 		var entry = sessions[sid]
-		if typeof(entry) != TYPE_DICTIONARY:
+		if typeof(entry) != TYPE_DICTIONARY or str(entry.get("zone_id", "")) != _get_zone_id():
 			continue
-		if str(entry.get("zone_id", "")) == _get_zone_id():
+		if _session_id.is_empty():
+			_session_id = str(sid)
+		var loot: Variant = entry.get("pending_loot", {})
+		if loot is Dictionary and loot.values().any(func(amount): return int(amount) > 0):
 			_session_id = str(sid)
 			break
+	if previous != _session_id and _claim_request.is_empty():
+		_claim_action = ""
 
 func _update_labels() -> void:
 	var zone_id = _get_zone_id()
@@ -1227,22 +1364,22 @@ func _update_labels() -> void:
 				heat = int(entry2.get("heat", 0))
 				rep = int(entry2.get("reputation", 0))
 		_heat_label.text = "Heat: %s | Rep: %s" % [heat, rep]
+	var sessions: Variant = _player_world.get("sessions", {})
+	var session: Dictionary = sessions.get(_session_id, {}) if sessions is Dictionary else {}
+	var loot: Variant = session.get("pending_loot", {})
 	if _loot_label != null:
-		var sessions: Variant = _player_world.get("sessions", {})
-		var session: Dictionary = sessions.get(_session_id, {}) if sessions is Dictionary else {}
-		var loot: Variant = session.get("pending_loot", {})
 		var parts: Array[String] = []
 		if loot is Dictionary:
 			for key in loot:
 				parts.append("%s: %s" % [str(key).replace("_", " ").capitalize(), loot[key]])
-		_loot_label.text = "Stamina: %s  |  Unclaimed loot: %s" % [_player_world.get("stamina", "-"), ", ".join(parts) if not parts.is_empty() else "None"]
+		_loot_label.text = "Unclaimed loot: %s" % [", ".join(parts) if not parts.is_empty() else "None"]
 	if _enter_button != null:
 		_enter_button.disabled = _session_id != "" or _gate_remaining() != 0
 		_enter_button.tooltip_text = "World Gate cooldown: %s" % _gate_remaining_text() if _session_id == "" and _gate_remaining() != 0 else ""
 	if _farm_button != null:
 		_farm_button.disabled = _session_id == ""
 	if _claim_button != null:
-		_claim_button.disabled = _session_id == ""
+		_claim_button.disabled = not _world_synced or _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or not _claim_request.is_empty() or _session_id == "" or not (loot is Dictionary and loot.values().any(func(amount): return int(amount) > 0))
 
 func _gate_remaining() -> int:
 	return _gate_clock.remaining_seconds(_player_world, int(_db.get_balance("world_gate_cooldown_seconds", 3600)))

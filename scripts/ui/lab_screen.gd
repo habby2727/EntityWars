@@ -1,6 +1,7 @@
 extends Control
 class_name LabScreen
 
+const LabActionAlert := preload("res://scripts/ui/lab_action_alert.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 const SpecializedPanel := preload("res://scripts/ui/lab_specialized_panel.gd")
@@ -187,15 +188,44 @@ func _on_debug_forge_updated(state: Dictionary) -> void:
 func _setup_compact_navigation() -> void:
 	if _left_panel == null or _right_panel == null or _grid == null:
 		return
-	_left_panel.custom_minimum_size.x = 96
+	_left_panel.custom_minimum_size.x = 220
 	_left_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_grid.columns = 1
+	_grid.columns = 2
+	var scroll := _grid.get_parent() as ScrollContainer
+	if scroll != null:
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+		var box := scroll.get_parent() as VBoxContainer
+		var up := Button.new()
+		up.name = "ScrollUp"
+		up.text = "?"
+		up.visible = false
+		box.add_child(up)
+		box.move_child(up, scroll.get_index())
+		var down := Button.new()
+		down.name = "ScrollDown"
+		down.text = "?"
+		box.add_child(down)
+		up.pressed.connect(func():
+			scroll.scroll_vertical = 0
+			up.hide()
+			down.show()
+		)
+		down.pressed.connect(func():
+			scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
+			down.hide()
+			up.show()
+		)
 	var overlay := _background_panel.get_node_or_null("ContentMargin/TopOverlay") as Control
 	if overlay != null and _resource_bar_panel != null:
 		_resource_bar_panel.reparent(overlay)
 		_resource_bar_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		_resource_bar_panel.position = Vector2(110, -42)
 		_resource_bar_panel.custom_minimum_size = Vector2(500, 34)
+	var heading := _right_panel.get_node_or_null("Margin/DetailVBox/CostHeader") as Label
+	if heading != null:
+		heading.add_theme_font_size_override("font_size", 14)
+	if overlay != null:
+		MenuArt.button(overlay.get_node("BackButton") as Button)
 	var background := StyleBoxFlat.new()
 	background.bg_color = Color(0.02, 0.07, 0.08, 0.9)
 	background.border_color = Color(0.47, 0.4, 0.25, 0.8)
@@ -212,6 +242,7 @@ func _process(delta: float) -> void:
 		_status_refresh_elapsed = 0.0
 		if _debug.unlock_all_buildings:
 			_advance_debug_research()
+		_update_cards()
 		_update_experiments()
 		_update_research()
 		_update_spell_section()
@@ -351,13 +382,14 @@ func _build_grid() -> void:
 		card.building_id = id
 		card.pressed.connect(_on_card_pressed.bind(id))
 		_grid.add_child(card)
+		LabActionAlert.badge(card)
 		_cards[id] = card
 
 func _apply_card_scale(card: BuildingCard) -> void:
 	if card == null:
 		return
 	MenuArt.button(card)
-	card.custom_minimum_size = Vector2(64, 64) * _ui_scale
+	card.custom_minimum_size = Vector2(96, 96) * _ui_scale
 	card.toggle_mode = true
 	var content := card.get_node_or_null("HBox") as HBoxContainer
 	if content:
@@ -370,7 +402,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 			labels.hide()
 	var icon_frame := card.get_node_or_null("HBox/IconFrame") as TextureRect
 	if icon_frame != null:
-		icon_frame.custom_minimum_size = Vector2(52, 52) * _ui_scale
+		icon_frame.custom_minimum_size = Vector2(84, 84) * _ui_scale
 	var name_label := card.get_node_or_null("HBox/Text/Name") as Label
 	if name_label != null:
 		name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
@@ -386,13 +418,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 
 func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0, 0, 0, 0.55)
-		sb.content_margin_left = 6
-		sb.content_margin_top = 4
-		sb.content_margin_right = 6
-		sb.content_margin_bottom = 4
-		_resource_bar_panel.add_theme_stylebox_override("panel", sb)
+		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	if _resource_bar == null:
 		return
 	for child in _resource_bar.get_children():
@@ -402,14 +428,14 @@ func _build_resource_bar() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 4)
 		var icon := TextureRect.new()
-		var icon_size = int(round(18.0 * _ui_scale))
+		var icon_size = int(round(36.0 * _ui_scale))
 		icon.custom_minimum_size = Vector2(icon_size, icon_size)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.texture = _catalog.get_tex(res_id)
 		var label := Label.new()
 		label.text = "0"
-		label.add_theme_font_size_override("font_size", int(round(12.0 * _ui_scale)))
+		label.add_theme_font_size_override("font_size", int(round(24.0 * _ui_scale)))
 		row.add_child(icon)
 		row.add_child(label)
 		_resource_bar.add_child(row)
@@ -864,6 +890,10 @@ func _update_cards() -> void:
 			locked = false
 		card.set_locked(locked, unlock_level)
 		card.set_pending(_is_pending_building(id))
+		var badge := card.get_node("ActionBadge") as Label
+		var verified := _debug.unlock_all_buildings or _spell_state_synced
+		var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
+		badge.visible = verified and LabActionAlert.available(id, _state, _db, now, _is_pending_building(id))
 
 func _update_resource_bar() -> void:
 	if _resource_bar == null:
@@ -988,9 +1018,9 @@ func _update_costs() -> void:
 		return
 	for key in cost.keys():
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
+		row.add_theme_constant_override("separation", 4)
 		var slot := UIThemeFactory.make_icon_slot()
-		var slot_size = int(round(28.0 * _ui_scale))
+		var slot_size = int(round(20.0 * _ui_scale))
 		slot.custom_minimum_size = Vector2(slot_size, slot_size)
 		var icon = slot.get_node_or_null("Icon")
 		if icon is TextureRect:
@@ -999,6 +1029,7 @@ func _update_costs() -> void:
 			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		var amount := Label.new()
 		amount.text = str(cost[key])
+		amount.add_theme_font_size_override("font_size", int(round(12.0 * _ui_scale)))
 		row.add_child(slot)
 		row.add_child(amount)
 		_cost_list.add_child(row)

@@ -1,4 +1,4 @@
-﻿import { Database } from "bun:sqlite";
+import { Database } from "bun:sqlite";
 import { createHash, createHmac } from "crypto";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
@@ -167,6 +167,8 @@ type PlayerWorldState = {
 	daily_entries: number;
 	last_entry_reset_at: number;
 	last_gate_entry_at: number;
+	last_reroll_at: number;
+	reroll_count: number;
 	stamina: number;
 	last_stamina_at: number;
 	boss_tickets: number;
@@ -1943,6 +1945,27 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (req.method == "POST" && url.pathname == "/world/reroll") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					const id = typeof body?.client_action_id === "string" ? body.client_action_id.trim() : "";
+					if (!id || id.length > 64 || Object.keys(body ?? {}).some(key => key !== "client_action_id")) throw new HttpError(400, "Invalid reroll request.");
+					return db.transaction(() => {
+						const duplicate = getIdempotentState(playerId, id, "WORLD_REROLL", body);
+						if (duplicate) return stateResponseExtra(duplicate, { duplicate: true });
+						const now = Date.now();
+						const state = ensurePlayerState(playerId);
+						const world = ensurePlayerWorld(state, now);
+						if (world.last_reroll_at && now < world.last_reroll_at + 60000) throw new HttpError(429, "Reroll is cooling down.");
+						world.last_reroll_at = now;
+						world.reroll_count += 1;
+						state.updated_at = now;
+						updatePlayerStmt.run(JSON.stringify(state), now, playerId);
+						insertActionStmt.run(playerId, id, "WORLD_REROLL", JSON.stringify(body), JSON.stringify(state), now);
+						return stateResponseExtra(state);
+					}).immediate();
+				}
+
 				if (req.method == "POST" && url.pathname == "/world/enter") {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, {
@@ -2263,7 +2286,7 @@ async function startServer(): Promise<void> {
 					const playerId = await requireAuth(req, ctx);
 					const zoneId = url.searchParams.get("zone_id") ?? "";
 					const huntId = url.searchParams.get("hunt_id") ?? "";
-					const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses);
+					const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses, soloBossSchedule(Date.now()).rotation_key);
 					if (!definitions) throw new HttpError(400, "Invalid zone or boss hunt.");
 					const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId) as { guardian_id: string }[];
 					const defeated = new Set(rows.map(row => row.guardian_id));
@@ -2431,7 +2454,7 @@ async function startServer(): Promise<void> {
 							const zoneId = (payload as any).zone_id;
 							const guardianId = (payload as any).guardian_id;
 							if ((zoneId !== undefined && typeof zoneId !== "string") || (guardianId !== undefined && (typeof guardianId !== "string" || !guardianId))) throw new HttpError(400, "Invalid guardian selection.");
-							const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses);
+							const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses, schedule.rotation_key);
 							if ((zoneId !== undefined && !definitions) || (guardianId !== undefined && !definitions)) throw new HttpError(400, "Invalid guardian zone.");
 							if (boss.tier !== "common" && !definitions) throw new HttpError(409, "Guardian zone required.");
 							let encounter = boss;
@@ -2735,7 +2758,7 @@ function soloBossSchedule(now: number) {
 	let cumulative = 0, chosen = "legendary";
 	for (const tier of ["mythic", "rare", "epic", "legendary"]) { cumulative += rotation.weights[tier]; if (roll < cumulative) { chosen = tier; break; } }
 	const special = bosses.find(boss => boss.tier === chosen)!;
-	return { server_time_unix_ms: now, rotation_key: key, current_special_id: special.id, next_rotation_at: start + interval, special_window_ends_at: end, bosses: bosses.map(boss => ({ ...boss, display_texture_id: boss.texture_variants?.[key % boss.texture_variants.length] ?? boss.texture_id, available: boss.tier === "common" || (boss.id === special.id && now < end), appearance_starts_at: boss.tier === "common" ? null : (boss.id === special.id ? start : null), appearance_ends_at: boss.tier === "common" ? null : (boss.id === special.id ? end : null) })) };
+	return { server_time_unix_ms: now, rotation_key: key, current_special_id: special.id, next_rotation_at: start + interval, special_window_ends_at: end, bosses: bosses.map(boss => ({ ...boss, name: ({ tier3boss: "Dread Sovereign", scorpion_boss: "Scorpion Overlord" } as Record<string, string>)[boss.texture_variants?.[key % boss.texture_variants.length] ?? boss.texture_id] ?? boss.name, display_texture_id: boss.texture_variants?.[key % boss.texture_variants.length] ?? boss.texture_id, available: boss.tier === "common" || (boss.id === special.id && now < end), appearance_starts_at: boss.tier === "common" ? null : (boss.id === special.id ? start : null), appearance_ends_at: boss.tier === "common" ? null : (boss.id === special.id ? end : null) })) };
 }
 
 function loadResourceIds(path: string): { ids: Set<string> } {
@@ -3427,6 +3450,8 @@ function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
 		daily_entries: dailyEntries,
 		last_entry_reset_at: lastEntryResetAt,
 		last_gate_entry_at: clampInt(worldRaw?.last_gate_entry_at ?? 0, 0, Number.MAX_SAFE_INTEGER),
+		last_reroll_at: clampInt(worldRaw?.last_reroll_at ?? 0, 0, Number.MAX_SAFE_INTEGER),
+		reroll_count: clampInt(worldRaw?.reroll_count ?? 0, 0, Number.MAX_SAFE_INTEGER),
 		stamina,
 		last_stamina_at: lastStaminaAt,
 		boss_tickets: bossTickets,

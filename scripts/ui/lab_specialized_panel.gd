@@ -46,6 +46,7 @@ var _anomaly_confirm: ConfirmationDialog
 var _anomaly_choice := ""
 var _sync_now := 0
 var _sync_pending := false
+var _sync_badge: Label
 var _dungeon_ranking_button: Button
 var _dungeon_ranking_dialog: AcceptDialog
 var _dungeon_ranking_text: Label
@@ -191,36 +192,39 @@ func _reactor_controls() -> void:
 	add_child(button)
 	_lab_buttons.append(button)
 
-func _setup_dungeon_ranking() -> void:
-	var dungeon_buttons := HBoxContainer.new()
-	dungeon_buttons.add_theme_constant_override("separation", 8)
-	add_child(dungeon_buttons)
+func _setup_dungeon_ranking(parent: Control) -> void:
 	_dungeon_entry_button = Button.new()
 	_dungeon_entry_button.text = "ENTER DUNGEON"
+	_dungeon_entry_button.custom_minimum_size = Vector2(165, 52)
 	_dungeon_entry_button.pressed.connect(_enter_dungeon)
 	MenuArt.button(_dungeon_entry_button)
-	dungeon_buttons.add_child(_dungeon_entry_button)
+	parent.add_child(_dungeon_entry_button)
 	_dungeon_entry_status = Label.new()
 	_dungeon_entry_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	add_child(_dungeon_entry_status)
+	parent.add_child(_dungeon_entry_status)
 	_dungeon_ranking_button = Button.new()
 	_dungeon_ranking_button.text = "MONTHLY RANKING"
+	_dungeon_ranking_button.custom_minimum_size = Vector2(165, 52)
 	_dungeon_ranking_button.pressed.connect(_open_dungeon_ranking)
 	MenuArt.button(_dungeon_ranking_button)
-	dungeon_buttons.add_child(_dungeon_ranking_button)
+	parent.add_child(_dungeon_ranking_button)
 	_dungeon_ranking_dialog = AcceptDialog.new()
-	_dungeon_ranking_dialog.title = "Dungeons — Monthly Ranking"
-	_dungeon_ranking_dialog.min_size = Vector2i(480, 520)
+	_dungeon_ranking_dialog.title = "Dungeons - Monthly Ranking"
+	_dungeon_ranking_dialog.min_size = Vector2i(620, 560)
+	_dungeon_ranking_dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
+	MenuArt.button(_dungeon_ranking_dialog.get_ok_button())
 	add_child(_dungeon_ranking_dialog)
 	var ranking_content := VBoxContainer.new()
 	_dungeon_ranking_dialog.add_child(ranking_content)
 	var previous := Button.new()
-	previous.text = "Previous month"
+	previous.text = "Previous Month"
+	previous.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	previous.custom_minimum_size = Vector2(165, 52)
 	previous.pressed.connect(_previous_dungeon_month)
 	MenuArt.button(previous)
 	ranking_content.add_child(previous)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(440, 400)
+	scroll.custom_minimum_size = Vector2(440, 360)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	ranking_content.add_child(scroll)
 	_dungeon_ranking_text = Label.new()
@@ -228,21 +232,48 @@ func _setup_dungeon_ranking() -> void:
 	_dungeon_ranking_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_dungeon_ranking_text)
 
+func _sync_card(parent: Control, title: String) -> VBoxContainer:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(275, 220)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(35, 35, 35, 30)))
+	parent.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 6)
+	panel.add_child(content)
+	var heading := Label.new()
+	heading.text = title
+	heading.add_theme_color_override("font_color", Color("e5c76d"))
+	content.add_child(heading)
+	return content
+
 func _sync_controls() -> void:
-	_message("CALIBRATION PROJECT", "Echo (NPC)")
+	var cards := HFlowContainer.new()
+	cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cards.add_theme_constant_override("h_separation", 8)
+	cards.add_theme_constant_override("v_separation", 8)
+	add_child(cards)
+	var calibration := _sync_card(cards, "CALIBRATION PROJECT")
+	var description := Label.new()
+	description.text = "Echo (NPC)\nCalibrate the Nexus to earn resources."
+	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	calibration.add_child(description)
 	_lab_progress = ProgressBar.new()
 	_lab_progress.show_percentage = false
 	_lab_progress.max_value = 100
-	add_child(_lab_progress)
+	calibration.add_child(_lab_progress)
 	_lab_status = Label.new()
 	_lab_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	add_child(_lab_status)
+	calibration.add_child(_lab_status)
 	var button := Button.new()
+	button.custom_minimum_size = Vector2(165, 52)
+	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	MenuArt.button(button)
 	button.pressed.connect(_sync_pressed)
-	add_child(button)
+	calibration.add_child(button)
 	_lab_buttons.append(button)
-	_setup_dungeon_ranking()
+	_sync_badge = preload("res://scripts/ui/lab_action_alert.gd").badge(button)
+	_setup_dungeon_ranking(_sync_card(cards, "DUNGEONS"))
 
 func _sync_pressed() -> void:
 	if _lab_buttons.is_empty() or _lab_buttons[0].disabled:
@@ -266,7 +297,9 @@ func _update_sync_status() -> void:
 	var hq := int(_forge_state.get("lab", {}).get("hqLevel", 0))
 	if not active and not _forge_debug and (level < 1 or hq < 4):
 		_lab_status.text += "\nRequires Sync Nexus level 1 and HQ level 4 (current: %d / %d)." % [level, hq]
-	_lab_buttons[0].text = "CLAIM" if active else "START"
+	_lab_buttons[0].text = (_clock(remaining) if remaining > 0 else "CLAIM") if active else "START"
+	if is_instance_valid(_sync_badge):
+		_sync_badge.visible = active and remaining <= 0 and ready and not _sync_pending
 	_lab_buttons[0].disabled = not ready or _sync_pending or (active and remaining > 0) or (not active and not _forge_debug and (level < 1 or hq < 4))
 	if is_instance_valid(_dungeon_ranking_button):
 		_dungeon_ranking_button.disabled = _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty()

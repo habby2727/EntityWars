@@ -134,6 +134,21 @@ func _ready() -> void:
 	_apply_panel_background()
 	_connect_backend()
 	_connect_buttons()
+	if _back_button != null:
+		MenuArt.button(_back_button)
+	if _zone_refresh != null:
+		_zone_refresh.hide()
+	if _top_info_label != null:
+		_top_info_label.hide()
+	if _top_session_label != null:
+		_top_session_label.hide()
+	var title := get_node_or_null("Background/Margin/RootVBox/Header/Title") as Label
+	if title != null:
+		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var spacer := get_node_or_null("Background/Margin/RootVBox/Header/Spacer") as Control
+	if spacer != null:
+		spacer.hide()
 	_tabs.tabs_visible = false
 	_tabs.current_tab = 0
 	for index in _tabs.get_tab_count():
@@ -421,6 +436,11 @@ func _build_zone_cards() -> void:
 		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name_label.clip_text = true
 		text_col.add_child(name_label)
+		var lore := Label.new()
+		lore.text = {"zone_chaos": "Reality fractures beneath unpredictable alchemical storms.", "zone_corrupted": "Tainted echoes reshape every creature that crosses this wasteland.", "zone_crystal": "Ancient prisms resonate with forgotten alchemical memories."}.get(str(zone_id), "")
+		lore.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lore.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		text_col.add_child(lore)
 		var mod_label := Label.new()
 		mod_label.text = "Modifiers: -"
 		mod_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

@@ -25,6 +25,18 @@ func _run() -> void:
 	panel._update_sync_status()
 	assert(panel._lab_buttons.size() == 1)
 	assert(panel._lab_buttons[0].text == "START")
+	var cards := panel.get_child(0) as HFlowContainer
+	assert(cards != null and cards.get_child_count() == 2)
+	assert(panel._lab_buttons[0].custom_minimum_size == Vector2(165, 52))
+	assert(panel._dungeon_ranking_dialog.get_theme_stylebox("panel") is StyleBoxTexture)
+	state.lab.runtime.sync_project = {"started_at": 1000, "completes_at": 61000}
+	panel.update_lab_status(state, 1000, false, {})
+	assert(panel._lab_buttons[0].disabled and panel._lab_buttons[0].text == "00:01:00" and not panel._sync_badge.visible)
+	panel.update_lab_status(state, 61000, false, {})
+	assert(panel._lab_buttons[0].text == "CLAIM" and not panel._lab_buttons[0].disabled and panel._sync_badge.visible)
+	state.lab.runtime.erase("sync_project")
+	panel.update_lab_status(state, 61000, false, {})
+	assert(panel._lab_buttons[0].text == "START" and not panel._sync_badge.visible)
 	assert(is_instance_valid(panel._dungeon_entry_button) and panel._dungeon_entry_button.text == "ENTER DUNGEON")
 	var dungeon_dialog := ConfirmationDialog.new()
 	panel.add_child(dungeon_dialog)

@@ -10,6 +10,9 @@ class_name LabHub
 @export var resource_bar_path: NodePath
 @export var structures_button_path: NodePath
 
+const LabActionAlert := preload("res://scripts/ui/lab_action_alert.gd")
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
+
 const DESIGN_SIZE := Vector2(1600, 900)
 const BUILDING_IDS := [
 	"lab_th",
@@ -71,6 +74,8 @@ var _structures_button: Button = null
 
 var _buttons: Dictionary = {}
 var _state: Dictionary = {}
+var _alert_synced := false
+var _alert_elapsed := 0.0
 var _resource_rows: Dictionary = {}
 @onready var _quick_panel = $BuildingQuickPanel
 
@@ -87,6 +92,8 @@ func _ready() -> void:
 	_resolve_nodes()
 	_setup_background()
 	_connect_backend()
+	for button in [$Aspect/Canvas/TopOverlay/BackButton, _structures_button]:
+		MenuArt.button(button)
 	_build_icons()
 	_build_resource_bar()
 	_load_state()
@@ -132,6 +139,10 @@ func _connect_backend() -> void:
 	if _backend == null or _debug.unlock_all_buildings:
 		return
 	_backend.state_updated.connect(_on_state_updated)
+	_backend.auth_changed.connect(func(_token):
+		_alert_synced = false
+		_update_lock_states()
+	)
 
 func _build_icons() -> void:
 	if _icon_layer == null:
@@ -165,6 +176,7 @@ func _build_icons() -> void:
 		button.tooltip_text = _get_building_display_name(building_id)
 		button.pressed.connect(_on_building_pressed.bind(building_id))
 		_icon_layer.add_child(button)
+		LabActionAlert.badge(button)
 		_buttons[building_id] = button
 
 func _load_state() -> void:
@@ -190,6 +202,9 @@ func _update_lock_states() -> void:
 		if _debug.unlock_all_buildings or _debug.force_all_clickable:
 			locked = false
 		button.disabled = false
+		var pending: bool = _quick_panel._pending.values().has(building_id) if not _debug.unlock_all_buildings else _debug.lab_cooldown_active(_state, building_id)
+		var now := int(Time.get_unix_time_from_system() * 1000) if _debug.unlock_all_buildings else (_backend.get_server_time_unix_ms() if _backend != null else -1)
+		button.get_node("ActionBadge").visible = (_debug.unlock_all_buildings or _alert_synced) and now >= 0 and LabActionAlert.available(building_id, _state, _db, now, pending)
 		var display_name = _get_building_display_name(building_id)
 		if locked:
 			button.modulate = Color(1, 1, 1, 0.4)
@@ -200,13 +215,7 @@ func _update_lock_states() -> void:
 
 func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0, 0, 0, 0.55)
-		sb.content_margin_left = 6
-		sb.content_margin_top = 4
-		sb.content_margin_right = 6
-		sb.content_margin_bottom = 4
-		_resource_bar_panel.add_theme_stylebox_override("panel", sb)
+		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	if _resource_bar == null:
 		return
 	for child in _resource_bar.get_children():
@@ -216,13 +225,13 @@ func _build_resource_bar() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 4)
 		var icon := TextureRect.new()
-		icon.custom_minimum_size = Vector2(18, 18)
+		icon.custom_minimum_size = Vector2(36, 36)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.texture = _catalog.get_tex(res_id)
 		var label := Label.new()
 		label.text = "0"
-		label.add_theme_font_size_override("font_size", 12)
+		label.add_theme_font_size_override("font_size", 24)
 		row.add_child(icon)
 		row.add_child(label)
 		_resource_bar.add_child(row)
@@ -282,6 +291,7 @@ func _on_state_updated(state: Dictionary) -> void:
 	if _debug.unlock_all_buildings:
 		return
 	_state = state
+	_alert_synced = _backend != null and _backend.token != "" and _backend.get_server_time_unix_ms() >= 0
 	_update_lock_states()
 	_update_resource_bar()
 
@@ -394,3 +404,9 @@ func _format_number(value: float) -> String:
 	if value >= 10.0:
 		return "%.1f" % value
 	return "%.2f" % value
+
+func _process(delta: float) -> void:
+	_alert_elapsed += delta
+	if _alert_elapsed >= 1.0:
+		_alert_elapsed = 0.0
+		_update_lock_states()

@@ -38,8 +38,8 @@ func _run() -> void:
 		_fail("Confirmed entry cost mismatch")
 		return
 	var session_id: String = scene._session_id
-	if scene._gate_remaining() <= 0 or not scene._enter_button.disabled or scene._farm_button.disabled or scene._claim_button.disabled:
-		_fail("Cooldown must block new entry while preserving farm and claim")
+	if scene._gate_remaining() <= 0 or not scene._enter_button.disabled or scene._farm_button.disabled or not scene._claim_button.disabled:
+		_fail("Cooldown must block new entry and empty loot claim")
 		return
 	var before_countdown: int = scene._gate_remaining()
 	await create_timer(1.1).timeout

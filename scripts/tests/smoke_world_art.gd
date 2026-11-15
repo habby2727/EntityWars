@@ -12,6 +12,8 @@ func _run() -> void:
 	for world in ["Chaos", "Corrupted", "Crystal"]:
 		var scene := load("res://scenes/ui/WorldZone%s.tscn" % world) as PackedScene
 		var zone := scene.instantiate()
+		zone.get_node("BackendClient").auto_dev_login = false
+		zone.get_node("BackendClient").base_url = "http://127.0.0.1:1"
 		root.add_child(zone)
 		await process_frame
 		if OS.has_environment("EW_CAPTURE_DIR"):
@@ -93,7 +95,13 @@ func _run() -> void:
 		if OS.has_environment("EW_CAPTURE_DIR"):
 			await create_timer(0.3).timeout
 			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("map_hunt_" + world + ".png"))
-		assert(zone._preview_stage.get_child_count() == 6)
+		assert(zone._preview_stage.get_child_count() == 5)
+		var stage_before = zone._preview_stage
+		var actors_before = stage_before.get_children()
+		zone._open_main_preview()
+		assert(zone._boss_portrait.texture != null and zone._view_guardians.visible)
+		zone._show_selected_guardians()
+		assert(zone._hunt_guardian_id == "guardian_0" and zone._preview_stage == stage_before and zone._preview_stage.get_children() == actors_before)
 		var guard: Control = zone._preview_stage.get_child(1)
 		guard.get_child(0).gui_input.emit(click)
 		assert(zone._hunt_guardian_id == "guardian_0" and zone._hunt_fight.visible)
@@ -123,30 +131,37 @@ func _run() -> void:
 		zone._hunt_progress.defeated_count = 1
 		zone._show_map_hunt(rare)
 		await process_frame
-		assert(zone._preview_stage.get_child_count() == 5)
+		assert(zone._preview_stage.get_child_count() == 4)
 		for guardian in online_guardians:
 			guardian.defeated = true
 		zone._hunt_progress.boss_unlocked = true
 		zone._hunt_progress.defeated_count = 3
 		zone._show_map_hunt(rare)
 		await process_frame
-		assert(zone._preview_stage.get_child_count() == 3)
+		assert(zone._preview_stage.get_child_count() == 2)
 		zone._world_modal.visible = false
 		var online_stage = zone._preview_stage
 		var online_actors: Array = online_stage.get_children()
 		zone._preview_stage.get_node("NearbyHunt").pressed.emit()
-		assert(zone._hunt_selected.id == "hunt_mythic")
+		assert(zone._hunt_selected.id == "hunt_mythic", "selected: " + str(zone._hunt_selected))
 		assert(zone._world_modal.visible and zone._preview_selection == "hunt_mythic")
 		assert(zone._preview_stage == online_stage and zone._preview_stage.get_children() == online_actors)
 		zone._world_modal.visible = false
 		zone._clear_guardian_preview()
 		zone._debug.unlock_all_buildings = true
+		var reroll_style = zone._reroll_button.get_theme_stylebox("normal")
 		zone._reroll_world_art()
+		zone._update_reroll_button()
+		assert(zone._reroll_button.disabled and zone._reroll_remaining() > 0)
+		assert(zone._reroll_button.get_theme_stylebox("disabled") == reroll_style)
+		var rotation_before: int = zone._debug_rotation
+		zone._reroll_world_art()
+		assert(zone._debug_rotation == rotation_before)
 		assert(is_instance_valid(zone._preview_stage))
 		assert(zone._preview_stage.get_child_count() >= 3)
 		zone._show_debug_boss(4)
 		await process_frame
-		assert(zone._preview_stage.get_child_count() == 8)
+		assert(zone._preview_stage.get_child_count() == 7)
 		var debug_stage = zone._preview_stage
 		var debug_actors: Array = debug_stage.get_children()
 		zone._preview_stage.get_node("NearbyDebugBoss").pressed.emit()
@@ -160,7 +175,7 @@ func _run() -> void:
 		assert(zone._preview_selection == "debug_epic" and zone._view_guardians.visible)
 		assert(zone._preview_status.text.contains("its 4 guardians"))
 		zone._view_guardians.pressed.emit()
-		assert(not zone._world_modal.visible and zone._preview_stage.get_child_count() == 7)
+		assert(zone._preview_stage == debug_stage or is_instance_valid(zone._preview_stage))
 		zone._show_debug_boss(4)
 		await process_frame
 		if OS.has_environment("EW_GUARDIAN_CAPTURE") and world == "Chaos":

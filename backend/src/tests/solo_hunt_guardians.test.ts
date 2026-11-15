@@ -240,3 +240,19 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }, 180000);
+
+test("guardian rotations cover every zone portrait without changing identity", () => {
+  const catalog = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/solo_bosses.json"), "utf8")).bosses;
+  for (const zone of ["zone_chaos", "zone_corrupted", "zone_crystal"]) {
+    const dir = resolve(import.meta.dir, `../../../assets/lab/bosses/${zone.slice(5)}_zone_common`);
+    const expected = readdirSync(dir).filter((name: string) => name.endsWith(".png")).sort();
+    const found = new Set<string>();
+    const first = guardiansFor(zone, "hunt_mythic", catalog, 0)!;
+    for (let rotation = 0; rotation < expected.length; rotation++) {
+      const group = guardiansFor(zone, "hunt_mythic", catalog, rotation)!;
+      expect(group.map(g => g.guardian_id)).toEqual(first.map(g => g.guardian_id));
+      for (const g of group) found.add(g.texture_id.split("/").pop()!);
+    }
+    expect([...found].sort()).toEqual(expected);
+  }
+});
