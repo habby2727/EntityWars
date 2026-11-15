@@ -24,6 +24,9 @@ static func detail(spell: Dictionary, state: String) -> String:
 	var text := "%s | %s | %s\nPower: %s   Accuracy: %d%%   Cooldown: %d\n\n%s" % [affinity(spell), str(spell.get("category", "")).capitalize(), state, power, int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), str(spell.get("desc", ""))]
 	var effects: Array[String] = []
 	for effect in spell.get("effects", []):
+		if effect.get("kind") == "physical_anomaly":
+			effects.append(anomaly_detail(spell, effect))
+			continue
 		var part := "%s: %s (%s)" % [str(effect.get("kind", "")).replace("_", " ").capitalize(), effect.get("value", 0), str(effect.get("target", ""))]
 		if effect.has("second_value"):
 			part += ", alternate: %s" % str(effect.second_value)
@@ -36,3 +39,6 @@ static func detail(spell: Dictionary, state: String) -> String:
 			costs.append("%s: %s" % [str(key).replace("_", " ").capitalize(), spell.research_cost[key]])
 		text += "\n\nResearch: Spell Tower level %d\n%s\nTime: %d s" % [int(spell.tower_level_required), ", ".join(costs), int(spell.get("research_time_sec", 0))]
 	return text
+
+static func anomaly_detail(spell: Dictionary, effect: Dictionary) -> String:
+	return "Phisical Anomaly — %s\n%s +15%% | %s -15%% direct spell damage\n3 exchanges after cast; affects both fighters.\nNew casts replace the current anomaly. Poison and homunculus damage are unaffected.\nAccuracy 100%% | CD 4" % [str(spell.get("name", "")), str(effect.get("favored_type", "")).capitalize(), str(effect.get("weakened_type", "")).capitalize()]

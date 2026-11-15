@@ -163,6 +163,13 @@ func _run_e2e() -> void:
 		await create_timer(0.1).timeout
 	combat._dungeon_brief.hide()
 	combat._dungeon_refresh_controls()
+	if OS.has_environment("DUNGEON_CAPTURE_DIR"):
+		await RenderingServer.frame_post_draw
+		var screenshot := root.get_texture().get_image()
+		if screenshot == null or screenshot.is_empty() or screenshot.save_png(OS.get_environment("DUNGEON_CAPTURE_DIR").path_join("dungeon-combat.png")) != OK:
+			push_error("Dungeon screenshot failed")
+			quit(1)
+			return
 	var initial_revision := int(combat._dungeon_session.combat_revision)
 	combat._on_spell_chosen(0)
 	var replay_payload: Dictionary = combat._dungeon_pending.duplicate(true)

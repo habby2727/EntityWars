@@ -6,6 +6,7 @@ const CombatLogPresenter := preload("res://scripts/ui/combat_log_presenter.gd")
 const CombatTypeIcon := preload("res://scripts/ui/combat_type_icon.gd")
 const CombatHomStatus := preload("res://scripts/ui/combat_hom_status.gd")
 const CombatInspiration := preload("res://scripts/ui/combat_inspiration.gd")
+const SpellPresentation := preload("res://scripts/ui/spell_presentation.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
@@ -95,6 +96,9 @@ var _dungeon_rank_loaded := false
 var _dungeon_best := -1
 var _dungeon_rank_floor := -1
 var _dungeon_synchronized := false
+var _physical_anomaly: Dictionary = {}
+var _physical_anomaly_label: Label
+var _physical_anomaly_display_id := ""
 var _online_hunt_request := ""
 var _online_hunt_session: Dictionary = {}
 var _online_hunt_revision := 0
@@ -218,6 +222,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_fit_combat_view)
 	_load_registry_safe()
 	_setup_combat_log()
+	_setup_physical_anomaly_ui()
 	_setup_hp_styles()
 	_setup_hom_ui()
 	_setup_combat_labels()
@@ -304,6 +309,9 @@ func _on_log_spell_hovered(meta: Variant) -> void:
 		log_box.tooltip_text = _spell_description(spell) if not spell.is_empty() else ""
 
 func _spell_description(spell: Dictionary) -> String:
+	for effect in spell.get("effects", []):
+		if effect.get("kind") == "physical_anomaly":
+			return SpellPresentation.anomaly_detail(spell, effect)
 	var lines: Array[String] = []
 	for effect in spell.get("effects", []):
 		var extra: Array[String] = []
@@ -426,8 +434,35 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 	else:
 		_dungeon_recover()
 
+func _setup_physical_anomaly_ui() -> void:
+	_physical_anomaly_label = Label.new()
+	_physical_anomaly_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_physical_anomaly_label.position = Vector2(-400, 195)
+	_physical_anomaly_label.size = Vector2(800, 36)
+	_physical_anomaly_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_physical_anomaly_label.add_theme_font_size_override("font_size", 17)
+	_physical_anomaly_label.add_theme_constant_override("outline_size", 5)
+	_physical_anomaly_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_physical_anomaly_label.hide()
+	add_child(_physical_anomaly_label)
+
+func _show_physical_anomaly(value: Variant) -> void:
+	var active: Dictionary = value if value is Dictionary else {}
+	var next_id := str(active.get("id", ""))
+	if not _physical_anomaly_display_id.is_empty() and _physical_anomaly_display_id != next_id:
+		_log_immediate("Phisical Anomaly expired." if next_id.is_empty() else "Phisical Anomaly replaced.")
+	_physical_anomaly_display_id = next_id
+	if active.is_empty():
+		_physical_anomaly_label.hide()
+		return
+	var spell: Dictionary = _reg.get_spell_by_id(str(active.get("id", ""))) if _reg != null else {}
+	_physical_anomaly_label.text = "Phisical Anomaly — %s | %d exchanges | %s +15%% | %s -15%%" % [str(spell.get("name", active.get("id", ""))), int(active.get("remaining_exchanges", 0)), str(active.get("favored_type", "")).capitalize(), str(active.get("weakened_type", "")).capitalize()]
+	_physical_anomaly_label.tooltip_text = _spell_description(spell)
+	_physical_anomaly_label.show()
+
 func _dungeon_render() -> void:
 	var state: Dictionary = _dungeon_session.get("combat_state", {})
+	_show_physical_anomaly(state.get("physical_anomaly"))
 	if not state.get("player") is Dictionary or not state.get("npc") is Dictionary:
 		_dungeon_show_retry("Invalid Dungeon state.")
 		return
@@ -514,6 +549,7 @@ func _dungeon_refresh_controls() -> void:
 func _begin_combat_initialization() -> void:
 	if not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
 		_dungeon_guard = true
+		_apply_dungeon_combat_visuals()
 		_combat_session_invalid = true
 		spell_panel.hide()
 		switch_weapon_btn.disabled = true
@@ -736,6 +772,7 @@ func _send_online_pending_turn() -> void:
 
 func _render_online_hunt(session: Dictionary) -> bool:
 	var state: Dictionary = session.combat_state
+	_show_physical_anomaly(state.get("physical_anomaly"))
 	var loadout: Dictionary = session.combat_loadout
 	var boss_def: Variant = session.get("boss_definition", {})
 	if not boss_def is Dictionary or not state.get("player") is Dictionary or not state.get("boss") is Dictionary or not state.get("moves") is Array or state.moves.size() != 4 or not state.get("minions") is Array:
@@ -1017,6 +1054,29 @@ func _start_combat() -> void:
 	_update_ui()
 	_refresh_spell_buttons()
 	_log_immediate("Unverified boss preview: no rewards." if _solo_boss_mode else "Battle 1 begins.")
+
+func _apply_dungeon_combat_visuals() -> void:
+	var background := $Background as TextureRect
+	background.texture = load("res://assets/ui/alchemy_kit/dungeons_combatbg.png") as Texture2D
+	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var layer := Control.new()
+	layer.name = "DungeonCombatSprites"
+	layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(layer)
+	move_child(layer, background.get_index() + 1)
+	for entry in [[player_hom, Vector2(190, 530), Vector2(165, 190)], [player_entity, Vector2(480, 530), Vector2(250, 275)], [enemy_entity, Vector2(1438, 530), Vector2(250, 275)], [enemy_hom, Vector2(1730, 530), Vector2(165, 190)]]:
+		var sprite: TextureRect = entry[0]
+		var center: Vector2 = entry[1]
+		var dimensions: Vector2 = entry[2]
+		sprite.reparent(layer)
+		sprite.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		sprite.position = Vector2(center.x - dimensions.x / 2, center.y - dimensions.y)
+		sprite.size = dimensions
+		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_player_hom_status.position = Vector2(70, 540)
+	_enemy_hom_status.position = Vector2(1610, 540)
+	call_deferred("_align_health_panels")
 
 func _apply_world_combat_visuals(zone_id: String) -> void:
 	var layouts := {
@@ -2684,6 +2744,11 @@ func _begin_spell_exchange() -> void:
 
 func _end_spell_exchange() -> void:
 	_spell_exchange_active = false
+	if not _physical_anomaly.is_empty() and int(_physical_anomaly.get("activated_exchange", 0)) < _turn:
+		_physical_anomaly.remaining_exchanges = int(_physical_anomaly.remaining_exchanges) - 1
+		if int(_physical_anomaly.remaining_exchanges) <= 0:
+			_physical_anomaly.clear()
+		_show_physical_anomaly(_physical_anomaly)
 	for fighter in [player, enemy]:
 		fighter.spell_neutralize_active = 0.0
 
@@ -2782,6 +2847,11 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 			if kind in ["atk_boost", "atk_down", "shield", "reflect", "vuln", "focus_next", "misalign_next", "type_neutralize"]:
 				value = clampf(value, 0.0, 0.95 if kind in ["shield", "reflect"] else 1.0)
 		match kind:
+			"physical_anomaly":
+				_log_step("Phisical Anomaly: %s replaces the previous anomaly." % str(spell.get("name", id)), func():
+					_physical_anomaly = {"id": id, "favored_type": str(effect.favored_type), "weakened_type": str(effect.weakened_type), "remaining_exchanges": 3, "activated_exchange": _turn}
+					_show_physical_anomaly(_physical_anomaly)
+				)
 			"cleanse_one":
 				_log_step("%s cleanses one negative status." % recipient.name, func():
 					for field in ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]:
@@ -2898,7 +2968,14 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			attacker.status.atk_boost = 0
 			_record_highlight("combo", boost_gain, "%s: attack boost" % attacker.name)
 		, _combat_event(attacker, "combo", " COMBO: attack boost applied.", {}))
-	var dmg: int = max(1, int(round((base_atk - int(defender.def * 0.5)) * mult * power_mult)))
+	var anomaly_mult := 1.0
+	if spell_attack and context.has("spell") and not _physical_anomaly.is_empty():
+		var attacker_type := str(attacker.get("type", ""))
+		if attacker_type == str(_physical_anomaly.get("favored_type", "")):
+			anomaly_mult = 1.15
+		elif attacker_type == str(_physical_anomaly.get("weakened_type", "")):
+			anomaly_mult = 0.85
+	var dmg: int = max(1, int(round((base_atk - int(defender.def * 0.5)) * mult * power_mult * anomaly_mult)))
 	dmg = maxi(1, int(round(dmg * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0))))
 	if defender.status.vuln_pct > 0:
 		var before_vulnerability := dmg
@@ -3197,6 +3274,8 @@ func _handle_battle_end() -> void:
 
 func _reset_battle_state() -> void:
 	_reset_animations()
+	_physical_anomaly.clear()
+	_show_physical_anomaly(null)
 	_turn = 0
 	_round = 1
 	_player_turn = true

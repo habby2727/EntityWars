@@ -2616,7 +2616,7 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
 
 function publicDungeonCombat(combat: any) {
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result };
+	return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {
@@ -2639,6 +2639,7 @@ function publicHuntCombat(state: any) {
 	});
 	return {
 		turn: state.turn,
+		physical_anomaly: state.physical_anomaly ?? null,
 		player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
 		boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...(state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {}) },
 		minions: (state.minions ?? []).map(fighter),

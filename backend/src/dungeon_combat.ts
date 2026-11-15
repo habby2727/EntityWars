@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { Database } from "bun:sqlite";
+import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "./physical_anomaly";
 
 export function dungeonSeason(timeMs: number): string {
   if (!Number.isSafeInteger(timeMs) || timeMs < 0) throw new Error("INVALID_DUNGEON_TIME");
@@ -86,7 +87,7 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
   return tied[Math.floor(roll * tied.length)].id;
 }
 
-const DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned"]);
+const DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned", "physical_anomaly"]);
 const DUNGEON_ITEMS = new Set(["power_flat", "guard_flat"]);
 
 // setup must be the result of server-side loadout validation, never client input.
@@ -97,7 +98,7 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any):
   const effects = equipment.find((w: any) => w.id)?.effects ?? setup.itemEffects ?? {};
   if (Object.entries(effects).some(([key, value]) => !DUNGEON_ITEMS.has(key) && value !== 0)) return { error: "UNSUPPORTED_MECHANIC" };
   const spells = [...setup.spell_ids, ...enemy.spell_ids].map(id => catalogs.spells.find((s: any) => s.id === id));
-  if (spells.some(s => !s || !Array.isArray(s.effects) || s.effects.some((e: any) => !DUNGEON_EFFECTS.has(e.kind)))) return { error: "UNSUPPORTED_MECHANIC" };
+  if (spells.some(s => !s || !Array.isArray(s.effects) || s.effects.some((e: any) => !DUNGEON_EFFECTS.has(e.kind) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))) return { error: "UNSUPPORTED_MECHANIC" };
   if (spells.some((s, i) => !(s.type === (i < 4 ? setup.entity.type : enemy.type) || (["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(i < 4 ? setup.entity.type : enemy.type))))) return { error: "UNTRUSTED_SETUP" };
   const hom = catalogs.homunculi.find((h: any) => h.id === enemy.homunculus_id);
   if (!hom || !Number.isInteger(enemy.homunculus_level) || enemy.homunculus_level < 0 || enemy.homunculus_level > 10 || [enemy.hp, enemy.attack, enemy.defense].some(v => !Number.isSafeInteger(v) || v < 1 || v > 100000)) return { error: "UNTRUSTED_SETUP" };
@@ -105,14 +106,14 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any):
   const npcHp = enemy.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level;
   const player = { id: setup.entity.id, type: setup.entity.type, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + (effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + (effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
   const npc = { id: enemy.entity_id, type: enemy.type, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
-  return { player, npc, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null };
+  return { player, npc, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 
 export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
   if (!state || state.terminal_result || !decision || typeof decision !== "object" || Object.keys(decision).some(k => !["turn", "spell_id", "hom_action"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const spell = state.spells.find((s: any) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
   if (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || (decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3))) return { error: "INVALID_DECISION" };
-  if (state.spells.some((s: any) => !Array.isArray(s.effects) || s.effects.some((e: any) => !DUNGEON_EFFECTS.has(e.kind)))) return { error: "UNSUPPORTED_MECHANIC" };
+  if (state.spells.some((s: any) => !Array.isArray(s.effects) || s.effects.some((e: any) => !DUNGEON_EFFECTS.has(e.kind) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
   let counter = next.rng_counter;
   const draw = () => { const value = rng(decision.turn, counter++); if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error("INVALID_RNG"); return value; };
@@ -135,12 +136,13 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       const mult = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
       const poisonBonus = chosen.effects.find((e: any) => e.kind === "bonus_if_poisoned");
       const power = chosen.power_mult * (poisonBonus && target.status.poison > 0 ? 1 + poisonBonus.value : 1);
-      let damage = Math.max(1, Math.round((actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * power * (1 + (target.status.vuln ?? 0))));
+      let damage = Math.max(1, Math.round((actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * physicalAnomalyMultiplier(next.physical_anomaly, actor.type) * power * (1 + (target.status.vuln ?? 0))));
       if (target.status.shield > 0) { damage = Math.max(0, Math.round(damage * (1 - target.status.shield))); delete target.status.shield; }
       target.hp = Math.max(0, target.hp - damage); events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp });
     }
     for (const e of chosen.effects) {
       if (e.kind === "bonus_if_poisoned") continue;
+      if (e.kind === "physical_anomaly") { next.physical_anomaly = castPhysicalAnomaly(chosen, decision.turn); events.push({ kind: "physical_anomaly_cast", actor: who, anomaly: structuredClone(next.physical_anomaly) }); continue; }
       const recipient = e.target === "self" ? actor : target;
       if (e.kind === "heal") recipient.hp = Math.min(recipient.max_hp, recipient.hp + e.value);
       else recipient.status[e.kind] = Math.max(recipient.status[e.kind] ?? 0, e.value);
@@ -165,5 +167,6 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   }
   next.turn++; next.rng_counter = counter;
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
+  next.physical_anomaly = next.terminal_result ? null : tickPhysicalAnomaly(next.physical_anomaly, next.turn);
   return { next_state: next, events, terminal_result: next.terminal_result };
 }

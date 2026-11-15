@@ -38,6 +38,12 @@ function isResearchable(entityId: string, spellId: string): boolean {
 		Array.isArray(spell.eligible_types) && spell.eligible_types.includes(type);
 }
 
+function researchableCount(entityId: string): number {
+	let count = 0;
+	for (const id of spells.keys()) if (isResearchable(entityId, id)) count++;
+	return count;
+}
+
 export function featuredSpellIds(type: string, towerLevel: number, now: number, rotationSeconds = 86400): string[] {
 	const index = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].indexOf(type);
 	if (index < 0 || !Number.isFinite(now) || !Number.isFinite(rotationSeconds) || rotationSeconds <= 0) return [];
@@ -64,7 +70,7 @@ export function normalizeSpellProgress(raw: any): SpellProgress {
 	if (source && typeof source === "object" && !Array.isArray(source)) {
 		for (const [entityId, values] of Object.entries(source)) {
 			if (!entities.has(entityId) || !Array.isArray(values)) continue;
-			learned[entityId] = [...new Set(values.filter((id): id is string => typeof id === "string" && isResearchable(entityId, id)))].slice(0, 20);
+			learned[entityId] = [...new Set(values.filter((id): id is string => typeof id === "string" && isResearchable(entityId, id)))];
 		}
 	}
 	const project = raw?.active_research;
@@ -102,7 +108,7 @@ export function startSpellResearch(state: any, payload: any, now: number, resour
 	const progress: SpellProgress = state.spell_progress;
 	if (progress.learned_by_entity[entityId]?.includes(spellId)) return "Spell already learned.";
 	if (progress.active_research) return "Spell research already in progress.";
-	if ((progress.learned_by_entity[entityId]?.length ?? 0) >= 20) return "Entity spell limit reached.";
+	if ((progress.learned_by_entity[entityId]?.length ?? 0) >= researchableCount(entityId)) return "Entity spell limit reached.";
 	const spell = spells.get(spellId)!;
 	if (!Number.isInteger(spell.tower_level_required) || (spell.tower_level_required ?? 0) < 1 ||
 		!Number.isInteger(spell.research_time_sec) || (spell.research_time_sec ?? 0) <= 0 ||
@@ -133,7 +139,7 @@ export function claimSpellResearch(state: any, payload: any, now: number): strin
 	if (!active || active.entity_id !== entityId || active.spell_id !== spellId) return "Spell research mismatch.";
 	if (active.completes_at > now) return "Spell research not complete.";
 	const learned = progress.learned_by_entity[entityId] ?? [];
-	if (learned.length >= 20) return "Entity spell limit reached.";
+	if (learned.length >= researchableCount(entityId)) return "Entity spell limit reached.";
 	progress.learned_by_entity[entityId] = [...learned, spellId];
 	progress.active_research = null;
 	return null;

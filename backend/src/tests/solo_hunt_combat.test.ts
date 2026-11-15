@@ -2,12 +2,74 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildTrustedCombatSetup, createCombatState, resolveCombatTurn, deterministicDraw, resolveInspirationDecision, restoreInspiration, bossStrikeMultiplier, selectBossIntent } from "../solo_hunt_combat";
+import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout } from "../spell_research";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
 const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} };
 const selection = { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
 const rng = (_turn: number, draw: number) => draw % 2 === 0 ? 0 : 0.99;
+
+test("all catalog anomalies can be researched and equipped", () => {
+  const ids = ["toxic_smog", "nuclear_fallout", "quicksilver_tempest", "cryosalt_squall", "vacuum_shear", "aureate_eclipse", "corrosive_rain", "plasma_tide", "quantum_static", "crystalline_dawn"];
+  const state: any = { spell_progress: normalizeSpellProgress({}), lab: { buildings: { ultrahit_tower: { level: 10 } } }, wallet: { essence: 100000, core: 100000, arcane_shard: 100000, time_crystal: 100000 } };
+  const resources = new Set(Object.keys(state.wallet));
+  let now = 100000;
+  for (const id of ids) {
+    const payload = { entity_id: "sulfur_01", spell_id: id };
+    expect(startSpellResearch(state, payload, now, resources)).toBeNull();
+    now = state.spell_progress.active_research.completes_at;
+    expect(claimSpellResearch(state, payload, now)).toBeNull();
+    expect(setSpellLoadout(state, { entity_id: "sulfur_01", mode: "attack", spell_ids: [id, "cinder_fist", "ash_temper", "brimstone_crash"] })).toBeNull();
+  }
+  expect(state.spell_progress.learned_by_entity.sulfur_01).toEqual(ids);
+});
+
+test("World Gate resolves physical anomaly attacks, replacement and expiry", () => {
+  const fixture = { id: "fixture_anomaly", name: "Fixture", type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: "support", power_mult: 0, accuracy: 1, cooldown_turns: 4, effects: [{ kind: "physical_anomaly", target: "self", value: 1 }], favored_type: "sulfur", weakened_type: "sodium", outgoing_bonus: 0.15, outgoing_penalty: 0.15, duration_exchanges: 3 };
+  const replacement = { ...fixture, id: "fixture_second", favored_type: "gold" };
+  const all = { ...catalogs, spells: [...catalogs.spells, fixture, replacement] };
+  const chosen = { ...selection, homunculus_id: "cinder", spell_ids: ["fixture_anomaly", "fixture_second", "cinder_fist", "ash_temper"] };
+  const trusted = { ...snapshot, spell_progress: { learned_by_entity: { sulfur_01: [fixture.id, replacement.id] } } };
+  const setup = buildTrustedCombatSetup(trusted, chosen, all, { independentLoadout: true });
+  expect(setup.error).toBeUndefined();
+  const state = createCombatState(setup);
+  state.player.hp = state.player.max_hp = 1000;
+  state.boss.hp = state.boss.max_hp = 1000;
+  const action = { turn: 1, spell_id: fixture.id, target: "boss" }, random = () => 0;
+  const cast = resolveCombatTurn(state, action, random);
+  expect(cast.next_state.physical_anomaly.remaining_exchanges).toBe(3);
+  expect(resolveCombatTurn(state, action, random)).toEqual(cast);
+  const base = structuredClone(cast.next_state); base.physical_anomaly = null;
+  const bossAttack = structuredClone(cast.next_state); bossAttack.boss_intent = "Special"; bossAttack.boss_actions_taken = 2;
+  const plainBossAttack = structuredClone(bossAttack); plainBossAttack.physical_anomaly = null;
+  const affectedBoss = resolveCombatTurn(bossAttack, { turn: 2, spell_id: "ash_temper", target: "boss" }, random);
+  const plainBoss = resolveCombatTurn(plainBossAttack, { turn: 2, spell_id: "ash_temper", target: "boss" }, random);
+  expect(affectedBoss.events.find((e: any) => e.kind === "damage" && e.actor === "boss").damage).toBeLessThan(plainBoss.events.find((e: any) => e.kind === "damage" && e.actor === "boss").damage);
+  const boosted = resolveCombatTurn(cast.next_state, { turn: 2, spell_id: "cinder_fist", target: "boss" }, random);
+  const normal = resolveCombatTurn(base, { turn: 2, spell_id: "cinder_fist", target: "boss" }, random);
+  expect(resolveCombatTurn(JSON.parse(JSON.stringify(cast.next_state)), { turn: 2, spell_id: "cinder_fist", target: "boss" }, random)).toEqual(boosted);
+  const playerDamage = (r: any) => r.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage;
+  expect(playerDamage(boosted)).toBeGreaterThan(playerDamage(normal));
+  const homBoosted = structuredClone(cast.next_state); homBoosted.hom_energy = 3;
+  const homBase = structuredClone(homBoosted); homBase.physical_anomaly = null;
+  const homAction = { turn: 2, spell_id: "cinder_fist", target: "boss", hom_action: "attack" };
+  expect(resolveCombatTurn(homBoosted, homAction, random).events.find((e: any) => e.kind === "hom_damage").damage).toBe(resolveCombatTurn(homBase, homAction, random).events.find((e: any) => e.kind === "hom_damage").damage);
+  expect(boosted.next_state.physical_anomaly.remaining_exchanges).toBe(2);
+  const replaced = resolveCombatTurn(boosted.next_state, { turn: 3, spell_id: replacement.id, target: "boss" }, random);
+  expect([replaced.next_state.physical_anomaly.id, replaced.next_state.physical_anomaly.remaining_exchanges]).toEqual([replacement.id, 3]);
+  let next = replaced.next_state;
+  for (let turn = 4; turn <= 6; turn++) next = resolveCombatTurn(next, { turn, spell_id: "cinder_fist", target: "boss" }, random).next_state;
+  expect(next.physical_anomaly).toBeNull();
+  const invalid = { ...fixture, weakened_type: "sulfur" };
+  expect(buildTrustedCombatSetup(trusted, chosen, { ...all, spells: [...catalogs.spells, invalid, replacement] }, { independentLoadout: true }).error).toBe("UNSUPPORTED_MECHANIC");
+});
+
+test("spell progress preserves every compatible learned catalog spell", () => {
+  const learned = catalogs.spells.filter((s: any) => ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes("sulfur")).map((s: any) => s.id);
+  const result = normalizeSpellProgress({ learned_by_entity: { sulfur_01: [...learned, ...learned, "invalid_spell"] } });
+  expect(result.learned_by_entity.sulfur_01).toEqual(learned);
+});
 
 test("trusted progression scales boss once with bounded equipment and owned floors", () => {
   const chosen = { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder" };
@@ -699,7 +761,7 @@ test("researchable catalog spells resolve or fail closed", () => {
     expect(state).toEqual(before);
   }
   console.log("Researchable spells supported:", JSON.stringify(counts));
-  expect(counts).toEqual({ universal: 10, hybrid: 30 });
+  expect(counts).toEqual({ universal: 20, hybrid: 30 });
 });
 
 test("universal is neutral and hybrid uses both catalog types", () => {
@@ -714,7 +776,7 @@ test("universal is neutral and hybrid uses both catalog types", () => {
   expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "void_etching", target: "boss" }, rng).next_state.boss.hp).toBe(91);
 });
 
-test("catalog sweep includes all 64 equipped spells", () => {
+test("catalog sweep includes all 74 equipped spells", () => {
   let passed = 0;
   for (const spell of catalogs.spells) {
     const entity = catalogs.entities.find((e: any) => spell.type === e.type || spell.eligible_types?.includes(e.type));
@@ -728,7 +790,7 @@ test("catalog sweep includes all 64 equipped spells", () => {
     expect(result.next_state.turn).toBe(1);
     passed++;
   }
-  expect(passed).toBe(64);
+  expect(passed).toBe(74);
 });
 
 test("precision, shields, leech and initiative have observable effects", () => {

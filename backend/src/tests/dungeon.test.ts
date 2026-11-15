@@ -6,9 +6,91 @@ import { createServer } from "node:net";
 import { Database } from "bun:sqlite";
 import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy } from "../dungeon_combat";
 import { buildTrustedCombatSetup } from "../solo_hunt_combat";
+import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } from "../physical_anomaly";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
+
+test("all ten catalog anomalies cast in Dungeon combat", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const anomalies = catalogs.spells.filter((s: any) => s.effects.some((e: any) => e.kind === "physical_anomaly"));
+  expect(anomalies).toHaveLength(10);
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  for (const spell of anomalies) {
+    const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: { learned_by_entity: { sulfur_01: [spell.id] } } };
+    const selection = { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: null, spell_ids: [spell.id, "cinder_fist", "furnace_rush", "ash_temper"], mode: "attack" };
+    const setup = buildTrustedCombatSetup(snapshot, selection, all, { independentLoadout: true });
+    expect(setup.error).toBeUndefined();
+    const combat = createDungeonCombatState(setup, enemy, all);
+    expect(combat.error).toBeUndefined();
+    const result = resolveDungeonTurn(combat, { turn: 1, spell_id: spell.id }, () => 0);
+    expect(result.next_state.physical_anomaly.id).toBe(spell.id);
+  }
+});
+
+test("physical anomalies affect Dungeon direct attacks and expire without stacking", () => {
+  const anomaly = { id: "fixture_anomaly", name: "Fixture", type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: "support", power_mult: 0, accuracy: 1, cooldown_turns: 4, effects: [{ kind: "physical_anomaly", target: "self", value: 1 }], favored_type: "sulfur", weakened_type: "sodium", outgoing_bonus: 0.15, outgoing_penalty: 0.15, duration_exchanges: 3 };
+  const second = { ...anomaly, id: "fixture_second", favored_type: "gold" };
+  const all = { ...catalogs, spells: [...catalogs.spells, anomaly, second], items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["fixture_anomaly", "fixture_second", "cinder_fist", "ash_temper"];
+  const setup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: { learned_by_entity: { sulfur_01: ["fixture_anomaly", "fixture_second"] } } }, { entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: ids, mode: "attack" }, all, { independentLoadout: true });
+  const enemy = { floor: 1, entity_id: "sulfur_01", type: "sulfur", hp: 500, attack: 21, defense: 11, homunculus_id: "cinder", homunculus_level: 0, spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] };
+  const state = createDungeonCombatState(setup, enemy, all);
+  expect(state.error).toBeUndefined();
+  const random = () => 0;
+  const npcCaster = createDungeonCombatState(setup, { ...enemy, spell_ids: [anomaly.id, "cinder_fist", "ash_temper", "brimstone_crash"] }, all);
+  const npcCast = resolveDungeonTurn(npcCaster, { turn: 1, spell_id: "ash_temper" }, random);
+  expect(npcCast.events.some((event: any) => event.kind === "physical_anomaly_cast" && event.actor === "npc")).toBe(true);
+  const activated = resolveDungeonTurn(state, { turn: 1, spell_id: anomaly.id }, random);
+  expect(activated.next_state.physical_anomaly.remaining_exchanges).toBe(3);
+  expect(resolveDungeonTurn(state, { turn: 1, spell_id: anomaly.id }, random)).toEqual(activated);
+  const repeatState = structuredClone(activated.next_state); repeatState.player.cooldowns[anomaly.id] = 0;
+  const repeated = resolveDungeonTurn(repeatState, { turn: 2, spell_id: anomaly.id }, random);
+  expect(repeated.next_state.physical_anomaly.remaining_exchanges).toBe(3);
+  expect(physicalAnomalyMultiplier(repeated.next_state.physical_anomaly, "sulfur")).toBe(1.15);
+  const replaced = resolveDungeonTurn(activated.next_state, { turn: 2, spell_id: second.id }, random);
+  expect([replaced.next_state.physical_anomaly.id, replaced.next_state.physical_anomaly.remaining_exchanges]).toEqual([second.id, 3]);
+  const base = structuredClone(activated.next_state); base.physical_anomaly = null;
+  const action = { turn: 2, spell_id: "cinder_fist" };
+  const boosted = resolveDungeonTurn(activated.next_state, action, random);
+  const normal = resolveDungeonTurn(base, action, random);
+  const playerDamage = (r: any) => r.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount;
+  const npcDamage = (r: any) => r.events.find((e: any) => e.kind === "damage" && e.actor === "npc").amount;
+  expect(playerDamage(boosted)).toBe(Math.round(playerDamage(normal) * 1.15));
+  expect(npcDamage(boosted)).toBe(Math.round(npcDamage(normal) * 1.15));
+  const weakened = structuredClone(activated.next_state); weakened.physical_anomaly = castPhysicalAnomaly({ ...anomaly, favored_type: "gold", weakened_type: "sulfur" }, 1);
+  const reduced = resolveDungeonTurn(weakened, action, random);
+  expect(playerDamage(reduced)).toBe(Math.round(playerDamage(normal) * 0.85));
+  expect(npcDamage(reduced)).toBe(Math.round((activated.next_state.npc.atk - Math.trunc(activated.next_state.player.def * 0.5)) * 0.95 * 0.85));
+  const neutral = structuredClone(activated.next_state); neutral.physical_anomaly = castPhysicalAnomaly(second, 1);
+  const unchanged = resolveDungeonTurn(neutral, action, random);
+  expect([playerDamage(unchanged), npcDamage(unchanged)]).toEqual([playerDamage(normal), npcDamage(normal)]);
+  expect(resolveDungeonTurn(JSON.parse(JSON.stringify(activated.next_state)), action, random)).toEqual(boosted);
+  const homBoosted = structuredClone(activated.next_state); homBoosted.player.hom_energy = 3;
+  const homBase = structuredClone(homBoosted); homBase.physical_anomaly = null;
+  const homAction = { ...action, hom_action: "attack" };
+  expect(resolveDungeonTurn(homBoosted, homAction, random).events.find((e: any) => e.kind === "hom_attack" && e.actor === "player").amount).toBe(resolveDungeonTurn(homBase, homAction, random).events.find((e: any) => e.kind === "hom_attack" && e.actor === "player").amount);
+  const poisonState = structuredClone(activated.next_state); poisonState.npc.status.poison = 2;
+  const poisoned = resolveDungeonTurn(poisonState, action, random);
+  expect(poisoned.events.find((e: any) => e.kind === "damage" && e.actor === "player").hp - poisoned.next_state.npc.hp).toBe(2);
+  expect(boosted.next_state.physical_anomaly.remaining_exchanges).toBe(2);
+  let next = boosted.next_state;
+  for (let turn = 3; turn <= 4; turn++) next = resolveDungeonTurn(next, { turn, spell_id: "cinder_fist" }, random).next_state;
+  expect(next.physical_anomaly).toBeNull();
+  const value = castPhysicalAnomaly(anomaly, 1);
+  expect([physicalAnomalyMultiplier(value, "sulfur"), physicalAnomalyMultiplier(value, "sodium"), physicalAnomalyMultiplier(value, "gold")]).toEqual([1.15, 0.85, 1]);
+  const types = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"];
+  for (let i = 0; i < types.length; i++) {
+    const entry = castPhysicalAnomaly({ ...anomaly, favored_type: types[i], weakened_type: types[(i + 1) % types.length] }, 1);
+    expect(physicalAnomalyMultiplier(entry, types[i])).toBe(1.15);
+    expect(physicalAnomalyMultiplier(entry, types[(i + 1) % types.length])).toBe(0.85);
+    expect(physicalAnomalyMultiplier(entry, types[(i + 2) % types.length])).toBe(1);
+  }
+  expect(tickPhysicalAnomaly(value, 1)).toEqual(value);
+  const replacement = castPhysicalAnomaly({ ...anomaly, id: "second", favored_type: "gold" }, 2);
+  expect([replacement.id, replacement.remaining_exchanges]).toEqual(["second", 3]);
+  expect(createDungeonCombatState(setup, enemy, { ...all, spells: [...catalogs.spells, { ...anomaly, weakened_type: "sulfur" }, second] }).error).toBe("UNSUPPORTED_MECHANIC");
+});
 
 test("pure dungeon combat resolves damage, effects, cooldowns, homunculus and terminal outcomes", () => {
   const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
@@ -240,6 +322,21 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect((await request(`/dungeon/leaderboard?month=${started.data.season}`, undefined, token)).data.player.cleared_floor).toBe(3);
     const another = await request("/dungeon/start", { client_action_id: "another-run" }, token);
     expect(another.status).toBe(200);
+    const anotherLoadout = await request("/dungeon/loadout", { ...loadout, run_id: another.data.run_id, client_action_id: "another-loadout" }, token);
+    expect(anotherLoadout.status).toBe(200);
+    const persisted = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(another.data.run_id) as any).combat_state_json);
+    const fixture = { id: "fixture_anomaly", name: "Fixture", type: "universal", eligible_types: ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"], category: "support", power_mult: 0, accuracy: 1, cooldown_turns: 4, effects: [{ kind: "physical_anomaly", target: "self", value: 1 }], favored_type: "sulfur", weakened_type: "sodium", outgoing_bonus: 0.15, outgoing_penalty: 0.15, duration_exchanges: 3 };
+    persisted.spells.push(fixture); persisted.player.spell_ids[0] = fixture.id; persisted.player.hp = persisted.player.max_hp = 1000;
+    db.query("UPDATE dungeon_runs SET combat_state_json = ? WHERE run_id = ?").run(JSON.stringify(persisted), another.data.run_id);
+    const anomalyAction = { run_id: another.data.run_id, client_action_id: "fixture-anomaly", expected_revision: 1, decision: { turn: 1, spell_id: fixture.id } };
+    const anomalyResponse = await request("/dungeon/turn", anomalyAction, token);
+    expect(anomalyResponse.status).toBe(200);
+    expect(anomalyResponse.data.combat_state.physical_anomaly.remaining_exchanges).toBe(3);
+    expect(anomalyResponse.data.combat_state.rng_counter).toBeUndefined();
+    server.kill(); await server.exited; server = spawn(); await ready();
+    token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
+    expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.physical_anomaly).toEqual(anomalyResponse.data.combat_state.physical_anomaly);
+    expect((await request("/dungeon/turn", anomalyAction, token)).data).toEqual(anomalyResponse.data);
     const abandon = { client_action_id: "abandon", run_id: another.data.run_id };
     const closed = await request("/dungeon/abandon", abandon, token);
     expect(closed.data.status).toBe("ABANDONED");

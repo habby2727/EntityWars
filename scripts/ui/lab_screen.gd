@@ -1503,7 +1503,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 			var owned: Array = learned.get(entity_id, [])
 			var active: Variant = progress.get("active_research")
 			if action_type == "START_SPELL_RESEARCH":
-				if spell_id in owned or owned.size() >= 20 or (active is Dictionary and not active.is_empty()):
+				if spell_id in owned or (active is Dictionary and not active.is_empty()):
 					return
 				var now := int(Time.get_unix_time_from_system() * 1000)
 				var runtime: Dictionary = _state.get("lab", {}).get("runtime", {})

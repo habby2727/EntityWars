@@ -12201,6 +12201,13 @@ function isResearchable(entityId, spellId) {
   const spell = spells.get(spellId);
   return !!type && !!spell && (spell.type === "universal" || spell.type === "hybrid") && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(type);
 }
+function researchableCount(entityId) {
+  let count = 0;
+  for (const id of spells.keys())
+    if (isResearchable(entityId, id))
+      count++;
+  return count;
+}
 function featuredSpellIds(type, towerLevel, now, rotationSeconds = 86400) {
   const index = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].indexOf(type);
   if (index < 0 || !Number.isFinite(now) || !Number.isFinite(rotationSeconds) || rotationSeconds <= 0)
@@ -12229,7 +12236,7 @@ function normalizeSpellProgress(raw) {
     for (const [entityId, values2] of Object.entries(source)) {
       if (!entities.has(entityId) || !Array.isArray(values2))
         continue;
-      learned[entityId] = [...new Set(values2.filter((id) => typeof id === "string" && isResearchable(entityId, id)))].slice(0, 20);
+      learned[entityId] = [...new Set(values2.filter((id) => typeof id === "string" && isResearchable(entityId, id)))];
     }
   }
   const project = raw?.active_research;
@@ -12269,7 +12276,7 @@ function startSpellResearch(state, payload, now, resources, balance = {}, timeMu
     return "Spell already learned.";
   if (progress.active_research)
     return "Spell research already in progress.";
-  if ((progress.learned_by_entity[entityId]?.length ?? 0) >= 20)
+  if ((progress.learned_by_entity[entityId]?.length ?? 0) >= researchableCount(entityId))
     return "Entity spell limit reached.";
   const spell = spells.get(spellId);
   if (!Number.isInteger(spell.tower_level_required) || (spell.tower_level_required ?? 0) < 1 || !Number.isInteger(spell.research_time_sec) || (spell.research_time_sec ?? 0) <= 0 || !spell.research_cost || typeof spell.research_cost !== "object" || Array.isArray(spell.research_cost) || Object.keys(spell.research_cost).length === 0)
@@ -12308,7 +12315,7 @@ function claimSpellResearch(state, payload, now) {
   if (active.completes_at > now)
     return "Spell research not complete.";
   const learned = progress.learned_by_entity[entityId] ?? [];
-  if (learned.length >= 20)
+  if (learned.length >= researchableCount(entityId))
     return "Entity spell limit reached.";
   progress.learned_by_entity[entityId] = [...learned, spellId];
   progress.active_research = null;
@@ -12350,8 +12357,41 @@ function claimVerifiedCombatReward(db, matchId, playerId, apply) {
 
 // src/solo_hunt_combat.ts
 import { createHmac } from "crypto";
+
+// src/physical_anomaly.ts
+var TYPES = new Set(["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"]);
+function validPhysicalAnomalySpell(spell) {
+  if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || spell.category !== "support" || spell.power_mult !== 0 || !Array.isArray(spell.effects))
+    return false;
+  const effects = spell.effects.filter((e) => e?.kind === "physical_anomaly");
+  if (effects.length !== 1 || effects[0].target !== "self" || effects[0].value !== 1)
+    return false;
+  const metadata = effects[0].favored_type === undefined ? spell : effects[0];
+  return TYPES.has(metadata.favored_type) && TYPES.has(metadata.weakened_type) && metadata.favored_type !== metadata.weakened_type && metadata.outgoing_bonus === 0.15 && metadata.outgoing_penalty === 0.15 && metadata.duration_exchanges === 3;
+}
+function castPhysicalAnomaly(spell, exchange) {
+  if (!validPhysicalAnomalySpell(spell) || !Number.isSafeInteger(exchange) || exchange < 1)
+    throw new Error("INVALID_PHYSICAL_ANOMALY");
+  const effect = spell.effects.find((e) => e.kind === "physical_anomaly");
+  const metadata = effect.favored_type === undefined ? spell : effect;
+  return { id: spell.id, favored_type: metadata.favored_type, weakened_type: metadata.weakened_type, remaining_exchanges: 3, activated_exchange: exchange };
+}
+function physicalAnomalyMultiplier(anomaly, attackerType) {
+  if (!anomaly)
+    return 1;
+  return anomaly.favored_type === attackerType ? 1.15 : anomaly.weakened_type === attackerType ? 0.85 : 1;
+}
+function tickPhysicalAnomaly(anomaly, exchange) {
+  if (!anomaly)
+    return null;
+  if (anomaly.activated_exchange >= exchange)
+    return anomaly;
+  return anomaly.remaining_exchanges <= 1 ? null : { ...anomaly, remaining_exchanges: anomaly.remaining_exchanges - 1 };
+}
+
+// src/solo_hunt_combat.ts
 var validated = new WeakMap;
-var SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order"]);
+var SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order", "physical_anomaly"]);
 function castableSpell(spell, element) {
   if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || !(spell.type === element || ["universal", "hybrid"].includes(spell.type) && Array.isArray(spell.eligible_types) && spell.eligible_types.includes(element)) || !["attack", "support"].includes(spell.category) || typeof spell.power_mult !== "number" || !Number.isFinite(spell.power_mult) || spell.power_mult < 0 || typeof spell.accuracy !== "number" || !Number.isFinite(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !Array.isArray(spell.effects))
     return false;
@@ -12360,7 +12400,7 @@ function castableSpell(spell, element) {
     return false;
   if (spell.category === "attack" && spell.power_mult <= 0 || spell.category === "support" && spell.power_mult !== 0)
     return false;
-  return spell.effects.every((e) => e && SUPPORTED_EFFECTS.has(e.kind) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every((key) => e[key] === undefined || typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0) && (e.threshold === undefined || e.threshold <= 1));
+  return spell.effects.every((e) => e && SUPPORTED_EFFECTS.has(e.kind) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(spell)) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.kind === "tempo_shift" || e.value >= 0) && ["threshold", "max_heal", "second_value"].every((key) => e[key] === undefined || typeof e[key] === "number" && Number.isFinite(e[key]) && e[key] >= 0) && (e.threshold === undefined || e.threshold <= 1));
 }
 function validBossCatalogEntry(boss, spells2) {
   const tiers = {
@@ -12556,7 +12596,7 @@ function createCombatState(setup, serverRng) {
   const minionConfig = { count: setup.boss.minions, hp: Math.max(1, Math.round(setup.bossEntity.base_stats.hp * minionRatios[setup.boss.tier])), atk: Math.max(1, Math.round(setup.bossEntity.base_stats.power * 0.25)), type: setup.bossEntity.type, def: setup.bossEntity.base_stats.guard };
   const bossFighter = fighter(setup.bossEntity, setup.boss.hp_mult * (1 + setup.rating * setup.scaling.max_hp_bonus), setup.boss.attack_mult * (1 + setup.rating * setup.scaling.max_attack_bonus));
   bossFighter.def = Math.round(bossFighter.def * (1 + setup.rating * setup.scaling.max_defense_bonus));
-  return { player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
+  return { physical_anomaly: null, player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
 }
 function scaleWeapon(effects, multiplier = 1) {
   const factor = Math.max(0, Math.min(2, multiplier ?? 1));
@@ -12724,7 +12764,7 @@ function resolveCombatTurn(state, decision, rng) {
       events.push({ kind: "status_consumed", target: actorId, status: "atk_boost", previous: a.status.atk_boost });
       delete a.status.atk_boost;
     }
-    let damage = Math.max(1, Math.round((atk - Math.trunc(d.def * 0.5)) * mult * power));
+    let damage = Math.max(1, Math.round((atk - Math.trunc(d.def * 0.5)) * mult * power * (actor === "player" || signatureType !== undefined ? physicalAnomalyMultiplier(next.physical_anomaly, a.type) : 1)));
     if (actor === "player" && d === next.boss && next.power_turn_active)
       damage *= 2;
     if ((actor === "boss" || actor === "minion") && !next.hom_spent)
@@ -12968,6 +13008,11 @@ function resolveCombatTurn(state, decision, rng) {
         if (success)
           for (const effect of spell.effects) {
             const recipient = effect.target === "self" ? next.player : target;
+            if (effect.kind === "physical_anomaly") {
+              next.physical_anomaly = castPhysicalAnomaly(spell, next.turn + 1);
+              events.push({ kind: "physical_anomaly_cast", actor: "player", anomaly: structuredClone(next.physical_anomaly) });
+              continue;
+            }
             if (recipient === next.boss && next.minions.some((m) => m.hp > 0))
               continue;
             if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(effect.kind))
@@ -13159,6 +13204,7 @@ function resolveCombatTurn(state, decision, rng) {
   for (const fighter of [next.player, next.boss])
     fighter.spell_neutralize_active = 0;
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.boss.hp <= 0 && !next.minions.some((m) => m.hp > 0) ? "WIN" : null;
+  next.physical_anomaly = next.terminal_result ? null : tickPhysicalAnomaly(next.physical_anomaly, next.turn);
   if (next.power_turn_active) {
     next.power_turn_active = false;
     const furyQueued = !next.terminal_result;
@@ -13356,7 +13402,7 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, targ
   const tied = scored.filter((s) => s.score === best);
   return tied[Math.floor(roll * tied.length)].id;
 }
-var DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned"]);
+var DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned", "physical_anomaly"]);
 var DUNGEON_ITEMS = new Set(["power_flat", "guard_flat"]);
 function createDungeonCombatState(setup, enemy, catalogs) {
   if (!setup?.entity?.base_stats || !Array.isArray(setup.spell_ids) || setup.spell_ids.length !== 4 || new Set(setup.spell_ids).size !== 4 || !enemy || !catalogs || !Array.isArray(enemy.spell_ids) || enemy.spell_ids.length !== 4 || !Array.isArray(catalogs.spells) || !Array.isArray(catalogs.homunculi) || !catalogs.types?.effectiveness)
@@ -13368,7 +13414,7 @@ function createDungeonCombatState(setup, enemy, catalogs) {
   if (Object.entries(effects).some(([key, value]) => !DUNGEON_ITEMS.has(key) && value !== 0))
     return { error: "UNSUPPORTED_MECHANIC" };
   const spells2 = [...setup.spell_ids, ...enemy.spell_ids].map((id) => catalogs.spells.find((s) => s.id === id));
-  if (spells2.some((s) => !s || !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind))))
+  if (spells2.some((s) => !s || !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
     return { error: "UNSUPPORTED_MECHANIC" };
   if (spells2.some((s, i) => !(s.type === (i < 4 ? setup.entity.type : enemy.type) || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(i < 4 ? setup.entity.type : enemy.type))))
     return { error: "UNTRUSTED_SETUP" };
@@ -13379,7 +13425,7 @@ function createDungeonCombatState(setup, enemy, catalogs) {
   const npcHp = enemy.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level;
   const player = { id: setup.entity.id, type: setup.entity.type, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + (effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + (effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
   const npc = { id: enemy.entity_id, type: enemy.type, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
-  return { player, npc, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null };
+  return { player, npc, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 function resolveDungeonTurn(state, decision, rng) {
   if (!state || state.terminal_result || !decision || typeof decision !== "object" || Object.keys(decision).some((k) => !["turn", "spell_id", "hom_action"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function")
@@ -13387,7 +13433,7 @@ function resolveDungeonTurn(state, decision, rng) {
   const spell = state.spells.find((s) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
   if (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3))
     return { error: "INVALID_DECISION" };
-  if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind))))
+  if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
     return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events = [];
   let counter = next.rng_counter;
@@ -13419,7 +13465,7 @@ function resolveDungeonTurn(state, decision, rng) {
       const mult = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
       const poisonBonus = chosen.effects.find((e) => e.kind === "bonus_if_poisoned");
       const power = chosen.power_mult * (poisonBonus && target.status.poison > 0 ? 1 + poisonBonus.value : 1);
-      let damage = Math.max(1, Math.round((actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * power * (1 + (target.status.vuln ?? 0))));
+      let damage = Math.max(1, Math.round((actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * physicalAnomalyMultiplier(next.physical_anomaly, actor.type) * power * (1 + (target.status.vuln ?? 0))));
       if (target.status.shield > 0) {
         damage = Math.max(0, Math.round(damage * (1 - target.status.shield)));
         delete target.status.shield;
@@ -13430,6 +13476,11 @@ function resolveDungeonTurn(state, decision, rng) {
     for (const e of chosen.effects) {
       if (e.kind === "bonus_if_poisoned")
         continue;
+      if (e.kind === "physical_anomaly") {
+        next.physical_anomaly = castPhysicalAnomaly(chosen, decision.turn);
+        events.push({ kind: "physical_anomaly_cast", actor: who, anomaly: structuredClone(next.physical_anomaly) });
+        continue;
+      }
       const recipient = e.target === "self" ? actor : target;
       if (e.kind === "heal")
         recipient.hp = Math.min(recipient.max_hp, recipient.hp + e.value);
@@ -13479,6 +13530,7 @@ function resolveDungeonTurn(state, decision, rng) {
   next.turn++;
   next.rng_counter = counter;
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
+  next.physical_anomaly = next.terminal_result ? null : tickPhysicalAnomaly(next.physical_anomaly, next.turn);
   return { next_state: next, events, terminal_result: next.terminal_result };
 }
 
@@ -15879,7 +15931,7 @@ function loadSoloBossCatalog(path, spellsPath) {
   return catalog;
 }
 function publicDungeonCombat(combat) {
-  return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result };
+  return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null };
 }
 function expireSoloHunts(playerId, now) {
   db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
@@ -15902,6 +15954,7 @@ function publicHuntCombat(state) {
   });
   return {
     turn: state.turn,
+    physical_anomaly: state.physical_anomaly ?? null,
     player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
     boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {} },
     minions: (state.minions ?? []).map(fighter),
