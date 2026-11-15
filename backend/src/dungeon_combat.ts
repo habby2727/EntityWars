@@ -22,14 +22,18 @@ export function dungeonLeaderboard(db: Database, season: string, playerId: strin
 }
 
 // This module only constructs an enemy. It does not verify or settle combat.
-export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: number, catalogs: any, growth = { hp: 0.05, attack: 0.025, defense: 0.02 }, previous?: { hp: number; attack: number; defense: number }) {
+export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: number, catalogs: any, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous?: { hp: number; attack: number; defense: number; entity_id?: string; homunculus_id?: string; spell_ids?: string[] }) {
   if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some(v => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1)) throw new Error("INVALID_DUNGEON_SETUP");
   const draw = (domain: string) => createHmac("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
   const entities = [...catalogs.entities].filter(e => e && typeof e.id === "string" && typeof e.type === "string" && e.base_stats && [e.base_stats.hp, e.base_stats.power, e.base_stats.guard].every(v => Number.isSafeInteger(v) && v > 0)).sort((a, b) => a.id.localeCompare(b.id));
   const homunculi = [...catalogs.homunculi].filter(h => h && typeof h.id === "string").sort((a, b) => a.id.localeCompare(b.id));
   if (!entities.length || !homunculi.length) throw new Error("INVALID_DUNGEON_CATALOG");
-  const entity = entities[draw("entity") % entities.length];
-  const homunculus = homunculi[draw("homunculus") % homunculi.length];
+  const otherEntities = entities.filter(e => e.id !== previous?.entity_id);
+  const otherHomunculi = homunculi.filter(h => h.id !== previous?.homunculus_id);
+  const entityChoices = otherEntities.length ? otherEntities : entities;
+  const homChoices = otherHomunculi.length ? otherHomunculi : homunculi;
+  const entity = entityChoices[draw("entity") % entityChoices.length];
+  const homunculus = homChoices[draw("homunculus") % homChoices.length];
   const candidates = catalogs.spells.filter(s => s && typeof s.id === "string" && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type))) && Array.isArray(s.effects) && s.effects.every((e: any) => DUNGEON_EFFECTS.has(e.kind)) && Number.isFinite(s.accuracy) && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0).sort((a, b) => a.id.localeCompare(b.id));
   const unique = [...new Map(candidates.map(s => [s.id, s])).values()] as any[];
   const advanced = unique.filter(s => s.type === "universal" || s.type === "hybrid");
@@ -44,7 +48,11 @@ export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: num
   const advancedIndex = remaining.findIndex(s => s.id === chosen[1].id);
   remaining.splice(advancedIndex, 1);
   while (chosen.length < 4) chosen.push(remaining.splice(draw(`spell-${chosen.length}`) % remaining.length, 1)[0]);
-  const scale = (base: number, rate: number) => Math.min(100000, Math.round(base * (1 + Math.min(floor - 1, 999) * rate)));
+  if (previous?.spell_ids && chosen.every(s => previous.spell_ids!.includes(s.id))) {
+    const alternatives = remaining.filter(s => !previous.spell_ids!.includes(s.id));
+    if (alternatives.length) chosen[3] = alternatives[draw("variety") % alternatives.length];
+  }
+  const scale = (base: number, rate: number) => Math.min(90000, Math.round(base * Math.pow(1 + rate, floor - 1)));
   if (previous && [previous.hp, previous.attack, previous.defense].some(v => !Number.isSafeInteger(v) || v < 0 || v >= 100000)) throw new Error("DUNGEON_DIFFICULTY_LIMIT");
   const hp = Math.max(scale(entity.base_stats.hp, growth.hp), (previous?.hp ?? -1) + 1);
   const npcAttack = Math.max(scale(entity.base_stats.power, growth.attack), (previous?.attack ?? -1) + 1);

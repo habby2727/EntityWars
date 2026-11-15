@@ -13276,7 +13276,7 @@ function dungeonLeaderboard(db, season, playerId) {
   const player = db.query(`${ranking} SELECT * FROM ranked WHERE player_id = ?`).get(season, playerId) ?? null;
   return { season, leaders, player };
 }
-function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.05, attack: 0.025, defense: 0.02 }, previous) {
+function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous) {
   if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1))
     throw new Error("INVALID_DUNGEON_SETUP");
   const draw = (domain) => createHmac2("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
@@ -13284,8 +13284,12 @@ function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.05,
   const homunculi = [...catalogs.homunculi].filter((h) => h && typeof h.id === "string").sort((a, b2) => a.id.localeCompare(b2.id));
   if (!entities2.length || !homunculi.length)
     throw new Error("INVALID_DUNGEON_CATALOG");
-  const entity = entities2[draw("entity") % entities2.length];
-  const homunculus = homunculi[draw("homunculus") % homunculi.length];
+  const otherEntities = entities2.filter((e) => e.id !== previous?.entity_id);
+  const otherHomunculi = homunculi.filter((h) => h.id !== previous?.homunculus_id);
+  const entityChoices = otherEntities.length ? otherEntities : entities2;
+  const homChoices = otherHomunculi.length ? otherHomunculi : homunculi;
+  const entity = entityChoices[draw("entity") % entityChoices.length];
+  const homunculus = homChoices[draw("homunculus") % homChoices.length];
   const candidates = catalogs.spells.filter((s) => s && typeof s.id === "string" && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type)) && Array.isArray(s.effects) && s.effects.every((e) => DUNGEON_EFFECTS.has(e.kind)) && Number.isFinite(s.accuracy) && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0).sort((a, b2) => a.id.localeCompare(b2.id));
   const unique = [...new Map(candidates.map((s) => [s.id, s])).values()];
   const advanced = unique.filter((s) => s.type === "universal" || s.type === "hybrid");
@@ -13304,7 +13308,12 @@ function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.05,
   remaining.splice(advancedIndex, 1);
   while (chosen.length < 4)
     chosen.push(remaining.splice(draw(`spell-${chosen.length}`) % remaining.length, 1)[0]);
-  const scale = (base, rate) => Math.min(1e5, Math.round(base * (1 + Math.min(floor - 1, 999) * rate)));
+  if (previous?.spell_ids && chosen.every((s) => previous.spell_ids.includes(s.id))) {
+    const alternatives = remaining.filter((s) => !previous.spell_ids.includes(s.id));
+    if (alternatives.length)
+      chosen[3] = alternatives[draw("variety") % alternatives.length];
+  }
+  const scale = (base, rate) => Math.min(90000, Math.round(base * Math.pow(1 + rate, floor - 1)));
   if (previous && [previous.hp, previous.attack, previous.defense].some((v) => !Number.isSafeInteger(v) || v < 0 || v >= 1e5))
     throw new Error("DUNGEON_DIFFICULTY_LIMIT");
   const hp = Math.max(scale(entity.base_stats.hp, growth.hp), (previous?.hp ?? -1) + 1);
@@ -15322,7 +15331,7 @@ async function startServer() {
                 const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
                 if (setup.error)
                   throw new HttpError(409, "Dungeon loadout unavailable.");
-                const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def }), floor: cleared + 1 };
+                const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }), floor: cleared + 1 };
                 combat = createDungeonCombatState(setup, enemy, catalogs);
                 if (combat.error)
                   throw new HttpError(409, combat.error);

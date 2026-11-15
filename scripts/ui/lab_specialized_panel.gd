@@ -46,6 +46,12 @@ var _anomaly_confirm: ConfirmationDialog
 var _anomaly_choice := ""
 var _sync_now := 0
 var _sync_pending := false
+var _dungeon_ranking_button: Button
+var _dungeon_ranking_dialog: AcceptDialog
+var _dungeon_ranking_text: Label
+var _dungeon_ranking_month := ""
+var _dungeon_request := ""
+var _dungeon_request_owner := ""
 
 func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cost: int, cost_per_level: int) -> void:
 	_registry = registry
@@ -57,6 +63,7 @@ func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cos
 		_backend.action_confirmed.connect(_forge_confirmed)
 		_backend.action_failed.connect(_forge_failed)
 		_backend.action_uncertain.connect(_forge_uncertain)
+		_backend.api_completed.connect(_on_dungeon_api_completed)
 		_backend.auth_changed.connect(func(_token): _update_forge_button())
 	custom_minimum_size.y = 210
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -93,6 +100,9 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_lab_buttons.clear()
 	_lab_status = null
 	_lab_progress = null
+	_dungeon_ranking_button = null
+	_dungeon_ranking_dialog = null
+	_dungeon_ranking_text = null
 	_vat_info = null
 	_vat_status = null
 	_vat_upgrade = null
@@ -166,6 +176,32 @@ func _reactor_controls() -> void:
 	add_child(button)
 	_lab_buttons.append(button)
 
+func _setup_dungeon_ranking() -> void:
+	_dungeon_ranking_button = Button.new()
+	_dungeon_ranking_button.text = "MONTHLY RANKING"
+	_dungeon_ranking_button.pressed.connect(_open_dungeon_ranking)
+	MenuArt.button(_dungeon_ranking_button)
+	add_child(_dungeon_ranking_button)
+	_dungeon_ranking_dialog = AcceptDialog.new()
+	_dungeon_ranking_dialog.title = "Dungeons — Monthly Ranking"
+	_dungeon_ranking_dialog.min_size = Vector2i(480, 520)
+	add_child(_dungeon_ranking_dialog)
+	var ranking_content := VBoxContainer.new()
+	_dungeon_ranking_dialog.add_child(ranking_content)
+	var previous := Button.new()
+	previous.text = "Previous month"
+	previous.pressed.connect(_previous_dungeon_month)
+	MenuArt.button(previous)
+	ranking_content.add_child(previous)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(440, 400)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	ranking_content.add_child(scroll)
+	_dungeon_ranking_text = Label.new()
+	_dungeon_ranking_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dungeon_ranking_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_dungeon_ranking_text)
+
 func _sync_controls() -> void:
 	_message("CALIBRATION PROJECT", "Echo (NPC)")
 	_lab_progress = ProgressBar.new()
@@ -180,6 +216,7 @@ func _sync_controls() -> void:
 	button.pressed.connect(_sync_pressed)
 	add_child(button)
 	_lab_buttons.append(button)
+	_setup_dungeon_ranking()
 
 func _sync_pressed() -> void:
 	if _lab_buttons.is_empty() or _lab_buttons[0].disabled:
@@ -205,6 +242,61 @@ func _update_sync_status() -> void:
 		_lab_status.text += "\nRequires Sync Nexus level 1 and HQ level 4 (current: %d / %d)." % [level, hq]
 	_lab_buttons[0].text = "CLAIM" if active else "START"
 	_lab_buttons[0].disabled = not ready or _sync_pending or (active and remaining > 0) or (not active and not _forge_debug and (level < 1 or hq < 4))
+	if is_instance_valid(_dungeon_ranking_button):
+		_dungeon_ranking_button.disabled = _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty()
+
+func _open_dungeon_ranking() -> void:
+	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
+		return
+	var server_ms := _backend.get_server_time_unix_ms()
+	var utc := Time.get_datetime_dict_from_unix_time(int(server_ms / 1000) if server_ms > 0 else int(Time.get_unix_time_from_system()))
+	_dungeon_ranking_month = "%04d-%02d" % [int(utc.year), int(utc.month)]
+	_dungeon_ranking_dialog.popup_centered()
+	_request_dungeon_ranking()
+
+func _previous_dungeon_month() -> void:
+	if _dungeon_request != "":
+		return
+	var parts := _dungeon_ranking_month.split("-")
+	if parts.size() != 2:
+		return
+	var year := int(parts[0])
+	var month := int(parts[1]) - 1
+	if month == 0:
+		year -= 1
+		month = 12
+	if year < 1:
+		return
+	_dungeon_ranking_month = "%04d-%02d" % [year, month]
+	_request_dungeon_ranking()
+
+func _request_dungeon_ranking() -> void:
+	if not is_instance_valid(_dungeon_ranking_text) or _backend == null or _dungeon_request != "":
+		return
+	_dungeon_request_owner = _backend._verified_player_id
+	_dungeon_request = _backend.request_api("GET", "/dungeon/leaderboard?month=" + _dungeon_ranking_month, null)
+	_dungeon_ranking_text.text = "Loading..." if not _dungeon_request.is_empty() else "Connection busy. Try again."
+
+func _on_dungeon_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id != _dungeon_request or _dungeon_request.is_empty():
+		return
+	_dungeon_request = ""
+	if not is_instance_valid(_dungeon_ranking_text):
+		return
+	if _backend == null or _dungeon_request_owner != _backend._verified_player_id or _dungeon_request_owner.is_empty():
+		_dungeon_ranking_text.text = "Account changed. Reopen the ranking."
+		return
+	if not ok:
+		_dungeon_ranking_text.text = str(data.get("error", "Ranking unavailable."))
+		return
+	var lines: PackedStringArray = ["Season: " + str(data.get("season", _dungeon_ranking_month))]
+	var leaders: Array = data.get("leaders", [])
+	for i in mini(20, leaders.size()):
+		var entry: Dictionary = leaders[i]
+		lines.append("%d. %s  |  Floor %d  |  %d turns" % [int(entry.get("rank", i + 1)), str(entry.get("display_name", "")), int(entry.get("cleared_floor", 0)), int(entry.get("total_turns", 0))])
+	var own: Variant = data.get("player")
+	lines.append("Your rank: #%d | Floor %d" % [int(own.get("rank", 0)), int(own.get("cleared_floor", 0))] if own is Dictionary else "Your rank: —")
+	_dungeon_ranking_text.text = "\n".join(lines)
 
 func _anomaly_controls() -> void:
 	_message("ANOMALY DETECTED", "Seal: 20 Essence + 1 Arcane Shard.\nInvestigate: 50% nothing, 40% 2 Arcane Shards, 10% 1 Time Crystal.")

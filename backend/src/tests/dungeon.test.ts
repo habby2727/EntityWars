@@ -68,14 +68,26 @@ test("dungeon enemy generation is deterministic, bounded and catalog-based", () 
     expect(enemy.homunculus_level).toBeLessThanOrEqual(10);
   }
   expect(catalogs).toEqual(before);
-  let previous: { hp: number; attack: number; defense: number } | undefined;
+  let previous: { hp: number; attack: number; defense: number; entity_id?: string; homunculus_id?: string; spell_ids?: string[] } | undefined;
   for (let floor = 1; floor <= 25; floor++) {
     const next = generateDungeonEnemy(seed, "progression", floor, catalogs, undefined, previous);
     if (previous) for (const stat of ["hp", "attack", "defense"] as const) expect(next[stat]).toBeGreaterThan(previous[stat]);
+    if (previous) {
+      expect(next.entity_id).not.toBe(previous.entity_id);
+      expect(next.homunculus_id).not.toBe(previous.homunculus_id);
+      expect(next.spell_ids.some(id => !previous!.spell_ids!.includes(id))).toBe(true);
+    }
     expect(next.spell_ids.some(id => { const spell = catalogs.spells.find(s => s.id === id); return spell.category === "attack" && spell.cooldown_turns === 0; })).toBe(true);
     previous = next;
   }
   expect(() => generateDungeonEnemy(seed, "run", 2, catalogs, undefined, { hp: 100000, attack: 1, defense: 1 })).toThrow("DUNGEON_DIFFICULTY_LIMIT");
+  let longRun: { hp: number; attack: number; defense: number; entity_id?: string; homunculus_id?: string; spell_ids?: string[] } | undefined;
+  for (let floor = 1; floor <= 1000; floor++) {
+    const next = generateDungeonEnemy(seed, "thousand-floor-test", floor, catalogs, undefined, longRun);
+    if (longRun) expect(next.hp > longRun.hp && next.attack > longRun.attack && next.defense > longRun.defense).toBe(true);
+    longRun = next;
+  }
+  expect(() => generateDungeonEnemy(seed, "thousand-floor-test", 1001, catalogs, undefined, longRun)).toThrow();
   expect(() => generateDungeonEnemy(seed, "run", 0, catalogs)).toThrow();
   expect(() => generateDungeonEnemy(seed, "run", 1, catalogs, { hp: 2, attack: 0, defense: 0 })).toThrow();
 });

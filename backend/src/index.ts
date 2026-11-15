@@ -2121,7 +2121,7 @@ async function startServer(): Promise<void> {
 							const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
 							const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
 							if (setup.error) throw new HttpError(409, "Dungeon loadout unavailable.");
-							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def }), floor: cleared + 1 };
+							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }), floor: cleared + 1 };
 							combat = createDungeonCombatState(setup, enemy, catalogs);
 							if (combat.error) throw new HttpError(409, combat.error);
 							combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
