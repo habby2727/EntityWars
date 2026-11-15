@@ -9602,7 +9602,7 @@ var require_built3 = __commonJS((exports, module) => {
 
 // src/index.ts
 import { Database } from "bun:sqlite";
-import { createHash, createHmac as createHmac2 } from "crypto";
+import { createHash, createHmac as createHmac3 } from "crypto";
 import { existsSync, mkdirSync, readFileSync as readFileSync2 } from "fs";
 import { dirname, resolve as resolve2 } from "path";
 
@@ -13255,6 +13255,7 @@ function resolveInspirationDecision(state, decision, rng) {
 }
 
 // src/dungeon_combat.ts
+import { createHmac as createHmac2 } from "crypto";
 function dungeonSeason(timeMs) {
   if (!Number.isSafeInteger(timeMs) || timeMs < 0)
     throw new Error("INVALID_DUNGEON_TIME");
@@ -13262,6 +13263,214 @@ function dungeonSeason(timeMs) {
   if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999)
     throw new Error("INVALID_DUNGEON_TIME");
   return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+function dungeonLeaderboard(db, season, playerId) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(season) || typeof playerId !== "string" || !playerId || playerId.length > 256)
+    throw new Error("INVALID_DUNGEON_LEADERBOARD");
+  const ranking = `WITH ranked AS (
+    SELECT b.player_id, p.display_name, b.cleared_floor, b.total_turns, b.achieved_at,
+      ROW_NUMBER() OVER (ORDER BY b.cleared_floor DESC, b.total_turns ASC, b.achieved_at ASC, b.player_id ASC) AS rank
+    FROM dungeon_monthly_best b JOIN players p ON p.player_id = b.player_id WHERE b.season = ?
+  )`;
+  const leaders = db.query(`${ranking} SELECT * FROM ranked ORDER BY rank LIMIT 50`).all(season);
+  const player = db.query(`${ranking} SELECT * FROM ranked WHERE player_id = ?`).get(season, playerId) ?? null;
+  return { season, leaders, player };
+}
+function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.05, attack: 0.025, defense: 0.02 }, previous) {
+  if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1))
+    throw new Error("INVALID_DUNGEON_SETUP");
+  const draw = (domain) => createHmac2("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
+  const entities2 = [...catalogs.entities].filter((e) => e && typeof e.id === "string" && typeof e.type === "string" && e.base_stats && [e.base_stats.hp, e.base_stats.power, e.base_stats.guard].every((v) => Number.isSafeInteger(v) && v > 0)).sort((a, b2) => a.id.localeCompare(b2.id));
+  const homunculi = [...catalogs.homunculi].filter((h) => h && typeof h.id === "string").sort((a, b2) => a.id.localeCompare(b2.id));
+  if (!entities2.length || !homunculi.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  const entity = entities2[draw("entity") % entities2.length];
+  const homunculus = homunculi[draw("homunculus") % homunculi.length];
+  const candidates = catalogs.spells.filter((s) => s && typeof s.id === "string" && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type)) && Array.isArray(s.effects) && s.effects.every((e) => DUNGEON_EFFECTS.has(e.kind)) && Number.isFinite(s.accuracy) && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0).sort((a, b2) => a.id.localeCompare(b2.id));
+  const unique = [...new Map(candidates.map((s) => [s.id, s])).values()];
+  const advanced = unique.filter((s) => s.type === "universal" || s.type === "hybrid");
+  if (unique.length < 4 || !advanced.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  const attack = unique.filter((s) => s.category === "attack" && s.cooldown_turns === 0 && s.power_mult > 0);
+  if (!attack.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  const chosen = [attack[draw("basic") % attack.length]];
+  const advancedChoices = advanced.filter((s) => s.id !== chosen[0].id);
+  if (!advancedChoices.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  chosen.push(advancedChoices[draw("advanced") % advancedChoices.length]);
+  const remaining = unique.filter((s) => s.id !== chosen[0].id);
+  const advancedIndex = remaining.findIndex((s) => s.id === chosen[1].id);
+  remaining.splice(advancedIndex, 1);
+  while (chosen.length < 4)
+    chosen.push(remaining.splice(draw(`spell-${chosen.length}`) % remaining.length, 1)[0]);
+  const scale = (base, rate) => Math.min(1e5, Math.round(base * (1 + Math.min(floor - 1, 999) * rate)));
+  if (previous && [previous.hp, previous.attack, previous.defense].some((v) => !Number.isSafeInteger(v) || v < 0 || v >= 1e5))
+    throw new Error("DUNGEON_DIFFICULTY_LIMIT");
+  const hp = Math.max(scale(entity.base_stats.hp, growth.hp), (previous?.hp ?? -1) + 1);
+  const npcAttack = Math.max(scale(entity.base_stats.power, growth.attack), (previous?.attack ?? -1) + 1);
+  const defense = Math.max(scale(entity.base_stats.guard, growth.defense), (previous?.defense ?? -1) + 1);
+  return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map((s) => s.id), hp, attack: npcAttack, defense };
+}
+function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, target, roll) {
+  if (!Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !Array.isArray(equippedIds) || equippedIds.length !== 4 || new Set(equippedIds).size !== 4 || !Array.isArray(spells2) || !cooldowns || typeof cooldowns !== "object" || !npc || !target || typeof roll !== "number" || !Number.isFinite(roll) || roll < 0 || roll >= 1)
+    throw new Error("INVALID_DUNGEON_DECISION");
+  const legal = equippedIds.map((id) => spells2.find((s) => s?.id === id)).filter((s) => s && (s.type === npc.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(npc.type)) && Array.isArray(s.effects) && Number.isFinite(s.power_mult) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Number.isInteger(cooldowns[s.id] ?? 0) && (cooldowns[s.id] ?? 0) === 0);
+  if (legal.length === 0)
+    throw new Error("NO_AVAILABLE_DUNGEON_SPELL");
+  if (floor <= 3)
+    return legal[Math.floor(roll * legal.length)].id;
+  const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
+  const scored = legal.map((spell) => {
+    let score = spell.category === "attack" ? spell.power_mult * spell.accuracy * 100 : 20;
+    for (const effect of spell.effects) {
+      if (effect.kind === "heal" && npc.hp < npc.max_hp * 0.6)
+        score += Math.min(effect.value ?? 0, npc.max_hp - npc.hp) * 3;
+      if (effect.kind === "shield" && !(ownStatus.shield_pct > 0))
+        score += 35;
+      if (effect.kind === "poison" && !(enemyStatus.poison > 0))
+        score += 35;
+      if (effect.kind === "vuln" && effect.target === "enemy" && !(enemyStatus.vuln_pct > 0))
+        score += 25;
+      if (floor >= 8 && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(effect.kind) && enemyStatus.poison > 0)
+        score += 65;
+      if (floor >= 8 && effect.kind === "bonus_if_shielded" && ownStatus.shield_pct > 0)
+        score += 55;
+      if (floor >= 15 && effect.kind === "atk_down" && !(enemyStatus.atk_down > 0))
+        score += 25;
+    }
+    if (floor >= 15 && enemyStatus.vuln_pct > 0 && spell.category === "attack")
+      score += spell.power_mult * 20;
+    return { id: spell.id, score };
+  });
+  const best = Math.max(...scored.map((s) => s.score));
+  const tied = scored.filter((s) => s.score === best);
+  return tied[Math.floor(roll * tied.length)].id;
+}
+var DUNGEON_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "heal", "poison", "bonus_if_poisoned"]);
+var DUNGEON_ITEMS = new Set(["power_flat", "guard_flat"]);
+function createDungeonCombatState(setup, enemy, catalogs) {
+  if (!setup?.entity?.base_stats || !Array.isArray(setup.spell_ids) || setup.spell_ids.length !== 4 || new Set(setup.spell_ids).size !== 4 || !enemy || !catalogs || !Array.isArray(enemy.spell_ids) || enemy.spell_ids.length !== 4 || !Array.isArray(catalogs.spells) || !Array.isArray(catalogs.homunculi) || !catalogs.types?.effectiveness)
+    return { error: "UNTRUSTED_SETUP" };
+  const equipment = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects ?? {} }];
+  if (equipment.filter((w) => w.id).length > 1)
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const effects = equipment.find((w) => w.id)?.effects ?? setup.itemEffects ?? {};
+  if (Object.entries(effects).some(([key, value]) => !DUNGEON_ITEMS.has(key) && value !== 0))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const spells2 = [...setup.spell_ids, ...enemy.spell_ids].map((id) => catalogs.spells.find((s) => s.id === id));
+  if (spells2.some((s) => !s || !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind))))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  if (spells2.some((s, i) => !(s.type === (i < 4 ? setup.entity.type : enemy.type) || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(i < 4 ? setup.entity.type : enemy.type))))
+    return { error: "UNTRUSTED_SETUP" };
+  const hom = catalogs.homunculi.find((h) => h.id === enemy.homunculus_id);
+  if (!hom || !Number.isInteger(enemy.homunculus_level) || enemy.homunculus_level < 0 || enemy.homunculus_level > 10 || [enemy.hp, enemy.attack, enemy.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
+    return { error: "UNTRUSTED_SETUP" };
+  const stats = setup.entity.base_stats, bonus = setup.bonuses ?? {};
+  const npcHp = enemy.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level;
+  const player = { id: setup.entity.id, type: setup.entity.type, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + (effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + (effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
+  const npc = { id: enemy.entity_id, type: enemy.type, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
+  return { player, npc, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null };
+}
+function resolveDungeonTurn(state, decision, rng) {
+  if (!state || state.terminal_result || !decision || typeof decision !== "object" || Object.keys(decision).some((k) => !["turn", "spell_id", "hom_action"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function")
+    return { error: "INVALID_DECISION" };
+  const spell = state.spells.find((s) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
+  if (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3))
+    return { error: "INVALID_DECISION" };
+  if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !DUNGEON_EFFECTS.has(e.kind))))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const next = structuredClone(state), events = [];
+  let counter = next.rng_counter;
+  const draw = () => {
+    const value = rng(decision.turn, counter++);
+    if (!Number.isFinite(value) || value < 0 || value >= 1)
+      throw new Error("INVALID_RNG");
+    return value;
+  };
+  let npcSpell;
+  try {
+    const npcId = chooseDungeonNpcSpell(next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw());
+    npcSpell = next.spells.find((s) => s.id === npcId);
+  } catch (err) {
+    if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL")
+      throw err;
+    npcSpell = { id: "basic_attack", type: next.npc.type, category: "attack", accuracy: 0.9, power_mult: 1, cooldown_turns: 0, effects: [] };
+  }
+  const act = (actor, target, chosen, who) => {
+    if (actor.hp <= 0 || target.hp <= 0)
+      return;
+    actor.cooldowns[chosen.id] = chosen.cooldown_turns + 1;
+    const hit = draw() < chosen.accuracy;
+    events.push({ kind: "spell", actor: who, spell_id: chosen.id, hit });
+    if (!hit)
+      return;
+    if (chosen.category === "attack") {
+      const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
+      const mult = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+      const poisonBonus = chosen.effects.find((e) => e.kind === "bonus_if_poisoned");
+      const power = chosen.power_mult * (poisonBonus && target.status.poison > 0 ? 1 + poisonBonus.value : 1);
+      let damage = Math.max(1, Math.round((actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * power * (1 + (target.status.vuln ?? 0))));
+      if (target.status.shield > 0) {
+        damage = Math.max(0, Math.round(damage * (1 - target.status.shield)));
+        delete target.status.shield;
+      }
+      target.hp = Math.max(0, target.hp - damage);
+      events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp });
+    }
+    for (const e of chosen.effects) {
+      if (e.kind === "bonus_if_poisoned")
+        continue;
+      const recipient = e.target === "self" ? actor : target;
+      if (e.kind === "heal")
+        recipient.hp = Math.min(recipient.max_hp, recipient.hp + e.value);
+      else
+        recipient.status[e.kind] = Math.max(recipient.status[e.kind] ?? 0, e.value);
+    }
+    if (actor.hom_id)
+      actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+  };
+  act(next.player, next.npc, spell, "player");
+  if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) {
+    if (draw() < 0.95) {
+      let damage = Math.max(1, Math.round(next.player.atk * (next.player.hom_energy >= 6 ? 0.6 : 0.4)));
+      if (next.npc.status.shield > 0) {
+        damage = Math.max(0, Math.round(damage * (1 - next.npc.status.shield)));
+        delete next.npc.status.shield;
+      }
+      next.npc.hp = Math.max(0, next.npc.hp - damage);
+      events.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp });
+    } else
+      events.push({ kind: "hom_miss", actor: "player" });
+    next.player.hom_energy = 0;
+  }
+  act(next.npc, next.player, npcSpell, "npc");
+  if (next.npc.hom_id && next.npc.hom_energy >= 3 && next.npc.hp > 0 && next.player.hp > 0) {
+    if (draw() < 0.95) {
+      let damage = Math.max(1, Math.round(next.npc.atk * (next.npc.hom_energy >= 6 ? 0.6 : 0.4)));
+      if (next.player.status.shield > 0) {
+        damage = Math.max(0, Math.round(damage * (1 - next.player.status.shield)));
+        delete next.player.status.shield;
+      }
+      next.player.hp = Math.max(0, next.player.hp - damage);
+      events.push({ kind: "hom_attack", actor: "npc", amount: damage, hp: next.player.hp });
+    } else
+      events.push({ kind: "hom_miss", actor: "npc" });
+    next.npc.hom_energy = 0;
+  }
+  for (const fighter of [next.player, next.npc]) {
+    if (fighter.hp > 0 && fighter.status.poison > 0) {
+      fighter.hp = Math.max(0, fighter.hp - 2);
+      fighter.status.poison--;
+      events.push({ kind: "poison", target: fighter.id, hp: fighter.hp });
+    }
+    for (const id of Object.keys(fighter.cooldowns))
+      fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
+  }
+  next.turn++;
+  next.rng_counter = counter;
+  next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
+  return { next_state: next, events, terminal_result: next.terminal_result };
 }
 
 // src/solo_guardians.ts
@@ -13992,7 +14201,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     if (isChoose && (!pending || pending.slot !== slot || !Array.isArray(pending.options) || pending.options.length !== 3 || new Set(pending.options).size !== 3 || pending.options.some((option) => typeof option !== "string" || !ids.includes(option) || traits.some((t) => t.id === option)) || typeof payload?.trait_id !== "string" || !pending.options.includes(payload.trait_id)))
       return { state: next, error: "Invalid or stale reroll selection." };
     const chooseTrait = (candidates, slotIndex) => {
-      const digest = createHmac2("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
+      const digest = createHmac3("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
       return candidates[digest.readUInt32BE(0) % candidates.length];
     };
     if (isReroll && ids.filter((candidate) => !traits.some((t) => t.id === candidate)).length < 3)
@@ -14018,7 +14227,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const options = [];
       for (let i = 0;i < 3; i++) {
         const candidates = ids.filter((candidate) => !traits.some((t) => t.id === candidate) && !options.includes(candidate));
-        const digest = createHmac2("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
+        const digest = createHmac3("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
         options.push(candidates[digest.readUInt32BE(0) % candidates.length]);
       }
       next.item_progress[id] = { ...current, specialization: path, traits, pending_reroll: { slot, options } };
@@ -14105,7 +14314,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const outcomes = staticData.balance.anomaly_investigate_outcomes;
       if (!Array.isArray(outcomes) || !outcomes.length || outcomes.some((entry) => !entry || typeof entry.weight !== "number" || !Number.isFinite(entry.weight) || entry.weight < 0 || !validReward2(entry.reward)) || Math.abs(outcomes.reduce((sum, entry) => sum + entry.weight, 0) - 1) > 0.000001)
         return { state: next, error: "Invalid anomaly outcome configuration." };
-      const digest = createHmac2("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
+      const digest = createHmac3("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
       const roll = digest.readUInt32BE(0) / 4294967296;
       let cumulative = 0;
       reward = outcomes[outcomes.length - 1].reward;
@@ -15018,6 +15227,13 @@ async function startServer() {
               });
             }).immediate();
           }
+          if (req.method == "GET" && url.pathname == "/dungeon/leaderboard") {
+            const playerId = await requireAuth(req, ctx);
+            const month = url.searchParams.get("month") ?? dungeonSeason(Date.now());
+            if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+              throw new HttpError(400, "Invalid dungeon month.");
+            return jsonResponse(dungeonLeaderboard(db, month, playerId));
+          }
           if (req.method == "POST" && url.pathname == "/dungeon/loadout") {
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
@@ -15045,12 +15261,77 @@ async function startServer() {
                 throw new HttpError(409, "Dungeon loadout unavailable.");
               const saved = JSON.parse(row.player_snapshot_json);
               const trusted = { ...saved, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common };
-              if (buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true }).error)
+              const setup = buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true });
+              if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
-              if (db.query("UPDATE dungeon_runs SET loadout_json = ? WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), body.run_id, playerId, now).changes !== 1)
+              const seed = createHmac3("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
+              const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs), floor: 1 };
+              const combat = createDungeonCombatState(setup, enemy, catalogs);
+              if (combat.error)
+                throw new HttpError(400, combat.error);
+              if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1)
                 throw new HttpError(409, "Dungeon run changed.");
-              const response = { run_id: body.run_id, loadout: selection, combat_ready: false };
+              const response = { run_id: body.run_id, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
               insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
+              return jsonResponse(response);
+            }).immediate();
+          }
+          if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next")) {
+            const playerId = await requireAuth(req, ctx);
+            await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+            const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn");
+            if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !["run_id", "client_action_id", "expected_revision", ...isTurn ? ["decision"] : []].includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || isTurn && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))
+              throw new HttpError(400, "Invalid dungeon action.");
+            const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...isTurn ? { decision: body.decision } : {} };
+            return db.transaction(() => {
+              const now = Date.now();
+              const prior = getActionStmt.get(playerId, actionId);
+              if (prior) {
+                if (prior.action_type !== actionType || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload))
+                  throw new HttpError(409, "Action ID already used with different content.");
+                return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
+              }
+              const row = db.query("SELECT * FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId);
+              if (!row)
+                throw new HttpError(404, "Dungeon run not found.");
+              if (row.status !== "ACTIVE" || row.expires_at <= now || !row.combat_state_json || row.combat_revision !== body.expected_revision)
+                throw new HttpError(409, "Dungeon run unavailable or stale.");
+              const current = JSON.parse(row.combat_state_json), seed = createHmac3("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
+              let combat, events = [], cleared = row.cleared_floor, turns = row.total_turns, status = "ACTIVE";
+              if (isTurn) {
+                const result = resolveDungeonTurn(current, body.decision, (turn, draw) => deterministicDraw(seed, `${row.run_id}:${current.floor}`, turn, draw));
+                if (result.error)
+                  throw new HttpError(400, result.error);
+                combat = result.next_state;
+                events = result.events;
+                if (result.terminal_result === "WIN") {
+                  if (combat.floor !== cleared + 1)
+                    throw new HttpError(409, "Invalid dungeon floor.");
+                  cleared = combat.floor;
+                  turns += combat.turn;
+                  db.query("INSERT INTO dungeon_monthly_best (season, player_id, cleared_floor, total_turns, achieved_at, run_id) VALUES (?,?,?,?,?,?) ON CONFLICT(season,player_id) DO UPDATE SET cleared_floor=excluded.cleared_floor,total_turns=excluded.total_turns,achieved_at=excluded.achieved_at,run_id=excluded.run_id WHERE excluded.cleared_floor > dungeon_monthly_best.cleared_floor OR (excluded.cleared_floor = dungeon_monthly_best.cleared_floor AND excluded.total_turns < dungeon_monthly_best.total_turns)").run(row.season, playerId, cleared, turns, now, row.run_id);
+                } else if (result.terminal_result === "LOSS")
+                  status = "LOSS";
+              } else {
+                if (current.terminal_result !== "WIN" || current.floor !== cleared)
+                  throw new HttpError(409, "Floor not cleared.");
+                if (cleared >= 1000 || [current.npc.max_hp, current.npc.atk, current.npc.def].some((value) => !Number.isSafeInteger(value) || value >= 1e5))
+                  throw new HttpError(409, "Dungeon difficulty limit reached.");
+                const dataDir = resolve2(import.meta.dir, "..", "..", "data");
+                const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve2(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+                const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
+                if (setup.error)
+                  throw new HttpError(409, "Dungeon loadout unavailable.");
+                const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def }), floor: cleared + 1 };
+                combat = createDungeonCombatState(setup, enemy, catalogs);
+                if (combat.error)
+                  throw new HttpError(409, combat.error);
+                combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
+              }
+              if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1)
+                throw new HttpError(409, "Dungeon run changed.");
+              const response = { run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };
+              insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
               return jsonResponse(response);
             }).immediate();
           }
@@ -15059,8 +15340,11 @@ async function startServer() {
             return db.transaction(() => {
               const now = Date.now();
               db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
-              const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId);
-              const session = row ? (({ loadout_json, ...rest }) => ({ ...rest, ...loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: false } : {} }))(row) : null;
+              const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId);
+              const session = row ? (({ loadout_json, combat_state_json, ...rest }) => {
+                const combat = combat_state_json ? JSON.parse(combat_state_json) : null;
+                return { ...rest, ...loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}, ...combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {} };
+              })(row) : null;
               return jsonResponse({ session, server_time_unix_ms: now });
             }).immediate();
           }
@@ -15166,7 +15450,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (state.player?.inspiration_pending)
                 throw new HttpError(409, "Inspiration decision pending.");
-              const seed = createHmac2("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac3("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveCombatTurn(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -15251,7 +15535,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (!state.player?.inspiration_pending)
                 throw new HttpError(409, "No inspiration decision pending.");
-              const seed = createHmac2("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac3("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveInspirationDecision(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -15298,7 +15582,7 @@ async function startServer() {
               const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported hunt loadout.");
-              const seed = createHmac2("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac3("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const combat = createCombatState(setup, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (combat.error)
                 throw new HttpError(400, "Unable to initialize combat.");
@@ -15585,6 +15869,9 @@ function loadSoloBossCatalog(path, spellsPath) {
   }
   return catalog;
 }
+function publicDungeonCombat(combat) {
+  return { player: combat.player, npc: combat.npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result };
+}
 function expireSoloHunts(playerId, now) {
   db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
 }
@@ -15624,7 +15911,7 @@ function soloBossSchedule(now) {
   const { rotation, bosses } = staticData.soloBosses;
   const interval = rotation.interval_seconds * 1000, window2 = rotation.window_seconds * 1000;
   const key = Math.floor(now / interval), start = key * interval, end = start + window2;
-  const roll = createHmac2("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
+  const roll = createHmac3("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
   let cumulative = 0, chosen = "legendary";
   for (const tier of ["mythic", "rare", "epic", "legendary"]) {
     cumulative += rotation.weights[tier];
