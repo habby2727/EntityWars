@@ -92,6 +92,8 @@ var _dungeon_identity := ""
 var _dungeon_brief: ConfirmationDialog
 var _dungeon_floor_label: Label
 var _dungeon_brief_floor := 0
+var _dungeon_encounter_log_key := ""
+var _dungeon_encounter_details := {}
 static var _dungeon_last_brief_key := ""
 var _dungeon_seen_actions := {}
 var _dungeon_playing_events := false
@@ -289,6 +291,13 @@ func _setup_combat_log() -> void:
 
 func _on_log_spell_clicked(meta: Variant) -> void:
 	if meta is Dictionary and meta.has("ability"):
+		if str(meta.ability).begins_with("dungeon_encounter:"):
+			var encounter: Variant = _dungeon_encounter_details.get(str(meta.ability))
+			if encounter is Dictionary:
+				_spell_detail.title = str(encounter.get("label", "Encounter"))
+				_spell_detail.dialog_text = str(encounter.get("hint", ""))
+				_spell_detail.popup_centered(Vector2i(440, 260))
+			return
 		_show_boss_ability(str(meta.ability))
 		return
 	if _reg == null:
@@ -307,6 +316,10 @@ func _on_log_spell_clicked(meta: Variant) -> void:
 
 func _on_log_spell_hovered(meta: Variant) -> void:
 	if meta is Dictionary and meta.has("ability"):
+		if str(meta.ability).begins_with("dungeon_encounter:"):
+			var encounter: Variant = _dungeon_encounter_details.get(str(meta.ability))
+			log_box.tooltip_text = str(encounter.get("hint", "")) if encounter is Dictionary else ""
+			return
 		log_box.tooltip_text = _boss_ability_description(str(meta.ability))
 		return
 	if _reg != null:
@@ -739,6 +752,11 @@ func _dungeon_render() -> void:
 		var effects := {"corrupted_fog": "VULN +10%", "crystal_bastion": "SHIELD 15%", "arcane_instability": "ATK +10%"}
 		_dungeon_floor_label.text += " | %s" % str(encounter.label)
 		if effects.has(str(encounter.get("kind", ""))): _dungeon_floor_label.text += " · %s" % effects[str(encounter.kind)]
+		var encounter_key := "%s:%d" % [str(_dungeon_session.get("run_id", "")), floor_id]
+		if _dungeon_encounter_log_key != encounter_key:
+			_dungeon_encounter_log_key = encounter_key
+			_dungeon_encounter_details["dungeon_encounter:" + str(encounter.get("kind", ""))] = encounter.duplicate(true)
+			_append_combat_log("ENCOUNTER: %s" % str(encounter.label), {"category": "advantage", "ability_id": "dungeon_encounter:" + str(encounter.get("kind", ""))})
 	_dungeon_floor_label.show()
 	_layout_dungeon_floor_header()
 	turn_label.text = "Cleared: %d" % int(_dungeon_session.get("cleared_floor", 0))
