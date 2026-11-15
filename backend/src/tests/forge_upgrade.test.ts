@@ -320,3 +320,40 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
     rmSync(directory, { recursive: true, force: true });
   }
 }, 150000);
+import { claimSpellResearch, featuredSpellIds, normalizeSpellProgress, setSpellLoadout, startSpellResearch } from "../spell_research";
+
+test("spell research durations, featured costs, claims and loadouts", () => {
+  const spells = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/spells.json"), "utf8")).spells;
+  const entities = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/entities.json"), "utf8")).entities;
+  const researchable = spells.filter((s: any) => ["universal", "hybrid"].includes(s.type));
+  const initial = spells.filter((s: any) => !["universal", "hybrid"].includes(s.type));
+  expect(researchable).toHaveLength(70);
+  expect(researchable.every((s: any) => s.research_time_sec === 900)).toBe(true);
+  expect(initial).toHaveLength(24);
+  expect(initial.every((s: any) => !("research_time_sec" in s))).toBe(true);
+  const entity = entities.find((e: any) => initial.filter((s: any) => s.type === e.type).length >= 3);
+  const now = 1700000000000;
+  const id = featuredSpellIds(entity.type, 10, now)[0];
+  const spell = researchable.find((s: any) => s.id === id);
+  const payload = { entity_id: entity.id, spell_id: id };
+  const state = () => ({ wallet: { essence: 10000, core: 100, arcane_shard: 100 }, lab: { buildings: { ultrahit_tower: { level: 10 } } }, spell_progress: normalizeSpellProgress({}) });
+  const resources = new Set(["essence", "core", "arcane_shard"]);
+  const normal = state();
+  expect(startSpellResearch(normal, payload, now, resources)).toBeNull();
+  const active = normal.spell_progress.active_research!;
+  expect(active.completes_at - active.started_at).toBe(900000);
+  for (const [resource, amount] of Object.entries(spell.research_cost) as [string, number][]) expect(normal.wallet[resource as keyof typeof normal.wallet]).toBe((resource === "essence" ? 10000 : 100) - Math.max(1, Math.ceil(amount * 0.8)));
+  const wallet = { ...normal.wallet };
+  expect(startSpellResearch(normal, payload, now, resources)).not.toBeNull();
+  expect(normal.wallet).toEqual(wallet);
+  expect(normalizeSpellProgress(normal.spell_progress).active_research).toEqual(active);
+  expect(claimSpellResearch(normal, payload, active.completes_at - 1)).not.toBeNull();
+  expect(claimSpellResearch(normal, payload, active.completes_at)).toBeNull();
+  expect(claimSpellResearch(normal, payload, active.completes_at)).toBeNull();
+  expect(normal.spell_progress.learned_by_entity[entity.id]).toEqual([id]);
+  const loadout = [id, ...initial.filter((s: any) => s.type === entity.type).slice(0, 3).map((s: any) => s.id)];
+  for (const mode of ["attack", "defense"]) expect(setSpellLoadout(normal, { entity_id: entity.id, mode, spell_ids: loadout })).toBeNull();
+  const boosted = state();
+  expect(startSpellResearch(boosted, payload, now, resources, {}, 0.85)).toBeNull();
+  expect(boosted.spell_progress.active_research!.completes_at - now).toBe(765000);
+});

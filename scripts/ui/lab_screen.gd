@@ -809,6 +809,11 @@ func _update_spell_section() -> void:
 				status.text = "Locked: awaiting server state"
 			button.disabled = true
 		if str(spell.get("type", "")) in ["universal", "hybrid"] and not normal_cost.is_empty():
+			var base_sec := int(spell.get("research_time_sec", 0))
+			var runtime: Dictionary = _state.get("lab", {}).get("runtime", {})
+			var boosted := _debug_boost_active(runtime, "fast_spells", now)
+			var boosted_sec := int(base_sec * float(ExperimentCatalog.get_by_id("fast_spells").get("effect", {}).get("spell_time_mult", 0.85)))
+			status.text += "\nTime: %02d:%02d base%s" % [int(base_sec / 60.0), base_sec % 60, " | %02d:%02d boosted" % [int(boosted_sec / 60.0), boosted_sec % 60] if boosted else ""]
 			status.text += "\nCost: %s%s" % [_spell_cost_text(effective_cost), " (normal: %s)" % _spell_cost_text(normal_cost) if is_featured else ""]
 
 func _on_spell_research_pressed(spell_id: String) -> void:
