@@ -25,6 +25,19 @@ static var _solo_hunt_context := {}
 static var _hunt_loadout_active := false
 static var _hunt_loadout := {}
 static var _debug_guardian_wins := {}
+static var _dungeon_context := {}
+
+static func go_to_dungeon_loadout(run_id: String, player_id: String) -> void:
+	_dungeon_context["run_id"] = run_id
+	_dungeon_context["player_id"] = player_id
+	_go_to(SCENE_LOADOUT, "LoadoutGrid")
+
+static func go_to_dungeon_combat() -> void:
+	_go_to(SCENE_COMBAT, "Combat")
+
+static func return_from_dungeon() -> void:
+	_dungeon_context.clear()
+	go_to_lab_structures("sync_nexus")
 
 static func debug_guardian_key(zone: String, tier_index: int, encounter_id: String) -> String:
 	return "%s:%d:%s" % [zone, tier_index, encounter_id]

@@ -110,6 +110,13 @@ var _resource_rows: Dictionary = {}
 var _debug := DebugFlags.new()
 
 func _exit_tree() -> void:
+	if is_instance_valid(_backend):
+		if _backend.action_sent.is_connected(_on_action_sent): _backend.action_sent.disconnect(_on_action_sent)
+		if _backend.action_queued.is_connected(_on_action_queued): _backend.action_queued.disconnect(_on_action_queued)
+		if _backend.action_confirmed.is_connected(_on_action_confirmed): _backend.action_confirmed.disconnect(_on_action_confirmed)
+		if _backend.action_failed.is_connected(_on_action_failed): _backend.action_failed.disconnect(_on_action_failed)
+		if _backend.state_updated.is_connected(_on_state_updated): _backend.state_updated.disconnect(_on_state_updated)
+		if _backend.auth_changed.is_connected(_on_spell_auth_changed): _backend.auth_changed.disconnect(_on_spell_auth_changed)
 	_catalog.free()
 	_db.free()
 	_spell_registry.free()
@@ -827,6 +834,8 @@ func _select_building(building_id: String) -> void:
 	_update_detail()
 
 func _refresh_from_state() -> void:
+	if not is_inside_tree():
+		return
 	_update_cards()
 	_update_detail()
 	_update_resource_bar()
@@ -1687,6 +1696,8 @@ func _on_action_failed(action_id: String, error: String) -> void:
 	_clear_pending(action_id)
 
 func _on_state_updated(state: Dictionary) -> void:
+	if not is_inside_tree() or not is_instance_valid(_debug):
+		return
 	if _debug.unlock_all_buildings:
 		return
 	if _backend != null and _backend.get_server_time_unix_ms() >= 0:

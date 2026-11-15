@@ -85,6 +85,12 @@ var _current_homunculus_id: String = ""
 var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
 var _hunt_mode := false
+var _dungeon_mode := false
+var _dungeon_backend: BackendClient
+var _dungeon_request := ""
+var _dungeon_kind := ""
+var _dungeon_recovered := false
+var _dungeon_payload: Dictionary = {}
 var _hunt_spells: Dictionary = {}
 var _hunt_backend: BackendClient
 var _hunt_recovery_request := ""
@@ -189,15 +195,16 @@ func _resolve_nodes() -> void:
 
 func _ready() -> void:
 	_resolve_nodes()
-	_hunt_mode = SceneRouter._hunt_loadout_active
-	if _hunt_mode:
+	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
+	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
+	if _hunt_mode or _dungeon_mode:
 		$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 		btn_save.hide()
 		var back := $BackButton as Button
 		var original_back := Callable(back, "_on_pressed")
 		if back.pressed.is_connected(original_back):
 			back.pressed.disconnect(original_back)
-		back.pressed.connect(SceneRouter.cancel_hunt_loadout)
+		back.pressed.connect(SceneRouter.return_from_dungeon if _dungeon_mode else SceneRouter.cancel_hunt_loadout)
 	if tooltip_panel:
 		tooltip_panel.visible = false
 		if tooltip_panel.get_parent() != self:
@@ -231,6 +238,9 @@ func _ready() -> void:
 	_tune_tabs()
 	_setup_build_dialog()
 	_load_registry_safe()
+	if _dungeon_mode:
+		_items = _items.duplicate()
+		_items.push_front({"id": "", "name": "None"})
 	_setup_spell_state()
 	_build_spell_dialog()
 	_wire_buttons()
@@ -241,6 +251,17 @@ func _ready() -> void:
 	_update_save_button_label()
 	if _hunt_mode and lbl_mode != null:
 		lbl_mode.text = "Boss Hunt"
+	if _dungeon_mode:
+		if lbl_mode != null:
+			lbl_mode.text = "Dungeons — Loadout"
+		_dungeon_payload = SceneRouter._dungeon_context.get("pending_loadout", {}).duplicate(true)
+		_dungeon_backend = BackendClient.new()
+		_dungeon_backend.base_url = spell_backend_url
+		_dungeon_backend.auto_dev_login = false
+		_dungeon_backend.state_updated.connect(_on_dungeon_identity)
+		_dungeon_backend.api_completed.connect(_on_dungeon_loadout_response)
+		add_child(_dungeon_backend)
+		_set_build_error("Dungeons: choose zero or one supported weapon. Verifying account...")
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
 		_hunt_identity = str(SceneRouter._solo_hunt_context.get("loadout_identity", ""))
 		var saved_payload: Variant = SceneRouter._solo_hunt_context.get("pending_loadout", {})
@@ -486,7 +507,7 @@ func _load_registry_safe() -> void:
 
 func _setup_spell_state() -> void:
 	_spell_debug.reload()
-	if _spell_debug.unlock_all_buildings:
+	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
 		_spell_state = _spell_debug.load_lab_state()
 		_spell_synced = true
 		return
@@ -509,7 +530,7 @@ func _on_spell_auth_changed(token: String) -> void:
 		_spell_backend.request_api("GET", "/player/state", null, true)
 
 func _on_spell_state_updated(state: Dictionary) -> void:
-	if _spell_debug.unlock_all_buildings:
+	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
 		return
 	_spell_state = state.duplicate(true)
 	_spell_synced = true
@@ -525,7 +546,7 @@ func _read_seal_data(mode: String) -> Dictionary:
 func _equipped_spells(mode: String, entity_id: String) -> Array:
 	if _reg == null:
 		return []
-	if _hunt_mode:
+	if _hunt_mode or _dungeon_mode:
 		var selected: Variant = _hunt_spells.get(entity_id, [])
 		if SpellLoadout.valid(_reg, entity_id, _spell_state.get("spell_progress", {}), selected):
 			return selected.duplicate()
@@ -735,7 +756,7 @@ func _refresh_spell_draft(slot_index: int) -> void:
 func _confirm_spell_dialog() -> void:
 	if not SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft):
 		return
-	if _hunt_mode:
+	if _hunt_mode or _dungeon_mode:
 		if not _spell_debug.unlock_all_buildings and not _spell_synced:
 			_set_build_error("Server state is unavailable.")
 			return
@@ -1036,7 +1057,7 @@ func _refresh_details() -> void:
 		ent = _find_by_id(_entities, _current_entity_id)
 	if ent.is_empty():
 		if lbl_name: lbl_name.text = "(Select an entity)"
-		if lbl_mode: lbl_mode.text = "Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper()
+		if lbl_mode: lbl_mode.text = "Dungeons — Loadout" if _dungeon_mode else ("Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper())
 		if lbl_homunculus: lbl_homunculus.text = "Homunculus: —"
 		if preview: preview.texture = null
 		if _spell_button: _spell_button.hide()
@@ -1044,7 +1065,7 @@ func _refresh_details() -> void:
 	_refresh_spell_button()
 
 	if lbl_name: lbl_name.text = str(ent.get("name", _current_entity_id))
-	if lbl_mode: lbl_mode.text = "Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper()
+	if lbl_mode: lbl_mode.text = "Dungeons — Loadout" if _dungeon_mode else ("Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper())
 	if lbl_homunculus:
 		var hom0 := _find_by_id(_homunculi, _current_homunculus_id)
 		var hname0 := str(hom0.get("name", _current_homunculus_id)) if typeof(hom0) == TYPE_DICTIONARY else _current_homunculus_id
@@ -1403,6 +1424,9 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	if _dungeon_mode:
+		_submit_dungeon_loadout()
+		return
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
 		_submit_hunt_loadout()
 		return
@@ -1426,6 +1450,94 @@ func _on_play_pressed() -> void:
 		get_tree().change_scene_to_file("res://scenes/Combat.tscn")
 	else:
 		_on_ready()
+
+func _on_dungeon_identity(state: Dictionary) -> void:
+	if _dungeon_backend == null or state.is_empty() or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")):
+		_dungeon_recovered = false
+		return
+	if _dungeon_request.is_empty() and not _dungeon_recovered:
+		_recover_dungeon()
+
+func _recover_dungeon() -> void:
+	if _dungeon_backend == null or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")) or _dungeon_backend.token.is_empty():
+		_set_build_error("Sign in with the original account to recover this Dungeon.")
+		return
+	_dungeon_kind = "session"
+	_dungeon_request = _dungeon_backend.request_api("GET", "/dungeon/session", null)
+	_set_build_error("Recovering Dungeon..." if not _dungeon_request.is_empty() else "Connection busy. Retry.")
+
+func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id.is_empty() or request_id != _dungeon_request:
+		return
+	_dungeon_request = ""
+	if btn_play: btn_play.disabled = false
+	if _dungeon_backend == null or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")):
+		_dungeon_recovered = false
+		_set_build_error("Account changed. Return to Sync Nexus.")
+		return
+	if _dungeon_kind == "loadout" and not ok:
+		var message := str(data.get("error", ""))
+		if message in ["Invalid or unsupported dungeon loadout.", "Invalid dungeon loadout.", "UNSUPPORTED_MECHANIC", "UNTRUSTED_SETUP"]:
+			_dungeon_payload.clear()
+			SceneRouter._dungeon_context.erase("pending_loadout")
+			_set_build_error("Unsupported build: choose zero or one supported weapon and supported spells.")
+		else:
+			_dungeon_recovered = false
+			_recover_dungeon()
+		return
+	var session: Variant = data.get("session") if _dungeon_kind == "session" else data
+	if not ok or not session is Dictionary or str(session.get("run_id", "")) != str(SceneRouter._dungeon_context.get("run_id", "")) or (_dungeon_kind == "session" and str(session.get("status", "")) != "ACTIVE"):
+		_dungeon_recovered = false
+		_set_build_error("Dungeon unavailable. Retry or return to Sync Nexus.")
+		return
+	_dungeon_recovered = true
+	if bool(session.get("combat_ready", false)) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary and not session.combat_state.is_empty():
+		if not _dungeon_payload.is_empty():
+			var saved: Variant = session.get("loadout", {})
+			for key in ["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"]:
+				if not saved is Dictionary or saved.get(key) != _dungeon_payload.get(key):
+					_dungeon_recovered = false
+					_set_build_error("Recovered loadout differs. Return to Sync Nexus.")
+					return
+		_dungeon_payload.clear()
+		SceneRouter._dungeon_context.erase("pending_loadout")
+		SceneRouter._dungeon_context["session"] = session.duplicate(true)
+		SceneRouter.go_to_dungeon_combat()
+	else:
+		_set_build_error("Select zero or one supported weapon and four spells; retry the same selection if needed.")
+
+func _submit_dungeon_loadout() -> void:
+	if not _dungeon_request.is_empty():
+		return
+	if not _dungeon_recovered:
+		_recover_dungeon()
+		return
+	if _dungeon_payload.is_empty():
+		var first := _idx_to_id(_items, dd_item1)
+		var second := _idx_to_id(_items, dd_item2)
+		if _current_entity_id.is_empty() or (not first.is_empty() and not second.is_empty()):
+			_set_build_error("Choose an entity and zero or one supported weapon.")
+			return
+		var spells: Array = _equipped_spells("attack", _current_entity_id)
+		var unique := {}
+		for id in spells:
+			if not id is String or id.is_empty() or unique.has(id):
+				_set_build_error("Choose four distinct spells.")
+				return
+			unique[id] = true
+		if spells.size() != 4:
+			_set_build_error("Choose four distinct spells.")
+			return
+		_dungeon_payload = {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _dungeon_backend._make_uuid(), "entity_id": _current_entity_id, "weapon_ids": [null if first.is_empty() else first, null if second.is_empty() else second], "homunculus_id": null if _current_homunculus_id.is_empty() else _current_homunculus_id, "spell_ids": spells.duplicate(), "mode": "attack"}
+		SceneRouter._dungeon_context["pending_loadout"] = _dungeon_payload.duplicate(true)
+	_dungeon_kind = "loadout"
+	_dungeon_request = _dungeon_backend.request_api("POST", "/dungeon/loadout", _dungeon_payload.duplicate(true))
+	if _dungeon_request.is_empty():
+		_dungeon_recovered = false
+		_recover_dungeon()
+	else:
+		if btn_play: btn_play.disabled = true
+		_set_build_error("Confirming Dungeon loadout...")
 
 func _submit_hunt_loadout() -> void:
 	if not _hunt_submit_request.is_empty() or not _hunt_recovery_request.is_empty():

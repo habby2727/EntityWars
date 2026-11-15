@@ -81,6 +81,20 @@ var _enemy_inspiration: Control
 var _ultra_armed := false
 var _solo_boss_mode := false
 var _online_hunt_guard := false
+var _dungeon_guard := false
+var _dungeon_session: Dictionary = {}
+var _dungeon_request := ""
+var _dungeon_kind := ""
+var _dungeon_pending: Dictionary = {}
+var _dungeon_hom_choice: Dictionary = {}
+var _dungeon_identity := ""
+var _dungeon_brief: ConfirmationDialog
+var _dungeon_brief_floor := 0
+var _dungeon_seen_actions := {}
+var _dungeon_rank_loaded := false
+var _dungeon_best := -1
+var _dungeon_rank_floor := -1
+var _dungeon_synchronized := false
 var _online_hunt_request := ""
 var _online_hunt_session: Dictionary = {}
 var _online_hunt_revision := 0
@@ -305,7 +319,230 @@ func _status_effect_text(kind: String, value: float) -> String:
 		return "%s %dT" % [label, int(value)]
 	return "%s %d%%" % [label, roundi(value * 100.0)]
 
+func _dungeon_on_identity(state: Dictionary) -> void:
+	if not _dungeon_guard:
+		return
+	if state.is_empty() or _combat_backend == null or _dungeon_identity.is_empty() or _combat_backend._verified_player_id != _dungeon_identity:
+		_dungeon_session.clear()
+		_dungeon_synchronized = false
+		_dungeon_refresh_controls()
+		return
+	if _dungeon_request.is_empty():
+		_dungeon_recover()
+
+func _dungeon_on_auth_changed(_token: String) -> void:
+	_dungeon_request = ""
+	_dungeon_session.clear()
+	_dungeon_synchronized = false
+	_dungeon_show_retry("Account changed. Sign in with the original account.")
+
+func _dungeon_recover() -> void:
+	if _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or not _dungeon_request.is_empty():
+		return
+	_dungeon_kind = "session"
+	_dungeon_request = _combat_backend.request_api("GET", "/dungeon/session", null)
+	if _dungeon_request.is_empty():
+		_dungeon_show_retry("Connection busy. Retry recovery.")
+	_dungeon_refresh_controls()
+
+func _dungeon_show_retry(message: String) -> void:
+	_dungeon_synchronized = false
+	_log_immediate(message)
+	next_turn_btn.text = "Retry"
+	next_turn_btn.show()
+	_dungeon_refresh_controls()
+
+func _dungeon_send_pending() -> void:
+	if _dungeon_pending.is_empty() or not _dungeon_request.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
+		return
+	_dungeon_kind = str(_dungeon_pending.get("kind", ""))
+	_dungeon_request = _combat_backend.request_api("POST", "/dungeon/" + _dungeon_kind, _dungeon_pending.get("payload", {}).duplicate(true))
+	if _dungeon_request.is_empty():
+		_dungeon_show_retry("Request unresolved. Retry recovery.")
+	_dungeon_refresh_controls()
+
+func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id.is_empty() or request_id != _dungeon_request:
+		return
+	_dungeon_request = ""
+	if _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or _dungeon_identity.is_empty():
+		_dungeon_session.clear()
+		_dungeon_show_retry("Account changed. Return to Sync Nexus.")
+		return
+	if _dungeon_kind == "ranking":
+		if ok:
+			var previous_best := _dungeon_best
+			var own: Variant = data.get("player")
+			_dungeon_best = int(own.get("cleared_floor", 0)) if own is Dictionary else 0
+			_dungeon_rank_loaded = true
+			var current_floor := int(_dungeon_session.get("combat_state", {}).get("floor", 0))
+			if str(_dungeon_session.get("phase", "")) == "FLOOR_CLEARED" and previous_best >= 0 and current_floor > previous_best and _dungeon_best >= current_floor:
+				_log_immediate("NEW PERSONAL BEST%s" % (" | Rank #%d" % int(own.get("rank", 0)) if own is Dictionary else ""))
+			elif str(_dungeon_session.get("status", "")) == "LOSS" and own is Dictionary:
+				_log_immediate("Monthly best: Floor %d | Rank #%d" % [_dungeon_best, int(own.get("rank", 0))])
+		_dungeon_refresh_controls()
+		return
+	if _dungeon_kind == "session":
+		var session: Variant = data.get("session")
+		if not ok:
+			_dungeon_show_retry("Dungeon recovery failed. Retry.")
+			return
+		if session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
+			if int(session.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
+				_dungeon_session = session.duplicate(true)
+				_dungeon_synchronized = true
+				_dungeon_render()
+		elif _dungeon_pending.is_empty():
+			_dungeon_show_retry("Dungeon session unavailable. Return to Sync Nexus.")
+			return
+		if not _dungeon_pending.is_empty():
+			_dungeon_send_pending()
+		return
+	if not ok and str(data.get("error", "")) in ["INVALID_DECISION", "UNSUPPORTED_MECHANIC", "Dungeon run unavailable or stale.", "Floor not cleared."]:
+		_dungeon_pending.clear()
+		SceneRouter._dungeon_context.erase("pending_action")
+		_log_immediate("Action rejected: " + str(data.get("error", "")))
+		_dungeon_recover()
+		return
+	if not ok or str(data.get("run_id", "")) != str(SceneRouter._dungeon_context.get("run_id", "")) or not data.get("combat_state") is Dictionary or int(data.get("combat_revision", 0)) != int(_dungeon_pending.get("payload", {}).get("expected_revision", -1)) + 1:
+		_dungeon_show_retry("Action unresolved. Retry recovery.")
+		return
+	var action_id := str(_dungeon_pending.get("payload", {}).get("client_action_id", ""))
+	if not _dungeon_seen_actions.has(action_id):
+		for event in data.get("events", []):
+			if event is Dictionary:
+				var spell_name := ""
+				if event.has("spell_id"):
+					var spell: Dictionary = _reg.get_spell_by_id(str(event.spell_id))
+					spell_name = " " + str(spell.get("name", event.spell_id))
+				_log_immediate("%s: %s%s%s" % [str(event.get("actor", "Combat")).capitalize(), str(event.get("kind", "event")).replace("_", " "), spell_name, " " + str(event.get("amount")) if event.has("amount") else ""])
+		_dungeon_seen_actions[action_id] = true
+	_dungeon_pending.clear()
+	SceneRouter._dungeon_context.erase("pending_action")
+	if int(data.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
+		_dungeon_session = data.duplicate(true)
+		_dungeon_synchronized = true
+		_dungeon_render()
+	else:
+		_dungeon_recover()
+
+func _dungeon_render() -> void:
+	var state: Dictionary = _dungeon_session.get("combat_state", {})
+	if not state.get("player") is Dictionary or not state.get("npc") is Dictionary:
+		_dungeon_show_retry("Invalid Dungeon state.")
+		return
+	var p: Dictionary = state.player
+	var n: Dictionary = state.npc
+	if int(p.get("max_hp", 0)) <= 0 or int(n.get("max_hp", 0)) <= 0 or not p.get("spell_ids") is Array or p.spell_ids.size() != 4:
+		_dungeon_show_retry("Invalid Dungeon fighters.")
+		return
+	get_node("PlayerPanel").show()
+	get_node("EnemyPanel").show()
+	spell_panel.show()
+	for pair in [[player_hp, p], [enemy_hp, n]]:
+		var icon: Node = pair[0].get_node_or_null("CombatTypeIcon")
+		if icon == null:
+			icon = CombatTypeIcon.new()
+			icon.name = "CombatTypeIcon"
+			icon.position = Vector2(-30, -3)
+			pair[0].add_child(icon)
+		icon.call("configure", str(pair[1].get("type", "")))
+	var pe := _find_by_id(_entities, str(p.get("id", "")))
+	var ne := _find_by_id(_entities, str(n.get("id", "")))
+	var ph := _find_by_id(_homunculi, str(p.get("hom_id", "")))
+	var nh := _find_by_id(_homunculi, str(n.get("hom_id", "")))
+	player_entity_name.text = str(pe.get("name", p.get("id", "")))
+	enemy_entity_name.text = str(ne.get("name", n.get("id", "")))
+	player_entity.texture = _load_preview_tex(str(p.id), "entity", str(p.get("type", "")))
+	enemy_entity.texture = _load_preview_tex(str(n.id), "entity", str(n.get("type", "")))
+	player_hom.visible = not ph.is_empty()
+	enemy_hom.visible = not nh.is_empty()
+	if not ph.is_empty(): player_hom.texture = _load_preview_tex(str(p.hom_id), "homunculus", str(ph.get("name", "")))
+	if not nh.is_empty(): enemy_hom.texture = _load_preview_tex(str(n.hom_id), "homunculus", str(nh.get("name", "")))
+	for pair in [[player_hp, p], [enemy_hp, n]]:
+		pair[0].max_value = float(pair[1].max_hp)
+		pair[0].value = float(pair[1].hp)
+		pair[0].get_node("HealthValue").text = "%d / %d" % [int(pair[1].hp), int(pair[1].max_hp)]
+	player_indicators.set_fighter(0, {"status": p.get("status", {})})
+	enemy_indicators.set_fighter(0, {"status": n.get("status", {})})
+	_player_hom_status.visible = not ph.is_empty()
+	_enemy_hom_status.visible = not nh.is_empty()
+	_player_hom_status.call("set_fighter", {"hom_name": str(ph.get("name", "")), "hom_energy": int(p.get("hom_energy", 0)), "hom_spent": false})
+	_enemy_hom_status.call("set_fighter", {"hom_name": str(nh.get("name", "")), "hom_energy": int(n.get("hom_energy", 0)), "hom_spent": false})
+	for i in 4:
+		var id := str(p.spell_ids[i])
+		var spell: Dictionary = _reg.get_spell_by_id(id)
+		var cd := int(p.get("cooldowns", {}).get(id, 0))
+		spell_buttons[i].text = str(spell.get("name", id)) + (" | CD: %d" % cd if cd > 0 else "")
+	var floor_id := int(state.get("floor", 1))
+	turn_label.text = "DUNGEONS — FLOOR %d | Cleared: %d" % [floor_id, int(_dungeon_session.get("cleared_floor", 0))]
+	var phase := str(_dungeon_session.get("phase", "COMBAT"))
+	if phase == "FLOOR_CLEARED":
+		_log_immediate("FLOOR %d CLEARED | HP %d / %d" % [floor_id, int(p.hp), int(p.max_hp)])
+		if int(p.hp) * 10 <= int(p.max_hp): _log_immediate("CLOSE CALL")
+		if int(state.get("turn", 0)) <= 5: _log_immediate("SWIFT CLEAR")
+		next_turn_btn.text = "Next Floor"
+		next_turn_btn.disabled = floor_id >= 1000
+		next_turn_btn.show()
+	elif str(_dungeon_session.get("status", "")) == "LOSS":
+		_log_immediate("RUN OVER | Cleared floors: %d" % int(_dungeon_session.get("cleared_floor", 0)))
+		next_turn_btn.text = "Return"
+		next_turn_btn.show()
+	else:
+		next_turn_btn.hide()
+		if floor_id != _dungeon_brief_floor and int(state.get("turn", 0)) == 0:
+			_dungeon_brief_floor = floor_id
+			_dungeon_brief.dialog_text = "Floor %d\n%s (%s)\nHomunculus: %s\nCleared: %d" % [floor_id, str(ne.get("name", n.id)), str(n.get("type", "")).capitalize(), str(nh.get("name", "None")), int(_dungeon_session.get("cleared_floor", 0))]
+			_dungeon_brief.popup_centered()
+	_dungeon_refresh_controls()
+	if _dungeon_request.is_empty() and _dungeon_pending.is_empty() and (not _dungeon_rank_loaded or ((phase == "FLOOR_CLEARED" or str(_dungeon_session.get("status", "")) == "LOSS") and _dungeon_rank_floor != floor_id)):
+		_dungeon_rank_floor = floor_id
+		_dungeon_kind = "ranking"
+		_dungeon_request = _combat_backend.request_api("GET", "/dungeon/leaderboard?month=" + str(_dungeon_session.get("season", "")).uri_encode(), null)
+		_dungeon_refresh_controls()
+
+func _dungeon_refresh_controls() -> void:
+	var state: Dictionary = _dungeon_session.get("combat_state", {})
+	var p: Dictionary = state.get("player", {})
+	var ids: Array = p.get("spell_ids", [])
+	var blocked := not _dungeon_synchronized or _dungeon_session.is_empty() or str(_dungeon_session.get("status", "")) != "ACTIVE" or str(_dungeon_session.get("phase", "")) != "COMBAT" or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty() or (_dungeon_brief != null and _dungeon_brief.visible) or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity
+	for i in spell_buttons.size():
+		spell_buttons[i].disabled = blocked or i >= ids.size() or int(p.get("cooldowns", {}).get(str(ids[i]), 0)) > 0
+	switch_weapon_btn.disabled = true
+	ultra_button.disabled = true
+
 func _begin_combat_initialization() -> void:
+	if not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
+		_dungeon_guard = true
+		_combat_session_invalid = true
+		spell_panel.hide()
+		switch_weapon_btn.disabled = true
+		ultra_button.disabled = true
+		for path in ["PlayerPanel", "EnemyPanel", "HomDecision"]:
+			var dungeon_panel := get_node_or_null(path) as CanvasItem
+			if dungeon_panel:
+				dungeon_panel.hide()
+		next_turn_btn.hide()
+		_dungeon_identity = str(SceneRouter._dungeon_context.get("player_id", ""))
+		_dungeon_pending = SceneRouter._dungeon_context.get("pending_action", {}).duplicate(true)
+		_dungeon_brief = ConfirmationDialog.new()
+		_dungeon_brief.title = "DUNGEONS"
+		_dungeon_brief.get_ok_button().text = "Fight"
+		_dungeon_brief.get_cancel_button().hide()
+		_dungeon_brief.confirmed.connect(func(): call_deferred("_dungeon_refresh_controls"))
+		_dungeon_brief.canceled.connect(func(): call_deferred("_dungeon_refresh_controls"))
+		add_child(_dungeon_brief)
+		_combat_backend = BackendClient.new()
+		_combat_backend.base_url = backend_url
+		_combat_backend.auto_dev_login = false
+		_combat_backend.state_updated.connect(_dungeon_on_identity)
+		_combat_backend.api_completed.connect(_dungeon_on_response)
+		_combat_backend.auth_changed.connect(_dungeon_on_auth_changed)
+		add_child(_combat_backend)
+		_combat_backend._ensure_api_http()
+		_combat_backend._api_http.timeout = 10.0
+		_log_immediate("Recovering Dungeon session...")
+		return
 	if not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
 		_online_hunt_guard = true
 		_solo_context = SceneRouter.consume_solo_hunt_context()
@@ -817,6 +1054,12 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 	_align_health_panels()
 
 func _on_back_pressed() -> void:
+	if not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
+		if not _dungeon_pending.is_empty() or not _dungeon_request.is_empty():
+			_dungeon_show_retry("Resolve the pending Dungeon request before leaving.")
+			return
+		SceneRouter.return_from_dungeon()
+		return
 	if _online_hunt_guard:
 		if not _online_turn_payload.is_empty():
 			_log_immediate("Pending turn must be recovered before leaving.")
@@ -1952,6 +2195,16 @@ func _apply_hp_color(bar: ProgressBar, f: Dictionary) -> void:
 	bar.add_theme_stylebox_override("fill", fill)
 
 func _on_next_turn() -> void:
+	if _dungeon_guard:
+		if next_turn_btn.text == "Retry":
+			_dungeon_recover()
+		elif next_turn_btn.text == "Next Floor" and _dungeon_synchronized and _dungeon_pending.is_empty() and _dungeon_request.is_empty() and _combat_backend._verified_player_id == _dungeon_identity:
+			_dungeon_pending = {"kind": "next", "payload": {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": int(_dungeon_session.get("combat_revision", 0))}}
+			SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
+			_dungeon_send_pending()
+		elif next_turn_btn.text == "Return":
+			SceneRouter.return_from_dungeon()
+		return
 	if _online_hunt_guard:
 		if not _online_turn_payload.is_empty():
 			if not _online_identity_invalid and _online_hunt_request.is_empty() and _online_turn_request.is_empty():
@@ -1976,6 +2229,24 @@ func _on_next_turn() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _on_spell_chosen(index: int) -> void:
+	if _dungeon_guard:
+		if index < 0 or index >= spell_buttons.size() or spell_buttons[index].disabled or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty():
+			return
+		var state: Dictionary = _dungeon_session.get("combat_state", {})
+		var p: Dictionary = state.get("player", {})
+		var ids: Array = p.get("spell_ids", [])
+		if index >= ids.size(): return
+		var payload := {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": int(_dungeon_session.get("combat_revision", 0)), "decision": {"turn": int(state.get("turn", 0)) + 1, "spell_id": str(ids[index]), "hom_action": "hold"}}
+		if p.get("hom_id") != null and not str(p.get("hom_id", "")).is_empty() and int(p.get("hom_energy", 0)) >= 3:
+			_dungeon_hom_choice = payload
+			hom_decision.show()
+			$HomDecision/Sacrifice.hide()
+			_dungeon_refresh_controls()
+		else:
+			_dungeon_pending = {"kind": "turn", "payload": payload}
+			SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
+			_dungeon_send_pending()
+		return
 	if _online_hunt_guard:
 		var decision := _online_spell_decision(index)
 		if decision.is_empty() or not _online_turn_request.is_empty():
@@ -2057,6 +2328,16 @@ func _queue_combat_action(action: Dictionary) -> void:
 	await _start_weapon_exchange(action)
 
 func _on_hom_choice(choice: String) -> void:
+	if _dungeon_guard:
+		if choice not in ["hold", "attack"] or _dungeon_hom_choice.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
+			return
+		_dungeon_hom_choice.decision.hom_action = choice
+		_dungeon_pending = {"kind": "turn", "payload": _dungeon_hom_choice.duplicate(true)}
+		_dungeon_hom_choice.clear()
+		hom_decision.hide()
+		SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
+		_dungeon_send_pending()
+		return
 	if _online_hunt_guard:
 		if choice not in ["hold", "attack", "sacrifice"] or _online_hom_payload.is_empty() or _online_identity_invalid or _combat_backend == null or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or _combat_backend.token.is_empty() or int(_online_hom_payload.get("expected_revision", -1)) != _online_hunt_revision or str(_online_hunt_session.get("status", "")) != "ACTIVE" or not _online_hunt_request.is_empty() or not _online_turn_request.is_empty():
 			return

@@ -52,6 +52,11 @@ var _dungeon_ranking_text: Label
 var _dungeon_ranking_month := ""
 var _dungeon_request := ""
 var _dungeon_request_owner := ""
+var _dungeon_entry_button: Button
+var _dungeon_entry_status: Label
+var _dungeon_entry_request := ""
+var _dungeon_entry_kind := ""
+var _dungeon_entry_owner := ""
 
 func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cost: int, cost_per_level: int) -> void:
 	_registry = registry
@@ -103,6 +108,8 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_dungeon_ranking_button = null
 	_dungeon_ranking_dialog = null
 	_dungeon_ranking_text = null
+	_dungeon_entry_button = null
+	_dungeon_entry_status = null
 	_vat_info = null
 	_vat_status = null
 	_vat_upgrade = null
@@ -177,11 +184,22 @@ func _reactor_controls() -> void:
 	_lab_buttons.append(button)
 
 func _setup_dungeon_ranking() -> void:
+	var dungeon_buttons := HBoxContainer.new()
+	dungeon_buttons.add_theme_constant_override("separation", 8)
+	add_child(dungeon_buttons)
+	_dungeon_entry_button = Button.new()
+	_dungeon_entry_button.text = "ENTER DUNGEON"
+	_dungeon_entry_button.pressed.connect(_enter_dungeon)
+	MenuArt.button(_dungeon_entry_button)
+	dungeon_buttons.add_child(_dungeon_entry_button)
+	_dungeon_entry_status = Label.new()
+	_dungeon_entry_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_dungeon_entry_status)
 	_dungeon_ranking_button = Button.new()
 	_dungeon_ranking_button.text = "MONTHLY RANKING"
 	_dungeon_ranking_button.pressed.connect(_open_dungeon_ranking)
 	MenuArt.button(_dungeon_ranking_button)
-	add_child(_dungeon_ranking_button)
+	dungeon_buttons.add_child(_dungeon_ranking_button)
 	_dungeon_ranking_dialog = AcceptDialog.new()
 	_dungeon_ranking_dialog.title = "Dungeons — Monthly Ranking"
 	_dungeon_ranking_dialog.min_size = Vector2i(480, 520)
@@ -244,6 +262,52 @@ func _update_sync_status() -> void:
 	_lab_buttons[0].disabled = not ready or _sync_pending or (active and remaining > 0) or (not active and not _forge_debug and (level < 1 or hq < 4))
 	if is_instance_valid(_dungeon_ranking_button):
 		_dungeon_ranking_button.disabled = _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty()
+	if is_instance_valid(_dungeon_entry_button):
+		_dungeon_entry_button.disabled = _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or not _dungeon_entry_request.is_empty()
+
+func _enter_dungeon() -> void:
+	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or not _dungeon_entry_request.is_empty():
+		return
+	_dungeon_entry_owner = _backend._verified_player_id
+	_dungeon_entry_kind = "session"
+	_dungeon_entry_request = _backend.request_api("GET", "/dungeon/session", null)
+	_dungeon_entry_status.text = "Checking Dungeon session..." if not _dungeon_entry_request.is_empty() else "Connection busy. Try again."
+	_update_sync_status()
+
+func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	if _dungeon_entry_request.is_empty() or request_id != _dungeon_entry_request:
+		return
+	_dungeon_entry_request = ""
+	if not is_instance_valid(_dungeon_entry_status):
+		return
+	if _backend == null or _dungeon_entry_owner.is_empty() or _backend._verified_player_id != _dungeon_entry_owner:
+		_dungeon_entry_status.text = "Account changed. Reopen Sync Nexus."
+		_update_sync_status()
+		return
+	if not ok:
+		_dungeon_entry_status.text = str(data.get("error", "Connection unavailable. Retry."))
+		_update_sync_status()
+		return
+	var session: Variant = data.get("session") if _dungeon_entry_kind == "session" else data
+	if session is Dictionary and str(session.get("status", "")) == "ACTIVE" and not str(session.get("run_id", "")).is_empty():
+		SceneRouter._dungeon_context = {"run_id": str(session.run_id), "player_id": _dungeon_entry_owner, "session": session.duplicate(true)}
+		if bool(session.get("combat_ready", false)) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
+			SceneRouter.go_to_dungeon_combat()
+		else:
+			SceneRouter.go_to_dungeon_loadout(str(session.run_id), _dungeon_entry_owner)
+		return
+	if _dungeon_entry_kind != "session" or session != null:
+		_dungeon_entry_status.text = "Dungeon session unavailable. Retry."
+		_update_sync_status()
+		return
+	var action_id := str(SceneRouter._dungeon_context.get("start_action_id", "")) if str(SceneRouter._dungeon_context.get("player_id", "")) == _dungeon_entry_owner else ""
+	if action_id.is_empty():
+		action_id = _backend._make_uuid()
+		SceneRouter._dungeon_context = {"player_id": _dungeon_entry_owner, "start_action_id": action_id}
+	_dungeon_entry_kind = "start"
+	_dungeon_entry_request = _backend.request_api("POST", "/dungeon/start", {"client_action_id": action_id})
+	_dungeon_entry_status.text = "Starting Dungeon..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
+	_update_sync_status()
 
 func _open_dungeon_ranking() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
@@ -278,6 +342,7 @@ func _request_dungeon_ranking() -> void:
 	_dungeon_ranking_text.text = "Loading..." if not _dungeon_request.is_empty() else "Connection busy. Try again."
 
 func _on_dungeon_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	_on_dungeon_entry_completed(request_id, ok, data)
 	if request_id != _dungeon_request or _dungeon_request.is_empty():
 		return
 	_dungeon_request = ""
