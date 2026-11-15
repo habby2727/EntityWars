@@ -283,6 +283,10 @@ func _dungeon_local_debug() -> bool:
 
 func _style_dungeon_dialog(dialog: ConfirmationDialog, extra_buttons: Array = []) -> void:
 	dialog.min_size = Vector2i(620, 300)
+	dialog.borderless = true
+	dialog.transparent_bg = true
+	dialog.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
+	dialog.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
 	dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(55, 50, 55, 40)))
 	var message := dialog.get_label()
 	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -407,10 +411,10 @@ func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary)
 			_dungeon_debug_session = session.duplicate(true)
 			if not is_instance_valid(_dungeon_debug_run_choice):
 				_dungeon_debug_run_choice = ConfirmationDialog.new()
-				_dungeon_debug_run_choice.title = "Dungeon test run"
+				_dungeon_debug_run_choice.title = ""
 				_dungeon_debug_run_choice.dialog_text = "Resume the active run or start a new test run."
 				_dungeon_debug_run_choice.get_ok_button().text = "RESUME RUN"
-				var new_run_button := _dungeon_debug_run_choice.add_button("NEW TEST RUN", false, "new_test_run")
+				var new_run_button := _dungeon_debug_run_choice.add_button("NEW RUN", false, "new_test_run")
 				_dungeon_debug_run_choice.confirmed.connect(_dungeon_debug_resume)
 				_dungeon_debug_run_choice.custom_action.connect(_dungeon_debug_run_action)
 				add_child(_dungeon_debug_run_choice)
@@ -449,8 +453,8 @@ func _dungeon_debug_run_action(action: StringName) -> void:
 	_dungeon_debug_run_choice.hide()
 	if not is_instance_valid(_dungeon_debug_abandon_confirm):
 		_dungeon_debug_abandon_confirm = ConfirmationDialog.new()
-		_dungeon_debug_abandon_confirm.title = "Abandon current run?"
-		_dungeon_debug_abandon_confirm.dialog_text = "The current Dungeon run will end before starting a new test run."
+		_dungeon_debug_abandon_confirm.title = ""
+		_dungeon_debug_abandon_confirm.dialog_text = "Abandon current run?\n\nThe current Dungeon run will end before starting a new run."
 		_dungeon_debug_abandon_confirm.confirmed.connect(_dungeon_debug_abandon)
 		add_child(_dungeon_debug_abandon_confirm)
 		_style_dungeon_dialog(_dungeon_debug_abandon_confirm)

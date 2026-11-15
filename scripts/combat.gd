@@ -798,7 +798,6 @@ func _dungeon_render() -> void:
 		var brief_key := "%s:%d" % [str(_dungeon_session.get("run_id", "")), floor_id]
 		if floor_id != _dungeon_brief_floor and int(state.get("turn", 0)) == 0 and (str(_dungeon_session.get("run_id", "")).is_empty() or brief_key != _dungeon_last_brief_key):
 			_dungeon_brief_floor = floor_id
-			if not str(_dungeon_session.get("run_id", "")).is_empty(): _dungeon_last_brief_key = brief_key
 			_dungeon_brief.dialog_text = "Floor %d\n%s (%s)\nHomunculus: %s\nCleared: %d" % [floor_id, str(ne.get("name", n.id)), str(n.get("type", "")).capitalize(), str(nh.get("name", "None")), int(_dungeon_session.get("cleared_floor", 0))]
 			if not is_elite and encounter is Dictionary and not str(encounter.get("label", "")).is_empty():
 				_dungeon_brief.dialog_text += "\n%s: %s" % [str(encounter.label), str(encounter.get("hint", ""))]
@@ -987,8 +986,12 @@ func _begin_combat_initialization() -> void:
 		_dungeon_brief.title = "DUNGEONS"
 		_dungeon_brief.get_ok_button().text = "Fight"
 		_dungeon_brief.get_cancel_button().hide()
-		_dungeon_brief.confirmed.connect(func(): call_deferred("_refresh_dungeon_blessing"); call_deferred("_dungeon_refresh_controls"))
-		_dungeon_brief.canceled.connect(func(): call_deferred("_dungeon_refresh_controls"))
+		_dungeon_brief.confirmed.connect(func():
+			_dungeon_last_brief_key = "%s:%d" % [str(_dungeon_session.get("run_id", "")), _dungeon_brief_floor]
+			call_deferred("_refresh_dungeon_blessing")
+			call_deferred("_dungeon_refresh_controls")
+		)
+		_dungeon_brief.canceled.connect(func(): _dungeon_brief.call_deferred("popup_centered"); call_deferred("_dungeon_refresh_controls"))
 		add_child(_dungeon_brief)
 		_setup_dungeon_blessing_ui()
 		_combat_backend = BackendClient.new()

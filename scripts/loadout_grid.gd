@@ -92,6 +92,7 @@ var _dungeon_kind := ""
 var _dungeon_recovered := false
 var _dungeon_payload: Dictionary = {}
 var _hunt_spells: Dictionary = {}
+var _dungeon_spells_changed: Dictionary = {}
 var _hunt_backend: BackendClient
 var _hunt_recovery_request := ""
 var _hunt_submit_request := ""
@@ -610,7 +611,7 @@ func _refresh_spell_button() -> void:
 	_spell_button.tooltip_text = "Change spells for this entity" if extra else "No additional spells unlocked for this entity"
 	MenuArt.button(_spell_button)
 	if is_instance_valid(_spell_warning):
-		_spell_warning.visible = _dungeon_mode and _dungeon_spell_progress is Dictionary and extra
+		_spell_warning.visible = _dungeon_mode and _dungeon_spell_progress is Dictionary and extra and not _dungeon_spells_changed.has(_current_entity_id)
 
 func _build_spell_dialog() -> void:
 	_spell_button = get_node_or_null("SpellConfig") as Button
@@ -832,6 +833,8 @@ func _confirm_spell_dialog() -> void:
 		if not _spell_debug.unlock_all_buildings and not _spell_synced:
 			_set_build_error("Server state is unavailable.")
 			return
+		if _dungeon_mode and _spell_draft != _equipped_spells(_mode, _current_entity_id):
+			_dungeon_spells_changed[_current_entity_id] = true
 		_hunt_spells[_current_entity_id] = _spell_draft.duplicate()
 		_refresh_spell_button()
 		_set_build_error("" if _dungeon_mode else "Boss Hunt spells selected.")

@@ -30,6 +30,7 @@ func _run() -> void:
 	panel.add_child(dungeon_dialog)
 	var new_run := dungeon_dialog.add_button("NEW TEST RUN", false, "new_test_run")
 	panel._style_dungeon_dialog(dungeon_dialog, [new_run])
+	assert(dungeon_dialog.transparent_bg and dungeon_dialog.borderless)
 	var dialog_frame := dungeon_dialog.get_theme_stylebox("panel") as StyleBoxTexture
 	assert(dialog_frame != null and dialog_frame.texture.resource_path.ends_with("marco-horizontal-popup.png"))
 	assert(dungeon_dialog.get_label().horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER)
@@ -91,6 +92,10 @@ func _run() -> void:
 	loadout._on_spell_state_updated({})
 	loadout._on_card_picked("entity", "sulfur_01")
 	assert(loadout._spell_warning.visible and not loadout._spell_button.disabled)
+	loadout._spell_draft = loadout._equipped_spells("attack", "sulfur_01").duplicate()
+	loadout._spell_draft[0] = "steady_script"
+	loadout._confirm_spell_dialog()
+	assert(not loadout._spell_warning.visible)
 	loadout._on_card_picked("entity", "sodium_01")
 	assert(not loadout._spell_warning.visible and not loadout._spell_button.disabled)
 	loadout._on_card_picked("entity", "sulfur_01")
@@ -155,6 +160,11 @@ func _run() -> void:
 	combat._dungeon_render()
 	assert(combat._dungeon_brief.visible and not combat._blessing_panel.visible)
 	combat._dungeon_brief.hide()
+	combat._dungeon_brief_floor = 0
+	combat._dungeon_render()
+	assert(combat._dungeon_brief.visible and not combat._blessing_panel.visible)
+	combat._dungeon_brief.confirmed.emit()
+	combat._dungeon_brief.hide()
 	combat._refresh_dungeon_blessing()
 	assert(combat._blessing_panel.visible and combat._blessing_cards.size() == 3)
 	assert(combat._blessing_cards[0].tooltip_text == "First")
@@ -177,6 +187,7 @@ func _run() -> void:
 		assert(combat._dungeon_brief.dialog_text.contains("TEST ABILITY: A brief hint."))
 		assert(combat._dungeon_brief.dialog_text.contains("Homunculus:") and combat._dungeon_brief.dialog_text.contains("Sulfur"))
 		assert(combat._dungeon_floor_label.has_theme_color_override("font_color") and combat.enemy_entity_name.has_theme_color_override("font_color"))
+		combat._dungeon_brief.confirmed.emit()
 		combat._dungeon_brief.hide()
 		combat._dungeon_render()
 		assert(not combat._dungeon_brief.visible)
