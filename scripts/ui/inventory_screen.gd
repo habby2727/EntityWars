@@ -6,6 +6,7 @@ const HOM_PREVIEW_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 
 @export var panel_path: NodePath
@@ -629,7 +630,7 @@ func _entry_details(entry: Variant) -> String:
 			lines.append("Current effects: %s" % _format_effects(effects) if _item_progress_known else "Effects by level: %s" % _format_effects(effects))
 	elif kind == "spell":
 		lines.append("Type: %s  |  %s" % [str(entry.get("type", "Unknown")).capitalize(), str(entry.get("category", "")).capitalize()])
-		lines.append("Power: x%.2f  |  Accuracy: %d%%  |  Cooldown: %d" % [float(entry.get("power_mult", 0)), int(round(float(entry.get("accuracy", 0)) * 100)), int(entry.get("cooldown_turns", 0))])
+		lines.append("Power: %s  |  Accuracy: %d%%  |  Cooldown: %d" % [Stats.percent(float(entry.get("power_mult", 0))), int(round(float(entry.get("accuracy", 0)) * 100)), int(entry.get("cooldown_turns", 0))])
 		lines.append("Efectos: %s" % _spell_effects(entry.get("effects", [])))
 	var description = str(entry.get("desc", ""))
 	if description != "":
@@ -644,11 +645,11 @@ func _format_effects(effects: Dictionary) -> String:
 		if value is Array:
 			var values: Array[String] = []
 			for number in value:
-				values.append(str(number))
+				values.append(Stats.stat_value(str(key), number))
 			var levels = " (levels 1-%s)" % value.size() if value.size() > 1 else ""
 			parts.append("%s%s: %s" % [label, levels, ", ".join(values)])
 		else:
-			parts.append("%s: %s" % [label, value])
+			parts.append("%s: %s" % [label, Stats.stat_value(str(key), value)])
 	return "; ".join(parts)
 
 func _make_cost_row(cost: Dictionary) -> Control:

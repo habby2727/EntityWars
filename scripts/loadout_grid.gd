@@ -212,6 +212,7 @@ func _ready() -> void:
 			if btn_play: btn_play.text = "Start Run"
 		else:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
+			if btn_play: btn_play.text = "Ready"
 		btn_save.hide()
 		var back := $BackButton as Button
 		var original_back := Callable(back, "_on_pressed")

@@ -1,5 +1,7 @@
 extends RefCounted
 
+const Stats := preload("res://scripts/ui/stat_presentation.gd")
+
 static func group(spell: Dictionary) -> String:
 	var kind := str(spell.get("type", ""))
 	return kind.capitalize() if kind in ["hybrid", "universal"] else "Initial"
@@ -20,7 +22,7 @@ static func status(spell: Dictionary, entity_id: String, entity_type: String, pr
 	return "Learned" if str(spell.get("id", "")) in progress.get("learned_by_entity", {}).get(entity_id, []) else "Locked"
 
 static func detail(spell: Dictionary, state: String) -> String:
-	var power := "Support" if float(spell.get("power_mult", 0)) == 0 else "x%.2f" % float(spell.power_mult)
+	var power := "Support" if float(spell.get("power_mult", 0)) == 0 else Stats.percent(float(spell.power_mult))
 	var text := "%s | %s | %s\nPower: %s   Accuracy: %d%%   Cooldown: %d\n\n%s" % [affinity(spell), str(spell.get("category", "")).capitalize(), state, power, int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), str(spell.get("desc", ""))]
 	var effects: Array[String] = []
 	for effect in spell.get("effects", []):
@@ -31,9 +33,9 @@ static func detail(spell: Dictionary, state: String) -> String:
 		if not strategic.is_empty():
 			effects.append(strategic)
 			continue
-		var part := "%s: %s (%s)" % [str(effect.get("kind", "")).replace("_", " ").capitalize(), effect.get("value", 0), str(effect.get("target", ""))]
+		var part := "%s: %s (%s)" % [str(effect.get("kind", "")).replace("_", " ").capitalize(), Stats.effect_value(str(effect.get("kind", "")), effect.get("value", 0)), str(effect.get("target", ""))]
 		if effect.has("second_value"):
-			part += ", alternate: %s" % str(effect.second_value)
+			part += ", alternate: %s" % Stats.effect_value(str(effect.get("kind", "")), effect.second_value, "second_value")
 		effects.append(part)
 	if not effects.is_empty():
 		text += "\n\nEffects: " + "; ".join(effects)

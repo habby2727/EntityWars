@@ -7,6 +7,7 @@ const CombatTypeIcon := preload("res://scripts/ui/combat_type_icon.gd")
 const CombatHomStatus := preload("res://scripts/ui/combat_hom_status.gd")
 const CombatInspiration := preload("res://scripts/ui/combat_inspiration.gd")
 const SpellPresentation := preload("res://scripts/ui/spell_presentation.gd")
+const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
@@ -159,7 +160,7 @@ func _boss_ability_description(ability: String) -> String:
 		"Summon": return "Summon creates independent minions once per battle. Defeat all living minions to expose the boss. Each surviving minion attacks once per exchange, starting next exchange."
 		"Shield": return "Alchemical Shield: %d%% direct damage mitigation for %d exchanges. Restores %d%% of prevented damage. One activation above 50%% HP and one at or below 50%%, subject to cooldown." % [roundi(float(_solo_def.get("shield_reduction", 0)) * 100), int(_solo_def.get("shield_turns", 0)), roundi(float(_solo_def.get("shield_heal_ratio", 0)) * 100)]
 		"Power": return "Power Turn doubles direct spell and homunculus damage against the boss for this exchange. Poison, damage over time and reflection are not doubled. It happens once per battle; if the boss survives, Fury follows."
-		"Fury": return "Fury is a retaliatory Strike x%.1f after the boss survives your Power Turn. It replaces ordinary Strike scaling and is not an extra turn. Stun delays it without consuming it." % float(_solo_def.get("fury_mult", 1.0))
+		"Fury": return "Fury is a retaliatory Strike at %s power after the boss survives your Power Turn. It replaces ordinary Strike scaling and is not an extra turn. Stun delays it without consuming it." % Stats.percent(float(_solo_def.get("fury_mult", 1.0)))
 		"Poison": return "Poison deals periodic damage at the end of an exchange while active. Remaining duration: %d turns." % int(enemy.get("status", {}).get("poison", 0))
 		"Stun": return "Stun prevents the boss from acting. Fury remains pending until an offensive action executes. Remaining duration: %d turns." % int(enemy.get("status", {}).get("stun", 0))
 	return ""
@@ -258,7 +259,23 @@ func _ready() -> void:
 		confirm_stay.pressed.connect(_on_confirm_stay)
 	if confirm_leave:
 		confirm_leave.pressed.connect(_on_confirm_leave)
+	_style_leave_confirmation()
 	_begin_combat_initialization()
+
+func _style_leave_confirmation() -> void:
+	var art = preload("res://scripts/ui/menu_art.gd")
+	confirm_popup.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	var panel := confirm_popup.get_node("Panel") as PanelContainer
+	panel.add_theme_stylebox_override("panel", art.frame("marco-horizontal-popup-grande.png", Vector4(65, 38, 65, 32)))
+	var title := confirm_popup.get_node("Panel/VBox/Title") as Label
+	title.add_theme_font_size_override("font_size", 24)
+	var body := confirm_popup.get_node("Panel/VBox/Body") as Label
+	body.add_theme_font_size_override("font_size", 17)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	for button in [confirm_stay, confirm_leave]:
+		art.button(button)
+		button.custom_minimum_size = Vector2(155, 46)
 
 func _fit_combat_view() -> void:
 	var available := get_viewport_rect().size
@@ -343,9 +360,9 @@ func _spell_description(spell: Dictionary) -> String:
 		var extra: Array[String] = []
 		for key in effect:
 			if key not in ["kind", "value", "target"]:
-				extra.append("%s: %s" % [str(key).replace("_", " ").capitalize(), str(effect[key])])
-		lines.append("%s: %s (%s)%s" % [str(effect.get("kind", "")).replace("_", " ").capitalize(), str(effect.get("value", "")), str(effect.get("target", "")), "; " + ", ".join(extra) if not extra.is_empty() else ""])
-	return "%s\nType: %s | %s\nPower: x%.2f | Accuracy: %d%% | Cooldown: %d\n%s\n%s" % [spell.get("name", ""), str(spell.get("type", "")).capitalize(), str(spell.get("category", "")).capitalize(), float(spell.get("power_mult", 0)), int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), ", ".join(lines) if not lines.is_empty() else "No additional effects", spell.get("desc", "")]
+				extra.append("%s: %s" % [str(key).replace("_", " ").capitalize(), Stats.effect_value(str(effect.get("kind", "")), effect[key], str(key))])
+		lines.append("%s: %s (%s)%s" % [str(effect.get("kind", "")).replace("_", " ").capitalize(), Stats.effect_value(str(effect.get("kind", "")), effect.get("value", "")), str(effect.get("target", "")), "; " + ", ".join(extra) if not extra.is_empty() else ""])
+	return "%s\nType: %s | %s\nPower: %s | Accuracy: %d%% | Cooldown: %d\n%s\n%s" % [spell.get("name", ""), str(spell.get("type", "")).capitalize(), str(spell.get("category", "")).capitalize(), Stats.percent(float(spell.get("power_mult", 0))), int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), ", ".join(lines) if not lines.is_empty() else "No additional effects", spell.get("desc", "")]
 
 func _status_effect_text(kind: String, value: float) -> String:
 	var label := kind.replace("_", " ").capitalize()
@@ -715,7 +732,7 @@ func _dungeon_render() -> void:
 		var id := str(p.spell_ids[i])
 		var spell: Dictionary = _reg.get_spell_by_id(id)
 		var cd := int(p.get("cooldowns", {}).get(id, 0))
-		var power := "Support" if float(spell.get("power_mult", 0)) == 0 else "x%.2f" % float(spell.power_mult)
+		var power := "Support" if float(spell.get("power_mult", 0)) == 0 else Stats.percent(float(spell.power_mult))
 		spell_buttons[i].text = "%s\n%s  |  %d%%%s" % [str(spell.get("name", id)), power, roundi(float(spell.get("accuracy", 0)) * 100), "  |  CD: %d" % cd if cd > 0 else ""]
 		spell_buttons[i].tooltip_text = _spell_description(spell)
 		var types: Array = [str(spell.get("primary_type", "")), str(spell.get("secondary_type", ""))] if spell.get("type") == "hybrid" else [str(spell.get("type", "universal"))]
@@ -1076,6 +1093,8 @@ func _hide_online_hunt_view() -> void:
 		_inspiration_panel.hide()
 	if _online_hunt_info:
 		_online_hunt_info.hide()
+	if is_instance_valid(_solo_panel):
+		_solo_panel.get_parent().hide()
 
 func _on_online_hunt_identity(state: Dictionary) -> void:
 	if _online_identity_invalid:
@@ -1093,6 +1112,13 @@ func _on_online_hunt_identity(state: Dictionary) -> void:
 			_combat_wait_timer.start(10.0)
 
 func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if not request_id.is_empty() and request_id == _solo_forfeit_request:
+		_solo_forfeit_request = ""
+		if ok and str(data.get("status", "")) == "FORFEIT" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity:
+			_return_from_solo_hunt()
+		else:
+			_log_immediate("Forfeit not confirmed. Reconnect and retry; the session remains active.")
+		return
 	if not request_id.is_empty() and request_id == _online_turn_request:
 		_online_turn_request = ""
 		if _combat_wait_timer:
@@ -1114,10 +1140,17 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		var action_id := str(_online_turn_payload.get("client_action_id", ""))
 		if not _online_processed_turns.has(action_id):
 			_online_processed_turns[action_id] = true
+			var decision: Dictionary = _online_turn_payload.get("decision", {})
+			if not inspiration_action and decision.has("spell_id"):
+				_log_online_spell(str(decision.spell_id), true)
+				await get_tree().create_timer(0.15).timeout
 			for event in data.get("events", []):
+				if not is_inside_tree() or _online_identity_invalid:
+					return
 				if event is Dictionary:
 					_online_event_turn = int(event.get("turn", -1))
-					_log_immediate("Server: " + JSON.stringify(event))
+					_log_online_hunt_event(event)
+					await get_tree().create_timer(0.10).timeout
 			_online_event_turn = -1
 		_online_turn_payload.clear()
 		_refresh_online_spell_buttons()
@@ -1155,7 +1188,59 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 	_refresh_online_inspiration()
 	next_turn_btn.hide()
 	_present_online_terminal()
-	_log_immediate("Server combat synchronized. Server actions pending.")
+
+func _log_online_spell(spell_id: String, player_cast: bool) -> void:
+	var spell: Dictionary = _reg.get_spell_by_id(spell_id)
+	var attacker: Control = player_entity if player_cast else enemy_entity
+	var attack := str(spell.get("category", "")) == "attack"
+	if attack:
+		_animate_lunge(attacker, 20.0 if player_cast else -20.0, true)
+	else:
+		_animate_pulse(attacker, Color(0.62, 0.7, 1.0), 1.04)
+	_append_combat_log("", {"category": "damage" if attack else "buff", "actor": player_entity_name.text if player_cast else enemy_entity_name.text, "actor_color": "69d7e8" if player_cast else "f2a078", "verb": " uses ", "spell_id": spell_id, "spell_name": str(spell.get("name", spell_id)), "suffix": "."})
+
+func _log_online_hunt_event(event: Dictionary) -> void:
+	var kind := str(event.get("kind", ""))
+	if kind in ["status_snapshot", "boss_intent", "combat_terminal"]:
+		return
+	if kind == "boss_special_cast":
+		_log_online_spell(str(event.get("spell_id", "")), false)
+		return
+	var actor := str(event.get("actor", ""))
+	var target := str(event.get("target", ""))
+	if actor.is_empty():
+		actor = target
+	var is_player := actor == "player"
+	var actor_name := player_entity_name.text if is_player else enemy_entity_name.text if actor == "boss" else "Minion" if not actor.is_empty() else "Combat"
+	var damage := int(event.get("actual_damage", event.get("damage", 0)))
+	var category := "damage" if kind in ["damage", "true_damage", "reflect", "corrosion", "hom_corrosion", "hom_damage", "status_tick"] else "heal" if kind == "heal" else "miss" if kind in ["miss", "evade", "hom_miss"] else "shield" if kind.begins_with("boss_shield") else "debuff" if kind in ["status_applied", "status_changed"] else "switch" if kind == "switch" else "system"
+	var entry := {"category": category, "actor": actor_name, "actor_kind": "entity", "actor_side": "player" if is_player else "enemy", "actor_color": "69d7e8" if is_player else "f2a078", "verb": " " + kind.replace("_", " ")}
+	if kind in ["damage", "true_damage", "corrosion", "hom_corrosion", "hom_damage"]:
+		entry["verb"] = " deals %d damage to" % damage
+	elif kind == "miss" or kind == "hom_miss":
+		entry["verb"] = " misses"
+	elif kind == "status_applied":
+		entry["verb"] = " applies %s to" % str(event.get("status", "effect")).replace("_", " ")
+	elif kind == "boss_action":
+		entry["verb"] = " prepares " + str(event.get("action", "Strike"))
+	if not target.is_empty() and target != actor:
+		entry["target"] = " " + (player_entity_name.text if target == "player" else enemy_entity_name.text if target == "boss" else "Minion")
+		entry["target_color"] = "69d7e8" if target == "player" else "f2a078"
+	entry["suffix"] = "."
+	if kind in ["hom_damage", "hom_miss"]:
+		_animate_lunge(player_hom, 12.0, false)
+	elif kind == "boss_action" and str(event.get("action", "")) in ["Strike", "Fury Strike"]:
+		_animate_lunge(enemy_entity, -20.0, true)
+	if damage > 0:
+		var target_sprite: Control = player_entity if target == "player" else enemy_entity
+		var hp_bar: ProgressBar = player_hp if target == "player" else enemy_hp
+		var minion_index := _online_visible_minions.find(target)
+		if minion_index >= 0 and minion_index < _solo_minion_views.size():
+			target_sprite = _solo_minion_views[minion_index]
+		_animate_hit(target_sprite, damage, int(hp_bar.max_value))
+	elif kind in ["heal", "status_applied"]:
+		_animate_pulse(player_entity if target == "player" else enemy_entity, Color(0.62, 0.85, 1.0), 1.04)
+	_append_combat_log("", entry)
 
 func _valid_online_result(session: Dictionary) -> bool:
 	var status := str(session.get("status", ""))
@@ -1211,13 +1296,14 @@ func _render_online_hunt(session: Dictionary) -> bool:
 	var boss_def: Variant = session.get("boss_definition", {})
 	if not boss_def is Dictionary or not state.get("player") is Dictionary or not state.get("boss") is Dictionary or not state.get("moves") is Array or state.moves.size() != 4 or not state.get("minions") is Array:
 		return false
+	_solo_def = boss_def.duplicate(true)
 	var p: Dictionary = state.player
 	var b: Dictionary = state.boss
 	if int(p.get("max_hp", 0)) <= 0 or int(b.get("max_hp", 0)) <= 0 or str(loadout.get("entity_id", "")).is_empty():
 		return false
 	if _online_hunt_info == null:
 		_apply_world_combat_visuals(str(_solo_context.get("visual_zone_id", "")))
-		_create_solo_minion_views()
+		_create_solo_panel()
 		_online_hunt_info = Label.new()
 		_online_hunt_info.name = "OnlineHuntInfo"
 		_online_hunt_info.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -1226,12 +1312,7 @@ func _render_online_hunt(session: Dictionary) -> bool:
 		_online_hunt_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_online_hunt_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		add_child(_online_hunt_info)
-		for icons in [player_indicators, enemy_indicators]:
-			icons.effect_clicked.connect(func(description: String):
-				_spell_detail.title = "Combat Status"
-				_spell_detail.dialog_text = description
-				_spell_detail.popup_centered(Vector2i(440, 260))
-			)
+	_solo_panel.get_parent().show()
 	get_node("PlayerPanel").show()
 	get_node("EnemyPanel").show()
 	_enemy_hom_status.hide()
@@ -1245,7 +1326,7 @@ func _render_online_hunt(session: Dictionary) -> bool:
 	var world_sprites := get_node_or_null("WorldCombatSprites") as CanvasItem
 	if world_sprites:
 		world_sprites.show()
-	_online_hunt_info.show()
+	_online_hunt_info.visible = str(session.get("status", "")) != "ACTIVE"
 	spell_panel.show()
 	for pair in [[player_hp, p], [enemy_hp, b]]:
 		var icon: Node = pair[0].get_node_or_null("CombatTypeIcon")
@@ -1261,6 +1342,8 @@ func _render_online_hunt(session: Dictionary) -> bool:
 	enemy_hp.value = float(b.get("hp", 0))
 	player_hp.get_node("HealthValue").text = "%d / %d" % [int(p.get("hp", 0)), int(p.max_hp)]
 	enemy_hp.get_node("HealthValue").text = "%d / %d" % [int(b.get("hp", 0)), int(b.max_hp)]
+	_apply_hp_color(player_hp, p)
+	_apply_hp_color(enemy_hp, b)
 	var entity_id := str(loadout.get("entity_id", ""))
 	var entity := _find_by_id(_entities, entity_id)
 	var hom_id := str(loadout.get("homunculus_id", "")) if loadout.get("homunculus_id") != null else ""
@@ -1295,8 +1378,25 @@ func _render_online_hunt(session: Dictionary) -> bool:
 		icon.modulate.a = 1.0 if int(p.get("active_weapon_slot", 1)) == i + 1 else 0.5
 	for i in 4:
 		var move: Dictionary = state.moves[i]
+		var spell: Dictionary = _reg.get_spell_by_id(str(move.get("id", "")))
 		var cd := int(move.get("cooldown_remaining", 0))
-		spell_buttons[i].text = "%s%s" % [str(move.get("name", move.get("id", ""))), " | CD: %d" % cd if cd > 0 else ""]
+		var power_value := float(move.get("power_mult", spell.get("power_mult", 0)))
+		var power_text := "Support" if is_zero_approx(power_value) else Stats.percent(power_value)
+		spell_buttons[i].text = "%s\n%s  |  %d%%%s" % [str(move.get("name", spell.get("name", move.get("id", "")))), power_text, roundi(float(move.get("accuracy", spell.get("accuracy", 0))) * 100), "  |  CD: %d" % cd if cd > 0 else ""]
+		spell_buttons[i].tooltip_text = _spell_description(spell) if not spell.is_empty() else ""
+		var types: Array = [str(spell.get("primary_type", "")), str(spell.get("secondary_type", ""))] if spell.get("type") == "hybrid" else [str(spell.get("type", "universal"))]
+		for icon_index in 2:
+			var icon_name := "OnlineSpellType%d" % icon_index
+			var type_icon: Control = spell_buttons[i].get_node_or_null(icon_name)
+			if type_icon == null:
+				type_icon = CombatTypeIcon.new()
+				type_icon.name = icon_name
+				type_icon.position = Vector2(5 + icon_index * 25, 5)
+				type_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				spell_buttons[i].add_child(type_icon)
+			type_icon.visible = icon_index < types.size() and not types[icon_index].is_empty()
+			if type_icon.visible:
+				type_icon.call("configure", types[icon_index])
 		spell_buttons[i].disabled = true
 	turn_label.text = "Boss Hunt | Turn %d | Revision %d" % [int(state.get("turn", 0)), _online_hunt_revision]
 	player_indicators.set_fighter(0, {"status": p.get("status", {})})
@@ -1305,31 +1405,45 @@ func _render_online_hunt(session: Dictionary) -> bool:
 	var fury: Dictionary = state.get("fury", {})
 	var power: Dictionary = state.get("power_turn", {})
 	var effects: Array = []
+	var player_effects: Array = []
+	for pair in [[p, player_effects], [b, effects]]:
+		var fighter: Dictionary = pair[0]
+		var indicators: Array = pair[1]
+		if fighter.get("strategic_trap") is Dictionary:
+			indicators.append({"icon": "shield", "label": "TRAP", "tooltip": "Counter trap active."})
+		if fighter.get("strategic_heal_suppression") is Dictionary:
+			indicators.append({"icon": "vuln", "label": "HEAL", "tooltip": "Healing suppressed."})
 	if int(shield.get("turns", 0)) > 0:
-		effects.append({"icon": "shield", "label": "%d%% %dT" % [roundi(float(shield.get("reduction", 0)) * 100), int(shield.turns)], "tooltip": "Alchemical Shield"})
+		effects.append({"icon": "shield", "label": "%d%% %dT" % [roundi(float(shield.get("reduction", 0)) * 100), int(shield.turns)], "tooltip": _boss_ability_description("Shield")})
 	if bool(fury.get("pending", false)):
-		effects.append({"icon": "fury", "label": "x%.1f" % float(fury.get("multiplier", 1)), "tooltip": "Fury pending"})
+		effects.append({"icon": "fury", "label": Stats.percent(float(fury.get("multiplier", 1))), "tooltip": _boss_ability_description("Fury")})
 	_solo_minions = state.minions.duplicate(true)
 	var alive := 0
 	for minion in _solo_minions:
 		if int(minion.get("hp", 0)) > 0:
 			alive += 1
 	if alive > 0:
-		effects.append({"icon": "minions", "label": str(alive), "tooltip": "Protected by minions"})
+		effects.append({"icon": "minions", "label": str(alive), "tooltip": _boss_ability_description("Summon")})
 	enemy_indicators.set_boss_effects(true, effects)
-	player_indicators.set_boss_effects(true, [{"icon": "power", "label": "x2", "tooltip": "Power Turn"}] if bool(power.get("active", false)) else [])
+	if bool(power.get("active", false)):
+		player_effects.append({"icon": "power", "label": "x2", "tooltip": _boss_ability_description("Power")})
+	player_indicators.set_boss_effects(true, player_effects)
 	_update_solo_minion_views()
 	var intent := str(b.get("intent", ""))
 	if intent == "Special":
 		var special: Dictionary = _reg.get_spell_by_id(str(b.get("intent_spell_id", "")))
 		intent = str(special.get("name", intent))
-	var inspiration: Dictionary = state.get("inspiration", {})
-	var offers: Array[String] = []
-	if bool(inspiration.get("pending", false)):
-		for id in inspiration.get("offers", []):
-			var spell: Dictionary = _reg.get_spell_by_id(str(id))
-			offers.append(str(spell.get("name", id)))
-	_online_hunt_info.text = "Server combat synchronized\nNEXT: %s%s" % [intent, "\nInspiration: " + ", ".join(offers) if not offers.is_empty() else ""]
+	_solo_intent = str(b.get("intent", ""))
+	_solo_signature = _reg.get_spell_by_id(str(b.get("intent_spell_id", "")))
+	_solo_intent_button.text = "NEXT: " + intent
+	_solo_status.text = "%s | %s\nShield: %d%% | %d turns\n%s" % [str(boss_def.get("name", "Boss")), str(b.get("tier", "")).to_upper(), roundi(float(shield.get("reduction", 0)) * 100), int(shield.get("turns", 0)), "Boss Protected - Kill Minions" if alive > 0 else "Boss vulnerable"]
+	_solo_power_label.visible = bool(power.get("active", false)) or bool(fury.get("pending", false))
+	if bool(power.get("active", false)):
+		_solo_power_label.text = "POWER TURN x2"
+	elif bool(fury.get("pending", false)):
+		_solo_power_label.text = "FURY PENDING %s power" % Stats.percent(float(fury.get("multiplier") if fury.get("multiplier") != null else 1.0))
+	else:
+		_solo_power_label.text = ""
 	return true
 
 func _refresh_online_spell_buttons() -> void:
@@ -1555,8 +1669,14 @@ func _on_back_pressed() -> void:
 		SceneRouter.return_from_dungeon()
 		return
 	if _online_hunt_guard:
-		if not _online_turn_payload.is_empty():
+		if not _online_turn_payload.is_empty() or not _online_hom_payload.is_empty() or not _online_turn_request.is_empty() or not _online_hunt_request.is_empty():
 			_log_immediate("Pending turn must be recovered before leaving.")
+			return
+		if _online_hunt_session.is_empty() and not _online_identity_invalid:
+			_log_immediate("Recover the encounter before leaving.")
+			return
+		if _online_hunt_session.has("global_event_id") and str(_online_hunt_session.get("status", "")) == "ACTIVE":
+			confirm_popup.popup_centered(Vector2i(600, 240))
 			return
 		_return_from_solo_hunt()
 		return
@@ -1566,7 +1686,7 @@ func _on_back_pressed() -> void:
 		return
 	if confirm_popup.visible:
 		return
-	confirm_popup.popup_centered()
+	confirm_popup.popup_centered(Vector2i(600, 240))
 
 func _on_confirm_stay() -> void:
 	if confirm_popup:
@@ -1576,6 +1696,9 @@ func _on_confirm_leave() -> void:
 	if confirm_popup:
 		confirm_popup.hide()
 	if _online_hunt_guard:
+		if _online_hunt_session.has("global_event_id") and str(_online_hunt_session.get("status", "")) == "ACTIVE":
+			_request_solo_forfeit()
+			return
 		_return_from_solo_hunt()
 		return
 	if _solo_boss_mode and not str(_solo_context.get("session_id", "")).is_empty():
@@ -1589,7 +1712,7 @@ func _on_confirm_leave() -> void:
 func _request_solo_forfeit() -> void:
 	if not _solo_forfeit_request.is_empty():
 		return
-	if _combat_backend == null or _combat_backend.token.is_empty():
+	if _combat_backend == null or _combat_backend.token.is_empty() or (_online_hunt_guard and (_combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity)):
 		_log_immediate("Forfeit unavailable: reconnect and retry. Session remains active.")
 		return
 	if _solo_forfeit_action.is_empty():
@@ -1766,18 +1889,18 @@ func _create_solo_panel() -> void:
 	if has_node("WorldCombatSprites"):
 		panel.offset_left = -220
 		panel.offset_right = 220
-		panel.offset_top = 285
-		panel.offset_bottom = 425
+		panel.offset_top = 360
+		panel.offset_bottom = 470
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.045, 0.055, 0.94)
 	style.border_color = Color("a9955d")
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(4)
-	style.set_content_margin_all(14)
+	style.set_content_margin_all(7 if has_node("WorldCombatSprites") else 14)
 	panel.add_theme_stylebox_override("panel", style)
 	add_child(panel)
 	_solo_panel = VBoxContainer.new()
-	_solo_panel.add_theme_constant_override("separation", 8)
+	_solo_panel.add_theme_constant_override("separation", 3 if has_node("WorldCombatSprites") else 8)
 	panel.add_child(_solo_panel)
 	_solo_power_label = Label.new()
 	_solo_power_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1945,7 +2068,7 @@ func _update_solo_panel() -> void:
 		return
 	_update_solo_minion_views()
 	_solo_power_label.visible = _solo_power_active or _solo_fury_pending
-	_solo_power_label.text = "POWER TURN x2 - DIRECT BOSS DAMAGE\nWARNING: SURVIVAL TRIGGERS FURY x%.1f" % float(_solo_def.fury_mult) if _solo_power_active else "FURY PENDING x%.1f" % float(_solo_def.fury_mult)
+	_solo_power_label.text = "POWER TURN x2 - DIRECT BOSS DAMAGE\nWARNING: SURVIVAL TRIGGERS FURY %s" % Stats.percent(float(_solo_def.fury_mult)) if _solo_power_active else "FURY PENDING %s power" % Stats.percent(float(_solo_def.fury_mult))
 	var intent_name := str(_solo_signature.get("name", "Special")) if _solo_intent == "Special" else _solo_intent
 	_solo_intent_button.text = "NEXT: " + intent_name
 	_solo_status.text = "%s | %s\nShield: %d%% | %d turns\n%s" % [str(_solo_def.get("name", "Boss")), str(_solo_def.get("tier", "")).to_upper(), roundi(float(_solo_def.shield_reduction) * 100.0) if _solo_shield_turns > 0 else 0, _solo_shield_turns, "Boss Protected - Kill Minions" if _solo_has_minions() else "Boss vulnerable"]
@@ -1960,7 +2083,7 @@ func _update_solo_panel() -> void:
 	var boss_effects: Array = []
 	if not _battle_over:
 		if _solo_fury_pending:
-			boss_effects.append({"icon": "fury", "label": "x%.1f" % float(_solo_def.fury_mult), "tooltip": _boss_ability_description("Fury")})
+			boss_effects.append({"icon": "fury", "label": Stats.percent(float(_solo_def.fury_mult)), "tooltip": _boss_ability_description("Fury")})
 		if _solo_shield_turns > 0:
 			boss_effects.append({"icon": "shield", "label": "%d%% %dT" % [roundi(float(_solo_def.shield_reduction) * 100), _solo_shield_turns], "tooltip": _boss_ability_description("Shield") + " Remaining: %d exchanges." % _solo_shield_turns})
 		if alive_minions > 0:
@@ -2020,7 +2143,7 @@ func _prepare_solo_power_turn(roll: float = -1.0) -> void:
 		_solo_power_used = true
 		_solo_power_active = true
 		_solo_events.append({"turn": _turn + 1, "power_turn": true})
-		_append_combat_log("POWER TURN x2 - Defeat the boss now or face Fury x%.1f." % float(_solo_def.fury_mult), {"ability_id": "Power", "category": "buff"})
+		_append_combat_log("POWER TURN x2 - Defeat the boss now or face Fury at %s power." % Stats.percent(float(_solo_def.fury_mult)), {"ability_id": "Power", "category": "buff"})
 
 func _prepare_solo_intent() -> void:
 	var ratio := float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
@@ -2079,7 +2202,7 @@ func _solo_boss_action() -> void:
 			_solo_fury_pending = false
 		elif _solo_has_minions():
 			fury *= 0.5
-		_append_combat_log("%s: %s x%.1f, 90%% base accuracy." % [enemy.name, intent, fury], {"ability_id": "Fury" if intent == "FURY STRIKE" else "Strike", "category": "damage"})
+		_append_combat_log("%s: %s at %s power, 90%% base accuracy." % [enemy.name, intent, Stats.percent(float(fury))], {"ability_id": "Fury" if intent == "FURY STRIKE" else "Strike", "category": "damage"})
 		_attack_entity(enemy, player, fury, 0.9, true)
 	await _flush_steps()
 
@@ -2134,7 +2257,7 @@ func _resolve_solo_exchange(action: Dictionary) -> void:
 		_solo_power_active = false
 		if enemy.hp > 0 and player.hp > 0:
 			_solo_fury_pending = true
-			_log_immediate("FURY PENDING x%.1f on the boss's next strike." % float(_solo_def.fury_mult))
+			_log_immediate("FURY PENDING: %s power on the boss's next strike." % Stats.percent(float(_solo_def.fury_mult)))
 	if shield_active_at_start and _solo_shield_turns > 0:
 		_solo_shield_turns -= 1
 		if _solo_shield_turns == 0:
@@ -3089,7 +3212,7 @@ func _refresh_spell_buttons() -> void:
 		if type_icon.visible and str(type_icon.get("element")) != type_id:
 			type_icon.call("configure", type_id)
 		var cd := int(player.get("spell_cooldowns", {}).get(spell.id, 0))
-		var power := "Support" if float(spell.power_mult) == 0.0 else "x%.2f" % float(spell.power_mult)
+		var power := "Support" if float(spell.power_mult) == 0.0 else Stats.percent(float(spell.power_mult))
 		var cooldown := "  |  CD: %d" % cd if cd > 0 else ""
 		button.text = "%s\n%s  |  %d%%%s" % [spell.name, power, int(round(float(spell.accuracy) * 100)), cooldown]
 		button.tooltip_text = _spell_description(spell)

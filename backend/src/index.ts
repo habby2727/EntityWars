@@ -2772,7 +2772,7 @@ function soloHuntResponse(row: SoloHuntRow) {
 }
 
 function globalBossStatus(eventId: string, playerId: string) {
-	const event = db.query("SELECT status, winner_count FROM global_boss_events WHERE event_id = ?").get(eventId) as any;
+	const event = db.query("SELECT status, winner_count, zone_id FROM global_boss_events WHERE event_id = ?").get(eventId) as any;
 	const winner = db.query("SELECT status, reward_json FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(eventId, playerId) as any;
 	return event ? { ...event, reward_status: winner?.status ?? null, reward: winner?.reward_json ? JSON.parse(winner.reward_json) : null } : null;
 }

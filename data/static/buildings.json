@@ -7,8 +7,8 @@
   "buildings": [
     {
       "id": "lab_th",
-      "name": "Lab HQ",
-      "display_name": "Lab HQ",
+      "name": "Lab Hall",
+      "display_name": "Lab Hall",
       "unlock_hq": 1,
       "routes": [
         "Scientific",

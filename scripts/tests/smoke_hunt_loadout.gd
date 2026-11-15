@@ -35,6 +35,7 @@ func _run() -> void:
 	await process_frame
 	var loadout = current_scene
 	assert(loadout != null and loadout._hunt_mode)
+	assert(loadout.btn_play.text == "Ready")
 	assert(loadout._spell_button.is_visible_in_tree() and loadout._spell_button.text == "Change Spells")
 	loadout._open_spell_dialog()
 	assert(loadout._spell_slots.size() == 4 and not loadout._spell_picker.visible)
@@ -307,6 +308,7 @@ func _run_online() -> void:
 	fixture.combat_state.moves[0].cooldown_remaining = 2
 	fixture.combat_state.inspiration = {"pending": true, "offers": ["cinder_fist", "silver_needle", "crystal_ram"]}
 	fixture.combat_state.minions = [{"id": "minion_0", "hp": 10, "max_hp": 20}, {"id": "minion_1", "hp": 20, "max_hp": 20}]
+	fixture.combat_state.fury = {"pending": false, "multiplier": null}
 	combat._online_hunt_session = fixture.duplicate(true)
 	assert(combat._online_spell_decision(0).is_empty())
 	fixture.combat_state.inspiration.pending = false
@@ -314,6 +316,9 @@ func _run_online() -> void:
 	assert(combat._online_spell_decision(1).target == "minion_0")
 	fixture.combat_state.inspiration.pending = true
 	assert(combat._render_online_hunt(fixture))
+	assert(is_instance_valid(combat._solo_panel) and combat._solo_panel.get_parent().visible)
+	assert(combat._solo_status.text.contains("Shield:") and combat._solo_intent_button.text.begins_with("NEXT:"))
+	assert(not combat._online_hunt_info.text.contains("Server combat synchronized"))
 	assert(combat._solo_minion_views[0].visible and combat._solo_minion_views[1].visible)
 	assert(is_equal_approx(combat._solo_minion_views[0].get_node("HP/Fill").size.x, 45.0))
 	var inspect := InputEventMouseButton.new()

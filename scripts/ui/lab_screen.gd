@@ -588,9 +588,11 @@ func _build_spell_section() -> void:
 	_spell_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_spell_section.add_theme_constant_override("separation", 6)
 	var heading := Label.new()
+	heading.name = "SpellResearchHeading"
 	heading.text = "Spell Research"
 	_spell_section.add_child(heading)
 	_spell_featured_header = Label.new()
+	_spell_featured_header.name = "SpellFeaturedHeader"
 	_spell_featured_header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_spell_section.add_child(_spell_featured_header)
 	_spell_entity_selector = OptionButton.new()
@@ -664,6 +666,7 @@ func _build_spell_info() -> void:
 	var header := HBoxContainer.new()
 	content.add_child(header)
 	_spell_info_title = Label.new()
+	_spell_info_title.name = "SpellInfoTitle"
 	_spell_info_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_title.add_theme_font_size_override("font_size", 22)
 	header.add_child(_spell_info_title)

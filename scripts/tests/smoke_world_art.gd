@@ -49,9 +49,12 @@ func _run() -> void:
 			zone._global_event = {"event_id": "global-fixture", "status": "ACTIVE", "winner_count": 2, "reward_status": null, "boss": {"id": "hunt_" + tiers[tier_index], "name": "Global fixture", "tier": tiers[tier_index], "texture_id": textures[tier_index]}}
 			zone._render_global_boss()
 			assert(is_instance_valid(zone._global_actor))
+			assert(is_equal_approx(zone._global_actor.anchor_left, 0.16))
 			assert(zone._global_actor.get_child(1).text.contains("2/5"))
 			var icon: Button = zone._global_actor.get_child(2)
-			assert(icon.tooltip_text == "Global Boss")
+			assert(zone._global_actor.get_child(3).text == "Global Boss")
+			assert(icon.position.y + icon.size.y <= zone._global_actor.get_child(1).position.y)
+			assert(zone._global_actor.get_child(3).position.y < icon.position.y)
 			icon.pressed.emit()
 			assert(zone._global_actor.get_child(3).visible and not zone._world_modal.visible)
 			var global_actor = zone._global_actor

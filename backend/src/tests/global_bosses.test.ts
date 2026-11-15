@@ -43,11 +43,15 @@ test("global bosses persist per zone and use trusted sessions", async () => {
     expect(start.status).toBe(200);
     expect(start.data.hunt_id).toBe(event.boss.id);
     expect(start.data.global_event_id).toBe(event.event_id);
+    expect(start.data.global_status.zone_id).toBe(event.zone_id);
     expect(start.data.boss_definition.texture_id).toBe(event.boss.texture_id);
     const storedStart = db.query("SELECT guardian_id, guardian_zone_id FROM solo_hunt_sessions WHERE session_id = ?").get(start.data.session_id) as any;
     expect(storedStart).toEqual({guardian_id: null, guardian_zone_id: null});
     expect((await request(`/world/boss-hunts/session?session_id=${start.data.session_id}`, undefined, b.token)).status).toBe(404);
-    expect((await request("/world/boss-hunts/forfeit", {client_action_id: "forfeit", session_id: start.data.session_id}, a.token)).status).toBe(200);
+    const forfeit = {client_action_id: "forfeit", session_id: start.data.session_id};
+    expect((await request("/world/boss-hunts/forfeit", forfeit, a.token)).data.status).toBe("FORFEIT");
+    expect((await request("/world/boss-hunts/forfeit", forfeit, a.token)).data.status).toBe("FORFEIT");
+    expect((await request("/world/boss-hunts/session", undefined, a.token)).data.session).toBeNull();
     const retry = await request("/world/boss-hunts/start", {client_action_id: "retry", global_event_id: event.event_id}, a.token);
     expect(retry.status).toBe(200);
     server.kill(); await server.exited; server = spawn(); await ready();

@@ -271,6 +271,23 @@ func _run() -> void:
 	seed(11)
 	await scene._resolve_solo_exchange({"kind": "spell", "spell": attack, "hom": "hold"})
 	_check(scene._battle_over and not scene._solo_fury_pending, "victory on power turn cancels fury")
+	scene._online_hunt_guard = true
+	var snapshot := {
+		"status": "ACTIVE",
+		"boss_definition": {"name": "Boss", "tier": "rare", "texture_id": "boss_leviathan"},
+		"combat_loadout": {"entity_id": "sulfur_01", "homunculus_id": null, "weapon_ids": [null, null]},
+		"combat_state": {"turn": 0, "player": {"hp": 100, "max_hp": 100, "type": "", "status": {}}, "boss": {"hp": 100, "max_hp": 100, "type": "", "tier": "rare", "intent": "Strike", "status": {}}, "moves": [{"id": "a"}, {"id": "b"}, {"id": "c"}, {"id": "d"}], "minions": [], "shield": {"turns": 0, "reduction": 0}, "fury": {"pending": false, "multiplier": null}, "power_turn": {"active": false}}
+	}
+	snapshot.combat_state.moves[0] = {"id": "cinder_fist", "name": "Cinder Fist", "power_mult": 1.0, "accuracy": 0.9, "cooldown_remaining": 0}
+	snapshot.combat_state.player.status = {"poison": 2}
+	_check(scene._render_online_hunt(snapshot) and not scene._solo_power_label.visible, "online hunt renders when inactive fury multiplier is null")
+	_check(scene.player_hp.get_theme_stylebox("fill") == scene._hp_fill_green and scene.enemy_hp.get_theme_stylebox("fill") == scene._hp_fill_green, "online hunt colors health bars")
+	_check(scene.spell_buttons[0].get_node("OnlineSpellType0").visible and not scene.spell_buttons[0].tooltip_text.is_empty() and scene.spell_buttons[0].text.contains("90%"), "online spells show type and details")
+	_check(scene._spell_description({"name": "Test", "type": "sulfur", "category": "attack", "power_mult": 0.9, "accuracy": 1.0, "effects": [{"kind": "shield", "value": 0.5, "target": "self"}]}).contains("Power: 90%"), "combat spell power is shown as a percentage")
+	_check(not scene.player_indicators._effects.is_empty(), "online status effects display under health")
+	scene._log_online_spell("cinder_fist", true)
+	scene._log_online_hunt_event({"kind": "damage", "actor": "player", "target": "boss", "actual_damage": 7})
+	_check(scene.log_box.get_parsed_text().contains("deals 7 damage"), "verified damage uses combat log presentation")
 	if failures == 0:
 		print("PASS: solo boss focused smoke")
 	quit(1 if failures > 0 else 0)

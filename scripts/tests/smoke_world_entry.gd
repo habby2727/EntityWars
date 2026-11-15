@@ -57,6 +57,14 @@ func _run() -> void:
 		_fail("Global victory did not disable replay")
 		return
 	scene._global_event["reward_status"] = null
+	scene._hunt_active_owner = scene._backend._verified_player_id
+	scene._hunt_active = {"session_id": "fixture", "hunt_id": "hunt_common", "zone_id": "zone_chaos", "expires_at": scene._backend.get_server_time_unix_ms() + 60000}
+	scene._open_global_boss()
+	if scene._hunt_fight.disabled or scene._hunt_fight.text != "Resume Hunt" or not scene._preview_status.text.contains("active encounter"):
+		_fail("Another active hunt cannot be resumed")
+		return
+	scene._hunt_active.clear()
+	scene._hunt_active_owner = ""
 	scene._world_modal.visible = false
 	await create_timer(0.4).timeout
 	if scene._session_id != "" or int(scene._backend.load_cached_state().get("wallet", {}).get("essence", -1)) != 100 or int(scene._player_world.get("daily_entries", 0)) != 0:

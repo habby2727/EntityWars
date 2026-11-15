@@ -2,6 +2,6 @@
   "mutations": [
     { "id": "catalyst", "name": "Catalyst", "description": "Power +1.", "effects": { "power_flat": 1 } },
     { "id": "vitality", "name": "Vitality", "description": "HP +5.", "effects": { "hp_flat": 5 } },
-    { "id": "resonance", "name": "Resonance", "description": "+0.03 elemental multiplier when favorable.", "effects": { "favorable_type_bonus": 0.03 } }
+    { "id": "resonance", "name": "Resonance", "description": "+3 percentage points to favorable elemental damage.", "effects": { "favorable_type_bonus": 0.03 } }
   ]
 }

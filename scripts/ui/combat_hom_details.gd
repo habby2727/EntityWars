@@ -1,6 +1,7 @@
 extends PanelContainer
 
 const HomProgress := preload("res://scripts/domain/homunculus_progress.gd")
+const Stats := preload("res://scripts/ui/stat_presentation.gd")
 var _fighter: Dictionary = {}
 var _owner_name := ""
 var _portrait: TextureRect
@@ -76,18 +77,21 @@ func refresh() -> void:
 	var lines: Array[String] = []
 	for key in synergy:
 		lines.append(_describe_synergy(str(key), float(synergy[key])))
+	var bonus_lines: Array[String] = []
+	for key in bonuses:
+		bonus_lines.append("%s: %s" % [str(key).replace("_", " ").capitalize(), Stats.stat_value(str(key), bonuses[key])])
 	_heading.text = "%s | %s" % [hom.get("name", "Homunculus"), _owner_name]
-	_details.text = "Rarity: %s | Level %d / 10\nEnergy: %d / 6 | %s\n\nBase: %s\nLevel: %s\nMutation: %s\n%s\n\n%s\nElement: %s\n%s\n\nHP, Power and Guard modify the entity. Homunculi have no separate HP." % [str(hom.get("rarity", "unknown")).capitalize(), level, energy, state, base, level_text, str(catalog.get(mutation, {}).get("name", "No mutation")), str(catalog.get(mutation, {}).get("description", "")), "TOTAL active: %s" % str(bonuses) if not spent else "TOTAL active: none (sacrificed)", str(_fighter.get("type", "")).capitalize(), "Synergy: %s" % ", ".join(lines) if not spent else "Synergy: inactive (sacrificed)"]
+	_details.text = "Rarity: %s | Level %d / 10\nEnergy: %d / 6 | %s\n\nBase: %s\nLevel: %s\nMutation: %s\n%s\n\n%s\nElement: %s\n%s\n\nHP, Power and Guard modify the entity. Homunculi have no separate HP." % [str(hom.get("rarity", "unknown")).capitalize(), level, energy, state, base, level_text, str(catalog.get(mutation, {}).get("name", "No mutation")), str(catalog.get(mutation, {}).get("description", "")), "TOTAL active: %s" % ", ".join(bonus_lines) if not spent else "TOTAL active: none (sacrificed)", str(_fighter.get("type", "")).capitalize(), "Synergy: %s" % ", ".join(lines) if not spent else "Synergy: inactive (sacrificed)"]
 
 func _describe_synergy(key: String, value: float) -> String:
 	match key:
-		"power_flat": return "+%s entity Power" % value
-		"guard_flat": return "+%s entity Guard" % value
-		"tempo_flat": return "+%s initiative" % value
-		"incoming_mult": return "Incoming direct damage x%.2f" % value
-		"dot_true": return "+%s true corrosion per hit" % value
-		"reflect_pct": return "%.1f%% reflection each round" % (value * 100.0)
-		"type_adv_bonus": return "+%.2f favorable type multiplier" % value
-		"item_effect_mult": return "Active weapon effects x%.2f" % value
+		"power_flat": return "+%s entity Power" % Stats.number(value)
+		"guard_flat": return "+%s entity Guard" % Stats.number(value)
+		"tempo_flat": return "+%s initiative" % Stats.number(value)
+		"incoming_mult": return "Incoming direct damage: %s of normal" % Stats.percent(value)
+		"dot_true": return "+%s true corrosion per hit" % Stats.number(value)
+		"reflect_pct": return "%s reflection each round" % Stats.percent(value)
+		"type_adv_bonus": return "+%s favorable type bonus" % Stats.percent(value)
+		"item_effect_mult": return "Active weapon effects: %s of normal" % Stats.percent(value)
 		"type_neutralize": return "%.0f%% less type deviation" % (value * 100.0)
-	return "%s: %s" % [key, value]
+	return "%s: %s" % [key.replace("_", " ").capitalize(), Stats.stat_value(key, value)]

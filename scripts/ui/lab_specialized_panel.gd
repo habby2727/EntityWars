@@ -5,6 +5,7 @@ signal lab_action_requested(action: Dictionary, building_id: String)
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const HomProgress := preload("res://scripts/domain/homunculus_progress.gd")
+const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const ITEM_FILES := {"bismuth_talisman": "talisman_bismuth", "mirror_sigel": "mirror", "vitriol_vial": "vitriol"}
 
 var _registry: DataRegistry
@@ -896,7 +897,7 @@ func _update_vat_status() -> void:
 	next_progress[_vat_item] = next_entry
 	var mutations := HomProgress.mutation_catalog()
 	var active := str(entry.get("mutation_id", ""))
-	_vat_info.text = "%s\nLevel %d / 10 | Mutation: %s\nCurrent: %s\nNext: %s\nMutations: Catalyst +1 Power | Vitality +5 HP | Resonance +0.03 favorable type multiplier\nSynergies:\n%s" % [hom.get("desc", ""), level, str(mutations.get(active, {}).get("name", "None")), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
+	_vat_info.text = "%s\nLevel %d / 10 | Mutation: %s\nCurrent: %s\nNext: %s\nMutations: Catalyst +1 Power | Vitality +5 HP | Resonance +3%% favorable type bonus\nSynergies:\n%s" % [hom.get("desc", ""), level, str(mutations.get(active, {}).get("name", "None")), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
 	var wallet: Dictionary = _forge_state.get("wallet", {})
 	var essence_cost := 25 + 15 * level
 	var core_cost := 1 if level >= 5 else 0
@@ -1056,8 +1057,8 @@ func _update_forge_button() -> void:
 			var points := int(traits[slot_index].get("points", 0)) if slot_index >= 0 and slot_index < traits.size() and traits[slot_index] is Dictionary else 0
 			var pool: Dictionary = balance_data.get("balance", {}).get("forge_trait_pool", {}).get(specialization, {}) if balance_data is Dictionary else {}
 			var bonus := float(pool.get(option, 0))
-			button.text = "%s\n+%s / point | +%s total" % [option.replace("_", " ").capitalize(), str(bonus), str(bonus * points)]
-			button.tooltip_text = "%s per point | %s total at %d points" % [str(bonus), str(bonus * points), points]
+			button.text = "%s\n+%s / point | +%s total" % [option.replace("_", " ").capitalize(), Stats.stat_value(option, bonus), Stats.stat_value(option, bonus * points)]
+			button.tooltip_text = "%s per point | %s total at %d points" % [Stats.stat_value(option, bonus), Stats.stat_value(option, bonus * points), points]
 			button.disabled = not can_trait or options.size() != 3 or option == "" or bonus <= 0
 		elif specialization == "":
 			button.text = ["Aggressive", "Defensive", "Technical"][i]
@@ -1325,6 +1326,6 @@ func _format_values(values: Dictionary) -> String:
 	var lines: Array[String] = []
 	for key in values:
 		var value: Variant = values[key]
-		var formatted := _format_values(value).replace("\n", ", ") if value is Dictionary else str(value)
+		var formatted := _format_values(value).replace("\n", ", ") if value is Dictionary else Stats.stat_value(str(key), value)
 		lines.append("%s: %s" % [str(key).replace("_", " ").capitalize(), formatted])
 	return "\n".join(lines)

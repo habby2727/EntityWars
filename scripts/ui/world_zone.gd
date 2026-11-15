@@ -266,6 +266,7 @@ func _setup_zone_view() -> void:
 	_preview_status.visible = false
 	content.add_child(_preview_status)
 	var title := Label.new()
+	title.name = "EncounterTitle"
 	title.text = "ENCOUNTER"
 	title.add_theme_font_size_override("font_size", 20)
 	content.add_child(title)
@@ -401,6 +402,7 @@ func _setup_world_art() -> void:
 	name_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	stage.add_child(name_panel)
 	_world_name = RichTextLabel.new()
+	_world_name.name = "WorldTitle"
 	_world_name.bbcode_enabled = true
 	_world_name.fit_content = true
 	_world_name.scroll_active = false
@@ -473,6 +475,7 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 	sprite.mouse_filter = Control.MOUSE_FILTER_STOP
 	actor.add_child(sprite)
 	var title := RichTextLabel.new()
+	title.name = "ActorTitle"
 	title.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	title.offset_left = -36
 	title.offset_right = 36
@@ -798,8 +801,8 @@ func _render_global_boss() -> void:
 		return
 	_global_actor = Control.new()
 	_global_actor.name = "GlobalBoss"
-	_global_actor.anchor_left = 0.84
-	_global_actor.anchor_right = 0.84
+	_global_actor.anchor_left = 0.16
+	_global_actor.anchor_right = 0.16
 	_global_actor.anchor_top = 0.61
 	_global_actor.anchor_bottom = 0.61
 	_global_actor.offset_left = -75
@@ -825,17 +828,25 @@ func _render_global_boss() -> void:
 	_global_actor.add_child(label)
 	var icon := Button.new()
 	icon.text = "🌐"
-	icon.tooltip_text = "Global Boss"
-	icon.position = Vector2(-37, -29)
+	icon.position = Vector2(60, -60)
 	icon.size = Vector2(30, 28)
 	_global_actor.add_child(icon)
 	var bubble := Label.new()
 	bubble.text = "Global Boss"
-	bubble.position = Vector2(-40, -56)
+	bubble.position = Vector2(0, -88)
+	bubble.size = Vector2(150, 24)
+	bubble.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bubble.visible = false
 	bubble.add_theme_constant_override("outline_size", 5)
 	_global_actor.add_child(bubble)
-	icon.pressed.connect(func(): bubble.visible = not bubble.visible)
+	icon.set_meta("bubble_pinned", false)
+	icon.mouse_entered.connect(func(): bubble.visible = true)
+	icon.mouse_exited.connect(func(): bubble.visible = bool(icon.get_meta("bubble_pinned")))
+	icon.pressed.connect(func():
+		var pinned := not bool(icon.get_meta("bubble_pinned"))
+		icon.set_meta("bubble_pinned", pinned)
+		bubble.visible = pinned)
 
 func _open_global_boss() -> void:
 	if str(_global_event.get("status", "")) != "ACTIVE":
@@ -857,7 +868,10 @@ func _open_global_boss() -> void:
 	_debug_fight.visible = false
 	_hunt_fight.visible = true
 	_hunt_fight.disabled = _backend == null or _backend.token.is_empty() or _global_event.get("reward_status") != null
-	_hunt_fight.text = "Resume Hunt" if _active_hunt_matches("") else "Fight"
+	var has_active := _backend != null and _hunt_active_owner == _backend._verified_player_id and not _hunt_active.is_empty() and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms()
+	_hunt_fight.text = "Resume Hunt" if has_active else "Fight"
+	if has_active and not _active_hunt_matches(""):
+		_preview_status.text += "\nResume your active encounter first."
 	_world_modal.visible = true
 	call_deferred("_fit_encounter_card")
 
@@ -1035,10 +1049,7 @@ func _start_map_hunt() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
 		return
 	if not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms():
-		if _active_hunt_matches(_hunt_guardian_id):
-			_enter_map_hunt(_hunt_active)
-		else:
-			_preview_status.text = "Resume your active encounter before starting another."
+		_enter_map_hunt(_hunt_active)
 		return
 	_hunt_active.clear()
 	var global_id := str(_hunt_selected.get("global_event_id", ""))
@@ -1081,7 +1092,8 @@ func _enter_map_hunt(session: Dictionary) -> void:
 		_preview_status.text = "Session unavailable; refresh the encounter."
 		return
 	var boss: Dictionary = session.get("boss_definition", {})
-	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), str(session.get("session_id", "")), _get_zone_id())
+	var session_zone := str(session.get("zone_id", session.get("global_status", {}).get("zone_id", _get_zone_id())))
+	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), str(session.get("session_id", "")), session_zone)
 
 func _show_debug_boss(index: int, group_id: String = "") -> void:
 	_nearby_debug_index = -1

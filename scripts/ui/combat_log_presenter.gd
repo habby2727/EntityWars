@@ -47,7 +47,7 @@ func append(label: RichTextLabel, turn: int, message: String, event: Dictionary 
 			label.add_image(_icon("advantage"), 18, 18)
 			label.push_color(Color("cdd3d9") if is_equal_approx(effectiveness, 1.0) else Color("ebc768"))
 			var matchup := "Neutral" if is_equal_approx(effectiveness, 1.0) else "Effective" if effectiveness > 1.0 else "Ineffective"
-			label.add_text(" %s x%.2f" % [matchup, effectiveness])
+			label.add_text(" %s %s" % [matchup, preload("res://scripts/ui/stat_presentation.gd").percent(effectiveness)])
 			label.pop()
 	else:
 		label.push_color(color)
