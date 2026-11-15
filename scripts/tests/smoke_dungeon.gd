@@ -112,12 +112,15 @@ func _run() -> void:
 	encounter.erase("elite")
 	encounter.erase("elite_trait")
 	encounter.npc_personality = "OPPORTUNIST"
+	encounter.special_encounter = {"kind": "corrupted_fog", "label": "CORRUPTED FOG", "hint": "Player starts vulnerable."}
 	combat._dungeon_render()
+	assert(combat._dungeon_floor_label.text.contains("CORRUPTED FOG") and combat._dungeon_brief.dialog_text.contains("Player starts vulnerable."))
 	assert(combat._dungeon_brief.dialog_text.contains("exploits existing weaknesses"))
 	assert(not combat._dungeon_floor_label.has_theme_color_override("font_color") and not combat.enemy_entity_name.has_theme_color_override("font_color"))
 	assert(not combat._dungeon_floor_label.text.contains("ELITE"))
 	combat._dungeon_brief.hide()
 	encounter.floor = 32
+	encounter.erase("special_encounter")
 	encounter.erase("npc_personality")
 	combat._dungeon_render()
 	assert(combat._dungeon_brief.dialog_text.contains("Floor 32") and combat._dungeon_brief.dialog_text.contains("Homunculus:"))

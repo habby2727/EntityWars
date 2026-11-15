@@ -24,6 +24,16 @@ export function dungeonLeaderboard(db: Database, season: string, playerId: strin
 }
 
 // This module only constructs an enemy. It does not verify or settle combat.
+export function generateDungeonEncounter(seed: Uint8Array, runId: string, floor: number, enabled: boolean) {
+  if (!enabled || floor < 5 || floor % 10 === 0) return null;
+  const draw = (domain: string) => createHmac("sha256", seed).update(JSON.stringify(["dungeon-encounter-v1", runId, floor, domain])).digest().readUInt32BE(0);
+  if (draw("chance") >= Math.floor(0x100000000 * 0.1)) return null;
+  return [
+    { kind: "corrupted_fog", label: "CORRUPTED FOG", hint: "Player starts vulnerable by 10%." },
+    { kind: "crystal_bastion", label: "CRYSTAL BASTION", hint: "Enemy starts with a 15% shield." },
+    { kind: "arcane_instability", label: "ARCANE INSTABILITY", hint: "Both fighters start with 10% attack boost." },
+  ][draw("variant") % 3];
+}
 export function generateDungeonEnemy(seed: Uint8Array, runId: string, floor: number, catalogs: any, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous?: { hp: number; attack: number; defense: number; entity_id?: string; homunculus_id?: string; spell_ids?: string[] }, elitesEnabled = false, tacticsEnabled = false, trackBase = elitesEnabled) {
   if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some(v => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1)) throw new Error("INVALID_DUNGEON_SETUP");
   const draw = (domain: string) => createHmac("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
@@ -238,11 +248,14 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any, 
   const npcHp = enemy.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level;
   const player = { id: setup.entity.id, type: setup.entity.type, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + Math.trunc(effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + Math.trunc(effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
   const npc = { id: enemy.entity_id, type: enemy.type, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
+  if (!enemy.elite && enemy.special_encounter?.kind === "corrupted_fog") Object.assign(player.status, { vuln: 0.1 });
+  if (!enemy.elite && enemy.special_encounter?.kind === "crystal_bastion") Object.assign(npc.status, { shield: 0.15 });
+  if (!enemy.elite && enemy.special_encounter?.kind === "arcane_instability") { Object.assign(player.status, { atk_boost: 0.1 }); Object.assign(npc.status, { atk_boost: 0.1 }); }
   if (enemy.elite) { npc.hp = npc.max_hp = Math.min(99999, npc.max_hp); npc.atk = Math.min(99999, npc.atk); npc.def = Math.min(99999, npc.def); }
   const inspirationCatalog = { player: dungeonInspirationCandidates(player.type, player.spell_ids, catalogs.spells), npc: dungeonInspirationCandidates(npc.type, npc.spell_ids, catalogs.spells) };
   if (inspirationCatalog.player.length < 3 || inspirationCatalog.npc.length < 3) return { error: "UNSUPPORTED_MECHANIC" };
   for (const fighter of [player, npc]) Object.assign(fighter, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
-  return { player, npc, ...(enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}), ...(enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}), inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+  return { player, npc, ...(!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}), ...(enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}), ...(enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}), inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 
 export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {

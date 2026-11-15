@@ -23,7 +23,7 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
-import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
+import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
@@ -2121,6 +2121,7 @@ async function startServer(): Promise<void> {
 						const combat = createDungeonCombatState(setup, enemy, catalogs);
 						if (combat.error) throw new HttpError(400, combat.error);
 						combat.elites_enabled = elitesEnabled;
+						combat.special_encounters_enabled = Bun.env.DUNGEON_SPECIAL_ENCOUNTERS_ENABLED === "1";
 						combat.elite_traits_enabled = Bun.env.DUNGEON_ELITE_TRAITS_ENABLED === "1";
 						combat.elite_trait_used = false;
 						combat.tactics_enabled = tacticsEnabled;
@@ -2176,10 +2177,11 @@ async function startServer(): Promise<void> {
 							if ([previousStats.hp, previousStats.attack, previousStats.defense].some((value: unknown) => !Number.isSafeInteger(value) || (value as number) < 0 || (value as number) >= 100000)) throw new HttpError(409, "Dungeon difficulty limit reached.");
 							const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
 							if (setup.error) throw new HttpError(409, "Dungeon loadout unavailable.");
-							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1 };
+							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1, special_encounter: generateDungeonEncounter(seed, row.run_id, cleared + 1, current.special_encounters_enabled === true) };
 							combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
 							if (combat.error) throw new HttpError(409, combat.error);
 							combat.elites_enabled = current.elites_enabled === true;
+							combat.special_encounters_enabled = current.special_encounters_enabled === true;
 							combat.elite_traits_enabled = current.elite_traits_enabled === true;
 							combat.elite_trait_used = false;
 							combat.tactics_enabled = current.tactics_enabled === true;
@@ -2676,7 +2678,8 @@ type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rot
 
 function publicDungeonCombat(combat: any) {
 	const trait = dungeonEliteTrait(combat);
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+	const encounter = combat.special_encounter;
+	return { player: combat.player, npc: combat.npc, floor: combat.floor, ...(encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}), ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {

@@ -734,6 +734,11 @@ func _dungeon_render() -> void:
 	else:
 		_dungeon_floor_label.remove_theme_color_override("font_color")
 		enemy_entity_name.remove_theme_color_override("font_color")
+	var encounter: Variant = state.get("special_encounter")
+	if not is_elite and encounter is Dictionary and not str(encounter.get("label", "")).is_empty():
+		var effects := {"corrupted_fog": "VULN +10%", "crystal_bastion": "SHIELD 15%", "arcane_instability": "ATK +10%"}
+		_dungeon_floor_label.text += " | %s" % str(encounter.label)
+		if effects.has(str(encounter.get("kind", ""))): _dungeon_floor_label.text += " · %s" % effects[str(encounter.kind)]
 	_dungeon_floor_label.show()
 	_layout_dungeon_floor_header()
 	turn_label.text = "Cleared: %d" % int(_dungeon_session.get("cleared_floor", 0))
@@ -763,6 +768,8 @@ func _dungeon_render() -> void:
 			_dungeon_brief_floor = floor_id
 			if not str(_dungeon_session.get("run_id", "")).is_empty(): _dungeon_last_brief_key = brief_key
 			_dungeon_brief.dialog_text = "Floor %d\n%s (%s)\nHomunculus: %s\nCleared: %d" % [floor_id, str(ne.get("name", n.id)), str(n.get("type", "")).capitalize(), str(nh.get("name", "None")), int(_dungeon_session.get("cleared_floor", 0))]
+			if not is_elite and encounter is Dictionary and not str(encounter.get("label", "")).is_empty():
+				_dungeon_brief.dialog_text += "\n%s: %s" % [str(encounter.label), str(encounter.get("hint", ""))]
 			if is_elite:
 				var bonuses: Array[String] = []
 				var modifiers: Variant = elite.get("modifiers", {})

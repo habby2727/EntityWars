@@ -5,12 +5,25 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { createHmac } from "node:crypto";
 import { Database } from "bun:sqlite";
-import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, dungeonPreviousBase } from "../dungeon_combat";
+import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase } from "../dungeon_combat";
 import { buildTrustedCombatSetup } from "../solo_hunt_combat";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } from "../physical_anomaly";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
+
+test("Dungeon special encounters are deterministic, gated and distributed", () => {
+  const seed = new Uint8Array(32).fill(7), kinds = new Set<string>(); let count = 0;
+  for (let i = 0; i < 1000; i++) {
+    const run = `encounter-${i}`, result = generateDungeonEncounter(seed, run, 9, true);
+    expect(generateDungeonEncounter(seed, run, 9, true)).toEqual(result);
+    expect(generateDungeonEncounter(seed, run, 9, false)).toBeNull();
+    expect(generateDungeonEncounter(seed, run, 10, true)).toBeNull();
+    expect(generateDungeonEncounter(seed, run, 4, true)).toBeNull();
+    if (result) { count++; kinds.add(result.kind); }
+  }
+  expect(count).toBeGreaterThan(65); expect(count).toBeLessThan(135); expect(kinds.size).toBe(3);
+});
 
 test("Dungeon elite traits activate once using existing status rules", () => {
   const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
@@ -24,6 +37,12 @@ test("Dungeon elite traits activate once using existing status rules", () => {
     const attack = s.spells.find((x: any) => x.id === "cinder_fist"); attack.accuracy = 1; attack.effects = []; attack.cooldown_turns = 0;
     return s;
   };
+  for (const [kind, side, status, value] of [["corrupted_fog", "player", "vuln", 0.1], ["crystal_bastion", "npc", "shield", 0.15], ["arcane_instability", "player", "atk_boost", 0.1]] as const) {
+    const state = createDungeonCombatState(setup, { ...enemy, floor: 9, special_encounter: { kind, label: kind, hint: "fixture" } }, all);
+    expect(state[side].status[status]).toBe(value);
+    if (kind === "arcane_instability") expect(state.npc.status.atk_boost).toBe(0.1);
+    expect(JSON.parse(JSON.stringify(state)).special_encounter.kind).toBe(kind);
+  }
   for (const [kind, hp, status, value] of [["bulwark", 700, "shield", 0.15], ["reaver", 500, "atk_boost", 0.15]] as const) {
     const s = fixture(kind); s.npc.hp = hp;
     const result = resolveDungeonTurn(s, { turn: 1, spell_id: "ash_temper" }, () => 0.5);
