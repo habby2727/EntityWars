@@ -23,7 +23,7 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
-import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, dungeonPreviousBase, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
+import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
@@ -2121,6 +2121,8 @@ async function startServer(): Promise<void> {
 						const combat = createDungeonCombatState(setup, enemy, catalogs);
 						if (combat.error) throw new HttpError(400, combat.error);
 						combat.elites_enabled = elitesEnabled;
+						combat.elite_traits_enabled = Bun.env.DUNGEON_ELITE_TRAITS_ENABLED === "1";
+						combat.elite_trait_used = false;
 						combat.tactics_enabled = tacticsEnabled;
 						if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
 						const response = { run_id: body.run_id, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
@@ -2178,6 +2180,8 @@ async function startServer(): Promise<void> {
 							combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
 							if (combat.error) throw new HttpError(409, combat.error);
 							combat.elites_enabled = current.elites_enabled === true;
+							combat.elite_traits_enabled = current.elite_traits_enabled === true;
+							combat.elite_trait_used = false;
 							combat.tactics_enabled = current.tactics_enabled === true;
 							combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
 						}
@@ -2671,7 +2675,8 @@ function loadSoloBossCatalog(path: string, spellsPath: string): SoloBossCatalog 
 type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rotation_key: number; status: string; boss_snapshot_json: string; player_snapshot_json: string; combat_loadout_json: string | null; combat_state_json: string | null; combat_revision: number; started_at: number; expires_at: number; finished_at: number | null; result_metadata_json: string | null; guardian_zone_id: string | null; guardian_parent_id: string | null; guardian_id: string | null };
 
 function publicDungeonCombat(combat: any) {
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, ...(combat.elite ? { elite: combat.elite } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+	const trait = dungeonEliteTrait(combat);
+	return { player: combat.player, npc: combat.npc, floor: combat.floor, ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {

@@ -81,6 +81,48 @@ func _run() -> void:
 	var combat = current_scene
 	assert(combat._combat_session_invalid and not combat._combat_started)
 	assert(not combat.spell_panel.visible)
+	var fighter := {"id": "sulfur_01", "type": "sulfur", "hp": 100, "max_hp": 100, "hom_id": "cinder", "hom_energy": 0, "status": {}, "cooldowns": {}, "spell_ids": ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"]}
+	combat._dungeon_rank_loaded = true
+	combat._dungeon_session = {"run_id": "presentation-fixture", "status": "ACTIVE", "phase": "COMBAT", "cleared_floor": 0, "combat_state": {"floor": 1, "turn": 0, "player": fighter.duplicate(true), "npc": fighter.duplicate(true)}}
+	var encounter: Dictionary = combat._dungeon_session.combat_state
+	var cases := [
+		{"label": "BULWARK", "modifiers": {"hp": 1.2, "attack": 1.0, "defense": 1.12}, "personality": "DEFENSIVE", "hint": "favors protection and healing", "bonus": "HP +20%, DEF +12%"},
+		{"label": "REAVER", "modifiers": {"hp": 1.12, "attack": 1.1, "defense": 1.0}, "personality": "AGGRESSIVE", "hint": "favors attacks and finishers", "bonus": "HP +12%, ATK +10%"},
+		{"label": "ALCHEMIST", "modifiers": {"hp": 1.15, "attack": 1.05, "defense": 1.05}, "personality": "ALCHEMIST", "hint": "seeks combos and anomalies", "bonus": "HP +15%, ATK +5%, DEF +5%"},
+	]
+	for index in cases.size():
+		var example: Dictionary = cases[index]
+		encounter.floor = 10 + index * 10
+		encounter.elite = {"label": example.label, "modifiers": example.modifiers}
+		encounter.elite_trait = {"label": "TEST ABILITY", "hint": "A brief hint."}
+		encounter.npc_personality = example.personality
+		combat._dungeon_render()
+		assert(combat._dungeon_brief.visible and combat._dungeon_brief.dialog_text.contains("ELITE: " + example.label))
+		assert(combat._dungeon_brief.dialog_text.contains(example.bonus) and combat._dungeon_brief.dialog_text.contains(example.hint))
+		assert(combat._dungeon_brief.dialog_text.contains("TEST ABILITY: A brief hint."))
+		assert(combat._dungeon_brief.dialog_text.contains("Homunculus:") and combat._dungeon_brief.dialog_text.contains("Sulfur"))
+		assert(combat._dungeon_floor_label.has_theme_color_override("font_color") and combat.enemy_entity_name.has_theme_color_override("font_color"))
+		combat._dungeon_brief.hide()
+		combat._dungeon_render()
+		assert(not combat._dungeon_brief.visible)
+		combat._dungeon_brief_floor = 0
+		combat._dungeon_render()
+		assert(not combat._dungeon_brief.visible)
+	encounter.floor = 31
+	encounter.erase("elite")
+	encounter.erase("elite_trait")
+	encounter.npc_personality = "OPPORTUNIST"
+	combat._dungeon_render()
+	assert(combat._dungeon_brief.dialog_text.contains("exploits existing weaknesses"))
+	assert(not combat._dungeon_floor_label.has_theme_color_override("font_color") and not combat.enemy_entity_name.has_theme_color_override("font_color"))
+	assert(not combat._dungeon_floor_label.text.contains("ELITE"))
+	combat._dungeon_brief.hide()
+	encounter.floor = 32
+	encounter.erase("npc_personality")
+	combat._dungeon_render()
+	assert(combat._dungeon_brief.dialog_text.contains("Floor 32") and combat._dungeon_brief.dialog_text.contains("Homunculus:"))
+	assert(not combat._dungeon_brief.dialog_text.contains("ELITE:") and not combat._dungeon_brief.dialog_text.contains("OPPORTUNIST"))
+	combat._dungeon_brief.hide()
 	var indicators = combat.player_indicators
 	indicators.set_boss_effects(true, [{"icon": "hourglass", "label": "8", "tooltip": "Delayed damage"}, {"icon": "trap", "label": "2T", "tooltip": "Counter trap"}, {"icon": "heal_block", "label": "1T", "tooltip": "Healing suppression"}])
 	indicators.set_fighter(0, {"status": {"poison": 2, "shield_pct": 0.25, "reflect_pct": 0.16}})

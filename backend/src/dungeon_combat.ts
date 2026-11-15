@@ -178,6 +178,15 @@ const DUNGEON_EFFECTS = new Set([...DUNGEON_GENERATED_EFFECTS, "hom_stun", "type
 const validEffect = (e: any) => e && DUNGEON_EFFECTS.has(e.kind) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["threshold", "max_heal", "second_value"].every(k => e[k] === undefined || (typeof e[k] === "number" && Number.isFinite(e[k]) && e[k] >= 0)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
 const DUNGEON_ITEMS = new Set(["power_flat", "guard_flat", "true_on_hit", "dot_true", "vuln_on_hit", "tempo_flat", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
 
+export function dungeonEliteTrait(state: any) {
+  if (state.elite_traits_enabled !== true || state.elites_enabled !== true || !Number.isInteger(state.floor) || state.floor % 10 !== 0) return null;
+  const traits: Record<string, any> = { bulwark: { trait: "aegis_protocol", label: "AEGIS PROTOCOL", status: "shield", value: 0.15, target: "npc", hint: "At 70% HP or below, gains 15% shield." }, reaver: { trait: "bloodrush", label: "BLOODRUSH", status: "atk_boost", value: 0.15, target: "npc", hint: "At 50% HP or below, gains 15% attack for the next spell hit." }, alchemist: { trait: "catalytic_exposure", label: "CATALYTIC EXPOSURE", status: "vuln", value: 0.12, target: "player", hint: "A damaging spell hit can apply 12% vulnerability." } };
+  const kind = state.elite?.kind, trait = traits[kind];
+  const expected: Record<string, number[]> = { bulwark: [1.2, 1, 1.12], reaver: [1.12, 1.1, 1], alchemist: [1.15, 1.05, 1.05] };
+  const modifiers = state.elite?.modifiers;
+  return trait && state.elite?.label === kind.toUpperCase() && modifiers && [modifiers.hp, modifiers.attack, modifiers.defense].every((value, i) => value === expected[kind][i]) ? trait : null;
+}
+
 function dungeonInspirationCandidates(type: string, equipped: string[], spells: any[]): any[] {
   const seen = new Set<string>();
   return spells.filter(s => s && typeof s.id === "string" && !seen.has(s.id) && !equipped.includes(s.id) && (s.type === type || (["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(type))) && ["attack", "support"].includes(s.category) && Number.isFinite(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e: any) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && !!seen.add(s.id));
@@ -274,6 +283,16 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     if (actor.inspiration_used || actor.inspiration_pending || actor.inspiration >= 3) return;
     actor.inspiration = Math.min(3, (actor.inspiration ?? 0) + 1);
     events.push({ kind: "inspiration", actor: who, value: actor.inspiration, source });
+  };
+  const triggerEliteTrait = (timing: string, directDamage = 0) => {
+    const trait = dungeonEliteTrait(next);
+    if (!trait || next.elite_trait_used || next.player.hp <= 0 || next.npc.hp <= 0) return;
+    if (timing === "hit" ? trait.trait !== "catalytic_exposure" || directDamage <= 0 : trait.trait === "catalytic_exposure" || next.npc.hp > next.npc.max_hp * (trait.trait === "aegis_protocol" ? 0.7 : 0.5)) return;
+    const recipient = next[trait.target], previous = recipient.status[trait.status] ?? 0;
+    if (previous >= trait.value) return;
+    recipient.status[trait.status] = trait.value; next.elite_trait_used = true;
+    events.push({ kind: "elite_trait_triggered", actor: "npc", target: trait.target, trait: trait.trait, label: trait.label });
+    events.push({ kind: "status_applied", actor: "npc", target: trait.target, status: trait.status, previous, value: trait.value, source: "elite" });
   };
   const act = (actor: any, target: any, chosen: any, who: string) => {
     if (actor.hp <= 0 || target.hp <= 0) return;
@@ -398,6 +417,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       }
     }
     if (chosen.category === "attack") strategicCounter(target, actor, who === "player" ? "npc" : "player", who, directDamage, decision.turn, events);
+    if (who === "npc" && chosen.category === "attack") triggerEliteTrait("hit", directDamage);
     if (actor.hom_id) actor.hom_energy = Math.min(6, actor.hom_energy + 1);
   };
   const playerAction = () => {
@@ -438,6 +458,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     for (const id of Object.keys(fighter.cooldowns)) fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   }
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);
+  triggerEliteTrait("end");
   for (const jam of pendingJams) jamStrategicCooldown(jam.target.spell_ids.map((id: string) => next.spells.find((s: any) => s.id === id)), jam.target.cooldowns, jam.actor, jam.targetId, events);
   next.turn++; next.rng_counter = counter;
   if (next.player.hp > 0 && next.npc.hp > 0 && next.turn % 2 === 1) {

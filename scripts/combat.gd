@@ -92,6 +92,7 @@ var _dungeon_identity := ""
 var _dungeon_brief: ConfirmationDialog
 var _dungeon_floor_label: Label
 var _dungeon_brief_floor := 0
+static var _dungeon_last_brief_key := ""
 var _dungeon_seen_actions := {}
 var _dungeon_playing_events := false
 var _dungeon_presentation_turn := -1
@@ -507,6 +508,8 @@ func _dungeon_present_events(events: Array, owner: String) -> void:
 			formatted["spell_name"] = str(spell.get("name", event.spell_id))
 		if event.has("amount"):
 			formatted["suffix"] = " %d" % int(event.amount)
+		if kind == "elite_trait_triggered":
+			formatted["verb"] = " activates " + str(event.get("label", "elite ability"))
 		_append_combat_log(combo, {"category": "combo"} if not combo.is_empty() else formatted)
 		if target in ["player", "npc"] and view.get(target) is Dictionary:
 			var target_view: Dictionary = view[target]
@@ -723,8 +726,14 @@ func _dungeon_render() -> void:
 		spell_panel.item_rect_changed.connect(_layout_dungeon_floor_header)
 	_dungeon_floor_label.text = "DUNGEONS — FLOOR %d" % floor_id
 	var elite: Variant = state.get("elite")
-	if elite is Dictionary:
+	var is_elite := elite is Dictionary and not str(elite.get("label", "")).is_empty()
+	if is_elite:
 		_dungeon_floor_label.text += " | ELITE: %s" % str(elite.get("label", ""))
+		_dungeon_floor_label.add_theme_color_override("font_color", Color("e6c878"))
+		enemy_entity_name.add_theme_color_override("font_color", Color("e6c878"))
+	else:
+		_dungeon_floor_label.remove_theme_color_override("font_color")
+		enemy_entity_name.remove_theme_color_override("font_color")
 	_dungeon_floor_label.show()
 	_layout_dungeon_floor_header()
 	turn_label.text = "Cleared: %d" % int(_dungeon_session.get("cleared_floor", 0))
@@ -749,9 +758,27 @@ func _dungeon_render() -> void:
 		next_turn_btn.show()
 	else:
 		next_turn_btn.hide()
-		if floor_id != _dungeon_brief_floor and int(state.get("turn", 0)) == 0:
+		var brief_key := "%s:%d" % [str(_dungeon_session.get("run_id", "")), floor_id]
+		if floor_id != _dungeon_brief_floor and int(state.get("turn", 0)) == 0 and (str(_dungeon_session.get("run_id", "")).is_empty() or brief_key != _dungeon_last_brief_key):
 			_dungeon_brief_floor = floor_id
+			if not str(_dungeon_session.get("run_id", "")).is_empty(): _dungeon_last_brief_key = brief_key
 			_dungeon_brief.dialog_text = "Floor %d\n%s (%s)\nHomunculus: %s\nCleared: %d" % [floor_id, str(ne.get("name", n.id)), str(n.get("type", "")).capitalize(), str(nh.get("name", "None")), int(_dungeon_session.get("cleared_floor", 0))]
+			if is_elite:
+				var bonuses: Array[String] = []
+				var modifiers: Variant = elite.get("modifiers", {})
+				if modifiers is Dictionary:
+					for pair in [["hp", "HP"], ["attack", "ATK"], ["defense", "DEF"]]:
+						var value: Variant = modifiers.get(pair[0])
+						if (value is float or value is int) and float(value) > 1.0:
+							bonuses.append("%s +%d%%" % [pair[1], roundi((float(value) - 1.0) * 100.0)])
+				_dungeon_brief.dialog_text += "\nELITE: %s" % str(elite.label)
+				if not bonuses.is_empty(): _dungeon_brief.dialog_text += " (%s)" % ", ".join(bonuses)
+				var ability: Variant = state.get("elite_trait")
+				if ability is Dictionary and not str(ability.get("label", "")).is_empty():
+					_dungeon_brief.dialog_text += "\n%s: %s" % [str(ability.label), str(ability.get("hint", ""))]
+			var personality := str(state.get("npc_personality", ""))
+			var hints := {"AGGRESSIVE": "favors attacks and finishers", "DEFENSIVE": "favors protection and healing", "OPPORTUNIST": "exploits existing weaknesses", "ALCHEMIST": "seeks combos and anomalies"}
+			if hints.has(personality): _dungeon_brief.dialog_text += "\n%s: %s." % [personality, hints[personality]]
 			_dungeon_brief.popup_centered()
 	_dungeon_refresh_controls()
 	_refresh_dungeon_inspiration()
