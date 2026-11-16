@@ -17,7 +17,7 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 		probe.once("error", fail);
 		probe.listen(0, "127.0.0.1", () => { const value = (probe.address() as { port: number }).port; probe.close(() => done(value)); });
 	});
-	const env = { ...process.env, NODE_ENV: "production", BUN_ENV: "production", HOST: "127.0.0.1", PORT: String(port), DB_PATH: dbPath, DEV_DOCKER_LOCAL_LOGIN: "1", DEBUG_BYPASS: "1", TOKEN_SIGNING_SECRET: "isolated-test-secret-not-for-production", DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1" };
+	const env = { ...process.env, NODE_ENV: "production", BUN_ENV: "production", HOST: "127.0.0.1", PORT: String(port), DB_PATH: dbPath, DEV_DOCKER_LOCAL_LOGIN: "1", DEBUG_BYPASS: "1", DUNGEON_DEBUG_PREPARE: "1", TOKEN_SIGNING_SECRET: "isolated-test-secret-not-for-production", EXPERIMENT_SECRET: "isolated-experiment-secret-0123456789", TRADE_SECRET: "isolated-trade-secret-012345678901234", WORLD_SECRET: "isolated-world-secret-012345678901234", DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1" };
 	const server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "pipe" });
 	try {
 		const base = `http://127.0.0.1:${port}`;
@@ -32,6 +32,9 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 			const response = await fetch(base + route, { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Bypass": "1" }, body: JSON.stringify({ name: "fixture" }) });
 			expect(response.status).toBe(403);
 		}
+		const headers = { "Content-Type": "application/json", "X-Debug-Bypass": "1" };
+		expect((await fetch(base + "/debug/dungeons/prepare", { method: "POST", headers, body: "{}" })).status).toBe(404);
+		expect((await fetch(base + "/ws", { headers })).status).toBe(403);
 	} finally {
 		server.kill();
 		await server.exited;
