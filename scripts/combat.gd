@@ -2123,7 +2123,6 @@ func _create_solo_panel() -> void:
 			_spell_detail.dialog_text = description
 			_spell_detail.popup_centered(Vector2i(440, 260))
 		)
-		icons.size = Vector2(300, 108)
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
 	enemy_name.modulate.a = 0.0
@@ -2746,6 +2745,8 @@ func _setup_combat_labels() -> void:
 		label.add_child(panel)
 
 func _setup_aligned_health_panels() -> void:
+	for panel in [$PlayerPanel, $EnemyPanel]:
+		panel.grow_vertical = Control.GROW_DIRECTION_END
 	var player_name_row := player_entity_name.get_parent() as Control
 	var player_hp_row := player_hp.get_parent() as Control
 	var enemy_hp_row := enemy_hp.get_parent() as Control
@@ -2764,6 +2765,18 @@ func _setup_aligned_health_panels() -> void:
 		pair[0].size = Vector2(200, 22)
 		pair[1].position = Vector2(0, 22)
 		pair[1].size = Vector2(200, 22)
+		var strip := ScrollContainer.new()
+		strip.name = "StatusStrip"
+		strip.position = Vector2(-90, 52)
+		strip.size = Vector2(380, 72)
+		strip.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		strip.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		group.add_child(strip)
+		var indicators: Control = player_indicators if pair[1] == player_hp else enemy_indicators
+		indicators.reparent(strip, false)
+		indicators.position = Vector2.ZERO
+		indicators.mouse_filter = Control.MOUSE_FILTER_STOP
+		indicators.call("_update_boss_height")
 		group.name = "PlayerHealthGroup" if pair[0] == player_entity_name else "EnemyHealthGroup"
 	call_deferred("_align_health_panels")
 	get_viewport().size_changed.connect(_align_health_panels, CONNECT_DEFERRED)
@@ -2775,6 +2788,27 @@ func _align_health_panels() -> void:
 	var health_y := 690 if has_node("WorldCombatSprites") else 610
 	$PlayerHealthGroup.position = Vector2(player_center.x - 100, health_y)
 	$EnemyHealthGroup.position = Vector2(enemy_center.x - 100, health_y)
+	# Keep the strips out of the central combat log while leaving the bars fixed.
+	for group in [$PlayerHealthGroup, $EnemyHealthGroup]:
+		var strip: ScrollContainer = group.get_node("StatusStrip")
+		strip.position.x = -90.0
+		var strip_rect := strip.get_global_rect()
+		var log_rect := log_box.get_global_rect()
+		if log_box.is_visible_in_tree() and strip_rect.intersects(log_rect):
+			var delta := (log_rect.position.x - strip_rect.end.x - 8.0) if group == $PlayerHealthGroup else (log_rect.end.x - strip_rect.position.x + 8.0)
+			strip.position.x += delta / get_global_transform_with_canvas().get_scale().x
+	call_deferred("_reserve_status_strip_space")
+
+func _reserve_status_strip_space() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for entry in [[$PlayerHealthGroup/StatusStrip, $PlayerPanel/PlayerBottomSpacer, $PlayerPanel/PlayerBuildTitle, $PlayerPanel/PlayerItems], [$EnemyHealthGroup/StatusStrip, $EnemyPanel/EnemyBottomSpacer, $EnemyPanel/EnemyBuildTitle, $EnemyPanel/EnemyItems]]:
+		var strip_rect: Rect2 = entry[0].get_global_rect()
+		var next_top: float = minf(entry[2].get_global_rect().position.y, entry[3].get_global_rect().position.y)
+		var overlap := strip_rect.end.y + 8.0 - next_top
+		if overlap > 0.0:
+			entry[1].custom_minimum_size.y = entry[1].size.y + overlap / get_global_transform_with_canvas().get_scale().y
+			entry[1].get_parent().queue_sort()
 
 func _setup_inspiration_ui() -> void:
 	_player_inspiration = CombatInspiration.new()
@@ -4634,7 +4668,9 @@ func _item_label(item: Dictionary) -> String:
 	return str(item.get("name", item.get("id", "")))
 
 func _load_seal(which: String) -> Dictionary:
-	var path := "user://seal_%s.json" % which
+	var gate := get_node_or_null("/root/ConnectionGate")
+	var identity := str(gate.player_id) if gate != null and not gate.blocked() else ""
+	var path := preload("res://scripts/domain/build_preferences.gd").seal_path(identity, which)
 	if not FileAccess.file_exists(path):
 		return {}
 	var f := FileAccess.open(path, FileAccess.READ)

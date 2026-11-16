@@ -22,6 +22,8 @@ var _layer: CanvasLayer
 var _title: Label
 var _detail: Label
 var _retry: Button
+var _debug_lab_button: Button
+var debug_offline_enabled := false
 
 func _ready() -> void:
 	_http = HTTPRequest.new()
@@ -36,6 +38,8 @@ func _ready() -> void:
 	_create_overlay()
 
 func register_identity(client: Node, identity: String) -> void:
+	if debug_offline_enabled:
+		return
 	if identity.is_empty() or str(client.token).is_empty():
 		return
 	if not player_id.is_empty() and player_id != identity:
@@ -67,6 +71,7 @@ func begin_explicit_login() -> bool:
 	var directory := DirAccess.open("user://")
 	if directory == null:
 		return false
+	debug_offline_enabled = false
 	var session_active := not SceneRouter._solo_hunt_context.is_empty() or not SceneRouter._dungeon_context.is_empty() or _recovery_owner_id != 0
 	for filename in directory.get_files():
 		if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
@@ -112,6 +117,21 @@ func authentication_changed(new_token: String, url: String) -> void:
 func blocked() -> bool:
 	return state != State.CONNECTED
 
+func enable_debug_lab() -> bool:
+	if not OS.has_feature("editor") or state == State.UPDATE_REQUIRED:
+		return false
+	debug_offline_enabled = true
+	_timer.stop()
+	_generation += 1
+	_http.cancel_request()
+	_checking = false
+	state = State.AUTH_REQUIRED
+	_layer.hide()
+	return true
+
+func debug_lab_navigation_allowed() -> bool:
+	return OS.has_feature("editor") and debug_offline_enabled and state != State.UPDATE_REQUIRED
+
 func report_failure(client: Node, reason: String, status: int = 0) -> void:
 	if status == 426:
 		require_update()
@@ -138,9 +158,11 @@ func _fail(next: State, message: String) -> void:
 	_loadout_session_verified = false
 	_title.text = "Update required" if next == State.UPDATE_REQUIRED else ("Disconnected (Reconnecting...)" if next == State.RECONNECTING else "Error")
 	_retry.visible = next != State.UPDATE_REQUIRED
+	if is_instance_valid(_debug_lab_button):
+		_debug_lab_button.visible = next != State.UPDATE_REQUIRED
 	_detail.text = message
 	var auth_scene := get_tree().current_scene
-	if not (is_instance_valid(auth_scene) and auth_scene.has_method("auth_gate_screen")):
+	if not debug_lab_navigation_allowed() and not (is_instance_valid(auth_scene) and auth_scene.has_method("auth_gate_screen")):
 		_layer.show()
 	if was_connected:
 		var scene := get_tree().current_scene
@@ -160,7 +182,7 @@ func _schedule_retry() -> void:
 	_timer.start(delay)
 
 func _check() -> void:
-	if state == State.UPDATE_REQUIRED or _checking or _identity_mismatch or token.is_empty():
+	if debug_offline_enabled or state == State.UPDATE_REQUIRED or _checking or _identity_mismatch or token.is_empty():
 		return
 	_timer.stop()
 	_checking = true
@@ -386,7 +408,7 @@ func _recover_loadout(scene: Node) -> void:
 		_unlock()
 
 func _unlock() -> void:
-	if state == State.UPDATE_REQUIRED:
+	if debug_offline_enabled or state == State.UPDATE_REQUIRED:
 		return
 	state = State.CONNECTED
 	_attempt = 0
@@ -404,7 +426,7 @@ func _input(event: InputEvent) -> void:
 	var scene := get_tree().current_scene
 	if is_instance_valid(scene) and scene.has_method("auth_gate_screen"):
 		return
-	if blocked() and (event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion):
+	if blocked() and not debug_lab_navigation_allowed() and (event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion):
 		get_viewport().set_input_as_handled()
 
 func _create_overlay() -> void:
@@ -449,4 +471,14 @@ func _create_overlay() -> void:
 	MenuArt.button(_retry)
 	_retry.pressed.connect(_check)
 	box.add_child(_retry)
+	if OS.has_feature("editor"):
+		_debug_lab_button = Button.new()
+		_debug_lab_button.text = tr("AUTH_DEBUG_LAB")
+		_debug_lab_button.custom_minimum_size = Vector2(220, 48)
+		_debug_lab_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		MenuArt.button(_debug_lab_button)
+		_debug_lab_button.pressed.connect(func():
+			if enable_debug_lab():
+				SceneRouter.go_to_lab_hub())
+		box.add_child(_debug_lab_button)
 	_layer.hide()

@@ -4,6 +4,9 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	TranslationServer.set_locale("en")
+	BackendClient._auto_login_started = true
+	root.size = Vector2i(1280, 720) if OS.has_environment("EW_SMALL") else Vector2i(1920, 1080)
 	var output := OS.get_environment("LOADOUT_TEST_DIR").replace("\\", "/")
 	if output.is_empty() or not OS.get_user_data_dir().replace("\\", "/").to_lower().begins_with(output.to_lower() + "/"):
 		quit(1)
@@ -15,8 +18,8 @@ func _run() -> void:
 	var defense_notice: Label = scene.btn_seal_defense.get_node("ComingSoon")
 	var attack_item = scene._idx_to_id(scene._items, scene.dd_item1)
 	scene.btn_seal_defense.pressed.emit()
-	if scene._mode != "attack" or not scene.btn_seal_attack.button_pressed or scene.btn_seal_defense.button_pressed or not defense_notice.visible or defense_notice.text != "Coming soon" or scene._idx_to_id(scene._items, scene.dd_item1) != attack_item:
-		push_error("Defense seal should show Coming soon while keeping attack active")
+	if scene._mode != "attack" or not scene.btn_seal_attack.button_pressed or scene.btn_seal_defense.button_pressed or not defense_notice.visible or defense_notice.text != "UI_COMING_SOON" or scene._idx_to_id(scene._items, scene.dd_item1) != attack_item:
+		push_error("Defense seal should show Coming soon while keeping attack active: %s" % str([scene._mode, scene.btn_seal_attack.button_pressed, scene.btn_seal_defense.button_pressed, defense_notice.visible, defense_notice.text, tr("UI_COMING_SOON")]))
 		quit(1)
 		return
 	scene.btn_seal_attack.pressed.emit()
@@ -49,12 +52,19 @@ func _run() -> void:
 		quit(1)
 		return
 	for button in [scene.dd_item1, scene.dd_item2]:
-		for i in scene._items.size() * 2:
-			scene._on_equip_button_pressed(button)
-			if scene._has_duplicate_build_items():
-				push_error("Weapon selector allowed a duplicate")
-				quit(1)
-				return
+		scene._on_equip_button_pressed(button)
+		assert(scene._weapon_overlay.visible and scene._weapon_list.get_child_count() == scene._items.size())
+		if OS.has_environment("EW_BUILD_CAPTURE"):
+			await process_frame
+			await RenderingServer.frame_post_draw
+			root.get_texture().get_image().save_png(OS.get_environment("EW_BUILD_CAPTURE"))
+		var other: String = scene._idx_to_id(scene._items, scene.dd_item2 if button == scene.dd_item1 else scene.dd_item1)
+		for row in scene._weapon_list.get_children():
+			if row.name == "Weapon_" + other:
+				assert(row.disabled)
+		scene._choose_weapon(other)
+		assert(not scene._has_duplicate_build_items())
+		scene._weapon_overlay.hide()
 	var file := FileAccess.open("user://seal_attack.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify({"equip_1": "bismuth_talisman", "equip_2": "bismuth_talisman"}))
 	file.close()
@@ -74,7 +84,7 @@ func _run() -> void:
 		push_error("Reset mark or saved seal remained after deletion")
 		quit(1)
 		return
-	print("PASS distinct default weapons, cycling and legacy seal")
+	print("PASS distinct default weapons, selector and legacy seal")
 	scene.queue_free()
 	await process_frame
 	quit(0)

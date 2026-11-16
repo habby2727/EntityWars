@@ -15,7 +15,7 @@ services:
     environment:
       NODE_ENV: production
       BUN_ENV: production
-      MIN_CLIENT_BUILD: "5503"
+      MIN_CLIENT_BUILD: "5504"
       DEBUG_BYPASS: "0"
       DEV_DOCKER_LOCAL_LOGIN: "0"
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}

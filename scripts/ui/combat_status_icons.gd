@@ -2,8 +2,8 @@ extends Control
 
 signal effect_clicked(description: String)
 
-const SLOT := 24.0
-const BOSS_ROW_HEIGHT := 36.0
+const SLOT := 48.0
+const ROW_HEIGHT := 64.0
 const DEFINITIONS := [
 	["poison", "poison", "STATUS_POISON", "turns"],
 	["shield_pct", "shield", "STATUS_SHIELD", "percent"],
@@ -27,31 +27,37 @@ var _extra_effects: Array = []
 func set_boss_effects(enabled: bool, effects: Array) -> void:
 	_boss_mode = enabled
 	_extra_effects = effects.duplicate(true)
-	mouse_filter = Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	_update_boss_height()
 	queue_redraw()
 
 func _visible_effects() -> Array:
 	return _extra_effects + _effects
 
-func _boss_slots() -> Array[Rect2]:
+func _entries() -> Array:
+	var entries: Array = []
+	if not _boss_mode:
+		entries.append({"icon": "crown", "label": "", "victory": 0})
+		entries.append({"icon": "crown", "label": "", "victory": 1})
+		if not _feedback.is_empty():
+			entries.append({"icon": _feedback_icon, "label": _feedback, "tooltip": _feedback})
+	entries.append_array(_visible_effects())
+	return entries
+
+func _slots() -> Array[Rect2]:
 	var result: Array[Rect2] = []
-	var cursor := Vector2.ZERO
-	var available := maxf(SLOT + 8.0, size.x)
-	for effect in _visible_effects():
-		var text_width := ThemeDB.fallback_font.get_string_size(str(effect.label), HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
-		var width := maxf(SLOT, text_width) + 8.0
-		if cursor.x > 0.0 and cursor.x + width > available:
-			cursor.x = 0.0
-			cursor.y += BOSS_ROW_HEIGHT
-		result.append(Rect2(cursor, Vector2(width, BOSS_ROW_HEIGHT)))
-		cursor.x += width
+	var x := 0.0
+	for entry in _entries():
+		var text_width := ThemeDB.fallback_font.get_string_size(str(entry.label), HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+		var width := maxf(SLOT, text_width) + 16.0
+		result.append(Rect2(x, 0, width, ROW_HEIGHT))
+		x += width
 	return result
 
 func _update_boss_height() -> void:
-	if _boss_mode:
-		var slots := _boss_slots()
-		size.y = BOSS_ROW_HEIGHT if slots.is_empty() else slots.back().end.y
+	var slots := _slots()
+	custom_minimum_size = Vector2(slots.back().end.x if not slots.is_empty() else 1.0, ROW_HEIGHT)
+	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -134,7 +140,7 @@ func _show_next_feedback() -> void:
 		_feedback_icon = str(next.icon)
 		_feedback_until = Time.get_ticks_msec() + 1800
 		set_process(true)
-	queue_redraw()
+	_update_boss_height()
 
 func _feedback_text(entry: Dictionary) -> String:
 	var id := str(entry.name)
@@ -162,56 +168,28 @@ func _effect_tooltip(effect: Dictionary) -> String:
 	return str(effect.get("tooltip", ""))
 
 func _get_tooltip(at_position: Vector2) -> String:
-	if _boss_mode:
-		var slots := _boss_slots()
-		var boss_effects := _visible_effects()
-		for i in slots.size():
-			if slots[i].has_point(at_position):
-				return _effect_tooltip(boss_effects[i])
-		return ""
-	var slot := int(at_position.x / SLOT)
-	var offset := 0 if _boss_mode else 2
-	if not _boss_mode and slot < 2:
-		return tr("STATUS_VICTORY") % [slot + 1, tr("STATUS_EARNED") if slot < _wins else tr("STATUS_PENDING")]
-	var effects := _visible_effects()
-	var index := slot - offset
-	if index >= 0 and index < effects.size() and (_boss_mode or index < 5):
-		return _effect_tooltip(effects[index])
-	if not _boss_mode and index == 5 and effects.size() > 5:
-		var extra: Array[String] = []
-		for effect in effects.slice(5):
-			extra.append(_effect_tooltip(effect))
-		return "\n".join(extra)
+	var slots := _slots()
+	var entries := _entries()
+	for i in slots.size():
+		if slots[i].has_point(at_position):
+			var entry: Dictionary = entries[i]
+			if entry.has("victory"):
+				var victory := int(entry.victory)
+				return tr("STATUS_VICTORY") % [victory + 1, tr("STATUS_EARNED") if victory < _wins else tr("STATUS_PENDING")]
+			return _effect_tooltip(entry)
 	return ""
 
 func _draw() -> void:
-	if _boss_mode:
-		var slots := _boss_slots()
-		var boss_effects := _visible_effects()
-		for i in slots.size():
-			var rect := slots[i]
-			_draw_icon(boss_effects[i].icon, rect.position + Vector2((rect.size.x - SLOT) * 0.5, 0), true)
-			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 32), str(boss_effects[i].label), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 10, Color.WHITE)
-		return
-	if not _boss_mode:
-		for i in 2:
-			_draw_icon("crown", Vector2(i * SLOT, 0), i < _wins)
-	var effects := _visible_effects()
-	var offset := 0 if _boss_mode else 2
-	for i in (effects.size() if _boss_mode else mini(effects.size(), 5)):
-		_draw_icon(effects[i].icon, Vector2((i + offset) * SLOT, 0), true)
-		_draw_label(effects[i].label, (i + offset) * SLOT)
-	if not _boss_mode and effects.size() > 5:
-		_draw_label("+%d" % (effects.size() - 5), 7 * SLOT, 15)
-	if not _boss_mode and not _feedback.is_empty():
-		_draw_icon(_feedback_icon, Vector2(200, 0), true)
-		draw_string(ThemeDB.fallback_font, Vector2(226, 14), _feedback, HORIZONTAL_ALIGNMENT_LEFT, 150, 13, Color("e4d39b"))
-
-func _draw_label(label: String, x: float, baseline: int = 28) -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(x, baseline), label, HORIZONTAL_ALIGNMENT_CENTER, SLOT, 9, Color(1, 1, 1))
+	var slots := _slots()
+	var entries := _entries()
+	for i in slots.size():
+		var rect := slots[i]
+		var entry: Dictionary = entries[i]
+		_draw_icon(entry.icon, rect.position + Vector2((rect.size.x - SLOT) * 0.5, 0), not entry.has("victory") or int(entry.victory) < _wins)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 62), str(entry.label), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 18, Color.WHITE)
 
 func _draw_icon(kind: String, offset: Vector2, enabled: bool) -> void:
-	draw_set_transform(offset)
+	draw_set_transform(offset, 0.0, Vector2(2, 2))
 	var c := Color.WHITE
 	match kind:
 		"hourglass":

@@ -13,6 +13,12 @@ AUTH_USERNAME,Username,Usuario
 AUTH_PASSWORD,Password,Contraseña
 AUTH_CONFIRM,Confirm password,Confirmar contraseña
 AUTH_RETRY,Retry,Reintentar
+LOADOUT_PRIMARY_WEAPON,Primary Weapon,Arma principal
+LOADOUT_SECONDARY_WEAPON,Secondary Weapon,Arma secundaria
+LOADOUT_WEAPON_OTHER_SLOT,Already equipped in the other slot,Ya equipada en la otra ranura
+LOADOUT_WEAPON_EQUIPPED,Equipped,Equipada
+AUTH_DEBUG_LAB,Open local debug laboratory,Abrir laboratorio local de depuración
+WORLD_DEBUG_OFFLINE,Local debug preview: online encounters and rewards require a connection.,Vista local de depuración: los encuentros y recompensas en línea requieren conexión.
 AUTH_VERIFYING,Verifying session…,Verificando sesión…
 AUTH_CONNECTION_ERROR,Connection error. Please retry.,Error de conexión. Inténtalo de nuevo.
 AUTH_SECURE_CONNECTION,A secure connection is required.,Se requiere una conexión segura.

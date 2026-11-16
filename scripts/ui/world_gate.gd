@@ -564,6 +564,9 @@ func _on_boss_claim_pressed() -> void:
 	_send_api_request("POST", "/boss/claim_rewards", body, "boss_claim", true)
 
 func _request_world_state() -> void:
+	if ConnectionGate.debug_lab_navigation_allowed():
+		_set_zone_error(tr("WORLD_DEBUG_OFFLINE"))
+		return
 	_send_api_request("GET", "/world/state", null, "world_state", false)
 
 func _request_boss_state() -> void:

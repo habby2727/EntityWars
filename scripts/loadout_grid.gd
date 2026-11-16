@@ -8,6 +8,7 @@ const SpellLoadout := preload("res://scripts/domain/spell_loadout.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
+const BuildPreferences := preload("res://scripts/domain/build_preferences.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
 const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
@@ -100,6 +101,13 @@ var _hunt_identity := ""
 var _hunt_payload: Dictionary = {}
 var _hunt_recovered := false
 var _spell_debug := DebugFlags.new()
+var _preferences_owner := ""
+var _preferences_ready := false
+var _cards_ready := false
+var _weapon_overlay: Control
+var _weapon_list: VBoxContainer
+var _weapon_heading: Label
+var _weapon_target: Button
 
 func _exit_tree() -> void:
 	_spell_debug.free()
@@ -267,6 +275,9 @@ func _ready() -> void:
 	if _dungeon_mode:
 		_items = _items.duplicate()
 		_items.push_front({"id": "", "name": "None"})
+	else:
+		_items = _items.duplicate()
+		_items.append({"id": "", "name": "None"})
 	_setup_spell_state()
 	_build_spell_dialog()
 	_wire_buttons()
@@ -274,6 +285,9 @@ func _ready() -> void:
 	_populate_dropdowns()
 	_refresh_build_warning()
 	_build_cards()
+	_cards_ready = true
+	if not _hunt_mode and not _dungeon_mode:
+		_restore_build_preferences(_verified_preferences_identity())
 	_refresh_details()
 	_update_save_button_label()
 	if _hunt_mode and lbl_mode != null:
@@ -304,6 +318,8 @@ func _ready() -> void:
 		_set_build_error("Verifying account for Boss Hunt...")
 
 func _on_hunt_auth_changed(_token: String) -> void:
+	_preferences_ready = false
+	_preferences_owner = ""
 	_hunt_recovered = false
 	_hunt_submit_request = ""
 	_hunt_recovery_request = ""
@@ -394,6 +410,8 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 		_set_build_error("Combat ready; connection pending.")
 	else:
 		_set_build_error("Session recovered. Retry the same loadout." if not _hunt_payload.is_empty() else "Session recovered. Select your loadout.")
+		if _hunt_payload.is_empty() and not SceneRouter._solo_hunt_context.has("pending_loadout"):
+			_restore_build_preferences(_hunt_identity)
 
 func _accept_hunt_session(session: Dictionary) -> bool:
 	if _hunt_identity.is_empty() or _hunt_backend == null or _hunt_backend._verified_player_id != _hunt_identity or str(session.get("session_id", "")) != str(SceneRouter._solo_hunt_context.get("session_id", "")):
@@ -592,6 +610,11 @@ func _setup_spell_state() -> void:
 		_spell_backend.request_api("GET", "/player/state", null, true)
 
 func _on_spell_auth_changed(token: String) -> void:
+	if not _hunt_mode and not _dungeon_mode:
+		_preferences_owner = ""
+		_preferences_ready = false
+		if _cards_ready:
+			_reset_build_defaults()
 	_spell_synced = false
 	_spell_state = {}
 	if _dungeon_mode and _dungeon_spell_progress is Dictionary: _spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
@@ -606,13 +629,20 @@ func _on_spell_state_updated(state: Dictionary) -> void:
 	if _dungeon_mode and _dungeon_spell_progress is Dictionary: _spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
 	_spell_synced = true
 	_refresh_spell_button()
+	if not _hunt_mode and not _dungeon_mode and _spell_backend != null and not state.is_empty() and str(state.get("player_id", "")) == _spell_backend._verified_player_id:
+		_restore_build_preferences(_spell_backend._verified_player_id)
 
 func _read_seal_data(mode: String) -> Dictionary:
-	var path := "user://seal_%s.json" % mode
+	var path := BuildPreferences.seal_path(_verified_preferences_identity(), mode)
 	if not FileAccess.file_exists(path):
 		return {}
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
-	return parsed if parsed is Dictionary else {}
+	if not parsed is Dictionary:
+		return {}
+	var identity := _verified_preferences_identity()
+	if not identity.is_empty() and str(parsed.get("player_id", "")) != identity:
+		return {}
+	return parsed
 
 func _equipped_spells(mode: String, entity_id: String) -> Array:
 	if _reg == null:
@@ -1046,8 +1076,100 @@ func _populate_control_with_list(control: Node, items: Array) -> void:
 			btn.pressed.connect(cb_equip)
 		return
 
+func _open_weapon_selector(target: Button) -> void:
+	_weapon_target = target
+	if not is_instance_valid(_weapon_overlay):
+		_weapon_overlay = Control.new()
+		_weapon_overlay.name = "WeaponSelector"
+		_weapon_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_weapon_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+		_weapon_overlay.z_index = 60
+		add_child(_weapon_overlay)
+		var dim := ColorRect.new()
+		dim.color = Color(0, 0, 0, 0.78)
+		dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+		dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_weapon_overlay.add_child(dim)
+		var center := CenterContainer.new()
+		center.set_anchors_preset(Control.PRESET_FULL_RECT)
+		center.mouse_filter = Control.MOUSE_FILTER_PASS
+		_weapon_overlay.add_child(center)
+		var panel := PanelContainer.new()
+		panel.custom_minimum_size = Vector2(820, 550)
+		panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+		center.add_child(panel)
+		var layout := VBoxContainer.new()
+		layout.add_theme_constant_override("separation", 8)
+		panel.add_child(layout)
+		_weapon_heading = Label.new()
+		_weapon_heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_weapon_heading.add_theme_font_size_override("font_size", 22)
+		_weapon_heading.add_theme_color_override("font_color", Color.WHITE)
+		_weapon_heading.add_theme_color_override("font_outline_color", Color.BLACK)
+		_weapon_heading.add_theme_constant_override("outline_size", 4)
+		layout.add_child(_weapon_heading)
+		var scroll := ScrollContainer.new()
+		scroll.name = "WeaponScroll"
+		scroll.custom_minimum_size = Vector2(650, 400)
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		layout.add_child(scroll)
+		_weapon_list = VBoxContainer.new()
+		_weapon_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(_weapon_list)
+		var close := Button.new()
+		close.text = tr("UI_CLOSE")
+		close.custom_minimum_size.y = 42
+		MenuArt.button(close)
+		close.pressed.connect(_weapon_overlay.hide)
+		layout.add_child(close)
+	_weapon_heading.text = tr("LOADOUT_PRIMARY_WEAPON") if target == dd_item1 else tr("LOADOUT_SECONDARY_WEAPON")
+	for child in _weapon_list.get_children():
+		_weapon_list.remove_child(child)
+		child.queue_free()
+	var selected := _idx_to_id(_items, target)
+	var other := _idx_to_id(_items, dd_item2 if target == dd_item1 else dd_item1)
+	for item in _items:
+		if not item is Dictionary:
+			continue
+		var id := str(item.get("id", ""))
+		var row := Button.new()
+		row.name = "Weapon_" + (id if not id.is_empty() else "none")
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.custom_minimum_size.y = 98
+		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		row.toggle_mode = true
+		row.button_pressed = id == selected
+		row.disabled = not id.is_empty() and id == other
+		row.tooltip_text = tr("LOADOUT_WEAPON_OTHER_SLOT") if row.disabled else ""
+		row.icon = _load_item_icon(item) if not id.is_empty() else null
+		row.expand_icon = true
+		row.add_theme_constant_override("icon_max_width", 54)
+		row.add_theme_font_size_override("font_size", 20)
+		var effective: Dictionary = preload("res://scripts/domain/item_progress.gd").effective_item(item, _spell_state.get("item_progress", {})) if not id.is_empty() else {}
+		var status := " [" + tr("LOADOUT_WEAPON_EQUIPPED") + "]" if id == selected else (" [" + tr("LOADOUT_WEAPON_OTHER_SLOT") + "]" if row.disabled else "")
+		row.text = _label_for_item(item, "None") + status if id.is_empty() else "%s%s\n%s\n%s" % [_label_for_item(item, "None"), status, _item_desc(item), _build_effects_text(effective.get("effects", {})).replace("\n", "  •  ")]
+		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		MenuArt.button(row)
+		row.pressed.connect(_choose_weapon.bind(id))
+		_weapon_list.add_child(row)
+	_weapon_overlay.show()
+
+func _choose_weapon(id: String) -> void:
+	if not is_instance_valid(_weapon_target):
+		return
+	var other := _idx_to_id(_items, dd_item2 if _weapon_target == dd_item1 else dd_item1)
+	if not id.is_empty() and id == other:
+		return
+	_set_button_selection(_weapon_target, _items, id)
+	_save_build_preferences()
+	_weapon_overlay.hide()
+
 func _on_equip_button_pressed(btn: Button) -> void:
 	if btn == null:
+		return
+	if btn in [dd_item1, dd_item2]:
+		_open_weapon_selector(btn)
 		return
 	var items = btn.get_meta("items")
 	if items == null or items.size() == 0:
@@ -1067,6 +1189,7 @@ func _on_equip_button_pressed(btn: Button) -> void:
 	btn.text = _label_for_item(items[sidx], "None")
 	_refresh_build_slot_icon(btn)
 	_refresh_build_warning()
+	_save_build_preferences()
 	if tooltip_panel and tooltip_panel.visible:
 		var mouse_pos := get_viewport().get_mouse_position()
 		if btn.get_global_rect().has_point(mouse_pos):
@@ -1188,6 +1311,7 @@ func _on_card_picked(p_kind: String, p_id: String) -> void:
 		_current_homunculus_id = p_id
 	_update_selected_visuals()
 	_refresh_details()
+	_save_build_preferences()
 
 func _update_selected_visuals() -> void:
 	if grid_entities:
@@ -1413,6 +1537,7 @@ func _on_option_selected(idx: int, dd: OptionButton) -> void:
 	var lbl := dd.get_node_or_null("CenterLabel")
 	if lbl:
 		lbl.text = dd.get_item_text(idx)
+	_save_build_preferences()
 
 func _clear_children(n: Node) -> void:
 	if n == null:
@@ -1436,6 +1561,8 @@ func _as_string_array(v) -> Array:
 
 func _label_for_item(item, fallback: String) -> String:
 	if typeof(item) == TYPE_DICTIONARY:
+		if str(item.get("id", "")) == "":
+			return tr("SPECIALIZATION_NONE_NAME")
 		if item.has("name"):
 			return GameLocalization.catalog("item", str(item.get("id", "")), "name", str(item.get("name", fallback)))
 		if item.has("id"):
@@ -1523,7 +1650,6 @@ func _on_seal_attack() -> void:
 	if lbl_mode:
 		lbl_mode.text = _localized_mode()
 	if changed:
-		_load_seal("attack")
 		_refresh_details()
 	_update_save_button_label()
 
@@ -1548,7 +1674,6 @@ func _on_seal_defense() -> void:
 	if lbl_mode:
 		lbl_mode.text = _localized_mode()
 	if changed:
-		_load_seal("defense")
 		_refresh_details()
 	_update_save_button_label()
 
@@ -1573,7 +1698,7 @@ func _on_save_pressed() -> void:
 	_update_save_button_label()
 
 func _on_save_reset_pressed() -> void:
-	var path := "user://seal_%s.json" % _mode
+	var path := BuildPreferences.seal_path(_verified_preferences_identity(), _mode)
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 	_has_saved = false
@@ -1699,6 +1824,8 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 		SceneRouter.go_to_dungeon_combat()
 	else:
 		_set_build_error("")
+		if _dungeon_payload.is_empty() and not SceneRouter._dungeon_context.has("pending_loadout"):
+			_restore_build_preferences(_dungeon_backend._verified_player_id)
 
 func _submit_dungeon_loadout() -> void:
 	if not _dungeon_request.is_empty():
@@ -1793,6 +1920,70 @@ func _set_build_error(msg: String) -> void:
 		return
 	lbl_build_error.text = msg
 
+func _verified_preferences_identity() -> String:
+	var backend: BackendClient = _dungeon_backend if _dungeon_mode else (_hunt_backend if _hunt_mode else _spell_backend)
+	if backend == null and not _hunt_mode and not _dungeon_mode and _spell_debug.unlock_all_buildings:
+		var gate := get_node_or_null("/root/ConnectionGate")
+		if gate != null and not gate.blocked() and not gate.token.is_empty():
+			return str(gate.player_id)
+	if backend == null or backend.token.is_empty() or backend._verified_player_id.is_empty():
+		return ""
+	if _hunt_mode and backend._verified_player_id != _hunt_identity:
+		return ""
+	if _dungeon_mode and backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")):
+		return ""
+	return backend._verified_player_id
+
+func _preferences_can_edit() -> bool:
+	if _hunt_mode:
+		var session: Dictionary = SceneRouter._solo_hunt_context.get("recovered_session", {})
+		return _hunt_recovered and _hunt_payload.is_empty() and not SceneRouter._solo_hunt_context.has("pending_loadout") and int(session.get("combat_revision", 0)) == 0
+	if _dungeon_mode:
+		return _dungeon_recovered and _dungeon_payload.is_empty() and not SceneRouter._dungeon_context.has("pending_loadout") and not SceneRouter._dungeon_context.has("session")
+	return true
+
+func _restore_build_preferences(player_id: String) -> void:
+	if not _cards_ready or not _preferences_can_edit() or player_id.is_empty() or player_id != _verified_preferences_identity() or (_preferences_ready and _preferences_owner == player_id):
+		return
+	if not _preferences_owner.is_empty() and _preferences_owner != player_id:
+		_reset_build_defaults()
+	var build := BuildPreferences.load_for(player_id)
+	_preferences_owner = player_id
+	_preferences_ready = true
+	_update_save_button_label()
+	if build.is_empty():
+		return
+	var entity_id := str(build.get("entity_id", ""))
+	var hom_id := str(build.get("homunculus_id", ""))
+	if not _find_by_id(_entities, entity_id).is_empty():
+		_current_entity_id = entity_id
+	if not _find_by_id(_homunculi, hom_id).is_empty():
+		_current_homunculus_id = hom_id
+	for entry in [[dd_item1, _items, "equip_1"], [dd_item2, _items, "equip_2"], [dd_side1, _items, "side_1"], [dd_side2, _items, "side_2"], [dd_atktech, _atk_techs, "attack_tech"], [dd_deftech, _def_techs, "defense_tech"]]:
+		if build.has(entry[2]):
+			_set_button_selection(entry[0], entry[1], build[entry[2]])
+	_ensure_distinct_weapons()
+	_update_selected_visuals()
+	_refresh_details()
+
+func _reset_build_defaults() -> void:
+	if not _entities.is_empty():
+		_current_entity_id = str(_entities[0].get("id", ""))
+	if not _homunculi.is_empty():
+		_current_homunculus_id = str(_homunculi[0].get("id", ""))
+	for entry in [[dd_item1, _items], [dd_item2, _items], [dd_side1, _items], [dd_side2, _items], [dd_atktech, _atk_techs], [dd_deftech, _def_techs]]:
+		_set_button_selection(entry[0], entry[1], "")
+	_ensure_distinct_weapons()
+	_update_selected_visuals()
+	_refresh_details()
+
+func _save_build_preferences() -> void:
+	if not _preferences_ready or not _preferences_can_edit() or _preferences_owner.is_empty() or _preferences_owner != _verified_preferences_identity():
+		return
+	var build := {"entity_id": _current_entity_id, "homunculus_id": _current_homunculus_id, "equip_1": _idx_to_id(_items, dd_item1), "equip_2": _idx_to_id(_items, dd_item2), "side_1": _idx_to_id(_items, dd_side1), "side_2": _idx_to_id(_items, dd_side2), "attack_tech": _idx_to_id(_atk_techs, dd_atktech), "defense_tech": _idx_to_id(_def_techs, dd_deftech)}
+	if not BuildPreferences.save_for(_preferences_owner, build):
+		_set_build_error("Could not save build preferences.")
+
 func _save_seal(which: String) -> void:
 	var payload := {
 		"mode": which,
@@ -1806,10 +1997,13 @@ func _save_seal(which: String) -> void:
 		"defense_tech": _idx_to_id(_def_techs, dd_deftech),
 		"spell_ids": _equipped_spells(_mode, _current_entity_id),
 	}
+	var identity := _verified_preferences_identity()
+	if not identity.is_empty():
+		payload["player_id"] = identity
 	if _hunt_mode:
 		SceneRouter._hunt_loadout = payload
 		return
-	var path := "user://seal_%s.json" % which
+	var path := BuildPreferences.seal_path(_verified_preferences_identity(), which)
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(payload, "\t"))
@@ -1818,7 +2012,7 @@ func _save_seal(which: String) -> void:
 	_has_saved = true
 
 func _load_seal(which: String) -> void:
-	var path := "user://seal_%s.json" % which
+	var path := BuildPreferences.seal_path(_verified_preferences_identity(), which)
 	if not FileAccess.file_exists(path):
 		return
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -1830,6 +2024,9 @@ func _load_seal(which: String) -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	var data: Dictionary = parsed
+	var identity := _verified_preferences_identity()
+	if not identity.is_empty() and str(data.get("player_id", "")) != identity:
+		return
 	if data.has("entity_id"):
 		_current_entity_id = str(data.get("entity_id", _current_entity_id))
 	if data.has("homunculus_id"):
@@ -1843,6 +2040,7 @@ func _load_seal(which: String) -> void:
 	_set_button_selection(dd_side2, _items, data.get("side_2", ""))
 	_set_button_selection(dd_atktech, _atk_techs, data.get("attack_tech", ""))
 	_set_button_selection(dd_deftech, _def_techs, data.get("defense_tech", ""))
+	_save_build_preferences()
 
 func _ensure_distinct_weapons() -> void:
 	if not _has_duplicate_build_items():
@@ -1991,7 +2189,7 @@ func _load_item_icon(item: Dictionary) -> Texture2D:
 func _update_save_button_label() -> void:
 	if btn_save == null:
 		return
-	var path := "user://seal_%s.json" % _mode
+	var path := BuildPreferences.seal_path(_verified_preferences_identity(), _mode)
 	_has_saved = FileAccess.file_exists(path)
 	btn_save.text = "Load Seal" if _has_saved else "Save Seal"
 	btn_save.get_node("ResetMark").visible = _has_saved

@@ -154,7 +154,7 @@ func _run() -> void:
 	journal.store_string("version gate preservation fixture")
 	journal.close()
 	_fault_code = 426
-	_fault_body = '{"error":"CLIENT_UPDATE_REQUIRED","min_client_build":5504}'
+	_fault_body = '{"error":"CLIENT_UPDATE_REQUIRED","min_client_build":5505}'
 	_fault_server = TCPServer.new()
 	if _fault_server.listen(0, "127.0.0.1") != OK:
 		push_error("Cannot start 426 fixture")

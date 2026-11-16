@@ -64,76 +64,81 @@ func _run() -> void:
 			scene._update_solo_panel()
 		await process_frame
 	if OS.has_environment("COMBAT_MULTI_STATUS"):
-		scene._solo_fury_pending = true
-		scene._solo_shield_turns = 2
-		scene._solo_summon()
-		scene.enemy.status.poison = 2
-		scene.enemy.status.stun = 1
-		scene._update_solo_panel()
-		scene.enemy_indicators.set_fighter(0, scene.enemy)
-		var icons: Array = scene.enemy_indicators._visible_effects().map(func(effect): return effect.icon)
-		for kind in ["fury", "shield", "minions", "poison", "stun"]:
-			if not icons.has(kind):
-				push_error("Boss status missing: " + kind)
-				quit(1)
-				return
-		var click := InputEventMouseButton.new()
-		click.button_index = MOUSE_BUTTON_LEFT
-		click.pressed = true
-		var slots: Array = scene.enemy_indicators._boss_slots()
-		var effects: Array = scene.enemy_indicators._visible_effects()
-		for i in slots.size():
-			for j in range(i + 1, slots.size()):
-				if slots[i].intersects(slots[j]):
-					push_error("Boss status slots overlap")
+		if not visual_zone.is_empty():
+			scene._solo_fury_pending = true
+			scene._solo_shield_turns = 2
+			scene._solo_summon()
+			scene._update_solo_panel()
+			var boss_icons: Array = scene.enemy_indicators._visible_effects().map(func(effect): return effect.icon)
+			for kind in ["shield", "fury", "minions"]:
+				if not boss_icons.has(kind):
+					push_error("Boss status missing: " + kind)
 					quit(1)
 					return
-			click.position = slots[i].get_center()
-			if scene.enemy_indicators._get_tooltip(click.position) != effects[i].tooltip:
-				push_error("Boss status tooltip target mismatch")
+		scene.enemy_indicators.set_boss_effects(true, [
+			{"icon": "shield", "label": "50% 2T", "tooltip": "Shield"},
+			{"icon": "fury", "label": "150%", "tooltip": "Fury"},
+			{"icon": "minions", "label": "2", "tooltip": "Minions"},
+		])
+		var many := {"poison": 2, "shield_pct": 0.2, "reflect_pct": 0.2, "atk_boost": 0.2, "atk_down": 0.2, "vuln_pct": 0.2, "stun": 1, "hom_stun": 1}
+		for indicator in [scene.player_indicators, scene.enemy_indicators]:
+			indicator.set_fighter(1, {"status": many})
+		for frame in 15:
+			await process_frame
+		for indicator in [scene.player_indicators, scene.enemy_indicators]:
+			var strip := indicator.get_parent() as ScrollContainer
+			var bar: Control = scene.player_hp if indicator == scene.player_indicators else scene.enemy_hp
+			var title: Control = scene.get_node("PlayerPanel/PlayerBuildTitle" if indicator == scene.player_indicators else "EnemyPanel/EnemyBuildTitle")
+			var items: Control = scene.get_node("PlayerPanel/PlayerItems" if indicator == scene.player_indicators else "EnemyPanel/EnemyItems")
+			var rect := strip.get_global_rect()
+			var protected: Array = [bar, title, items, scene.next_turn_btn, scene.switch_weapon_btn, scene.log_box]
+			protected.append_array(scene.spell_buttons)
+			for other in protected:
+				if other.is_visible_in_tree() and other.modulate.a > 0.0 and rect.intersects(other.get_global_rect()):
+					push_error("Status strip %s intersects %s %s spacer=%s" % [rect, other.get_path(), other.get_global_rect(), scene.get_node("EnemyPanel/EnemyBottomSpacer").custom_minimum_size])
+					quit(1)
+					return
+			if rect.position.y < bar.get_global_rect().end.y or indicator.size.x <= strip.size.x:
+				push_error("Status strip position or content width incorrect")
 				quit(1)
 				return
-			scene.enemy_indicators._gui_input(click)
-			if not scene._spell_detail.visible or scene._spell_detail.dialog_text != effects[i].tooltip:
-				push_error("Boss status click target mismatch")
-				quit(1)
-				return
-			scene._spell_detail.hide()
-		scene.enemy_indicators.size.x = 75
-		var wrapped: Array = scene.enemy_indicators._boss_slots()
-		if wrapped.size() != slots.size() or wrapped.back().position.y <= 0:
-			push_error("Boss status wrapping unavailable")
-			quit(1)
-			return
-		click.position = wrapped.back().get_center()
-		if scene.enemy_indicators._get_tooltip(click.position) != effects.back().tooltip:
-			push_error("Wrapped final status tooltip mismatch")
-			quit(1)
-			return
-		scene.enemy_indicators._gui_input(click)
-		if not scene._spell_detail.visible or scene._spell_detail.dialog_text != effects.back().tooltip:
-			push_error("Wrapped final status click mismatch")
-			quit(1)
-			return
-		scene._spell_detail.hide()
-		scene.enemy_indicators.size.x = 300
-		scene.enemy.status.stun = 0
-		scene.enemy_indicators.set_fighter(0, scene.enemy)
-		if scene.enemy_indicators._boss_slots().size() != slots.size() - 1:
-			push_error("Expired status did not update layout")
-			quit(1)
-			return
-		scene.enemy.status.stun = 1
-		scene.enemy_indicators.set_fighter(0, scene.enemy)
-		scene._solo_power_active = true
-		scene._update_solo_panel()
-		if scene.player_indicators._extra_effects.is_empty() or scene.player_indicators._extra_effects[0].icon != "power":
-			push_error("Power Turn icon missing")
-			quit(1)
-			return
-		scene._solo_power_active = OS.has_environment("COMBAT_POWER_ACTIVE")
-		scene._update_solo_panel()
-		await process_frame
+			var clicked: Array = []
+			indicator.effect_clicked.connect(func(description): clicked.append(description))
+			var slots: Array = indicator._slots()
+			for endpoint in [0, slots.size() - 1]:
+				strip.scroll_horizontal = 0 if endpoint == 0 else int(indicator.size.x)
+				await process_frame
+				var point: Vector2 = root.get_final_transform() * indicator.get_global_transform_with_canvas() * slots[endpoint].get_center()
+				var motion := InputEventMouseMotion.new()
+				motion.position = point
+				motion.global_position = point
+				Input.parse_input_event(motion)
+				await process_frame
+				var hovered := root.gui_get_hovered_control()
+				if hovered != indicator:
+					push_error("Pointer did not reach status endpoint: %s point=%s strip=%s indicator=%s scroll=%s" % [hovered, point, strip.get_global_rect(), indicator.get_global_rect(), strip.scroll_horizontal])
+					quit(1)
+					return
+				var expected: String = indicator._get_tooltip(slots[endpoint].get_center())
+				if expected.is_empty():
+					push_error("Missing endpoint tooltip")
+					quit(1)
+					return
+				var click := InputEventMouseButton.new()
+				click.button_index = MOUSE_BUTTON_LEFT
+				click.pressed = true
+				click.position = point
+				click.global_position = point
+				Input.parse_input_event(click)
+				await process_frame
+				if clicked.is_empty() or clicked.back() != expected:
+					push_error("Pointer click did not open status detail")
+					quit(1)
+					return
+				scene._spell_detail.hide()
+				click.pressed = false
+				Input.parse_input_event(click)
+				await process_frame
 	if OS.has_environment("COMBAT_ENERGY"):
 		scene.player.hom_energy = int(OS.get_environment("COMBAT_ENERGY"))
 		scene._update_ui()

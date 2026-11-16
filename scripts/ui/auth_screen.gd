@@ -17,6 +17,7 @@ var confirm: LineEdit
 var message: Label
 var submit_buttons: Array[Button] = []
 var retry: Button
+var debug_button: Button
 var busy := false
 var verifying := false
 var endpoint_safe := false
@@ -77,6 +78,7 @@ func _process(_delta: float) -> void:
 		verifying = false
 		preflight_ok = false
 		for button in submit_buttons: button.disabled = true
+		if is_instance_valid(debug_button): debug_button.disabled = true
 		message.text = "Update required. Please update Entity Wars to continue."
 		retry.hide()
 		return
@@ -160,6 +162,16 @@ func _build_ui() -> void:
 	retry.pressed.connect(_retry)
 	box.add_child(retry)
 	retry.hide()
+	if OS.has_feature("editor"):
+		debug_button = Button.new()
+		debug_button.name = "DebugLaboratory"
+		debug_button.text = tr("AUTH_DEBUG_LAB")
+		debug_button.custom_minimum_size.y = 48
+		MenuArt.button(debug_button)
+		debug_button.pressed.connect(func():
+			if ConnectionGate.enable_debug_lab():
+				SceneRouter.go_to_lab_hub())
+		box.add_child(debug_button)
 
 func _field(parent: Control, placeholder: String, secret: bool) -> LineEdit:
 	var field := LineEdit.new()

@@ -17,7 +17,7 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 		probe.once("error", fail);
 		probe.listen(0, "127.0.0.1", () => { const value = (probe.address() as { port: number }).port; probe.close(() => done(value)); });
 	});
-	const env = { ...process.env, MIN_CLIENT_BUILD: "5503", NODE_ENV: "production", BUN_ENV: "production", HOST: "127.0.0.1", PORT: String(port), DB_PATH: dbPath, DEV_DOCKER_LOCAL_LOGIN: "1", DEBUG_BYPASS: "1", DUNGEON_DEBUG_PREPARE: "1", TOKEN_SIGNING_SECRET: "isolated-test-secret-not-for-production", EXPERIMENT_SECRET: "isolated-experiment-secret-0123456789", TRADE_SECRET: "isolated-trade-secret-012345678901234", WORLD_SECRET: "isolated-world-secret-012345678901234", DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1" };
+	const env = { ...process.env, MIN_CLIENT_BUILD: "5504", NODE_ENV: "production", BUN_ENV: "production", HOST: "127.0.0.1", PORT: String(port), DB_PATH: dbPath, DEV_DOCKER_LOCAL_LOGIN: "1", DEBUG_BYPASS: "1", DUNGEON_DEBUG_PREPARE: "1", TOKEN_SIGNING_SECRET: "isolated-test-secret-not-for-production", EXPERIMENT_SECRET: "isolated-experiment-secret-0123456789", TRADE_SECRET: "isolated-trade-secret-012345678901234", WORLD_SECRET: "isolated-world-secret-012345678901234", DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1" };
 	let server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "pipe" });
 	try {
 		const base = `http://127.0.0.1:${port}`;
@@ -30,15 +30,15 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 		expect(ready).toBe(true);
 		const version = await fetch(base + "/static/version");
 		expect(version.status).toBe(200);
-		expect((await version.json()).min_client_build).toBe(5503);
-		for (const build of [undefined, "5502", "invalid", "5503.0"]) {
+		expect((await version.json()).min_client_build).toBe(5504);
+		for (const build of [undefined, "5503", "invalid", "5504.0"]) {
 			const headers: Record<string, string> = {};
 			if (build !== undefined) headers["X-EntityWars-Client-Build"] = build;
 			const response = await fetch(base + "/player/state", { headers });
 			expect(response.status).toBe(426);
-			expect(await response.json()).toEqual({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: 5503 });
+			expect(await response.json()).toEqual({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: 5504 });
 		}
-		expect((await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5503" } })).status).not.toBe(426);
+		expect((await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5504" } })).status).not.toBe(426);
 		for (const route of ["/auth/dev_login", "/v1/auth/login"]) {
 			const response = await fetch(base + route, { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Bypass": "1" }, body: JSON.stringify({ name: "fixture" }) });
 			expect(response.status).toBe(403);
@@ -48,7 +48,7 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 		expect((await fetch(base + "/ws", { headers })).status).toBe(403);
 		server.kill();
 		await server.exited;
-		server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env: { ...env, MIN_CLIENT_BUILD: "5504" }, stdout: "ignore", stderr: "pipe" });
+		server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env: { ...env, MIN_CLIENT_BUILD: "5505" }, stdout: "ignore", stderr: "pipe" });
 		let restarted = false;
 		for (let i = 0; i < 100; i++) {
 			if (server.exitCode !== null) throw new Error(`Server exited: ${await new Response(server.stderr).text()}`);
@@ -56,10 +56,10 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 			await Bun.sleep(100);
 		}
 		expect(restarted).toBe(true);
-		expect((await (await fetch(base + "/static/version")).json()).min_client_build).toBe(5504);
-		const outdated = await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5503" } });
+		expect((await (await fetch(base + "/static/version")).json()).min_client_build).toBe(5505);
+		const outdated = await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5504" } });
 		expect(outdated.status).toBe(426);
-		expect((await outdated.json()).min_client_build).toBe(5504);
+		expect((await outdated.json()).min_client_build).toBe(5505);
 	} finally {
 		server.kill();
 		await server.exited;
@@ -74,7 +74,7 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 test("production rejects invalid minimum client builds at startup", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "entitywars-invalid-build-"));
 	try {
-		for (const value of ["", "0", "-1", "5503.5", "abc", "9007199254740992"]) {
+		for (const value of ["", "0", "-1", "5504.5", "abc", "9007199254740992"]) {
 			const env = { ...process.env, NODE_ENV: "production", BUN_ENV: "production", MIN_CLIENT_BUILD: value, DB_PATH: join(dir, "unused.sqlite"), TOKEN_SIGNING_SECRET: "isolated-test-secret-not-for-production", EXPERIMENT_SECRET: "isolated-experiment-secret-0123456789", TRADE_SECRET: "isolated-trade-secret-012345678901234", WORLD_SECRET: "isolated-world-secret-012345678901234", DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1" };
 			const server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "pipe" });
 			const error = await new Response(server.stderr).text();

@@ -132,6 +132,11 @@ func _load_flags() -> void:
 		return
 	_apply_from_balance()
 	_apply_from_file()
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var gate := (loop as SceneTree).root.get_node_or_null("ConnectionGate")
+		if gate != null and gate.debug_lab_navigation_allowed():
+			unlock_all_buildings = true
 
 func _apply_from_balance() -> void:
 	var db := StaticDB.new()

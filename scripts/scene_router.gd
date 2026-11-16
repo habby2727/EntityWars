@@ -159,7 +159,8 @@ static func go_to_loadout() -> void:
 	_go_to(SCENE_LOADOUT, "LoadoutGrid")
 
 static func _go_to(scene_path: String, label: String) -> void:
-	if _connection_gate().blocked():
+	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL]
+	if _connection_gate().blocked() and not (_connection_gate().debug_lab_navigation_allowed() and scene_path in local_debug_scenes):
 		return
 	if scene_path == "":
 		push_error("SceneRouter: Missing scene path for %s." % label)

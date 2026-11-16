@@ -23,9 +23,6 @@ func _run() -> void:
 		print("PASS Godot process restart, authenticated spell progress and isolated debug")
 		quit(0)
 		return
-	var seal := FileAccess.open("user://seal_attack.json", FileAccess.WRITE)
-	seal.store_string(JSON.stringify({"entity_id": "sulfur_01", "equip_1": "wind_amulet", "equip_2": "saltstone_charm", "side_1": "mirror_sigel"}))
-	seal.close()
 	var login := BackendClient.new()
 	login.base_url = url
 	login.auto_dev_login = false
@@ -34,6 +31,7 @@ func _run() -> void:
 	login.login_dev("combat_account_a")
 	if not await _wait_verified(login):
 		return
+	_write_seal(login._verified_player_id)
 	var scene = await _open_combat()
 	if scene == null or not _check_fighters(scene, 10) or not _check_spell(scene, true) or not _check_weapons(scene, 10):
 		return
@@ -45,6 +43,7 @@ func _run() -> void:
 		return
 	if not await _wait_verified(login):
 		return
+	_write_seal(login._verified_player_id)
 	scene.queue_free()
 	await process_frame
 	scene = await _open_combat()
@@ -70,6 +69,12 @@ func _run() -> void:
 	login.queue_free()
 	await process_frame
 	quit(0)
+
+func _write_seal(player_id: String) -> void:
+	var path := preload("res://scripts/domain/build_preferences.gd").seal_path(player_id, "attack")
+	var seal := FileAccess.open(path, FileAccess.WRITE)
+	seal.store_string(JSON.stringify({"player_id": player_id, "entity_id": "sulfur_01", "equip_1": "wind_amulet", "equip_2": "saltstone_charm", "side_1": "mirror_sigel"}))
+	seal.close()
 
 func _wait_verified(client: BackendClient) -> bool:
 	var deadline := Time.get_ticks_msec() + 20000
