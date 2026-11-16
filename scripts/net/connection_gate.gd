@@ -2,7 +2,7 @@ extends Node
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const RecoveryJournal := preload("res://scripts/net/session_recovery_journal.gd")
-enum State { CONNECTED, RECONNECTING, ERROR, AUTH_REQUIRED }
+enum State { CONNECTED, RECONNECTING, ERROR, AUTH_REQUIRED, UPDATE_REQUIRED }
 var state: State = State.CONNECTED
 var player_id := ""
 var token := ""
@@ -51,6 +51,11 @@ func register_identity(client: Node, identity: String) -> void:
 		_generation += 1
 		if state != State.CONNECTED:
 			_check()
+
+func require_update() -> void:
+	_timer.stop()
+	_generation += 1
+	_fail(State.UPDATE_REQUIRED, "Update required. Please update Entity Wars to continue.")
 
 func require_authentication() -> void:
 	_fail(State.AUTH_REQUIRED, "Authentication required")
@@ -107,6 +112,9 @@ func blocked() -> bool:
 	return state != State.CONNECTED
 
 func report_failure(client: Node, reason: String, status: int = 0) -> void:
+	if status == 426:
+		require_update()
+		return
 	if str(client.token).is_empty():
 		return
 	observe_credentials(client)
@@ -118,6 +126,8 @@ func report_failure(client: Node, reason: String, status: int = 0) -> void:
 		_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
 
 func _fail(next: State, message: String) -> void:
+	if state == State.UPDATE_REQUIRED and next != State.UPDATE_REQUIRED:
+		return
 	if (state == State.AUTH_REQUIRED or _identity_mismatch) and next == State.RECONNECTING:
 		return
 	var was_connected := state == State.CONNECTED
@@ -125,7 +135,8 @@ func _fail(next: State, message: String) -> void:
 	_player_verified = false
 	_loadout_session_requested = false
 	_loadout_session_verified = false
-	_title.text = "Disconnected (Reconnecting...)" if next == State.RECONNECTING else "Error"
+	_title.text = "Update required" if next == State.UPDATE_REQUIRED else ("Disconnected (Reconnecting...)" if next == State.RECONNECTING else "Error")
+	_retry.visible = next != State.UPDATE_REQUIRED
 	_detail.text = message
 	var auth_scene := get_tree().current_scene
 	if not (is_instance_valid(auth_scene) and auth_scene.has_method("auth_gate_screen")):
@@ -148,12 +159,12 @@ func _schedule_retry() -> void:
 	_timer.start(delay)
 
 func _check() -> void:
-	if _checking or _identity_mismatch or token.is_empty():
+	if state == State.UPDATE_REQUIRED or _checking or _identity_mismatch or token.is_empty():
 		return
 	_timer.stop()
 	_checking = true
 	_http.set_meta("generation", _generation)
-	var err := _http.request(base_url + "/player/state", PackedStringArray(["Authorization: Bearer " + token]), HTTPClient.METHOD_GET)
+	var err := _http.request(base_url + "/player/state", PackedStringArray(["Authorization: Bearer " + token, preload("res://scripts/net/client_build.gd").header()]), HTTPClient.METHOD_GET)
 	if err != OK:
 		_checking = false
 		_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
@@ -162,6 +173,11 @@ func _on_check_completed(result: int, code: int, _headers: PackedStringArray, bo
 	_checking = false
 	if int(_http.get_meta("generation", -1)) != _generation:
 		_check()
+		return
+	if code == 426:
+		require_update()
+		return
+	if state == State.UPDATE_REQUIRED:
 		return
 	if code in [401, 403]:
 		_fail(State.AUTH_REQUIRED, "Authentication required")
@@ -369,6 +385,8 @@ func _recover_loadout(scene: Node) -> void:
 		_unlock()
 
 func _unlock() -> void:
+	if state == State.UPDATE_REQUIRED:
+		return
 	state = State.CONNECTED
 	_attempt = 0
 	_player_verified = false

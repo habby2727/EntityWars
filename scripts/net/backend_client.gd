@@ -207,7 +207,7 @@ func send_action(action_dict: Dictionary) -> String:
 	return action_id
 
 func refresh_state() -> void:
-	if token == "":
+	if token == "" or _connection_gate().state == _connection_gate().State.UPDATE_REQUIRED:
 		return
 	if _http != null and _http.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
 		return
@@ -216,7 +216,7 @@ func refresh_state() -> void:
 		push_error("BackendClient: refresh_state failed to send (%s)" % err)
 
 func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false) -> String:
-	if _connection_gate().blocked() and not recovery:
+	if _connection_gate().state == _connection_gate().State.UPDATE_REQUIRED or (_connection_gate().blocked() and not recovery):
 		return ""
 	_ensure_api_http()
 	if _api_in_flight.size() > 0:
@@ -355,7 +355,7 @@ func _send_request(method: String, path: String, body: Variant, meta: Dictionary
 	_http.timeout = 8.0 if str(meta.get("kind", "")) == "action" else 10.0
 	_load_debug_flags()
 	var url = base_url + path
-	var headers: PackedStringArray = ["Content-Type: application/json"]
+	var headers: PackedStringArray = ["Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()]
 	if token != "":
 		headers.append("Authorization: Bearer %s" % token)
 	if _debug_bypass:
@@ -374,7 +374,7 @@ func _send_api_request(method: String, path: String, body: Variant, meta: Dictio
 	meta["session_generation"] = _session_generation
 	_load_debug_flags()
 	var url = base_url + path
-	var headers: PackedStringArray = ["Content-Type: application/json"]
+	var headers: PackedStringArray = ["Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()]
 	if token != "":
 		headers.append("Authorization: Bearer %s" % token)
 	if _debug_bypass:

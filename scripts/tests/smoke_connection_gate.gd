@@ -137,6 +137,48 @@ func _run() -> void:
 		push_error("Account mismatch did not lock")
 		quit(1)
 		return
-	print("PASS authenticated heartbeat, action lock, 401/403, 500, invalid JSON and identity mismatch")
+	gate._identity_mismatch = false
+	gate.player_id = backend._verified_player_id
+	gate.base_url = url
+	gate._check()
+	deadline = Time.get_ticks_msec() + 15000
+	while gate.blocked() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.05).timeout
+	if gate.blocked():
+		push_error("Fixture could not restore authenticated state")
+		quit(1)
+		return
+	var saved_auth := FileAccess.get_file_as_string("user://auth.json")
+	var journal_path := "user://session_recovery_version_qa.json"
+	var journal := FileAccess.open(journal_path, FileAccess.WRITE)
+	journal.store_string("version gate preservation fixture")
+	journal.close()
+	_fault_code = 426
+	_fault_body = '{"error":"CLIENT_UPDATE_REQUIRED","min_client_build":5504}'
+	_fault_server = TCPServer.new()
+	if _fault_server.listen(0, "127.0.0.1") != OK:
+		push_error("Cannot start 426 fixture")
+		quit(1)
+		return
+	backend.base_url = "http://127.0.0.1:%d" % _fault_server.get_local_port()
+	var update_request := backend.request_api("GET", "/player/state", null)
+	deadline = Time.get_ticks_msec() + 15000
+	while gate.state != gate.State.UPDATE_REQUIRED and Time.get_ticks_msec() < deadline:
+		await create_timer(0.05).timeout
+	_fault_server.stop()
+	_fault_server = null
+	gate.base_url = url
+	gate._check()
+	gate._unlock()
+	await create_timer(2.5).timeout
+	if update_request.is_empty() or gate.state != gate.State.UPDATE_REQUIRED or not gate._timer.is_stopped() or gate._checking or gate._retry.visible or not backend.send_action({"action_type": "TEST"}).is_empty() or not backend.request_api("POST", "/player/action", {}, false, true).is_empty():
+		push_error("426 did not permanently block gameplay and retries")
+		quit(1)
+		return
+	if FileAccess.get_file_as_string("user://auth.json") != saved_auth or FileAccess.get_file_as_string(journal_path) != "version gate preservation fixture":
+		push_error("426 changed credentials or the recovery journal")
+		quit(1)
+		return
+	print("PASS authenticated heartbeat, action lock, recovery, HTTP faults, identity mismatch and terminal 426")
 	backend.queue_free()
 	quit(0)

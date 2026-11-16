@@ -64,7 +64,7 @@ func poll_now() -> void:
 		return
 	_next_poll = Time.get_ticks_msec() + 15000
 	_poll_busy = true
-	var err := _poll.request(ConnectionGate.base_url + "/chat/state", PackedStringArray(["Authorization: Bearer " + ConnectionGate.token]))
+	var err := _poll.request(ConnectionGate.base_url + "/chat/state", PackedStringArray(["Authorization: Bearer " + ConnectionGate.token, preload("res://scripts/net/client_build.gd").header()]))
 	if err != OK:
 		_poll_busy = false
 		error_key = "CHAT_UNAVAILABLE"
@@ -72,6 +72,9 @@ func poll_now() -> void:
 
 func _poll_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	_poll_busy = false
+	if code == 426:
+		ConnectionGate.require_update()
+		return
 	if not available():
 		return
 	var data: Variant = JSON.parse_string(body.get_string_from_utf8())
@@ -123,7 +126,7 @@ func send_message(text: String) -> bool:
 		_pending_text = text
 		_pending_id = "%s-%s-%s" % [Time.get_unix_time_from_system(), Time.get_ticks_usec(), randi()]
 	_send_busy = true
-	var headers := PackedStringArray(["Authorization: Bearer " + ConnectionGate.token, "Content-Type: application/json"])
+	var headers := PackedStringArray(["Authorization: Bearer " + ConnectionGate.token, "Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()])
 	var err := _send.request(ConnectionGate.base_url + "/chat/send", headers, HTTPClient.METHOD_POST, JSON.stringify({"text": text, "client_message_id": _pending_id}))
 	if err != OK:
 		_send_busy = false
@@ -134,6 +137,9 @@ func send_message(text: String) -> bool:
 
 func _send_completed(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
 	_send_busy = false
+	if code == 426:
+		ConnectionGate.require_update()
+		return
 	if not available():
 		return
 	if result == HTTPRequest.RESULT_SUCCESS and code == 200:
