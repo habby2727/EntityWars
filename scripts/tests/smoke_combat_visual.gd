@@ -86,7 +86,7 @@ func _run() -> void:
 		for frame in 15:
 			await process_frame
 		for indicator in [scene.player_indicators, scene.enemy_indicators]:
-			var strip := indicator.get_parent() as ScrollContainer
+			var strip := indicator.get_parent() as Control
 			var bar: Control = scene.player_hp if indicator == scene.player_indicators else scene.enemy_hp
 			var title: Control = scene.get_node("PlayerPanel/PlayerBuildTitle" if indicator == scene.player_indicators else "EnemyPanel/EnemyBuildTitle")
 			var items: Control = scene.get_node("PlayerPanel/PlayerItems" if indicator == scene.player_indicators else "EnemyPanel/EnemyItems")
@@ -98,7 +98,7 @@ func _run() -> void:
 					push_error("Status strip %s intersects %s %s spacer=%s" % [rect, other.get_path(), other.get_global_rect(), scene.get_node("EnemyPanel/EnemyBottomSpacer").custom_minimum_size])
 					quit(1)
 					return
-			if rect.end.y > bar.get_global_rect().position.y or indicator.size.x <= strip.size.x:
+			if rect.end.y > bar.get_global_rect().position.y or indicator.size.x > strip.size.x:
 				push_error("Status strip position or content width incorrect")
 				quit(1)
 				return
@@ -106,7 +106,6 @@ func _run() -> void:
 			indicator.effect_clicked.connect(func(description): clicked.append(description))
 			var slots: Array = indicator._slots()
 			for endpoint in [0, slots.size() - 1]:
-				strip.scroll_horizontal = 0 if endpoint == 0 else int(indicator.size.x)
 				await process_frame
 				var point: Vector2 = root.get_final_transform() * indicator.get_global_transform_with_canvas() * slots[endpoint].get_center()
 				var motion := InputEventMouseMotion.new()
@@ -116,7 +115,7 @@ func _run() -> void:
 				await process_frame
 				var hovered := root.gui_get_hovered_control()
 				if hovered != indicator:
-					push_error("Pointer did not reach status endpoint: %s point=%s strip=%s indicator=%s scroll=%s" % [hovered, point, strip.get_global_rect(), indicator.get_global_rect(), strip.scroll_horizontal])
+					push_error("Pointer did not reach status endpoint: %s point=%s strip=%s indicator=%s" % [hovered, point, strip.get_global_rect(), indicator.get_global_rect()])
 					quit(1)
 					return
 				var expected: String = indicator._get_tooltip(slots[endpoint].get_center())
@@ -168,7 +167,7 @@ func _run() -> void:
 			return
 		var decision_rect: Rect2 = scene.hom_decision.get_global_rect()
 		var energy_rect: Rect2 = scene._player_hom_status.get_global_rect()
-		if decision_rect.end.y > energy_rect.position.y or absf(decision_rect.get_center().x - energy_rect.get_center().x) > 1.0:
+		if decision_rect.intersects(energy_rect) or absf(decision_rect.get_center().x - energy_rect.get_center().x) > 1.0:
 			push_error("Homunculus decision is not centered above energy")
 			quit(1)
 			return

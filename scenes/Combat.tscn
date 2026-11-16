@@ -29,6 +29,13 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="ItemTooltipBackground"]
+bg_color = Color(0, 0, 0, 0.82)
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+
 [node name="Combat" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -66,7 +73,7 @@ grow_horizontal = 2
 grow_vertical = 2
 texture = ExtResource("2")
 expand_mode = 1
-stretch_mode = 5
+stretch_mode = 0
 
 [node name="PlayerPanel" type="VBoxContainer" parent="."]
 layout_mode = 1
@@ -602,6 +609,8 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="ItemTooltip" type="PanelContainer" parent="."]
+theme_override_styles/panel = SubResource("ItemTooltipBackground")
+mouse_filter = 2
 visible = false
 layout_mode = 0
 offset_left = 20.0

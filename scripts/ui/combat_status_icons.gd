@@ -2,6 +2,7 @@ extends Control
 
 signal effect_clicked(description: String)
 
+const STATUS_FONT := preload("res://assets/fonts/old-newspaper-types-font/Oldnewspapertypes-449D.ttf")
 const SLOT := 48.0
 const ROW_HEIGHT := 64.0
 const DEFINITIONS := [
@@ -19,6 +20,8 @@ const DEFINITIONS := [
 	["poison_on_reflect", "poison", "STATUS_POISON_REFLECT", "turns"],
 ]
 
+var victory_only := false
+var victory_markers: Control
 var _wins := 0
 var _effects: Array = []
 var _boss_mode := false
@@ -26,6 +29,8 @@ var _extra_effects: Array = []
 
 func set_boss_effects(enabled: bool, effects: Array) -> void:
 	_boss_mode = enabled
+	if is_instance_valid(victory_markers):
+		victory_markers.visible = not enabled
 	_extra_effects = effects.duplicate(true)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_update_boss_height()
@@ -36,27 +41,33 @@ func _visible_effects() -> Array:
 
 func _entries() -> Array:
 	var entries: Array = []
-	if not _boss_mode:
-		entries.append({"icon": "crown", "label": "", "victory": 0})
-		entries.append({"icon": "crown", "label": "", "victory": 1})
-		if not _feedback.is_empty():
-			entries.append({"icon": _feedback_icon, "label": _feedback, "tooltip": _feedback})
+	if victory_only:
+		return [{"icon": "crown", "label": "", "victory": 0}, {"icon": "crown", "label": "", "victory": 1}]
+	if not _boss_mode and not _feedback.is_empty():
+		entries.append({"icon": _feedback_icon, "label": _feedback, "tooltip": _feedback})
 	entries.append_array(_visible_effects())
 	return entries
 
 func _slots() -> Array[Rect2]:
 	var result: Array[Rect2] = []
-	var x := 0.0
+	var cursor := Vector2.ZERO
 	for entry in _entries():
-		var text_width := ThemeDB.fallback_font.get_string_size(str(entry.label), HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
-		var width := maxf(SLOT, text_width) + 16.0
-		result.append(Rect2(x, 0, width, ROW_HEIGHT))
-		x += width
+		var text_width := STATUS_FONT.get_string_size(str(entry.label), HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+		var width := 24.0 if victory_only else maxf(SLOT, text_width) + 16.0
+		if not victory_only and cursor.x > 0.0 and cursor.x + width > 600.0:
+			cursor.x = 0.0
+			cursor.y += ROW_HEIGHT
+		result.append(Rect2(cursor, Vector2(width, 24.0 if victory_only else ROW_HEIGHT)))
+		cursor.x += width
 	return result
 
 func _update_boss_height() -> void:
 	var slots := _slots()
-	custom_minimum_size = Vector2(slots.back().end.x if not slots.is_empty() else 1.0, ROW_HEIGHT)
+	var height: float = 24.0 if victory_only else (slots.back().end.y if not slots.is_empty() else ROW_HEIGHT)
+	custom_minimum_size = Vector2(48.0 if victory_only else 600.0, height)
+	size = custom_minimum_size
+	if not victory_only and get_parent() is Control:
+		get_parent().size.y = height
 	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
@@ -76,6 +87,8 @@ var _previous_mark_turns := 0
 
 func set_fighter(wins: int, fighter: Dictionary) -> void:
 	_wins = wins
+	if is_instance_valid(victory_markers):
+		victory_markers.set_fighter(wins, {})
 	_effects.clear()
 	var status: Dictionary = fighter.get("status", {})
 	if _status_initialized:
@@ -185,11 +198,11 @@ func _draw() -> void:
 	for i in slots.size():
 		var rect := slots[i]
 		var entry: Dictionary = entries[i]
-		_draw_icon(entry.icon, rect.position + Vector2((rect.size.x - SLOT) * 0.5, 0), not entry.has("victory") or int(entry.victory) < _wins)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 62), str(entry.label), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 18, Color.WHITE)
+		_draw_icon(entry.icon, rect.position + Vector2((rect.size.x - (24.0 if victory_only else SLOT)) * 0.5, 0), not entry.has("victory") or int(entry.victory) < _wins)
+		draw_string(STATUS_FONT, rect.position + Vector2(0, 62), str(entry.label), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 18, Color.WHITE)
 
 func _draw_icon(kind: String, offset: Vector2, enabled: bool) -> void:
-	draw_set_transform(offset, 0.0, Vector2(2, 2))
+	draw_set_transform(offset, 0.0, Vector2.ONE if victory_only else Vector2(2, 2))
 	var c := Color.WHITE
 	match kind:
 		"hourglass":

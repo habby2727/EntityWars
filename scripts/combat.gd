@@ -72,6 +72,8 @@ var _spell_acts_second := false
 var _animation_tweens := {}
 var _animation_original := {}
 var _pending_hom_action := {}
+var _decision_spacer_before := -1.0
+var _decision_growth_before := 0
 var _player_hom_status: PanelContainer
 var _enemy_hom_status: PanelContainer
 var _hom_details: PanelContainer
@@ -1783,7 +1785,7 @@ func _start_combat() -> void:
 func _apply_dungeon_combat_visuals() -> void:
 	var background := $Background as TextureRect
 	background.texture = load("res://assets/ui/alchemy_kit/dungeons_combatbg.png") as Texture2D
-	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	background.stretch_mode = TextureRect.STRETCH_SCALE
 	var layer := Control.new()
 	layer.name = "DungeonCombatSprites"
 	layer.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1814,7 +1816,7 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 	var layout: Array = layouts[zone_id]
 	var background := $Background as TextureRect
 	background.texture = load("res://assets/lab/resources/world_zones/%s.png" % layout[0]) as Texture2D
-	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	background.stretch_mode = TextureRect.STRETCH_SCALE
 	var layer := Control.new()
 	layer.name = "WorldCombatSprites"
 	layer.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -2698,6 +2700,10 @@ func _setup_hom_ui() -> void:
 	hom_decision.visibility_changed.connect(func():
 		if hom_decision.visible:
 			call_deferred("_position_hom_decision")
+		elif _decision_spacer_before >= 0.0:
+			$PlayerPanel/PlayerBottomSpacer.custom_minimum_size.y = _decision_spacer_before
+			$PlayerPanel.grow_vertical = _decision_growth_before
+			_decision_spacer_before = -1.0
 	)
 	_enemy_hom_status = CombatHomStatus.new()
 	_enemy_hom_status.position = Vector2(1652, 540)
@@ -2754,6 +2760,17 @@ func _position_hom_decision() -> void:
 	hom_decision.size = Vector2(maxf(_player_hom_status.size.x, minimum.x), minimum.y)
 	var x := _player_hom_status.position.x + (_player_hom_status.size.x - hom_decision.size.x) / 2.0
 	hom_decision.position = Vector2(clampf(x, 0.0, size.x - hom_decision.size.x), _player_hom_status.position.y - hom_decision.size.y - 8.0)
+	if player_hom.is_visible_in_tree() and hom_decision.get_global_rect().intersects(player_hom.get_global_rect()):
+		hom_decision.position.y = _player_hom_status.position.y + _player_hom_status.size.y + 8.0
+		var decision_rect := hom_decision.get_global_rect()
+		var title_rect: Rect2 = $PlayerPanel/PlayerBuildTitle.get_global_rect()
+		var items_rect: Rect2 = $PlayerPanel/PlayerItems.get_global_rect()
+		if decision_rect.intersects(title_rect) or decision_rect.intersects(items_rect):
+			var spacer := $PlayerPanel/PlayerBottomSpacer
+			_decision_spacer_before = spacer.custom_minimum_size.y
+			_decision_growth_before = $PlayerPanel.grow_vertical
+			$PlayerPanel.grow_vertical = Control.GROW_DIRECTION_END
+			spacer.custom_minimum_size.y = spacer.size.y + (decision_rect.end.y - minf(title_rect.position.y, items_rect.position.y) + 8.0) / get_global_transform_with_canvas().get_scale().y
 
 func _setup_aligned_health_panels() -> void:
 	var player_name_row := player_entity_name.get_parent() as Control
@@ -2774,14 +2791,18 @@ func _setup_aligned_health_panels() -> void:
 		pair[0].size = Vector2(200, 22)
 		pair[1].position = Vector2(0, 22)
 		pair[1].size = Vector2(200, 22)
-		var strip := ScrollContainer.new()
+		var strip := Control.new()
 		strip.name = "StatusStrip"
 		strip.position = Vector2(-90, 52)
-		strip.size = Vector2(380, 72)
-		strip.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-		strip.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		strip.size = Vector2(600, 64)
+		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		group.add_child(strip)
 		var indicators: Control = player_indicators if pair[1] == player_hp else enemy_indicators
+		var crowns: Control = preload("res://scripts/ui/combat_status_icons.gd").new()
+		crowns.set("victory_only", true)
+		crowns.position = Vector2(0, 46)
+		group.add_child(crowns)
+		indicators.set("victory_markers", crowns)
 		indicators.reparent(strip, false)
 		indicators.position = Vector2.ZERO
 		indicators.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2799,7 +2820,7 @@ func _align_health_panels() -> void:
 	$EnemyHealthGroup.position = Vector2(enemy_center.x - 100, health_y)
 	# Place each strip at its side of the top edge, below the Back button.
 	for group in [$PlayerHealthGroup, $EnemyHealthGroup]:
-		var strip: ScrollContainer = group.get_node("StatusStrip")
+		var strip: Control = group.get_node("StatusStrip")
 		var x := 20.0 if group == $PlayerHealthGroup else size.x - strip.size.x - 20.0
 		strip.position = Vector2(x, 55.0) - group.position
 
