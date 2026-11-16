@@ -4,3 +4,4 @@ assets/
 backend/node_modules/
 backend/.env*
 backend/data/
+backend/backups/

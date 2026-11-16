@@ -1,0 +1,100 @@
+name: entitywars-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile.prod
+    image: entitywars-prod-api:local
+    environment:
+      NODE_ENV: production
+      BUN_ENV: production
+      MIN_CLIENT_BUILD: "5503"
+      DEBUG_BYPASS: "0"
+      DEV_DOCKER_LOCAL_LOGIN: "0"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:?Set TOKEN_SIGNING_SECRET}
+      EXPERIMENT_SECRET: ${EXPERIMENT_SECRET:?Set EXPERIMENT_SECRET}
+      TRADE_SECRET: ${TRADE_SECRET:?Set TRADE_SECRET}
+      WORLD_SECRET: ${WORLD_SECRET:?Set WORLD_SECRET}
+      PG_POOL_SIZE: "4"
+    volumes:
+      - sqlite:/var/lib/entitywars
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8787/health').then(async r => { const j = await r.json(); process.exit(r.ok && j.postgres === 'up' && j.redis === 'up' ? 0 : 1) }).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 60s
+    mem_limit: 768m
+    restart: unless-stopped
+    logging: *logging
+  postgres:
+    image: postgres:16.10-alpine
+    environment:
+      POSTGRES_USER: entitywars
+      POSTGRES_DB: entitywars
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    command: ["postgres", "-c", "max_connections=30", "-c", "shared_buffers=128MB", "-c", "effective_cache_size=512MB", "-c", "work_mem=4MB", "-c", "maintenance_work_mem=32MB"]
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    restart: unless-stopped
+    logging: *logging
+  redis:
+    image: redis:7.4.5-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --maxmemory 128mb --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    restart: unless-stopped
+    logging: *logging
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 192m
+    restart: unless-stopped
+    logging: *logging
+volumes:
+  sqlite:
+  postgres:
+  redis:
+  caddy_data:
+  caddy_config:

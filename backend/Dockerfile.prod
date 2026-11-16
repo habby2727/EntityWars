@@ -1,0 +1,13 @@
+FROM oven/bun:1.3.8
+WORKDIR /app/backend
+COPY backend/package.json backend/bun.lock ./
+RUN bun install --frozen-lockfile --production
+COPY backend/src ./src
+COPY backend/migrations ./migrations
+COPY backend/deploy/entrypoint.sh /usr/local/bin/entitywars-entrypoint
+COPY data /app/data
+RUN chmod 755 /usr/local/bin/entitywars-entrypoint && mkdir -p /var/lib/entitywars && chown bun:bun /var/lib/entitywars
+USER bun
+ENV NODE_ENV=production BUN_ENV=production HOST=0.0.0.0 PORT=8787 DB_PATH=/var/lib/entitywars/game.sqlite
+EXPOSE 8787
+ENTRYPOINT ["/usr/local/bin/entitywars-entrypoint"]

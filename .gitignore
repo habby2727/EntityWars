@@ -6,6 +6,8 @@
 backend/node_modules/
 backend/.env
 backend/.env.local
+backend/.env.prod
+backend/backups/
 backend/data/*.sqlite
 backend/data/*.sqlite-shm
 backend/data/*.sqlite-wal

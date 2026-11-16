@@ -1,0 +1,8 @@
+{$SITE_ADDRESS} {
+	@private path /metrics /metrics/* /debug /debug/* /auth/dev_login /v1/auth/login
+	respond @private 404
+	reverse_proxy api:8787 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
