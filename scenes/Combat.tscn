@@ -537,7 +537,7 @@ theme_override_styles/hover = SubResource("ReturnButtonHover")
 theme_override_styles/pressed = SubResource("ReturnButtonHover")
 tooltip_text = "Available once in the decisive 1-1 battle.\nActivate before choosing a spell to double its\ndamage and applicable buffs/debuffs.\nConsumed even if the spell misses."
 
-[node name="HomDecision" type="HBoxContainer" parent="."]
+[node name="HomDecision" type="VBoxContainer" parent="."]
 visible = false
 layout_mode = 1
 anchors_preset = 1

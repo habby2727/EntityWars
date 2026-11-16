@@ -98,7 +98,7 @@ func _run() -> void:
 					push_error("Status strip %s intersects %s %s spacer=%s" % [rect, other.get_path(), other.get_global_rect(), scene.get_node("EnemyPanel/EnemyBottomSpacer").custom_minimum_size])
 					quit(1)
 					return
-			if rect.position.y < bar.get_global_rect().end.y or indicator.size.x <= strip.size.x:
+			if rect.end.y > bar.get_global_rect().position.y or indicator.size.x <= strip.size.x:
 				push_error("Status strip position or content width incorrect")
 				quit(1)
 				return
@@ -156,6 +156,27 @@ func _run() -> void:
 			return
 		await process_frame
 		await process_frame
+	if OS.has_environment("COMBAT_HOM_DECISION"):
+		scene.player.hom_energy = 6
+		scene._update_ui()
+		scene.spell_buttons[0].pressed.emit()
+		for frame in 3:
+			await process_frame
+		if not scene.hom_decision.visible:
+			push_error("Homunculus decision unavailable")
+			quit(1)
+			return
+		var decision_rect: Rect2 = scene.hom_decision.get_global_rect()
+		var energy_rect: Rect2 = scene._player_hom_status.get_global_rect()
+		if decision_rect.end.y > energy_rect.position.y or absf(decision_rect.get_center().x - energy_rect.get_center().x) > 1.0:
+			push_error("Homunculus decision is not centered above energy")
+			quit(1)
+			return
+		for control in [scene.spell_panel, scene.player_hp, scene.player_indicators.get_parent(), scene.log_box]:
+			if control.is_visible_in_tree() and decision_rect.intersects(control.get_global_rect()):
+				push_error("Homunculus decision intersects " + str(control.get_path()))
+				quit(1)
+				return
 	var image := root.get_texture().get_image()
 	var suffix := OS.get_environment("COMBAT_CAPTURE_NAME")
 	if suffix.is_empty():
@@ -164,7 +185,8 @@ func _run() -> void:
 		push_error("Cannot capture rendered combat")
 		quit(1)
 		return
-	scene.spell_buttons[0].pressed.emit()
+	if not OS.has_environment("COMBAT_HOM_DECISION"):
+		scene.spell_buttons[0].pressed.emit()
 	if scene.hom_decision.visible:
 		scene._on_hom_choice("hold")
 	if not scene._resolving_exchange:

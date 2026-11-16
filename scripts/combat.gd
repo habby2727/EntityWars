@@ -217,7 +217,7 @@ var _hp_fill_red: StyleBoxFlat = null
 var _next_turn_action := ""
 @onready var switch_weapon_btn: Button = $SwitchWeapon
 @onready var ultra_button: Button = $Ultraturn
-@onready var hom_decision: HBoxContainer = $HomDecision
+@onready var hom_decision: VBoxContainer = $HomDecision
 @onready var spell_panel: PanelContainer = $SpellPanel
 @onready var spell_buttons: Array = [$SpellPanel/SpellGrid/Spell1, $SpellPanel/SpellGrid/Spell2, $SpellPanel/SpellGrid/Spell3, $SpellPanel/SpellGrid/Spell4]
 @onready var back_button: Button = $BackButton
@@ -2694,6 +2694,11 @@ func _setup_hom_ui() -> void:
 	_player_hom_status = CombatHomStatus.new()
 	_player_hom_status.position = Vector2(28, 540)
 	add_child(_player_hom_status)
+	hom_decision.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	hom_decision.visibility_changed.connect(func():
+		if hom_decision.visible:
+			call_deferred("_position_hom_decision")
+	)
 	_enemy_hom_status = CombatHomStatus.new()
 	_enemy_hom_status.position = Vector2(1652, 540)
 	add_child(_enemy_hom_status)
@@ -2744,9 +2749,13 @@ func _setup_combat_labels() -> void:
 		panel.add_theme_stylebox_override("panel", style)
 		label.add_child(panel)
 
+func _position_hom_decision() -> void:
+	var minimum := hom_decision.get_combined_minimum_size()
+	hom_decision.size = Vector2(maxf(_player_hom_status.size.x, minimum.x), minimum.y)
+	var x := _player_hom_status.position.x + (_player_hom_status.size.x - hom_decision.size.x) / 2.0
+	hom_decision.position = Vector2(clampf(x, 0.0, size.x - hom_decision.size.x), _player_hom_status.position.y - hom_decision.size.y - 8.0)
+
 func _setup_aligned_health_panels() -> void:
-	for panel in [$PlayerPanel, $EnemyPanel]:
-		panel.grow_vertical = Control.GROW_DIRECTION_END
 	var player_name_row := player_entity_name.get_parent() as Control
 	var player_hp_row := player_hp.get_parent() as Control
 	var enemy_hp_row := enemy_hp.get_parent() as Control
@@ -2788,27 +2797,11 @@ func _align_health_panels() -> void:
 	var health_y := 690 if has_node("WorldCombatSprites") else 610
 	$PlayerHealthGroup.position = Vector2(player_center.x - 100, health_y)
 	$EnemyHealthGroup.position = Vector2(enemy_center.x - 100, health_y)
-	# Keep the strips out of the central combat log while leaving the bars fixed.
+	# Place each strip at its side of the top edge, below the Back button.
 	for group in [$PlayerHealthGroup, $EnemyHealthGroup]:
 		var strip: ScrollContainer = group.get_node("StatusStrip")
-		strip.position.x = -90.0
-		var strip_rect := strip.get_global_rect()
-		var log_rect := log_box.get_global_rect()
-		if log_box.is_visible_in_tree() and strip_rect.intersects(log_rect):
-			var delta := (log_rect.position.x - strip_rect.end.x - 8.0) if group == $PlayerHealthGroup else (log_rect.end.x - strip_rect.position.x + 8.0)
-			strip.position.x += delta / get_global_transform_with_canvas().get_scale().x
-	call_deferred("_reserve_status_strip_space")
-
-func _reserve_status_strip_space() -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
-	for entry in [[$PlayerHealthGroup/StatusStrip, $PlayerPanel/PlayerBottomSpacer, $PlayerPanel/PlayerBuildTitle, $PlayerPanel/PlayerItems], [$EnemyHealthGroup/StatusStrip, $EnemyPanel/EnemyBottomSpacer, $EnemyPanel/EnemyBuildTitle, $EnemyPanel/EnemyItems]]:
-		var strip_rect: Rect2 = entry[0].get_global_rect()
-		var next_top: float = minf(entry[2].get_global_rect().position.y, entry[3].get_global_rect().position.y)
-		var overlap := strip_rect.end.y + 8.0 - next_top
-		if overlap > 0.0:
-			entry[1].custom_minimum_size.y = entry[1].size.y + overlap / get_global_transform_with_canvas().get_scale().y
-			entry[1].get_parent().queue_sort()
+		var x := 20.0 if group == $PlayerHealthGroup else size.x - strip.size.x - 20.0
+		strip.position = Vector2(x, 55.0) - group.position
 
 func _setup_inspiration_ui() -> void:
 	_player_inspiration = CombatInspiration.new()
