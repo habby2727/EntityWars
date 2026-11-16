@@ -43,9 +43,7 @@ func _exit_tree() -> void:
 		_debug_flags.free()
 
 func _ready() -> void:
-	var configured_url := OS.get_environment("ENTITYWARS_BACKEND_URL").strip_edges().trim_suffix("/")
-	if base_url == "http://127.0.0.1:8787" and not configured_url.is_empty():
-		base_url = configured_url
+	base_url = preload("res://scripts/net/backend_endpoint.gd").resolve(base_url)
 	add_to_group("backend_session_clients")
 	_ensure_http()
 	_pending.clear_identity()
@@ -392,6 +390,7 @@ func _ensure_http() -> void:
 	if _http != null:
 		return
 	_http = HTTPRequest.new()
+	_http.max_redirects = 0
 	add_child(_http)
 	_http.request_completed.connect(_on_request_completed)
 
@@ -399,6 +398,7 @@ func _ensure_api_http() -> void:
 	if _api_http != null:
 		return
 	_api_http = HTTPRequest.new()
+	_api_http.max_redirects = 0
 	_api_http.timeout = 10.0
 	add_child(_api_http)
 	_api_http.request_completed.connect(_on_api_request_completed)

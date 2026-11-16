@@ -231,9 +231,7 @@ var _next_turn_action := ""
 @onready var confirm_leave: Button = $ConfirmLeave/Panel/VBox/Buttons/LeaveButton
 
 func _ready() -> void:
-	var configured_url := OS.get_environment("ENTITYWARS_BACKEND_URL").strip_edges().trim_suffix("/")
-	if backend_url == "http://127.0.0.1:8787" and not configured_url.is_empty():
-		backend_url = configured_url
+	backend_url = preload("res://scripts/net/backend_endpoint.gd").resolve(backend_url)
 	_fit_combat_view()
 	get_viewport().size_changed.connect(_fit_combat_view)
 	_load_registry_safe()

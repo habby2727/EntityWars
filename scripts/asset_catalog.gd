@@ -181,8 +181,9 @@ func _scan_dir(path: String) -> void:
 			file_name = dir.get_next()
 			continue
 		if file_name.ends_with(".import"):
-			file_name = dir.get_next()
-			continue
+			# Exported packs contain import metadata in place of source images.
+			file_name = file_name.trim_suffix(".import")
+			full_path = path + "/" + file_name
 		var ext = file_name.get_extension().to_lower()
 		if not VALID_EXTS.has(ext):
 			file_name = dir.get_next()

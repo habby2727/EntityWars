@@ -31,9 +31,7 @@ func _ready() -> void:
 	_build_ui()
 	client = BackendClient.new()
 	client.auto_dev_login = false
-	var configured := OS.get_environment("ENTITYWARS_BACKEND_URL").strip_edges().trim_suffix("/")
-	if not configured.is_empty():
-		client.base_url = configured
+	client.base_url = preload("res://scripts/net/backend_endpoint.gd").resolve(client.base_url)
 	var url := client.base_url.to_lower()
 	var authority := url.trim_prefix("http://").get_slice("/", 0).get_slice(":", 0)
 	endpoint_safe = url.begins_with("https://") or (url.begins_with("http://") and authority in ["localhost", "127.0.0.1"])
@@ -43,6 +41,7 @@ func _ready() -> void:
 	for field in username:
 		field.text = client.dev_display_name
 	http = HTTPRequest.new()
+	http.max_redirects = 0
 	http.timeout = 8.0
 	add_child(http)
 	http.request_completed.connect(_on_auth_response)

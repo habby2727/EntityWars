@@ -23,6 +23,8 @@ var _pending_id := ""
 func _ready() -> void:
 	_poll = HTTPRequest.new()
 	_send = HTTPRequest.new()
+	_poll.max_redirects = 0
+	_send.max_redirects = 0
 	_poll.timeout = 8.0
 	_send.timeout = 8.0
 	add_child(_poll)

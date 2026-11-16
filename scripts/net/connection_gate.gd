@@ -25,6 +25,7 @@ var _retry: Button
 
 func _ready() -> void:
 	_http = HTTPRequest.new()
+	_http.max_redirects = 0
 	_http.timeout = 8.0
 	add_child(_http)
 	_http.request_completed.connect(_on_check_completed)
