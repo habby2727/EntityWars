@@ -39,13 +39,20 @@ func _ready() -> void:
 	_state.add_theme_color_override("font_color", Color("b9e8f3"))
 	content.add_child(_state)
 
+var _localized_fighter: Dictionary = {}
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready() and not _localized_fighter.is_empty():
+		set_fighter(_localized_fighter)
+
 func set_fighter(fighter: Dictionary) -> void:
 	if _title == null:
 		return
+	_localized_fighter = fighter.duplicate(true)
 	var energy := int(fighter.get("hom_energy", 0))
 	var spent := bool(fighter.get("hom_spent", false))
-	_title.text = "%s  |  %s" % [fighter.get("hom_name", "Homunculus"), "SPENT" if spent else "ACTIVE"]
+	_title.text = "%s  |  %s" % [fighter.get("hom_name", "Homunculus"), tr("HOM_SPENT") if spent else tr("HOM_ACTIVE")]
 	_bar.value = 0 if spent else energy
-	_state.text = "Sacrificed" if spent else "%d / 6  |  %s" % [energy, "OVERCHARGED" if energy >= 6 else "READY" if energy >= 3 else "Charging"]
-	tooltip_text = "Charge: %d exchanges.\nAttack available at 3; stronger at 6.\n\nSacrifice: heal up to 30 HP immediately,\nbut lose the homunculus for this combat.\n\nHomunculi have no separate HP." % energy
+	_state.text = tr("HOM_SACRIFICED") if spent else "%d / 6  |  %s" % [energy, tr("HOM_OVERCHARGED") if energy >= 6 else tr("HOM_READY") if energy >= 3 else tr("HOM_CHARGING")]
+	tooltip_text = tr("HOM_STATUS_HINT").replace("\\n", "\n") % energy
 	modulate = Color(0.65, 0.65, 0.65) if spent else Color.WHITE

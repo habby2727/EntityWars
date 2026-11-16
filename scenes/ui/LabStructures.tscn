@@ -93,7 +93,7 @@ offset_left = -120.0
 offset_top = 0.0
 offset_right = 0.0
 offset_bottom = 32.0
-text = "Back"
+text = "SETTINGS_BACK"
 focus_mode = 0
 theme_override_font_sizes/font_size = 14
 script = ExtResource("3_back_button")
@@ -135,7 +135,7 @@ theme_override_constants/separation = 8
 [node name="BackButton" type="Button" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow"]
 layout_mode = 2
 custom_minimum_size = Vector2(120, 32)
-text = "Back"
+text = "SETTINGS_BACK"
 focus_mode = 0
 mouse_filter = 0
 theme_override_font_sizes/font_size = 14
@@ -227,7 +227,7 @@ visible = false
 
 [node name="PendingLabel" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
 layout_mode = 2
-text = "PENDING"
+text = "LAB_PENDING"
 modulate = Color(1, 0.82, 0.3, 1)
 visible = false
 
@@ -237,7 +237,7 @@ theme_override_constants/separation = 8
 
 [node name="RouteLabel" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/RouteRow"]
 layout_mode = 2
-text = "Route"
+text = "LAB_ROUTE"
 
 [node name="RouteOption" type="OptionButton" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/RouteRow"]
 layout_mode = 2
@@ -245,7 +245,7 @@ size_flags_horizontal = 3
 
 [node name="CostHeader" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
 layout_mode = 2
-text = "Upgrade Cost"
+text = "LAB_UPGRADE_COST"
 
 [node name="CostList" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
 layout_mode = 2
@@ -257,19 +257,19 @@ theme_override_constants/separation = 8
 
 [node name="UpgradeButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
 layout_mode = 2
-text = "Upgrade"
+text = "LAB_UPGRADE"
 
 [node name="RouteButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
 layout_mode = 2
-text = "Set Route"
+text = "LAB_SET_ROUTE"
 
 [node name="ClaimButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
 layout_mode = 2
-text = "Claim"
+text = "LAB_CLAIM"
 
 [node name="OpenButton" type="Button" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/Buttons"]
 layout_mode = 2
-text = "Open"
+text = "LAB_OPEN"
 
 [node name="ExperimentSection" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox"]
 layout_mode = 2
@@ -278,7 +278,7 @@ theme_override_constants/separation = 6
 
 [node name="ExperimentHeader" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ExperimentSection"]
 layout_mode = 2
-text = "Experiments"
+text = "LAB_EXPERIMENTS"
 
 [node name="ExperimentList" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ExperimentSection"]
 layout_mode = 2
@@ -291,7 +291,7 @@ theme_override_constants/separation = 6
 
 [node name="ResearchHeader" type="Label" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ResearchSection"]
 layout_mode = 2
-text = "Research"
+text = "SPELL_RESEARCH"
 
 [node name="ResearchList" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin/DetailVBox/ResearchSection"]
 layout_mode = 2
@@ -310,6 +310,6 @@ grow_vertical = 2
 
 [node name="PopupLabel" type="Label" parent="PlaceholderPopup/PopupPanel"]
 layout_mode = 2
-text = "Coming soon..."
+text = "UI_COMING_SOON"
 horizontal_alignment = 1
 vertical_alignment = 1

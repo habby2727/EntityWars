@@ -58,4 +58,4 @@ func set_locked(locked: bool, unlock_level: int) -> void:
 	if _lock_label != null:
 		_lock_label.visible = locked
 		if locked:
-			_lock_label.text = "Unlock at HQ Lv %s" % unlock_level
+			_lock_label.text = tr("LAB_UNLOCK_HQ") % unlock_level

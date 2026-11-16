@@ -91,7 +91,7 @@ offset_left = 12.0
 offset_top = 12.0
 offset_right = 84.0
 offset_bottom = 38.0
-text = "Back"
+text = "SETTINGS_BACK"
 focus_mode = 0
 theme_override_font_sizes/font_size = 14
 script = ExtResource("3_back_button")
@@ -110,7 +110,7 @@ offset_left = -132.0
 offset_top = 12.0
 offset_right = -12.0
 offset_bottom = 38.0
-text = "Structures"
+text = "LAB_STRUCTURES"
 focus_mode = 0
 theme_override_font_sizes/font_size = 14
 script = ExtResource("3_back_button")
@@ -156,7 +156,7 @@ grow_vertical = 2
 
 [node name="PopupLabel" type="Label" parent="PlaceholderPopup/PopupPanel"]
 layout_mode = 2
-text = "Coming soon..."
+text = "UI_COMING_SOON"
 horizontal_alignment = 1
 vertical_alignment = 1
 

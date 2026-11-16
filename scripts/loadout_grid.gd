@@ -209,10 +209,10 @@ func _ready() -> void:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol.hide()
-			if btn_play: btn_play.text = "Start Run"
+			if btn_play: btn_play.text = tr("LOADOUT_START_RUN")
 		else:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
-			if btn_play: btn_play.text = "Ready"
+			if btn_play: btn_play.text = tr("LOADOUT_READY")
 		btn_save.hide()
 		var back := $BackButton as Button
 		var original_back := Callable(back, "_on_pressed")
@@ -265,10 +265,10 @@ func _ready() -> void:
 	_refresh_details()
 	_update_save_button_label()
 	if _hunt_mode and lbl_mode != null:
-		lbl_mode.text = "Boss Hunt"
+		lbl_mode.text = "LOADOUT_HUNT"
 	if _dungeon_mode:
 		if lbl_mode != null:
-			lbl_mode.text = "Dungeons — Loadout"
+			lbl_mode.text = "LOADOUT_DUNGEON"
 		_dungeon_payload = SceneRouter._dungeon_context.get("pending_loadout", {}).duplicate(true)
 		_dungeon_backend = BackendClient.new()
 		_dungeon_backend.base_url = spell_backend_url
@@ -615,13 +615,14 @@ func _equipped_spells(mode: String, entity_id: String) -> Array:
 func _refresh_spell_button() -> void:
 	if _spell_button == null or _reg == null:
 		return
+	_spell_button.text = tr("LOADOUT_CHANGE_SPELLS")
 	var available := SpellLoadout.available_ids(_reg, _current_entity_id, _spell_state.get("spell_progress", {}))
 	_spell_button.visible = true
 	_spell_button.disabled = _spell_pending_id != ""
 	if _dungeon_mode and not _dungeon_spell_progress is Dictionary: _spell_button.disabled = true
 	var equipped := _equipped_spells(_mode, _current_entity_id)
 	var extra := available.any(func(id): return id not in equipped)
-	_spell_button.tooltip_text = "Change spells for this entity" if extra else "No additional spells unlocked for this entity"
+	_spell_button.tooltip_text = tr("LOADOUT_CHANGE_SPELLS_HINT") if extra else tr("LOADOUT_SPELLS_EMPTY")
 	MenuArt.button(_spell_button)
 	if is_instance_valid(_spell_warning):
 		_spell_warning.visible = _dungeon_mode and _dungeon_spell_progress is Dictionary and extra and not _dungeon_spells_changed.has(_current_entity_id)
@@ -630,7 +631,7 @@ func _build_spell_dialog() -> void:
 	_spell_button = get_node_or_null("SpellConfig") as Button
 	if _spell_button == null:
 		return
-	_spell_button.text = "Change Spells"
+	_spell_button.text = tr("LOADOUT_CHANGE_SPELLS")
 	_spell_button.reparent($RootMargin/MainHSplit/RightPanel/BottomRow)
 	_spell_button.custom_minimum_size = Vector2(190, 72)
 	_spell_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -669,13 +670,13 @@ func _build_spell_dialog() -> void:
 	header.add_child(_spell_heading)
 	var close := Button.new()
 	close.text = "X"
-	close.tooltip_text = "Close"
+	close.tooltip_text = "UI_CLOSE"
 	close.custom_minimum_size = Vector2(44, 36)
 	MenuArt.button(close)
 	close.pressed.connect(_spell_dialog.hide)
 	header.add_child(close)
 	_spell_empty_notice = Label.new()
-	_spell_empty_notice.text = "No additional spells unlocked for this entity"
+	_spell_empty_notice.text = tr("LOADOUT_SPELLS_EMPTY")
 	_spell_empty_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_spell_empty_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_spell_empty_notice.hide()
@@ -706,7 +707,7 @@ func _build_spell_dialog() -> void:
 	var filter_group := ButtonGroup.new()
 	for group_name in ["All", "Initial", "Hybrid", "Universal"]:
 		var filter := Button.new()
-		filter.text = group_name
+		filter.text = "SPELL_FILTER_" + group_name.to_upper()
 		filter.toggle_mode = true
 		filter.button_group = filter_group
 		_style_spell_button(filter)
@@ -734,13 +735,13 @@ func _build_spell_dialog() -> void:
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	content.add_child(actions)
 	var cancel := Button.new()
-	cancel.text = "Cancel"
+	cancel.text = "UI_CANCEL"
 	cancel.custom_minimum_size = Vector2(150, 42)
 	MenuArt.button(cancel)
 	cancel.pressed.connect(_spell_dialog.hide)
 	actions.add_child(cancel)
 	_spell_confirm = Button.new()
-	_spell_confirm.text = "Confirm"
+	_spell_confirm.text = "UI_CONFIRM"
 	_spell_confirm.custom_minimum_size = Vector2(150, 42)
 	MenuArt.button(_spell_confirm)
 	_spell_confirm.pressed.connect(func():
@@ -758,7 +759,7 @@ func _open_spell_dialog() -> void:
 	_spell_selected_slot = 0
 	_spell_filter = "All"
 	var entity: Dictionary = _reg.entities.get(_current_entity_id, {})
-	_spell_heading.text = "Configure Spells   |   %s - %s   |   4/4 Equipped" % [entity.get("name", ""), str(entity.get("type", "")).capitalize()]
+	_spell_heading.text = tr("LOADOUT_CONFIGURE_SPELLS") % [entity.get("name", ""), SpellView.affinity(entity)]
 	_rebuild_spell_catalog()
 	_refresh_spell_draft(0)
 	_spell_picker.hide()
@@ -785,7 +786,8 @@ func _rebuild_spell_catalog() -> void:
 		var status := SpellView.status(spell, _current_entity_id, entity_type, _spell_state.get("spell_progress", {}), _spell_synced or _spell_debug.unlock_all_buildings)
 		if status not in ["Initial", "Learned"]: continue
 		var row := Button.new()
-		row.text = "%s   |   %s" % [spell.name, SpellView.affinity(spell)]
+		row.set_meta("spell", spell)
+		row.text = "%s   |   %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), SpellView.affinity(spell)]
 		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		row.custom_minimum_size.y = 32
 		if status == "Locked":
@@ -798,6 +800,47 @@ func _rebuild_spell_catalog() -> void:
 		row.pressed.connect(_choose_catalog_spell.bind(spell, status))
 		_spell_catalog.add_child(row)
 		_style_spell_button(row)
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready():
+		return
+	if lbl_mode != null:
+		lbl_mode.text = _localized_mode()
+	_refresh_spell_button()
+	if is_instance_valid(_spell_empty_notice):
+		_spell_empty_notice.text = tr("LOADOUT_SPELLS_EMPTY")
+	if btn_play != null and (_hunt_mode or _dungeon_mode):
+		btn_play.text = tr("LOADOUT_START_RUN" if _dungeon_mode else "LOADOUT_READY")
+	if lbl_homunculus != null:
+		var hom := _find_by_id(_homunculi, _current_homunculus_id)
+		lbl_homunculus.text = tr("LOADOUT_HOMUNCULUS") % str(hom.get("name", _current_homunculus_id if not _current_homunculus_id.is_empty() else "—"))
+	if lbl_types != null:
+		var entity := _find_by_id(_entities, _current_entity_id)
+		if not entity.is_empty():
+			var kind := _type_for_entity(entity)
+			lbl_types.text = tr("LOADOUT_TYPES") % GameLocalization.catalog("type", kind, "name", kind)
+	for button in [dd_item1, dd_item2, dd_side1, dd_side2]:
+		if button != null and button.has_meta("items"):
+			var item := _get_selected_item_from_button(button)
+			button.text = tr("LOADOUT_NONE") if item.is_empty() or str(item.get("id", "")).is_empty() else _label_for_item(item, "None")
+	if is_instance_valid(tooltip_panel) and tooltip_panel.visible:
+		var hovered: Variant = tooltip_panel.get_meta("hovered_button", null)
+		if is_instance_valid(hovered):
+			_on_build_hover_entered(hovered)
+	if is_instance_valid(_spell_catalog):
+		for row in _spell_catalog.get_children():
+			if row is Button and row.has_meta("spell"):
+				var spell: Dictionary = row.get_meta("spell")
+				row.text = "%s   |   %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), SpellView.affinity(spell)]
+	if is_instance_valid(_spell_dialog) and _spell_dialog.visible and _spell_draft.size() > _spell_selected_slot:
+		var entity: Dictionary = _reg.entities.get(_current_entity_id, {})
+		_spell_heading.text = tr("LOADOUT_CONFIGURE_SPELLS") % [entity.get("name", ""), SpellView.affinity(entity)]
+		var duplicate_preview: Dictionary = _spell_description.get_meta("duplicate_preview", {})
+		var duplicate_status := str(_spell_description.get_meta("duplicate_status", "Learned"))
+		_refresh_spell_draft(_spell_selected_slot)
+		if not duplicate_preview.is_empty():
+			_spell_description.text = "%s\n%s\n%s" % [GameLocalization.catalog("spell", str(duplicate_preview.id), "name", str(duplicate_preview.name)), SpellView.detail(duplicate_preview, duplicate_status), tr("LOADOUT_SPELL_DUPLICATE")]
+			_spell_description.set_meta("duplicate_preview", duplicate_preview)
 
 func _style_spell_button(button: Button) -> void:
 	for state in ["normal", "hover", "pressed", "hover_pressed"]:
@@ -815,27 +858,31 @@ func _style_spell_button(button: Button) -> void:
 	button.add_theme_font_size_override("font_size", 14)
 
 func _choose_catalog_spell(spell: Dictionary, status: String) -> void:
-	_spell_description.text = "%s\n%s" % [spell.name, SpellView.detail(spell, status)]
+	_spell_description.set_meta("duplicate_preview", {})
+	_spell_description.text = "%s\n%s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), SpellView.detail(spell, status)]
 	if status not in ["Initial", "Learned"]:
 		return
 	var id := str(spell.id)
 	if id in _spell_draft and _spell_draft[_spell_selected_slot] != id:
-		_spell_description.text += "\nAlready equipped in another slot."
+		_spell_description.set_meta("duplicate_preview", spell)
+		_spell_description.set_meta("duplicate_status", status)
+		_spell_description.text += "\n" + tr("LOADOUT_SPELL_DUPLICATE")
 		return
 	_spell_draft[_spell_selected_slot] = id
 	_refresh_spell_draft(_spell_selected_slot)
 
 func _refresh_spell_draft(slot_index: int) -> void:
+	_spell_description.set_meta("duplicate_preview", {})
 	var valid := SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft)
 	_spell_confirm.disabled = not valid or _spell_pending_id != "" or (not _spell_debug.unlock_all_buildings and not _spell_synced)
 	for i in _spell_slots.size():
 		var selected_spell: Dictionary = _reg.get_spell_by_id(str(_spell_draft[i])) if i < _spell_draft.size() else {}
-		_spell_slots[i].text = "%d. %s\n%s | CD %d" % [i + 1, selected_spell.get("name", "-"), SpellView.affinity(selected_spell), int(selected_spell.get("cooldown_turns", 0))]
+		_spell_slots[i].text = "%d. %s\n%s | CD %d" % [i + 1, GameLocalization.catalog("spell", str(selected_spell.get("id", "")), "name", str(selected_spell.get("name", "-"))), SpellView.affinity(selected_spell), int(selected_spell.get("cooldown_turns", 0))]
 		_spell_slots[i].button_pressed = i == _spell_selected_slot
 	var spell: Dictionary = _reg.get_spell_by_id(str(_spell_draft[slot_index])) if slot_index < _spell_draft.size() else {}
-	_spell_description.text = "%s\n%s" % [spell.get("name", ""), SpellView.detail(spell, "Equipped")]
+	_spell_description.text = "%s\n%s" % [GameLocalization.catalog("spell", str(spell.get("id", "")), "name", str(spell.get("name", ""))), SpellView.detail(spell, "Equipped")]
 	if not valid:
-		_spell_description.text += "\nEach slot must contain a different available spell."
+		_spell_description.text += "\n" + tr("LOADOUT_SPELL_DISTINCT")
 	elif not _spell_debug.unlock_all_buildings and not _spell_synced:
 		_spell_description.text += "\nWaiting for an authenticated server state."
 
@@ -1140,28 +1187,36 @@ func _update_selected_visuals() -> void:
 			if c2 and c2.has_method("set_selected"):
 				c2.call("set_selected", c2.get("id") == _current_homunculus_id)
 
+func _localized_mode() -> String:
+	if _dungeon_mode:
+		return tr("LOADOUT_DUNGEON")
+	if _hunt_mode:
+		return tr("LOADOUT_HUNT")
+	return tr("LOADOUT_MODE") % tr("LOADOUT_ATTACK" if _mode == "attack" else "LOADOUT_DEFENSE")
+
 func _refresh_details() -> void:
 	var ent := _find_by_id(_entities, _current_entity_id)
 	if ent.is_empty() and _entities.size() > 0:
 		_current_entity_id = str(_entities[0].get("id",""))
 		ent = _find_by_id(_entities, _current_entity_id)
 	if ent.is_empty():
-		if lbl_name: lbl_name.text = "(Select an entity)"
-		if lbl_mode: lbl_mode.text = "Dungeons — Loadout" if _dungeon_mode else ("Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper())
-		if lbl_homunculus: lbl_homunculus.text = "Homunculus: —"
+		if lbl_name: lbl_name.text = "LOADOUT_SELECT_ENTITY"
+		if lbl_mode: lbl_mode.text = _localized_mode()
+		if lbl_homunculus: lbl_homunculus.text = tr("LOADOUT_HOMUNCULUS") % "—"
 		if preview: preview.texture = null
 		if _spell_button: _spell_button.show()
 		return
 	_refresh_spell_button()
 
 	if lbl_name: lbl_name.text = str(ent.get("name", _current_entity_id))
-	if lbl_mode: lbl_mode.text = "Dungeons — Loadout" if _dungeon_mode else ("Boss Hunt" if _hunt_mode else "Mode: " + _mode.to_upper())
+	if lbl_mode: lbl_mode.text = _localized_mode()
 	if lbl_homunculus:
 		var hom0 := _find_by_id(_homunculi, _current_homunculus_id)
 		var hname0 := str(hom0.get("name", _current_homunculus_id)) if typeof(hom0) == TYPE_DICTIONARY else _current_homunculus_id
-		lbl_homunculus.text = "Homunculus: " + hname0
+		lbl_homunculus.text = tr("LOADOUT_HOMUNCULUS") % hname0
 	if lbl_types:
-		lbl_types.text = "Types: " + _type_for_entity(ent)
+		var kind := _type_for_entity(ent)
+		lbl_types.text = tr("LOADOUT_TYPES") % GameLocalization.catalog("type", kind, "name", kind)
 	if lbl_base:
 		var stats = _get_base_stats(ent)
 		var buffs = _get_homunculus_buffs(_current_homunculus_id)
@@ -1370,7 +1425,7 @@ func _as_string_array(v) -> Array:
 func _label_for_item(item, fallback: String) -> String:
 	if typeof(item) == TYPE_DICTIONARY:
 		if item.has("name"):
-			return str(item.get("name", fallback))
+			return GameLocalization.catalog("item", str(item.get("id", "")), "name", str(item.get("name", fallback)))
 		if item.has("id"):
 			return str(item.get("id", fallback))
 	return str(item) if item != null else fallback
@@ -1454,7 +1509,7 @@ func _on_seal_attack() -> void:
 	if btn_seal_defense:
 		btn_seal_defense.button_pressed = false
 	if lbl_mode:
-		lbl_mode.text = "Mode: ATTACK"
+		lbl_mode.text = _localized_mode()
 	if changed:
 		_load_seal("attack")
 		_refresh_details()
@@ -1479,7 +1534,7 @@ func _on_seal_defense() -> void:
 		btn_seal_defense.button_pressed = true
 		_pulse_button(btn_seal_defense)
 	if lbl_mode:
-		lbl_mode.text = "Mode: DEFENSE"
+		lbl_mode.text = _localized_mode()
 	if changed:
 		_load_seal("defense")
 		_refresh_details()
@@ -1534,13 +1589,13 @@ func _on_play_pressed() -> void:
 		_submit_hunt_loadout()
 		return
 	if _spell_pending_id != "":
-		_set_build_error("Wait for spell loadout confirmation.")
+		_set_build_error(tr("LOADOUT_WAIT_SPELLS"))
 		return
 	if not _spell_debug.unlock_all_buildings and _spell_backend != null and _spell_backend.token != "" and not _spell_synced:
 		_set_build_error("Waiting for server spell loadouts.")
 		return
 	if _has_duplicate_build_items():
-		_set_build_error("You can't choose the same item twice")
+		_set_build_error(tr("LOADOUT_DUPLICATE_ITEM"))
 		return
 	_set_build_error("")
 	_save_seal(_mode)
@@ -1643,17 +1698,17 @@ func _submit_dungeon_loadout() -> void:
 		var first := _idx_to_id(_items, dd_item1)
 		var second := _idx_to_id(_items, dd_item2)
 		if _current_entity_id.is_empty() or (not first.is_empty() and first == second):
-			_set_build_error("Choose an entity and different weapons.")
+			_set_build_error(tr("LOADOUT_CHOOSE_ENTITY_WEAPONS"))
 			return
 		var spells: Array = _equipped_spells("attack", _current_entity_id)
 		var unique := {}
 		for id in spells:
 			if not id is String or id.is_empty() or unique.has(id):
-				_set_build_error("Choose four distinct spells.")
+				_set_build_error(tr("LOADOUT_CHOOSE_FOUR_SPELLS"))
 				return
 			unique[id] = true
 		if spells.size() != 4:
-			_set_build_error("Choose four distinct spells.")
+			_set_build_error(tr("LOADOUT_CHOOSE_FOUR_SPELLS"))
 			return
 		_dungeon_payload = {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _dungeon_backend._make_uuid(), "entity_id": _current_entity_id, "weapon_ids": [null if first.is_empty() else first, null if second.is_empty() else second], "homunculus_id": null if _current_homunculus_id.is_empty() else _current_homunculus_id, "spell_ids": spells.duplicate(), "mode": "attack"}
 		SceneRouter._dungeon_context["pending_loadout"] = _dungeon_payload.duplicate(true)
@@ -1835,10 +1890,11 @@ func _on_build_hover_entered(btn: Button) -> void:
 	var item := _get_selected_item_from_button(btn)
 	if item == null or item.is_empty():
 		return
+	tooltip_panel.set_meta("hovered_button", btn)
 	var helper = preload("res://scripts/domain/item_progress.gd")
 	var level: int = helper.level_for(str(item.get("id", "")), _spell_state.get("item_progress", {}))
 	var effective: Dictionary = helper.effective_item(item, _spell_state.get("item_progress", {}))
-	tooltip_label.text = "%s  |  Level %d\n%s\n%s" % [_label_for_item(item, "None"), level, _item_desc(item), _build_effects_text(effective.get("effects", {}))]
+	tooltip_label.text = tr("LOADOUT_WEAPON_LEVEL").replace("\\n", "\n") % [_label_for_item(item, "None"), level, _item_desc(item), _build_effects_text(effective.get("effects", {}))]
 	tooltip_icon.texture = _load_item_icon(item)
 	tooltip_panel.visible = true
 	tooltip_panel.custom_minimum_size = Vector2.ZERO
@@ -1885,8 +1941,8 @@ func _build_effects_text(effects: Dictionary) -> String:
 		var formatted := str(snappedf(amount, 0.01))
 		if formatted.ends_with(".0"):
 			formatted = formatted.trim_suffix(".0")
-		lines.append("%s: %s%s" % [str(labels.get(str(key), str(key).replace("_", " ").capitalize())), formatted, "%" if str(key) in percentages else ""])
-	return "\n".join(lines) if not lines.is_empty() else "No active effects."
+		lines.append("%s: %s%s" % [GameLocalization.catalog("loadout_stat", str(key), "name", str(labels.get(str(key), str(key).replace("_", " ").capitalize()))), formatted, "%" if str(key) in percentages else ""])
+	return "\n".join(lines) if not lines.is_empty() else tr("LOADOUT_NO_ACTIVE_EFFECTS")
 
 func _on_build_hover_exited() -> void:
 	if tooltip_panel:
@@ -1904,7 +1960,7 @@ func _get_selected_item_from_button(btn: Button) -> Dictionary:
 	return {}
 
 func _item_desc(item: Dictionary) -> String:
-	return str(item.get("desc", ""))
+	return GameLocalization.catalog("item", str(item.get("id", "")), "desc", str(item.get("desc", "")))
 
 func _load_item_icon(item: Dictionary) -> Texture2D:
 	var pid: String = str(item.get("id", ""))

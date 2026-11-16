@@ -17,6 +17,7 @@ config/icon="res://assets/ui/ew-icon.png"
 
 [autoload]
 
+GameLocalization="*res://scripts/ui/game_localization.gd"
 DropdownStyle="*res://scripts/ui/dropdown_style.gd"
 WindowModeManager="*res://scripts/ui/window_mode_manager.gd"
 GameTypography="*res://scripts/ui/game_typography.gd"
@@ -29,6 +30,10 @@ window/size/viewport_width=1920
 window/size/viewport_height=1080
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://i18n/ui.en.translation", "res://i18n/ui.es.translation", "res://i18n/catalog.en.translation", "res://i18n/catalog.es.translation", "res://i18n/lab.en.translation", "res://i18n/lab.es.translation", "res://i18n/gameplay.en.translation", "res://i18n/gameplay.es.translation")
 
 [physics]
 

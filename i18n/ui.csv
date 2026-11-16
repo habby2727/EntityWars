@@ -1,0 +1,241 @@
+keys,en,es
+MENU_COMBAT,COMBAT,COMBATE
+MENU_INVENTORY,INVENTORY,INVENTARIO
+MENU_LABORATORY,LABORATORY,LABORATORIO
+MENU_SETTINGS,SETTINGS,AJUSTES
+SETTINGS_TITLE,SETTINGS,AJUSTES
+SETTINGS_LANGUAGE,Language,Idioma
+SETTINGS_FULLSCREEN,Fullscreen,Pantalla completa
+SETTINGS_APPLY,Apply,Aplicar
+SETTINGS_YES,Yes,Sí
+SETTINGS_NO,No,No
+SETTINGS_BACK,Back,Volver
+SETTINGS_MUSIC_SOON,Music (Coming Soon),Música (próximamente)
+SETTINGS_SOUND_SOON,Sound (Coming Soon),Sonido (próximamente)
+SETTINGS_DISPLAY_PENDING,Press Apply to change display mode.,Pulsa Aplicar para cambiar el modo de pantalla.
+SETTINGS_DISPLAY_FULLSCREEN,Fullscreen enabled.,Pantalla completa activada.
+SETTINGS_DISPLAY_WINDOWED,Windowed mode enabled.,Modo ventana activado.
+SETTINGS_DISPLAY_SAVE_FAILED,"Display changed, but settings could not be saved.","La pantalla ha cambiado, pero no se han podido guardar los ajustes."
+EFFECT_TARGET_SELF,self,propio
+EFFECT_TARGET_ENEMY,enemy,enemigo
+EFFECT_HEAL,Heal %d HP (%s),Cura %d PV (%s)
+EFFECT_SHIELD,Shield %d %% (%s),Escudo %d %% (%s)
+EFFECT_ATK_BOOST,Attack +%d %% (%s),Ataque +%d %% (%s)
+EFFECT_ATK_DOWN,Attack -%d %% (%s),Ataque -%d %% (%s)
+EFFECT_HOM_STUN,Stuns homunculus for %d turn(s),Bloquea homúnculo %d turno(s)
+EFFECT_POISON,Poison for %d turn(s) (%s),Veneno %d turno(s) (%s)
+EFFECT_REFLECT,Reflects %d %% damage (%s),Refleja %d %% de daño (%s)
+EFFECT_VULNERABILITY,Vulnerability %d %% (%s),Vulnerabilidad %d %% (%s)
+EFFECT_TYPE_NEUTRALIZE,Reduces type advantage or disadvantage by %d %% in the next exchange,Reduce %d %% la ventaja o desventaja de tipo en el próximo intercambio
+EFFECT_BONUS_POISONED,Power +%d %% if the enemy is already poisoned,Potencia +%d %% si el enemigo ya está envenenado
+EFFECT_BONUS_HIT,Power +%d %% if hit in the previous exchange,Potencia +%d %% si recibió daño en el intercambio anterior
+EFFECT_NONE,No additional effect,Sin efecto adicional
+INVENTORY_EFFECTS,Effects: %s,Efectos: %s
+INVENTORY_OPEN_LOADOUT,OPEN LOADOUT,ABRIR EQUIPO
+UI_BACK_UPPER,BACK,VOLVER
+UI_CLOSE,Close,Cerrar
+UI_COMING_SOON,Coming soon...,Pronto...
+LAB_STRUCTURES,Structures,Estructuras
+LAB_NEXT_UPGRADE,NEXT UPGRADE,PROXIMA MEJORA
+LAB_UPGRADE,Upgrade,Mejorar
+LAB_COLLECT,Collect,Recoger
+LAB_MANAGE,Manage,Gestionar
+LOADOUT_TITLE,LOADOUT,EQUIPO
+LOADOUT_ENTITIES,ENTITIES,ENTIDADES
+LOADOUT_HOMUNCULI,HOMUNCULI,HOMÚNCULOS
+LOADOUT_WEAPONS,PRIMARY & SECONDARY WEAPONS,ARMAS PRINCIPALES Y SECUNDARIAS
+LOADOUT_TECHNIQUES,Techniques,Técnicas
+LOADOUT_ATTACK,ATTACK,ATAQUE
+LOADOUT_DEFENSE,DEFENSE,DEFENSA
+LOADOUT_SAVE,Save Seal,Guardar sello
+BUILDING_LAB_TH_NAME,Lab Hall,Sala del laboratorio
+BUILDING_ESSENCE_REACTOR_NAME,Essence Reactor,Reactor de esencia
+BUILDING_STORAGE_VAULT_NAME,Storage Vault,Bodega
+BUILDING_BUILD_FORGE_NAME,Build Forge,Forja de equipo
+BUILDING_HOMUNCULUS_VAT_NAME,Homunculus Vat,Criadero
+BUILDING_ULTRAHIT_TOWER_NAME,Spell Tower,Torre de hechizos
+BUILDING_EXPERIMENT_CHAMBER_NAME,Experiment Chamber,Sala de experimentos
+BUILDING_ARCANE_ARCHIVES_NAME,Arcane Archives,Archivos arcanos
+BUILDING_SYNC_NEXUS_NAME,Sync Nexus,Nexo de enlace
+BUILDING_ANOMALY_CONTAINMENT_NAME,Anomaly Containment,Control de riesgos
+BUILDING_TRADE_HALL_NAME,Trade Hall,Sala de comercio
+BUILDING_WORLD_GATE_NAME,World Gate,Portal del mundo
+BUILDING_LAB_TH_DESC,Unlock structures and raise their level caps.,Desbloquea estructuras y aumenta sus niveles máximos.
+BUILDING_ESSENCE_REACTOR_DESC,Produces Essence over time.,Produce esencia con el tiempo.
+BUILDING_STORAGE_VAULT_DESC,Increases resource storage capacity.,Aumenta la capacidad de almacenamiento de recursos.
+BUILDING_BUILD_FORGE_DESC,Manage your builds and equipment.,Gestiona tus configuraciones y equipo.
+BUILDING_HOMUNCULUS_VAT_DESC,Manage your homunculi.,Gestiona tus homúnculos.
+BUILDING_ULTRAHIT_TOWER_DESC,Research spells for your entities.,Investiga hechizos para tus entidades.
+BUILDING_EXPERIMENT_CHAMBER_DESC,Run laboratory experiments.,Realiza experimentos de laboratorio.
+BUILDING_ARCANE_ARCHIVES_DESC,Research new laboratory knowledge.,Investiga nuevos conocimientos de laboratorio.
+BUILDING_SYNC_NEXUS_DESC,Synchronizes laboratory networks.,Sincroniza las redes del laboratorio.
+BUILDING_ANOMALY_CONTAINMENT_DESC,Contains unstable anomalies.,Contiene anomalías inestables.
+BUILDING_TRADE_HALL_DESC,Trade resources and services.,Intercambia recursos y servicios.
+BUILDING_WORLD_GATE_DESC,Travel to distant zones.,Viaja a zonas lejanas.
+ITEM_BISMUTH_TALISMAN_NAME,Bismuth Sword,Espada de bismuto
+ITEM_BISMUTH_TALISMAN_DESC,Power bonus; true damage on hit; +1 Guard.,Bonificación de potencia; daño verdadero al golpear; +1 defensa.
+ITEM_WIND_AMULET_NAME,Wind Spear,Lanza del viento
+ITEM_WIND_AMULET_DESC,Tempo bonus; 8% evasion; +1 Power.,Bonificación de ritmo; 8% de evasión; +1 potencia.
+ITEM_SALTSTONE_CHARM_NAME,Saltstone Hammer,Martillo de sal
+ITEM_SALTSTONE_CHARM_DESC,Guard bonus; 12% ward each round; +1 Power.,Bonificación de defensa; 12% de protección por ronda; +1 potencia.
+ITEM_MIRROR_SIGEL_NAME,Mirror Blade,Hoja de espejo
+ITEM_MIRROR_SIGEL_DESC,Reflects damage; 8% ward each round; +1 Guard.,Refleja daño; 8% de protección por ronda; +1 defensa.
+ITEM_VITRIOL_VIAL_NAME,Vitriol Dagger,Daga de vitriolo
+ITEM_VITRIOL_VIAL_DESC,True corrosion damage on hit; 10% vulnerability; +1 Power.,Daño verdadero de corrosión al golpear; 10% de vulnerabilidad; +1 potencia.
+ITEM_GILDED_SCALE_NAME,Gilded Wardblade,Espada dorada protectora
+ITEM_GILDED_SCALE_DESC,Reduces type disadvantage; 6% ward each round; +1 Guard.,Reduce la desventaja de tipo; 6% de protección por ronda; +1 defensa.
+ITEM_MERCURY_LENS_NAME,Mercury Sabre,Sable de mercurio
+ITEM_MERCURY_LENS_DESC,Tempo after winning a round; 4% evasion; +1 Power.,Ritmo tras ganar una ronda; 4% de evasión; +1 potencia.
+ITEM_AETHER_KNOT_NAME,Aether Edge,Filo de éter
+ITEM_AETHER_KNOT_DESC,Chance to ignore reflection; 6% ward each round; +1 Power.,Probabilidad de ignorar reflejo; 6% de protección por ronda; +1 potencia.
+MUTATION_CATALYST_NAME,Catalyst,Catalizador
+MUTATION_CATALYST_DESC,Power +1.,Potencia +1.
+MUTATION_VITALITY_NAME,Vitality,Vitalidad
+MUTATION_VITALITY_DESC,HP +5.,PV +5.
+MUTATION_RESONANCE_NAME,Resonance,Resonancia
+MUTATION_RESONANCE_DESC,+3 percentage points to favorable elemental damage.,+3 puntos porcentuales de daño elemental favorable.
+RESEARCH_ARCHIVE_BASICS_NAME,Archive Basics,Fundamentos de archivo
+RESEARCH_TRADE_JOBS_NAME,Trade Jobs,Trabajos comerciales
+RESEARCH_WORLD_ZONES_NAME,World Zones,Zonas del mundo
+RESEARCH_SYNC_THEORY_NAME,Sync Theory,Teoría de enlace
+RESEARCH_ANOMALY_THEORY_NAME,Anomaly Theory,Teoría de anomalías
+RESEARCH_EXPERIMENT_COOLDOWN_NAME,Experiment Cooldown,Espera de experimentos
+RESEARCH_STORAGE_PROTOCOLS_NAME,Storage Protocols,Protocolos de almacenamiento
+RESEARCH_REACTOR_NOTES_NAME,Reactor Notes,Notas del reactor
+RESEARCH_ARCANE_CATALOG_NAME,Arcane Catalog,Catálogo arcano
+RESEARCH_GATEWAY_STUDIES_NAME,Gateway Studies,Estudios del portal
+SPELL_CINDER_FIST_NAME,Cinder Fist,Puño de brasas
+SPELL_CINDER_FIST_DESC,A reliable burning strike.,Un golpe ardiente y fiable.
+SPELL_FURNACE_RUSH_NAME,Furnace Rush,Embestida del horno
+SPELL_FURNACE_RUSH_DESC,A powerful rush that leaves the user vulnerable by 12%.,Una potente embestida que deja al usuario con un 12% de vulnerabilidad.
+SPELL_ASH_TEMPER_NAME,Ash Temper,Temple de ceniza
+SPELL_ASH_TEMPER_DESC,Increases the user's attack by 20%.,Aumenta un 20% el ataque del usuario.
+SPELL_BRIMSTONE_CRASH_NAME,Brimstone Crash,Golpe de azufre
+SPELL_BRIMSTONE_CRASH_DESC,A heavy strike that reduces enemy attack by 12%.,Un golpe fuerte que reduce un 12% el ataque enemigo.
+SPELL_SILVER_NEEDLE_NAME,Silver Needle,Aguja de plata
+SPELL_SILVER_NEEDLE_DESC,A precise silver strike.,Un golpe preciso de plata.
+SPELL_FALSE_SIGNAL_NAME,False Signal,Señal falsa
+SPELL_FALSE_SIGNAL_DESC,Reduces enemy attack by 10%.,Reduce un 10% el ataque enemigo.
+SPELL_LIQUID_DECOY_NAME,Liquid Decoy,Señuelo líquido
+SPELL_LIQUID_DECOY_DESC,Grants the user an 18% shield.,Otorga al usuario un escudo del 18%.
+SPELL_MERCURY_SNARE_NAME,Mercury Snare,Trampa de mercurio
+SPELL_MERCURY_SNARE_DESC,Blocks the enemy homunculus for one turn.,Bloquea al homúnculo enemigo durante un turno.
+SPELL_CRYSTAL_RAM_NAME,Crystal Ram,Ariete de cristal
+SPELL_CRYSTAL_RAM_DESC,A reliable crystalline charge.,Una carga cristalina fiable.
+SPELL_SALT_BARRIER_NAME,Salt Barrier,Barrera de sal
+SPELL_SALT_BARRIER_DESC,Grants the user a 24% shield.,Otorga al usuario un escudo del 24%.
+SPELL_BRINE_MEND_NAME,Brine Mend,Curación salina
+SPELL_BRINE_MEND_DESC,Restores 11 HP to the user.,Restaura 11 PV al usuario.
+SPELL_BASTION_RETURN_NAME,Bastion Return,Respuesta del bastión
+SPELL_BASTION_RETURN_DESC,Grants the user 18% damage reflection.,Otorga al usuario un 18% de reflejo de daño.
+SPELL_RIFT_TOUCH_NAME,Rift Touch,Toque de grieta
+SPELL_RIFT_TOUCH_DESC,A reliable strike through a rift.,Un golpe fiable a través de una grieta.
+SPELL_NULL_STITCH_NAME,Null Stitch,Sutura nula
+SPELL_NULL_STITCH_DESC,Blocks the enemy homunculus for one turn.,Bloquea al homúnculo enemigo durante un turno.
+SPELL_VEIL_RUPTURE_NAME,Veil Rupture,Ruptura del velo
+SPELL_VEIL_RUPTURE_DESC,Leaves the enemy vulnerable by 16%.,Deja al enemigo con un 16% de vulnerabilidad.
+SPELL_PARADOX_FOLD_NAME,Paradox Fold,Pliegue paradójico
+SPELL_PARADOX_FOLD_DESC,Halves type advantages and disadvantages for the next exchange.,Reduce a la mitad las ventajas y desventajas de tipo durante el próximo intercambio.
+SPELL_ETCHING_FANG_NAME,Etching Fang,Colmillo grabador
+SPELL_ETCHING_FANG_DESC,A reliable corrosive strike.,Un golpe corrosivo fiable.
+SPELL_CAUSTIC_MARK_NAME,Caustic Mark,Marca cáustica
+SPELL_CAUSTIC_MARK_DESC,Poisons the enemy for two turns.,Envenena al enemigo durante dos turnos.
+SPELL_BITTER_HAZE_NAME,Bitter Haze,Bruma amarga
+SPELL_BITTER_HAZE_DESC,Reduces enemy attack by 16%.,Reduce un 16% el ataque enemigo.
+SPELL_ROT_HARVEST_NAME,Rot Harvest,Cosecha de podredumbre
+SPELL_ROT_HARVEST_DESC,Gains 35% power if the enemy is already poisoned.,Gana un 35% de potencia si el enemigo ya está envenenado.
+SPELL_AURUM_EDGE_NAME,Aurum Edge,Filo áureo
+SPELL_AURUM_EDGE_DESC,A reliable golden strike.,Un golpe dorado fiable.
+SPELL_GILDED_REPRISAL_NAME,Gilded Reprisal,Represalia dorada
+SPELL_GILDED_REPRISAL_DESC,Grants the user 22% damage reflection.,Otorga al usuario un 22% de reflejo de daño.
+SPELL_DEBT_SEAL_NAME,Debt Seal,Sello de deuda
+SPELL_DEBT_SEAL_DESC,Leaves the enemy vulnerable by 12%.,Deja al enemigo con un 12% de vulnerabilidad.
+SPELL_TRIBUNAL_STRIKE_NAME,Tribunal Strike,Golpe del tribunal
+SPELL_TRIBUNAL_STRIKE_DESC,Gains 30% power if the user took damage in the previous exchange.,Gana un 30% de potencia si el usuario recibió daño en el intercambio anterior.
+SPELL_SUPPORT,Support,Apoyo
+SPELL_DETAIL_HEADER,"%s | %s | %s\nPower: %s   Accuracy: %d%%   Cooldown: %d\n\n%s","%s | %s | %s\nPotencia: %s   Precisión: %d%%   Espera: %d\n\n%s"
+SPELL_CATEGORY_ATTACK_NAME,Attack,Ataque
+SPELL_CATEGORY_SUPPORT_NAME,Support,Apoyo
+SPELL_STATE_INITIAL_NAME,Initial,Inicial
+SPELL_STATE_INCOMPATIBLE_NAME,Incompatible,Incompatible
+SPELL_STATE_UNKNOWN_NAME,Unknown,Desconocido
+SPELL_STATE_LEARNED_NAME,Learned,Aprendido
+SPELL_STATE_LOCKED_NAME,Locked,Bloqueado
+SPELL_STATE_EQUIPPED_NAME,Equipped,Equipado
+SPELL_STATE_RESEARCH_NAME,Research,Investigación
+TYPE_SULFUR_NAME,Sulfur,Azufre
+TYPE_MERCURY_NAME,Mercury,Mercurio
+TYPE_SODIUM_NAME,Sodium,Sodio
+TYPE_AETHER_NAME,Aether,Éter
+TYPE_VITRIOL_NAME,Vitriol,Vitriolo
+TYPE_GOLD_NAME,Gold,Oro
+TYPE_HYBRID_NAME,Hybrid,Híbrido
+TYPE_UNIVERSAL_NAME,Universal,Universal
+INVENTORY_NO_DETAILS,No details available.,No hay detalles disponibles.
+INVENTORY_COST,Cost:,Coste:
+INVENTORY_TYPE_ROLE,Type: %s  |  Role: %s,Tipo: %s  |  Función: %s
+INVENTORY_RARITY,Rarity: %s,Rareza: %s
+INVENTORY_BONUSES,Bonuses  |  ATK: %+d    GUARD: %+d    HP: %+d,Bonificaciones  |  ATQ: %+d    DEF: %+d    PV: %+d
+INVENTORY_SYNERGIES,Synergies:,Sinergias:
+INVENTORY_LEVEL,Level: %d / 10,Nivel: %d / 10
+INVENTORY_LEVEL_UNAVAILABLE,Level: unavailable,Nivel: no disponible
+INVENTORY_SPECIALIZATION,Specialization: %s,Especialización: %s
+INVENTORY_CURRENT_EFFECTS,Current effects: %s,Efectos actuales: %s
+INVENTORY_EFFECTS_BY_LEVEL,Effects by level: %s,Efectos por nivel: %s
+RARITY_COMMON_NAME,Common,Común
+RARITY_UNCOMMON_NAME,Uncommon,Poco común
+RARITY_RARE_NAME,Rare,Raro
+RARITY_EPIC_NAME,Epic,Épico
+RARITY_LEGENDARY_NAME,Legendary,Legendario
+SPECIALIZATION_NONE_NAME,None,Ninguna
+SPECIALIZATION_OFFENSIVE_NAME,Offensive,Ofensiva
+SPECIALIZATION_DEFENSIVE_NAME,Defensive,Defensiva
+SPECIALIZATION_UTILITY_NAME,Utility,Utilidad
+SPELL_FILTER_ALL,All,Todos
+SPELL_FILTER_INITIAL,Initial,Inicial
+SPELL_FILTER_HYBRID,Hybrid,Mixtos
+SPELL_FILTER_UNIVERSAL,Universal,Universal
+SPELL_GROUP_INITIAL,Initial Spells,Hechizos iniciales
+SPELL_DETAILS,Spell details,Detalles del hechizo
+SPELL_RESEARCH,Research,Investigar
+UI_CANCEL,Cancel,Cancelar
+UI_CONFIRM,Confirm,Confirmar
+LAB_PENDING,PENDING,PENDIENTE
+LAB_ROUTE,Route,Ruta
+LAB_UPGRADE_COST,Upgrade Cost,Coste de mejora
+LAB_SET_ROUTE,Set Route,Elegir ruta
+LAB_CLAIM,Claim,Recoger
+LAB_OPEN,Open,Abrir
+LAB_EXPERIMENTS,Experiments,Experimentos
+SPELL_FEATURED,FEATURED,DESTACADO
+SPELL_AVAILABLE_INITIAL,Available (initial),Disponible (inicial)
+SPELL_RESEARCHING,Researching: %s,Investigando: %s
+SPELL_READY_CLAIM,Ready to claim,Listo para recoger
+SPELL_LOCKED_RESEARCH,Locked: another spell is being researched,Bloqueado: hay otro hechizo en investigación
+SPELL_LOCKED_TOWER,Locked: Spell Tower level %d required,Bloqueado: requiere nivel %d de la Torre de hechizos
+SPELL_LOCKED_RESOURCES,Locked: insufficient resources,Bloqueado: recursos insuficientes
+SPELL_RESEARCHABLE,Researchable,Disponible para investigar
+SPELL_RESEARCHABLE_DEBUG,Researchable (local debug),Disponible para investigar (depuración local)
+SPELL_LOCKED_SIGN_IN,Locked: backend sign-in required,Bloqueado: requiere iniciar sesión
+SPELL_LOCKED_STATE,Locked: awaiting server state,Bloqueado: esperando el estado del servidor
+SPELL_TIME_BASE,Time: %02d:%02d base%s,Tiempo: %02d:%02d base%s
+SPELL_TIME_BOOSTED, | %02d:%02d boosted, | %02d:%02d con impulso
+SPELL_COST_DETAIL,Cost: %s%s,Coste: %s%s
+SPELL_COST_NORMAL, (normal: %s), (normal: %s)
+EXPERIMENT_VOLATILE_OVERCLOCK_NAME,More Essence,Más esencia
+EXPERIMENT_VOLATILE_OVERCLOCK_DESC,Produce 10% more Essence for 20 minutes.,Produce un 10% más de esencia durante 20 minutos.
+EXPERIMENT_ESSENCE_TURBO_NAME,Essence Turbo,Esencia turbo
+EXPERIMENT_ESSENCE_TURBO_DESC,Produce 20% more Essence for 8 minutes. Only the strongest output boost applies.,Produce un 20% más de esencia durante 8 minutos. Solo se aplica el aumento más potente.
+EXPERIMENT_SAFE_REACTOR_NAME,Safe Reactor,Reactor seguro
+EXPERIMENT_SAFE_REACTOR_DESC,Reduce the chance of Volatile route losses by 35% for 30 minutes.,Reduce un 35% la probabilidad de pérdidas de la ruta volátil durante 30 minutos.
+EXPERIMENT_MUTAGEN_SURGE_NAME,More Shards,Más fragmentos
+EXPERIMENT_MUTAGEN_SURGE_DESC,"Increase the Mutagenic route's rare shard chance by 35% for 20 minutes, up to its usual cap.","Aumenta un 35% la probabilidad de fragmentos raros de la ruta mutagénica durante 20 minutos, hasta su límite habitual."
+EXPERIMENT_FAST_RESEARCH_NAME,Faster Research,Investigación acelerada
+EXPERIMENT_FAST_RESEARCH_DESC,New Arcane Archives research starts 15% faster for 20 minutes.,Las nuevas investigaciones de los Archivos arcanos comienzan un 15% más rápido durante 20 minutos.
+EXPERIMENT_FAST_SPELLS_NAME,Faster Spells,Hechizos acelerados
+EXPERIMENT_FAST_SPELLS_DESC,New Spell Tower research starts 15% faster for 20 minutes.,Las nuevas investigaciones de la Torre de hechizos comienzan un 15% más rápido durante 20 minutos.
+EXPERIMENT_EXTRA_STORAGE_NAME,Extra Storage,Almacenamiento adicional
+EXPERIMENT_EXTRA_STORAGE_DESC,Increase storage capacity during collection by 15% for 30 minutes.,Aumenta un 15% la capacidad de almacenamiento al recoger durante 30 minutos.
+EXPERIMENT_BETTER_ODDS_NAME,Better Chances,Mejores probabilidades
+EXPERIMENT_BETTER_ODDS_DESC,Add 10 percentage points to other experiment success chances for 10 minutes.,Añade 10 puntos porcentuales a la probabilidad de éxito de otros experimentos durante 10 minutos.
+EXPERIMENT_TIMING,Duration: %s | Cooldown: %s,Duración: %s | Espera: %s

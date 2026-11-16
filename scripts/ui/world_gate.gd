@@ -237,15 +237,16 @@ func _render_hunt_rows() -> void:
 		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(column)
 		var select := Button.new()
+		select.set_meta("localization_body_font", true)
 		var tier := str(boss.get("tier", ""))
-		select.text = "%s | %s | Tier %d / 5" % [boss.get("name", id), tier.to_upper(), tiers.find(tier) + 1]
+		select.text = tr("HUNT_LIST_ROW") % [GameLocalization.catalog("hunt", id, "name", str(boss.get("name", id))), GameLocalization.catalog("tier", tier, "name", tier.capitalize()).to_upper(), tiers.find(tier) + 1]
 		MenuArt.button(select)
 		select.pressed.connect(_select_hunt.bind(id))
 		column.add_child(select)
 		var status := Label.new()
 		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		column.add_child(status)
-		_hunt_rows[id] = {"status": status, "boss": boss}
+		_hunt_rows[id] = {"status": status, "boss": boss, "select": select}
 	if _hunt_selected == "" or not _hunt_rows.has(_hunt_selected):
 		_hunt_selected = str(_hunt_bosses[0].get("id", "")) if not _hunt_bosses.is_empty() else ""
 	_select_hunt(_hunt_selected)
@@ -260,7 +261,8 @@ func _select_hunt(id: String) -> void:
 	_hunt_portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
 	var tier := str(boss.get("tier", ""))
 	var rank := ["common", "mythic", "rare", "epic", "legendary"].find(tier) + 1
-	_hunt_details.text = "%s\n%s | Tier %d / 5\nDifficulty: %s\nLoot tier: %s\n\nUnverified preview: no rewards." % [boss.get("name", id), tier.to_upper(), rank, tier.capitalize(), tier.capitalize()]
+	var tier_name := GameLocalization.catalog("tier", tier, "name", tier.capitalize())
+	_hunt_details.text = tr("HUNT_DETAILS").replace("\\n", "\n") % [GameLocalization.catalog("hunt", id, "name", str(boss.get("name", id))), tier_name.to_upper(), rank, tier_name, tier_name]
 	_update_hunt_fight()
 
 func _update_hunt_countdowns() -> void:
@@ -385,6 +387,34 @@ func _load_state() -> void:
 		_player_world = {}
 	_sync_active_session()
 
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready():
+		return
+	for zone_id in _zone_rows:
+		var row: Dictionary = _zone_rows[zone_id]
+		var raw_entry: Variant = _db.zones.get(zone_id, {})
+		var entry: Dictionary = raw_entry if raw_entry is Dictionary else {}
+		var name_label: Label = row.get("name")
+		var lore: Label = row.get("lore")
+		if name_label != null:
+			name_label.text = GameLocalization.catalog("zone", str(zone_id), "name", str(entry.get("display_name", entry.get("name", zone_id))))
+		if lore != null:
+			lore.text = GameLocalization.catalog("zone", str(zone_id), "desc", "")
+	var tiers := ["common", "mythic", "rare", "epic", "legendary"]
+	for id in _hunt_rows:
+		var row: Dictionary = _hunt_rows[id]
+		var boss: Dictionary = row.boss
+		var select: Button = row.get("select")
+		var tier := str(boss.get("tier", ""))
+		if select != null:
+			select.text = tr("HUNT_LIST_ROW") % [GameLocalization.catalog("hunt", str(id), "name", str(boss.get("name", id))), GameLocalization.catalog("tier", tier, "name", tier.capitalize()).to_upper(), tiers.find(tier) + 1]
+	if _hunt_rows.has(_hunt_selected) and is_instance_valid(_hunt_details):
+		var boss: Dictionary = _hunt_rows[_hunt_selected].boss
+		var tier := str(boss.get("tier", ""))
+		var tier_name := GameLocalization.catalog("tier", tier, "name", tier.capitalize())
+		_hunt_details.text = tr("HUNT_DETAILS").replace("\\n", "\n") % [GameLocalization.catalog("hunt", _hunt_selected, "name", str(boss.get("name", _hunt_selected))), tier_name.to_upper(), tiers.find(tier) + 1, tier_name, tier_name]
+	_update_zone_cards()
+
 func _build_zone_cards() -> void:
 	if _zone_list == null:
 		return
@@ -429,7 +459,7 @@ func _build_zone_cards() -> void:
 		text_col.clip_contents = true
 		row.add_child(text_col)
 		var name_label := Label.new()
-		name_label.text = str(entry.get("display_name", entry.get("name", zone_id)))
+		name_label.text = GameLocalization.catalog("zone", str(zone_id), "name", str(entry.get("display_name", entry.get("name", zone_id))))
 		name_label.add_theme_font_size_override("font_size", int(round(18.0 * _ui_scale)))
 		var zone_colors := {"zone_chaos": Color("dc9dff"), "zone_corrupted": Color("90e68a"), "zone_crystal": Color("81dfff")}
 		name_label.add_theme_color_override("font_color", zone_colors.get(str(zone_id), Color.WHITE))
@@ -437,7 +467,8 @@ func _build_zone_cards() -> void:
 		name_label.clip_text = true
 		text_col.add_child(name_label)
 		var lore := Label.new()
-		lore.text = {"zone_chaos": "Reality fractures beneath unpredictable alchemical storms.", "zone_corrupted": "Tainted echoes reshape every creature that crosses this wasteland.", "zone_crystal": "Ancient prisms resonate with forgotten alchemical memories."}.get(str(zone_id), "")
+		lore.set_meta("localization_body_font", true)
+		lore.text = GameLocalization.catalog("zone", str(zone_id), "desc", "")
 		lore.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lore.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		text_col.add_child(lore)
@@ -460,7 +491,8 @@ func _build_zone_cards() -> void:
 			"preview": preview,
 			"mod": mod_label,
 			"enter": enter_btn,
-			"name": name_label
+			"name": name_label,
+			"lore": lore
 		}
 	if zone_ids.size() > 0:
 		_selected_zone_id = str(zone_ids[0])
@@ -827,7 +859,7 @@ func _update_zone_cards() -> void:
 		var modifiers = []
 		if zone_map.has(zone_id):
 			modifiers = zone_map[zone_id].get("modifier_ids", [])
-		var mod_text = "Modifiers: %s" % _format_list(modifiers)
+		var mod_text = tr("WORLD_MODIFIERS") % _format_list(modifiers)
 		var mod_label: Label = row.get("mod", null)
 		if mod_label != null:
 			mod_label.text = mod_text
@@ -836,8 +868,8 @@ func _update_zone_cards() -> void:
 			var has_session := _has_zone_session(str(zone_id))
 			var remaining := _gate_remaining()
 			enter_btn.disabled = not has_session and remaining != 0
-			enter_btn.text = "Resume" if has_session else "Wait %s" % _gate_remaining_text() if remaining != 0 else "Enter"
-			enter_btn.tooltip_text = "World Gate cooldown: %s" % _gate_remaining_text() if remaining != 0 and not has_session else ""
+			enter_btn.text = tr("WORLD_RESUME") if has_session else tr("WORLD_WAIT") % _gate_remaining_text() if remaining != 0 else tr("WORLD_ENTER")
+			enter_btn.tooltip_text = tr("WORLD_GATE_COOLDOWN") % _gate_remaining_text() if remaining != 0 and not has_session else ""
 
 func _has_zone_session(zone_id: String) -> bool:
 	var sessions: Variant = _player_world.get("sessions", {})
@@ -865,8 +897,8 @@ func _update_session_panel() -> void:
 	if _db.zones.has(zone_id):
 		var entry = _db.zones[zone_id]
 		if typeof(entry) == TYPE_DICTIONARY:
-			display_name = str(entry.get("display_name", entry.get("name", zone_id)))
-	_session_zone_label.text = "Active Zone: %s" % display_name
+			display_name = GameLocalization.catalog("zone", zone_id, "name", str(entry.get("display_name", entry.get("name", zone_id))))
+	_session_zone_label.text = tr("WORLD_ACTIVE_ZONE") % display_name
 	var heat := 0
 	var rep := 0
 	var progress = _player_world.get("zone_progress", {})

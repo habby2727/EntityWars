@@ -38,7 +38,7 @@ autowrap_mode = 2
 [node name="Close" type="Button" parent="Margin/Scroll/Content/Header"]
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
-tooltip_text = "Close"
+tooltip_text = "UI_CLOSE"
 text = "X"
 
 [node name="ImageFrame" type="CenterContainer" parent="Margin/Scroll/Content"]
@@ -78,7 +78,7 @@ autowrap_mode = 2
 
 [node name="CostTitle" type="Label" parent="Margin/Scroll/Content"]
 layout_mode = 2
-text = "NEXT UPGRADE"
+text = "LAB_NEXT_UPGRADE"
 theme_override_font_sizes/font_size = 13
 
 [node name="Costs" type="VBoxContainer" parent="Margin/Scroll/Content"]
@@ -93,17 +93,17 @@ theme_override_font_sizes/font_size = 13
 [node name="Upgrade" type="Button" parent="Margin/Scroll/Content"]
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
-text = "Upgrade"
+text = "LAB_UPGRADE"
 
 [node name="Collect" type="Button" parent="Margin/Scroll/Content"]
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
-text = "Collect"
+text = "LAB_COLLECT"
 
 [node name="Manage" type="Button" parent="Margin/Scroll/Content"]
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
-text = "Manage"
+text = "LAB_MANAGE"
 
 [node name="HealthTimer" type="Timer" parent="."]
 wait_time = 8.0

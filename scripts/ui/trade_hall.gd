@@ -367,7 +367,7 @@ func _build_npc_exchange() -> void:
 	_npc_list.add_theme_constant_override("separation", 8)
 	margin.add_child(_npc_list)
 	_npc_confirm = ConfirmationDialog.new()
-	_npc_confirm.title = "Confirm NPC exchange"
+	_npc_confirm.title = "TRADE_NPC_CONFIRM_TITLE"
 	_npc_confirm.confirmed.connect(_confirm_npc_buy)
 	add_child(_npc_confirm)
 	_render_npc_offers()
@@ -429,7 +429,7 @@ func _npc_amount_text(amounts: Dictionary) -> String:
 	var parts: Array[String] = []
 	for id in amounts:
 		var resource: Dictionary = _db.resources.get(id, {})
-		parts.append("%d %s" % [int(amounts[id]), str(resource.get("display_name", resource.get("name", id)))])
+		parts.append("%d %s" % [int(amounts[id]), GameLocalization.catalog("resource", str(id), "name", str(resource.get("display_name", resource.get("name", id))))])
 	return ", ".join(parts)
 
 func _render_npc_offers() -> void:
@@ -446,7 +446,7 @@ func _render_npc_offers() -> void:
 	_npc_list.add_child(_npc_status)
 	for period in ["daily", "weekly"]:
 		var heading := Label.new()
-		heading.text = "Daily offers" if period == "daily" else "Weekly offers"
+		heading.text = "TRADE_NPC_DAILY" if period == "daily" else "TRADE_NPC_WEEKLY"
 		heading.add_theme_font_size_override("font_size", 20)
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_npc_list.add_child(heading)
@@ -472,14 +472,17 @@ func _render_npc_offers() -> void:
 			row.add_theme_constant_override("separation", 12)
 			background.add_child(row)
 			var label := Label.new()
+			label.name = "NPCOfferText"
+			label.set_meta("offer", offer)
+			label.set_meta("localization_body_font", true)
 			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			label.text = "%s -> %s   |   %s" % [_npc_amount_text(offer.get("pay", {})), _npc_amount_text(offer.get("receive", {})), "Availability unverified" if _npc_preview else "%d / %d remaining" % [int(offer.get("remaining", 0)), int(offer.get("max", 0))]]
+			label.text = _npc_offer_text(offer)
 			row.add_child(label)
 			var button := Button.new()
-			button.text = "Buy"
+			button.text = "TRADE_BUY"
 			button.custom_minimum_size = Vector2(120, 42)
 			MenuArt.button(button)
 			button.set_meta("offer", offer)
@@ -487,6 +490,25 @@ func _render_npc_offers() -> void:
 			row.add_child(button)
 			_npc_buttons.append(button)
 	_update_npc_buttons()
+
+func _npc_offer_text(offer: Dictionary) -> String:
+	return "%s -> %s   |   %s" % [_npc_amount_text(offer.get("pay", {})), _npc_amount_text(offer.get("receive", {})), tr("TRADE_NPC_UNVERIFIED") if _npc_preview else tr("TRADE_NPC_REMAINING") % [int(offer.get("remaining", 0)), int(offer.get("max", 0))]]
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready():
+		return
+	if is_instance_valid(_npc_list):
+		for label in _npc_list.find_children("NPCOfferText", "Label", true, false):
+			label.text = _npc_offer_text(label.get_meta("offer", {}))
+	if _npc_server_ms > 0:
+		var now := _npc_server_ms + Time.get_ticks_msec() - _npc_received_tick
+		var key := "TRADE_NPC_LOCAL_ROTATION" if _npc_preview else "TRADE_NPC_ROTATION"
+		if is_instance_valid(_npc_daily_timer):
+			_npc_daily_timer.text = tr(key) % _npc_clock(maxi(0, _npc_next_daily - now))
+		if is_instance_valid(_npc_weekly_timer):
+			_npc_weekly_timer.text = tr(key) % _npc_clock(maxi(0, _npc_next_weekly - now))
+	if is_instance_valid(_npc_confirm) and _npc_confirm.visible and not _npc_selected.is_empty():
+		_npc_confirm.dialog_text = tr("TRADE_NPC_CONFIRM") % [_npc_amount_text(_npc_selected.get("pay", {})), _npc_amount_text(_npc_selected.get("receive", {}))]
 
 func _update_npc_buttons() -> void:
 	var wallet: Dictionary = _state.get("wallet", {})
@@ -507,9 +529,9 @@ func _update_npc_timers() -> void:
 		return
 	var now := _npc_server_ms + Time.get_ticks_msec() - _npc_received_tick
 	if is_instance_valid(_npc_daily_timer):
-		_npc_daily_timer.text = ("Local rotation in " if _npc_preview else "Rotation in ") + _npc_clock(maxi(0, _npc_next_daily - now))
+		_npc_daily_timer.text = tr("TRADE_NPC_LOCAL_ROTATION" if _npc_preview else "TRADE_NPC_ROTATION") % _npc_clock(maxi(0, _npc_next_daily - now))
 	if is_instance_valid(_npc_weekly_timer):
-		_npc_weekly_timer.text = ("Local rotation in " if _npc_preview else "Rotation in ") + _npc_clock(maxi(0, _npc_next_weekly - now))
+		_npc_weekly_timer.text = tr("TRADE_NPC_LOCAL_ROTATION" if _npc_preview else "TRADE_NPC_ROTATION") % _npc_clock(maxi(0, _npc_next_weekly - now))
 	if (_npc_next_daily > 0 and now >= _npc_next_daily) or (_npc_next_weekly > 0 and now >= _npc_next_weekly):
 		_npc_expired = true
 		_update_npc_buttons()
@@ -528,7 +550,7 @@ func _request_npc_buy(offer: Dictionary) -> void:
 	if _busy or _npc_expired or _npc_fetch_pending:
 		return
 	_npc_selected = offer.duplicate(true)
-	_npc_confirm.dialog_text = "Exchange %s for %s?" % [_npc_amount_text(offer.get("pay", {})), _npc_amount_text(offer.get("receive", {}))]
+	_npc_confirm.dialog_text = tr("TRADE_NPC_CONFIRM") % [_npc_amount_text(offer.get("pay", {})), _npc_amount_text(offer.get("receive", {}))]
 	_npc_confirm.popup_centered()
 
 func _confirm_npc_buy() -> void:

@@ -53,7 +53,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="Background/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "INVENTORY"
+text = "MENU_INVENTORY"
 theme_override_font_sizes/font_size = 28
 
 [node name="Spacer" type="Control" parent="Background/Margin/RootVBox/Header"]
@@ -62,11 +62,11 @@ size_flags_horizontal = 3
 
 [node name="LoadoutButton" type="Button" parent="Background/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "OPEN LOADOUT"
+text = "INVENTORY_OPEN_LOADOUT"
 
 [node name="BackButton" type="Button" parent="Background/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "BACK"
+text = "UI_BACK_UPPER"
 
 [node name="Tabs" type="TabContainer" parent="Background/Margin/RootVBox"]
 layout_mode = 2

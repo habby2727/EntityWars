@@ -4,6 +4,7 @@ const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 
 func _initialize() -> void:
+	TranslationServer.set_locale("en")
 	assert(Stats.percent(0.9) == "90%")
 	assert(Stats.effect_value("shield", 0.5) == "50%")
 	assert(Stats.effect_value("poison", 2) == "2")

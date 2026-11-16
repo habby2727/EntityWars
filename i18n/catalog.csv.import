@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cb0efhqqjpkgt"
+
+[deps]
+
+files=["res://i18n/catalog.en.translation", "res://i18n/catalog.es.translation"]
+
+source_file="res://i18n/catalog.csv"
+dest_files=["res://i18n/catalog.en.translation", "res://i18n/catalog.es.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

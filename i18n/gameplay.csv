@@ -1,0 +1,181 @@
+keys,en,es
+STATUS_POISON,Poison: periodic damage,Veneno: daño periódico
+STATUS_SHIELD,Shield: reduces the next hit,Escudo: reduce el próximo impacto
+STATUS_REFLECT,Reflect: returns damage on the next hit,Reflejo: devuelve daño en el próximo impacto
+STATUS_ATK_BOOST,Attack increased on the next hit,Ataque aumentado en el próximo golpe
+STATUS_ATK_DOWN,Attack reduced on the next hit,Ataque reducido en el próximo golpe
+STATUS_VULNERABILITY,Vulnerability: increases damage received on the next hit,Vulnerabilidad: aumenta el daño recibido en el próximo impacto
+STATUS_STUN,Stun: loses actions,Aturdimiento: pierde acciones
+STATUS_HOM_STUN,Homunculus blocked,Homúnculo bloqueado
+STATUS_TEMPO,Tempo change until the next initiative,Cambio de ritmo hasta la próxima iniciativa
+STATUS_FOCUS,Accuracy increased on the next offensive action,Precisión aumentada en la próxima acción ofensiva
+STATUS_MISALIGN,Accuracy reduced on the next offensive action,Precisión reducida en la próxima acción ofensiva
+STATUS_POISON_REFLECT,Poison when the next reflection triggers,Veneno al activar el próximo reflejo
+STATUS_HYBRID_MARK,Hybrid mark: %d caster actions,Marca híbrida: %d acciones del lanzador
+STATUS_TYPE_CHANGE,Type alteration: %d%% (%s),Alteración de tipo: %d%% (%s)
+STATUS_CURRENT_EXCHANGE,current exchange,intercambio actual
+STATUS_NEXT_EXCHANGE,next exchange,próximo intercambio
+STATUS_VICTORY,Victory %d: %s,Victoria %d: %s
+STATUS_EARNED,earned,conseguida
+STATUS_PENDING,pending,pendiente
+STATUS_NAME_POISON_NAME,Poison,Veneno
+STATUS_NAME_SHIELD_PCT_NAME,Shield,Escudo
+STATUS_NAME_REFLECT_PCT_NAME,Reflect,Reflejo
+STATUS_NAME_ATK_BOOST_NAME,Atk Boost,Aumento de ataque
+STATUS_NAME_ATK_DOWN_NAME,Atk Down,Reducción de ataque
+STATUS_NAME_VULN_PCT_NAME,Vuln,Vulnerabilidad
+STATUS_NAME_STUN_NAME,Stun,Aturdimiento
+STATUS_NAME_HOM_STUN_NAME,Hom Stun,Bloqueo de homúnculo
+STATUS_NAME_TEMPO_BONUS_NAME,Tempo Bonus,Cambio de ritmo
+STATUS_NAME_FOCUS_NEXT_NAME,Focus Next,Precisión aumentada
+STATUS_NAME_MISALIGN_NEXT_NAME,Misalign Next,Precisión reducida
+STATUS_NAME_POISON_ON_REFLECT_NAME,Poison On Reflect,Veneno al reflejar
+STATUS_NAME_TYPE_ALTERATION_NAME,Type alteration,Alteración de tipo
+STATUS_NAME_HYBRID_MARK_NAME,Hybrid mark,Marca híbrida
+STATUS_ENDED,ended,terminado
+COMBAT_RETRY,Retry,Reintentar
+COMBAT_NEXT_FLOOR,Next Floor,Siguiente piso
+COMBAT_RETURN,Return,Volver
+COMBAT_RECOVER,Recover,Recuperar
+COMBAT_RETURN_ZONE,Return to World Zone,Volver a la zona
+COMBAT_RETURN_GATE,Return to World Gate,Volver al portal
+COMBAT_RETURN_LOADOUT,Return to Loadout,Volver al equipo
+ANOMALY_EXPIRED,Physical Anomaly expired.,La anomalía física ha terminado.
+ANOMALY_REPLACED,Physical Anomaly replaced.,La anomalía física ha sido sustituida.
+ANOMALY_DISPLAY,Physical Anomaly — %s | %d exchanges | %s +15%% | %s -15%%,Anomalía física — %s | %d intercambios | %s +15%% | %s -15%%
+ANOMALY_TOOLTIP,"Physical Anomaly: %s +15%%, %s -15%% direct spell damage; %d exchanges remaining.","Anomalía física: daño directo de hechizos de %s +15%%, de %s -15%%; quedan %d intercambios."
+ANOMALY_TOOLTIP_GAIN,Physical Anomaly: %s gains 15%% and %s loses 15%% direct spell damage; %d exchanges remaining.,Anomalía física: %s gana un 15%% y %s pierde un 15%% de daño directo de hechizos; quedan %d intercambios.
+ANOMALY_REPLACES,Physical Anomaly: %s replaces the previous anomaly.,Anomalía física: %s sustituye la anomalía anterior.
+COMBAT_PLAYER,Player,Jugador
+COMBAT_ENTITY,Entity,Entidad
+COMBAT_FAMILIAR,Homunculus,Familiar
+COMBAT_BUILD,Build,Equipo
+COMBAT_HOLD,Hold,Conservar
+COMBAT_HOLD_HINT,Keep homunculus energy.,Conserva la energía del homúnculo.
+COMBAT_ATTACK,Attack,Atacar
+COMBAT_SACRIFICE,Sacrifice (+30 HP),Sacrificar (+30 PV)
+COMBAT_SACRIFICE_HINT,Heal up to 30 HP; lose this homunculus for the rest of the combat.,Cura hasta 30 PV; pierdes este homúnculo durante el resto del combate.
+COMBAT_LEAVE_TITLE,Leave Combat?,¿Salir del combate?
+COMBAT_LEAVE_WARNING,Leaving will cancel the combat and count as a defeat.,Salir cancelará el combate y contará como derrota.
+COMBAT_STAY,Stay,Quedarse
+COMBAT_LEAVE,Leave,Salir
+WORLD_GATE_TITLE,WORLD GATE,PORTAL DEL MUNDO
+WORLD_ZONES,Zones,Zonas
+WORLD_REFRESH,Refresh,Actualizar
+WORLD_SESSION,Active Session,Partida activa
+WORLD_QUEUE,Queue,Cola
+WORLD_SPEND_BLOCK,Spend 1 Time Block,Gastar 1 bloque de tiempo
+WORLD_CLAIM_DROPS,Claim Drops,Recoger premios
+WORLD_BOSS,World Boss,Jefe mundial
+WORLD_BOSS_ATTACK,Attack,Atacar
+WORLD_CLAIM_REWARDS,Claim Rewards,Recoger premios
+WORLD_ZONE_TITLE,ZONE,ZONA
+WORLD_ENTER,Enter,Entrar
+WORLD_FARM,Farm,Explorar
+WORLD_CLAIM,Claim,Recoger
+TRADE_TITLE,TRADE HALL,SALA DE COMERCIO
+TRADE_OPEN_ORDERS,Open Orders,Ofertas abiertas
+TRADE_FILTER,Filter,Filtrar
+TRADE_CREATE_SELL,Create Sell Order,Crear oferta de venta
+TRADE_RESOURCE,Resource,Recurso
+TRADE_AMOUNT,Amount,Cantidad
+TRADE_PRICE,Price (Essence),Precio en esencia
+TRADE_MY_ORDERS,My Orders,Mis ofertas
+TRADE_AVAILABLE_JOBS,Available Jobs,Encargos disponibles
+TRADE_MY_RUNS,My Runs,Mis encargos
+TRADE_CREATE_JOB,Create Job,Crear encargo
+TRADE_INPUT,Input,Entrada
+TRADE_OUTPUT,Output,Resultado
+TRADE_DURATION,Duration (sec),Tiempo (s)
+TRADE_COMMISSION,Commission,Tarifa
+TRADE_QUEUE_LIMIT,Queue Limit,Tope de cola
+HOM_SPENT,SPENT,AGOTADO
+HOM_ACTIVE,ACTIVE,ACTIVO
+HOM_SACRIFICED,Sacrificed,Sacrificado
+HOM_OVERCHARGED,OVERCHARGED,SOBRECARGADO
+HOM_READY,READY,LISTO
+HOM_CHARGING,Charging,Cargando
+HOM_STATUS_HINT,"Charge: %d exchanges.\nAttack available at 3; stronger at 6.\n\nSacrifice: heal up to 30 HP immediately,\nbut lose the homunculus for this combat.\n\nHomunculi have no separate HP.","Carga: %d intercambios.\nPuede atacar con 3; es más fuerte con 6.\n\nSacrificio: cura hasta 30 PV al instante,\npero pierdes el homúnculo durante este combate.\n\nLos homúnculos no tienen PV propios."
+INSPIRATION_USED_HINT,Inspiration used for this battle.,Inspiración utilizada en este combate.
+INSPIRATION_HINT,"Inspiration: %d/3.\nEarn +1 whenever your spell successfully applies\na negative status to the opponent. Repeated types count.\nAt 3, choose one of three temporary spells.\nIt replaces a random equipped spell until this battle ends.","Inspiración: %d/3.\nGana +1 cuando tu hechizo aplique correctamente\nun estado negativo al rival. Los tipos repetidos cuentan.\nCon 3, elige uno de tres hechizos temporales.\nSustituye un hechizo equipado al azar hasta el final del combate."
+INSPIRATION_USED,USED,USADA
+INSPIRATION_TITLE,INSPIRATION,INSPIRACIÓN
+HOM_DETAIL_SACRIFICED,Sacrificed,Sacrificado
+HOM_DETAIL_OVERCHARGED,Overcharged,Sobrecargado
+HOM_DETAIL_READY,Ready,Listo
+HOM_DETAIL_CHARGING,Charging,Cargando
+HOM_DETAIL_BASE,Power %s | Guard %s | HP %s,Potencia %s | Defensa %s | PV %s
+HOM_DETAIL_LEVEL,Power +%d | Guard +%d | HP +%d,Potencia +%d | Defensa +%d | PV +%d
+HOM_DETAIL_NONE,No mutation,Sin mutación
+HOM_DETAIL_ACTIVE,TOTAL active: %s,TOTAL activo: %s
+HOM_DETAIL_INACTIVE,TOTAL active: none (sacrificed),TOTAL activo: ninguno (sacrificado)
+HOM_DETAIL_SYNERGY,Synergy: %s,Sinergia: %s
+HOM_DETAIL_SYNERGY_INACTIVE,Synergy: inactive (sacrificed),Sinergia: inactiva (sacrificado)
+HOM_DETAIL_TEXT,"Rarity: %s | Level %d / 10\nEnergy: %d / 6 | %s\n\nBase: %s\nLevel: %s\nMutation: %s\n%s\n\n%s\nElement: %s\n%s\n\nHP, Power and Guard modify the entity. Homunculi have no separate HP.","Rareza: %s | Nivel %d / 10\nEnergía: %d / 6 | %s\n\nBase: %s\nNivel: %s\nMutación: %s\n%s\n\n%s\nElemento: %s\n%s\n\nPV, potencia y defensa modifican la entidad. Los homúnculos no tienen PV propios."
+HOM_SYNERGY_POWER,+%s entity Power,+%s de potencia de la entidad
+HOM_SYNERGY_GUARD,+%s entity Guard,+%s de defensa de la entidad
+HOM_SYNERGY_TEMPO,+%s initiative,+%s de iniciativa
+HOM_SYNERGY_INCOMING,Incoming direct damage: %s of normal,Daño directo recibido: %s de lo normal
+HOM_SYNERGY_CORROSION,+%s true corrosion per hit,+%s de corrosión verdadera por golpe
+HOM_SYNERGY_REFLECT,%s reflection each round,%s de reflejo por ronda
+HOM_SYNERGY_TYPE,+%s favorable type bonus,+%s de bonificación de tipo favorable
+HOM_SYNERGY_ITEM,Active weapon effects: %s of normal,Efectos de armas activas: %s de lo normal
+HOM_SYNERGY_NEUTRAL,%.0f%% less type deviation,%.0f%% menos de desviación de tipo
+ZONE_ZONE_CORRUPTED_NAME,Corrupted Zone,Zona corrupta
+ZONE_ZONE_CRYSTAL_NAME,Crystal Zone,Zona cristalina
+ZONE_ZONE_CHAOS_NAME,Chaos Zone,Zona del caos
+ZONE_ZONE_CHAOS_DESC,Reality fractures beneath unpredictable alchemical storms.,La realidad se fractura bajo imprevisibles tormentas alquímicas.
+ZONE_ZONE_CORRUPTED_DESC,Tainted echoes reshape every creature that crosses this wasteland.,Ecos contaminados transforman a toda criatura que cruza este páramo.
+ZONE_ZONE_CRYSTAL_DESC,Ancient prisms resonate with forgotten alchemical memories.,Prismas ancestrales resuenan con recuerdos alquímicos olvidados.
+BOSS_BOSS_COMMON_NAME,Common Boss,Jefe común
+BOSS_BOSS_COLOSSUS_NAME,Giant Arcane Colossus,Coloso arcano gigante
+BOSS_BOSS_LEVIATHAN_NAME,Corrupted Energy Leviathan,Leviatán de energía corrupta
+BOSS_BOSS_TEMPORAL_NAME,Temporal Warden Titan,Titán guardián del tiempo
+HUNT_HUNT_COMMON_NAME,Sentinel,Centinela
+HUNT_HUNT_MYTHIC_NAME,Arcane Colossus,Coloso arcano
+HUNT_HUNT_RARE_NAME,Corrupted Leviathan,Leviatán corrupto
+HUNT_HUNT_EPIC_NAME,Cosmic Titan,Titán cósmico
+HUNT_HUNT_LEGENDARY_NAME,Eternal Warden,Guardián eterno
+WORLD_MODIFIERS,Modifiers: %s,Modificadores: %s
+WORLD_RESUME,Resume,Continuar
+WORLD_WAIT,Wait %s,Espera %s
+WORLD_GATE_COOLDOWN,World Gate cooldown: %s,Espera del portal: %s
+WORLD_ACTIVE_ZONE,Active Zone: %s,Zona activa: %s
+HUNT_LIST_ROW,%s | %s | Tier %d / 5,%s | %s | Rango %d / 5
+HUNT_DETAILS,%s\n%s | Tier %d / 5\nDifficulty: %s\nLoot tier: %s\n\nUnverified preview: no rewards.,%s\n%s | Rango %d / 5\nDificultad: %s\nRango del botín: %s\n\nVista sin verificar: no concede recompensas.
+TRADE_NPC_CONFIRM_TITLE,Confirm NPC exchange,Confirmar intercambio
+TRADE_NPC_DAILY,Daily offers,Ofertas diarias
+TRADE_NPC_WEEKLY,Weekly offers,Ofertas semanales
+TRADE_BUY,Buy,Comprar
+TRADE_NPC_UNVERIFIED,Availability unverified,Disponibilidad sin verificar
+TRADE_NPC_REMAINING,%d / %d remaining,Quedan %d / %d
+TRADE_NPC_ROTATION,Rotation in %s,Renovación en %s
+TRADE_NPC_LOCAL_ROTATION,Local rotation in %s,Renovación local en %s
+TRADE_NPC_CONFIRM,Exchange %s for %s?,¿Intercambiar %s por %s?
+WORLD_REROLL,REROLL,NUEVA TIRADA
+WORLD_ENTER_ZONE,Enter zone,Entrar en zona
+WORLD_EXPLORE,Explore,Explorar
+WORLD_CLAIM_LOOT,Claim loot,Recoger premios
+WORLD_ENCOUNTER,ENCOUNTER,ENCUENTRO
+WORLD_BOSS_OPEN,Open boss encounter,Ver encuentro con jefe
+HUNT_PREVIEW_FIGHT,Fight (unverified preview),Luchar (vista sin verificar)
+HUNT_VIEW_GUARDIANS,View this boss's guardians,Ver guardianes del jefe
+HUNT_DEBUG_FIGHT,Fight (debug preview),Luchar (vista de prueba)
+HUNT_RESUME,Resume Hunt,Reanudar caza
+HUNT_FIGHT,Fight,Luchar
+WORLD_GLOBAL_BOSS,Global Boss,Jefe global
+DUNGEON_FLOOR_TITLE,DUNGEONS — FLOOR %d,MAZMORRAS — PISO %d
+DUNGEON_CLEARED_COUNT,Cleared: %d,Completados: %d
+DUNGEON_FLOOR_CLEARED,FLOOR %d CLEARED | HP %d / %d,PISO %d COMPLETADO | PV %d / %d
+DUNGEON_CLOSE_CALL,CLOSE CALL,POR LOS PELOS
+DUNGEON_SWIFT_CLEAR,SWIFT CLEAR,VICTORIA VELOZ
+DUNGEON_RUN_OVER,RUN OVER | Cleared floors: %d,PARTIDA TERMINADA | Pisos completados: %d
+DUNGEON_BLESSING_TITLE,FLOOR BLESSING - Choose one,DON DEL PISO - Elige uno
+DUNGEON_BLESSING_INFO,This blessing lasts only for this floor.,Esta bendición dura solo durante este piso.
+COMBAT_SPELL_TOOLTIP,%s\nType: %s | %s\nPower: %s | Accuracy: %d%% | Cooldown: %d\n%s\n%s,%s\nTipo: %s | %s\nPotencia: %s | Precisión: %d%% | Espera: %d\n%s\n%s
+COMBAT_NO_EFFECTS,No additional effects,Sin efectos adicionales
+TIER_COMMON_NAME,Common,Común
+TIER_MYTHIC_NAME,Mythic,Mítico
+TIER_RARE_NAME,Rare,Raro
+TIER_EPIC_NAME,Epic,Épico
+TIER_LEGENDARY_NAME,Legendary,Legendario

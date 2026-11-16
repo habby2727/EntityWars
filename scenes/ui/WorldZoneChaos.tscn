@@ -72,7 +72,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="Overlay/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "ZONE"
+text = "WORLD_ZONE_TITLE"
 theme_override_font_sizes/font_size = 28
 
 [node name="Spacer" type="Control" parent="Overlay/Margin/RootVBox/Header"]
@@ -81,7 +81,7 @@ size_flags_horizontal = 3
 
 [node name="BackButton" type="Button" parent="Overlay/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "Back"
+text = "SETTINGS_BACK"
 script = ExtResource("3_back_button")
 target = "lab_hub"
 
@@ -103,7 +103,7 @@ theme_override_constants/separation = 8
 
 [node name="EnterButton" type="Button" parent="Overlay/Margin/RootVBox/Buttons"]
 layout_mode = 2
-text = "Enter"
+text = "WORLD_ENTER"
 
 [node name="FarmCount" type="OptionButton" parent="Overlay/Margin/RootVBox/Buttons"]
 layout_mode = 2
@@ -111,11 +111,11 @@ custom_minimum_size = Vector2(80, 0)
 
 [node name="FarmButton" type="Button" parent="Overlay/Margin/RootVBox/Buttons"]
 layout_mode = 2
-text = "Farm"
+text = "WORLD_FARM"
 
 [node name="ClaimButton" type="Button" parent="Overlay/Margin/RootVBox/Buttons"]
 layout_mode = 2
-text = "Claim"
+text = "WORLD_CLAIM"
 
 [node name="ErrorLabel" type="Label" parent="Overlay/Margin/RootVBox"]
 layout_mode = 2

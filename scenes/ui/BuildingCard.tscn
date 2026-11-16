@@ -57,7 +57,7 @@ text = "Lv 0"
 
 [node name="Pending" type="Label" parent="HBox/Text"]
 layout_mode = 2
-text = "PENDING"
+text = "LAB_PENDING"
 modulate = Color(1, 0.82, 0.3, 1)
 visible = false
 

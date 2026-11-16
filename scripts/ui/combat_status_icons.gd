@@ -5,18 +5,18 @@ signal effect_clicked(description: String)
 const SLOT := 24.0
 const BOSS_ROW_HEIGHT := 36.0
 const DEFINITIONS := [
-	["poison", "poison", "Veneno: daño periódico", "turns"],
-	["shield_pct", "shield", "Escudo: reduce el próximo impacto", "percent"],
-	["reflect_pct", "reflect", "Reflejo: devuelve daño en el próximo impacto", "percent"],
-	["atk_boost", "atk_up", "Ataque aumentado en el próximo golpe", "plus"],
-	["atk_down", "atk_down", "Ataque reducido en el próximo golpe", "minus"],
-	["vuln_pct", "vuln", "Vulnerabilidad: aumenta el daño recibido en el próximo impacto", "percent"],
-	["stun", "stun", "Aturdimiento: pierde acciones", "turns"],
-	["hom_stun", "chain", "Homúnculo bloqueado", "turns"],
-	["tempo_bonus", "tempo", "Cambio de tempo hasta la próxima iniciativa", "number"],
-	["focus_next", "type", "Precisión aumentada en la próxima acción ofensiva", "plus"],
-	["misalign_next", "stun", "Precisión reducida en la próxima acción ofensiva", "minus"],
-	["poison_on_reflect", "poison", "Veneno al activar el próximo reflejo", "turns"],
+	["poison", "poison", "STATUS_POISON", "turns"],
+	["shield_pct", "shield", "STATUS_SHIELD", "percent"],
+	["reflect_pct", "reflect", "STATUS_REFLECT", "percent"],
+	["atk_boost", "atk_up", "STATUS_ATK_BOOST", "plus"],
+	["atk_down", "atk_down", "STATUS_ATK_DOWN", "minus"],
+	["vuln_pct", "vuln", "STATUS_VULNERABILITY", "percent"],
+	["stun", "stun", "STATUS_STUN", "turns"],
+	["hom_stun", "chain", "STATUS_HOM_STUN", "turns"],
+	["tempo_bonus", "tempo", "STATUS_TEMPO", "number"],
+	["focus_next", "type", "STATUS_FOCUS", "plus"],
+	["misalign_next", "stun", "STATUS_MISALIGN", "minus"],
+	["poison_on_reflect", "poison", "STATUS_POISON_REFLECT", "turns"],
 ]
 
 var _wins := 0
@@ -63,6 +63,7 @@ var _status_initialized := false
 var _feedback := ""
 var _feedback_until := 0
 var _feedback_queue: Array[Dictionary] = []
+var _current_feedback: Dictionary = {}
 var _feedback_icon := "type"
 var _previous_neutralization := 0.0
 var _previous_mark_turns := 0
@@ -82,7 +83,7 @@ func set_fighter(wins: int, fighter: Dictionary) -> void:
 					value_text = "%d%%" % roundi(absf(current) * 100.0)
 				elif definition[3] == "turns":
 					value_text = "%dT" % int(current)
-				_queue_feedback("%s %s" % [key.replace("_pct", "").replace("_", " ").capitalize(), "ended" if current == 0.0 else value_text], str(definition[1]))
+				_queue_feedback(key, value_text, current == 0.0, str(definition[1]))
 	_previous_status = status.duplicate(true)
 	_status_initialized = true
 	for definition in DEFINITIONS:
@@ -96,24 +97,24 @@ func set_fighter(wins: int, fighter: Dictionary) -> void:
 			"plus": label = "+%d%%" % int(round(value * 100))
 			"minus": label = "-%d%%" % int(round(value * 100))
 			_: label = ("+" if value > 0 else "") + str(value).trim_suffix(".0")
-		_effects.append({"icon": definition[1], "label": label, "tooltip": "%s (%s)" % [definition[2], label]})
+		_effects.append({"icon": definition[1], "label": label, "tooltip": "%s (%s)" % [tr(definition[2]), label], "tooltip_key": definition[2]})
 	var mark: Dictionary = status.get("hybrid_mark", {})
 	if int(mark.get("remaining", 0)) > 0:
-		_effects.append({"icon": "chain", "label": "%dT" % int(mark.remaining), "tooltip": "Marca híbrida: %d acciones del lanzador" % int(mark.remaining)})
+		_effects.append({"icon": "chain", "label": "%dT" % int(mark.remaining), "tooltip": tr("STATUS_HYBRID_MARK") % int(mark.remaining), "tooltip_key": "STATUS_HYBRID_MARK", "turns": int(mark.remaining)})
 	var active := float(fighter.get("spell_neutralize_active", 0.0))
 	var pending := float(fighter.get("spell_neutralize_pending", 0.0))
 	var neutralization := maxf(active, pending)
 	var mark_turns := int(mark.get("remaining", 0))
 	if _status_initialized and not is_equal_approx(neutralization, _previous_neutralization):
-		_queue_feedback("Type alteration %s" % ("ended" if neutralization == 0 else "%d%%" % roundi(neutralization * 100.0)))
+		_queue_feedback("type_alteration", "%d%%" % roundi(neutralization * 100.0), neutralization == 0.0)
 	if _status_initialized and mark_turns != _previous_mark_turns:
-		_queue_feedback("Hybrid mark %s" % ("ended" if mark_turns == 0 else "%dT" % mark_turns))
+		_queue_feedback("hybrid_mark", "%dT" % mark_turns, mark_turns == 0)
 	_previous_neutralization = neutralization
 	_previous_mark_turns = mark_turns
 	if active > 0.0 or pending > 0.0:
 		var value := maxf(active, pending)
-		var phase := "intercambio actual" if active > 0.0 else "próximo intercambio"
-		_effects.append({"icon": "type", "label": "%d%%" % int(round(value * 100)), "tooltip": "Alteración de tipo: %d%% (%s)" % [int(round(value * 100)), phase]})
+		var phase := "STATUS_CURRENT_EXCHANGE" if active > 0.0 else "STATUS_NEXT_EXCHANGE"
+		_effects.append({"icon": "type", "label": "%d%%" % int(round(value * 100)), "tooltip": tr("STATUS_TYPE_CHANGE") % [int(round(value * 100)), tr(phase)], "tooltip_key": "STATUS_TYPE_CHANGE", "value": int(round(value * 100)), "phase": phase})
 	_update_boss_height()
 	queue_redraw()
 
@@ -124,19 +125,41 @@ func _process(_delta: float) -> void:
 func _show_next_feedback() -> void:
 	if _feedback_queue.is_empty():
 		_feedback = ""
+		_current_feedback.clear()
 		set_process(false)
 	else:
 		var next: Dictionary = _feedback_queue.pop_front()
-		_feedback = str(next.text)
+		_current_feedback = next
+		_feedback = _feedback_text(next)
 		_feedback_icon = str(next.icon)
 		_feedback_until = Time.get_ticks_msec() + 1800
 		set_process(true)
 	queue_redraw()
 
-func _queue_feedback(message: String, icon: String = "type") -> void:
-	_feedback_queue.append({"text": message, "icon": icon})
+func _feedback_text(entry: Dictionary) -> String:
+	var id := str(entry.name)
+	var fallback := id.replace("_pct", "").replace("_", " ").capitalize()
+	return "%s %s" % [GameLocalization.catalog("status_name", id, "name", fallback), tr("STATUS_ENDED") if bool(entry.ended) else str(entry.value)]
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready() and not _current_feedback.is_empty():
+		_feedback = _feedback_text(_current_feedback)
+		queue_redraw()
+
+func _queue_feedback(name: String, value: String, ended: bool, icon: String = "type") -> void:
+	_feedback_queue.append({"name": name, "value": value, "ended": ended, "icon": icon})
 	if _feedback.is_empty():
 		_show_next_feedback()
+
+func _effect_tooltip(effect: Dictionary) -> String:
+	var key := str(effect.get("tooltip_key", ""))
+	if key == "STATUS_HYBRID_MARK":
+		return tr(key) % int(effect.turns)
+	if key == "STATUS_TYPE_CHANGE":
+		return tr(key) % [int(effect.value), tr(effect.phase)]
+	if not key.is_empty():
+		return "%s (%s)" % [tr(key), effect.label]
+	return str(effect.get("tooltip", ""))
 
 func _get_tooltip(at_position: Vector2) -> String:
 	if _boss_mode:
@@ -144,20 +167,20 @@ func _get_tooltip(at_position: Vector2) -> String:
 		var boss_effects := _visible_effects()
 		for i in slots.size():
 			if slots[i].has_point(at_position):
-				return str(boss_effects[i].tooltip)
+				return _effect_tooltip(boss_effects[i])
 		return ""
 	var slot := int(at_position.x / SLOT)
 	var offset := 0 if _boss_mode else 2
 	if not _boss_mode and slot < 2:
-		return "Victoria %d: %s" % [slot + 1, "conseguida" if slot < _wins else "pendiente"]
+		return tr("STATUS_VICTORY") % [slot + 1, tr("STATUS_EARNED") if slot < _wins else tr("STATUS_PENDING")]
 	var effects := _visible_effects()
 	var index := slot - offset
 	if index >= 0 and index < effects.size() and (_boss_mode or index < 5):
-		return effects[index].tooltip
+		return _effect_tooltip(effects[index])
 	if not _boss_mode and index == 5 and effects.size() > 5:
 		var extra: Array[String] = []
 		for effect in effects.slice(5):
-			extra.append(effect.tooltip)
+			extra.append(_effect_tooltip(effect))
 		return "\n".join(extra)
 	return ""
 

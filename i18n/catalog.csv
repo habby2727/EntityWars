@@ -1,0 +1,214 @@
+keys,en,es
+SPELL_STEADY_SCRIPT_NAME,Steady Script,Trazo certero
+SPELL_STEADY_SCRIPT_DESC,A reliable neutral strike.,Un golpe neutral y fiable.
+SPELL_WARD_GLYPH_NAME,Ward Glyph,Glifo protector
+SPELL_WARD_GLYPH_DESC,Grants a 13% shield.,Otorga un escudo del 13%.
+SPELL_CLEAR_THREAD_NAME,Clear Thread,Hilo purificador
+SPELL_CLEAR_THREAD_DESC,Removes one negative status.,Elimina un estado negativo.
+SPELL_NEEDLE_ETCH_NAME,Needle Etch,Grabado punzante
+SPELL_NEEDLE_ETCH_DESC,Ignores 30% of the target's shield mitigation.,Ignora un 30% de la mitigación del escudo del objetivo.
+SPELL_QUIET_FOCUS_NAME,Quiet Focus,Concentración serena
+SPELL_QUIET_FOCUS_DESC,Increases accuracy of the next offensive action by 12%.,Aumenta un 12% la precisión de la siguiente acción ofensiva.
+SPELL_ECHO_SIPHON_NAME,Echo Siphon,Sifón de ecos
+SPELL_ECHO_SIPHON_DESC,"Heals 20% of damage dealt, up to 5 HP.","Cura el 20% del daño infligido, hasta un máximo de 5 PV."
+SPELL_REVERSE_QUILL_NAME,Reverse Quill,Pluma refleja
+SPELL_REVERSE_QUILL_DESC,Reflects 13% of the next hit.,Refleja un 13% del siguiente golpe.
+SPELL_CROOKED_RUNE_NAME,Crooked Rune,Runa torcida
+SPELL_CROOKED_RUNE_DESC,Reduces the target's next offensive accuracy by 10%.,Reduce un 10% la precisión de la siguiente acción ofensiva del objetivo.
+SPELL_SECOND_MEASURE_NAME,Second Measure,Compás siguiente
+SPELL_SECOND_MEASURE_DESC,Adds 2 tempo to the next initiative.,Añade 2 de ritmo a la próxima iniciativa.
+SPELL_LAST_AXIOM_NAME,Last Axiom,Último axioma
+SPELL_LAST_AXIOM_DESC,Adds 20 percentage points of base power below 40% HP; takes 4 recoil on hit.,Añade 20 puntos porcentuales de potencia base por debajo del 40% de PV; sufre 4 de retroceso al golpear.
+SPELL_PARADOX_EDICT_NAME,Paradox Edict,Edicto paradójico
+SPELL_PARADOX_EDICT_DESC,Marks the enemy for two of the caster's actions.,Marca al enemigo durante dos acciones del lanzador.
+SPELL_GILDED_EXCEPTION_NAME,Gilded Exception,Excepción dorada
+SPELL_GILDED_EXCEPTION_DESC,Adds 25 percentage points of base power when consuming a hybrid mark.,Añade 25 puntos porcentuales de potencia base al consumir una marca híbrida.
+SPELL_NULL_LATTICE_NAME,Null Lattice,Retícula nula
+SPELL_NULL_LATTICE_DESC,Reduces type deviation by 45% next exchange.,Reduce un 45% la desviación de tipo en el próximo intercambio.
+SPELL_SALT_RIFT_NAME,Salt Rift,Grieta salina
+SPELL_SALT_RIFT_DESC,Grants a 12% shield on hit.,Otorga un escudo del 12% al golpear.
+SPELL_VOID_ETCHING_NAME,Void Etching,Grabado del vacío
+SPELL_VOID_ETCHING_DESC,Applies 12% vulnerability on hit.,Aplica un 12% de vulnerabilidad al golpear.
+SPELL_CAUSTIC_PARADOX_NAME,Caustic Paradox,Paradoja cáustica
+SPELL_CAUSTIC_PARADOX_DESC,Adds 25 percentage points of base power against poison; takes 4 recoil on hit.,Añade 25 puntos porcentuales de potencia base contra veneno; sufre 4 de retroceso al golpear.
+SPELL_EMBER_ANOMALY_NAME,Ember Anomaly,Anomalía de brasas
+SPELL_EMBER_ANOMALY_DESC,Takes 5 recoil on hit.,Sufre 5 de retroceso al golpear.
+SPELL_ENTROPY_KILN_NAME,Entropy Kiln,Horno entrópico
+SPELL_ENTROPY_KILN_DESC,Reduces enemy attack by 12%.,Reduce un 12% el ataque enemigo.
+SPELL_PHASE_QUICKSILVER_NAME,Phase Quicksilver,Azogue espectral
+SPELL_PHASE_QUICKSILVER_DESC,Adds 10% accuracy to the next offensive action.,Añade un 10% de precisión a la siguiente acción ofensiva.
+SPELL_MERCURIAL_RIFT_NAME,Mercurial Rift,Grieta mercurial
+SPELL_MERCURIAL_RIFT_DESC,Ignores 45% shield mitigation; gains 8% vulnerability on hit.,Ignora un 45% de mitigación de escudo; gana un 8% de vulnerabilidad al golpear.
+SPELL_CROWNED_BULWARK_NAME,Crowned Bulwark,Baluarte coronado
+SPELL_CROWNED_BULWARK_DESC,Grants a 12% shield on hit.,Otorga un escudo del 12% al golpear.
+SPELL_SALT_TRIBUNAL_NAME,Salt Tribunal,Tribunal de sal
+SPELL_SALT_TRIBUNAL_DESC,Adds 22 percentage points of base power while shielded.,Añade 22 puntos porcentuales de potencia base mientras tenga escudo.
+SPELL_VERDIGRIS_OATH_NAME,Verdigris Oath,Juramento de verdín
+SPELL_VERDIGRIS_OATH_DESC,Poisons the enemy for two turns.,Envenena al enemigo durante dos turnos.
+SPELL_CORROSIVE_TRIBUTE_NAME,Corrosive Tribute,Tributo corrosivo
+SPELL_CORROSIVE_TRIBUTE_DESC,Adds 28 percentage points of base power against poison and consumes one poison turn on hit.,Añade 28 puntos porcentuales de potencia base contra veneno y consume un turno de veneno al golpear.
+SPELL_GOLDEN_CRUCIBLE_NAME,Golden Crucible,Crisol dorado
+SPELL_GOLDEN_CRUCIBLE_DESC,Grants 12% reflect on hit.,Otorga un 12% de reflejo al golpear.
+SPELL_REGAL_DETONATION_NAME,Regal Detonation,Detonación regia
+SPELL_REGAL_DETONATION_DESC,Takes 8 recoil on hit.,Sufre 8 de retroceso al golpear.
+SPELL_LIQUID_DECREE_NAME,Liquid Decree,Decreto líquido
+SPELL_LIQUID_DECREE_DESC,Reduces the next enemy offensive accuracy by 10%.,Reduce un 10% la precisión de la siguiente acción ofensiva enemiga.
+SPELL_SILVER_DEBT_NAME,Silver Debt,Deuda de plata
+SPELL_SILVER_DEBT_DESC,Adds 25 percentage points of base power if hurt in the previous exchange.,Añade 25 puntos porcentuales de potencia base si recibió daño en el intercambio anterior.
+SPELL_BRINE_TOXIN_NAME,Brine Toxin,Toxina salina
+SPELL_BRINE_TOXIN_DESC,Poisons for one turn and grants an 8% shield on hit.,Envenena durante un turno y otorga un escudo del 8% al golpear.
+SPELL_CRYSTAL_DECAY_NAME,Crystal Decay,Deterioro cristalino
+SPELL_CRYSTAL_DECAY_DESC,Ignores 50% shield mitigation.,Ignora un 50% de mitigación de escudo.
+SPELL_FLASH_BRINE_NAME,Flash Brine,Destello salino
+SPELL_FLASH_BRINE_DESC,Gains 10% vulnerability on hit.,Gana un 10% de vulnerabilidad al golpear.
+SPELL_FURNACE_BULWARK_NAME,Furnace Bulwark,Baluarte del horno
+SPELL_FURNACE_BULWARK_DESC,Grants 14% reflect on hit.,Otorga un 14% de reflejo al golpear.
+SPELL_SALT_CIRCUIT_NAME,Salt Circuit,Circuito de sal
+SPELL_SALT_CIRCUIT_DESC,Reduces enemy next initiative by 2.,Reduce en 2 la próxima iniciativa enemiga.
+SPELL_FLUID_ANCHOR_NAME,Fluid Anchor,Ancla fluida
+SPELL_FLUID_ANCHOR_DESC,"Grants an 8% shield, or 18% when acting second.","Otorga un escudo del 8%, o del 18% si actúa en segundo lugar."
+SPELL_FUMING_DISTILLATE_NAME,Fuming Distillate,Destilado humeante
+SPELL_FUMING_DISTILLATE_DESC,Poisons the enemy for two turns.,Envenena al enemigo durante dos turnos.
+SPELL_CINDER_CORROSION_NAME,Cinder Corrosion,Corrosión de brasas
+SPELL_CINDER_CORROSION_DESC,Adds 27 percentage points of base power against poison and consumes one poison turn on hit.,Añade 27 puntos porcentuales de potencia base contra veneno y consume un turno de veneno al golpear.
+SPELL_QUICKSILVER_SOLVENT_NAME,Quicksilver Solvent,Disolvente de azogue
+SPELL_QUICKSILVER_SOLVENT_DESC,Reduces the enemy shield by 40% before damage.,Reduce un 40% el escudo enemigo antes de infligir daño.
+SPELL_TOXIC_MIRROR_NAME,Toxic Mirror,Espejo tóxico
+SPELL_TOXIC_MIRROR_DESC,Grants 16% reflect; poisons the attacker for one turn when it triggers.,Otorga un 16% de reflejo; al activarse envenena al atacante durante un turno.
+SPELL_VOLATILE_CURRENT_NAME,Volatile Current,Corriente volátil
+SPELL_VOLATILE_CURRENT_DESC,Adds 8% accuracy to the next offensive action on hit.,Al golpear añade un 8% de precisión a la siguiente acción ofensiva.
+SPELL_BOILING_MERCURY_NAME,Boiling Mercury,Mercurio hirviente
+SPELL_BOILING_MERCURY_DESC,Takes 6 recoil and reduces enemy attack by 10% on hit.,Sufre 6 de retroceso y reduce un 10% el ataque enemigo al golpear.
+SPELL_TOXIC_SMOG_NAME,Toxic Smog,Bruma tóxica
+SPELL_TOXIC_SMOG_DESC,"Global anomaly: Vitriol direct spell damage +15%, Sodium -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de vitriolo +15%, sodio -15% durante tres intercambios tras lanzarla."
+SPELL_NUCLEAR_FALLOUT_NAME,Nuclear Fallout,Lluvia nuclear
+SPELL_NUCLEAR_FALLOUT_DESC,"Global anomaly: Sulfur direct spell damage +15%, Gold -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de azufre +15%, oro -15% durante tres intercambios tras lanzarla."
+SPELL_QUICKSILVER_TEMPEST_NAME,Quicksilver Tempest,Tempestad de azogue
+SPELL_QUICKSILVER_TEMPEST_DESC,"Global anomaly: Mercury direct spell damage +15%, Gold -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de mercurio +15%, oro -15% durante tres intercambios tras lanzarla."
+SPELL_CRYOSALT_SQUALL_NAME,Cryosalt Squall,Ventisca de sal helada
+SPELL_CRYOSALT_SQUALL_DESC,"Global anomaly: Sodium direct spell damage +15%, Mercury -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de sodio +15%, mercurio -15% durante tres intercambios tras lanzarla."
+SPELL_VACUUM_SHEAR_NAME,Vacuum Shear,Cizalla del vacío
+SPELL_VACUUM_SHEAR_DESC,"Global anomaly: Aether direct spell damage +15%, Sulfur -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de éter +15%, azufre -15% durante tres intercambios tras lanzarla."
+SPELL_AUREATE_ECLIPSE_NAME,Aureate Eclipse,Eclipse áureo
+SPELL_AUREATE_ECLIPSE_DESC,"Global anomaly: Gold direct spell damage +15%, Aether -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de oro +15%, éter -15% durante tres intercambios tras lanzarla."
+SPELL_CORROSIVE_RAIN_NAME,Corrosive Rain,Lluvia corrosiva
+SPELL_CORROSIVE_RAIN_DESC,"Global anomaly: Vitriol direct spell damage +15%, Gold -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de vitriolo +15%, oro -15% durante tres intercambios tras lanzarla."
+SPELL_PLASMA_TIDE_NAME,Plasma Tide,Marea de plasma
+SPELL_PLASMA_TIDE_DESC,"Global anomaly: Sulfur direct spell damage +15%, Sodium -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de azufre +15%, sodio -15% durante tres intercambios tras lanzarla."
+SPELL_QUANTUM_STATIC_NAME,Quantum Static,Estática cuántica
+SPELL_QUANTUM_STATIC_DESC,"Global anomaly: Aether direct spell damage +15%, Mercury -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de éter +15%, mercurio -15% durante tres intercambios tras lanzarla."
+SPELL_CRYSTALLINE_DAWN_NAME,Crystalline Dawn,Albor cristalino
+SPELL_CRYSTALLINE_DAWN_DESC,"Global anomaly: Sodium direct spell damage +15%, Aether -15% for three exchanges after casting.","Anomalía global: daño directo de hechizos de sodio +15%, éter -15% durante tres intercambios tras lanzarla."
+SPELL_SEPTIC_ECHO_NAME,Septic Echo,Eco séptico
+SPELL_SEPTIC_ECHO_DESC,Poisons and delays part of the hit.,Envenena y retrasa parte del golpe.
+SPELL_VOID_PURGE_NAME,Void Purge,Purga del vacío
+SPELL_VOID_PURGE_DESC,Transfers a debuff and grants a shield.,Transfiere un perjuicio y otorga un escudo.
+SPELL_PARADOX_LEDGER_NAME,Paradox Ledger,Libro de paradojas
+SPELL_PARADOX_LEDGER_DESC,Inflicts vulnerability and delayed damage.,Inflige vulnerabilidad y daño diferido.
+SPELL_SOVEREIGN_HACK_NAME,Sovereign Hack,Intrusión soberana
+SPELL_SOVEREIGN_HACK_DESC,Steals a buff and inflicts vulnerability.,Roba una mejora e inflige vulnerabilidad.
+SPELL_SIGNAL_JAM_NAME,Signal Jam,Interferencia
+SPELL_SIGNAL_JAM_DESC,Delays an enemy spell.,Retrasa un hechizo enemigo.
+SPELL_ECHO_AMBUSH_NAME,Echo Ambush,Emboscada resonante
+SPELL_ECHO_AMBUSH_DESC,Arms a counter trap.,Prepara una trampa de represalia.
+SPELL_CRYSTAL_DIVIDEND_NAME,Crystal Dividend,Dividendo cristalino
+SPELL_CRYSTAL_DIVIDEND_DESC,Converts an existing spell shield into damage.,Convierte un escudo de hechizo existente en daño.
+SPELL_NULL_QUARANTINE_NAME,Null Quarantine,Cuarentena nula
+SPELL_NULL_QUARANTINE_DESC,Temporarily suppresses enemy healing.,Reduce temporalmente la curación enemiga.
+SPELL_GILDED_LIEN_NAME,Gilded Lien,Gravamen dorado
+SPELL_GILDED_LIEN_DESC,"Converts an existing ward, then grants a new shield.","Convierte una protección existente y después otorga un escudo nuevo."
+SPELL_AURIC_RETORT_NAME,Auric Retort,Réplica áurea
+SPELL_AURIC_RETORT_DESC,Arms a counter trap and grants a shield.,Prepara una trampa de represalia y otorga un escudo.
+SPELL_CAUSTIC_QUARANTINE_NAME,Caustic Quarantine,Cuarentena cáustica
+SPELL_CAUSTIC_QUARANTINE_DESC,Suppresses healing and poisons the enemy.,Reduce la curación y envenena al enemigo.
+SPELL_OSMOTIC_REBOUND_NAME,Osmotic Rebound,Rebote osmótico
+SPELL_OSMOTIC_REBOUND_DESC,Transfers a debuff and restores 6 HP.,Transfiere un perjuicio y restaura 6 PV.
+SPELL_CATALYTIC_MIRROR_NAME,Catalytic Mirror,Espejo catalítico
+SPELL_CATALYTIC_MIRROR_DESC,Arms a counter trap and grants a shield.,Prepara una trampa de represalia y otorga un escudo.
+SPELL_TOXIC_EXTRACTION_NAME,Toxic Extraction,Extracción tóxica
+SPELL_TOXIC_EXTRACTION_DESC,Siphons homunculus energy and poisons the enemy.,Absorbe energía del homúnculo y envenena al enemigo.
+SPELL_PYROLYTIC_FUSE_NAME,Pyrolytic Fuse,Mecha pirolítica
+SPELL_PYROLYTIC_FUSE_DESC,Delays damage and gains power against poisoned enemies.,Retrasa el daño y gana potencia contra enemigos envenenados.
+SPELL_SCORCHED_ANTIDOTE_NAME,Scorched Antidote,Antídoto calcinado
+SPELL_SCORCHED_ANTIDOTE_DESC,Suppresses healing and gains power against poison.,Reduce la curación y gana potencia contra el veneno.
+SPELL_OVERCLOCK_DRAIN_NAME,Overclock Drain,Drenaje acelerado
+SPELL_OVERCLOCK_DRAIN_DESC,Siphons homunculus energy and boosts attack.,Absorbe energía del homúnculo y aumenta el ataque.
+SPELL_REACTOR_FEEDBACK_NAME,Reactor Feedback,Reflujo del reactor
+SPELL_REACTOR_FEEDBACK_DESC,Arms a counter trap but leaves the caster vulnerable.,Prepara una trampa de represalia pero deja vulnerable al lanzador.
+SPELL_ASHEN_PATENT_NAME,Ashen Patent,Patente de ceniza
+SPELL_ASHEN_PATENT_DESC,Steals a buff and boosts attack.,Roba una mejora y aumenta el ataque.
+SPELL_DEBT_BOMB_NAME,Debt Bomb,Bomba de deuda
+SPELL_DEBT_BOMB_DESC,Deals delayed damage but leaves the caster vulnerable.,Inflige daño diferido pero deja vulnerable al lanzador.
+HOMUNCULUS_CINDER_NAME,Cinder,Cinder
+HOMUNCULUS_CINDER_DESC,Sulfur-leaning familiar. Adds a burst of Power.,Familiar afín al azufre. Otorga un impulso de potencia.
+HOMUNCULUS_SILPHIDE_NAME,Silphide,Silphide
+HOMUNCULUS_SILPHIDE_DESC,Mercury familiar. Adds Tempo and slight evasion (reduces incoming).,Familiar de mercurio. Aumenta el ritmo y aporta una ligera evasión que reduce el daño recibido.
+HOMUNCULUS_SODIUM_NAME,Sodi,Sodi
+HOMUNCULUS_SODIUM_DESC,Sodium familiar. Adds Guard and stabilizes extremes.,Familiar de sodio. Aumenta la defensa y suaviza los extremos.
+HOMUNCULUS_DRAKON_NAME,Drakon,Drakon
+HOMUNCULUS_DRAKON_DESC,Aether familiar. Tweaks rules: raises type advantage slightly for you.,Familiar de éter. Aumenta ligeramente tu ventaja de tipo.
+HOMUNCULUS_PYRITC_NAME,Pyro,Pyro
+HOMUNCULUS_PYRITC_DESC,Vitriol familiar. Adds corrosion each round.,Familiar de vitriolo. Añade corrosión en cada ronda.
+HOMUNCULUS_CHIMERA_NAME,Chimera,Chimera
+HOMUNCULUS_CHIMERA_DESC,Gold familiar. Adds reflect and discipline.,Familiar de oro. Aporta reflejo y disciplina.
+HOMUNCULUS_NIGHTY_NAME,Nighty,Nighty
+HOMUNCULUS_NIGHTY_DESC,Build-oriented familiar. Improves item effects slightly.,Familiar centrado en el equipo. Mejora ligeramente los efectos de los objetos.
+HOMUNCULUS_MOTHY_NAME,Mothy,Mothy
+HOMUNCULUS_MOTHY_DESC,Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).,Familiar antitáctico. Reduce ligeramente ambos multiplicadores de tipo y los acerca a la neutralidad.
+TECHNIQUE_ASSAULT_SIGIL_NAME,Assault Sigil,Sello de asalto
+TECHNIQUE_ASSAULT_SIGIL_DESC,"Round 1 burst: +Power, but lower Guard overall.","Explosión en la primera ronda: más potencia, pero menos defensa general."
+TECHNIQUE_PIERCING_RUNE_NAME,Piercing Rune,Runa perforante
+TECHNIQUE_PIERCING_RUNE_DESC,Ignores part of Guard each round.,Ignora parte de la defensa en cada ronda.
+TECHNIQUE_TEMPO_FEINT_NAME,Tempo Feint,Finta rítmica
+TECHNIQUE_TEMPO_FEINT_DESC,"If you lose a round, gain Tempo next round.","Si pierdes una ronda, ganas ritmo en la siguiente."
+TECHNIQUE_BULWARK_RITE_NAME,Bulwark Rite,Rito del baluarte
+TECHNIQUE_BULWARK_RITE_DESC,"+Guard each round, but slightly lower Power.","Más defensa en cada ronda, pero algo menos de potencia."
+TECHNIQUE_NULL_VEIL_NAME,Null Veil,Velo nulo
+TECHNIQUE_NULL_VEIL_DESC,Reduce type multipliers toward neutral.,Acerca los multiplicadores de tipo a la neutralidad.
+TECHNIQUE_REVERSAL_MARK_NAME,Reversal Mark,Marca de revancha
+TECHNIQUE_REVERSAL_MARK_DESC,"If you win a round, reduce incoming damage next round.","Si ganas una ronda, reduce el daño recibido en la siguiente."
+EFFECT_TARGET_SELF_NAME,self,propio
+EFFECT_TARGET_ENEMY_NAME,enemy,enemigo
+EFFECT_KIND_HEAL_NAME,Heal,Curación
+EFFECT_KIND_SHIELD_NAME,Shield,Escudo
+EFFECT_KIND_ATK_BOOST_NAME,Atk Boost,Aumento de ataque
+EFFECT_KIND_ATK_DOWN_NAME,Atk Down,Reducción de ataque
+EFFECT_KIND_HOM_STUN_NAME,Hom Stun,Bloqueo de homúnculo
+EFFECT_KIND_POISON_NAME,Poison,Veneno
+EFFECT_KIND_REFLECT_NAME,Reflect,Reflejo
+EFFECT_KIND_VULN_NAME,Vuln,Vulnerabilidad
+EFFECT_KIND_TYPE_NEUTRALIZE_NAME,Type Neutralize,Neutralización de tipo
+EFFECT_KIND_BONUS_IF_POISONED_NAME,Bonus If Poisoned,Bonificación contra veneno
+EFFECT_KIND_BONUS_IF_HIT_LAST_EXCHANGE_NAME,Bonus If Hit Last Exchange,Bonificación tras recibir daño
+EFFECT_KIND_BONUS_IF_LOW_HP_NAME,Bonus If Low Hp,Bonificación por PV bajos
+EFFECT_KIND_BONUS_IF_MARKED_NAME,Bonus If Marked,Bonificación contra marca
+EFFECT_KIND_BONUS_IF_SHIELDED_NAME,Bonus If Shielded,Bonificación con escudo
+EFFECT_KIND_BONUS_POWER_IF_HIT_LAST_EXCHANGE_NAME,Bonus Power If Hit Last Exchange,Potencia adicional tras recibir daño
+EFFECT_KIND_BONUS_POWER_IF_POISONED_NAME,Bonus Power If Poisoned,Potencia adicional contra veneno
+EFFECT_KIND_CLEANSE_ONE_NAME,Cleanse One,Purificación
+EFFECT_KIND_CONSUME_POISON_NAME,Consume Poison,Consumo de veneno
+EFFECT_KIND_FOCUS_NEXT_NAME,Focus Next,Precisión siguiente
+EFFECT_KIND_HYBRID_MARK_NAME,Hybrid Mark,Marca híbrida
+EFFECT_KIND_LIFE_LEECH_NAME,Life Leech,Absorción de vida
+EFFECT_KIND_MISALIGN_NEXT_NAME,Misalign Next,Imprecisión siguiente
+EFFECT_KIND_PIERCE_WARD_NAME,Pierce Ward,Perforación de escudo
+EFFECT_KIND_POISON_ON_REFLECT_NAME,Poison On Reflect,Veneno al reflejar
+EFFECT_KIND_RECOIL_NAME,Recoil,Retroceso
+EFFECT_KIND_SHIELD_BY_ORDER_NAME,Shield By Order,Escudo por orden
+EFFECT_KIND_TEMPO_SHIFT_NAME,Tempo Shift,Cambio de ritmo
+EFFECT_KIND_WARD_DISPEL_NAME,Ward Dispel,Disipación de escudo
+RESOURCE_ESSENCE_NAME,Essence,Esencia
+RESOURCE_CORE_NAME,Core,Núcleo
+RESOURCE_ARCANE_SHARD_NAME,Arcane Shard,Fragmento arcano
+RESOURCE_TIME_CRYSTAL_NAME,Time Crystal,Cristal de tiempo
+SPELL_ALTERNATE,", alternate: %s",", alternativa: %s"
+SPELL_EFFECTS,Effects:,Efectos:
+SPELL_RESEARCH_DETAIL,"Research: Spell Tower level %d\n%s\nTime: %d s","Investigación: Torre de hechizos nivel %d\n%s\nTiempo: %d s"
+SPELL_STRATEGIC_DELAYED_DAMAGE,"Delayed: %d%% of actual direct HP damage after the next exchange; replaces the caster's prior delay on this target.","Diferido: %d%% del daño directo real a PV tras el próximo intercambio; sustituye el daño diferido anterior del lanzador sobre este objetivo."
+SPELL_STRATEGIC_DEBUFF_TRANSFER,"Transfers one caster debuff to the enemy: poison, vulnerability, then attack reduction. No debuff means no effect.","Transfiere un perjuicio del lanzador al enemigo: primero veneno, después vulnerabilidad y por último reducción de ataque. Sin perjuicios no tiene efecto."
+SPELL_STRATEGIC_BUFF_STEAL,"Steals 50% of one enemy buff (attack, shield, then reflect), capped at 20%; no buff means no effect.","Roba el 50% de una mejora enemiga (ataque, escudo y después reflejo), hasta un máximo del 20%; sin mejoras no tiene efecto."
+SPELL_STRATEGIC_COOLDOWN_JAM,"Adds 1 cooldown to the strongest eligible enemy spell, up to 4; basic attacks are unaffected.","Añade 1 de espera al hechizo enemigo apto más potente, hasta 4; no afecta a los ataques básicos."
+SPELL_STRATEGIC_COUNTER_TRAP,"Counter Trap: retaliates for %d%% of direct spell HP damage, up to 20%% of attacker HP. Expires after two exchanges or one trigger.","Trampa de represalia: devuelve un %d%% del daño directo a PV de hechizos, hasta el 20%% de los PV del atacante. Caduca tras dos intercambios o una activación."
+SPELL_STRATEGIC_WARD_CONVERT,"Consumes a pre-existing spell shield for %d%% of its max-HP value as direct damage, capped at 20%% of target HP. Shields gained by this spell are retained.","Consume un escudo de hechizo existente e inflige daño directo equivalente al %d%% de su valor en PV máximos, hasta el 20%% de los PV del objetivo. Conserva los escudos que otorga este hechizo."
+SPELL_STRATEGIC_HEAL_SUPPRESSION,Reduces enemy healing by 50% for two exchanges after casting.,Reduce un 50% la curación enemiga durante dos intercambios tras lanzarlo.
+SPELL_STRATEGIC_HOM_ENERGY_SIPHON,Transfers up to 2 homunculus energy; both combatants need an active homunculus and the recipient cannot exceed its maximum.,Transfiere hasta 2 de energía de homúnculo; ambos combatientes necesitan un homúnculo activo y el receptor no puede superar su máximo.

@@ -81,7 +81,7 @@ theme_override_constants/margin_right = 0
 [node name="Title" type="Label" parent="RootMargin/MainHSplit/LeftPanel" unique_id=465534816]
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
-text = "LOADOUT"
+text = "LOADOUT_TITLE"
 autowrap_mode = 3
 
 [node name="ModeRow" type="HBoxContainer" parent="RootMargin/MainHSplit/LeftPanel" unique_id=1869084492]
@@ -98,7 +98,7 @@ theme_override_constants/side_margin = 0
 custom_minimum_size = Vector2(170, 60)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("8_libserif")
-text = "ENTITIES"
+text = "LOADOUT_ENTITIES"
 toggle_mode = true
 focus_mode = 0
 theme_override_styles/normal = SubResource("StyleBoxTexture_toggle")
@@ -110,7 +110,7 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_toggle")
 custom_minimum_size = Vector2(170, 60)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("8_libserif")
-text = "HOMUNCULI"
+text = "LOADOUT_HOMUNCULI"
 toggle_mode = true
 focus_mode = 0
 theme_override_styles/normal = SubResource("StyleBoxTexture_toggle")
@@ -138,7 +138,7 @@ focus_mode = 0
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 5
 layout_mode = 2
-text = "SEAL: ATTACK"
+text = "LOADOUT_SEAL_ATTACK"
 horizontal_alignment = 0
 theme_override_colors/font_color = Color(0.9, 1, 0.9, 1)
 
@@ -167,7 +167,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_top = -32.0
 mouse_filter = 2
-text = "Coming soon"
+text = "UI_COMING_SOON"
 horizontal_alignment = 1
 vertical_alignment = 1
 theme_override_colors/font_color = Color(1, 0.91, 0.72, 1)
@@ -179,7 +179,7 @@ theme_override_font_sizes/font_size = 15
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 5
 layout_mode = 2
-text = "SEAL: DEFENSE"
+text = "LOADOUT_SEAL_DEFENSE"
 horizontal_alignment = 0
 theme_override_colors/font_color = Color(0.9, 1, 0.9, 1)
 
@@ -319,7 +319,7 @@ theme_override_constants/outline_size = 5
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("8_libserif")
-text = "(Select an entity)"
+text = "LOADOUT_SELECT_ENTITY"
 autowrap_mode = 3
 
 [node name="HomunculusName" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/SelectedRow/InfoVBox" unique_id=1054208040]
@@ -403,7 +403,7 @@ theme_override_constants/separation = 2
 [node name="BuildTitle" type="Label" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildHeader/BuildHeaderBox" unique_id=1640843532]
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
-text = "Build"
+text = "LOADOUT_BUILD"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
@@ -414,7 +414,7 @@ custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("9_libserif_bold")
 theme_override_fonts/font = ExtResource("8_libserif")
-text = "PRIMARY & SECONDARY WEAPONS"
+text = "LOADOUT_WEAPONS"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
@@ -429,25 +429,25 @@ columns = 2
 
 [node name="Equip1" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=1494022192]
 layout_mode = 2
-text = "Equip Slot 1"
+text = "LOADOUT_SLOT_1"
 focus_mode = 0
 custom_minimum_size = Vector2(428, 96)
 
 [node name="Equip2" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=98548784]
 layout_mode = 2
-text = "Equip Slot 2"
+text = "LOADOUT_SLOT_2"
 focus_mode = 0
 custom_minimum_size = Vector2(428, 96)
 
 [node name="Side1" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=101044448]
 layout_mode = 2
-text = "Sideboard 1"
+text = "LOADOUT_SIDEBOARD_1"
 focus_mode = 0
 custom_minimum_size = Vector2(428, 96)
 
 [node name="Side2" type="Button" parent="RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/BuildCenter/BuildBlock/BuildGrid" unique_id=353973127]
 layout_mode = 2
-text = "Sideboard 2"
+text = "LOADOUT_SIDEBOARD_2"
 focus_mode = 0
 custom_minimum_size = Vector2(428, 96)
 
@@ -488,7 +488,7 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 22)
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Techniques"
+text = "LOADOUT_TECHNIQUES"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
@@ -505,7 +505,7 @@ columns = 2
 layout_mode = 2
 theme_override_fonts/font = ExtResource("9_libserif_bold")
 theme_override_fonts/font = ExtResource("8_libserif")
-text = "ATTACK"
+text = "LOADOUT_ATTACK"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
@@ -516,7 +516,7 @@ theme_override_font_sizes/font_size = 16
 layout_mode = 2
 theme_override_fonts/font = ExtResource("9_libserif_bold")
 theme_override_fonts/font = ExtResource("8_libserif")
-text = "DEFENSE"
+text = "LOADOUT_DEFENSE"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
@@ -540,7 +540,7 @@ theme_override_constants/separation = 12
 [node name="Save" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=1529519569]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Save Seal"
+text = "LOADOUT_SAVE"
 focus_mode = 0
 custom_minimum_size = Vector2(200, 72)
 
@@ -565,7 +565,7 @@ theme_override_font_sizes/font_size = 24
 [node name="Play" type="Button" parent="RootMargin/MainHSplit/RightPanel/BottomRow" unique_id=2093744421]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "READY (Start Bo3)"
+text = "LOADOUT_READY_BO3"
 focus_mode = 0
 custom_minimum_size = Vector2(220, 72)
 
@@ -579,8 +579,8 @@ offset_left = -205.0
 offset_top = 60.0
 offset_right = -20.0
 offset_bottom = 96.0
-text = "Spells · 4/4"
-tooltip_text = "Configure spells for the selected entity"
+text = "LOADOUT_SPELLS_4"
+tooltip_text = "LOADOUT_SPELLS_HINT"
 
 [node name="BackButton" type="Button" parent="."]
 layout_mode = 1
@@ -593,7 +593,7 @@ offset_left = -168.0
 offset_top = 12.0
 offset_right = -12.0
 offset_bottom = 64.0
-text = "Back"
+text = "SETTINGS_BACK"
 focus_mode = 0
 theme_override_font_sizes/font_size = 16
 z_index = 40

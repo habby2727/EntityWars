@@ -49,26 +49,26 @@ theme_override_constants/separation = 16
 [node name="Title" type="Label" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 26
-text = "SETTINGS"
+text = "SETTINGS_TITLE"
 horizontal_alignment = 1
 
 [node name="LanguageLabel" type="Label" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
-text = "Language / Idioma"
+text = "SETTINGS_LANGUAGE"
 
 [node name="Language" type="OptionButton" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
 
 [node name="FullscreenLabel" type="Label" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
-text = "Fullscreen"
+text = "SETTINGS_FULLSCREEN"
 
 [node name="Fullscreen" type="OptionButton" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
 
 [node name="ApplyDisplay" type="Button" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
-text = "Apply"
+text = "SETTINGS_APPLY"
 
 [node name="DisplayStatus" type="Label" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
@@ -77,13 +77,13 @@ horizontal_alignment = 1
 [node name="Music" type="Button" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
 disabled = true
-text = "Music (Coming Soon)"
+text = "SETTINGS_MUSIC_SOON"
 
 [node name="Sound" type="Button" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
 disabled = true
-text = "Sound (Coming Soon)"
+text = "SETTINGS_SOUND_SOON"
 
 [node name="Back" type="Button" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
-text = "Back"
+text = "SETTINGS_BACK"

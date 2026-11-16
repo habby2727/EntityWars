@@ -23,7 +23,7 @@ func _run() -> void:
 	panel.show_building("build_forge", state, {}, {}, true)
 	panel._forge_item = "aether_knot"
 	panel._update_forge_button()
-	if not panel._forge_info.text.contains("Base (Lv 0)") or not panel._forge_info.text.contains("Lv 1:") or not panel._forge_info.text.contains("Lv 2:") or not panel._forge_info.text.contains("0.1") or not panel._forge_info.text.contains("0.15") or not panel._forge_info.text.contains("0.18"):
+	if not panel._forge_info.text.contains("Base (Lv 0)") or not panel._forge_info.text.contains("Lv 1:") or not panel._forge_info.text.contains("Lv 2:") or not panel._forge_info.text.contains("10%") or not panel._forge_info.text.contains("15%") or not panel._forge_info.text.contains("18%"):
 		_fail("Forge does not show baseline and level 1/2 effects")
 		return
 	for level in range(10):

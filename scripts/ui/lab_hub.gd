@@ -208,7 +208,7 @@ func _update_lock_states() -> void:
 		var display_name = _get_building_display_name(building_id)
 		if locked:
 			button.modulate = Color(1, 1, 1, 0.4)
-			button.tooltip_text = "%s\nUnlock at HQ Lv %s" % [display_name, unlock_level]
+			button.tooltip_text = tr("LAB_UNLOCK_BUILDING").replace("\\n", "\n") % [display_name, unlock_level]
 		else:
 			button.modulate = Color(1, 1, 1, 1)
 			button.tooltip_text = display_name
@@ -286,6 +286,10 @@ func _on_canvas_resized() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
 		_layout_icons()
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready():
+		_update_lock_states()
+		_update_resource_bar()
+		_quick_panel._refresh()
 
 func _on_state_updated(state: Dictionary) -> void:
 	if _debug.unlock_all_buildings:
@@ -341,18 +345,18 @@ func _get_building_display_name(building_id: String) -> String:
 	var data = _db.get_building(building_id)
 	if typeof(data) == TYPE_DICTIONARY:
 		if data.has("display_name"):
-			return str(data.get("display_name", building_id))
+			return GameLocalization.catalog("building", building_id, "name", str(data.get("display_name", building_id)))
 		if data.has("name"):
-			return str(data.get("name", building_id))
+			return GameLocalization.catalog("building", building_id, "name", str(data.get("name", building_id)))
 	return building_id
 
 func _get_resource_name(res_id: String) -> String:
 	var entry = _db.get_resource(res_id)
 	if typeof(entry) == TYPE_DICTIONARY:
 		if entry.has("display_name"):
-			return str(entry.get("display_name", res_id))
+			return GameLocalization.catalog("resource", res_id, "name", str(entry.get("display_name", res_id)))
 		if entry.has("name"):
-			return str(entry.get("name", res_id))
+			return GameLocalization.catalog("resource", res_id, "name", str(entry.get("name", res_id)))
 	return res_id
 
 func _get_production_per_hour() -> Dictionary:

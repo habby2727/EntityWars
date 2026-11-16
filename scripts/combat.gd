@@ -214,6 +214,7 @@ var _hp_fill_red: StyleBoxFlat = null
 
 @onready var log_box: RichTextLabel = $Log
 @onready var next_turn_btn: Button = $NextTurn
+var _next_turn_action := ""
 @onready var switch_weapon_btn: Button = $SwitchWeapon
 @onready var ultra_button: Button = $Ultraturn
 @onready var hom_decision: HBoxContainer = $HomDecision
@@ -356,19 +357,24 @@ func _spell_description(spell: Dictionary) -> String:
 			return SpellPresentation.anomaly_detail(spell, effect)
 	var lines: Array[String] = []
 	for effect in spell.get("effects", []):
-		var strategic := SpellPresentation.strategic_detail(effect)
+		var strategic := SpellPresentation.localized_strategic_detail(effect)
 		if not strategic.is_empty():
 			lines.append(strategic)
 			continue
 		var extra: Array[String] = []
 		for key in effect:
 			if key not in ["kind", "value", "target"]:
-				extra.append("%s: %s" % [str(key).replace("_", " ").capitalize(), Stats.effect_value(str(effect.get("kind", "")), effect[key], str(key))])
-		lines.append("%s: %s (%s)%s" % [str(effect.get("kind", "")).replace("_", " ").capitalize(), Stats.effect_value(str(effect.get("kind", "")), effect.get("value", "")), str(effect.get("target", "")), "; " + ", ".join(extra) if not extra.is_empty() else ""])
-	return "%s\nType: %s | %s\nPower: %s | Accuracy: %d%% | Cooldown: %d\n%s\n%s" % [spell.get("name", ""), str(spell.get("type", "")).capitalize(), str(spell.get("category", "")).capitalize(), Stats.percent(float(spell.get("power_mult", 0))), int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), ", ".join(lines) if not lines.is_empty() else "No additional effects", spell.get("desc", "")]
+				extra.append("%s: %s" % [GameLocalization.catalog("stat", str(key), "name", str(key).replace("_", " ").capitalize()), Stats.effect_value(str(effect.get("kind", "")), effect[key], str(key))])
+		var kind := str(effect.get("kind", ""))
+		var target := str(effect.get("target", ""))
+		lines.append("%s: %s (%s)%s" % [GameLocalization.catalog("effect_kind", kind, "name", kind.replace("_", " ").capitalize()), Stats.effect_value(kind, effect.get("value", "")), GameLocalization.catalog("effect_target", target, "name", target), "; " + ", ".join(extra) if not extra.is_empty() else ""])
+	var id := str(spell.get("id", ""))
+	var spell_type := str(spell.get("type", ""))
+	var category := str(spell.get("category", ""))
+	return tr("COMBAT_SPELL_TOOLTIP").replace("\\n", "\n") % [GameLocalization.catalog("spell", id, "name", str(spell.get("name", ""))), GameLocalization.catalog("type", spell_type, "name", spell_type.capitalize()), GameLocalization.catalog("spell_category", category, "name", category.capitalize()), Stats.percent(float(spell.get("power_mult", 0))), int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), ", ".join(lines) if not lines.is_empty() else tr("COMBAT_NO_EFFECTS"), GameLocalization.catalog("spell", id, "desc", str(spell.get("desc", "")))]
 
 func _status_effect_text(kind: String, value: float) -> String:
-	var label := kind.replace("_", " ").capitalize()
+	var label := GameLocalization.catalog("effect_kind", kind, "name", kind.replace("_", " ").capitalize())
 	if kind in ["poison", "hom_stun"]:
 		return "%s %dT" % [label, int(value)]
 	return "%s %d%%" % [label, roundi(value * 100.0)]
@@ -402,7 +408,7 @@ func _dungeon_recover() -> void:
 func _dungeon_show_retry(message: String) -> void:
 	_dungeon_synchronized = false
 	_log_immediate(message)
-	next_turn_btn.text = "Retry"
+	_set_next_turn_action("retry")
 	next_turn_btn.show()
 	_dungeon_refresh_controls()
 
@@ -451,7 +457,7 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 			SceneRouter._dungeon_context.erase("pending_action")
 			_gate_session_verified = true
 			_log_immediate("Dungeon " + str(session.status).to_lower() + ".")
-			next_turn_btn.text = "Return"
+			_set_next_turn_action("return")
 			next_turn_btn.show()
 			connection_gate_recover()
 			return
@@ -643,7 +649,7 @@ func _dungeon_event_effects(view: Dictionary, event: Dictionary, target: String)
 		if anomaly is Dictionary and not anomaly.is_empty():
 			var affinity := str(fighter.get("type", ""))
 			var modifier := 15 if affinity == str(anomaly.get("favored_type", "")) else -15 if affinity == str(anomaly.get("weakened_type", "")) else 0
-			if modifier != 0: effects.append({"icon": "type", "label": ("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip": "Phisical Anomaly: %s +15%%, %s -15%% direct spell damage; %d exchanges remaining." % [str(anomaly.get("favored_type", "")).capitalize(), str(anomaly.get("weakened_type", "")).capitalize(), int(anomaly.get("remaining_exchanges", 0))]})
+			if modifier != 0: effects.append({"icon": "type", "label": ("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip": tr("ANOMALY_TOOLTIP") % [GameLocalization.catalog("type", str(anomaly.get("favored_type", "")), "name", str(anomaly.get("favored_type", "")).capitalize()), GameLocalization.catalog("type", str(anomaly.get("weakened_type", "")), "name", str(anomaly.get("weakened_type", "")).capitalize()), int(anomaly.get("remaining_exchanges", 0))]})
 		pair[0].set_boss_effects(true, effects)
 
 func _dungeon_strategic_event(event: Dictionary) -> String:
@@ -673,15 +679,21 @@ func _show_physical_anomaly(value: Variant) -> void:
 	var active: Dictionary = value if value is Dictionary else {}
 	var next_id := str(active.get("id", ""))
 	if not _physical_anomaly_display_id.is_empty() and _physical_anomaly_display_id != next_id:
-		_log_immediate("Phisical Anomaly expired." if next_id.is_empty() else "Phisical Anomaly replaced.")
+		_log_immediate(tr("ANOMALY_EXPIRED") if next_id.is_empty() else tr("ANOMALY_REPLACED"))
 	_physical_anomaly_display_id = next_id
 	if active.is_empty():
+		if _physical_anomaly_label.has_meta("active_anomaly"):
+			_physical_anomaly_label.remove_meta("active_anomaly")
 		_physical_anomaly_label.hide()
 		return
-	var spell: Dictionary = _reg.get_spell_by_id(str(active.get("id", ""))) if _reg != null else {}
-	_physical_anomaly_label.text = "Phisical Anomaly — %s | %d exchanges | %s +15%% | %s -15%%" % [str(spell.get("name", active.get("id", ""))), int(active.get("remaining_exchanges", 0)), str(active.get("favored_type", "")).capitalize(), str(active.get("weakened_type", "")).capitalize()]
-	_physical_anomaly_label.tooltip_text = _spell_description(spell)
+	_physical_anomaly_label.set_meta("active_anomaly", active.duplicate(true))
+	_render_physical_anomaly(active)
 	_physical_anomaly_label.show()
+
+func _render_physical_anomaly(active: Dictionary) -> void:
+	var spell: Dictionary = _reg.get_spell_by_id(str(active.get("id", ""))) if _reg != null else {}
+	_physical_anomaly_label.text = tr("ANOMALY_DISPLAY") % [GameLocalization.catalog("spell", str(active.get("id", "")), "name", str(spell.get("name", active.get("id", "")))), int(active.get("remaining_exchanges", 0)), GameLocalization.catalog("type", str(active.get("favored_type", "")), "name", str(active.get("favored_type", "")).capitalize()), GameLocalization.catalog("type", str(active.get("weakened_type", "")), "name", str(active.get("weakened_type", "")).capitalize())]
+	_physical_anomaly_label.tooltip_text = _spell_description(spell)
 
 func _dungeon_render() -> void:
 	var state: Dictionary = _dungeon_session.get("combat_state", {})
@@ -752,7 +764,7 @@ func _dungeon_render() -> void:
 			var affinity := str(pair[1].get("type", ""))
 			var modifier := 15 if affinity == str(anomaly.get("favored_type", "")) else -15 if affinity == str(anomaly.get("weakened_type", "")) else 0
 			if modifier != 0:
-				effects.append({"icon": "type", "label": ("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip": "Phisical Anomaly: %s gains 15%% and %s loses 15%% direct spell damage; %d exchanges remaining." % [str(anomaly.get("favored_type", "")).capitalize(), str(anomaly.get("weakened_type", "")).capitalize(), int(anomaly.get("remaining_exchanges", 0))]})
+				effects.append({"icon": "type", "label": ("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip": tr("ANOMALY_TOOLTIP_GAIN") % [GameLocalization.catalog("type", str(anomaly.get("favored_type", "")), "name", str(anomaly.get("favored_type", "")).capitalize()), GameLocalization.catalog("type", str(anomaly.get("weakened_type", "")), "name", str(anomaly.get("weakened_type", "")).capitalize()), int(anomaly.get("remaining_exchanges", 0))]})
 		pair[0].set_boss_effects(true, effects)
 		if not pair[0].effect_clicked.is_connected(_show_dungeon_status):
 			pair[0].effect_clicked.connect(_show_dungeon_status)
@@ -769,9 +781,7 @@ func _dungeon_render() -> void:
 		var id := str(p.spell_ids[i])
 		var spell: Dictionary = _reg.get_spell_by_id(id)
 		var cd := int(p.get("cooldowns", {}).get(id, 0))
-		var power := "Support" if float(spell.get("power_mult", 0)) == 0 else Stats.percent(float(spell.power_mult))
-		spell_buttons[i].text = "%s\n%s  |  %d%%%s" % [str(spell.get("name", id)), power, roundi(float(spell.get("accuracy", 0)) * 100), "  |  CD: %d" % cd if cd > 0 else ""]
-		spell_buttons[i].tooltip_text = _spell_description(spell)
+		_set_localized_spell_button(spell_buttons[i], spell, str(spell.get("name", id)), float(spell.get("power_mult", 0)), float(spell.get("accuracy", 0)), cd)
 		var types: Array = [str(spell.get("primary_type", "")), str(spell.get("secondary_type", ""))] if spell.get("type") == "hybrid" else [str(spell.get("type", "universal"))]
 		for icon_index in 2:
 			var icon_name := "DungeonSpellType%d" % icon_index
@@ -795,7 +805,9 @@ func _dungeon_render() -> void:
 		spell_panel.get_parent().add_child(_dungeon_floor_label)
 		spell_panel.resized.connect(_layout_dungeon_floor_header)
 		spell_panel.item_rect_changed.connect(_layout_dungeon_floor_header)
-	_dungeon_floor_label.text = "DUNGEONS — FLOOR %d" % floor_id
+	_dungeon_floor_label.text = tr("DUNGEON_FLOOR_TITLE") % floor_id
+	_dungeon_floor_label.set_meta("localized_floor", floor_id)
+	_dungeon_floor_label.set_meta("localized_prefix", _dungeon_floor_label.text)
 	var elite: Variant = state.get("elite")
 	var is_elite := elite is Dictionary and not str(elite.get("label", "")).is_empty()
 	if is_elite:
@@ -827,7 +839,9 @@ func _dungeon_render() -> void:
 			_append_combat_log("BLESSING: " + str(selected.get("name", "")), {"category": "advantage", "ability_id": detail_key})
 	_dungeon_floor_label.show()
 	_layout_dungeon_floor_header()
-	turn_label.text = "Cleared: %d" % int(_dungeon_session.get("cleared_floor", 0))
+	turn_label.text = tr("DUNGEON_CLEARED_COUNT") % int(_dungeon_session.get("cleared_floor", 0))
+	turn_label.set_meta("localized_cleared", int(_dungeon_session.get("cleared_floor", 0)))
+	turn_label.set_meta("localized_cleared_text", turn_label.text)
 	var weapons: Array = state.get("weapons", [])
 	var active_slot := int(state.get("active_weapon_slot", 0))
 	for i in 2:
@@ -837,15 +851,15 @@ func _dungeon_render() -> void:
 		slot_icon.modulate.a = 1.0 if i + 1 == active_slot else 0.5
 	var phase := str(_dungeon_session.get("phase", "COMBAT"))
 	if phase == "FLOOR_CLEARED":
-		_log_immediate("FLOOR %d CLEARED | HP %d / %d" % [floor_id, int(p.hp), int(p.max_hp)])
-		if int(p.hp) * 10 <= int(p.max_hp): _log_immediate("CLOSE CALL")
-		if int(state.get("turn", 0)) <= 5: _log_immediate("SWIFT CLEAR")
-		next_turn_btn.text = "Next Floor"
+		_log_immediate(tr("DUNGEON_FLOOR_CLEARED") % [floor_id, int(p.hp), int(p.max_hp)])
+		if int(p.hp) * 10 <= int(p.max_hp): _log_immediate(tr("DUNGEON_CLOSE_CALL"))
+		if int(state.get("turn", 0)) <= 5: _log_immediate(tr("DUNGEON_SWIFT_CLEAR"))
+		_set_next_turn_action("next_floor")
 		next_turn_btn.disabled = floor_id >= 1000
 		next_turn_btn.show()
 	elif str(_dungeon_session.get("status", "")) == "LOSS":
-		_log_immediate("RUN OVER | Cleared floors: %d" % int(_dungeon_session.get("cleared_floor", 0)))
-		next_turn_btn.text = "Return"
+		_log_immediate(tr("DUNGEON_RUN_OVER") % int(_dungeon_session.get("cleared_floor", 0)))
+		_set_next_turn_action("return")
 		next_turn_btn.show()
 	else:
 		next_turn_btn.hide()
@@ -918,13 +932,13 @@ func _setup_dungeon_blessing_ui() -> void:
 	column.add_theme_constant_override("separation", 8)
 	_blessing_panel.add_child(column)
 	var title := Label.new()
-	title.text = "FLOOR BLESSING - Choose one"
+	title.text = "DUNGEON_BLESSING_TITLE"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color("d4af37"))
 	column.add_child(title)
 	var info := Label.new()
-	info.text = "This blessing lasts only for this floor."
+	info.text = "DUNGEON_BLESSING_INFO"
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(info)
 	var cards := HBoxContainer.new()
@@ -1126,7 +1140,7 @@ func _on_online_hunt_auth_changed(_token: String) -> void:
 	_online_hunt_request = ""
 	_online_turn_request = ""
 	_hide_online_hunt_view()
-	next_turn_btn.text = "Return"
+	_set_next_turn_action("return")
 	next_turn_btn.show()
 	_log_immediate("Account changed. Return to World Zone; the session remains active.")
 
@@ -1259,7 +1273,7 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 	if not ok or not session is Dictionary or _online_identity_invalid or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(session.get("session_id", "")) != str(_solo_context.get("session_id", "")) or not _valid_online_result(session) or int(session.get("combat_revision", 0)) < maxi(1, _online_hunt_revision) or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
 		_hide_online_hunt_view()
 		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
-		next_turn_btn.text = "Retry"
+		_set_next_turn_action("retry")
 		next_turn_btn.show()
 		return
 	if _combat_wait_timer:
@@ -1269,7 +1283,7 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 	if not _render_online_hunt(session):
 		_online_hunt_session.clear()
 		_log_immediate("Invalid server combat snapshot. Retry or return.")
-		next_turn_btn.text = "Retry"
+		_set_next_turn_action("retry")
 		next_turn_btn.show()
 		return
 	_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
@@ -1338,7 +1352,7 @@ func _show_closed_online_session(status: String) -> void:
 	_online_hunt_session = {"status": status}
 	_hide_online_hunt_view()
 	_log_immediate("Encounter " + status.to_lower() + ".")
-	next_turn_btn.text = "Return"
+	_set_next_turn_action("return")
 	next_turn_btn.show()
 
 func _online_hunt_event_delay(event: Dictionary) -> float:
@@ -1436,7 +1450,7 @@ func _present_online_terminal() -> void:
 	if not _online_terminal_shown:
 		_online_terminal_shown = true
 		_log_immediate(_online_hunt_info.text)
-	next_turn_btn.text = "Return"
+	_set_next_turn_action("return")
 	next_turn_btn.show()
 
 func _send_online_pending_turn() -> void:
@@ -1543,9 +1557,7 @@ func _render_online_hunt(session: Dictionary) -> bool:
 		var spell: Dictionary = _reg.get_spell_by_id(str(move.get("id", "")))
 		var cd := int(move.get("cooldown_remaining", 0))
 		var power_value := float(move.get("power_mult", spell.get("power_mult", 0)))
-		var power_text := "Support" if is_zero_approx(power_value) else Stats.percent(power_value)
-		spell_buttons[i].text = "%s\n%s  |  %d%%%s" % [str(move.get("name", spell.get("name", move.get("id", "")))), power_text, roundi(float(move.get("accuracy", spell.get("accuracy", 0))) * 100), "  |  CD: %d" % cd if cd > 0 else ""]
-		spell_buttons[i].tooltip_text = _spell_description(spell) if not spell.is_empty() else ""
+		_set_localized_spell_button(spell_buttons[i], spell, str(move.get("name", spell.get("name", move.get("id", "")))), power_value, float(move.get("accuracy", spell.get("accuracy", 0))), cd)
 		var types: Array = [str(spell.get("primary_type", "")), str(spell.get("secondary_type", ""))] if spell.get("type") == "hybrid" else [str(spell.get("type", "universal"))]
 		for icon_index in 2:
 			var icon_name := "OnlineSpellType%d" % icon_index
@@ -1625,7 +1637,7 @@ func _online_turn_unresolved() -> void:
 	switch_weapon_btn.disabled = true
 	_refresh_online_inspiration()
 	_log_immediate("Turn response uncertain. Recovery is required; no new turn has been sent.")
-	next_turn_btn.text = "Recover"
+	_set_next_turn_action("recover")
 	next_turn_btn.show()
 
 func _refresh_online_inspiration() -> void:
@@ -1701,12 +1713,12 @@ func _on_combat_state_timeout() -> void:
 			_online_hunt_request = ""
 		_hide_online_hunt_view()
 		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
-		next_turn_btn.text = "Retry"
+		_set_next_turn_action("retry")
 		next_turn_btn.show()
 		return
 	if not _combat_started:
 		_log_immediate("Player state unavailable. Press Retry or leave combat.")
-		next_turn_btn.text = "Retry"
+		_set_next_turn_action("retry")
 		next_turn_btn.show()
 
 func _on_combat_state_updated(state: Dictionary) -> void:
@@ -1718,7 +1730,7 @@ func _on_combat_state_updated(state: Dictionary) -> void:
 			_combat_session_invalid = true
 			_battle_over = true
 			spell_panel.hide()
-			next_turn_btn.text = "Return"
+			_set_next_turn_action("return")
 			next_turn_btn.show()
 			_log_immediate("Session changed. Leave combat and authenticate again.")
 		return
@@ -1738,7 +1750,7 @@ func _start_combat() -> void:
 	if not _load_player_from_seal():
 		_combat_started = false
 		_log_immediate("Invalid Boss Hunt loadout. Return and select your equipment again.")
-		next_turn_btn.text = "Return"
+		_set_next_turn_action("return")
 		next_turn_btn.show()
 		return
 	_setup_enemy()
@@ -2988,15 +3000,53 @@ func _apply_hp_color(bar: ProgressBar, f: Dictionary) -> void:
 		fill = _hp_fill_yellow
 	bar.add_theme_stylebox_override("fill", fill)
 
+func _set_localized_spell_button(button: Button, spell: Dictionary, fallback_name: String, power: float, accuracy: float, cooldown: int) -> void:
+	button.set_meta("localized_spell", {"spell": spell, "name": fallback_name, "power": power, "accuracy": accuracy, "cooldown": cooldown})
+	_refresh_localized_spell_button(button)
+
+func _refresh_localized_spell_button(button: Button) -> void:
+	var data: Dictionary = button.get_meta("localized_spell", {})
+	if data.is_empty():
+		return
+	var spell: Dictionary = data.spell
+	var power := tr("SPELL_SUPPORT") if is_zero_approx(float(data.power)) else Stats.percent(float(data.power))
+	var cd := int(data.cooldown)
+	button.text = "%s\n%s  |  %d%%%s" % [GameLocalization.catalog("spell", str(spell.get("id", "")), "name", str(data.name)), power, roundi(float(data.accuracy) * 100), "  |  CD: %d" % cd if cd > 0 else ""]
+	button.tooltip_text = _spell_description(spell) if not spell.is_empty() else ""
+
+func _set_next_turn_action(action: String) -> void:
+	_next_turn_action = action
+	var keys := {"retry": "COMBAT_RETRY", "next_floor": "COMBAT_NEXT_FLOOR", "return": "COMBAT_RETURN", "recover": "COMBAT_RECOVER", "return_zone": "COMBAT_RETURN_ZONE", "return_gate": "COMBAT_RETURN_GATE", "return_loadout": "COMBAT_RETURN_LOADOUT"}
+	next_turn_btn.text = tr(keys.get(action, action))
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready():
+		for button in spell_buttons:
+			if is_instance_valid(button) and button.has_meta("localized_spell"):
+				_refresh_localized_spell_button(button)
+		if not _next_turn_action.is_empty():
+			_set_next_turn_action(_next_turn_action)
+		if is_instance_valid(_physical_anomaly_label) and _physical_anomaly_label.has_meta("active_anomaly"):
+			_render_physical_anomaly(_physical_anomaly_label.get_meta("active_anomaly"))
+		if is_instance_valid(_dungeon_floor_label) and _dungeon_floor_label.has_meta("localized_floor"):
+			var old_prefix := str(_dungeon_floor_label.get_meta("localized_prefix", ""))
+			var suffix := _dungeon_floor_label.text.trim_prefix(old_prefix)
+			var prefix := tr("DUNGEON_FLOOR_TITLE") % int(_dungeon_floor_label.get_meta("localized_floor"))
+			_dungeon_floor_label.text = prefix + suffix
+			_dungeon_floor_label.set_meta("localized_prefix", prefix)
+		if is_instance_valid(turn_label) and turn_label.has_meta("localized_cleared") and _dungeon_guard and turn_label.text == str(turn_label.get_meta("localized_cleared_text", "")):
+			turn_label.text = tr("DUNGEON_CLEARED_COUNT") % int(turn_label.get_meta("localized_cleared"))
+			turn_label.set_meta("localized_cleared_text", turn_label.text)
+
 func _on_next_turn() -> void:
 	if _dungeon_guard:
-		if next_turn_btn.text == "Retry":
+		if _next_turn_action == "retry":
 			_dungeon_recover()
-		elif next_turn_btn.text == "Next Floor" and _dungeon_synchronized and _dungeon_pending.is_empty() and _dungeon_request.is_empty() and _combat_backend._verified_player_id == _dungeon_identity:
+		elif _next_turn_action == "next_floor" and _dungeon_synchronized and _dungeon_pending.is_empty() and _dungeon_request.is_empty() and _combat_backend._verified_player_id == _dungeon_identity:
 			_dungeon_pending = {"kind": "next", "payload": {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": int(_dungeon_session.get("combat_revision", 0))}}
 			SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
 			_dungeon_send_pending()
-		elif next_turn_btn.text == "Return":
+		elif _next_turn_action == "return":
 			SceneRouter.return_from_dungeon()
 		return
 	if _online_hunt_guard:
@@ -3005,7 +3055,7 @@ func _on_next_turn() -> void:
 				next_turn_btn.hide()
 				_on_online_hunt_identity({"player_id": _combat_identity})
 			return
-		if next_turn_btn.text == "Retry" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity and not _combat_identity.is_empty():
+		if _next_turn_action == "retry" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity and not _combat_identity.is_empty():
 			next_turn_btn.hide()
 			_on_online_hunt_identity({"player_id": _combat_identity})
 		else:
@@ -3379,10 +3429,7 @@ func _refresh_spell_buttons() -> void:
 		if type_icon.visible and str(type_icon.get("element")) != type_id:
 			type_icon.call("configure", type_id)
 		var cd := int(player.get("spell_cooldowns", {}).get(spell.id, 0))
-		var power := "Support" if float(spell.power_mult) == 0.0 else Stats.percent(float(spell.power_mult))
-		var cooldown := "  |  CD: %d" % cd if cd > 0 else ""
-		button.text = "%s\n%s  |  %d%%%s" % [spell.name, power, int(round(float(spell.accuracy) * 100)), cooldown]
-		button.tooltip_text = _spell_description(spell)
+		_set_localized_spell_button(button, spell, str(spell.name), float(spell.power_mult), float(spell.accuracy), cd)
 		button.disabled = _resolving_exchange or _processing_steps or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty() or cd > 0
 
 func _style_spell_buttons() -> void:
@@ -3693,7 +3740,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 					caster.hom_energy += amount
 				)
 			"physical_anomaly":
-				_log_step("Phisical Anomaly: %s replaces the previous anomaly." % str(spell.get("name", id)), func():
+				_log_step(tr("ANOMALY_REPLACES") % GameLocalization.catalog("spell", str(id), "name", str(spell.get("name", id))), func():
 					_physical_anomaly = {"id": id, "favored_type": str(effect.favored_type), "weakened_type": str(effect.weakened_type), "remaining_exchanges": 3, "activated_exchange": _turn}
 					_show_physical_anomaly(_physical_anomaly)
 				)
@@ -4065,7 +4112,7 @@ func _handle_battle_end() -> void:
 		spell_panel.hide()
 		switch_weapon_btn.hide()
 		_inspiration_panel.hide()
-		next_turn_btn.text = "Return to World Zone" if not str(_solo_context.get("visual_zone_id", "")).is_empty() else "Return to World Gate"
+		_set_next_turn_action("return_zone" if not str(_solo_context.get("visual_zone_id", "")).is_empty() else "return_gate")
 		next_turn_btn.disabled = false
 		next_turn_btn.show()
 		return
@@ -4096,7 +4143,7 @@ func _handle_battle_end() -> void:
 		if _player_wins > _enemy_wins:
 			_show_unverified_reward_status()
 		_show_highlights()
-		next_turn_btn.text = "Return to Loadout"
+		_set_next_turn_action("return_loadout")
 		next_turn_btn.show()
 		next_turn_btn.disabled = false
 		return
@@ -4119,7 +4166,7 @@ func _handle_battle_end() -> void:
 		if _player_wins > _enemy_wins:
 			_show_unverified_reward_status()
 		_show_highlights()
-		next_turn_btn.text = "Return to Loadout"
+		_set_next_turn_action("return_loadout")
 		next_turn_btn.show()
 		next_turn_btn.disabled = false
 		return

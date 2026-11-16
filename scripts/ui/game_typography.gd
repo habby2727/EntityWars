@@ -33,19 +33,32 @@ func _excluded(node: Node) -> bool:
 func _apply_font(node: Node) -> void:
 	if not is_instance_valid(node) or not node.is_inside_tree() or _excluded(node):
 		return
+	var settings_control := false
+	var ancestor := node
+	while ancestor != null:
+		if ancestor.scene_file_path == "res://scenes/ui/Settings.tscn":
+			settings_control = true
+			break
+		ancestor = ancestor.get_parent()
 	if node is PopupMenu:
-		node.add_theme_font_override("font", _title_font)
+		node.add_theme_font_override("font", _body_font if settings_control or node.has_meta("localization_body_font") else _title_font)
 		return
 	var control := node as Control
 	if control == null or _title_font == null or _body_font == null:
 		return
 	var heading := control is BaseButton or control is TabBar or control is TabContainer
+	if settings_control and control is BaseButton:
+		heading = false
 	if control is Label or control is RichTextLabel:
 		var node_name := str(control.name).to_lower()
 		heading = "title" in node_name or "header" in node_name or "heading" in node_name or "subtitle" in node_name
 		var size_key := "normal_font_size" if control is RichTextLabel else "font_size"
 		if control.get_theme_font_size(size_key) >= 24:
 			heading = true
+		if settings_control and control.name != "Title":
+			heading = false
+	if control.has_meta("localization_body_font"):
+		heading = false
 	var font: Font = _title_font if heading else _body_font
 	if control is RichTextLabel:
 		for key in ["normal_font", "bold_font", "italics_font", "bold_italics_font", "mono_font"]:

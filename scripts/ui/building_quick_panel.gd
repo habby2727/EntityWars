@@ -171,10 +171,10 @@ func _refresh() -> void:
 	var wallet = _state.get("wallet", {})
 	if not wallet is Dictionary:
 		wallet = {}
-	_name_label.text = str(data.get("display_name", data.get("name", _building_id)))
-	_description.text = str(DESCRIPTIONS.get(_building_id, ""))
+	_name_label.text = GameLocalization.catalog("building", _building_id, "name", str(data.get("display_name", data.get("name", _building_id))))
+	_description.text = GameLocalization.catalog("building", _building_id, "desc", str(DESCRIPTIONS.get(_building_id, "")))
 	if _building_id in ["sync_nexus", "anomaly_containment"]:
-		_description.text += "\nSpecialized functions: Coming Soon."
+		_description.text += "\n" + tr("LAB_FUNCTIONS_SOON")
 	if _building_id == "essence_reactor" and level < max_level:
 		var reactor: Dictionary = buildings.get("essence_reactor", {})
 		var storage: Dictionary = buildings.get("storage_vault", {})
@@ -187,25 +187,25 @@ func _refresh() -> void:
 		var storage_route := str(storage.get("route", ""))
 		var current_rate := 0.0 if level <= 0 else engine._compute_output_rate(level, route, storage_route, hq_path, balance) * 3600.0
 		var next_rate: float = engine._compute_output_rate(level + 1, route, storage_route, hq_path, balance) * 3600.0
-		_description.text += "\nEstimated base: %.0f → %.0f Essence/h (excludes boosts)." % [current_rate, next_rate]
+		_description.text += "\n" + tr("LAB_ESTIMATED_RATE") % [current_rate, next_rate]
 	elif _building_id == "storage_vault" and level < max_level:
 		var storage: Dictionary = buildings.get("storage_vault", {})
 		var route := str(storage.get("route", ""))
 		var hq_path := str(lab.get("hqPath", "Scientific"))
 		var current_capacity := Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
 		var next_capacity := Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance)
-		_description.text += "\nCapacity: %d → %d." % [current_capacity, next_capacity]
+		_description.text += "\n" + tr("LAB_CAPACITY") % [current_capacity, next_capacity]
 	_icon.texture = _catalog.get_tex(_building_id) if _catalog.has(_building_id) else null
-	_level.text = "Level %s / %s%s" % [level, max_level, ("  →  %s" % (level + 1)) if level < max_level else ""]
+	_level.text = tr("LAB_LEVEL_RANGE") % [level, max_level, ("  →  %s" % (level + 1)) if level < max_level else ""]
 	_requirement.text = ""
 	if not unlocked:
-		_requirement.text = "Requires HQ level %d to unlock (current: %d)." % [HqRules.get_unlock_level(_building_id), hq_level]
+		_requirement.text = tr("LAB_REQUIRES_HQ") % [HqRules.get_unlock_level(_building_id), hq_level]
 	elif level >= max_level:
-		_requirement.text = "Maximum level reached"
+		_requirement.text = tr("LAB_MAX_LEVEL")
 	elif not can_upgrade:
-		_requirement.text = "Upgrade to level %d requires HQ level %d (current: %d)." % [level + 1, HqRules.get_required_hq_for_upgrade(_building_id, level), hq_level]
+		_requirement.text = tr("LAB_UPGRADE_REQUIRES_HQ") % [level + 1, HqRules.get_required_hq_for_upgrade(_building_id, level), hq_level]
 	elif level == 0:
-		_requirement.text = "Build this structure to use its functions."
+		_requirement.text = tr("LAB_BUILD_FIRST")
 	_cost_title.visible = level < max_level
 	for child in _costs.get_children():
 		_costs.remove_child(child)
@@ -224,29 +224,29 @@ func _refresh() -> void:
 		icon.texture = _catalog.get_tex(resource_id) if _catalog.has(resource_id) else null
 		var label := Label.new()
 		var resource = _db.get_resource(resource_id)
-		label.text = "%s: %s / %s" % [resource.get("display_name", resource.get("name", resource_id)), available, amount]
+		label.text = "%s: %s / %s" % [GameLocalization.catalog("resource", str(resource_id), "name", str(resource.get("display_name", resource.get("name", resource_id)))), available, amount]
 		label.modulate = Color(1.0, 0.48, 0.4) if available < amount else Color.WHITE
 		row.add_child(icon)
 		row.add_child(label)
 		_costs.add_child(row)
 	var pending = _debug.lab_cooldown_active(_state, _building_id) if debug_enabled else _pending.values().has(_building_id)
 	var online = debug_enabled or (_backend != null and _backend.token != "" and _health_ok and _fresh_state)
-	_upgrade.text = "Build" if level == 0 else "Upgrade"
-	_manage.text = "Open" if _building_id == "world_gate" else "Manage"
+	_upgrade.text = "LAB_BUILD" if level == 0 else "LAB_UPGRADE"
+	_manage.text = "LAB_OPEN" if _building_id == "world_gate" else "LAB_MANAGE"
 	_upgrade.disabled = not online or pending or not can_upgrade or (not debug_enabled and not affordable)
 	_collect.visible = _building_id == "essence_reactor"
 	_collect.disabled = not online or pending or level <= 0 or not unlocked
 	_manage.disabled = not unlocked or (level <= 0 and not debug_enabled) or pending
-	_status.text = _message
+	_status.text = tr(_message)
 	if debug_enabled:
-		_status.text = "Local debug - cooldown 1s" if pending else ("Local debug" if _message == "" else _message)
+		_status.text = tr("LAB_LOCAL_DEBUG_COOLDOWN") if pending else (tr("LAB_LOCAL_DEBUG") if _message == "" else tr(_message))
 	elif not online:
-		_status.text = "Offline or awaiting server state. Actions unavailable."
+		_status.text = tr("LAB_OFFLINE")
 	elif pending and _status.text == "":
-		_status.text = "Action pending server confirmation."
+		_status.text = tr("LAB_ACTION_PENDING")
 	if _building_id == "essence_reactor" and level > 0:
 		var stored = buildings.get("essence_reactor", {}).get("runtime", {}).get("stored_output", 0)
-		_status.text += "\nStored at last update: %.1f Essence." % float(stored)
+		_status.text += "\n" + tr("LAB_STORED") % float(stored)
 
 func _on_upgrade() -> void:
 	if not _upgrade.disabled:
@@ -295,18 +295,18 @@ func _send_local_debug(action_type: String) -> void:
 		next["lab"] = lab
 	elif action_type == "CLAIM_PRODUCTION" and _building_id == "essence_reactor":
 		if _debug.claim_lab_production(next, _db).is_empty():
-			_message = "Reactor must be built before collection."
+			_message = "LAB_REACTOR_BUILD_FIRST"
 			_refresh()
 			return
 	else:
 		return
 	_debug.start_lab_cooldown(next, _building_id)
 	if not _debug.save_lab_state(next):
-		_message = "Could not save local debug state."
+		_message = "LAB_DEBUG_SAVE_FAILED"
 		_refresh()
 		return
 	_state = next
-	_message = "Local debug action saved."
+	_message = "LAB_DEBUG_ACTION_SAVED"
 	debug_state_changed.emit(_state)
 	_refresh()
 	get_tree().create_timer(1.1).timeout.connect(_refresh_debug_cooldown, CONNECT_ONE_SHOT)

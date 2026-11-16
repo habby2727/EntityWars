@@ -246,6 +246,66 @@ func _setup_building_actions_layout() -> void:
 		_route_option.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		_route_option.custom_minimum_size.x = 280 * _ui_scale
 
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready():
+		return
+	_update_cards()
+	if _detail_name != null and _selected_id != "":
+		_detail_name.text = _get_building_name(_selected_id)
+	if _detail_level != null and _selected_id != "":
+		_detail_level.text = tr("LAB_LEVEL") % _get_building_level(_selected_id)
+	if _locked_label != null and _selected_id != "":
+		var hq_level := _get_hq_level()
+		var unlock_level := _get_unlock_level(_selected_id)
+		var level := _get_building_level(_selected_id)
+		if hq_level < unlock_level and not _debug.unlock_all_buildings:
+			_locked_label.text = tr("LAB_REQUIRES_HQ") % [unlock_level, hq_level]
+		elif level >= HqRules.get_max_level(_selected_id):
+			_locked_label.text = tr("LAB_MAX_BUILDING_LEVEL")
+		elif not _debug.unlock_all_buildings and not HqRules.can_upgrade(_selected_id, level, hq_level):
+			_locked_label.text = tr("LAB_UPGRADE_REQUIRES_HQ") % [level + 1, HqRules.get_required_hq_for_upgrade(_selected_id, level), hq_level]
+		elif level == 0:
+			_locked_label.text = tr("LAB_NOT_BUILT_DEBUG") if _debug.unlock_all_buildings else tr("LAB_BUILD_FIRST")
+	if _pending_label != null and _selected_id != "" and _is_pending_building(_selected_id):
+		_pending_label.text = tr("LAB_ACTION_PENDING")
+	elif _pending_label != null and _action_message_building == _selected_id:
+		_pending_label.text = tr(_action_message)
+	if _detail_desc != null and _selected_id != "":
+		_detail_desc.text = _get_building_desc(_selected_id)
+		if _selected_id == "essence_reactor" and _backend != null and _backend.get_server_time_unix_ms() < 0:
+			_detail_desc.text += "\n" + tr("LAB_OFFLINE_ESTIMATE")
+	for id in _research_rows:
+		var row: Dictionary = _research_rows[id]
+		var data: Dictionary = row.get("data", {})
+		var label: Label = row.get("name_label")
+		label.text = GameLocalization.catalog("research", str(id), "name", str(data.get("name", id)))
+		var info: Label = row.get("info_label")
+		info.text = _research_info_text(data, str(id))
+	for id in _experiment_rows:
+		var row: Dictionary = _experiment_rows[id]
+		var data: Dictionary = row.get("data", {})
+		var label: Label = row.get("name_label")
+		var description: Label = row.get("desc_label")
+		label.text = GameLocalization.catalog("experiment", str(id), "name", str(data.get("name", id)))
+		description.text = GameLocalization.catalog("experiment", str(id), "desc", str(data.get("desc", ""))) + "\n" + tr("EXPERIMENT_TIMING") % [_experiment_clock(int(data.get("boost_duration_s", 0)) * 1000), _experiment_clock(int(data.get("cooldown_s", 0)) * 1000)]
+	for id in _spell_rows:
+		var row: Dictionary = _spell_rows[id]
+		var spell: Dictionary = row.spell
+		row.base_name = "%s  |  %s" % [GameLocalization.catalog("spell", str(id), "name", str(spell.get("name", id))), SpellView.affinity(spell)]
+		var label: Label = row.name
+		label.text = row.base_name
+	if is_instance_valid(_spell_info) and _spell_info.visible and _spell_info.has_meta("spell"):
+		var spell: Dictionary = _spell_info.get_meta("spell")
+		_spell_info_title.text = GameLocalization.catalog("spell", str(spell.get("id", "")), "name", str(spell.get("name", "")))
+		_spell_info_text.text = SpellView.detail(spell, "Research")
+	_update_spell_section()
+	_update_experiments()
+	_update_research()
+	if _route_option != null:
+		for index in _route_option.item_count:
+			var route := str(_route_option.get_item_metadata(index))
+			_route_option.set_item_text(index, GameLocalization.catalog("route", route, "name", route))
+
 func _process(delta: float) -> void:
 	_status_refresh_elapsed += delta
 	if _status_refresh_elapsed >= 1.0:
@@ -281,6 +341,9 @@ func _resolve_nodes() -> void:
 	_detail_desc = get_node_or_null(detail_desc_path) as Label
 	_detail_level = get_node_or_null(detail_level_path) as Label
 	_route_option = get_node_or_null(route_option_path) as OptionButton
+	if _route_option != null:
+		_route_option.set_meta("localization_body_font", true)
+		_route_option.get_popup().set_meta("localization_body_font", true)
 	_cost_list = get_node_or_null(cost_list_path) as VBoxContainer
 	_upgrade_btn = get_node_or_null(upgrade_button_path) as Button
 	_route_btn = get_node_or_null(route_button_path) as Button
@@ -484,16 +547,16 @@ func _build_experiments() -> void:
 		var header := HBoxContainer.new()
 		header.add_theme_constant_override("separation", 8)
 		var name_label := Label.new()
-		name_label.text = str(entry.get("name", exp_id))
+		name_label.text = GameLocalization.catalog("experiment", exp_id, "name", str(entry.get("name", exp_id)))
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var start_btn := Button.new()
-		start_btn.text = "Start"
+		start_btn.text = "LAB_START"
 		start_btn.pressed.connect(_on_start_experiment_pressed.bind(exp_id))
 		header.add_child(name_label)
 		header.add_child(start_btn)
 
 		var desc_label := Label.new()
-		desc_label.text = "%s\nDuration: %s | Cooldown: %s" % [str(entry.get("desc", "")), _experiment_clock(int(entry.get("boost_duration_s", 0)) * 1000), _experiment_clock(int(entry.get("cooldown_s", 0)) * 1000)]
+		desc_label.text = GameLocalization.catalog("experiment", exp_id, "desc", str(entry.get("desc", ""))) + "\n" + tr("EXPERIMENT_TIMING") % [_experiment_clock(int(entry.get("boost_duration_s", 0)) * 1000), _experiment_clock(int(entry.get("cooldown_s", 0)) * 1000)]
 		desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 		var cost_row := HBoxContainer.new()
@@ -512,6 +575,8 @@ func _build_experiments() -> void:
 		_experiment_rows[exp_id] = {
 			"button": start_btn,
 			"cooldown": cooldown_label,
+			"name_label": name_label,
+			"desc_label": desc_label,
 			"data": entry
 		}
 
@@ -522,7 +587,7 @@ func _build_research() -> void:
 		child.queue_free()
 	_research_rows.clear()
 	_research_queue_label = Label.new()
-	_research_queue_label.text = "Queue 0/1"
+	_research_queue_label.text = "LAB_QUEUE_EMPTY"
 	_research_list.add_child(_research_queue_label)
 	var entries = _db.list_research()
 	for entry in entries:
@@ -537,7 +602,7 @@ func _build_research() -> void:
 		var header := HBoxContainer.new()
 		header.add_theme_constant_override("separation", 8)
 		var name_label := Label.new()
-		name_label.text = str(entry.get("name", research_id))
+		name_label.text = GameLocalization.catalog("research", research_id, "name", str(entry.get("name", research_id)))
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var status_label := Label.new()
 		status_label.text = ""
@@ -553,19 +618,17 @@ func _build_research() -> void:
 		var buttons := HBoxContainer.new()
 		buttons.add_theme_constant_override("separation", 8)
 		var start_btn := Button.new()
-		start_btn.text = "Start"
+		start_btn.text = "LAB_START"
 		start_btn.pressed.connect(_on_start_research_pressed.bind(research_id))
 		var claim_btn := Button.new()
-		claim_btn.text = "Claim"
+		claim_btn.text = "LAB_CLAIM"
 		claim_btn.pressed.connect(_on_claim_research_pressed.bind(research_id))
 		buttons.add_child(start_btn)
 		buttons.add_child(claim_btn)
 
 		row.add_child(header)
 		var info := Label.new()
-		info.text = "Time: %ss | Requires: %s | Flag: %s" % [int(entry.get("time_sec", 0)), _format_requirements(entry.get("requires", [])), str(entry.get("flag_id", research_id))]
-		if str(entry.get("flag_id", research_id)) in RESEARCH_FLAG_ONLY:
-			info.text += " | Additional effect: Coming Soon"
+		info.text = _research_info_text(entry, research_id)
 		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(info)
 		row.add_child(cost_row)
@@ -576,6 +639,8 @@ func _build_research() -> void:
 			"start": start_btn,
 			"claim": claim_btn,
 			"status": status_label,
+			"name_label": name_label,
+			"info_label": info,
 			"data": entry
 		}
 
@@ -591,7 +656,7 @@ func _build_spell_section() -> void:
 	_spell_section.add_theme_constant_override("separation", 6)
 	var heading := Label.new()
 	heading.name = "SpellResearchHeading"
-	heading.text = "Spell Research"
+	heading.text = "LAB_SPELL_RESEARCH_TITLE"
 	_spell_section.add_child(heading)
 	_spell_featured_header = Label.new()
 	_spell_featured_header.name = "SpellFeaturedHeader"
@@ -610,7 +675,7 @@ func _build_spell_section() -> void:
 	var group := ButtonGroup.new()
 	for kind in ["All", "Initial", "Hybrid", "Universal"]:
 		var filter := Button.new()
-		filter.text = kind
+		filter.text = "SPELL_FILTER_" + kind.to_upper()
 		filter.custom_minimum_size = Vector2(90, 32)
 		filter.toggle_mode = true
 		filter.button_group = group
@@ -669,12 +734,13 @@ func _build_spell_info() -> void:
 	content.add_child(header)
 	_spell_info_title = Label.new()
 	_spell_info_title.name = "SpellInfoTitle"
+	_spell_info_title.set_meta("localization_body_font", true)
 	_spell_info_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_title.add_theme_font_size_override("font_size", 22)
 	header.add_child(_spell_info_title)
 	var close := Button.new()
 	close.text = "X"
-	close.tooltip_text = "Close"
+	close.tooltip_text = "UI_CLOSE"
 	close.custom_minimum_size = Vector2(45, 40)
 	MenuArt.button(close)
 	close.pressed.connect(_spell_info.hide)
@@ -689,7 +755,8 @@ func _build_spell_info() -> void:
 	scroll.add_child(_spell_info_text)
 
 func _show_spell_info(spell: Dictionary) -> void:
-	_spell_info_title.text = str(spell.get("name", ""))
+	_spell_info.set_meta("spell", spell)
+	_spell_info_title.text = GameLocalization.catalog("spell", str(spell.get("id", "")), "name", str(spell.get("name", "")))
 	_spell_info_text.text = SpellView.detail(spell, "Research")
 	_spell_info.show()
 
@@ -721,14 +788,13 @@ func _build_spell_rows() -> void:
 		if current_group != group:
 			current_group = group
 			var group_label := Label.new()
-			group_label.text = group
+			group_label.text = "SPELL_GROUP_INITIAL" if group == "Initial Spells" else "SPELL_FILTER_" + group.to_upper()
 			_spell_list.add_child(group_label)
 		var row := VBoxContainer.new()
 		var name_label := Label.new()
-		var types := kind.capitalize()
-		if kind == "hybrid":
-			types = "%s / %s" % [str(spell.get("primary_type", "")).capitalize(), str(spell.get("secondary_type", "")).capitalize()]
-		name_label.text = "%s  |  %s" % [spell.name, types]
+		var types := SpellView.affinity(spell)
+		name_label.set_meta("localization_body_font", true)
+		name_label.text = "%s  |  %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), types]
 		name_label.add_theme_font_size_override("font_size", 18)
 		row.add_child(name_label)
 		var actions := HBoxContainer.new()
@@ -738,13 +804,13 @@ func _build_spell_rows() -> void:
 		actions.add_child(status)
 		var info := Button.new()
 		info.text = "i"
-		info.tooltip_text = "Spell details"
+		info.tooltip_text = "SPELL_DETAILS"
 		info.custom_minimum_size = Vector2(38, 34)
 		MenuArt.button(info)
 		info.pressed.connect(_show_spell_info.bind(spell))
 		actions.add_child(info)
 		var button := Button.new()
-		button.text = "Research"
+		button.text = "SPELL_RESEARCH"
 		button.custom_minimum_size = Vector2(110, 34)
 		MenuArt.button(button)
 		button.pressed.connect(_on_spell_research_pressed.bind(str(spell.id)))
@@ -804,7 +870,7 @@ func _update_spell_section() -> void:
 	var featured := _featured_spell_ids(entity_type, _get_building_level("ultrahit_tower"), now, rotation_seconds)
 	var rotation_ms := rotation_seconds * 1000
 	var seconds_left := int(ceil(float(rotation_ms - posmod(now, rotation_ms)) / 1000.0))
-	_spell_featured_header.text = "Daily Featured Research -%d%%\nRotation in %02d:%02d:%02d%s" % [int(round(discount * 100.0)), int(seconds_left / 3600.0), int(seconds_left / 60.0) % 60, seconds_left % 60, "" if _debug.unlock_all_buildings or _spell_state_synced else " (awaiting server time)"]
+	_spell_featured_header.text = tr("SPELL_FEATURED_HEADER").replace("\\n", "\n") % [int(round(discount * 100.0)), int(seconds_left / 3600.0), int(seconds_left / 60.0) % 60, seconds_left % 60, "" if _debug.unlock_all_buildings or _spell_state_synced else tr("SPELL_AWAITING_TIME")]
 	var pending := _is_pending_building("ultrahit_tower")
 	for id in _spell_rows:
 		var row: Dictionary = _spell_rows[id]
@@ -813,46 +879,46 @@ func _update_spell_section() -> void:
 		var button: Button = row.button
 		var name_label: Label = row.name
 		var is_featured := str(id) in featured
-		name_label.text = str(row.base_name) + ("  |  FEATURED" if is_featured else "")
+		name_label.text = str(row.base_name) + ("  |  " + tr("SPELL_FEATURED") if is_featured else "")
 		name_label.add_theme_color_override("font_color", Color("e5c76d") if is_featured else Color.WHITE)
 		var normal_cost: Dictionary = spell.get("research_cost", {})
 		var effective_cost := _featured_cost(normal_cost, discount) if is_featured else normal_cost
-		button.text = "Research"
+		button.text = "SPELL_RESEARCH"
 		button.disabled = true
 		if spell.get("type", "") not in ["universal", "hybrid"]:
-			status.text = "Available (initial)"
+			status.text = tr("SPELL_AVAILABLE_INITIAL")
 		elif id in learned:
-			status.text = "Learned"
+			status.text = tr("SPELL_STATE_LEARNED_NAME")
 		elif not active.is_empty():
 			if active.get("entity_id") == entity_id and active.get("spell_id") == id:
 				var remaining := maxi(0, int(active.get("completes_at", 0)) - now)
-				status.text = "Researching: %s" % _format_seconds(remaining) if remaining > 0 else "Ready to claim"
-				button.text = "Claim"
+				status.text = tr("SPELL_RESEARCHING") % _format_seconds(remaining) if remaining > 0 else tr("SPELL_READY_CLAIM")
+				button.text = "LAB_CLAIM"
 				button.disabled = pending or remaining > 0
 			else:
-				status.text = "Locked: another spell is being researched"
+				status.text = tr("SPELL_LOCKED_RESEARCH")
 		elif not _debug.unlock_all_buildings and _get_building_level("ultrahit_tower") < int(spell.tower_level_required):
-			status.text = "Locked: Spell Tower level %d required" % int(spell.tower_level_required)
+			status.text = tr("SPELL_LOCKED_TOWER") % int(spell.tower_level_required)
 		elif not _can_afford(effective_cost):
-			status.text = "Locked: insufficient resources"
+			status.text = tr("SPELL_LOCKED_RESOURCES")
 		else:
-			status.text = "Researchable" if not _debug.unlock_all_buildings else "Researchable (local debug)"
+			status.text = tr("SPELL_RESEARCHABLE") if not _debug.unlock_all_buildings else tr("SPELL_RESEARCHABLE_DEBUG")
 			button.disabled = pending
 		if not _debug.unlock_all_buildings and (_backend == null or _backend.token == ""):
 			if not button.disabled:
-				status.text = "Locked: backend sign-in required"
+				status.text = tr("SPELL_LOCKED_SIGN_IN")
 			button.disabled = true
 		elif not _debug.unlock_all_buildings and not _spell_state_synced:
 			if not button.disabled:
-				status.text = "Locked: awaiting server state"
+				status.text = tr("SPELL_LOCKED_STATE")
 			button.disabled = true
 		if str(spell.get("type", "")) in ["universal", "hybrid"] and not normal_cost.is_empty():
 			var base_sec := int(spell.get("research_time_sec", 0))
 			var runtime: Dictionary = _state.get("lab", {}).get("runtime", {})
 			var boosted := _debug_boost_active(runtime, "fast_spells", now)
 			var boosted_sec := int(base_sec * float(ExperimentCatalog.get_by_id("fast_spells").get("effect", {}).get("spell_time_mult", 0.85)))
-			status.text += "\nTime: %02d:%02d base%s" % [int(base_sec / 60.0), base_sec % 60, " | %02d:%02d boosted" % [int(boosted_sec / 60.0), boosted_sec % 60] if boosted else ""]
-			status.text += "\nCost: %s%s" % [_spell_cost_text(effective_cost), " (normal: %s)" % _spell_cost_text(normal_cost) if is_featured else ""]
+			status.text += "\n" + tr("SPELL_TIME_BASE") % [int(base_sec / 60.0), base_sec % 60, tr("SPELL_TIME_BOOSTED") % [int(boosted_sec / 60.0), boosted_sec % 60] if boosted else ""]
+			status.text += "\n" + tr("SPELL_COST_DETAIL") % [_spell_cost_text(effective_cost), tr("SPELL_COST_NORMAL") % _spell_cost_text(normal_cost) if is_featured else ""]
 
 func _on_spell_research_pressed(spell_id: String) -> void:
 	if not _spell_rows.has(spell_id) or _spell_rows[spell_id].button.disabled:
@@ -939,10 +1005,10 @@ func _update_detail() -> void:
 	if _detail_desc != null:
 		var desc = _get_building_desc(_selected_id)
 		if _selected_id == "essence_reactor" and _backend != null and _backend.get_server_time_unix_ms() < 0:
-			desc += "\nUnverified Offline (backend offline; estimates capped to 1h)."
+			desc += "\n" + tr("LAB_OFFLINE_ESTIMATE")
 		_detail_desc.text = desc
 	if _detail_level != null:
-		_detail_level.text = "Level %s" % _get_building_level(_selected_id)
+		_detail_level.text = tr("LAB_LEVEL") % _get_building_level(_selected_id)
 	if _detail_icon != null:
 		_detail_icon.texture = _get_building_icon(_selected_id)
 	var unlock_level = _get_unlock_level(_selected_id)
@@ -954,19 +1020,19 @@ func _update_detail() -> void:
 		var max_level := HqRules.get_max_level(_selected_id)
 		var requirement := ""
 		if locked:
-			requirement = "Requires HQ level %d to unlock (current: %d)." % [unlock_level, _get_hq_level()]
+			requirement = tr("LAB_REQUIRES_HQ") % [unlock_level, _get_hq_level()]
 		elif current_level >= max_level:
-			requirement = "Maximum building level reached."
+			requirement = tr("LAB_MAX_BUILDING_LEVEL")
 		elif not _debug.unlock_all_buildings and not HqRules.can_upgrade(_selected_id, current_level, _get_hq_level()):
-			requirement = "Upgrade to level %d requires HQ level %d (current: %d)." % [current_level + 1, HqRules.get_required_hq_for_upgrade(_selected_id, current_level), _get_hq_level()]
+			requirement = tr("LAB_UPGRADE_REQUIRES_HQ") % [current_level + 1, HqRules.get_required_hq_for_upgrade(_selected_id, current_level), _get_hq_level()]
 		elif current_level == 0:
-			requirement = "Build this structure to use its functions." if not _debug.unlock_all_buildings else "Not built (level 0); debug may bypass requirements."
+			requirement = tr("LAB_BUILD_FIRST") if not _debug.unlock_all_buildings else tr("LAB_NOT_BUILT_DEBUG")
 		_locked_label.visible = requirement != ""
 		_locked_label.text = requirement
 	if _pending_label != null:
 		var is_pending := _is_pending_building(_selected_id)
 		_pending_label.visible = is_pending or (_action_message_building == _selected_id and _action_message != "")
-		_pending_label.text = "Action pending server confirmation." if is_pending else _action_message
+		_pending_label.text = tr("LAB_ACTION_PENDING") if is_pending else tr(_action_message)
 	_update_routes()
 	_update_costs()
 	_update_buttons()
@@ -1008,7 +1074,8 @@ func _update_routes() -> void:
 		return
 	_route_option.disabled = false
 	for opt in options:
-		_route_option.add_item(opt)
+		_route_option.add_item(GameLocalization.catalog("route", str(opt), "name", str(opt)))
+		_route_option.set_item_metadata(_route_option.item_count - 1, opt)
 	var current = _get_building_route(_selected_id)
 	var idx = 0
 	for i in range(options.size()):
@@ -1025,7 +1092,7 @@ func _update_costs() -> void:
 	var cost = _get_upgrade_cost(_selected_id)
 	if cost.is_empty():
 		var label := Label.new()
-		label.text = "No cost data"
+		label.text = "LAB_NO_COST_DATA"
 		_cost_list.add_child(label)
 		return
 	for key in cost.keys():
@@ -1053,7 +1120,7 @@ func _populate_cost_row(container: HBoxContainer, cost: Variant) -> void:
 		child.queue_free()
 	if typeof(cost) != TYPE_DICTIONARY or cost.is_empty():
 		var label := Label.new()
-		label.text = "No cost"
+		label.text = "LAB_NO_COST"
 		container.add_child(label)
 		return
 	for key in cost.keys():
@@ -1088,11 +1155,11 @@ func _update_buttons() -> void:
 		_route_btn.disabled = locked or pending or _route_option == null or _route_option.item_count == 0
 	if _claim_btn != null:
 		_claim_btn.visible = _selected_id == "essence_reactor"
-		_claim_btn.text = "Collect"
+		_claim_btn.text = "LAB_COLLECT"
 		_claim_btn.disabled = pending or _selected_id != "essence_reactor"
 	if _open_btn != null:
 		_open_btn.visible = GATE_BUILDINGS.has(_selected_id)
-		_open_btn.text = "Enter World Gate" if _selected_id == "world_gate" else ("Open Trade Hall" if _selected_id == "trade_hall" else "Open")
+		_open_btn.text = "LAB_ENTER_WORLD_GATE" if _selected_id == "world_gate" else ("LAB_OPEN_TRADE_HALL" if _selected_id == "trade_hall" else "LAB_OPEN")
 		_open_btn.disabled = pending or not GATE_BUILDINGS.has(_selected_id)
 
 func _update_experiments() -> void:
@@ -1109,9 +1176,10 @@ func _update_experiments() -> void:
 		_experiment_stability_bar.value = failures
 	if is_instance_valid(_experiment_summary):
 		var last: Dictionary = runtime.get("experiment_last", {})
-		_experiment_summary.text = "Stability: %d / 3 failures | +%d percentage points next try\nFailure increases the next chance; success resets stability." % [failures, failures * 10]
+		_experiment_summary.text = tr("LAB_EXPERIMENT_SUMMARY").replace("\\n", "\n") % [failures, failures * 10]
 		if not last.is_empty():
-			_experiment_summary.text += "\nLast: %s - %s (%.0f%%)" % [str(ExperimentCatalog.get_by_id(str(last.get("id", ""))).get("name", last.get("id", ""))), "Success" if bool(last.get("success", false)) else "Failed", float(last.get("chance", 0)) * 100.0]
+			var last_id := str(last.get("id", ""))
+			_experiment_summary.text += "\n" + tr("LAB_EXPERIMENT_LAST") % [GameLocalization.catalog("experiment", last_id, "name", str(ExperimentCatalog.get_by_id(last_id).get("name", last_id))), tr("LAB_SUCCESS_LABEL") if bool(last.get("success", false)) else tr("LAB_FAILURE_LABEL"), float(last.get("chance", 0)) * 100.0]
 	var unlock_level = _get_unlock_level("experiment_chamber")
 	var locked = _get_hq_level() < unlock_level or _get_building_level("experiment_chamber") <= 0
 	if _debug.unlock_all_buildings:
@@ -1131,19 +1199,19 @@ func _update_experiments() -> void:
 		var chance := _experiment_chance(data, runtime, now_ms)
 		var text := ""
 		if locked:
-			text = "Unlock at HQ Lv %s" % unlock_level
+			text = tr("LAB_UNLOCK_HQ") % unlock_level
 		elif remaining > 0:
-			text = "Cooldown: %s" % _experiment_clock(remaining)
+			text = tr("LAB_COOLDOWN") % _experiment_clock(remaining)
 		else:
-			text = "Ready"
+			text = tr("LAB_READY")
 		if boost_id != "":
 			if boost_remaining > 0:
-				text += " | Active: %s" % _experiment_clock(boost_remaining)
-		text += " | Success: %d%%" % int(round(chance * 100.0))
+				text += " | " + tr("LAB_ACTIVE") % _experiment_clock(boost_remaining)
+		text += " | " + tr("LAB_SUCCESS") % int(round(chance * 100.0))
 		if str(exp_id) == "safe_reactor" and _get_building_route("essence_reactor").to_lower() != "volatile":
-			text += " | Requires Volatile route for effect"
+			text += " | " + tr("LAB_REQUIRE_VOLATILE")
 		elif str(exp_id) == "mutagen_surge" and _get_building_route("essence_reactor").to_lower() != "mutagenic":
-			text += " | Requires Mutagenic route for effect"
+			text += " | " + tr("LAB_REQUIRE_MUTAGENIC")
 		if label != null:
 			label.text = text
 		if button != null:
@@ -1192,7 +1260,7 @@ func _update_research() -> void:
 	var now_ms = Time.get_unix_time_from_system() * 1000 + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
 	var flags = _get_research_flags()
 	if is_instance_valid(_research_queue_label):
-		_research_queue_label.text = "Queue 1/1: %s" % str(_db.get_research(queued_id).get("name", queued_id)) if queued_id != "" else "Queue 0/1"
+		_research_queue_label.text = tr("LAB_QUEUE_ITEM") % GameLocalization.catalog("research", queued_id, "name", str(_db.get_research(queued_id).get("name", queued_id))) if queued_id != "" else tr("LAB_QUEUE_EMPTY")
 	var unlock_level = _get_unlock_level("arcane_archives")
 	var locked = _get_hq_level() < unlock_level or _get_building_level("arcane_archives") <= 0
 	if _debug.unlock_all_buildings:
@@ -1220,27 +1288,27 @@ func _update_research() -> void:
 			if not active_data.is_empty():
 				effective_flags[str(active_data.get("flag_id", active_id))] = true
 		if locked:
-			text = "Unlock at HQ Lv %s" % unlock_level
+			text = tr("LAB_UNLOCK_HQ") % unlock_level
 			can_start = false
 		elif bool(flags.get(flag_id, false)):
-			text = "Completed"
+			text = tr("LAB_COMPLETED")
 			can_start = false
 		elif active_id != "":
 			if active_id == research_id:
 				if completes_at <= now_ms:
-					text = "Ready to claim"
+					text = tr("SPELL_READY_CLAIM")
 					can_claim = true
 				else:
-					text = "In progress: %s" % _format_seconds(completes_at - now_ms)
+					text = tr("LAB_IN_PROGRESS") % _format_seconds(completes_at - now_ms)
 				can_start = false
 			elif queued_id == research_id:
-				text = "Queued | Starts in %s" % _format_seconds(maxf(0, completes_at - now_ms))
+				text = tr("LAB_QUEUED") % _format_seconds(maxf(0, completes_at - now_ms))
 				can_start = false
 			elif queued_id != "":
-				text = "Queue full"
+				text = tr("LAB_QUEUE_FULL")
 				can_start = false
 			elif not _requirements_met(requirements, effective_flags):
-				text = "Requires: %s" % _format_requirements(requirements)
+				text = tr("LAB_REQUIRES") % _format_requirements(requirements)
 				can_start = false
 			else:
 				var wallet: Dictionary = _state.get("wallet", {})
@@ -1251,21 +1319,21 @@ func _update_research() -> void:
 				var cost_text: Array[String] = []
 				for resource in queue_cost:
 					cost_text.append("%s %d" % [_get_resource_name(str(resource)), int(queue_cost[resource])])
-				text = ("Queue cost: " if affordable else "Insufficient resources: ") + ", ".join(cost_text)
+				text = (tr("LAB_QUEUE_COST") if affordable else tr("LAB_INSUFFICIENT_DETAIL")) + " " + ", ".join(cost_text)
 				can_start = affordable
 		else:
 			if not _debug.unlock_all_buildings and not _requirements_met(requirements, flags):
-				text = "Requires: %s" % _format_requirements(requirements)
+				text = tr("LAB_REQUIRES") % _format_requirements(requirements)
 				can_start = false
 			elif not _can_afford(data.get("cost", {})):
-				text = "Insufficient resources"
+				text = tr("LAB_INSUFFICIENT")
 				can_start = false
 			else:
-				text = "Ready"
+				text = tr("LAB_READY")
 		if status != null:
 			status.text = text
 		if start_btn != null:
-			start_btn.text = "Queue (+%d Essence)" % int(_db.get_balance("archive_queue_fee_essence", 10)) if queue_mode else "Start"
+			start_btn.text = tr("LAB_QUEUE_BUTTON") % int(_db.get_balance("archive_queue_fee_essence", 10)) if queue_mode else tr("LAB_START")
 			start_btn.disabled = locked or pending or not can_start
 		if claim_btn != null:
 			claim_btn.disabled = locked or pending or not can_claim
@@ -1320,7 +1388,7 @@ func _on_upgrade_pressed() -> void:
 func _on_set_route_pressed() -> void:
 	if _selected_id == "" or _route_option == null or _route_option.item_count == 0:
 		return
-	var route = _route_option.get_item_text(_route_option.selected)
+	var route = _route_option.get_item_metadata(_route_option.selected)
 	var action = {
 		"action_type": "SET_BUILDING_ROUTE",
 		"payload": {"building_id": _selected_id, "route": route}
@@ -1341,7 +1409,7 @@ func _on_start_experiment_pressed(experiment_id: String) -> void:
 		return
 	_experiment_confirm_id = experiment_id
 	var experiment: Dictionary = _experiment_rows[experiment_id].data
-	_experiment_confirm.dialog_text = "Start %s? Cost: %s" % [str(experiment.get("name", experiment_id)), _spell_cost_text(experiment.get("cost", {}))]
+	_experiment_confirm.dialog_text = tr("LAB_START_EXPERIMENT") % [GameLocalization.catalog("experiment", experiment_id, "name", str(experiment.get("name", experiment_id))), _spell_cost_text(experiment.get("cost", {}))]
 	_experiment_confirm.popup_centered()
 
 func _confirm_experiment() -> void:
@@ -1487,7 +1555,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 			var wallet: Dictionary = _state.get("wallet", {})
 			for res in cost:
 				if int(wallet.get(res, 0)) < int(cost[res]):
-					_action_message = "Insufficient resources."
+					_action_message = "LAB_INSUFFICIENT_SENTENCE"
 					_action_message_building = building_id
 					_refresh_from_state()
 					return
@@ -1654,9 +1722,9 @@ func _simulate_debug_action(action: Dictionary) -> void:
 	_action_message_building = building_id
 	if not _debug.save_lab_state(_state):
 		_state = previous
-		_action_message = "Could not save local debug state."
+		_action_message = "LAB_DEBUG_SAVE_FAILED"
 	else:
-		_action_message = "Local debug action saved."
+		_action_message = "LAB_DEBUG_ACTION_SAVED"
 	_refresh_from_state()
 	get_tree().create_timer(1.0).timeout.connect(_refresh_from_state, CONNECT_ONE_SHOT)
 
@@ -1860,13 +1928,25 @@ func _requirements_met(requires: Variant, flags: Dictionary) -> bool:
 			return false
 	return true
 
+func _research_info_text(entry: Dictionary, research_id: String) -> String:
+	var flag := str(entry.get("flag_id", research_id))
+	var result := tr("LAB_RESEARCH_INFO") % [int(entry.get("time_sec", 0)), _format_requirements(entry.get("requires", [])), flag]
+	if flag in RESEARCH_FLAG_ONLY:
+		result += tr("LAB_RESEARCH_EXTRA")
+	return result
+
 func _format_requirements(requires: Variant) -> String:
 	if typeof(requires) != TYPE_ARRAY or requires.is_empty():
 		return "-"
 	var names: Array = []
 	for req in requires:
 		if typeof(req) == TYPE_STRING:
-			names.append(req)
+			var display := str(req)
+			for research in _db.list_research():
+				if str(research.get("flag_id", "")) == req:
+					display = GameLocalization.catalog("research", str(research.get("id", "")), "name", str(research.get("name", req)))
+					break
+			names.append(display)
 	return ", ".join(names)
 
 func _is_pending_building(building_id: String) -> bool:
@@ -1903,12 +1983,16 @@ func _get_building_name(building_id: String) -> String:
 	var data = _db.get_building(building_id)
 	if typeof(data) == TYPE_DICTIONARY:
 		if data.has("display_name"):
-			return str(data.get("display_name", building_id))
+			return GameLocalization.catalog("building", building_id, "name", str(data.get("display_name", building_id)))
 		if data.has("name"):
-			return str(data.get("name", building_id))
+			return GameLocalization.catalog("building", building_id, "name", str(data.get("name", building_id)))
 	return building_id
 
 func _get_building_desc(building_id: String) -> String:
+	if TranslationServer.get_locale() == "es":
+		var translated := GameLocalization.catalog("building", building_id, "desc", "")
+		if not translated.is_empty():
+			return translated
 	match building_id:
 		"lab_th":
 			return "Unlock new structures and increase caps."
@@ -1941,9 +2025,9 @@ func _get_resource_name(res_id: String) -> String:
 	var entry = _db.get_resource(res_id)
 	if typeof(entry) == TYPE_DICTIONARY:
 		if entry.has("display_name"):
-			return str(entry.get("display_name", res_id))
+			return GameLocalization.catalog("resource", res_id, "name", str(entry.get("display_name", res_id)))
 		if entry.has("name"):
-			return str(entry.get("name", res_id))
+			return GameLocalization.catalog("resource", res_id, "name", str(entry.get("name", res_id)))
 	return res_id
 
 func _get_production_per_hour() -> Dictionary:

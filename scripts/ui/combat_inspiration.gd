@@ -16,13 +16,20 @@ func set_fighter(fighter: Dictionary) -> void:
 		modulate = Color(1.5, 1.3, 2.0)
 		tween.tween_property(self, "modulate", Color.WHITE, 0.35)
 	_points = points
-	tooltip_text = "Inspiration used for this battle." if _used else "Inspiration: %d/3.\nEarn +1 whenever your spell successfully applies\na negative status to the opponent. Repeated types count.\nAt 3, choose one of three temporary spells.\nIt replaces a random equipped spell until this battle ends." % _points
+	_update_localized()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready():
+		_update_localized()
+
+func _update_localized() -> void:
+	tooltip_text = tr("INSPIRATION_USED_HINT") if _used else tr("INSPIRATION_HINT").replace("\\n", "\n") % _points
 	queue_redraw()
 
 func _draw() -> void:
 	var font := ThemeDB.fallback_font
 	draw_rect(Rect2(-5, 0, 200, 22), Color(0.025, 0.02, 0.05, 0.94))
-	draw_string(font, Vector2(0, 16), "USED" if _used else "INSPIRATION", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("d4af37"))
+	draw_string(font, Vector2(0, 16), tr("INSPIRATION_USED") if _used else tr("INSPIRATION_TITLE"), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("d4af37"))
 	for i in 3:
 		var rect := Rect2(108 + i * 27, 3, 23, 13)
 		draw_rect(rect, Color("9d76eb") if i < _points else Color("171323"))

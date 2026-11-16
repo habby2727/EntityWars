@@ -226,7 +226,7 @@ func _setup_zone_view() -> void:
 	if actions != null:
 		_reroll_button = Button.new()
 		_reroll_button.name = "RerollButton"
-		_reroll_button.text = "REROLL"
+		_reroll_button.text = "WORLD_REROLL"
 		_reroll_button.custom_minimum_size = Vector2(130, 42)
 		_reroll_button.pressed.connect(_reroll_world_art)
 		actions.add_child(_reroll_button)
@@ -234,11 +234,11 @@ func _setup_zone_view() -> void:
 		MenuArt.button(_reroll_button)
 		_reroll_button.add_theme_stylebox_override("disabled", _reroll_button.get_theme_stylebox("normal"))
 	if _enter_button != null:
-		_enter_button.text = "Enter zone"
+		_enter_button.text = "WORLD_ENTER_ZONE"
 	if _farm_button != null:
-		_farm_button.text = "Explore"
+		_farm_button.text = "WORLD_EXPLORE"
 	if _claim_button != null:
-		_claim_button.text = "Claim loot"
+		_claim_button.text = "WORLD_CLAIM_LOOT"
 	for button in [_enter_button, _farm_button, _claim_button]:
 		if button != null:
 			button.custom_minimum_size = Vector2(130, 42)
@@ -267,7 +267,7 @@ func _setup_zone_view() -> void:
 	content.add_child(_preview_status)
 	var title := Label.new()
 	title.name = "EncounterTitle"
-	title.text = "ENCOUNTER"
+	title.text = "WORLD_ENCOUNTER"
 	title.add_theme_font_size_override("font_size", 20)
 	content.add_child(title)
 	_boss_picker = OptionButton.new()
@@ -292,25 +292,25 @@ func _setup_zone_view() -> void:
 	content.add_child(_boss_hp)
 	_boss_open = Button.new()
 	_boss_open.visible = false
-	_boss_open.text = "Open boss encounter"
+	_boss_open.text = "WORLD_BOSS_OPEN"
 	_boss_open.disabled = true
 	_boss_open.custom_minimum_size.y = 42
 	MenuArt.button(_boss_open)
 	content.add_child(_boss_open)
 	_hunt_fight = Button.new()
-	_hunt_fight.text = "Fight (unverified preview)"
+	_set_hunt_button_text("HUNT_PREVIEW_FIGHT")
 	_hunt_fight.visible = false
 	_hunt_fight.pressed.connect(_start_map_hunt)
 	MenuArt.button(_hunt_fight)
 	content.add_child(_hunt_fight)
 	_view_guardians = Button.new()
-	_view_guardians.text = "View this boss's guardians"
+	_view_guardians.text = "HUNT_VIEW_GUARDIANS"
 	_view_guardians.visible = false
 	_view_guardians.pressed.connect(_show_selected_guardians)
 	MenuArt.button(_view_guardians)
 	content.add_child(_view_guardians)
 	_debug_fight = Button.new()
-	_debug_fight.text = "Fight (debug preview)"
+	_debug_fight.text = "HUNT_DEBUG_FIGHT"
 	_debug_fight.visible = _debug.unlock_all_buildings
 	_debug_fight.pressed.connect(_start_debug_hunt)
 	MenuArt.button(_debug_fight)
@@ -325,7 +325,7 @@ func _setup_zone_view() -> void:
 	panel.reparent(_world_modal)
 	panel.visible = true
 	var close := Button.new()
-	close.text = "Close"
+	close.text = "UI_CLOSE"
 	close.custom_minimum_size = Vector2(40, 40)
 	close.pressed.connect(func(): _world_modal.visible = false)
 	content.add_child(close)
@@ -523,7 +523,7 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 					call_deferred("_request_guardian_progress")
 				_hunt_fight.disabled = not verified or _backend.token.is_empty() or (not active and (not unlocked or not bool(_hunt_selected.get("available", false))))
 				_preview_status.text = "%s\nGuardians: %d/%d defeated%s" % [str(entry.get("name", "Boss")), int(_hunt_progress.get("defeated_count", 0)), int(_hunt_progress.get("total_count", 0)), "" if verified else "\nProgress unavailable; retry."]
-				_hunt_fight.text = "Resume Hunt" if active else "Fight"
+				_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
 				_view_guardians.visible = main and verified and not unlocked and not active
 			_world_modal.visible = true
 			call_deferred("_fit_encounter_card")
@@ -705,7 +705,7 @@ func _update_reroll_button() -> void:
 	if not is_instance_valid(_reroll_button):
 		return
 	var remaining := _reroll_remaining()
-	_reroll_button.text = "%02d:%02d" % [remaining / 60, remaining % 60] if remaining > 0 else "REROLL"
+	_reroll_button.text = "%02d:%02d" % [remaining / 60, remaining % 60] if remaining > 0 else "WORLD_REROLL"
 	_reroll_button.disabled = remaining != 0 or not _reroll_request.is_empty()
 
 func _load_debug_appearances() -> Dictionary:
@@ -832,7 +832,7 @@ func _render_global_boss() -> void:
 	icon.size = Vector2(30, 28)
 	_global_actor.add_child(icon)
 	var bubble := Label.new()
-	bubble.text = "Global Boss"
+	bubble.text = "WORLD_GLOBAL_BOSS"
 	bubble.position = Vector2(0, -88)
 	bubble.size = Vector2(150, 24)
 	bubble.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -869,7 +869,7 @@ func _open_global_boss() -> void:
 	_hunt_fight.visible = true
 	_hunt_fight.disabled = _backend == null or _backend.token.is_empty() or _global_event.get("reward_status") != null
 	var has_active := _backend != null and _hunt_active_owner == _backend._verified_player_id and not _hunt_active.is_empty() and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms()
-	_hunt_fight.text = "Resume Hunt" if has_active else "Fight"
+	_set_hunt_button_text("HUNT_RESUME" if has_active else "HUNT_FIGHT")
 	if has_active and not _active_hunt_matches(""):
 		_preview_status.text += "\nResume your active encounter first."
 	_world_modal.visible = true
@@ -1038,7 +1038,7 @@ func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> voi
 	_debug_fight.visible = false
 	_hunt_fight.visible = true
 	_hunt_fight.disabled = not verified or _backend == null or _backend.token.is_empty() or (not active and (not unlocked or not bool(boss.get("available", false))))
-	_hunt_fight.text = "Resume Hunt" if active else "Fight"
+	_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
 	_view_guardians.visible = verified and not unlocked and not active
 	_world_modal.visible = true
 	call_deferred("_fit_encounter_card")
@@ -1228,7 +1228,7 @@ func _show_selected_guardians() -> void:
 			_view_guardians.visible = false
 			_hunt_fight.visible = true
 			var active := _active_hunt_matches(_hunt_guardian_id)
-			_hunt_fight.text = "Resume Hunt" if active else "Fight"
+			_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
 			_hunt_fight.disabled = _backend.token.is_empty() or (not active and not bool(_hunt_selected.get("available", false)))
 			_world_modal.visible = true
 			return
@@ -1608,10 +1608,22 @@ func _get_zone_id() -> String:
 			_zone_id = str(zones[0])
 	return _zone_id
 
+func _set_hunt_button_text(key: String) -> void:
+	_hunt_fight.set_meta("localization_key", key)
+	_hunt_fight.text = tr(key)
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready():
+		return
+	if _header_label != null and not _zone_id.is_empty():
+		_header_label.text = _get_zone_name(_zone_id)
+	if is_instance_valid(_hunt_fight) and _hunt_fight.has_meta("localization_key"):
+		_set_hunt_button_text(str(_hunt_fight.get_meta("localization_key")))
+
 func _get_zone_name(zone_id: String) -> String:
 	var entry = _db.zones.get(zone_id, {})
 	if typeof(entry) == TYPE_DICTIONARY:
-		return str(entry.get("display_name", entry.get("name", zone_id)))
+		return GameLocalization.catalog("zone", zone_id, "name", str(entry.get("display_name", entry.get("name", zone_id))))
 	return zone_id
 
 func _sync_session() -> void:

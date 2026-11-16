@@ -1,0 +1,86 @@
+extends SceneTree
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
+	var localization := root.get_node("GameLocalization")
+	var config := ConfigFile.new()
+	if OS.get_environment("L10N_RESTART") == "1":
+		assert(TranslationServer.get_locale() == "es", "Spanish must persist after restart")
+		assert(config.load("user://settings.cfg") == OK and config.get_value("display", "fullscreen") == true, "Display settings must persist")
+		print("PASS localization restart")
+		quit()
+		return
+	assert(TranslationServer.get_locale() == "en", "Default locale must be English")
+	config.set_value("display", "fullscreen", true)
+	assert(config.save("user://settings.cfg") == OK)
+	change_scene_to_file("res://scenes/MainMenu.tscn")
+	await process_frame
+	await process_frame
+	var combat: Button = current_scene.get_node("LowerButtons/CombatButton")
+	assert(combat.tr(combat.text) == "COMBAT")
+	localization.set_language("es")
+	assert(combat.tr(combat.text) == "COMBATE")
+	localization.set_language("en")
+	assert(combat.tr(combat.text) == "COMBAT")
+	current_scene.get_node("LowerButtons/SettingsButton").pressed.emit()
+	await process_frame
+	await process_frame
+	assert(current_scene.scene_file_path == "res://scenes/ui/Settings.tscn")
+	var content := current_scene.get_node("Center/Panel/Margin/Content")
+	var language: OptionButton = content.get_node("Language")
+	var fullscreen: OptionButton = content.get_node("Fullscreen")
+	assert(content.get_node("LanguageLabel").tr("SETTINGS_LANGUAGE") == "Language")
+	assert(fullscreen.get_item_text(0) == "Yes")
+	fullscreen.item_selected.emit(1)
+	language.item_selected.emit(1)
+	assert(TranslationServer.get_locale() == "es")
+	assert(fullscreen.get_item_text(0) == "Sí")
+	assert(content.get_node("DisplayStatus").text == "Pulsa Aplicar para cambiar el modo de pantalla.")
+	language.item_selected.emit(0)
+	assert(fullscreen.get_item_text(0) == "Yes")
+	assert(content.get_node("DisplayStatus").text == "Press Apply to change display mode.")
+	language.item_selected.emit(1)
+	assert(config.load("user://settings.cfg") == OK and config.get_value("display", "fullscreen") == true)
+	var inventory = load("res://scripts/ui/inventory_screen.gd").new()
+	var effects := [{"kind": "heal", "value": 5, "target": "self"}, {"kind": "reflect", "value": 0.1, "target": "enemy"}]
+	assert(inventory._spell_effects(effects) == "Cura 5 PV (propio); Refleja 10 % de daño (enemigo)")
+	assert(localization.catalog("spell", "cinder_fist", "desc", "") == "Un golpe ardiente y fiable.")
+	assert(localization.catalog("item", "bismuth_talisman", "desc", "").begins_with("Bonificación"))
+	assert(localization.catalog("mutation", "resonance", "desc", "").contains("daño elemental"))
+	assert(localization.catalog("research", "archive_basics", "name", "") == "Fundamentos de archivo")
+	assert(localization.catalog("building", "essence_reactor", "desc", "") == "Produce esencia con el tiempo.")
+	var spell_catalog: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/spells.json"))
+	for spell in spell_catalog.spells:
+		var id := str(spell.id)
+		assert(TranslationServer.translate("SPELL_%s_NAME" % id.to_upper()) != "SPELL_%s_NAME" % id.to_upper())
+		assert(TranslationServer.translate("SPELL_%s_DESC" % id.to_upper()) != "SPELL_%s_DESC" % id.to_upper())
+		var detail: String = preload("res://scripts/ui/spell_presentation.gd").detail(spell, "Initial")
+		assert(not detail.contains("SPELL_"), "Translation key leaked into spell details: " + id)
+	var localized_detail: String = preload("res://scripts/ui/spell_presentation.gd").detail(spell_catalog.spells[0], "Initial")
+	assert(localized_detail.contains("Potencia:") and localized_detail.contains("Un golpe ardiente y fiable."))
+	localization.set_language("en")
+	assert(inventory._spell_effects(effects) == "Heal 5 HP (self); Reflects 10 % damage (enemy)")
+	assert(inventory._spell_effects([]) == "No additional effect")
+	assert(localization.catalog("spell", "cinder_fist", "desc", "") == "A reliable burning strike.")
+	assert(localization.catalog("item", "bismuth_talisman", "desc", "").begins_with("Power bonus"))
+	assert(localization.catalog("mutation", "resonance", "desc", "").contains("elemental damage"))
+	assert(localization.catalog("research", "archive_basics", "name", "") == "Archive Basics")
+	assert(localization.catalog("building", "essence_reactor", "desc", "") == "Produces Essence over time.")
+	inventory.free()
+	SceneRouter.go_to_inventory()
+	await process_frame
+	await process_frame
+	var screen = current_scene
+	var selected: BaseButton = screen._entry_group.get_pressed_button()
+	var selected_id := str(selected.get_meta("entry").get("id", ""))
+	localization.set_language("es")
+	assert(screen._entry_group.get_pressed_button() == selected)
+	assert(str(selected.get_meta("entry").get("id", "")) == selected_id)
+	assert(screen._extract_name({"kind": "build", "id": "bismuth_talisman", "name": "Bismuth Sword"}) == "Espada de bismuto")
+	localization.set_language("en")
+	assert(screen._extract_name({"kind": "build", "id": "bismuth_talisman", "name": "Bismuth Sword"}) == "Bismuth Sword")
+	localization.set_language("es")
+	print("PASS localization live changes and settings preservation")
+	quit()

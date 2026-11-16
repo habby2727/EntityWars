@@ -87,7 +87,7 @@ custom_minimum_size = Vector2(0, 0)
 
 [node name="PlayerName" type="Label" parent="PlayerPanel"]
 layout_mode = 2
-text = "Player"
+text = "COMBAT_PLAYER"
 custom_minimum_size = Vector2(0, 20)
 
 [node name="PlayerSprites" type="HBoxContainer" parent="PlayerPanel"]
@@ -138,7 +138,7 @@ custom_minimum_size = Vector2(576, 0)
 layout_mode = 2
 custom_minimum_size = Vector2(192, 22)
 horizontal_alignment = 1
-text = "Homunculus"
+text = "COMBAT_FAMILIAR"
 
 [node name="PlayerHomNameSpacer" type="Control" parent="PlayerPanel/PlayerHomNameRow"]
 layout_mode = 2
@@ -157,7 +157,7 @@ custom_minimum_size = Vector2(284, 0)
 layout_mode = 2
 custom_minimum_size = Vector2(200, 22)
 horizontal_alignment = 1
-text = "Entity"
+text = "COMBAT_ENTITY"
 [node name="PlayerHPRow" type="HBoxContainer" parent="PlayerPanel"]
 layout_mode = 2
 theme_override_constants/separation = 0
@@ -194,7 +194,7 @@ size_flags_vertical = 3
 
 [node name="PlayerBuildTitle" type="Label" parent="PlayerPanel"]
 layout_mode = 2
-text = "Build"
+text = "COMBAT_BUILD"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
@@ -337,14 +337,14 @@ layout_mode = 2
 custom_minimum_size = Vector2(384, 22)
 size_flags_horizontal = 3
 horizontal_alignment = 1
-text = "Entity"
+text = "COMBAT_ENTITY"
 
 [node name="EnemyHomName" type="Label" parent="EnemyPanel/EnemyNames"]
 layout_mode = 2
 custom_minimum_size = Vector2(192, 22)
 size_flags_horizontal = 3
 horizontal_alignment = 1
-text = "Homunculus"
+text = "COMBAT_FAMILIAR"
 
 [node name="EnemyHPRow" type="HBoxContainer" parent="EnemyPanel"]
 layout_mode = 2
@@ -382,7 +382,7 @@ size_flags_vertical = 3
 
 [node name="EnemyBuildTitle" type="Label" parent="EnemyPanel"]
 layout_mode = 2
-text = "Build"
+text = "COMBAT_BUILD"
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
@@ -555,8 +555,8 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 18
 theme_override_styles/normal = SubResource("ReturnButtonNormal")
 theme_override_styles/hover = SubResource("ReturnButtonHover")
-text = "Hold"
-tooltip_text = "Keep homunculus energy."
+text = "COMBAT_HOLD"
+tooltip_text = "COMBAT_HOLD_HINT"
 
 [node name="Attack" type="Button" parent="HomDecision"]
 layout_mode = 2
@@ -564,7 +564,7 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 18
 theme_override_styles/normal = SubResource("ReturnButtonNormal")
 theme_override_styles/hover = SubResource("ReturnButtonHover")
-text = "Attack"
+text = "COMBAT_ATTACK"
 
 [node name="Sacrifice" type="Button" parent="HomDecision"]
 layout_mode = 2
@@ -572,8 +572,8 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 18
 theme_override_styles/normal = SubResource("ReturnButtonNormal")
 theme_override_styles/hover = SubResource("ReturnButtonHover")
-text = "Sacrifice (+30 HP)"
-tooltip_text = "Heal up to 30 HP; lose this homunculus for the rest of the combat."
+text = "COMBAT_SACRIFICE"
+tooltip_text = "COMBAT_SACRIFICE_HINT"
 
 [node name="SpellGrid" type="GridContainer" parent="SpellPanel"]
 layout_mode = 2
@@ -646,12 +646,13 @@ theme_override_constants/separation = 10
 
 [node name="Title" type="Label" parent="ConfirmLeave/Panel/VBox"]
 layout_mode = 2
-text = "Leave Combat?"
+text = "COMBAT_LEAVE_TITLE"
 horizontal_alignment = 1
 
 [node name="Body" type="Label" parent="ConfirmLeave/Panel/VBox"]
 layout_mode = 2
-text = "Leaving will cancel the combat and count as a defeat."
+text = "COMBAT_LEAVE_WARNING"
+metadata/localization_body_font = true
 horizontal_alignment = 1
 autowrap_mode = 2
 
@@ -662,12 +663,12 @@ alignment = 1
 
 [node name="StayButton" type="Button" parent="ConfirmLeave/Panel/VBox/Buttons"]
 layout_mode = 2
-text = "Stay"
+text = "COMBAT_STAY"
 focus_mode = 0
 
 [node name="LeaveButton" type="Button" parent="ConfirmLeave/Panel/VBox/Buttons"]
 layout_mode = 2
-text = "Leave"
+text = "COMBAT_LEAVE"
 focus_mode = 0
 
 [node name="BackButton" type="Button" parent="."]
@@ -681,7 +682,7 @@ offset_left = -108.0
 offset_top = 12.0
 offset_right = -12.0
 offset_bottom = 46.0
-text = "Back"
+text = "SETTINGS_BACK"
 focus_mode = 0
 mouse_filter = 0
 theme_override_font_sizes/font_size = 14

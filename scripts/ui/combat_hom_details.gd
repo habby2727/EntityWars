@@ -56,6 +56,10 @@ func show_fighter(fighter: Dictionary, texture: Texture2D, owner_name: String) -
 	refresh()
 	show()
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready():
+		refresh()
+
 func refresh() -> void:
 	if _fighter.is_empty() or _heading == null:
 		return
@@ -67,9 +71,9 @@ func refresh() -> void:
 	var catalog := HomProgress.mutation_catalog()
 	var spent := bool(_fighter.get("hom_spent", true))
 	var energy := int(_fighter.get("hom_energy", 0))
-	var state := "Sacrificed" if spent else ("Overcharged" if energy >= 6 else "Ready" if energy >= 3 else "Charging")
-	var base := "Power %s | Guard %s | HP %s" % [hom.get("buff_atk", 0), hom.get("buff_def", 0), hom.get("buff_hp", 0)]
-	var level_text := "Power +%d | Guard +%d | HP +%d" % [int(level / 5.0), int(level / 3.0), level]
+	var state := tr("HOM_DETAIL_SACRIFICED") if spent else (tr("HOM_DETAIL_OVERCHARGED") if energy >= 6 else tr("HOM_DETAIL_READY") if energy >= 3 else tr("HOM_DETAIL_CHARGING"))
+	var base := tr("HOM_DETAIL_BASE") % [hom.get("buff_atk", 0), hom.get("buff_def", 0), hom.get("buff_hp", 0)]
+	var level_text := tr("HOM_DETAIL_LEVEL") % [int(level / 5.0), int(level / 3.0), level]
 	var bonuses := HomProgress.effective_bonuses(hom, progress)
 	var synergy: Dictionary = _fighter.get("hom_synergy", {})
 	bonuses["power_flat"] = int(bonuses.get("power_flat", 0)) + int(synergy.get("power_flat", 0))
@@ -79,19 +83,19 @@ func refresh() -> void:
 		lines.append(_describe_synergy(str(key), float(synergy[key])))
 	var bonus_lines: Array[String] = []
 	for key in bonuses:
-		bonus_lines.append("%s: %s" % [str(key).replace("_", " ").capitalize(), Stats.stat_value(str(key), bonuses[key])])
+		bonus_lines.append("%s: %s" % [GameLocalization.catalog("stat", str(key), "name", str(key).replace("_", " ").capitalize()), Stats.stat_value(str(key), bonuses[key])])
 	_heading.text = "%s | %s" % [hom.get("name", "Homunculus"), _owner_name]
-	_details.text = "Rarity: %s | Level %d / 10\nEnergy: %d / 6 | %s\n\nBase: %s\nLevel: %s\nMutation: %s\n%s\n\n%s\nElement: %s\n%s\n\nHP, Power and Guard modify the entity. Homunculi have no separate HP." % [str(hom.get("rarity", "unknown")).capitalize(), level, energy, state, base, level_text, str(catalog.get(mutation, {}).get("name", "No mutation")), str(catalog.get(mutation, {}).get("description", "")), "TOTAL active: %s" % ", ".join(bonus_lines) if not spent else "TOTAL active: none (sacrificed)", str(_fighter.get("type", "")).capitalize(), "Synergy: %s" % ", ".join(lines) if not spent else "Synergy: inactive (sacrificed)"]
+	_details.text = tr("HOM_DETAIL_TEXT").replace("\\n", "\n") % [GameLocalization.catalog("rarity", str(hom.get("rarity", "unknown")), "name", str(hom.get("rarity", "unknown")).capitalize()), level, energy, state, base, level_text, GameLocalization.catalog("mutation", mutation, "name", str(catalog.get(mutation, {}).get("name", tr("HOM_DETAIL_NONE")))), GameLocalization.catalog("mutation", mutation, "desc", str(catalog.get(mutation, {}).get("description", ""))), tr("HOM_DETAIL_ACTIVE") % ", ".join(bonus_lines) if not spent else tr("HOM_DETAIL_INACTIVE"), GameLocalization.catalog("type", str(_fighter.get("type", "")), "name", str(_fighter.get("type", "")).capitalize()), tr("HOM_DETAIL_SYNERGY") % ", ".join(lines) if not spent else tr("HOM_DETAIL_SYNERGY_INACTIVE")]
 
 func _describe_synergy(key: String, value: float) -> String:
 	match key:
-		"power_flat": return "+%s entity Power" % Stats.number(value)
-		"guard_flat": return "+%s entity Guard" % Stats.number(value)
-		"tempo_flat": return "+%s initiative" % Stats.number(value)
-		"incoming_mult": return "Incoming direct damage: %s of normal" % Stats.percent(value)
-		"dot_true": return "+%s true corrosion per hit" % Stats.number(value)
-		"reflect_pct": return "%s reflection each round" % Stats.percent(value)
-		"type_adv_bonus": return "+%s favorable type bonus" % Stats.percent(value)
-		"item_effect_mult": return "Active weapon effects: %s of normal" % Stats.percent(value)
-		"type_neutralize": return "%.0f%% less type deviation" % (value * 100.0)
+		"power_flat": return tr("HOM_SYNERGY_POWER") % Stats.number(value)
+		"guard_flat": return tr("HOM_SYNERGY_GUARD") % Stats.number(value)
+		"tempo_flat": return tr("HOM_SYNERGY_TEMPO") % Stats.number(value)
+		"incoming_mult": return tr("HOM_SYNERGY_INCOMING") % Stats.percent(value)
+		"dot_true": return tr("HOM_SYNERGY_CORROSION") % Stats.number(value)
+		"reflect_pct": return tr("HOM_SYNERGY_REFLECT") % Stats.percent(value)
+		"type_adv_bonus": return tr("HOM_SYNERGY_TYPE") % Stats.percent(value)
+		"item_effect_mult": return tr("HOM_SYNERGY_ITEM") % Stats.percent(value)
+		"type_neutralize": return tr("HOM_SYNERGY_NEUTRAL") % (value * 100.0)
 	return "%s: %s" % [key.replace("_", " ").capitalize(), Stats.stat_value(key, value)]

@@ -101,6 +101,8 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	if building_id == _current_id and building_id == "build_forge":
 		_update_forge_button()
 		return
+	if has_meta("localization_status"):
+		remove_meta("localization_status")
 	_current_id = building_id
 	_forge_button = null
 	_forge_status = null
@@ -137,11 +139,61 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 		"anomaly_containment": _anomaly_controls()
 		"lab_th": _hq(state, building_names)
 		"essence_reactor": _reactor_controls()
-		"storage_vault": _message("STORAGE", "Capacity: %s   |   Next level: %s\nResources:\n%s" % [metrics.get("capacity", "-"), metrics.get("next_capacity", "-"), _format_values(state.get("wallet", {}))])
-		"trade_hall": _message("MARKET AND JOBS", "Open Trade Hall to manage market orders and trade jobs.")
-		"world_gate": _message("WORLD ACCESS", "Open World Gate to access the available zones.")
+		"storage_vault": _message("PANEL_STORAGE", tr("PANEL_STORAGE_TEXT").replace("\\n", "\n") % [metrics.get("capacity", "-"), metrics.get("next_capacity", "-"), _format_values(state.get("wallet", {}))])
+		"trade_hall": _message("PANEL_MARKET", "PANEL_MARKET_TEXT")
+		"world_gate": _message("PANEL_WORLD", "PANEL_WORLD_TEXT")
 		_:
 			visible = false
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready() or _registry == null:
+		return
+	for node in find_children("LocalizationCatalogItems", "ItemList", true, false):
+		var list := node as ItemList
+		var kind := str(list.get_meta("catalog_kind", "item"))
+		var entries: Dictionary = _registry.get_homunculi() if kind == "homunculus" else _registry.get_items()
+		for index in list.item_count:
+			var id := str(list.get_item_metadata(index))
+			list.set_item_text(index, GameLocalization.catalog(kind, id, "name", str(entries.get(id, {}).get("name", id))))
+		var heading := find_child("LocalizationCatalogHeading", true, false) as Label
+		var selected := list.get_selected_items()
+		if heading != null and not selected.is_empty():
+			var id := str(list.get_item_metadata(selected[0]))
+			heading.text = GameLocalization.catalog(kind, id, "name", str(entries.get(id, {}).get("name", id)))
+	if _current_id == "homunculus_vat":
+		for i in range(_vat_mutations.size()):
+			var id: String = ["catalyst", "vitality", "resonance"][i]
+			_vat_mutations[i].text = GameLocalization.catalog("mutation", id, "name", str(HomProgress.mutation_catalog().get(id, {}).get("name", id)))
+		_update_vat_status()
+	elif _current_id == "build_forge":
+		if is_instance_valid(_fusion_donor):
+			var items: Dictionary = _registry.get_items()
+			for index in _fusion_donor.item_count:
+				var id := str(_fusion_donor.get_item_metadata(index))
+				_fusion_donor.set_item_text(index, GameLocalization.catalog("item", id, "name", str(items.get(id, {}).get("name", id))))
+		_update_forge_button()
+	elif _current_id == "storage_vault":
+		var description := find_child("LocalizationMessageBody", true, false) as Label
+		if description != null:
+			description.text = tr("PANEL_STORAGE_TEXT").replace("\\n", "\n") % [_lab_metrics.get("capacity", "-"), _lab_metrics.get("next_capacity", "-"), _format_values(_forge_state.get("wallet", {}))]
+	elif _current_id == "lab_th":
+		var description := find_child("LocalizationMessageBody", true, false) as Label
+		if description != null:
+			description.text = _hq_text(_forge_state, get_meta("hq_names", {}))
+	elif _current_id == "anomaly_containment":
+		var description := find_child("LocalizationMessageBody", true, false) as Label
+		if description != null:
+			description.text = tr("PANEL_ANOMALY_TEXT").replace("\\n", "\n")
+	elif _current_id == "sync_nexus":
+		var description := find_child("SyncDescription", true, false) as Label
+		if description != null:
+			description.text = tr("SYNC_DESCRIPTION").replace("\\n", "\n")
+		if is_instance_valid(_dungeon_entry_button):
+			_dungeon_entry_button.text = tr("SYNC_ENTER_DUNGEON")
+		_update_sync_status()
+	if _current_id in ["lab_th", "essence_reactor", "anomaly_containment"] and has_meta("localization_status"):
+		var cached: Dictionary = get_meta("localization_status")
+		update_lab_status(_forge_state, int(cached.now), bool(cached.pending), _lab_metrics)
 
 func _message(title: String, message: String) -> void:
 	var heading := Label.new()
@@ -149,11 +201,27 @@ func _message(title: String, message: String) -> void:
 	heading.add_theme_font_size_override("font_size", 18)
 	add_child(heading)
 	var description := Label.new()
+	description.name = "LocalizationMessageBody"
 	description.text = message
 	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(description)
 
 func _hq(state: Dictionary, names: Dictionary) -> void:
+	set_meta("hq_names", names)
+	_message("PANEL_LAB_PROGRESS", _hq_text(state, names))
+	var row := HBoxContainer.new()
+	add_child(row)
+	for directive in ["production", "research", "experimentation"]:
+		var button := Button.new()
+		button.text = "HQ_DIRECTIVE_" + directive.to_upper()
+		MenuArt.button(button)
+		button.pressed.connect(func(): lab_action_requested.emit({"action_type": "SET_HQ_DIRECTIVE", "payload": {"directive": directive}}, "lab_th"))
+		row.add_child(button)
+		_lab_buttons.append(button)
+	_lab_status = Label.new()
+	add_child(_lab_status)
+
+func _hq_text(state: Dictionary, names: Dictionary) -> String:
 	var level := int(state.get("lab", {}).get("hqLevel", 1))
 	var unlocked: Array[String] = []
 	var next: Array[String] = []
@@ -162,34 +230,23 @@ func _hq(state: Dictionary, names: Dictionary) -> void:
 			continue
 		var required := HqRules.get_unlock_level(id)
 		if required <= level:
-			unlocked.append(str(names[id]))
+			unlocked.append(GameLocalization.catalog("building", str(id), "name", str(names[id])))
 		elif required == level + 1:
-			next.append(str(names[id]))
-	_message("LAB PROGRESS", "Unlocked: %s\nNext HQ level: %s" % [", ".join(unlocked), ", ".join(next) if not next.is_empty() else "No additional unlocks"])
-	var row := HBoxContainer.new()
-	add_child(row)
-	for directive in ["production", "research", "experimentation"]:
-		var button := Button.new()
-		button.text = {"production": "Production +10%", "research": "Research time -10%", "experimentation": "Experiment chance +5%"}[directive]
-		MenuArt.button(button)
-		button.pressed.connect(func(): lab_action_requested.emit({"action_type": "SET_HQ_DIRECTIVE", "payload": {"directive": directive}}, "lab_th"))
-		row.add_child(button)
-		_lab_buttons.append(button)
-	_lab_status = Label.new()
-	add_child(_lab_status)
+			next.append(GameLocalization.catalog("building", str(id), "name", str(names[id])))
+	return tr("PANEL_LAB_PROGRESS_TEXT").replace("\\n", "\n") % [", ".join(unlocked), ", ".join(next) if not next.is_empty() else tr("PANEL_NO_UNLOCKS")]
 
 func _reactor_controls() -> void:
-	_message("PRODUCTION", "Collect Essence to charge the reactor.")
+	_message("PANEL_PRODUCTION", "PANEL_PRODUCTION_TEXT")
 	_lab_progress = ProgressBar.new()
 	_lab_progress.show_percentage = false
 	add_child(_lab_progress)
 	_lab_status = Label.new()
 	add_child(_lab_status)
 	var button := Button.new()
-	button.text = "Activate Overcharge"
+	button.text = "REACTOR_ACTIVATE"
 	button.custom_minimum_size = Vector2(200, 44)
 	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	button.tooltip_text = "Reward: 15 Essence and 1 Core"
+	button.tooltip_text = "REACTOR_REWARD"
 	MenuArt.button(button)
 	button.pressed.connect(func(): lab_action_requested.emit({"action_type": "REACTOR_OVERCHARGE", "payload": {}}, "essence_reactor"))
 	add_child(button)
@@ -197,7 +254,7 @@ func _reactor_controls() -> void:
 
 func _setup_dungeon_ranking(parent: Control) -> void:
 	_dungeon_entry_button = Button.new()
-	_dungeon_entry_button.text = "ENTER DUNGEON"
+	_dungeon_entry_button.text = tr("SYNC_ENTER_DUNGEON")
 	_dungeon_entry_button.custom_minimum_size = Vector2(165, 52)
 	_dungeon_entry_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_dungeon_entry_button.pressed.connect(_enter_dungeon)
@@ -207,7 +264,7 @@ func _setup_dungeon_ranking(parent: Control) -> void:
 	_dungeon_entry_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	parent.add_child(_dungeon_entry_status)
 	_dungeon_ranking_button = Button.new()
-	_dungeon_ranking_button.text = "MONTHLY RANKING"
+	_dungeon_ranking_button.text = "SYNC_MONTHLY_RANKING"
 	_dungeon_ranking_button.custom_minimum_size = Vector2(165, 52)
 	_dungeon_ranking_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_dungeon_ranking_button.pressed.connect(_open_dungeon_ranking)
@@ -226,7 +283,7 @@ func _setup_dungeon_ranking(parent: Control) -> void:
 	var ranking_content := VBoxContainer.new()
 	_dungeon_ranking_dialog.add_child(ranking_content)
 	var previous := Button.new()
-	previous.text = "Previous Month"
+	previous.text = "SYNC_PREVIOUS_MONTH"
 	previous.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	previous.custom_minimum_size = Vector2(165, 52)
 	previous.pressed.connect(_previous_dungeon_month)
@@ -268,9 +325,10 @@ func _sync_controls() -> void:
 	cards.add_theme_constant_override("h_separation", 8)
 	cards.add_theme_constant_override("v_separation", 8)
 	add_child(cards)
-	var calibration := _sync_card(cards, "CALIBRATION PROJECT")
+	var calibration := _sync_card(cards, "SYNC_CALIBRATION")
 	var description := Label.new()
-	description.text = "Echo (NPC)\nCalibrate the Nexus to earn resources."
+	description.text = tr("SYNC_DESCRIPTION").replace("\\n", "\n")
+	description.name = "SyncDescription"
 	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	calibration.add_child(description)
 	_lab_progress = ProgressBar.new()
@@ -288,7 +346,7 @@ func _sync_controls() -> void:
 	calibration.add_child(button)
 	_lab_buttons.append(button)
 	_sync_badge = preload("res://scripts/ui/lab_action_alert.gd").badge(button)
-	_setup_dungeon_ranking(_sync_card(cards, "DUNGEONS"))
+	_setup_dungeon_ranking(_sync_card(cards, "SYNC_DUNGEONS"))
 
 func _sync_pressed() -> void:
 	if _lab_buttons.is_empty() or _lab_buttons[0].disabled:
@@ -306,13 +364,13 @@ func _update_sync_status() -> void:
 	var duration := maxi(1, int(project.get("completes_at", 0)) - int(project.get("started_at", 0))) if active else 1
 	_lab_progress.value = clampf(100.0 * (1.0 - float(remaining) / float(duration)), 0.0, 100.0) if active else 0
 	var reward: Dictionary = _lab_metrics.get("sync_reward", {"core": 1, "arcane_shard": 1})
-	_lab_status.text = "%s\nReward: %s" % ["Project in progress" if active and remaining > 0 else ("Ready to claim" if active else "Ready to start"), _format_values(reward).replace("\n", ", ")]
+	_lab_status.text = tr("SYNC_REWARD").replace("\\n", "\n") % [tr("SYNC_PROGRESS") if active and remaining > 0 else (tr("SPELL_READY_CLAIM") if active else tr("SYNC_START_READY")), _format_values(reward).replace("\n", ", ")]
 	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
 	var level := int(_forge_state.get("lab", {}).get("buildings", {}).get("sync_nexus", {}).get("level", 0))
 	var hq := int(_forge_state.get("lab", {}).get("hqLevel", 0))
 	if not active and not _forge_debug and (level < 1 or hq < 4):
-		_lab_status.text += "\nRequires Sync Nexus level 1 and HQ level 4 (current: %d / %d)." % [level, hq]
-	_lab_buttons[0].text = (_clock(remaining) if remaining > 0 else "CLAIM") if active else "START"
+		_lab_status.text += "\n" + tr("SYNC_REQUIRES") % [level, hq]
+	_lab_buttons[0].text = (_clock(remaining) if remaining > 0 else tr("SYNC_CLAIM")) if active else tr("SYNC_START")
 	if is_instance_valid(_sync_badge):
 		_sync_badge.visible = active and remaining <= 0 and ready and not _sync_pending
 	_lab_buttons[0].disabled = not ready or _sync_pending or (active and remaining > 0) or (not active and not _forge_debug and (level < 1 or hq < 4))
@@ -575,13 +633,13 @@ func _on_dungeon_api_completed(request_id: String, ok: bool, data: Dictionary) -
 	_dungeon_ranking_text.text = "\n".join(lines)
 
 func _anomaly_controls() -> void:
-	_message("ANOMALY DETECTED", "Seal: 20 Essence + 1 Arcane Shard.\nInvestigate: 50% nothing, 40% 2 Arcane Shards, 10% 1 Time Crystal.")
+	_message("PANEL_ANOMALY", tr("PANEL_ANOMALY_TEXT").replace("\\n", "\n"))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	add_child(row)
 	for choice in ["seal", "investigate"]:
 		var button := Button.new()
-		button.text = choice.to_upper()
+		button.text = "ANOMALY_ACTION_" + choice.to_upper()
 		MenuArt.button(button)
 		button.pressed.connect(_request_anomaly.bind(choice))
 		row.add_child(button)
@@ -590,7 +648,7 @@ func _anomaly_controls() -> void:
 	_lab_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_lab_status)
 	_anomaly_confirm = ConfirmationDialog.new()
-	_anomaly_confirm.title = "Resolve anomaly"
+	_anomaly_confirm.title = "ANOMALY_CONFIRM_TITLE"
 	_anomaly_confirm.confirmed.connect(_confirm_anomaly)
 	add_child(_anomaly_confirm)
 
@@ -599,7 +657,7 @@ func _request_anomaly(choice: String) -> void:
 	if index < 0 or _lab_buttons[index].disabled:
 		return
 	_anomaly_choice = choice
-	_anomaly_confirm.dialog_text = "Resolve this anomaly by %s?" % choice
+	_anomaly_confirm.dialog_text = tr("ANOMALY_CONFIRM") % GameLocalization.catalog("anomaly", choice, "name", choice)
 	_anomaly_confirm.popup_centered()
 
 func _confirm_anomaly() -> void:
@@ -608,6 +666,7 @@ func _confirm_anomaly() -> void:
 		lab_action_requested.emit({"action_type": "ANOMALY_RESOLVE", "payload": {"choice": _anomaly_choice}}, "anomaly_containment")
 
 func update_lab_status(state: Dictionary, now_ms: int, pending: bool, metrics: Dictionary) -> void:
+	set_meta("localization_status", {"state": state, "now": now_ms, "pending": pending, "metrics": metrics})
 	if _current_id == "sync_nexus":
 		_forge_state = state
 		_lab_metrics = metrics
@@ -628,7 +687,8 @@ func update_lab_status(state: Dictionary, now_ms: int, pending: bool, metrics: D
 	if _current_id == "lab_th":
 		var directive: Dictionary = runtime.get("directive", {})
 		var remaining := maxi(0, int(directive.get("ends_at", 0)) - now_ms)
-		_lab_status.text = "Active: %s | %s remaining" % [str(directive.get("id", "")).capitalize(), _clock(remaining)] if remaining > 0 else "Ready to choose"
+		var directive_id := str(directive.get("id", ""))
+		_lab_status.text = tr("HQ_ACTIVE") % [GameLocalization.catalog("directive", directive_id, "name", directive_id.capitalize()), _clock(remaining)] if remaining > 0 else tr("HQ_READY")
 		for i in range(_lab_buttons.size()):
 			_lab_buttons[i].disabled = not ready or pending or remaining > 0
 			_lab_buttons[i].modulate = Color(1.25, 1.1, 0.7) if remaining > 0 and directive.get("id") == ["production", "research", "experimentation"][i] else Color.WHITE
@@ -640,9 +700,9 @@ func update_lab_status(state: Dictionary, now_ms: int, pending: bool, metrics: D
 		var remaining := maxi(0, last + int(metrics.get("cooldown", 10800)) * 1000 - now_ms) if last > 0 else 0
 		_lab_progress.max_value = threshold
 		_lab_progress.value = progress
-		_lab_status.text = "Rate: %.1f Essence / hour | Stored: %.1f\n%d / %d collected | %s\nReward: %s" % [float(metrics.get("rate", 0)), float(metrics.get("stored", 0)), progress, threshold, "Cooldown: " + _clock(remaining) if remaining > 0 else ("Ready to activate" if progress >= threshold else "Charging"), _format_values(metrics.get("reward", {})).replace("\n", ", ")]
+		_lab_status.text = tr("REACTOR_STATUS").replace("\\n", "\n") % [float(metrics.get("rate", 0)), float(metrics.get("stored", 0)), progress, threshold, tr("LAB_COOLDOWN") % _clock(remaining) if remaining > 0 else (tr("REACTOR_READY") if progress >= threshold else tr("REACTOR_CHARGING")), _format_values(metrics.get("reward", {})).replace("\n", ", ")]
 		if int(state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("level", 0)) < 1:
-			_lab_status.text += "\nRequires Essence Reactor level 1."
+			_lab_status.text += "\n" + tr("REACTOR_REQUIRES")
 		_lab_buttons[0].disabled = not ready or pending or int(state.get("lab", {}).get("buildings", {}).get("essence_reactor", {}).get("level", 0)) < 1 or progress < threshold or remaining > 0
 		_lab_buttons[0].modulate = Color(1.25, 1.1, 0.7) if not _lab_buttons[0].disabled else Color.WHITE
 	elif _current_id == "anomaly_containment":
@@ -650,12 +710,12 @@ func update_lab_status(state: Dictionary, now_ms: int, pending: bool, metrics: D
 		var remaining := maxi(0, int(anomaly.get("next_at", 0)) - now_ms)
 		var level := int(state.get("lab", {}).get("buildings", {}).get("anomaly_containment", {}).get("level", 0))
 		var hq := int(state.get("lab", {}).get("hqLevel", 0))
-		_lab_status.text = "Level %d | %s" % [level, "Cooldown: " + _clock(remaining) if remaining > 0 else "Ready"]
+		_lab_status.text = tr("ANOMALY_LEVEL") % [level, tr("LAB_COOLDOWN") % _clock(remaining) if remaining > 0 else tr("LAB_READY")]
 		if level < 1 or hq < 5:
-			_lab_status.text += "\nRequires Anomaly Containment level 1 and HQ level 5 (current: %d / %d)." % [level, hq]
+			_lab_status.text += "\n" + tr("ANOMALY_REQUIRES") % [level, hq]
 		if anomaly.has("last_choice"):
 			var reward: Dictionary = anomaly.get("last_reward", {})
-			_lab_status.text += "\nLast: %s | %s" % [str(anomaly.last_choice).capitalize(), "No reward" if reward.is_empty() else _format_values(reward).replace("\n", ", ")]
+			_lab_status.text += "\n" + tr("ANOMALY_LAST") % [GameLocalization.catalog("anomaly", str(anomaly.last_choice), "name", str(anomaly.last_choice).capitalize()), tr("ANOMALY_NO_REWARD") if reward.is_empty() else _format_values(reward).replace("\n", ", ")]
 		for button in _lab_buttons:
 			button.disabled = not ready or pending or level < 1 or hq < 5 or remaining > 0
 
@@ -680,7 +740,7 @@ func _unconfigured(title: String, tabs: Array) -> void:
 
 func _catalog(homunculi: bool) -> void:
 	var title := Label.new()
-	title.text = "HOMUNCULUS CATALOG" if homunculi else "WEAPONS CATALOG"
+	title.text = "VAT_CATALOG" if homunculi else "FORGE_CATALOG"
 	title.add_theme_font_size_override("font_size", 18)
 	if not homunculi:
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -705,6 +765,8 @@ func _catalog(homunculi: bool) -> void:
 		center.add_child(right_space)
 	var entries: Dictionary = _registry.get_homunculi() if homunculi else _registry.get_items()
 	var list := ItemList.new()
+	list.name = "LocalizationCatalogItems"
+	list.set_meta("catalog_kind", "homunculus" if homunculi else "item")
 	list.custom_minimum_size = Vector2(220, 150)
 	list.add_theme_font_size_override("font_size", 19)
 	var list_bg := StyleBoxFlat.new()
@@ -727,6 +789,8 @@ func _catalog(homunculi: bool) -> void:
 		details.add_theme_constant_override("separation", 8)
 	row.add_child(details)
 	var heading := Label.new()
+	heading.name = "LocalizationCatalogHeading"
+	heading.set_meta("localization_body_font", true)
 	heading.add_theme_font_size_override("font_size", 18)
 	if not homunculi:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -777,14 +841,14 @@ func _catalog(homunculi: bool) -> void:
 	details.add_child(actions)
 	for label in (["Upgrade Homunculus"] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
-		action.text = label
+		action.text = {"Upgrade Homunculus": "LAB_ACTION_UPGRADE_HOMUNCULUS", "Upgrade": "LAB_UPGRADE", "Reroll": "LAB_ACTION_REROLL"}[label]
 		action.disabled = true
-		action.tooltip_text = "Not implemented on the server."
+		action.tooltip_text = "LAB_ACTION_NOT_IMPLEMENTED"
 		MenuArt.button(action)
 		actions.add_child(action)
 		if not homunculi and label == "Upgrade":
 			_forge_button = action
-			action.tooltip_text = "Upgrade selected talisman"
+			action.tooltip_text = "LAB_ACTION_UPGRADE_TALISMAN"
 			action.pressed.connect(_request_forge_confirmation)
 		elif not homunculi and label == "Reroll":
 			_forge_reroll_button = action
@@ -793,20 +857,20 @@ func _catalog(homunculi: bool) -> void:
 			_vat_upgrade = action
 			action.pressed.connect(_request_vat_upgrade)
 	var inventory := Button.new()
-	inventory.text = "Open Inventory"
+	inventory.text = "LAB_OPEN_INVENTORY"
 	MenuArt.button(inventory)
 	inventory.pressed.connect(func(): SceneRouter.go_to_inventory("Homunculi" if homunculi else "Builds", true))
 	actions.add_child(inventory)
 	if homunculi:
 		var mutation_heading := Label.new()
-		mutation_heading.text = "Mutations"
+		mutation_heading.text = "VAT_MUTATIONS"
 		details.add_child(mutation_heading)
 		var mutation_row := HBoxContainer.new()
 		details.add_child(mutation_row)
 		for mutation_id in ["catalyst", "vitality", "resonance"]:
 			var button := Button.new()
-			button.text = str(HomProgress.mutation_catalog().get(mutation_id, {}).get("name", mutation_id))
-			button.tooltip_text = str(HomProgress.mutation_catalog().get(mutation_id, {}).get("description", ""))
+			button.text = GameLocalization.catalog("mutation", mutation_id, "name", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("name", mutation_id)))
+			button.tooltip_text = GameLocalization.catalog("mutation", mutation_id, "desc", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("description", "")))
 			MenuArt.button(button)
 			button.pressed.connect(_request_vat_mutation.bind(mutation_id))
 			mutation_row.add_child(button)
@@ -824,12 +888,15 @@ func _catalog(homunculi: bool) -> void:
 		trait_actions.add_theme_constant_override("separation", 8)
 		details.add_child(trait_actions)
 		_forge_reroll_slot = OptionButton.new()
-		_forge_reroll_slot.tooltip_text = "Trait to reroll"
+		_forge_reroll_slot.set_meta("localization_body_font", true)
+		_forge_reroll_slot.get_popup().set_meta("localization_body_font", true)
+		_forge_reroll_slot.tooltip_text = "FORGE_REROLL_TRAIT"
 		for i in range(3):
 			_forge_reroll_slot.add_item("Slot %d" % (i + 1))
 		trait_actions.add_child(_forge_reroll_slot)
 		for i in range(3):
 			var trait_button := Button.new()
+			trait_button.set_meta("localization_body_font", true)
 			trait_button.custom_minimum_size = Vector2(90, 38)
 			MenuArt.button(trait_button)
 			trait_actions.add_child(trait_button)
@@ -840,14 +907,16 @@ func _catalog(homunculi: bool) -> void:
 		fusion_row.add_theme_constant_override("separation", 8)
 		details.add_child(fusion_row)
 		_fusion_donor = OptionButton.new()
+		_fusion_donor.set_meta("localization_body_font", true)
+		_fusion_donor.get_popup().set_meta("localization_body_font", true)
 		_fusion_donor.custom_minimum_size.x = 165
 		for donor_id in entries:
-			_fusion_donor.add_item(str(entries[donor_id].get("name", donor_id)))
+			_fusion_donor.add_item(GameLocalization.catalog("item", str(donor_id), "name", str(entries[donor_id].get("name", donor_id))))
 			_fusion_donor.set_item_metadata(_fusion_donor.item_count - 1, donor_id)
 		_fusion_donor.item_selected.connect(func(_index): _update_forge_button())
 		fusion_row.add_child(_fusion_donor)
 		_fusion_button = Button.new()
-		_fusion_button.text = "Fusion"
+		_fusion_button.text = "FORGE_FUSION"
 		MenuArt.button(_fusion_button)
 		_fusion_button.pressed.connect(_request_fusion)
 		fusion_row.add_child(_fusion_button)
@@ -866,7 +935,7 @@ func _catalog(homunculi: bool) -> void:
 	var keys := entries.keys()
 	keys.sort()
 	for id in keys:
-		list.add_item(str(entries[id].get("name", id)))
+		list.add_item(GameLocalization.catalog("homunculus" if homunculi else "item", str(id), "name", str(entries[id].get("name", id))))
 		list.set_item_metadata(list.item_count - 1, id)
 	var select := func(index: int):
 		var id := str(list.get_item_metadata(index))
@@ -874,7 +943,7 @@ func _catalog(homunculi: bool) -> void:
 			_forge_item = id
 			_update_forge_button()
 		var entry: Dictionary = entries[id]
-		heading.text = str(entry.get("name", id))
+		heading.text = GameLocalization.catalog("homunculus" if homunculi else "item", id, "name", str(entry.get("name", id)))
 		if homunculi:
 			_vat_item = id
 			_update_vat_status()
@@ -901,7 +970,7 @@ func _update_vat_status() -> void:
 	next_progress[_vat_item] = next_entry
 	var mutations := HomProgress.mutation_catalog()
 	var active := str(entry.get("mutation_id", ""))
-	_vat_info.text = "%s\nLevel %d / 10 | Mutation: %s\nCurrent: %s\nNext: %s\nMutations: Catalyst +1 Power | Vitality +5 HP | Resonance +3%% favorable type bonus\nSynergies:\n%s" % [hom.get("desc", ""), level, str(mutations.get(active, {}).get("name", "None")), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
+	_vat_info.text = tr("VAT_DESCRIPTION").replace("\\n", "\n") % [GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", ""))), level, GameLocalization.catalog("mutation", active, "name", str(mutations.get(active, {}).get("name", tr("SPECIALIZATION_NONE_NAME")))), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
 	var wallet: Dictionary = _forge_state.get("wallet", {})
 	var essence_cost := 25 + 15 * level
 	var core_cost := 1 if level >= 5 else 0
@@ -915,36 +984,37 @@ func _update_vat_status() -> void:
 	elif _vat_pending:
 		mutation_reason = "Waiting for action confirmation."
 	elif vat_level < 1:
-		mutation_reason = "Build the Homunculus Vat first."
+		mutation_reason = tr("VAT_NEEDS_VAT")
 	elif level < 3:
-		mutation_reason = "Requires homunculus level 3 (current: %d)." % level
+		mutation_reason = tr("VAT_NEEDS_LEVEL") % level
 	elif cooldown > 0:
-		mutation_reason = "Next mutation available in %s." % _clock(cooldown)
+		mutation_reason = tr("VAT_NEXT_MUTATION") % _clock(cooldown)
 	elif int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1:
-		mutation_reason = "Insufficient resources: %d/70 Essence, %d/2 Core, %d/1 Arcane Shard." % [int(wallet.get("essence", 0)), int(wallet.get("core", 0)), int(wallet.get("arcane_shard", 0))]
+		mutation_reason = tr("VAT_NEEDS_RESOURCES") % [int(wallet.get("essence", 0)), int(wallet.get("core", 0)), int(wallet.get("arcane_shard", 0))]
 	_vat_upgrade.disabled = not ready or _vat_pending or vat_level < 1 or hq_level < 2 or level >= 10 or int(wallet.get("essence", 0)) < essence_cost or int(wallet.get("core", 0)) < core_cost
-	_vat_upgrade.tooltip_text = "Cost: %d Essence%s" % [essence_cost, ", 1 Core" if core_cost else ""]
+	_vat_upgrade.tooltip_text = tr("VAT_UPGRADE_COST") % [essence_cost, tr("VAT_CORE_COST") if core_cost else ""]
 	for i in range(_vat_mutations.size()):
 		var id: String = ["catalyst", "vitality", "resonance"][i]
 		_vat_mutations[i].disabled = not ready or _vat_pending or vat_level < 1 or level < 3 or cooldown > 0 or active == id or int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1
 		_vat_mutations[i].modulate = Color(1.25, 1.1, 0.7) if active == id else Color.WHITE
-		var description := str(mutations.get(id, {}).get("description", ""))
-		_vat_mutations[i].tooltip_text = description + ("\nCurrently equipped." if active == id else "\n" + mutation_reason if mutation_reason != "" else "\nSelect this mutation.")
-	_vat_status.text = "Upgrade: %d Essence%s | Mutation: 70 Essence, 2 Core, 1 Arcane Shard\nMutation cooldown: %s" % [essence_cost, ", 1 Core" if core_cost else "", _clock(cooldown) if cooldown > 0 else "Ready"]
+		var description := GameLocalization.catalog("mutation", id, "desc", str(mutations.get(id, {}).get("description", "")))
+		_vat_mutations[i].tooltip_text = description + ("\n" + tr("VAT_EQUIPPED") if active == id else "\n" + mutation_reason if mutation_reason != "" else "\n" + tr("VAT_SELECT"))
+	_vat_status.text = tr("VAT_STATUS").replace("\\n", "\n") % [essence_cost, tr("VAT_CORE_COST") if core_cost else "", _clock(cooldown) if cooldown > 0 else tr("LAB_READY")]
 	if vat_level < 1 or hq_level < 2:
-		_vat_status.text += "\nUpgrade requires Homunculus Vat level 1 and HQ level 2 (current: %d / %d)." % [vat_level, hq_level]
+		_vat_status.text += "\n" + tr("VAT_REQUIRE_BUILDING") % [vat_level, hq_level]
 	if level < 3:
-		_vat_status.text += "\nMutation requires homunculus level 3 (current: %d)." % level
+		_vat_status.text += "\n" + tr("VAT_MUTATION_REQUIRED") % level
 	elif mutation_reason != "":
 		_vat_status.text += "\n" + mutation_reason
 	else:
-		_vat_status.text += "\nChoose a mutation above. The current mutation is highlighted."
+		_vat_status.text += "\n" + tr("VAT_CHOOSE_MUTATION")
 
 func _request_vat_upgrade() -> void:
 	if _vat_upgrade.disabled:
 		return
 	_vat_action = {"action_type": "HOM_UPGRADE", "payload": {"homunculus_id": _vat_item}}
-	_vat_confirm.dialog_text = "Upgrade %s? %s" % [_vat_item, _vat_upgrade.tooltip_text]
+	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
+	_vat_confirm.dialog_text = tr("VAT_CONFIRM_UPGRADE") % [GameLocalization.catalog("homunculus", _vat_item, "name", str(hom.get("name", _vat_item))), _vat_upgrade.tooltip_text]
 	_vat_confirm.popup_centered()
 
 func _request_vat_mutation(id: String) -> void:
@@ -952,7 +1022,8 @@ func _request_vat_mutation(id: String) -> void:
 	if index < 0 or _vat_mutations[index].disabled:
 		return
 	_vat_action = {"action_type": "HOM_MUTATE", "payload": {"homunculus_id": _vat_item, "mutation_id": id}}
-	_vat_confirm.dialog_text = "Apply %s to %s for 70 Essence, 2 Core and 1 Arcane Shard?\n%s" % [id.capitalize(), _vat_item, _vat_mutations[index].tooltip_text]
+	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
+	_vat_confirm.dialog_text = tr("VAT_CONFIRM_MUTATION").replace("\\n", "\n") % [GameLocalization.catalog("mutation", id, "name", id.capitalize()), GameLocalization.catalog("homunculus", _vat_item, "name", str(hom.get("name", _vat_item))), _vat_mutations[index].tooltip_text]
 	_vat_confirm.popup_centered()
 
 func _send_vat_action() -> void:
@@ -988,7 +1059,8 @@ func _update_forge_button() -> void:
 		if trait_entry is Dictionary:
 			var points := int(trait_entry.get("points", 0))
 			allocated += points
-			trait_lines.append("Equipped: %s | %d / 4" % [str(trait_entry.get("id", "Unknown")).replace("_", " ").capitalize(), points])
+			var trait_id := str(trait_entry.get("id", "Unknown"))
+			trait_lines.append(tr("FORGE_EQUIPPED") % [GameLocalization.catalog("stat", trait_id, "name", trait_id.replace("_", " ").capitalize()), points])
 	if is_instance_valid(_forge_info) and _registry != null:
 		var item: Dictionary = _registry.get_items().get(_forge_item, {})
 		var helper = preload("res://scripts/domain/item_progress.gd")
@@ -999,7 +1071,7 @@ func _update_forge_button() -> void:
 		var base: Dictionary = helper.effective_item(item, {_forge_item: {"level": 0}})
 		var level_one: Dictionary = helper.effective_item(item, {_forge_item: {"level": 1}})
 		var level_two: Dictionary = helper.effective_item(item, {_forge_item: {"level": 2}})
-		_forge_info.text = "%s\nSpecialization: %s | Unspent points: %d\n%s\nBase (Lv 0): %s\nLv 1: %s\nLv 2: %s\nCurrent: %s\nNext: %s" % [item.get("desc", ""), specialization.capitalize() if specialization != "" else "None", maxi(0, level - allocated), "\n".join(trait_lines), _format_values(base.get("effects", {})).replace("\n", ", "), _format_values(level_one.get("effects", {})).replace("\n", ", "), _format_values(level_two.get("effects", {})).replace("\n", ", "), _format_values(current.get("effects", {})).replace("\n", ", "), _format_values(next.get("effects", {})).replace("\n", ", ")]
+		_forge_info.text = tr("FORGE_INFO").replace("\\n", "\n") % [GameLocalization.catalog("item", _forge_item, "desc", str(item.get("desc", ""))), GameLocalization.catalog("specialization", specialization if specialization != "" else "none", "name", specialization.capitalize() if specialization != "" else "None"), maxi(0, level - allocated), "\n".join(trait_lines), _format_values(base.get("effects", {})).replace("\n", ", "), _format_values(level_one.get("effects", {})).replace("\n", ", "), _format_values(level_two.get("effects", {})).replace("\n", ", "), _format_values(current.get("effects", {})).replace("\n", ", "), _format_values(next.get("effects", {})).replace("\n", ", ")]
 	var forge_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("build_forge", {}).get("level", 0))
 	var cost := maxi(0, _forge_base_cost + level * _forge_cost_per_level)
 	var essence := int(_forge_state.get("wallet", {}).get("essence", 0))
@@ -1041,17 +1113,18 @@ func _update_forge_button() -> void:
 				enough = false
 		_fusion_donor.disabled = not can_trait
 		_fusion_button.disabled = not can_trait or has_offer or donor == _forge_item or donor == current_donor or level < 3 or int(progress.get(donor, {}).get("level", 0)) < 3 or imprint.is_empty() or not enough
-		_fusion_info.text = "Fusion: %s | Imprint: %s | Cost: %s\nPreview: %s" % [str(_registry.get_items().get(current_donor, {}).get("name", "None")), _format_values(imprint).replace("\n", ", "), _format_values(fusion_cost).replace("\n", ", "), _format_values(preview.get("effects", {})).replace("\n", ", ")]
+		_fusion_info.text = tr("FORGE_FUSION_INFO").replace("\\n", "\n") % [GameLocalization.catalog("item", current_donor, "name", str(_registry.get_items().get(current_donor, {}).get("name", tr("SPECIALIZATION_NONE_NAME")))), _format_values(imprint).replace("\n", ", "), _format_values(fusion_cost).replace("\n", ", "), _format_values(preview.get("effects", {})).replace("\n", ", ")]
 		if level < 3 or int(progress.get(donor, {}).get("level", 0)) < 3:
-			_fusion_info.text += "\nFusion requires both weapons at level 3 (current: %d / %d)." % [level, int(progress.get(donor, {}).get("level", 0))]
-	var reroll_text := "%d Essence, %d Core%s" % [int(reroll_cost.get("essence", 0)), int(reroll_cost.get("core", 0)), ", %d Arcane Shard" % shard_cost if shard_cost > 0 else ""]
+			_fusion_info.text += "\n" + tr("FORGE_FUSION_REQUIRES") % [level, int(progress.get(donor, {}).get("level", 0))]
+	var reroll_text := tr("FORGE_REROLL_PRICE") % [int(reroll_cost.get("essence", 0)), int(reroll_cost.get("core", 0)), tr("FORGE_SHARD_PRICE") % shard_cost if shard_cost > 0 else ""]
 	if is_instance_valid(_forge_reroll_button) and is_instance_valid(_forge_reroll_slot):
 		_forge_reroll_slot.visible = specialization != "" and not has_offer
 		_forge_reroll_slot.disabled = not can_trait or traits.size() != 3
 		for i in range(mini(3, traits.size())):
 			if traits[i] is Dictionary:
-				_forge_reroll_slot.set_item_text(i, "%s (%d)" % [str(traits[i].get("id", "Slot")).replace("_", " ").capitalize(), int(traits[i].get("points", 0))])
-		_forge_reroll_button.tooltip_text = "Reroll cost: " + reroll_text
+				var trait_id := str(traits[i].get("id", "Slot"))
+				_forge_reroll_slot.set_item_text(i, "%s (%d)" % [GameLocalization.catalog("stat", trait_id, "name", trait_id.replace("_", " ").capitalize()), int(traits[i].get("points", 0))])
+		_forge_reroll_button.tooltip_text = tr("FORGE_REROLL_COST") + " " + reroll_text
 		_forge_reroll_button.disabled = not can_trait or has_offer or specialization == "" or traits.size() != 3 or reroll_cost.is_empty() or essence < int(reroll_cost.get("essence", 0)) or int(wallet.get("core", 0)) < int(reroll_cost.get("core", 0)) or int(wallet.get("arcane_shard", 0)) < shard_cost
 	for i in range(_forge_trait_buttons.size()):
 		var button := _forge_trait_buttons[i]
@@ -1061,23 +1134,24 @@ func _update_forge_button() -> void:
 			var points := int(traits[slot_index].get("points", 0)) if slot_index >= 0 and slot_index < traits.size() and traits[slot_index] is Dictionary else 0
 			var pool: Dictionary = balance_data.get("balance", {}).get("forge_trait_pool", {}).get(specialization, {}) if balance_data is Dictionary else {}
 			var bonus := float(pool.get(option, 0))
-			button.text = "%s\n+%s / point | +%s total" % [option.replace("_", " ").capitalize(), Stats.stat_value(option, bonus), Stats.stat_value(option, bonus * points)]
-			button.tooltip_text = "%s per point | %s total at %d points" % [Stats.stat_value(option, bonus), Stats.stat_value(option, bonus * points), points]
+			button.text = tr("FORGE_TRAIT_OFFER").replace("\\n", "\n") % [GameLocalization.catalog("stat", option, "name", option.replace("_", " ").capitalize()), Stats.stat_value(option, bonus), Stats.stat_value(option, bonus * points)]
+			button.tooltip_text = tr("FORGE_TRAIT_OFFER_HINT") % [Stats.stat_value(option, bonus), Stats.stat_value(option, bonus * points), points]
 			button.disabled = not can_trait or options.size() != 3 or option == "" or bonus <= 0
 		elif specialization == "":
-			button.text = ["Aggressive", "Defensive", "Technical"][i]
-			button.tooltip_text = "Specialize: %d Essence, %d Core" % [int(specialize_cost.get("essence", 0)), int(specialize_cost.get("core", 0))]
+			button.text = ["FORGE_AGGRESSIVE", "FORGE_DEFENSIVE", "FORGE_TECHNICAL"][i]
+			button.tooltip_text = tr("FORGE_SPECIALIZE") % [int(specialize_cost.get("essence", 0)), int(specialize_cost.get("core", 0))]
 			button.disabled = not can_trait or level < 1 or specialize_cost.is_empty() or essence < int(specialize_cost.get("essence", 0)) or int(_forge_state.get("wallet", {}).get("core", 0)) < int(specialize_cost.get("core", 0))
 		else:
 			var slot: Variant = traits[i] if i < traits.size() else {}
-			button.text = "+1 " + (str(slot.get("id", "Slot %d" % (i + 1))).replace("_", " ").capitalize() if slot is Dictionary else "Slot %d" % (i + 1))
-			button.tooltip_text = "Allocate one point"
+			var trait_id := str(slot.get("id", "Slot %d" % (i + 1))) if slot is Dictionary else "Slot %d" % (i + 1)
+			button.text = "+1 " + GameLocalization.catalog("stat", trait_id, "name", trait_id.replace("_", " ").capitalize())
+			button.tooltip_text = "FORGE_ALLOCATE"
 			button.disabled = not can_trait or has_offer or traits.size() != 3 or not slot is Dictionary or int(slot.get("points", 4)) >= 4 or allocated >= level
-	_forge_status.text = "Level %d / 10 | Next: %s | Essence: %d / %d" % [level, str(level + 1) if level < 10 else "MAX", essence, cost]
+	_forge_status.text = tr("FORGE_STATUS") % [level, str(level + 1) if level < 10 else "MAX", essence, cost]
 	if specialization != "":
-		_forge_status.text += " | Reroll: " + reroll_text
+		_forge_status.text += " | " + tr("FORGE_REROLL") + " " + reroll_text
 	if has_offer:
-		_forge_status.text += " | Choose a reroll option"
+		_forge_status.text += " | " + tr("FORGE_CHOOSE_REROLL")
 	if _forge_pending != "" or outstanding != "":
 		_forge_status.text += " | Waiting for confirmation / Reconnecting"
 	elif _forge_debug:
@@ -1087,16 +1161,17 @@ func _update_forge_button() -> void:
 	elif not _forge_synced:
 		_forge_status.text += " | Waiting for server state"
 	elif forge_level < 1:
-		_forge_status.text += " | Build Forge first"
+		_forge_status.text += " | " + tr("FORGE_BUILD_FIRST")
 	elif level < 10 and essence < cost:
-		_forge_status.text += " | Insufficient Essence"
+		_forge_status.text += " | " + tr("FORGE_INSUFFICIENT_ESSENCE")
 
 func _request_forge_confirmation() -> void:
 	if _forge_button == null or _forge_button.disabled:
 		return
 	var level := int(_forge_state.get("item_progress", {}).get(_forge_item, {}).get("level", 0))
 	_forge_confirm_action = "FORGE_UPGRADE"
-	_forge_confirm.dialog_text = "Upgrade %s from level %d to %d for %d Essence?" % [_forge_item, level, level + 1, maxi(0, _forge_base_cost + level * _forge_cost_per_level)]
+	var item: Dictionary = _registry.get_items().get(_forge_item, {})
+	_forge_confirm.dialog_text = tr("FORGE_CONFIRM_UPGRADE") % [GameLocalization.catalog("item", _forge_item, "name", str(item.get("name", _forge_item))), level, level + 1, maxi(0, _forge_base_cost + level * _forge_cost_per_level)]
 	_forge_confirm.popup_centered()
 
 func _request_trait_action(index: int) -> void:
@@ -1112,15 +1187,16 @@ func _request_trait_action(index: int) -> void:
 		_forge_confirm_action = "FORGE_CHOOSE_REROLL"
 		_forge_confirm_payload["slot"] = int(offer.get("slot", -1))
 		_forge_confirm_payload["trait_id"] = options[index]
-		_forge_confirm.dialog_text = "Choose %s?\n%s" % [_forge_trait_buttons[index].text, _forge_trait_buttons[index].tooltip_text]
+		_forge_confirm.dialog_text = tr("FORGE_CONFIRM_CHOICE").replace("\\n", "\n") % [_forge_trait_buttons[index].text, _forge_trait_buttons[index].tooltip_text]
 	elif str(state.get("specialization", "")) == "":
 		_forge_confirm_action = "FORGE_SPECIALIZE"
 		_forge_confirm_payload["path"] = ["aggressive", "defensive", "technical"][index]
-		_forge_confirm.dialog_text = "Specialize %s as %s?\n%s" % [_forge_item, _forge_confirm_payload.path, _forge_trait_buttons[index].tooltip_text]
+		var item: Dictionary = _registry.get_items().get(_forge_item, {})
+		_forge_confirm.dialog_text = tr("FORGE_CONFIRM_SPECIALIZE") % [GameLocalization.catalog("item", _forge_item, "name", str(item.get("name", _forge_item))), GameLocalization.catalog("specialization", str(_forge_confirm_payload.path), "name", str(_forge_confirm_payload.path))] + "\n" + _forge_trait_buttons[index].tooltip_text
 	else:
 		_forge_confirm_action = "FORGE_ALLOCATE_TRAIT"
 		_forge_confirm_payload["slot"] = index
-		_forge_confirm.dialog_text = "Allocate one point to %s?" % _forge_trait_buttons[index].text.trim_prefix("+1 ")
+		_forge_confirm.dialog_text = tr("FORGE_CONFIRM_ALLOCATE") % _forge_trait_buttons[index].text.trim_prefix("+1 ")
 	_forge_confirm.popup_centered()
 
 func _request_forge_reroll() -> void:
@@ -1128,7 +1204,7 @@ func _request_forge_reroll() -> void:
 		return
 	_forge_confirm_action = "FORGE_REROLL_TRAIT"
 	_forge_confirm_payload = {"item_id": _forge_item, "slot": _forge_reroll_slot.selected}
-	_forge_confirm.dialog_text = "Reroll %s for %s?" % [_forge_reroll_slot.get_item_text(_forge_reroll_slot.selected), _forge_reroll_button.tooltip_text.trim_prefix("Reroll cost: ")]
+	_forge_confirm.dialog_text = tr("FORGE_CONFIRM_REROLL") % [_forge_reroll_slot.get_item_text(_forge_reroll_slot.selected), _forge_reroll_button.tooltip_text.trim_prefix(tr("FORGE_REROLL_COST") + " ")]
 	_forge_confirm.popup_centered()
 
 func _request_fusion() -> void:
@@ -1136,7 +1212,8 @@ func _request_fusion() -> void:
 		return
 	_forge_confirm_action = "FORGE_FUSE"
 	_forge_confirm_payload = {"item_id": _forge_item, "donor_id": str(_fusion_donor.get_item_metadata(_fusion_donor.selected))}
-	_forge_confirm.dialog_text = "Fuse %s with %s? Resources are spent permanently; the donor is not consumed.\n%s" % [_forge_item, _fusion_donor.get_item_text(_fusion_donor.selected), _fusion_info.text]
+	var item: Dictionary = _registry.get_items().get(_forge_item, {})
+	_forge_confirm.dialog_text = tr("FORGE_FUSION_CONFIRM").replace("\\n", "\n") % [GameLocalization.catalog("item", _forge_item, "name", str(item.get("name", _forge_item))), _fusion_donor.get_item_text(_fusion_donor.selected), _fusion_info.text]
 	_forge_confirm.popup_centered()
 
 func _send_forge_confirmed() -> void:
@@ -1246,7 +1323,7 @@ func _apply_debug_trait_action() -> void:
 		return
 	for resource in cost:
 		if int(wallet.get(resource, 0)) < int(cost[resource]):
-			_forge_status.text = "Insufficient resources in local debug."
+			_forge_status.text = tr("FORGE_DEBUG_INSUFFICIENT")
 			debug.free()
 			return
 		wallet[resource] = int(wallet.get(resource, 0)) - int(cost[resource])
@@ -1257,9 +1334,9 @@ func _apply_debug_trait_action() -> void:
 		_forge_state = state
 		debug_forge_updated.emit(state)
 		_update_forge_button()
-		_forge_status.text += " | Local debug action saved"
+		_forge_status.text += " | " + tr("FORGE_DEBUG_SAVED")
 	else:
-		_forge_status.text = "Could not save local debug state."
+		_forge_status.text = tr("LAB_DEBUG_SAVE_FAILED")
 	debug.free()
 
 func _send_forge_upgrade() -> void:
@@ -1269,7 +1346,7 @@ func _send_forge_upgrade() -> void:
 		var debug := DebugFlags.new()
 		debug.reload()
 		if not debug.unlock_all_buildings:
-			_forge_status.text = "Debug mode is no longer active."
+			_forge_status.text = tr("FORGE_DEBUG_DISABLED")
 			debug.free()
 			return
 		var next := debug.load_lab_state()
@@ -1280,7 +1357,7 @@ func _send_forge_upgrade() -> void:
 		var wallet: Dictionary = next.get("wallet", {})
 		var forge: Dictionary = next.get("lab", {}).get("buildings", {}).get("build_forge", {})
 		if level >= 10 or int(forge.get("level", 0)) < 1 or int(wallet.get("essence", 0)) < cost:
-			_forge_status.text = "Upgrade requirements are not met."
+			_forge_status.text = tr("FORGE_REQUIREMENTS")
 			debug.free()
 			return
 		wallet["essence"] = int(wallet.get("essence", 0)) - cost
@@ -1289,14 +1366,14 @@ func _send_forge_upgrade() -> void:
 		next["wallet"] = wallet
 		next["item_progress"] = progress
 		if not debug.save_lab_state(next):
-			_forge_status.text = "Could not save local debug state."
+			_forge_status.text = tr("LAB_DEBUG_SAVE_FAILED")
 			debug.free()
 			return
 		debug.free()
 		_forge_state = next
 		debug_forge_updated.emit(next)
 		_update_forge_button()
-		_forge_status.text += " | Upgrade saved"
+		_forge_status.text += " | " + tr("FORGE_UPGRADE_SAVED")
 		return
 	if _backend == null:
 		return
@@ -1331,5 +1408,8 @@ func _format_values(values: Dictionary) -> String:
 	for key in values:
 		var value: Variant = values[key]
 		var formatted := _format_values(value).replace("\n", ", ") if value is Dictionary else Stats.stat_value(str(key), value)
-		lines.append("%s: %s" % [str(key).replace("_", " ").capitalize(), formatted])
+		var fallback := str(key).replace("_", " ").capitalize()
+		var resource := GameLocalization.catalog("resource", str(key), "name", fallback)
+		var type_name := GameLocalization.catalog("type", str(key), "name", resource)
+		lines.append("%s: %s" % [GameLocalization.catalog("stat", str(key), "name", type_name), formatted])
 	return "\n".join(lines)

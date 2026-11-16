@@ -75,7 +75,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="Background/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "TRADE HALL"
+text = "TRADE_TITLE"
 theme_override_font_sizes/font_size = 28
 
 [node name="Spacer" type="Control" parent="Background/Margin/RootVBox/Header"]
@@ -84,7 +84,7 @@ size_flags_horizontal = 3
 
 [node name="BackButton" type="Button" parent="Background/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "BACK"
+text = "UI_BACK_UPPER"
 
 [node name="Tabs" type="TabContainer" parent="Background/Margin/RootVBox"]
 layout_mode = 2
@@ -111,7 +111,7 @@ theme_override_constants/separation = 10
 
 [node name="OrdersHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
-text = "Open Orders"
+text = "TRADE_OPEN_ORDERS"
 
 [node name="FilterRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
@@ -119,7 +119,7 @@ theme_override_constants/separation = 8
 
 [node name="FilterLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow"]
 layout_mode = 2
-text = "Filter"
+text = "TRADE_FILTER"
 
 [node name="MarketFilter" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow"]
 layout_mode = 2
@@ -127,7 +127,7 @@ size_flags_horizontal = 3
 
 [node name="RefreshButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/FilterRow"]
 layout_mode = 2
-text = "Refresh"
+text = "WORLD_REFRESH"
 
 [node name="OrdersList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
@@ -135,7 +135,7 @@ theme_override_constants/separation = 6
 
 [node name="CreateHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
-text = "Create Sell Order"
+text = "TRADE_CREATE_SELL"
 
 [node name="CreateSell" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
@@ -147,7 +147,7 @@ theme_override_constants/separation = 8
 
 [node name="ResourceLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource"]
 layout_mode = 2
-text = "Resource"
+text = "TRADE_RESOURCE"
 
 [node name="SellResource" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource"]
 layout_mode = 2
@@ -159,7 +159,7 @@ theme_override_constants/separation = 8
 
 [node name="AmountLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount"]
 layout_mode = 2
-text = "Amount"
+text = "TRADE_AMOUNT"
 
 [node name="SellAmount" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount"]
 layout_mode = 2
@@ -172,7 +172,7 @@ theme_override_constants/separation = 8
 
 [node name="PriceLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice"]
 layout_mode = 2
-text = "Price (Essence)"
+text = "TRADE_PRICE"
 
 [node name="SellPrice" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice"]
 layout_mode = 2
@@ -181,7 +181,7 @@ placeholder_text = "e.g., 5"
 
 [node name="CreateSellButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
 layout_mode = 2
-text = "Create Sell Order"
+text = "TRADE_CREATE_SELL"
 
 [node name="SellErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
 layout_mode = 2
@@ -190,7 +190,7 @@ modulate = Color(1, 0.35, 0.35, 1)
 
 [node name="MyOrdersHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
-text = "My Orders"
+text = "TRADE_MY_ORDERS"
 
 [node name="MyOrdersList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
@@ -220,12 +220,12 @@ theme_override_constants/separation = 8
 
 [node name="JobsHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/JobsHeaderRow"]
 layout_mode = 2
-text = "Available Jobs"
+text = "TRADE_AVAILABLE_JOBS"
 size_flags_horizontal = 3
 
 [node name="RefreshJobsButton" type="Button" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/JobsHeaderRow"]
 layout_mode = 2
-text = "Refresh"
+text = "WORLD_REFRESH"
 
 [node name="JobsList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
@@ -233,7 +233,7 @@ theme_override_constants/separation = 6
 
 [node name="RunsHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
-text = "My Runs"
+text = "TRADE_MY_RUNS"
 
 [node name="RunsList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
@@ -241,7 +241,7 @@ theme_override_constants/separation = 6
 
 [node name="CreateJobHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
-text = "Create Job"
+text = "TRADE_CREATE_JOB"
 
 [node name="CreateJob" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
@@ -253,7 +253,7 @@ theme_override_constants/separation = 8
 
 [node name="InputLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
 layout_mode = 2
-text = "Input"
+text = "TRADE_INPUT"
 
 [node name="JobInput" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
 layout_mode = 2
@@ -270,7 +270,7 @@ theme_override_constants/separation = 8
 
 [node name="OutputLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
 layout_mode = 2
-text = "Output"
+text = "TRADE_OUTPUT"
 
 [node name="JobOutput" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
 layout_mode = 2
@@ -292,7 +292,7 @@ theme_override_constants/separation = 8
 
 [node name="DurationLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowDuration"]
 layout_mode = 2
-text = "Duration (sec)"
+text = "TRADE_DURATION"
 
 [node name="JobDuration" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowDuration"]
 layout_mode = 2
@@ -305,7 +305,7 @@ theme_override_constants/separation = 8
 
 [node name="CommissionLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission"]
 layout_mode = 2
-text = "Commission"
+text = "TRADE_COMMISSION"
 
 [node name="JobCommission" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission"]
 layout_mode = 2
@@ -322,7 +322,7 @@ theme_override_constants/separation = 8
 
 [node name="QueueLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowQueue"]
 layout_mode = 2
-text = "Queue Limit"
+text = "TRADE_QUEUE_LIMIT"
 
 [node name="JobQueueLimit" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowQueue"]
 layout_mode = 2
@@ -331,7 +331,7 @@ placeholder_text = "e.g., 2"
 
 [node name="CreateJobButton" type="Button" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
 layout_mode = 2
-text = "Create Job"
+text = "TRADE_CREATE_JOB"
 
 [node name="JobErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
 layout_mode = 2

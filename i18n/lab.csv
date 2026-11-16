@@ -1,0 +1,251 @@
+keys,en,es
+LAB_FUNCTIONS_SOON,Specialized functions: Coming Soon.,Funciones especializadas: disponibles pronto.
+LAB_ESTIMATED_RATE,Estimated base: %.0f → %.0f Essence/h (excludes boosts).,Base estimada: %.0f → %.0f esencia/h (sin impulsos).
+LAB_CAPACITY,Capacity: %d → %d.,Capacidad: %d → %d.
+LAB_LEVEL_RANGE,Level %s / %s%s,Nivel %s / %s%s
+LAB_REQUIRES_HQ,Requires HQ level %d to unlock (current: %d).,Requiere nivel %d de la sala para desbloquearse (actual: %d).
+LAB_MAX_LEVEL,Maximum level reached,Nivel máximo alcanzado
+LAB_UPGRADE_REQUIRES_HQ,Upgrade to level %d requires HQ level %d (current: %d).,La mejora al nivel %d requiere nivel %d de la sala (actual: %d).
+LAB_BUILD_FIRST,Build this structure to use its functions.,Construye esta estructura para usar sus funciones.
+LAB_BUILD,Build,Construir
+LAB_OFFLINE,Offline or awaiting server state. Actions unavailable.,Sin conexión o esperando el estado del servidor. Acciones no disponibles.
+LAB_ACTION_PENDING,Action pending server confirmation.,Acción pendiente de confirmación del servidor.
+LAB_STORED,Stored at last update: %.1f Essence.,Almacenado en la última actualización: %.1f de esencia.
+LAB_LOCAL_DEBUG,Local debug,Depuración local
+LAB_LOCAL_DEBUG_COOLDOWN,Local debug - cooldown 1s,Depuración local: espera de 1 s
+LAB_START,Start,Iniciar
+LAB_LEVEL,Level %s,Nivel %s
+LAB_NO_COST_DATA,No cost data,Sin datos de coste
+LAB_NO_COST,No cost,Sin coste
+LAB_READY,Ready,Listo
+LAB_COMPLETED,Completed,Completada
+LAB_IN_PROGRESS,In progress: %s,En curso: %s
+LAB_COOLDOWN,Cooldown: %s,Espera: %s
+LAB_QUEUED,Queued | Starts in %s,En cola | Comienza en %s
+LAB_QUEUE_FULL,Queue full,Cola llena
+LAB_REQUIRES,Requires: %s,Requiere: %s
+LAB_QUEUE_COST,Queue cost:,Coste de cola:
+LAB_INSUFFICIENT,Insufficient resources,Recursos insuficientes
+LAB_INSUFFICIENT_DETAIL,Insufficient resources:,Recursos insuficientes:
+LAB_QUEUE_BUTTON,Queue (+%d Essence),Encolar (+%d esencia)
+LAB_QUEUE_EMPTY,Queue 0/1,Cola 0/1
+LAB_QUEUE_ITEM,Queue 1/1: %s,Cola 1/1: %s
+LAB_UNLOCK_HQ,Unlock at HQ Lv %s,Se desbloquea al nivel %s de la sala
+LAB_SPELL_RESEARCH_TITLE,Spell Research,Estudio de hechizos
+LAB_ACTIVE,Active: %s,Activo: %s
+LAB_SUCCESS,Success: %d%%,Éxito: %d%%
+LAB_REQUIRE_VOLATILE,Requires Volatile route for effect,Requiere la ruta volátil para surtir efecto
+LAB_REQUIRE_MUTAGENIC,Requires Mutagenic route for effect,Requiere la ruta mutagénica para surtir efecto
+LAB_EXPERIMENT_SUMMARY,"Stability: %d / 3 failures | +%d percentage points next try\nFailure increases the next chance; success resets stability.","Estabilidad: %d / 3 fallos | +%d puntos porcentuales en el próximo intento\nUn fallo aumenta la probabilidad siguiente; un éxito reinicia la estabilidad."
+LAB_EXPERIMENT_LAST,Last: %s - %s (%.0f%%),Último: %s - %s (%.0f%%)
+LAB_SUCCESS_LABEL,Success,Éxito
+LAB_FAILURE_LABEL,Failed,Fallo
+LAB_START_EXPERIMENT,Start %s? Cost: %s,¿Iniciar %s? Coste: %s
+INVENTORY_TAB_ENTITIES,Entities,Entidades
+INVENTORY_TAB_BUILDS,Builds,Equipo
+INVENTORY_TAB_HOMUNCULI,Homunculi,Familiares
+INVENTORY_TAB_SPELLS,Spells,Hechizos
+INVENTORY_TAB_TECHS,Techs,Artes
+INVENTORY_NO_ENTRIES,No entries available.,No hay elementos disponibles.
+INVENTORY_NO_DATA,No data available,No hay datos disponibles
+INVENTORY_ROW_LEVEL,Level %d / 10,Nivel %d / 10
+INVENTORY_ROW_UNAVAILABLE,Level unavailable,Nivel no disponible
+FORGE_CATALOG,WEAPONS CATALOG,ARMAS DISPONIBLES
+VAT_CATALOG,HOMUNCULUS CATALOG,FAMILIARES DISPONIBLES
+LAB_OPEN_INVENTORY,Open Inventory,Abrir inventario
+VAT_MUTATIONS,Mutations,Mutaciones
+VAT_DESCRIPTION,"%s\nLevel %d / 10 | Mutation: %s\nCurrent: %s\nNext: %s\nMutations: Catalyst +1 Power | Vitality +5 HP | Resonance +3%% favorable type bonus\nSynergies:\n%s","%s\nNivel %d / 10 | Mutación: %s\nActual: %s\nSiguiente: %s\nMutaciones: Catalizador +1 potencia | Vitalidad +5 PV | Resonancia +3%% de daño favorable\nSinergias:\n%s"
+VAT_EQUIPPED,Currently equipped.,Actualmente equipada.
+VAT_SELECT,Select this mutation.,Selecciona esta mutación.
+FORGE_INFO,"%s\nSpecialization: %s | Unspent points: %d\n%s\nBase (Lv 0): %s\nLv 1: %s\nLv 2: %s\nCurrent: %s\nNext: %s","%s\nEspecialización: %s | Puntos sin gastar: %d\n%s\nBase (Nv 0): %s\nNv 1: %s\nNv 2: %s\nActual: %s\nSiguiente: %s"
+FORGE_STATUS,Level %d / 10 | Next: %s | Essence: %d / %d,Nivel %d / 10 | Siguiente: %s | Esencia: %d / %d
+FORGE_AGGRESSIVE,Aggressive,Agresiva
+FORGE_DEFENSIVE,Defensive,Defensiva
+FORGE_TECHNICAL,Technical,Precisa
+FORGE_ALLOCATE,Allocate one point,Asignar un punto
+FORGE_SPECIALIZE,"Specialize: %d Essence, %d Core","Especialización: %d de esencia, %d núcleos"
+FORGE_EQUIPPED,Equipped: %s | %d / 4,Equipado: %s | %d / 4
+SPECIALIZATION_AGGRESSIVE_NAME,Aggressive,Agresiva
+SPECIALIZATION_TECHNICAL_NAME,Technical,Técnica
+LOADOUT_MODE,Mode: %s,Modo: %s
+LOADOUT_DUNGEON,Dungeons — Loadout,Mazmorras — Equipo
+LOADOUT_HUNT,Boss Hunt,Caza de jefes
+LOADOUT_SELECT_ENTITY,(Select an entity),(Selecciona una entidad)
+LOADOUT_HOMUNCULUS,Homunculus: %s,Homúnculo: %s
+LOADOUT_TYPES,Types: %s,Tipos: %s
+LOADOUT_CHANGE_SPELLS,Change Spells,Cambiar hechizos
+LOADOUT_SPELLS_EMPTY,No additional spells unlocked for this entity,Esta entidad no tiene más hechizos desbloqueados
+LOADOUT_CHANGE_SPELLS_HINT,Change spells for this entity,Cambiar los hechizos de esta entidad
+LOADOUT_CONFIGURE_SPELLS,Configure Spells   |   %s - %s   |   4/4 Equipped,Configurar hechizos   |   %s - %s   |   4/4 equipados
+LOADOUT_SPELL_DUPLICATE,Already equipped in another slot.,Ya está equipado en otra ranura.
+LOADOUT_SPELL_DISTINCT,Each slot must contain a different available spell.,Cada ranura debe contener un hechizo disponible distinto.
+ROUTE_STABLE_NAME,Stable,Estable
+ROUTE_VOLATILE_NAME,Volatile,Volátil
+ROUTE_MUTAGENIC_NAME,Mutagenic,Mutagénica
+ROUTE_COMPACT_NAME,Compact,Compacta
+ROUTE_REACTIVE_NAME,Reactive,Reactiva
+ROUTE_SEALED_NAME,Sealed,Sellada
+ROUTE_SCIENTIFIC_NAME,Scientific,Científica
+ROUTE_CHAOTIC_NAME,Chaotic,Caótica
+ROUTE_INDUSTRIAL_NAME,Industrial,Industrial
+STAT_DISADVANTAGE_REDUCTION_NAME,Disadvantage Reduction,Reducción de desventaja
+STAT_DOT_TRUE_NAME,Dot True,Daño verdadero periódico
+STAT_EVASION_PCT_NAME,Evasion Pct,Evasión
+STAT_GUARD_FLAT_NAME,Guard Flat,Defensa
+STAT_IGNORE_REFLECT_CHANCE_NAME,Ignore Reflect Chance,Probabilidad de ignorar reflejo
+STAT_POWER_FLAT_NAME,Power Flat,Potencia
+STAT_REFLECT_PCT_NAME,Reflect Pct,Reflejo
+STAT_TEMPO_FLAT_NAME,Tempo Flat,Ritmo
+STAT_TEMPO_ON_WIN_NAME,Tempo On Win,Ritmo al ganar
+STAT_TRUE_ON_HIT_NAME,True On Hit,Daño verdadero al golpear
+STAT_VULN_ON_HIT_NAME,Vuln On Hit,Vulnerabilidad al golpear
+STAT_WARD_PCT_NAME,Ward Pct,Protección
+STAT_HP_FLAT_NAME,Hp Flat,PV
+STAT_INCOMING_MULT_NAME,Incoming Mult,Daño recibido
+STAT_FAVORABLE_TYPE_BONUS_NAME,Favorable Type Bonus,Bonificación de tipo favorable
+ROLE_BRAWLER_NAME,Brawler,Luchador
+ROLE_TRICKSTER_NAME,Trickster,Embaucador
+ROLE_TANK_NAME,Tank,Defensor
+ROLE_RULEBREAKER_NAME,Rulebreaker,Transgresor
+ROLE_DOT_NAME,Dot,Daño periódico
+ROLE_COUNTER_NAME,Counter,Contraataque
+RARITY_BASIC_NAME,Basic,Básico
+RARITY_ADVANCED_NAME,Advanced,Avanzado
+LAB_RESEARCH_INFO,Time: %ss | Requires: %s | Flag: %s,Tiempo: %ss | Requiere: %s | Indicador: %s
+LAB_RESEARCH_EXTRA, | Additional effect: Coming Soon, | Efecto adicional: disponible pronto
+VAT_NEEDS_VAT,Build the Homunculus Vat first.,Construye primero el criadero.
+VAT_NEEDS_LEVEL,Requires homunculus level 3 (current: %d).,Requiere un homúnculo de nivel 3 (actual: %d).
+VAT_NEXT_MUTATION,Next mutation available in %s.,Próxima mutación disponible en %s.
+VAT_NEEDS_RESOURCES,"Insufficient resources: %d/70 Essence, %d/2 Core, %d/1 Arcane Shard.","Recursos insuficientes: %d/70 de esencia, %d/2 núcleos, %d/1 fragmento arcano."
+VAT_UPGRADE_COST,Cost: %d Essence%s,Coste: %d de esencia%s
+VAT_CORE_COST,", 1 Core",", 1 núcleo"
+VAT_STATUS,"Upgrade: %d Essence%s | Mutation: 70 Essence, 2 Core, 1 Arcane Shard\nMutation cooldown: %s","Mejora: %d de esencia%s | Mutación: 70 de esencia, 2 núcleos, 1 fragmento arcano\nEspera de mutación: %s"
+VAT_REQUIRE_BUILDING,Upgrade requires Homunculus Vat level 1 and HQ level 2 (current: %d / %d).,La mejora requiere criadero de nivel 1 y sala de nivel 2 (actual: %d / %d).
+FORGE_CONFIRM_UPGRADE,Upgrade %s from level %d to %d for %d Essence?,¿Mejorar %s del nivel %d al %d por %d de esencia?
+FORGE_CONFIRM_SPECIALIZE,Specialize %s as %s?,¿Especializar %s en %s?
+FORGE_CONFIRM_ALLOCATE,Allocate one point to %s?,¿Asignar un punto a %s?
+LAB_ENTER_WORLD_GATE,Enter World Gate,Entrar al portal
+LAB_OPEN_TRADE_HALL,Open Trade Hall,Abrir sala de comercio
+LAB_MAX_BUILDING_LEVEL,Maximum building level reached.,Nivel máximo del edificio alcanzado.
+LAB_NOT_BUILT_DEBUG,Not built (level 0); debug may bypass requirements.,Sin construir (nivel 0); la depuración puede omitir requisitos.
+LOADOUT_DUPLICATE_ITEM,You can't choose the same item twice,No puedes elegir el mismo objeto dos veces
+LOADOUT_CHOOSE_ENTITY_WEAPONS,Choose an entity and different weapons.,Elige una entidad y armas distintas.
+LOADOUT_CHOOSE_FOUR_SPELLS,Choose four distinct spells.,Elige cuatro hechizos distintos.
+LOADOUT_WAIT_SPELLS,Wait for spell loadout confirmation.,Espera la confirmación de los hechizos equipados.
+LOADOUT_START_RUN,Start Run,Iniciar partida
+LOADOUT_READY,Ready,Listo
+LOADOUT_WEAPON_LEVEL,%s  |  Level %d\n%s\n%s,%s  |  Nivel %d\n%s\n%s
+FORGE_TRAIT_OFFER,%s\n+%s / point | +%s total,%s\n+%s / punto | +%s en total
+FORGE_TRAIT_OFFER_HINT,%s per point | %s total at %d points,%s por punto | %s en total con %d puntos
+PANEL_STORAGE,STORAGE,BODEGA
+PANEL_STORAGE_TEXT,"Capacity: %s   |   Next level: %s\nResources:\n%s","Capacidad: %s   |   Siguiente nivel: %s\nRecursos:\n%s"
+PANEL_MARKET,MARKET AND JOBS,COMERCIO Y ENCARGOS
+PANEL_MARKET_TEXT,Open Trade Hall to manage market orders and trade jobs.,Abre la sala de comercio para gestionar pedidos y encargos.
+PANEL_WORLD,WORLD ACCESS,ACCESO AL MUNDO
+PANEL_WORLD_TEXT,Open World Gate to access the available zones.,Abre el portal para acceder a las zonas disponibles.
+PANEL_PRODUCTION,PRODUCTION,REACTOR
+PANEL_PRODUCTION_TEXT,Collect Essence to charge the reactor.,Recoge esencia para cargar el reactor.
+PANEL_LAB_PROGRESS,LAB PROGRESS,PROGRESO DEL LABORATORIO
+PANEL_LAB_PROGRESS_TEXT,"Unlocked: %s\nNext HQ level: %s","Desbloqueado: %s\nSiguiente nivel de la sala: %s"
+PANEL_NO_UNLOCKS,No additional unlocks,No hay más desbloqueos
+PANEL_ANOMALY,ANOMALY DETECTED,ALERTA DE RIESGO
+PANEL_ANOMALY_TEXT,"Seal: 20 Essence + 1 Arcane Shard.\nInvestigate: 50% nothing, 40% 2 Arcane Shards, 10% 1 Time Crystal.","Sellar: 20 de esencia y 1 fragmento arcano.\nInvestigar: 50% nada, 40% 2 fragmentos arcanos, 10% 1 cristal de tiempo."
+HQ_DIRECTIVE_PRODUCTION,Production +10%,Ritmo +10%
+HQ_DIRECTIVE_RESEARCH,Research time -10%,Tiempo de estudio -10%
+HQ_DIRECTIVE_EXPERIMENTATION,Experiment chance +5%,Probabilidad +5%
+DIRECTIVE_PRODUCTION_NAME,Production,Producción
+DIRECTIVE_RESEARCH_NAME,Research,Investigación
+DIRECTIVE_EXPERIMENTATION_NAME,Experimentation,Experimentación
+HQ_ACTIVE,Active: %s | %s remaining,Activa: %s | quedan %s
+HQ_READY,Ready to choose,Lista para elegir
+REACTOR_ACTIVATE,Activate Overcharge,Activar sobrecarga
+REACTOR_REWARD,Reward: 15 Essence and 1 Core,Recompensa: 15 de esencia y 1 núcleo
+REACTOR_STATUS,"Rate: %.1f Essence / hour | Stored: %.1f\n%d / %d collected | %s\nReward: %s","Ritmo: %.1f de esencia / hora | Almacenado: %.1f\n%d / %d recogidos | %s\nRecompensa: %s"
+REACTOR_READY,Ready to activate,Listo para activar
+REACTOR_CHARGING,Charging,Cargando
+REACTOR_REQUIRES,Requires Essence Reactor level 1.,Requiere un reactor de esencia de nivel 1.
+ANOMALY_LEVEL,Level %d | %s,Nivel %d | %s
+ANOMALY_REQUIRES,Requires Anomaly Containment level 1 and HQ level 5 (current: %d / %d).,Requiere control de riesgos de nivel 1 y sala de nivel 5 (actual: %d / %d).
+ANOMALY_LAST,Last: %s | %s,Última: %s | %s
+ANOMALY_NO_REWARD,No reward,Sin recompensa
+ANOMALY_SEAL_NAME,Seal,Sellar
+ANOMALY_INVESTIGATE_NAME,Investigate,Investigar
+SYNC_CALIBRATION,CALIBRATION PROJECT,PROYECTO DE AJUSTE
+SYNC_DESCRIPTION,Echo (NPC)\nCalibrate the Nexus to earn resources.,Echo (PNJ)\nAjusta el nexo para obtener recursos.
+SYNC_PROGRESS,Project in progress,Proyecto en curso
+SYNC_START_READY,Ready to start,Listo para iniciar
+SYNC_REWARD,%s\nReward: %s,%s\nRecompensa: %s
+SYNC_REQUIRES,Requires Sync Nexus level 1 and HQ level 4 (current: %d / %d).,Requiere nexo de enlace de nivel 1 y sala de nivel 4 (actual: %d / %d).
+SYNC_START,START,INICIAR
+SYNC_CLAIM,CLAIM,RECOGER
+SYNC_DUNGEONS,DUNGEONS,MAZMORRAS
+SYNC_ENTER_DUNGEON,ENTER DUNGEON,ENTRAR EN MAZMORRA
+SYNC_MONTHLY_RANKING,MONTHLY RANKING,CLASIFICACION MENSUAL
+SYNC_PREVIOUS_MONTH,Previous Month,Mes anterior
+ANOMALY_ACTION_SEAL,SEAL,SELLAR
+ANOMALY_ACTION_INVESTIGATE,INVESTIGATE,INVESTIGAR
+ANOMALY_CONFIRM_TITLE,Resolve anomaly,Resolver anomalía
+ANOMALY_CONFIRM,Resolve this anomaly by %s?,¿Confirmar acción: %s?
+LOADOUT_STAT_POWER_FLAT_NAME,Power,Potencia
+LOADOUT_STAT_GUARD_FLAT_NAME,Guard,Defensa
+LOADOUT_STAT_TEMPO_FLAT_NAME,Tempo,Ritmo
+LOADOUT_STAT_TRUE_ON_HIT_NAME,True damage on hit,Daño verdadero al golpear
+LOADOUT_STAT_DOT_TRUE_NAME,Corrosion damage on hit,Daño corrosivo al golpear
+LOADOUT_STAT_TEMPO_ON_WIN_NAME,Tempo after winning a round,Ritmo tras ganar una ronda
+LOADOUT_STAT_WARD_PCT_NAME,Ward each round,Protección por ronda
+LOADOUT_STAT_REFLECT_PCT_NAME,Damage reflected,Daño reflejado
+LOADOUT_STAT_EVASION_PCT_NAME,Evasion,Evasión
+LOADOUT_STAT_VULN_ON_HIT_NAME,Vulnerability on hit,Vulnerabilidad al golpear
+LOADOUT_STAT_DISADVANTAGE_REDUCTION_NAME,Type disadvantage reduction,Reducción de desventaja de tipo
+LOADOUT_STAT_IGNORE_REFLECT_CHANCE_NAME,Chance to ignore reflection,Probabilidad de ignorar reflejo
+LOADOUT_NO_ACTIVE_EFFECTS,No active effects.,Sin efectos activos.
+LOADOUT_SEAL_ATTACK,SEAL: ATTACK,SELLO: ATAQUE
+LOADOUT_SEAL_DEFENSE,SEAL: DEFENSE,SELLO: DEFENSA
+LOADOUT_BUILD,Build,Equipo
+LOADOUT_SLOT_1,Equip Slot 1,Ranura 1
+LOADOUT_SLOT_2,Equip Slot 2,Ranura 2
+LOADOUT_SIDEBOARD_1,Sideboard 1,Reserva 1
+LOADOUT_SIDEBOARD_2,Sideboard 2,Reserva 2
+LOADOUT_READY_BO3,READY (Start Bo3),LISTO (iniciar al mejor de 3)
+LOADOUT_SPELLS_4,Spells · 4/4,Hechizos · 4/4
+LOADOUT_SPELLS_HINT,Configure spells for the selected entity,Configura los hechizos de la entidad seleccionada
+LOADOUT_NONE,None,Ninguno
+FORGE_FUSION,Fusion,Fusion
+FORGE_REROLL_TRAIT,Trait to reroll,Rasgo para volver a tirar
+FORGE_CONFIRM_CHOICE,Choose %s?\n%s,¿Elegir %s?\n%s
+FORGE_CONFIRM_REROLL,Reroll %s for %s?,¿Volver a tirar %s por %s?
+VAT_CONFIRM_UPGRADE,Upgrade %s? %s,¿Mejorar %s? %s
+VAT_CONFIRM_MUTATION,"Apply %s to %s for 70 Essence, 2 Core and 1 Arcane Shard?\n%s","¿Aplicar %s a %s por 70 de esencia, 2 núcleos y 1 fragmento arcano?\n%s"
+LAB_OFFLINE_ESTIMATE,Unverified Offline (backend offline; estimates capped to 1h).,Sin verificar y sin conexión (estimaciones limitadas a 1 h).
+SPELL_FEATURED_HEADER,Daily Featured Research -%d%%\nRotation in %02d:%02d:%02d%s,Investigación destacada del día -%d%%\nRenovación en %02d:%02d:%02d%s
+SPELL_AWAITING_TIME, (awaiting server time), (esperando la hora del servidor)
+LAB_UNLOCK_BUILDING,%s\nUnlock at HQ Lv %s,%s\nSe desbloquea al nivel %s de la sala
+LAB_ACTION_UPGRADE_HOMUNCULUS,Upgrade Homunculus,Mejorar familiar
+LAB_ACTION_REROLL,Reroll,Nueva tirada
+LAB_ACTION_NOT_IMPLEMENTED,Not implemented on the server.,Aún no disponible en el servidor.
+LAB_ACTION_UPGRADE_TALISMAN,Upgrade selected talisman,Mejorar el talismán seleccionado
+LAB_REACTOR_BUILD_FIRST,Reactor must be built before collection.,Construye el reactor antes de recoger.
+LAB_DEBUG_SAVE_FAILED,Could not save local debug state.,No se pudo guardar el estado local de depuración.
+LAB_DEBUG_ACTION_SAVED,Local debug action saved.,Acción de depuración local guardada.
+LAB_INSUFFICIENT_SENTENCE,Insufficient resources.,Recursos insuficientes.
+INVENTORY_BASE_STATS,HP: %s    ATK: %s    GUARD: %s    TEMPO: %s,PV: %s    ATQ: %s    DEF: %s    RITMO: %s
+INVENTORY_SPELL_TYPE,Type: %s  |  %s,Tipo: %s  |  %s
+INVENTORY_SPELL_STATS,Power: %s  |  Accuracy: %d%%  |  Cooldown: %d,Potencia: %s  |  Precisión: %d%%  |  Espera: %d
+INVENTORY_LEVELS, (levels 1-%s), (niveles 1-%s)
+FORGE_DEBUG_INSUFFICIENT,Insufficient resources in local debug.,Recursos insuficientes en la depuración local.
+FORGE_DEBUG_DISABLED,Debug mode is no longer active.,El modo de depuración ya no está activo.
+FORGE_REQUIREMENTS,Upgrade requirements are not met.,No se cumplen los requisitos de mejora.
+FORGE_DEBUG_SAVED,Local debug action saved,Acción de depuración local guardada
+FORGE_UPGRADE_SAVED,Upgrade saved,Mejora guardada
+FORGE_FUSION_INFO,"Fusion: %s | Imprint: %s | Cost: %s\nPreview: %s","Fusión: %s | Huella: %s | Coste: %s\nVista previa: %s"
+FORGE_FUSION_REQUIRES,Fusion requires both weapons at level 3 (current: %d / %d).,La fusión requiere ambas armas en nivel 3 (actual: %d / %d).
+FORGE_FUSION_CONFIRM,"Fuse %s with %s? Resources are spent permanently; the donor is not consumed.\n%s","¿Fusionar %s con %s? Los recursos se gastan de forma permanente; el arma donante no se consume.\n%s"
+FORGE_REROLL_COST,Reroll cost:,Coste de nueva tirada:
+FORGE_REROLL,Reroll:,Nueva tirada:
+FORGE_CHOOSE_REROLL,Choose a reroll option,Elige una opción de nueva tirada
+FORGE_BUILD_FIRST,Build Forge first,Construye primero la forja
+FORGE_INSUFFICIENT_ESSENCE,Insufficient Essence,Esencia insuficiente
+FORGE_REROLL_PRICE,"%d Essence, %d Core%s","%d de esencia, %d núcleos%s"
+FORGE_SHARD_PRICE,", %d Arcane Shard",", %d fragmentos arcanos"
+VAT_MUTATION_REQUIRED,Mutation requires homunculus level 3 (current: %d).,La mutación requiere un homúnculo de nivel 3 (actual: %d).
+VAT_CHOOSE_MUTATION,Choose a mutation above. The current mutation is highlighted.,Elige una mutación arriba. La mutación actual aparece resaltada.

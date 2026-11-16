@@ -94,7 +94,7 @@ func _setup_inventory_layout() -> void:
 			var group := ButtonGroup.new()
 			for filter_name in ["All", "Initial", "Hybrid", "Universal"]:
 				var filter_button := Button.new()
-				filter_button.text = filter_name
+				filter_button.text = "SPELL_FILTER_" + filter_name.to_upper()
 				filter_button.toggle_mode = true
 				filter_button.button_group = group
 				filter_button.custom_minimum_size = Vector2(74, 32)
@@ -146,6 +146,7 @@ func _setup_inventory_layout() -> void:
 	header.add_child(icon_frame)
 	_detail_icon = icon_frame.get_node("Icon") as TextureRect
 	_detail_title = Label.new()
+	_detail_title.set_meta("localization_body_font", true)
 	_detail_title.custom_minimum_size.x = 220
 	_detail_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_detail_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -255,7 +256,7 @@ func _on_inventory_tab_changed(index: int) -> void:
 			_show_entry(child.get_meta("entry"))
 			return
 	_detail_title.text = ""
-	_detail_text.text = "No entries available."
+	_detail_text.text = "INVENTORY_NO_ENTRIES"
 	_detail_icon.texture = null
 
 func _show_entry(entry: Variant) -> void:
@@ -265,12 +266,31 @@ func _show_entry(entry: Variant) -> void:
 	if not cost.is_empty():
 		var parts: Array[String] = []
 		for key in cost:
-			parts.append("%s: %s" % [str(key).capitalize(), cost[key]])
-		_detail_text.text += "\n\nCost: " + ", ".join(parts)
+			parts.append("%s: %s" % [GameLocalization.catalog("resource", str(key), "name", str(key).capitalize()), cost[key]])
+		_detail_text.text += "\n\n" + tr("INVENTORY_COST") + " " + ", ".join(parts)
 	_detail_icon.texture = _extract_preview_texture(entry)
 	var icon_id := _extract_icon_id(entry)
 	if _detail_icon.texture == null and icon_id != "":
 		_detail_icon.texture = _catalog.get_tex(icon_id)
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready():
+		return
+	_apply_tab_titles()
+	for list in [_entities_list, _builds_list, _homunculi_list, _ultrahit_list, _techs_list]:
+		for row in list.get_children():
+			if row is Button and row.has_meta("entry"):
+				var label := row.get_node_or_null("EntryRow/EntryText/EntryTitle") as Label
+				if label != null:
+					label.text = _extract_name(row.get_meta("entry"))
+				var subtitle := row.get_node_or_null("EntryRow/EntryText/SpellStatus") as Label
+				var entry: Dictionary = row.get_meta("entry")
+				if subtitle != null:
+					subtitle.text = "%s  |  %s" % [SpellView.affinity(entry), SpellView.state_label(str(entry.get("spell_status", "Unknown")))]
+	var selected := _entry_group.get_pressed_button()
+	if selected != null and selected.has_meta("entry"):
+		_show_entry(selected.get_meta("entry"))
+	_refresh_build_levels()
 
 func _refresh_build_levels() -> void:
 	if _builds_list == null:
@@ -280,7 +300,7 @@ func _refresh_build_levels() -> void:
 			var subtitle := child.get_node_or_null("EntryRow/EntryText/ItemLevel") as Label
 			if subtitle != null:
 				var id := str(child.get_meta("entry").get("id", ""))
-				subtitle.text = "Level %d / 10" % int(_item_progress.get(id, {}).get("level", 0)) if _item_progress_known else "Level unavailable"
+				subtitle.text = tr("INVENTORY_ROW_LEVEL") % int(_item_progress.get(id, {}).get("level", 0)) if _item_progress_known else tr("INVENTORY_ROW_UNAVAILABLE")
 	var selected := _entry_group.get_pressed_button()
 	if selected != null and selected.has_meta("entry") and selected.get_meta("entry").get("kind") == "build":
 		_show_entry(selected.get_meta("entry"))
@@ -293,10 +313,9 @@ func _apply_tab_titles() -> void:
 		if child == null:
 			continue
 		var tab_name = str(child.name)
-		if tab_name == "Ultrahit":
-			_tabs.set_tab_title(i, "Spells")
-		if tab_name == "Techs":
-			_tabs.set_tab_title(i, "Techs")
+		var keys := {"Entities": "INVENTORY_TAB_ENTITIES", "Builds": "INVENTORY_TAB_BUILDS", "Homunculi": "INVENTORY_TAB_HOMUNCULI", "Ultrahit": "INVENTORY_TAB_SPELLS", "Techs": "INVENTORY_TAB_TECHS"}
+		if keys.has(tab_name):
+			_tabs.set_tab_title(i, tr(keys[tab_name]))
 
 func _resolve_nodes() -> void:
 	_panel = get_node_or_null(panel_path) as Panel
@@ -440,6 +459,7 @@ func _populate_techs() -> void:
 			for technique in attack:
 				if technique is Dictionary:
 					var entry: Dictionary = technique.duplicate(true)
+					entry["kind"] = "technique"
 					if _extract_icon_id(entry) == "" and _catalog.has("rune_offensive"):
 						entry["icon_id"] = "rune_offensive"
 					entries.append(entry)
@@ -449,6 +469,7 @@ func _populate_techs() -> void:
 			for technique in defense:
 				if technique is Dictionary:
 					var entry: Dictionary = technique.duplicate(true)
+					entry["kind"] = "technique"
 					if _extract_icon_id(entry) == "" and _catalog.has("rune_defense"):
 						entry["icon_id"] = "rune_defense"
 					entries.append(entry)
@@ -485,20 +506,20 @@ func _spell_effects(effects: Array) -> String:
 		var kind: String = str(effect.get("kind", ""))
 		var value := float(effect.get("value", 0))
 		var pct := int(round(value * 100.0))
-		var target := "propio" if effect.get("target") == "self" else "enemigo"
+		var target := tr("EFFECT_TARGET_SELF") if effect.get("target") == "self" else tr("EFFECT_TARGET_ENEMY")
 		match kind:
-			"heal": parts.append("Cura %d HP (%s)" % [int(value), target])
-			"shield": parts.append("Escudo %d %% (%s)" % [pct, target])
-			"atk_boost": parts.append("Ataque +%d %% (%s)" % [pct, target])
-			"atk_down": parts.append("Ataque -%d %% (%s)" % [pct, target])
-			"hom_stun": parts.append("Bloquea homúnculo %d turno(s)" % int(value))
-			"poison": parts.append("Veneno %d turno(s) (%s)" % [int(value), target])
-			"reflect": parts.append("Refleja %d %% de daño (%s)" % [pct, target])
-			"vuln": parts.append("Vulnerabilidad %d %% (%s)" % [pct, target])
-			"type_neutralize": parts.append("Reduce %d %% la ventaja o desventaja de tipo en el próximo intercambio" % pct)
-			"bonus_if_poisoned": parts.append("Potencia +%d %% si el enemigo ya está envenenado" % pct)
-			"bonus_if_hit_last_exchange": parts.append("Potencia +%d %% si recibió daño en el intercambio anterior" % pct)
-	return "; ".join(parts) if not parts.is_empty() else "Sin efecto adicional"
+			"heal": parts.append(tr("EFFECT_HEAL") % [int(value), target])
+			"shield": parts.append(tr("EFFECT_SHIELD") % [pct, target])
+			"atk_boost": parts.append(tr("EFFECT_ATK_BOOST") % [pct, target])
+			"atk_down": parts.append(tr("EFFECT_ATK_DOWN") % [pct, target])
+			"hom_stun": parts.append(tr("EFFECT_HOM_STUN") % int(value))
+			"poison": parts.append(tr("EFFECT_POISON") % [int(value), target])
+			"reflect": parts.append(tr("EFFECT_REFLECT") % [pct, target])
+			"vuln": parts.append(tr("EFFECT_VULNERABILITY") % [pct, target])
+			"type_neutralize": parts.append(tr("EFFECT_TYPE_NEUTRALIZE") % pct)
+			"bonus_if_poisoned": parts.append(tr("EFFECT_BONUS_POISONED") % pct)
+			"bonus_if_hit_last_exchange": parts.append(tr("EFFECT_BONUS_HIT") % pct)
+	return "; ".join(parts) if not parts.is_empty() else tr("EFFECT_NONE")
 
 func _apply_initial_tab() -> void:
 	if _tabs == null:
@@ -512,11 +533,11 @@ func _apply_initial_tab() -> void:
 
 func _find_tab_index(tab_label: String) -> int:
 	var needle = tab_label.to_lower()
-	if needle == "ultrahit":
-		needle = "spells"
+	if needle == "spells":
+		needle = "ultrahit"
 	for i in range(_tabs.get_tab_count()):
-		var title = _tabs.get_tab_title(i).to_lower()
-		if title.find(needle) != -1:
+		var tab := _tabs.get_child(i)
+		if tab != null and str(tab.name).to_lower().find(needle) != -1:
 			return i
 	return -1
 
@@ -563,6 +584,8 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	text_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(text_column)
 	var title := Label.new()
+	title.name = "EntryTitle"
+	title.set_meta("localization_body_font", true)
 	title.text = _extract_name(entry)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -574,12 +597,13 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 		item_level.name = "ItemLevel"
 		item_level.add_theme_font_size_override("font_size", 12)
 		item_level.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		item_level.text = "Level %d / 10" % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else "Level unavailable"
+		item_level.text = tr("INVENTORY_ROW_LEVEL") % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else tr("INVENTORY_ROW_UNAVAILABLE")
 		text_column.add_child(item_level)
 	if entry is Dictionary and entry.get("kind") == "spell":
 		var status := str(entry.get("spell_status", "Unknown"))
 		var subtitle := Label.new()
-		subtitle.text = "%s  |  %s" % [SpellView.affinity(entry), status]
+		subtitle.name = "SpellStatus"
+		subtitle.text = "%s  |  %s" % [SpellView.affinity(entry), SpellView.state_label(status)]
 		subtitle.add_theme_font_size_override("font_size", 12)
 		subtitle.modulate = Color(0.73, 0.79, 0.76)
 		subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -597,56 +621,57 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 
 func _entry_details(entry: Variant) -> String:
 	if not entry is Dictionary:
-		return "No details available."
+		return tr("INVENTORY_NO_DETAILS")
 	var lines: Array[String] = []
 	var kind = str(entry.get("kind", ""))
 	if kind == "entity":
-		lines.append("Type: %s  |  Role: %s" % [str(entry.get("type", "Unknown")).capitalize(), str(entry.get("role", "Unknown")).capitalize()])
+		lines.append(tr("INVENTORY_TYPE_ROLE") % [GameLocalization.catalog("type", str(entry.get("type", "")), "name", str(entry.get("type", "Unknown")).capitalize()), GameLocalization.catalog("role", str(entry.get("role", "")), "name", str(entry.get("role", "Unknown")).capitalize())])
 		var stats = entry.get("base_stats", {})
 		if stats is Dictionary:
-			lines.append("HP: %s    ATK: %s    GUARD: %s    TEMPO: %s" % [stats.get("hp", "-"), stats.get("power", "-"), stats.get("guard", "-"), stats.get("tempo", "-")])
+			lines.append(tr("INVENTORY_BASE_STATS") % [stats.get("hp", "-"), stats.get("power", "-"), stats.get("guard", "-"), stats.get("tempo", "-")])
 	elif kind == "homunculus":
-		lines.append("Rarity: %s" % str(entry.get("rarity", "Unknown")).capitalize())
-		lines.append("Bonuses  |  ATK: %+d    GUARD: %+d    HP: %+d" % [int(entry.get("buff_atk", 0)), int(entry.get("buff_def", 0)), int(entry.get("buff_hp", 0))])
+		lines.append(tr("INVENTORY_RARITY") % GameLocalization.catalog("rarity", str(entry.get("rarity", "")), "name", str(entry.get("rarity", "Unknown")).capitalize()))
+		lines.append(tr("INVENTORY_BONUSES") % [int(entry.get("buff_atk", 0)), int(entry.get("buff_def", 0)), int(entry.get("buff_hp", 0))])
 		var per_type = entry.get("per_type", {})
 		if per_type is Dictionary and not per_type.is_empty():
-			lines.append("Synergies:")
+			lines.append(tr("INVENTORY_SYNERGIES"))
 			for entity_type in per_type:
 				if per_type[entity_type] is Dictionary:
-					lines.append("  %s: %s" % [str(entity_type).capitalize(), _format_effects(per_type[entity_type])])
+					lines.append("  %s: %s" % [GameLocalization.catalog("type", str(entity_type), "name", str(entity_type).capitalize()), _format_effects(per_type[entity_type])])
 	elif kind == "build":
-		lines.append("Level: %d / 10" % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else "Level: unavailable")
-		lines.append("Rarity: %s" % str(entry.get("rarity", "Unknown")).capitalize())
+		lines.append(tr("INVENTORY_LEVEL") % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else tr("INVENTORY_LEVEL_UNAVAILABLE"))
+		lines.append(tr("INVENTORY_RARITY") % GameLocalization.catalog("rarity", str(entry.get("rarity", "")), "name", str(entry.get("rarity", "Unknown")).capitalize()))
 		var item_state: Variant = _item_progress.get(str(entry.get("id", "")), {})
 		if _item_progress_known and item_state is Dictionary:
-			lines.append("Specialization: %s" % str(item_state.get("specialization", "None")).capitalize())
+			lines.append(tr("INVENTORY_SPECIALIZATION") % GameLocalization.catalog("specialization", str(item_state.get("specialization", "none")), "name", str(item_state.get("specialization", "None")).capitalize()))
 			var traits: Variant = item_state.get("traits", [])
 			if traits is Array:
 				for trait_entry in traits:
 					if trait_entry is Dictionary and trait_entry.get("id") is String:
-						lines.append("%s: %s / 4" % [str(trait_entry.id).replace("_", " ").capitalize(), str(trait_entry.get("points", 0))])
+						var trait_id := str(trait_entry.id)
+						lines.append("%s: %s / 4" % [GameLocalization.catalog("stat", trait_id, "name", trait_id.replace("_", " ").capitalize()), str(trait_entry.get("points", 0))])
 		var effects = preload("res://scripts/domain/item_progress.gd").effective_item(entry, _item_progress).get("effects", {}) if _item_progress_known else entry.get("effects", {})
 		if effects is Dictionary and not effects.is_empty():
-			lines.append("Current effects: %s" % _format_effects(effects) if _item_progress_known else "Effects by level: %s" % _format_effects(effects))
+			lines.append(tr("INVENTORY_CURRENT_EFFECTS") % _format_effects(effects) if _item_progress_known else tr("INVENTORY_EFFECTS_BY_LEVEL") % _format_effects(effects))
 	elif kind == "spell":
-		lines.append("Type: %s  |  %s" % [str(entry.get("type", "Unknown")).capitalize(), str(entry.get("category", "")).capitalize()])
-		lines.append("Power: %s  |  Accuracy: %d%%  |  Cooldown: %d" % [Stats.percent(float(entry.get("power_mult", 0))), int(round(float(entry.get("accuracy", 0)) * 100)), int(entry.get("cooldown_turns", 0))])
-		lines.append("Efectos: %s" % _spell_effects(entry.get("effects", [])))
-	var description = str(entry.get("desc", ""))
+		lines.append(tr("INVENTORY_SPELL_TYPE") % [SpellView.affinity(entry), GameLocalization.catalog("spell_category", str(entry.get("category", "")), "name", str(entry.get("category", "")).capitalize())])
+		lines.append(tr("INVENTORY_SPELL_STATS") % [Stats.percent(float(entry.get("power_mult", 0))), int(round(float(entry.get("accuracy", 0)) * 100)), int(entry.get("cooldown_turns", 0))])
+		lines.append(tr("INVENTORY_EFFECTS") % _spell_effects(entry.get("effects", [])))
+	var description = GameLocalization.catalog("item" if kind == "build" else kind, str(entry.get("id", "")), "desc", str(entry.get("desc", "")))
 	if description != "":
 		lines.append(description)
-	return "\n".join(lines) if not lines.is_empty() else "No details available."
+	return "\n".join(lines) if not lines.is_empty() else tr("INVENTORY_NO_DETAILS")
 
 func _format_effects(effects: Dictionary) -> String:
 	var parts: Array[String] = []
 	for key in effects:
 		var value = effects[key]
-		var label = str(key).replace("_", " ").capitalize()
+		var label = GameLocalization.catalog("stat", str(key), "name", str(key).replace("_", " ").capitalize())
 		if value is Array:
 			var values: Array[String] = []
 			for number in value:
 				values.append(Stats.stat_value(str(key), number))
-			var levels = " (levels 1-%s)" % value.size() if value.size() > 1 else ""
+			var levels = tr("INVENTORY_LEVELS") % value.size() if value.size() > 1 else ""
 			parts.append("%s%s: %s" % [label, levels, ", ".join(values)])
 		else:
 			parts.append("%s: %s" % [label, Stats.stat_value(str(key), value)])
@@ -672,7 +697,8 @@ func _make_cost_row(cost: Dictionary) -> Control:
 
 func _extract_name(entry: Variant) -> String:
 	if typeof(entry) == TYPE_DICTIONARY:
-		return str(entry.get("name", entry.get("id", "Unknown")))
+		var kind := str(entry.get("kind", ""))
+		return GameLocalization.catalog("item" if kind == "build" else kind, str(entry.get("id", "")), "name", str(entry.get("name", entry.get("id", "Unknown"))))
 	return str(entry)
 
 func _extract_icon_id(entry: Variant) -> String:
@@ -782,5 +808,5 @@ func _clear_container(container: Control) -> void:
 
 func _add_placeholder(container: Control) -> void:
 	var label := Label.new()
-	label.text = "No data available"
+	label.text = "INVENTORY_NO_DATA"
 	container.add_child(label)

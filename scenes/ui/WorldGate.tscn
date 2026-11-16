@@ -94,7 +94,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="Background/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "WORLD GATE"
+text = "WORLD_GATE_TITLE"
 theme_override_font_sizes/font_size = 28
 
 [node name="Spacer" type="Control" parent="Background/Margin/RootVBox/Header"]
@@ -103,7 +103,7 @@ size_flags_horizontal = 3
 
 [node name="BackButton" type="Button" parent="Background/Margin/RootVBox/Header"]
 layout_mode = 2
-text = "BACK"
+text = "UI_BACK_UPPER"
 
 [node name="Tabs" type="TabContainer" parent="Background/Margin/RootVBox"]
 layout_mode = 2
@@ -134,12 +134,12 @@ theme_override_constants/separation = 8
 
 [node name="ZonesHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZonesHeaderRow"]
 layout_mode = 2
-text = "Zones"
+text = "WORLD_ZONES"
 size_flags_horizontal = 3
 
 [node name="RefreshZonesButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ZonesHeaderRow"]
 layout_mode = 2
-text = "Refresh"
+text = "WORLD_REFRESH"
 
 [node name="ZoneList" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox"]
 layout_mode = 2
@@ -170,7 +170,7 @@ theme_override_constants/separation = 8
 
 [node name="SessionHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
 layout_mode = 2
-text = "Active Session"
+text = "WORLD_SESSION"
 
 [node name="SessionZoneLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
 layout_mode = 2
@@ -186,7 +186,7 @@ theme_override_constants/separation = 8
 
 [node name="FarmCountLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
 layout_mode = 2
-text = "Queue"
+text = "WORLD_QUEUE"
 
 [node name="FarmCountOption" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
 layout_mode = 2
@@ -194,7 +194,7 @@ custom_minimum_size = Vector2(80, 0)
 
 [node name="FarmButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
 layout_mode = 2
-text = "Spend 1 Time Block"
+text = "WORLD_SPEND_BLOCK"
 
 [node name="FarmProgressLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox/FarmRow"]
 layout_mode = 2
@@ -207,7 +207,7 @@ text = "Expected per block: 0-0 items"
 
 [node name="ClaimButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
 layout_mode = 2
-text = "Claim Drops"
+text = "WORLD_CLAIM_DROPS"
 
 [node name="ZoneErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/SessionPanel/SessionMargin/SessionVBox"]
 layout_mode = 2
@@ -231,12 +231,12 @@ theme_override_constants/separation = 8
 
 [node name="BossHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossHeaderRow"]
 layout_mode = 2
-text = "World Boss"
+text = "WORLD_BOSS"
 size_flags_horizontal = 3
 
 [node name="RefreshBossButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossHeaderRow"]
 layout_mode = 2
-text = "Refresh"
+text = "WORLD_REFRESH"
 
 [node name="BossPortrait" type="TextureRect" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
 custom_minimum_size = Vector2(240, 240)
@@ -276,11 +276,11 @@ theme_override_constants/separation = 8
 
 [node name="BossAttackButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossButtons"]
 layout_mode = 2
-text = "Attack"
+text = "WORLD_BOSS_ATTACK"
 
 [node name="BossClaimButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox/BossButtons"]
 layout_mode = 2
-text = "Claim Rewards"
+text = "WORLD_CLAIM_REWARDS"
 
 [node name="BossErrorLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Boss/BossVBox"]
 layout_mode = 2

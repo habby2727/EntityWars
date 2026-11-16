@@ -54,7 +54,7 @@ alignment = 1
 [node name="CombatButton" type="Button" parent="LowerButtons"]
 layout_mode = 2
 custom_minimum_size = Vector2(420, 105)
-text = "COMBAT"
+text = "MENU_COMBAT"
 theme_override_font_sizes/font_size = 28
 theme_override_fonts/font = ExtResource("4_arcana")
 theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
@@ -65,7 +65,7 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_btn")
 [node name="InventoryButton" type="Button" parent="LowerButtons"]
 layout_mode = 2
 custom_minimum_size = Vector2(420, 105)
-text = "INVENTORY"
+text = "MENU_INVENTORY"
 theme_override_font_sizes/font_size = 24
 theme_override_fonts/font = ExtResource("4_arcana")
 theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
@@ -76,7 +76,7 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_btn")
 [node name="LaboratoryButton" type="Button" parent="LowerButtons"]
 layout_mode = 2
 custom_minimum_size = Vector2(420, 105)
-text = "LABORATORY"
+text = "MENU_LABORATORY"
 theme_override_font_sizes/font_size = 24
 theme_override_fonts/font = ExtResource("4_arcana")
 theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
@@ -87,7 +87,7 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_btn")
 [node name="SettingsButton" type="Button" parent="LowerButtons"]
 layout_mode = 2
 custom_minimum_size = Vector2(420, 105)
-text = "SETTINGS"
+text = "MENU_SETTINGS"
 theme_override_font_sizes/font_size = 24
 theme_override_fonts/font = ExtResource("4_arcana")
 theme_override_styles/normal = SubResource("StyleBoxTexture_btn")
