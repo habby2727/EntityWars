@@ -1,5 +1,5 @@
 # Entity Wars — Deployment Phase (Godot 4.6) - V Beta
-Copyright © 2026 [PKC GAMES]
+Copyright © 2026 [POKECAFE GAMES]
 All rights reserved.
 
 This software and its original assets are proprietary.
