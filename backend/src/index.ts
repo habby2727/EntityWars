@@ -2235,8 +2235,10 @@ async function startServer(): Promise<void> {
 					return db.transaction(() => {
 						const now = Date.now();
 						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
-						const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId) as (Record<string, any> & { loadout_json: string | null; combat_state_json: string | null }) | null;
-						const session = row ? (({ loadout_json, combat_state_json, player_snapshot_json, ...rest }) => { const combat = combat_state_json ? JSON.parse(combat_state_json) : null; return { ...rest, ...(!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}), ...(loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}), ...(combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {}) }; })(row) : null;
+						const runId = url.searchParams.get("run_id");
+						const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json";
+						const row = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'`).get(playerId)) as (Record<string, any> & { loadout_json: string | null; combat_state_json: string | null }) | null;
+						const session = row ? (({ loadout_json, combat_state_json, player_snapshot_json, ...rest }) => { const combat = combat_state_json ? JSON.parse(combat_state_json) : null; return { ...rest, ...(!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}), ...(loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}), ...(combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: rest.status === "LOSS" ? "LOSS" : combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {}) }; })(row) : null;
 						return jsonResponse({ session, server_time_unix_ms: now });
 					}).immediate();
 				}

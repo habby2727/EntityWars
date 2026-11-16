@@ -104,7 +104,7 @@ func _verify_identity(state: Dictionary) -> bool:
 	return true
 
 func login_dev(display_name: String) -> void:
-	if _connection_gate().blocked():
+	if not _connection_gate().begin_explicit_login():
 		return
 	_invalidate_other_clients()
 	_invalidate_session()
@@ -217,6 +217,10 @@ func request_api(method: String, path: String, body: Variant, expect_state: bool
 	_ensure_api_http()
 	if _api_in_flight.size() > 0:
 		return ""
+	var recovery_paths := {"/world/boss-hunts/loadout": ["hunt", "loadout"], "/world/boss-hunts/turn": ["hunt", "turn"], "/world/boss-hunts/inspiration": ["hunt", "inspiration"], "/world/boss-hunts/forfeit": ["hunt", "forfeit"], "/dungeon/loadout": ["dungeon", "loadout"], "/dungeon/turn": ["dungeon", "turn"], "/dungeon/inspiration": ["dungeon", "inspiration"], "/dungeon/blessing": ["dungeon", "blessing"], "/dungeon/next": ["dungeon", "next"]}
+	if method == "POST" and recovery_paths.has(path):
+		if not body is Dictionary or not _connection_gate().journal_pending(self, recovery_paths[path][0], recovery_paths[path][1], body):
+			return ""
 	var request_id := _make_uuid()
 	var meta := {"kind": "api", "request_id": request_id, "expect_state": expect_state}
 	var err = _send_api_request(method, path, body, meta)

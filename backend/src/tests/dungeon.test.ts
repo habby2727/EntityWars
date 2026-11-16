@@ -1036,6 +1036,16 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
       expect(result.status).toBe(200); revision = result.data.combat_revision; lost = result.data.status === "LOSS";
     }
     expect(lost).toBe(true);
+    const recoveredLoss = (await request(`/dungeon/session?run_id=${started.data.run_id}`, undefined, token)).data.session;
+    expect(recoveredLoss.status).toBe("LOSS");
+    expect(recoveredLoss.phase).toBe("LOSS");
+    expect(recoveredLoss.combat_revision).toBe(revision);
+    const otherLogin = await request("/auth/dev_login", { name: "dungeon_test_b" });
+    expect(otherLogin.status).toBe(200);
+    const foreignLoss = await request(`/dungeon/session?run_id=${started.data.run_id}`, undefined, otherLogin.data.token);
+    expect(foreignLoss.status).toBe(200);
+    expect(foreignLoss.data.session).toBeNull();
+    expect((await request("/dungeon/session", undefined, token)).data.session).toBeNull();
     expect((await request(`/dungeon/leaderboard?month=${started.data.season}`, undefined, token)).data.player.cleared_floor).toBe(3);
     const another = await request("/dungeon/start", { client_action_id: "another-run" }, token);
     expect(another.status).toBe(200);

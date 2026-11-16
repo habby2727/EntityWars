@@ -1,6 +1,7 @@
 extends Node
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const RecoveryJournal := preload("res://scripts/net/session_recovery_journal.gd")
 enum State { CONNECTED, RECONNECTING, ERROR, AUTH_REQUIRED }
 var state: State = State.CONNECTED
 var player_id := ""
@@ -16,6 +17,7 @@ var _identity_mismatch := false
 var _recovery_owner_id := 0
 var _loadout_session_requested := false
 var _loadout_session_verified := false
+var _journal_checked := false
 var _layer: CanvasLayer
 var _title: Label
 var _detail: Label
@@ -53,15 +55,40 @@ func register_identity(client: Node, identity: String) -> void:
 func require_authentication() -> void:
 	_fail(State.AUTH_REQUIRED, "Authentication required")
 
+func begin_explicit_login() -> bool:
+	if _identity_mismatch:
+		return false
+	var directory := DirAccess.open("user://")
+	if directory == null:
+		return false
+	var session_active := not SceneRouter._solo_hunt_context.is_empty() or not SceneRouter._dungeon_context.is_empty() or _recovery_owner_id != 0
+	for filename in directory.get_files():
+		if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
+			session_active = true
+	if not session_active:
+		player_id = ""
+	token = ""
+	_generation += 1
+	_journal_checked = false
+	if state == State.AUTH_REQUIRED:
+		state = State.CONNECTED
+	_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
+	return true
+
 func observe_credentials(client: Node) -> void:
 	if player_id.is_empty() and token.is_empty() and not str(client.token).is_empty():
 		token = str(client.token)
 		base_url = str(client.base_url)
+		_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
+		call_deferred("_check")
 
 func authentication_changed(new_token: String, url: String) -> void:
 	if player_id.is_empty() and token.is_empty() and state == State.CONNECTED:
 		token = new_token
 		base_url = url
+		if not new_token.is_empty():
+			_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
+			call_deferred("_check")
 		return
 	if new_token.is_empty():
 		token = ""
@@ -162,6 +189,9 @@ func _on_check_completed(result: int, code: int, _headers: PackedStringArray, bo
 		_timer.start(15.0)
 		return
 	_player_verified = true
+	if not _journal_checked:
+		if not _restore_journal():
+			return
 	var scene := get_tree().current_scene
 	if _recovery_owner_id != 0 and (not is_instance_valid(scene) or scene.get_instance_id() != _recovery_owner_id):
 		_detail.text = "The original session must be recovered before continuing."
@@ -179,9 +209,116 @@ func _on_check_completed(result: int, code: int, _headers: PackedStringArray, bo
 	else:
 		_unlock()
 
+func _restore_journal() -> bool:
+	var journal := RecoveryJournal.new()
+	if not journal.set_identity(player_id):
+		_fail(State.ERROR, "Invalid recovery identity.")
+		return false
+	var entry := journal.load_entry()
+	if entry.has("error"):
+		_fail(State.ERROR, "Recovery journal is invalid. Session remains locked.")
+		return false
+	_journal_checked = true
+	if entry.is_empty():
+		return true
+	var kind := str(entry.pending_kind)
+	if entry.mode == "hunt":
+		SceneRouter._solo_hunt_context = entry.context.duplicate(true)
+		SceneRouter._solo_hunt_context["session_id"] = entry.session_id
+		SceneRouter._solo_hunt_context["loadout_identity"] = player_id
+		if kind == "loadout":
+			SceneRouter._hunt_loadout_active = true
+			SceneRouter._solo_hunt_context["pending_loadout"] = entry.payload.duplicate(true)
+		elif not kind.is_empty():
+			SceneRouter._solo_hunt_context["pending_action"] = {"kind": kind, "payload": entry.payload.duplicate(true)}
+	else:
+		SceneRouter._dungeon_context = {"run_id": entry.session_id, "player_id": player_id}
+		if kind == "loadout":
+			SceneRouter._dungeon_context["pending_loadout"] = entry.payload.duplicate(true)
+		elif not kind.is_empty():
+			SceneRouter._dungeon_context["pending_action"] = {"kind": kind, "payload": entry.payload.duplicate(true)}
+	var scene_path: String = SceneRouter.SCENE_LOADOUT if kind == "loadout" else SceneRouter.SCENE_COMBAT
+	_navigate_recovery(scene_path)
+	return false
+
+func journal_pending(client: Node, mode: String, kind: String, payload: Dictionary) -> bool:
+	if client._verified_player_id.is_empty() or client._verified_player_id != player_id:
+		return false
+	var journal := RecoveryJournal.new()
+	journal.set_identity(player_id)
+	var previous := journal.load_entry()
+	if previous.has("error"):
+		_fail(State.ERROR, "Recovery journal is invalid. Session remains locked.")
+		return false
+	var session_id := str(payload.get("session_id" if mode == "hunt" else "run_id", ""))
+	if not previous.is_empty() and (previous.mode != mode or previous.session_id != session_id):
+		_fail(State.ERROR, "A different session requires recovery.")
+		return false
+	if not previous.is_empty() and not str(previous.pending_kind).is_empty() and JSON.stringify(previous.payload) != JSON.stringify(JSON.parse_string(JSON.stringify(payload))):
+		_fail(State.ERROR, "Another session action requires recovery.")
+		return false
+	var context := {}
+	if mode == "hunt":
+		var source := SceneRouter._solo_hunt_context
+		var scene := get_tree().current_scene
+		if source.is_empty() and is_instance_valid(scene):
+			source = scene.get("_solo_context")
+		if source is Dictionary:
+			for key in RecoveryJournal.CONTEXT_KEYS:
+				if source.has(key): context[key] = source[key]
+	var entry := {"version": RecoveryJournal.VERSION, "mode": mode, "player_id": player_id, "session_id": session_id, "context": context, "pending_kind": kind, "payload": payload.duplicate(true)}
+	if not journal.save_entry(entry):
+		_fail(State.ERROR, "Cannot save session recovery. Action was not sent.")
+		return false
+	return true
+
+func journal_confirm(action_id: String) -> bool:
+	var journal := RecoveryJournal.new()
+	if not journal.set_identity(player_id): return false
+	var entry := journal.load_entry()
+	if entry.is_empty() or entry.has("error") or str(entry.payload.get("client_action_id", "")) != action_id:
+		_fail(State.ERROR, "Recovery journal confirmation failed.")
+		return false
+	entry.pending_kind = ""
+	entry.payload = {}
+	if not journal.save_entry(entry):
+		_fail(State.ERROR, "Cannot save session confirmation.")
+		return false
+	return true
+
+func journal_close(mode: String, session_id: String) -> bool:
+	var journal := RecoveryJournal.new()
+	if not journal.set_identity(player_id): return false
+	var entry := journal.load_entry()
+	if entry.has("error") or (not entry.is_empty() and (entry.mode != mode or entry.session_id != session_id or not journal.remove())):
+		_fail(State.ERROR, "Cannot close session recovery.")
+		return false
+	return true
+
 func recovery_completed() -> void:
 	if blocked() and _player_verified:
 		_unlock()
+
+func recovery_to_combat() -> void:
+	if not blocked() or not _player_verified:
+		return
+	SceneRouter._hunt_loadout_active = false
+	_navigate_recovery(SceneRouter.SCENE_COMBAT)
+
+func _navigate_recovery(scene_path: String) -> void:
+	if not blocked() or not _player_verified or scene_path not in [SceneRouter.SCENE_LOADOUT, SceneRouter.SCENE_COMBAT]:
+		return
+	_recovery_owner_id = 0
+	_loadout_session_requested = false
+	_loadout_session_verified = false
+	call_deferred("_perform_recovery_navigation", scene_path)
+	_timer.start(2.0)
+
+func _perform_recovery_navigation(scene_path: String) -> void:
+	if not blocked() or not _player_verified:
+		return
+	if get_tree().change_scene_to_file(scene_path) != OK:
+		_fail(State.ERROR, "Cannot open the recovery session.")
 
 func _recover_loadout(scene: Node) -> void:
 	var dungeon := not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
@@ -205,7 +342,7 @@ func _recover_loadout(scene: Node) -> void:
 			if dungeon:
 				scene._dungeon_recovered = false
 				scene._dungeon_kind = "session"
-				scene._dungeon_request = client.request_api("GET", "/dungeon/session", null, false, true)
+				scene._dungeon_request = client.request_api("GET", "/dungeon/session?run_id=" + str(SceneRouter._dungeon_context.get("run_id", "")).uri_encode(), null, false, true)
 				_loadout_session_requested = not scene._dungeon_request.is_empty()
 			else:
 				scene._hunt_recovered = false
@@ -221,9 +358,13 @@ func _recover_loadout(scene: Node) -> void:
 		else:
 			scene._hunt_submit_request = client.request_api("POST", "/world/boss-hunts/loadout", pending.duplicate(true), false, true)
 		return
-	_unlock()
 	if dungeon and SceneRouter._dungeon_context.has("session"):
-		get_tree().call_deferred("change_scene_to_file", SceneRouter.SCENE_COMBAT)
+		_navigate_recovery(SceneRouter.SCENE_COMBAT)
+	elif not dungeon and int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) >= 1:
+		SceneRouter._hunt_loadout_active = false
+		_navigate_recovery(SceneRouter.SCENE_COMBAT)
+	else:
+		_unlock()
 
 func _unlock() -> void:
 	state = State.CONNECTED

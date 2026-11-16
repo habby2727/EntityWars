@@ -338,11 +338,13 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 			_set_build_error("Account changed. Return to World Zone.")
 			return
 		if ok and _accept_hunt_session(data) and int(data.get("combat_revision", 0)) >= 1 and data.get("combat_state") is Dictionary and _hunt_loadout_matches(data):
+			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 			_hunt_payload.clear()
 			SceneRouter._solo_hunt_context.erase("pending_loadout")
 			_set_build_error("Combat ready; connection pending.")
 			return
 		if not ok and str(data.get("error", "")) in ["Invalid or unsupported hunt loadout.", "Invalid hunt loadout selection.", "Invalid hunt loadout request."]:
+			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 			_hunt_payload.clear()
 			SceneRouter._solo_hunt_context.erase("pending_loadout")
 			_set_build_error("Loadout rejected: " + str(data.get("error")))
@@ -355,6 +357,14 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 		return
 	_hunt_recovery_request = ""
 	var session: Variant = data.get("session")
+	if ok and session is Dictionary and not _hunt_identity.is_empty() and _hunt_backend._verified_player_id == _hunt_identity and str(session.get("session_id", "")) == str(SceneRouter._solo_hunt_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"]:
+		var gate := get_node("/root/ConnectionGate")
+		if not gate.journal_close("hunt", str(session.session_id)): return
+		_hunt_payload.clear()
+		SceneRouter._solo_hunt_context.erase("pending_loadout")
+		if gate.blocked(): gate.recovery_to_combat()
+		else: SceneRouter.go_to_combat()
+		return
 	if not ok or not session is Dictionary or not _accept_hunt_session(session):
 		_hunt_recovered = false
 		_set_build_error("Boss Hunt unavailable or connection failed. Return to World Zone and retry.")
@@ -365,6 +375,8 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 			_hunt_recovered = false
 			_set_build_error("Recovered loadout differs from the submitted selection. Return to World Zone.")
 			return
+		if not _hunt_payload.is_empty():
+			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 		_hunt_payload.clear()
 		SceneRouter._solo_hunt_context.erase("pending_loadout")
 		_set_build_error("Combat ready; connection pending.")
@@ -1575,6 +1587,7 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 	if _dungeon_kind == "loadout" and not ok:
 		var message := str(data.get("error", ""))
 		if message in ["Invalid or unsupported dungeon loadout.", "Invalid dungeon loadout.", "UNSUPPORTED_MECHANIC", "UNTRUSTED_SETUP"]:
+			if not get_node("/root/ConnectionGate").journal_confirm(str(_dungeon_payload.get("client_action_id", ""))): return
 			_dungeon_payload.clear()
 			SceneRouter._dungeon_context.erase("pending_loadout")
 			_set_build_error("The server rejected this loadout. Check your entity, homunculus, weapons and learned spells; verify the backend is up to date.")
@@ -1583,6 +1596,14 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 			_recover_dungeon()
 		return
 	var session: Variant = data.get("session") if _dungeon_kind == "session" else data
+	if ok and _dungeon_kind == "session" and session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and str(session.get("status", "")) in ["LOSS", "EXPIRED", "ABANDONED"]:
+		var gate := get_node("/root/ConnectionGate")
+		if not gate.journal_close("dungeon", str(session.run_id)): return
+		_dungeon_payload.clear()
+		SceneRouter._dungeon_context.erase("pending_loadout")
+		if gate.blocked(): gate.recovery_to_combat()
+		else: SceneRouter.go_to_dungeon_combat()
+		return
 	if not ok or not session is Dictionary or str(session.get("run_id", "")) != str(SceneRouter._dungeon_context.get("run_id", "")) or (_dungeon_kind == "session" and str(session.get("status", "")) != "ACTIVE"):
 		_dungeon_recovered = false
 		_set_build_error("Dungeon unavailable. Retry or return to Sync Nexus.")
@@ -1604,6 +1625,7 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 					_dungeon_recovered = false
 					_set_build_error("Recovered loadout differs. Return to Sync Nexus.")
 					return
+			if not get_node("/root/ConnectionGate").journal_confirm(str(_dungeon_payload.get("client_action_id", ""))): return
 		_dungeon_payload.clear()
 		SceneRouter._dungeon_context.erase("pending_loadout")
 		SceneRouter._dungeon_context["session"] = session.duplicate(true)

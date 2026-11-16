@@ -394,7 +394,7 @@ func _dungeon_recover() -> void:
 	if _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or not _dungeon_request.is_empty():
 		return
 	_dungeon_kind = "session"
-	_dungeon_request = _combat_backend.request_api("GET", "/dungeon/session", null, false, _connection_gate().blocked())
+	_dungeon_request = _combat_backend.request_api("GET", "/dungeon/session?run_id=" + str(SceneRouter._dungeon_context.get("run_id", "")).uri_encode(), null, false, _connection_gate().blocked())
 	if _dungeon_request.is_empty():
 		_dungeon_show_retry("Connection busy. Retry recovery.")
 	_dungeon_refresh_controls()
@@ -444,6 +444,17 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		if not ok:
 			_dungeon_show_retry("Dungeon recovery failed. Retry.")
 			return
+		if session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and str(session.get("status", "")) in ["EXPIRED", "ABANDONED"]:
+			if not _connection_gate().journal_close("dungeon", str(session.run_id)): return
+			_dungeon_session = session.duplicate(true)
+			_dungeon_pending.clear()
+			SceneRouter._dungeon_context.erase("pending_action")
+			_gate_session_verified = true
+			_log_immediate("Dungeon " + str(session.status).to_lower() + ".")
+			next_turn_btn.text = "Return"
+			next_turn_btn.show()
+			connection_gate_recover()
+			return
 		if session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
 			if int(session.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
 				_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
@@ -456,9 +467,11 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		if not _dungeon_pending.is_empty():
 			_dungeon_send_pending()
 		else:
+			if session is Dictionary and str(session.get("status", "")) == "LOSS" and not _connection_gate().journal_close("dungeon", str(session.get("run_id", ""))): return
 			connection_gate_recover()
 		return
 	if not ok and str(data.get("error", "")) in ["INVALID_DECISION", "UNSUPPORTED_MECHANIC", "Dungeon run unavailable or stale.", "Floor not cleared."]:
+		if not _connection_gate().journal_confirm(str(_dungeon_pending.get("payload", {}).get("client_action_id", ""))): return
 		_dungeon_pending.clear()
 		SceneRouter._dungeon_context.erase("pending_action")
 		_log_immediate("Action rejected: " + str(data.get("error", "")))
@@ -487,6 +500,9 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_presentation_turn = -1
 		if not is_inside_tree() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
 			return
+	if not _connection_gate().journal_confirm(str(_dungeon_pending.get("payload", {}).get("client_action_id", ""))): return
+	if str(data.get("status", "")) != "ACTIVE":
+		if not _connection_gate().journal_close("dungeon", str(SceneRouter._dungeon_context.get("run_id", ""))): return
 	_dungeon_pending.clear()
 	SceneRouter._dungeon_context.erase("pending_action")
 	if int(data.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
@@ -1050,6 +1066,11 @@ func _begin_combat_initialization() -> void:
 	if not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
 		_online_hunt_guard = true
 		_solo_context = SceneRouter.consume_solo_hunt_context()
+		var recovered_pending: Dictionary = _solo_context.get("pending_action", {})
+		if recovered_pending.get("kind") == "forfeit":
+			_solo_forfeit_action = str(recovered_pending.get("payload", {}).get("client_action_id", ""))
+		elif recovered_pending.get("kind") in ["turn", "inspiration"]:
+			_online_turn_payload = recovered_pending.get("payload", {}).duplicate(true)
 		_combat_identity = str(_solo_context.get("loadout_identity", ""))
 		_combat_session_invalid = true
 		spell_panel.hide()
@@ -1148,6 +1169,8 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		if _connection_gate().blocked() and not _gate_session_verified:
 			return
 		if ok and str(data.get("status", "")) == "FORFEIT" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity:
+			if not _connection_gate().journal_confirm(_solo_forfeit_action): return
+			if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
 			_solo_forfeit_action = ""
 			if _connection_gate().blocked():
 				_show_closed_online_session("FORFEIT")
@@ -1209,6 +1232,9 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 				return
 			_online_event_turn = -1
 			_online_presenting_events = false
+		if not _connection_gate().journal_confirm(str(_online_turn_payload.get("client_action_id", ""))): return
+		if str(data.get("status", "")) in ["VERIFIED_WIN", "VERIFIED_LOSS"]:
+			if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
 		_online_turn_payload.clear()
 		_refresh_online_spell_buttons()
 		_refresh_online_inspiration()
@@ -1222,6 +1248,8 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		return
 	var session: Variant = data.get("session")
 	if ok and session is Dictionary and str(session.get("session_id", "")) == str(_solo_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"] and _combat_backend._verified_player_id == _combat_identity:
+		if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
+		_online_turn_payload.clear()
 		_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
 		_solo_forfeit_action = ""
 		if _online_turn_payload.is_empty():
@@ -1252,6 +1280,7 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 			return
 		_send_online_pending_turn()
 		return
+	if str(session.status) in ["VERIFIED_WIN", "VERIFIED_LOSS"] and not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
 	_refresh_online_spell_buttons()
 	_refresh_online_inspiration()
 	next_turn_btn.hide()
