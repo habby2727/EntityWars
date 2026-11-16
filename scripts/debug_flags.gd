@@ -128,6 +128,8 @@ func reload() -> void:
 func _load_flags() -> void:
 	unlock_all_buildings = false
 	force_all_clickable = false
+	if not OS.has_feature("editor"):
+		return
 	_apply_from_balance()
 	_apply_from_file()
 

@@ -104,6 +104,8 @@ func _verify_identity(state: Dictionary) -> bool:
 	return true
 
 func login_dev(display_name: String) -> void:
+	if not OS.has_feature("editor"):
+		return
 	if not _connection_gate().begin_explicit_login():
 		return
 	_invalidate_other_clients()

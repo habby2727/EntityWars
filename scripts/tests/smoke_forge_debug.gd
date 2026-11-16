@@ -9,9 +9,12 @@ func _run() -> void:
 		_fail("Isolation missing")
 		return
 	var file := FileAccess.open("user://debug.json", FileAccess.WRITE)
-	file.store_string(JSON.stringify({"unlock_all_buildings": true}))
+	file.store_string(JSON.stringify({"unlock_all_buildings": true, "force_all_clickable": true}))
 	file.close()
 	var debug := DebugFlags.new()
+	if not debug.unlock_all_buildings or not debug.force_all_clickable:
+		_fail("Editor debug flags not loaded")
+		return
 	var state := {"wallet": {"essence": 650}, "lab": {"buildings": {"build_forge": {"level": 1}}}, "item_progress": {"aether_knot": {"level": 0}}}
 	if not debug.save_lab_state(state):
 		_fail("Cannot write isolated fixture")

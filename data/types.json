@@ -34,9 +34,9 @@
   "effectiveness": {
     "sulfur": {
       "vitriol": 2.0,
-      "sodium": 0.5,
+      "sodium": 1.0,
       "mercury": 1.0,
-      "aether": 1.0,
+      "aether": 0.5,
       "gold": 1.0,
       "sulfur": 1.0
     },
