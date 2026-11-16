@@ -590,6 +590,7 @@ func _clear_guardian_preview() -> void:
 		_boss_open.visible = false
 
 func _show_common_details() -> void:
+	_hunt_wants_guardians = false
 	_hunt_selected = {"id": "hunt_common", "appearance_id": str(_debug_visual.get("id", ""))}
 	_hunt_guardian_id = ""
 	var texture_path := str(_debug_visual.get("texture", ""))
@@ -899,7 +900,7 @@ func _open_global_boss() -> void:
 	call_deferred("_fit_encounter_card")
 
 func _drain_hunt_requests() -> void:
-	if _backend == null or _backend.token.is_empty():
+	if not is_inside_tree() or not is_instance_valid(_backend) or not _backend.is_inside_tree() or _backend.token.is_empty():
 		return
 	if not _hunt_pending_start_payload.is_empty():
 		var current_key := _hunt_action_context_key()
@@ -923,7 +924,7 @@ func _drain_hunt_requests() -> void:
 	elif _hunt_wants_session:
 		kind = "session"
 		path = "/world/boss-hunts/session"
-	elif _hunt_wants_guardians and not _hunt_selected.is_empty() and not _backend._verified_player_id.is_empty():
+	elif _hunt_wants_guardians and not _hunt_selected.is_empty() and not _hunt_selected.has("appearance_id") and not _hunt_selected.has("global_event_id") and not _backend._verified_player_id.is_empty():
 		kind = "guardians"
 		path = "/world/boss-hunts/guardians?zone_id=" + _get_zone_id().uri_encode() + "&hunt_id=" + str(_hunt_selected.get("id", "")).uri_encode()
 	elif _global_wants_refresh and not _backend._verified_player_id.is_empty():
@@ -964,7 +965,8 @@ func _active_hunt_matches(guardian_id: String) -> bool:
 	return parent == str(_hunt_selected.get("id", "")) and str(_hunt_active.get("zone_id", "")) == _get_zone_id() and str(_hunt_active.get("guardian_id", "")) == guardian_id
 
 func _request_guardian_progress() -> void:
-	if _hunt_selected.has("global_event_id"):
+	if _hunt_selected.is_empty() or _hunt_selected.has("global_event_id") or _hunt_selected.has("appearance_id"):
+		_hunt_wants_guardians = false
 		return
 	if _hunt_requests.values().has("guardians") and _guardian_request_key == _guardian_key() and _backend != null and _guardian_request_owner == _backend._verified_player_id:
 		return
@@ -1411,6 +1413,8 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 		_hunt_requests.erase(_request_id)
 		if kind == "schedule":
 			call_deferred("_request_hunt_session")
+		if kind == "guardians" and (_hunt_selected.is_empty() or _hunt_selected.has("appearance_id") or _hunt_selected.has("global_event_id")):
+			return
 		if kind == "guardians" and (_guardian_request_key != _guardian_key() or _backend == null or _guardian_request_owner.is_empty() or _guardian_request_owner != _backend._verified_player_id):
 			call_deferred("_request_guardian_progress")
 			return
@@ -1536,7 +1540,7 @@ func _on_state_updated(state: Dictionary) -> void:
 	if _backend != null and not _backend._verified_player_id.is_empty():
 		if _hunt_active_owner != _backend._verified_player_id:
 			call_deferred("_request_hunt_session")
-		elif not _hunt_selected.is_empty() and not _hunt_selected.has("global_event_id") and _hunt_progress_key != _guardian_key():
+		elif not _hunt_selected.is_empty() and not _hunt_selected.has("global_event_id") and not _hunt_selected.has("appearance_id") and _hunt_progress_key != _guardian_key():
 			call_deferred("_request_guardian_progress")
 
 func _on_enter_pressed() -> void:

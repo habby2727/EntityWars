@@ -25,6 +25,24 @@ func _run() -> void:
 		zone._update_common_details()
 		assert(not zone._hunt_fight.disabled, zone._preview_status.text)
 		var appearance: String = zone._hunt_selected.appearance_id
+		# A response for a prior standard hunt_common has the same guardian key.
+		zone._hunt_active_owner = "player"
+		zone._hunt_progress_key = ""
+		zone._hunt_wants_guardians = false
+		zone._backend.token = ""
+		zone._on_state_updated({})
+		zone._request_guardian_progress()
+		assert(not zone._hunt_wants_guardians)
+		zone._guardian_request_key = zone._guardian_key()
+		zone._guardian_request_owner = "player"
+		zone._hunt_requests["stale-common"] = "guardians"
+		zone._on_api_completed("stale-common", true, {"zone_id": zone._get_zone_id(), "hunt_id": "hunt_common", "boss_unlocked": true, "guardians": []})
+		assert(zone._hunt_selected.get("appearance_id") == appearance and zone._world_modal.visible)
+		assert(zone._hunt_fight.visible and not zone._view_guardians.visible)
+		zone._hunt_requests["stale-failed"] = "guardians"
+		zone._on_api_completed("stale-failed", false, {"error": "test failure"})
+		assert(zone._hunt_selected.get("appearance_id") == appearance and not zone._hunt_wants_guardians)
+		zone._backend.token = "fixture"
 		zone._hunt_active_owner = "player"
 		zone._hunt_active = {"hunt_id": "hunt_common", "zone_id": zone._get_zone_id(), "expires_at": 9999999999999, "boss_definition": {"appearance_id": appearance}}
 		zone._update_common_details()

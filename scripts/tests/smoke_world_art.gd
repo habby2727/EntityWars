@@ -7,6 +7,7 @@ func _run() -> void:
 	if OS.get_environment("EW_C6_E2E") == "1":
 		await _run_real_guardian()
 		return
+	root.size = Vector2i(1920, 1080)
 	if OS.has_environment("EW_CAPTURE_DIR"):
 		DisplayServer.window_set_size(Vector2i(1280, 720) if OS.has_environment("EW_SMALL") else Vector2i(1920, 1080))
 	for world in ["Chaos", "Corrupted", "Crystal"]:
@@ -135,11 +136,23 @@ func _run() -> void:
 		var rightmost_sprite: Control = rightmost.get_child(0)
 		var nearby: Control = zone._preview_stage.get_node("NearbyHunt")
 		assert(not rightmost_sprite.get_global_rect().intersects(nearby.get_global_rect()))
+		# This fixture uses an offline backend; the connection overlay otherwise
+		# intercepts the real pointer before it reaches the world scene.
+		var gate = root.get_node("ConnectionGate")
+		gate._timer.stop()
+		gate.state = gate.State.CONNECTED
+		gate._layer.hide()
 		var actual_click := InputEventMouseButton.new()
 		actual_click.button_index = MOUSE_BUTTON_LEFT
 		actual_click.pressed = true
 		actual_click.position = root.get_canvas_transform() * rightmost_sprite.get_global_rect().get_center()
+		var motion := InputEventMouseMotion.new()
+		motion.position = actual_click.position
+		root.push_input(motion, true)
 		root.push_input(actual_click, true)
+		var release := actual_click.duplicate() as InputEventMouseButton
+		release.pressed = false
+		root.push_input(release, true)
 		await process_frame
 		assert(zone._hunt_guardian_id == str(rightmost.name).trim_prefix("Actor_") and zone._debug_rotation == previous_rotation and zone._hunt_selected.id == "hunt_rare")
 		zone._world_modal.visible = false
