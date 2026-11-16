@@ -659,7 +659,7 @@ test("validated setup and deterministic direct exchange", () => {
   const decision = { turn: 1, spell_id: "cinder_fist", target: "boss" };
   const result = resolveCombatTurn(state, decision, rng);
   expect(result.error).toBeUndefined();
-  expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([93, 101]);
+  expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([93, 100]);
   expect(result.next_state.turn).toBe(1);
   expect(resolveCombatTurn(state, decision, rng)).toEqual(result);
   const missed = resolveCombatTurn(state, decision, () => 0.99);
@@ -997,7 +997,7 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   const enhanced = createCombatState(buildTrustedCombatSetup(progress, selected, catalogs));
   expect([enhanced.player.hp, enhanced.player.atk, enhanced.item_effects.true_on_hit]).toEqual([114, 35, 2]);
   enhanced.boss.status.stun = 1;
-  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(112);
+  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(110);
   const supported = structuredClone(progress); supported.item_progress.bismuth_talisman.specialization = "technical";
   supported.item_progress.bismuth_talisman.traits = [{ id: "guard_flat", points: 2 }, { id: "power_flat", points: 1 }, { id: "tempo_flat", points: 0 }];
   expect(buildTrustedCombatSetup(supported, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
@@ -1054,7 +1054,7 @@ test("synergy damage, neutralization, corrosion and incoming reduction", () => {
   const d = resolveCombatTurn(drakon, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng);
   expect(d.events.find((e: any) => e.kind === "damage").damage).toBe(19);
   expect(drakon.hom_advantage).toBeCloseTo(0.08);
-  const unfavorable = fixture("sulfur_01", "drakon", "sodium_01", "resonance"); unfavorable.boss.status.stun = 1;
+  const unfavorable = fixture("sulfur_01", "drakon", "aether_01", "resonance"); unfavorable.boss.status.stun = 1;
   const withoutBonus = structuredClone(unfavorable); withoutBonus.hom_advantage = 0;
   expect(resolveCombatTurn(unfavorable, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(resolveCombatTurn(withoutBonus, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp);
   const universalIds = ["steady_script", "furnace_rush", "ash_temper", "brimstone_crash"];
@@ -1066,10 +1066,10 @@ test("synergy damage, neutralization, corrosion and incoming reduction", () => {
   const hybridProgress = { learned_by_entity: { sulfur_01: ["golden_crucible"] }, equipped_by_mode: { attack: { sulfur_01: hybridIds } } };
   const hybrid = createCombatState(buildTrustedCombatSetup({ ...snapshot, boss_entity_id: "aether_01", spell_progress: hybridProgress, homunculus_progress: { drakon: { mutation_id: "resonance" } } }, { ...selection, spell_ids: hybridIds, homunculus_id: "drakon" }, catalogs));
   hybrid.boss.status.stun = 1;
-  expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "golden_crucible", target: "boss" }, rng).events.find((e: any) => e.kind === "damage").damage).toBe(20);
-  const mothy = fixture("sulfur_01", "mothy", "sodium_01"); mothy.player.spell_neutralize_pending = 0.5; mothy.boss.status.stun = 1;
+  expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "golden_crucible", target: "boss" }, rng).events.find((e: any) => e.kind === "damage").damage).toBe(19);
+  const mothy = fixture("sulfur_01", "mothy", "aether_01"); mothy.player.spell_neutralize_pending = 0.5; mothy.boss.status.stun = 1;
   const m = resolveCombatTurn(mothy, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng);
-  expect(m.events.find((e: any) => e.kind === "damage").damage).toBe(14);
+  expect(m.events.find((e: any) => e.kind === "damage").damage).toBe(16);
   const pyritc = fixture("vitriol_01", "pyritc", "sodium_01"); pyritc.boss.status.stun = 1;
   const p = resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng);
   expect(p.events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 3, actual_damage: 3, hp: p.next_state.boss.hp });

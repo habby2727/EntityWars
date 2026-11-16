@@ -153,10 +153,16 @@ test("shared SQLite serializes economic actions across two Bun processes", async
     expect(newEntry.status).toBe(200);
     expect(newEntry.data.session_id).not.toBe(activeSession);
     expect(JSON.parse(row().state_json).world.last_gate_entry_at).toBeGreaterThan(expired.world.last_gate_entry_at);
+    const bossFixture = JSON.parse((db.query("SELECT state_json FROM world LIMIT 1").get() as {state_json:string}).state_json);
+    bossFixture.bosses.find((boss:any) => boss.boss_id === "boss_common").contributors[id] = Number(balance.boss_token_divisor) - 1;
+    db.query("UPDATE world SET state_json = ?").run(JSON.stringify(bossFixture));
     const tickets = JSON.parse(row().state_json).world.boss_tickets;
+    const tokensBefore = JSON.parse(row().state_json).world.boss_tokens;
     const attack = {client_action_id:"multi-boss", boss_id:"boss_common"};
     const attacks = await pair("/boss/attack", [attack, attack]);
     expect(attacks.map(r => r.status)).toEqual([200, 200]);
+    expect(attacks.map(r => r.data.tokens_earned).sort()).toEqual([0, 1]);
+    expect(JSON.parse(row().state_json).world.boss_tokens).toBe(tokensBefore + 1);
     expect(JSON.parse(row().state_json).world.boss_tickets).toBe(tickets - 1);
     expect((db.query("SELECT COUNT(*) AS n FROM action_log WHERE player_id = ? AND client_action_id = ?").get(id, "multi-boss") as {n:number}).n).toBe(1);
     expect((await request(1, "/boss/attack", {...attack, boss_id:"boss_colossus"}, tokens[1])).status).toBe(409);

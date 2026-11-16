@@ -27,6 +27,7 @@ import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveC
 import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
 import { guardiansFor } from "./solo_guardians";
 import { globalBossRoll, globalBossTier } from "./global_boss_rotation";
+import { incrementalBossTokens, worldDropAmount } from "./world_economy";
 
 const SOLO_HUNT_BOSS_ENTITIES: Record<string, string> = { hunt_common: "sodium_01", hunt_mythic: "sodium_01", hunt_rare: "sodium_01", hunt_epic: "sodium_01", hunt_legendary: "sodium_01" };
 
@@ -5107,9 +5108,9 @@ function getPlayerPowerScore(state: PlayerState): number {
 	return Math.floor(total);
 }
 
-function computeBossTokens(damage: number): number {
+function computeBossTokens(previous: number, current: number): number {
 	const divisor = Math.max(1, getBalanceNumber("boss_token_divisor", 1000));
-	const tokens = Math.floor(damage / divisor);
+	const tokens = incrementalBossTokens(previous, current, divisor);
 	return clampInt(tokens, 0, 1_000_000);
 }
 
@@ -5195,7 +5196,7 @@ function computeZoneDrops(zone: ZoneDef, heat: number, seedBase: string): Resour
 	const minAmount = clampInt(getBalanceNumber("world_drop_min", 1), 0, 1_000_000);
 	const maxAmount = clampInt(getBalanceNumber("world_drop_max", 3), minAmount, 1_000_000);
 	const amountRoll = seededRandom01(`${seedBase}:amount`);
-	const baseAmount = Math.floor(minAmount + (maxAmount - minAmount) * amountRoll);
+	const baseAmount = worldDropAmount(minAmount, maxAmount, amountRoll);
 	const hazardChance = clampChance(
 		getBalanceNumber("world_hazard_base_chance", 0.02) +
 			heat * getBalanceNumber("world_heat_hazard_bonus", 0.003)
@@ -5947,7 +5948,7 @@ function attackBoss(
 		bossEntry.contributors[playerId] = contributorScore;
 		world.boss_tickets = Math.max(0, world.boss_tickets - 1);
 		world.last_boss_ticket_at = now;
-		tokens = computeBossTokens(damage);
+		tokens = computeBossTokens(existing, contributorScore);
 		if (tokens > 0) {
 			world.boss_tokens = clampInt(world.boss_tokens + tokens, 0, Number.MAX_SAFE_INTEGER);
 		}
