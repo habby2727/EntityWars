@@ -1,26 +1,28 @@
 extends Node
 
-var _art: Texture2D
 var _track: StyleBoxTexture
 var _thumb: StyleBoxTexture
 
 func _ready() -> void:
-	_art = load("res://assets/ui/new-elements/scrollbar_vertical.png") as Texture2D
-	if _art == null:
+	var track_art := load("res://assets/ui/new-elements/scrollbar_track_vertical_32x96.png") as Texture2D
+	var thumb_art := load("res://assets/ui/new-elements/scrollbar_thumb_vertical_32x96.png") as Texture2D
+	if track_art == null or thumb_art == null:
 		return
-	_track = _style(Rect2(0, 90, 122, 200), 16.0, 0.0)
-	_thumb = _style(Rect2(18, 312, 86, 280), 16.0, 32.0)
+	_track = _style(track_art, 0.0)
+	_thumb = _style(thumb_art, 32.0)
 	get_tree().node_added.connect(_on_node_added)
 	_apply_existing(get_tree().root)
 
-func _style(region: Rect2, width: float, height: float) -> StyleBoxTexture:
-	var atlas := AtlasTexture.new()
-	atlas.atlas = _art
-	atlas.region = region
+func _style(art: Texture2D, height: float) -> StyleBoxTexture:
+	var image := art.get_image()
+	image.resize(16, 48, Image.INTERPOLATE_LANCZOS)
 	var box := StyleBoxTexture.new()
-	box.texture = atlas
-	box.content_margin_left = width / 2.0
-	box.content_margin_right = width / 2.0
+	box.texture = ImageTexture.create_from_image(image)
+	box.texture_margin_top = 16.0
+	box.texture_margin_bottom = 16.0
+	box.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+	box.content_margin_left = 8.0
+	box.content_margin_right = 8.0
 	box.content_margin_top = height / 2.0
 	box.content_margin_bottom = height / 2.0
 	return box

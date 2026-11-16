@@ -52,7 +52,8 @@ func _ready() -> void:
 	_reconcile.clear_identity()
 	_load_debug_flags()
 	_load_auth()
-	if auto_dev_login and token == "" and not _auto_login_started:
+	_connection_gate().observe_credentials(self)
+	if auto_dev_login and token == "" and not _auto_login_started and not _connection_gate().blocked() and _connection_gate().player_id.is_empty():
 		_auto_login_started = true
 		var dev_name := _get_dev_name()
 		_last_login_name = dev_name
@@ -64,6 +65,7 @@ func set_token(new_token: String) -> void:
 	_invalidate_other_clients()
 	_invalidate_session()
 	token = new_token.strip_edges()
+	_connection_gate().authentication_changed(token, base_url)
 	_save_auth()
 	emit_signal("auth_changed", token)
 	if token != "":
@@ -89,14 +91,21 @@ func _verify_identity(state: Dictionary) -> bool:
 	if player_id.is_empty() or player_id.length() > 128:
 		return false
 	if not _verified_player_id.is_empty():
-		return player_id == _verified_player_id
+		if player_id != _verified_player_id:
+			_connection_gate().report_failure(self, "identity_mismatch")
+			return false
+		_connection_gate().register_identity(self, player_id)
+		return true
 	if token.is_empty() or not _reconcile.set_identity(player_id):
 		return false
 	_verified_player_id = player_id
+	_connection_gate().register_identity(self, player_id)
 	_build_pending_keys()
 	return true
 
 func login_dev(display_name: String) -> void:
+	if _connection_gate().blocked():
+		return
 	_invalidate_other_clients()
 	_invalidate_session()
 	token = ""
@@ -123,6 +132,8 @@ func _invalidate_external_session() -> void:
 	emit_signal("auth_changed", token)
 
 func ensure_dev_login() -> void:
+	if _connection_gate().blocked() or not _connection_gate().player_id.is_empty():
+		return
 	if token != "":
 		return
 	if _auto_login_started:
@@ -148,6 +159,8 @@ func get_pending_actions() -> Array:
 	return _pending.to_array()
 
 func send_action(action_dict: Dictionary) -> String:
+	if _connection_gate().blocked():
+		return ""
 	if _verified_player_id.is_empty():
 		return ""
 	var action = _normalize_action(action_dict)
@@ -198,7 +211,9 @@ func refresh_state() -> void:
 	if err != OK:
 		push_error("BackendClient: refresh_state failed to send (%s)" % err)
 
-func request_api(method: String, path: String, body: Variant, expect_state: bool = false) -> String:
+func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false) -> String:
+	if _connection_gate().blocked() and not recovery:
+		return ""
 	_ensure_api_http()
 	if _api_in_flight.size() > 0:
 		return ""
@@ -211,6 +226,8 @@ func request_api(method: String, path: String, body: Variant, expect_state: bool
 	return request_id
 
 func flush_queue() -> void:
+	if _connection_gate().blocked():
+		return
 	if _verified_player_id.is_empty():
 		return
 	if _in_flight.size() > 0:
@@ -390,9 +407,11 @@ func _on_request_completed(result: int, response_code: int, _headers: PackedStri
 	var was_queued = bool(meta.get("queued", false))
 	_in_flight.clear()
 	if result != HTTPRequest.RESULT_SUCCESS:
+		_connection_gate().report_failure(self, "network_error")
 		_handle_request_failure(kind, action, action_key, "network_error", was_queued)
 		return
 	if response_code < 200 or response_code >= 300:
+		_connection_gate().report_failure(self, "http", response_code)
 		var err_data = _parse_json(body)
 		if kind == "action" and (response_code >= 500 or response_code < 400 or response_code == 408):
 			_handle_request_failure(kind, action, action_key, "uncertain_http_%s" % response_code, was_queued)
@@ -406,6 +425,7 @@ func _on_request_completed(result: int, response_code: int, _headers: PackedStri
 		return
 	var data = _parse_json(body)
 	if typeof(data) != TYPE_DICTIONARY:
+		_connection_gate().report_failure(self, "bad_json")
 		_handle_request_failure(kind, action, action_key, "bad_json", was_queued)
 		return
 	var ok = true
@@ -460,9 +480,11 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 	_api_in_flight.clear()
 	var request_id = str(meta.get("request_id", ""))
 	if result != HTTPRequest.RESULT_SUCCESS:
+		_connection_gate().report_failure(self, "network_error")
 		emit_signal("api_completed", request_id, false, {"error": "network_error"})
 		return
 	if response_code < 200 or response_code >= 300:
+		_connection_gate().report_failure(self, "http", response_code)
 		var err_data = _parse_json(body)
 		if typeof(err_data) == TYPE_DICTIONARY and err_data.has("error"):
 			err_data["http_status"] = response_code
@@ -472,6 +494,7 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 		return
 	var data = _parse_json(body)
 	if typeof(data) != TYPE_DICTIONARY:
+		_connection_gate().report_failure(self, "bad_json")
 		emit_signal("api_completed", request_id, false, {"error": "bad_json"})
 		return
 	if data.has("server_time_unix_ms"):
@@ -486,6 +509,7 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 		var state = data.get("updated_player_state", data)
 		if typeof(state) == TYPE_DICTIONARY:
 			if not _verify_identity(state):
+				_connection_gate().report_failure(self, "identity_mismatch")
 				emit_signal("api_completed", request_id, false, {"error": "identity_mismatch"})
 				return
 			if _reconcile.apply_server_state(state):
@@ -538,14 +562,10 @@ func _parse_json(body: PackedByteArray) -> Variant:
 	if body.is_empty():
 		return null
 	var text = body.get_string_from_utf8()
-	var parsed = JSON.parse_string(text)
-	if parsed == null:
+	var json := JSON.new()
+	if json.parse(text) != OK:
 		return null
-	if typeof(parsed) == TYPE_OBJECT:
-		if parsed.error != OK:
-			return {}
-		return parsed.result
-	return parsed
+	return json.data
 
 func _load_auth() -> void:
 	if _auth_loaded:
@@ -601,3 +621,6 @@ func _get_dev_name() -> String:
 	if os_name != "":
 		return os_name
 	return "DevPlayer"
+
+static func _connection_gate() -> Node:
+	return (Engine.get_main_loop() as SceneTree).root.get_node("ConnectionGate")

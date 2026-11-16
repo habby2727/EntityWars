@@ -36,6 +36,8 @@ static func go_to_dungeon_combat() -> void:
 	_go_to(SCENE_COMBAT, "Combat")
 
 static func return_from_dungeon() -> void:
+	if _connection_gate().blocked():
+		return
 	_dungeon_context.clear()
 	go_to_lab_structures("sync_nexus")
 
@@ -43,6 +45,8 @@ static func debug_guardian_key(zone: String, tier_index: int, encounter_id: Stri
 	return "%s:%d:%s" % [zone, tier_index, encounter_id]
 
 static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "", visual_zone_id: String = "", debug_visual: Dictionary = {}) -> void:
+	if _connection_gate().blocked():
+		return
 	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key, "display_texture_id": display_texture_id, "session_id": session_id, "visual_zone_id": visual_zone_id if visual_zone_id in ["zone_chaos", "zone_corrupted", "zone_crystal"] else ""}
 	if session_id.is_empty() and not debug_visual.is_empty():
 		_solo_hunt_context["debug_visual"] = debug_visual.duplicate(true)
@@ -51,6 +55,8 @@ static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_
 	_go_to(SCENE_LOADOUT, "LoadoutGrid")
 
 static func cancel_hunt_loadout() -> void:
+	if _connection_gate().blocked():
+		return
 	var zone_id := str(_solo_hunt_context.get("visual_zone_id", ""))
 	_hunt_loadout_active = false
 	_hunt_loadout.clear()
@@ -148,6 +154,8 @@ static func go_to_loadout() -> void:
 	_go_to(SCENE_LOADOUT, "LoadoutGrid")
 
 static func _go_to(scene_path: String, label: String) -> void:
+	if _connection_gate().blocked():
+		return
 	if scene_path == "":
 		push_error("SceneRouter: Missing scene path for %s." % label)
 		return
@@ -167,3 +175,6 @@ static func _get_tree() -> SceneTree:
 	if loop is SceneTree:
 		return loop
 	return null
+
+static func _connection_gate() -> Node:
+	return (Engine.get_main_loop() as SceneTree).root.get_node("ConnectionGate")

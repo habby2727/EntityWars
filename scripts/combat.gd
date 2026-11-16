@@ -101,6 +101,8 @@ var _dungeon_encounter_details := {}
 static var _dungeon_last_brief_key := ""
 var _dungeon_seen_actions := {}
 var _dungeon_playing_events := false
+var _gate_epoch := 0
+var _gate_session_verified := false
 var _dungeon_presentation_turn := -1
 var _dungeon_rank_loaded := false
 var _dungeon_best := -1
@@ -382,6 +384,8 @@ func _dungeon_on_identity(state: Dictionary) -> void:
 		_dungeon_recover()
 
 func _dungeon_on_auth_changed(_token: String) -> void:
+	_dungeon_playing_events = false
+	_dungeon_presentation_turn = -1
 	_dungeon_request = ""
 	_dungeon_synchronized = false
 	_dungeon_show_retry("Account changed. Sign in with the original account.")
@@ -390,7 +394,7 @@ func _dungeon_recover() -> void:
 	if _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or not _dungeon_request.is_empty():
 		return
 	_dungeon_kind = "session"
-	_dungeon_request = _combat_backend.request_api("GET", "/dungeon/session", null)
+	_dungeon_request = _combat_backend.request_api("GET", "/dungeon/session", null, false, _connection_gate().blocked())
 	if _dungeon_request.is_empty():
 		_dungeon_show_retry("Connection busy. Retry recovery.")
 	_dungeon_refresh_controls()
@@ -406,7 +410,7 @@ func _dungeon_send_pending() -> void:
 	if _dungeon_pending.is_empty() or not _dungeon_request.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
 		return
 	_dungeon_kind = str(_dungeon_pending.get("kind", ""))
-	_dungeon_request = _combat_backend.request_api("POST", "/dungeon/" + _dungeon_kind, _dungeon_pending.get("payload", {}).duplicate(true))
+	_dungeon_request = _combat_backend.request_api("POST", "/dungeon/" + _dungeon_kind, _dungeon_pending.get("payload", {}).duplicate(true), false, _connection_gate().blocked() and _gate_session_verified)
 	if _dungeon_request.is_empty():
 		_dungeon_show_retry("Request unresolved. Retry recovery.")
 	_dungeon_refresh_controls()
@@ -415,6 +419,9 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 	if request_id.is_empty() or request_id != _dungeon_request:
 		return
 	_dungeon_request = ""
+	if _connection_gate().blocked() and (not _connection_gate()._player_verified or (_dungeon_kind != "session" and not _gate_session_verified)):
+		_dungeon_synchronized = false
+		return
 	if _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or _dungeon_identity.is_empty():
 		_dungeon_show_retry("Account changed. Return to Sync Nexus.")
 		return
@@ -439,6 +446,7 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 			return
 		if session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
 			if int(session.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
+				_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
 				_dungeon_session = session.duplicate(true)
 				_dungeon_synchronized = true
 				_dungeon_render()
@@ -447,6 +455,8 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 			return
 		if not _dungeon_pending.is_empty():
 			_dungeon_send_pending()
+		else:
+			connection_gate_recover()
 		return
 	if not ok and str(data.get("error", "")) in ["INVALID_DECISION", "UNSUPPORTED_MECHANIC", "Dungeon run unavailable or stale.", "Floor not cleared."]:
 		_dungeon_pending.clear()
@@ -466,10 +476,12 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_playing_events = true
 		_dungeon_presentation_turn = int(data.get("combat_state", {}).get("turn", 0))
 		_dungeon_refresh_controls()
-		await _dungeon_present_events(data.get("events", []), _dungeon_identity, generation, run_id, action_id, revision)
-		if not _dungeon_playback_valid(_dungeon_identity, generation, run_id, action_id, revision):
-			_dungeon_playing_events = false
-			_dungeon_presentation_turn = -1
+		var playback_epoch := _gate_epoch
+		await _dungeon_present_events(data.get("events", []), _dungeon_identity, generation, run_id, action_id, revision, playback_epoch)
+		if not _dungeon_playback_valid(_dungeon_identity, generation, run_id, action_id, revision, playback_epoch):
+			if playback_epoch == _gate_epoch:
+				_dungeon_playing_events = false
+				_dungeon_presentation_turn = -1
 			return
 		_dungeon_playing_events = false
 		_dungeon_presentation_turn = -1
@@ -481,16 +493,17 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_session = data.duplicate(true)
 		_dungeon_synchronized = true
 		_dungeon_render()
+		connection_gate_recover()
 	else:
 		_dungeon_recover()
 
-func _dungeon_playback_valid(owner: String, generation: int, run_id: String, action_id: String, revision: int) -> bool:
-	return is_inside_tree() and _combat_backend != null and _combat_backend._session_generation == generation and _combat_backend._verified_player_id == owner and not owner.is_empty() and str(SceneRouter._dungeon_context.get("run_id", "")) == run_id and str(_dungeon_pending.get("payload", {}).get("client_action_id", "")) == action_id and int(_dungeon_pending.get("payload", {}).get("expected_revision", -1)) + 1 == revision and int(_dungeon_session.get("combat_revision", 0)) <= revision
+func _dungeon_playback_valid(owner: String, generation: int, run_id: String, action_id: String, revision: int, playback_epoch: int) -> bool:
+	return is_inside_tree() and playback_epoch == _gate_epoch and _combat_backend != null and _combat_backend._session_generation == generation and _combat_backend._verified_player_id == owner and not owner.is_empty() and str(SceneRouter._dungeon_context.get("run_id", "")) == run_id and str(_dungeon_pending.get("payload", {}).get("client_action_id", "")) == action_id and int(_dungeon_pending.get("payload", {}).get("expected_revision", -1)) + 1 == revision and int(_dungeon_session.get("combat_revision", 0)) <= revision
 
-func _dungeon_present_events(events: Array, owner: String, generation: int, run_id: String, action_id: String, revision: int) -> void:
+func _dungeon_present_events(events: Array, owner: String, generation: int, run_id: String, action_id: String, revision: int, playback_epoch: int) -> void:
 	var view: Dictionary = _dungeon_session.get("combat_state", {}).duplicate(true)
 	for event in events:
-		if not _dungeon_playback_valid(owner, generation, run_id, action_id, revision):
+		if not _dungeon_playback_valid(owner, generation, run_id, action_id, revision, playback_epoch):
 			return
 		if not event is Dictionary:
 			continue
@@ -1028,6 +1041,10 @@ func _begin_combat_initialization() -> void:
 		add_child(_combat_backend)
 		_combat_backend._ensure_api_http()
 		_combat_backend._api_http.timeout = 10.0
+		if _combat_backend.token.is_empty():
+			_connection_gate().require_authentication()
+		else:
+			_connection_gate().register_identity(_combat_backend, _dungeon_identity)
 		_log_immediate("Recovering Dungeon session...")
 		return
 	if not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
@@ -1050,6 +1067,10 @@ func _begin_combat_initialization() -> void:
 		_combat_backend.api_completed.connect(_on_online_hunt_response)
 		_combat_backend.auth_changed.connect(_on_online_hunt_auth_changed)
 		add_child(_combat_backend)
+		if _combat_backend.token.is_empty():
+			_connection_gate().require_authentication()
+		else:
+			_connection_gate().register_identity(_combat_backend, _combat_identity)
 		_log_immediate("Recovering server combat...")
 		_wait_for_combat_state()
 		return
@@ -1075,6 +1096,8 @@ func _begin_combat_initialization() -> void:
 	_wait_for_combat_state()
 
 func _on_online_hunt_auth_changed(_token: String) -> void:
+	_online_presenting_events = false
+	_online_event_turn = -1
 	_online_identity_invalid = true
 	_online_hom_payload.clear()
 	hom_decision.hide()
@@ -1113,7 +1136,7 @@ func _on_online_hunt_identity(state: Dictionary) -> void:
 		_on_online_hunt_auth_changed("")
 		return
 	if not _online_presenting_events and _online_hunt_request.is_empty() and _online_turn_request.is_empty():
-		_online_hunt_request = _combat_backend.request_api("GET", "/world/boss-hunts/session?session_id=" + str(_solo_context.get("session_id", "")).uri_encode(), null, false)
+		_online_hunt_request = _combat_backend.request_api("GET", "/world/boss-hunts/session?session_id=" + str(_solo_context.get("session_id", "")).uri_encode(), null, false, _connection_gate().blocked())
 		if _online_hunt_request.is_empty():
 			_on_combat_state_timeout()
 		elif _combat_wait_timer:
@@ -1122,13 +1145,23 @@ func _on_online_hunt_identity(state: Dictionary) -> void:
 func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) -> void:
 	if not request_id.is_empty() and request_id == _solo_forfeit_request:
 		_solo_forfeit_request = ""
+		if _connection_gate().blocked() and not _gate_session_verified:
+			return
 		if ok and str(data.get("status", "")) == "FORFEIT" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity:
-			_return_from_solo_hunt()
+			_solo_forfeit_action = ""
+			if _connection_gate().blocked():
+				_show_closed_online_session("FORFEIT")
+				_connection_gate().recovery_completed()
+			else:
+				_return_from_solo_hunt()
 		else:
 			_log_immediate("Forfeit not confirmed. Reconnect and retry; the session remains active.")
 		return
 	if not request_id.is_empty() and request_id == _online_turn_request:
 		_online_turn_request = ""
+		if _connection_gate().blocked() and (not _connection_gate()._player_verified or not _gate_session_verified):
+			_online_turn_unresolved()
+			return
 		if _combat_wait_timer:
 			_combat_wait_timer.stop()
 		var inspiration_action := str(_online_turn_payload.get("decision", {}).get("kind", "")) in ["choose", "decline"]
@@ -1152,12 +1185,16 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 			var generation := _combat_backend._session_generation
 			var session_id := str(_solo_context.get("session_id", ""))
 			var revision := int(data.combat_revision)
+			var playback_epoch := _gate_epoch
 			var decision: Dictionary = _online_turn_payload.get("decision", {})
 			if not inspiration_action and decision.has("spell_id"):
 				_log_online_spell(str(decision.spell_id), true)
 				await get_tree().create_timer(LOG_STEP_SECONDS).timeout
 			for event in data.get("events", []):
-				if not _online_playback_valid(generation, session_id, action_id, revision):
+				if not _online_playback_valid(generation, session_id, action_id, revision, playback_epoch):
+					if playback_epoch == _gate_epoch and str(_online_turn_payload.get("client_action_id", "")) == action_id:
+						_online_presenting_events = false
+						_online_event_turn = -1
 					return
 				if event is Dictionary:
 					_online_event_turn = int(event.get("turn", -1))
@@ -1165,7 +1202,10 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 					var delay := _online_hunt_event_delay(event)
 					if delay > 0.0:
 						await get_tree().create_timer(delay).timeout
-			if not _online_playback_valid(generation, session_id, action_id, revision):
+			if not _online_playback_valid(generation, session_id, action_id, revision, playback_epoch):
+				if playback_epoch == _gate_epoch and str(_online_turn_payload.get("client_action_id", "")) == action_id:
+					_online_presenting_events = false
+					_online_event_turn = -1
 				return
 			_online_event_turn = -1
 			_online_presenting_events = false
@@ -1173,11 +1213,21 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		_refresh_online_spell_buttons()
 		_refresh_online_inspiration()
 		_present_online_terminal()
+		connection_gate_recover()
 		return
 	if request_id.is_empty() or request_id != _online_hunt_request:
 		return
 	_online_hunt_request = ""
+	if _connection_gate().blocked() and not _connection_gate()._player_verified:
+		return
 	var session: Variant = data.get("session")
+	if ok and session is Dictionary and str(session.get("session_id", "")) == str(_solo_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"] and _combat_backend._verified_player_id == _combat_identity:
+		_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
+		_solo_forfeit_action = ""
+		if _online_turn_payload.is_empty():
+			_show_closed_online_session(str(session.status))
+			connection_gate_recover()
+		return
 	if not ok or not session is Dictionary or _online_identity_invalid or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(session.get("session_id", "")) != str(_solo_context.get("session_id", "")) or not _valid_online_result(session) or int(session.get("combat_revision", 0)) < maxi(1, _online_hunt_revision) or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
 		_hide_online_hunt_view()
 		_log_immediate("Server combat unavailable. Retry or return; the session remains active.")
@@ -1194,6 +1244,7 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		next_turn_btn.text = "Retry"
 		next_turn_btn.show()
 		return
+	_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
 	if not _online_turn_payload.is_empty():
 		var expected := int(_online_turn_payload.get("expected_revision", -1))
 		if _online_hunt_revision < expected or (_online_hunt_revision == expected and str(session.status) != "ACTIVE"):
@@ -1205,9 +1256,61 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 	_refresh_online_inspiration()
 	next_turn_btn.hide()
 	_present_online_terminal()
+	connection_gate_recover()
 
-func _online_playback_valid(generation: int, session_id: String, action_id: String, revision: int) -> bool:
-	return is_inside_tree() and not _online_identity_invalid and _combat_backend != null and _combat_backend._session_generation == generation and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity and str(_solo_context.get("session_id", "")) == session_id and str(_online_turn_payload.get("client_action_id", "")) == action_id and _online_hunt_revision == revision
+func _online_playback_valid(generation: int, session_id: String, action_id: String, revision: int, playback_epoch: int) -> bool:
+	return is_inside_tree() and playback_epoch == _gate_epoch and not _online_identity_invalid and _combat_backend != null and _combat_backend._session_generation == generation and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity and str(_solo_context.get("session_id", "")) == session_id and str(_online_turn_payload.get("client_action_id", "")) == action_id and _online_hunt_revision == revision
+
+func connection_gate_lost() -> void:
+	_gate_epoch += 1
+	_gate_session_verified = false
+	_online_presenting_events = false
+	_online_event_turn = -1
+	_dungeon_playing_events = false
+	_dungeon_presentation_turn = -1
+	_dungeon_synchronized = false
+	if _online_hunt_guard:
+		_refresh_online_spell_buttons()
+		_refresh_online_inspiration()
+	elif _dungeon_guard:
+		_dungeon_refresh_controls()
+
+func connection_gate_recover() -> void:
+	if not _connection_gate().blocked() or not _connection_gate()._player_verified:
+		return
+	if _combat_backend == null:
+		return
+	if _combat_backend._verified_player_id.is_empty() and not _combat_backend.token.is_empty():
+		_combat_backend.refresh_state()
+		return
+	if _online_hunt_guard:
+		if _online_identity_invalid or _combat_backend._verified_player_id != _combat_identity:
+			return
+		if not _gate_session_verified:
+			if _online_hunt_request.is_empty() and _online_turn_request.is_empty() and not _online_presenting_events:
+				_on_online_hunt_identity({"player_id": _combat_identity})
+		elif _online_turn_payload.is_empty() and _online_turn_request.is_empty() and not _online_presenting_events and _solo_forfeit_request.is_empty():
+			if not _solo_forfeit_action.is_empty():
+				_solo_forfeit_request = _combat_backend.request_api("POST", "/world/boss-hunts/forfeit", {"session_id": str(_solo_context.session_id), "client_action_id": _solo_forfeit_action}, false, true)
+			else:
+				_connection_gate().recovery_completed()
+	elif _dungeon_guard:
+		if _combat_backend._verified_player_id != _dungeon_identity:
+			return
+		if not _gate_session_verified:
+			if _dungeon_request.is_empty() and not _dungeon_playing_events:
+				_dungeon_recover()
+		elif _dungeon_pending.is_empty() and not _dungeon_playing_events:
+			_connection_gate().recovery_completed()
+	else:
+		_connection_gate().recovery_completed()
+
+func _show_closed_online_session(status: String) -> void:
+	_online_hunt_session = {"status": status}
+	_hide_online_hunt_view()
+	_log_immediate("Encounter " + status.to_lower() + ".")
+	next_turn_btn.text = "Return"
+	next_turn_btn.show()
 
 func _online_hunt_event_delay(event: Dictionary) -> float:
 	var kind := str(event.get("kind", ""))
@@ -1313,7 +1416,7 @@ func _send_online_pending_turn() -> void:
 		return
 	var is_inspiration := str(_online_turn_payload.get("decision", {}).get("kind", "")) in ["choose", "decline"]
 	var endpoint := "/world/boss-hunts/inspiration" if is_inspiration else "/world/boss-hunts/turn"
-	_online_turn_request = _combat_backend.request_api("POST", endpoint, _online_turn_payload.duplicate(true), false)
+	_online_turn_request = _combat_backend.request_api("POST", endpoint, _online_turn_payload.duplicate(true), false, _connection_gate().blocked() and _gate_session_verified)
 	if _online_turn_request.is_empty():
 		_online_turn_unresolved()
 	elif _combat_wait_timer:
@@ -1554,6 +1657,8 @@ func _wait_for_combat_state() -> void:
 	_combat_backend.refresh_state()
 
 func _on_combat_state_timeout() -> void:
+	if _combat_backend != null:
+		_connection_gate().report_failure(_combat_backend, "network_error")
 	if _online_hunt_guard:
 		if not _online_turn_request.is_empty() and _combat_backend != null:
 			_combat_backend._api_http.cancel_request()
@@ -4683,6 +4788,10 @@ func _reset_animations() -> void:
 		_restore_animation(node)
 
 func _exit_tree() -> void:
+	_online_presenting_events = false
+	_online_event_turn = -1
+	_dungeon_playing_events = false
+	_dungeon_presentation_turn = -1
 	_clear_solo_power()
 	_reset_animations()
 	if is_instance_valid(_reg):
@@ -4761,3 +4870,6 @@ func _scroll_log_to_bottom() -> void:
 	var lc := log_box.get_line_count()
 	if lc > 0:
 		log_box.scroll_to_line(lc - 1)
+
+static func _connection_gate() -> Node:
+	return (Engine.get_main_loop() as SceneTree).root.get_node("ConnectionGate")

@@ -189,6 +189,29 @@ func _run_online() -> void:
 		push_error("Recovery failed: " + loadout.lbl_build_error.text)
 		quit(1)
 		return
+	var loadout_gate := root.get_node("ConnectionGate")
+	var loadout_url: String = loadout_gate.base_url
+	var loadout_timeout: float = loadout_gate._http.timeout
+	loadout_gate.base_url = "http://127.0.0.1:1"
+	loadout_gate._http.timeout = 0.25
+	loadout_gate._check()
+	deadline = Time.get_ticks_msec() + 10000
+	while not loadout_gate.blocked() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.05).timeout
+	loadout_gate.base_url = loadout_url
+	loadout_gate._http.timeout = loadout_timeout
+	if not loadout_gate.blocked():
+		push_error("Loadout heartbeat failure did not lock")
+		quit(1)
+		return
+	loadout_gate._check()
+	deadline = Time.get_ticks_msec() + 20000
+	while loadout_gate.blocked() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if loadout_gate.blocked() or not loadout._hunt_recovered:
+		push_error("Loadout session did not recover automatically")
+		quit(1)
+		return
 	if int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1:
 		loadout._on_play_pressed()
 		while int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1 and Time.get_ticks_msec() < deadline:
@@ -338,7 +361,13 @@ func _run_online() -> void:
 			push_error("Failed to capture online combat")
 			quit(1)
 			return
-	assert("CD: 2" in combat.spell_buttons[0].text and "Inspiration:" in combat._online_hunt_info.text)
+	assert("CD: 2" in combat.spell_buttons[0].text)
+	combat._online_hunt_session = fixture.duplicate(true)
+	combat._refresh_online_inspiration()
+	assert(combat._inspiration_panel.visible and combat._inspiration_options.size() == 3)
+	for i in 3:
+		assert(str(combat._inspiration_options[i].id) == str(fixture.combat_state.inspiration.offers[i]))
+		assert(not combat._inspiration_cards[i].text.is_empty())
 	fixture.combat_state.minions[0].hp = 0
 	assert(combat._render_online_hunt(fixture))
 	assert(combat._solo_minion_views[0].visible and not combat._solo_minion_views[1].visible)
@@ -369,15 +398,48 @@ func _run_online() -> void:
 		push_error("HTTP retry did not recover the same session")
 		quit(1)
 		return
+	var connection_gate := root.get_node("ConnectionGate")
+	while connection_gate.blocked() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if connection_gate.blocked():
+		push_error("Recovered session remained locked")
+		quit(1)
+		return
+	while connection_gate._checking and Time.get_ticks_msec() < deadline:
+		await create_timer(0.05).timeout
+	connection_gate._timer.stop()
 	combat._on_spell_chosen(0)
 	var pending: Dictionary = combat._online_turn_payload.duplicate(true)
 	combat._on_spell_chosen(0)
 	assert(not pending.is_empty() and combat._online_turn_payload == pending)
 	assert(combat.spell_buttons[0].disabled)
 	deadline = Time.get_ticks_msec() + 20000
-	while combat._online_hunt_revision < 2 and Time.get_ticks_msec() < deadline:
+	while not combat._online_presenting_events and Time.get_ticks_msec() < deadline:
+		await create_timer(0.05).timeout
+	if not combat._online_presenting_events:
+		push_error("Online turn did not begin event playback")
+		quit(1)
+		return
+	var gate := connection_gate
+	var heartbeat_url: String = gate.base_url
+	var heartbeat_timeout: float = gate._http.timeout
+	gate._http.timeout = 0.25
+	gate.base_url = "http://127.0.0.1:1"
+	gate._check()
+	deadline = Time.get_ticks_msec() + 10000
+	while not gate.blocked() and Time.get_ticks_msec() < deadline:
+		await create_timer(0.05).timeout
+	gate.base_url = heartbeat_url
+	gate._http.timeout = heartbeat_timeout
+	if not gate.blocked() or combat._online_presenting_events or combat._online_turn_payload != pending:
+		push_error("Disconnect during playback: locked=%s presenting=%s pending=%s expected=%s" % [gate.blocked(), combat._online_presenting_events, combat._online_turn_payload, pending])
+		quit(1)
+		return
+	gate._check()
+	deadline = Time.get_ticks_msec() + 20000
+	while (combat._online_hunt_revision < 2 or not combat._online_turn_payload.is_empty() or combat._online_presenting_events) and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
-	if combat._online_hunt_revision != 2 or not combat._online_turn_payload.is_empty() or combat._combat_started:
+	if combat._online_hunt_revision != 2 or not combat._online_turn_payload.is_empty() or combat._combat_started or gate.blocked():
 		push_error("Authoritative turn failed")
 		quit(1)
 		return
@@ -402,7 +464,7 @@ func _run_online() -> void:
 	combat._combat_backend.base_url = server_url
 	combat._on_next_turn()
 	deadline = Time.get_ticks_msec() + 20000
-	while combat._online_hunt_revision < 3 and Time.get_ticks_msec() < deadline:
+	while (combat._online_hunt_revision < 3 or not combat._online_turn_payload.is_empty() or combat._online_presenting_events) and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
 	assert(combat._online_hunt_revision == 3 and combat._online_turn_payload.is_empty())
 	assert(combat._online_processed_turns.has(unresolved.client_action_id))
