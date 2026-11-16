@@ -74,7 +74,7 @@ for (const [mode, kind, committed] of [["hunt", "victory", true], ["hunt", "turn
     player.lab.hqLevel = 4; player.lab.buildings.sync_nexus = { level: 1 };
     db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(player), playerId);
     const schedule = (await request("/world/boss-hunts")).data;
-    const started = await request(mode === "hunt" ? "/world/boss-hunts/start" : "/dungeon/start", mode === "hunt" ? { client_action_id: "start", hunt_id: "hunt_common", rotation_key: schedule.rotation_key } : { client_action_id: "start" }, token);
+    const started = await request(mode === "hunt" ? "/world/boss-hunts/start" : "/dungeon/start", mode === "hunt" ? { client_action_id: "start", hunt_id: "hunt_common", rotation_key: schedule.rotation_key, zone_id: "zone_chaos", appearance_id: "chaos_astral_alchemist" } : { client_action_id: "start" }, token);
     expect(started.status).toBe(200);
     const sessionId = mode === "hunt" ? started.data.session_id : started.data.run_id;
     const loadout = mode === "hunt" ? { session_id: sessionId, client_action_id: "loadout", entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["steady_script", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" } : { run_id: sessionId, client_action_id: "loadout", entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };

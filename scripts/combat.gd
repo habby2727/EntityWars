@@ -1919,6 +1919,13 @@ func _leave_combat() -> void:
 
 func _return_from_solo_hunt() -> void:
 	var zone := str(_solo_context.get("visual_zone_id", ""))
+	SceneRouter._world_encounter_return = _solo_context.get("return_view", {}).duplicate(true)
+	if SceneRouter._world_encounter_return.is_empty() and not _combat_identity.is_empty() and not _online_hunt_session.is_empty():
+		var session := _online_hunt_session
+		var parent := str(session.get("parent_hunt_id", ""))
+		var hunt := str(session.get("hunt_id", ""))
+		var event := str(session.get("global_event_id", ""))
+		SceneRouter._world_encounter_return = {"zone_id": zone, "player_id": _combat_identity, "category": "global" if not event.is_empty() else ("special" if not parent.is_empty() or hunt != "hunt_common" else "common"), "hunt_id": parent if not parent.is_empty() else hunt, "event_id": event}
 	if zone in ["zone_chaos", "zone_corrupted", "zone_crystal"]:
 		SceneRouter.go_to_world_zone(zone)
 	else:

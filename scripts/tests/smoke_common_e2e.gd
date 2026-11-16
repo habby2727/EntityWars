@@ -20,7 +20,7 @@ func _run() -> void:
 	await process_frame
 	var zone = current_scene
 	var deadline := Time.get_ticks_msec() + 30000
-	while (zone._backend._verified_player_id.is_empty() or zone._hunt_rotation < 0 or not zone._hunt_session_checked) and Time.get_ticks_msec() < deadline:
+	while (zone._backend._verified_player_id.is_empty() or zone._hunt_rotation < 0 or not zone._hunt_session_checked or zone._common_owner != zone._backend._verified_player_id or zone._common_progress.is_empty()) and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
@@ -73,7 +73,7 @@ func _run() -> void:
 	await process_frame
 	zone = current_scene
 	deadline = Time.get_ticks_msec() + 30000
-	while (zone._hunt_active.is_empty() or zone._hunt_active_owner.is_empty()) and Time.get_ticks_msec() < deadline:
+	while (zone._hunt_active.is_empty() or zone._hunt_active_owner.is_empty() or zone._common_progress.is_empty()) and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
 	if zone._hunt_active.is_empty():
 		_fail("Common session did not recover")

@@ -22,6 +22,8 @@ func _run() -> void:
 		zone._global_connection_lost = false
 		zone._hunt_session_checked = true
 		zone._hunt_rotation = 123
+		zone._common_owner = "player"
+		zone._common_progress = {"commons": []}
 		zone._update_common_details()
 		assert(not zone._hunt_fight.disabled, zone._preview_status.text)
 		var appearance: String = zone._hunt_selected.appearance_id
@@ -49,11 +51,14 @@ func _run() -> void:
 		assert(not zone._hunt_fight.disabled and zone._active_hunt_matches(""))
 		zone._hunt_active.boss_definition.appearance_id = "another"
 		zone._update_common_details()
-		assert(zone._hunt_fight.disabled and zone._preview_status.text.contains("Another hunt"))
+		assert(not zone._hunt_fight.disabled)
 		zone._hunt_active.clear()
 		zone._common_cooldown_until = zone._backend.get_server_time_unix_ms() + 30000
 		zone._update_common_details()
-		assert(zone._hunt_fight.disabled and zone._preview_status.text.contains("cooldown"))
+		assert(not zone._hunt_fight.disabled)
+		zone._common_progress = {"commons": [{"appearance_id": appearance, "defeated": true}]}
+		zone._update_common_details()
+		assert(zone._hunt_fight.disabled and zone._preview_status.text.contains("Defeated"))
 		zone.queue_free()
 		await process_frame
 	print("PASS common encounter availability and legacy UI")

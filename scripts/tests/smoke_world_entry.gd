@@ -60,8 +60,8 @@ func _run() -> void:
 	scene._hunt_active_owner = scene._backend._verified_player_id
 	scene._hunt_active = {"session_id": "fixture", "hunt_id": "hunt_common", "zone_id": "zone_chaos", "expires_at": scene._backend.get_server_time_unix_ms() + 60000}
 	scene._open_global_boss()
-	if scene._hunt_fight.disabled or scene._hunt_fight.text != "Resume Hunt" or not scene._preview_status.text.contains("active encounter"):
-		_fail("Another active hunt cannot be resumed")
+	if scene._hunt_fight.disabled or scene._active_hunt_matches(""):
+		_fail("A different active hunt blocked the global encounter")
 		return
 	scene._hunt_active.clear()
 	scene._hunt_active_owner = ""
@@ -99,8 +99,8 @@ func _run() -> void:
 		_fail("Existing zone session cannot be resumed during cooldown")
 		return
 	for zone in gate._zone_rows:
-		if zone != "zone_corrupted" and not gate._zone_rows[zone].enter.disabled:
-			_fail("New zone entry remains enabled during cooldown")
+		if gate._zone_rows[zone].enter.disabled:
+			_fail("Zone encounters are inaccessible during exploration cooldown")
 			return
 	gate.queue_free()
 	scene._update_from_state(scene._backend.load_cached_state())

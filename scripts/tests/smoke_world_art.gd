@@ -7,7 +7,7 @@ func _run() -> void:
 	if OS.get_environment("EW_C6_E2E") == "1":
 		await _run_real_guardian()
 		return
-	root.size = Vector2i(1920, 1080)
+	root.size = Vector2i(1280, 720) if OS.has_environment("EW_SMALL") else Vector2i(1920, 1080)
 	if OS.has_environment("EW_CAPTURE_DIR"):
 		DisplayServer.window_set_size(Vector2i(1280, 720) if OS.has_environment("EW_SMALL") else Vector2i(1920, 1080))
 	for world in ["Chaos", "Corrupted", "Crystal"]:
@@ -78,9 +78,17 @@ func _run() -> void:
 			for i in commons:
 				guardians.append({"id": "common_%d" % i, "name": "Common %d" % i, "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [world.to_lower(), entries[i]]})
 			var main := {"id": "main", "name": "Boss", "tier": tiers[tier_index], "texture_id": textures[tier_index]}
+			zone._global_event = {"event_id": "global-layout", "status": "ACTIVE", "winner_count": 2, "reward_status": null, "boss": {"id": "hunt_mythic", "name": "Global fixture", "tier": "mythic", "texture_id": "boss_colossus"}}
+			zone._render_global_boss()
 			zone.show_guardian_preview(main, guardians)
 			await process_frame
 			assert(zone._preview_stage.get_child_count() == guardians.size() + 1)
+			for i in zone._preview_stage.get_child_count():
+				var first_sprite: Control = zone._preview_stage.get_child(i).get_child(0)
+				assert(not first_sprite.get_global_rect().intersects(zone._global_actor.get_child(0).get_global_rect()), "Global event overlaps encounter input")
+				for j in range(i + 1, zone._preview_stage.get_child_count()):
+					var second_sprite: Control = zone._preview_stage.get_child(j).get_child(0)
+					assert(not first_sprite.get_global_rect().intersects(second_sprite.get_global_rect()), "Encounter input rectangles overlap")
 			var actor: Control = zone._preview_stage.get_child(1)
 			actor.get_child(0).gui_input.emit(click)
 			assert(zone._preview_selection == str(guardians[0].id))
@@ -120,7 +128,8 @@ func _run() -> void:
 		if OS.has_environment("EW_CAPTURE_DIR"):
 			await create_timer(0.3).timeout
 			root.get_texture().get_image().save_png(OS.get_environment("EW_CAPTURE_DIR").path_join("map_hunt_" + world + ".png"))
-		assert(zone._preview_stage.get_child_count() == 5)
+		assert(zone._preview_stage.get_child_count() == 4)
+		assert(zone._preview_stage.get_node_or_null("NearbyHunt") == null)
 		var stage_before = zone._preview_stage
 		var actors_before = stage_before.get_children()
 		zone._open_main_preview()
@@ -134,8 +143,8 @@ func _run() -> void:
 		var previous_rotation: int = zone._debug_rotation
 		var rightmost: Control = zone._preview_stage.get_child(3)
 		var rightmost_sprite: Control = rightmost.get_child(0)
-		var nearby: Control = zone._preview_stage.get_node("NearbyHunt")
-		assert(not rightmost_sprite.get_global_rect().intersects(nearby.get_global_rect()))
+		assert(not rightmost_sprite.get_global_rect().intersects(zone._common_picker.get_global_rect()))
+		assert(not rightmost_sprite.get_global_rect().intersects(zone._special_picker.get_global_rect()))
 		# This fixture uses an offline backend; the connection overlay otherwise
 		# intercepts the real pointer before it reaches the world scene.
 		var gate = root.get_node("ConnectionGate")
@@ -168,21 +177,18 @@ func _run() -> void:
 		zone._hunt_progress.defeated_count = 1
 		zone._show_map_hunt(rare)
 		await process_frame
-		assert(zone._preview_stage.get_child_count() == 4)
+		assert(zone._preview_stage.get_child_count() == 3)
 		for guardian in online_guardians:
 			guardian.defeated = true
 		zone._hunt_progress.boss_unlocked = true
 		zone._hunt_progress.defeated_count = 3
 		zone._show_map_hunt(rare)
 		await process_frame
-		assert(zone._preview_stage.get_child_count() == 2)
+		assert(zone._preview_stage.get_child_count() == 1)
 		zone._world_modal.visible = false
-		var online_stage = zone._preview_stage
-		var online_actors: Array = online_stage.get_children()
-		zone._preview_stage.get_node("NearbyHunt").pressed.emit()
+		zone._select_special_roster(2)
 		assert(zone._hunt_selected.id == "hunt_mythic", "selected: " + str(zone._hunt_selected))
 		assert(zone._world_modal.visible and zone._preview_selection == "hunt_mythic")
-		assert(zone._preview_stage == online_stage and zone._preview_stage.get_children() == online_actors)
 		zone._world_modal.visible = false
 		zone._clear_guardian_preview()
 		zone._debug.unlock_all_buildings = true

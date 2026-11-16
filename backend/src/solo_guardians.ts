@@ -12,6 +12,10 @@ export function commonAppearance(zoneId: unknown, appearanceId: unknown): { name
   return { appearance_id: appearanceId, name, texture_id: `res://assets/lab/bosses/${zoneId.slice(5)}_zone_common/${appearanceId}.png` };
 }
 
+export function commonAppearances(zoneId: string) {
+  return Object.hasOwn(ZONE_ART, zoneId) ? ZONE_ART[zoneId].map(id => commonAppearance(zoneId, id)!) : null;
+}
+
 const GROUPS: Record<string, readonly string[]> = {
   hunt_common: [],
   hunt_mythic: ["common", "common"],
@@ -28,14 +32,14 @@ export type GuardianDefinition = {
   texture_id: string;
 };
 
-export function guardiansFor(zoneId: string, parentId: string, bosses: readonly any[], rotation = 0, seed?: number): GuardianDefinition[] | null {
+export function guardiansFor(zoneId: string, parentId: string, bosses: readonly any[], _rotation = 0, seed?: number): GuardianDefinition[] | null {
   if (!Object.hasOwn(ZONE_ART, zoneId) || !Object.hasOwn(GROUPS, parentId) || !Array.isArray(bosses)) return null;
   const source = ZONE_ART[zoneId];
   const art = seed === undefined ? source : [...source].sort((a, b) => {
     const score = (id: string) => createHash("sha256").update(`${seed}:${zoneId}:${id}`).digest("hex");
     return score(a).localeCompare(score(b));
   });
-  const offset = seed === undefined ? rotation : 0;
+  const offset = 0;
   const groups = GROUPS[parentId];
   const result: GuardianDefinition[] = [];
   let commonIndex = 0;

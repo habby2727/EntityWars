@@ -203,6 +203,18 @@ func _ready() -> void:
 	_resolve_nodes()
 	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
 	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
+	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("replaced_session_id", "")).is_empty():
+		var notice := Label.new()
+		notice.text = "Previous hunt abandoned."
+		notice.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		notice.offset_left = -120
+		notice.offset_right = 120
+		notice.offset_top = 8
+		notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(notice)
+		SceneRouter._solo_hunt_context.erase("replaced_session_id")
+		get_tree().create_timer(5.0).timeout.connect(notice.queue_free)
 	if _hunt_mode or _dungeon_mode:
 		$RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter.hide()
 		if _dungeon_mode:

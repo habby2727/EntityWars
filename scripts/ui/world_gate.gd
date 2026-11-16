@@ -183,16 +183,18 @@ func _enter_hunt_session(session: Dictionary) -> void:
 	if session_id.is_empty() or str(session.get("status", "")) != "ACTIVE":
 		_hunt_status.text = "Invalid or closed boss session."
 		return
-	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), session_id, visual_zone_id)
+	var session_zone := str(session.get("zone_id", session.get("global_status", {}).get("zone_id", visual_zone_id)))
+	SceneRouter.go_to_solo_hunt(str(session.get("hunt_id", "")), int(session.get("rotation_key", -1)), str(boss.get("display_texture_id", boss.get("texture_id", ""))), session_id, session_zone)
 
 func _update_hunt_fight() -> void:
 	if not is_instance_valid(_hunt_fight):
 		return
-	var boss: Dictionary = _hunt_rows.get(_hunt_selected, {}).get("boss", {})
 	var authenticated := _backend != null and not str(_backend.token).is_empty() and not _backend._verified_player_id.is_empty()
 	var active := not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _get_server_now_ms() if _backend != null else false
-	_hunt_fight.text = "Resume Hunt" if active else "Fight (Unverified Preview)"
-	_hunt_fight.disabled = not (authenticated and not _hunt_loading and not _busy and (active or (_hunt_valid and _hunt_rotation_key >= 0 and _hunt_boundary > _get_server_now_ms() and bool(boss.get("available", false)))))
+	_hunt_fight.text = "Resume Hunt" if active else "Select a zone to fight"
+	_hunt_fight.disabled = not (authenticated and not _hunt_loading and not _busy and active)
+	if not active and is_instance_valid(_hunt_status) and not _hunt_loading:
+		_hunt_status.text = "Choose a zone to select commons, guardians or a special boss."
 
 func _request_hunt_schedule() -> void:
 	if _hunt_loading:
@@ -508,9 +510,6 @@ func _on_refresh_zones_pressed() -> void:
 func _on_enter_pressed(zone_id: String) -> void:
 	_clear_zone_error()
 	if zone_id == "":
-		return
-	if _gate_remaining() != 0 and not _has_zone_session(zone_id):
-		_set_zone_error("World Gate cooldown: %s" % _gate_remaining_text())
 		return
 	_selected_zone_id = zone_id
 	SceneRouter.go_to_world_zone(zone_id)
@@ -866,10 +865,9 @@ func _update_zone_cards() -> void:
 		var enter_btn: Button = row.get("enter", null)
 		if enter_btn != null:
 			var has_session := _has_zone_session(str(zone_id))
-			var remaining := _gate_remaining()
-			enter_btn.disabled = not has_session and remaining != 0
-			enter_btn.text = tr("WORLD_RESUME") if has_session else tr("WORLD_WAIT") % _gate_remaining_text() if remaining != 0 else tr("WORLD_ENTER")
-			enter_btn.tooltip_text = tr("WORLD_GATE_COOLDOWN") % _gate_remaining_text() if remaining != 0 and not has_session else ""
+			enter_btn.disabled = false
+			enter_btn.text = tr("WORLD_RESUME") if has_session else tr("WORLD_ENTER")
+			enter_btn.tooltip_text = ""
 
 func _has_zone_session(zone_id: String) -> bool:
 	var sessions: Variant = _player_world.get("sessions", {})

@@ -22,6 +22,7 @@ static var _next_world_zone_id: String = ""
 static var _next_world_boss_id: String = ""
 static var _combat_seal_mode := "attack"
 static var _solo_hunt_context := {}
+static var _world_encounter_return := {}
 static var _hunt_loadout_active := false
 static var _hunt_loadout := {}
 static var _debug_guardian_wins := {}
@@ -44,10 +45,13 @@ static func return_from_dungeon() -> void:
 static func debug_guardian_key(zone: String, tier_index: int, encounter_id: String) -> String:
 	return "%s:%d:%s" % [zone, tier_index, encounter_id]
 
-static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "", visual_zone_id: String = "", debug_visual: Dictionary = {}) -> void:
+static func go_to_solo_hunt(hunt_id: String, rotation_key: int, display_texture_id: String = "", session_id: String = "", visual_zone_id: String = "", debug_visual: Dictionary = {}, replaced_session_id: String = "", return_view: Dictionary = {}) -> void:
 	if _connection_gate().blocked():
 		return
 	_solo_hunt_context = {"hunt_id": hunt_id, "rotation_key": rotation_key, "display_texture_id": display_texture_id, "session_id": session_id, "visual_zone_id": visual_zone_id if visual_zone_id in ["zone_chaos", "zone_corrupted", "zone_crystal"] else ""}
+	_solo_hunt_context["return_view"] = return_view.duplicate(true)
+	if not replaced_session_id.is_empty():
+		_solo_hunt_context["replaced_session_id"] = replaced_session_id
 	if session_id.is_empty() and not debug_visual.is_empty():
 		_solo_hunt_context["debug_visual"] = debug_visual.duplicate(true)
 	_hunt_loadout_active = true
@@ -58,6 +62,7 @@ static func cancel_hunt_loadout() -> void:
 	if _connection_gate().blocked():
 		return
 	var zone_id := str(_solo_hunt_context.get("visual_zone_id", ""))
+	_world_encounter_return = _solo_hunt_context.get("return_view", {}).duplicate(true)
 	_hunt_loadout_active = false
 	_hunt_loadout.clear()
 	_solo_hunt_context.clear()

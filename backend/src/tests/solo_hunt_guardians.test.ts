@@ -41,8 +41,10 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
   const db = new Database(join(directory, "test.sqlite"));
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: join(directory, "test.sqlite"), NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
-  let server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+  const clockOffset = Math.floor(Date.now() / 900000) * 900000 + 120000 - Date.now();
+  const env = { ...process.env, DB_PATH: join(directory, "test.sqlite"), NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", TEST_CLOCK_OFFSET: String(clockOffset) };
+  const spawnServer = () => Bun.spawn([process.execPath, "-e", "const realNow = Date.now.bind(Date); Date.now = () => realNow() + Number(process.env.TEST_CLOCK_OFFSET); await import('./src/index.ts');"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+  let server = spawnServer();
   const request = async (path: string, body?: unknown, token?: string) => {
     const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: r.status, data: await r.json() as any };
@@ -57,7 +59,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     const beforeA = wallet(a.data.player_id).essence;
     const beforeB = wallet(b.data.player_id).essence;
     const commonSchedule = (await request("/world/boss-hunts")).data;
-    const common = await request("/world/boss-hunts/start", { client_action_id: "common-start", hunt_id: "hunt_common", rotation_key: commonSchedule.rotation_key }, b.data.token);
+    const common = await request("/world/boss-hunts/start", { client_action_id: "common-start", hunt_id: "hunt_common", rotation_key: commonSchedule.rotation_key, zone_id: "zone_chaos", appearance_id: "chaos_astral_alchemist" }, b.data.token);
     expect(common.status).toBe(200);
     expect((await request("/world/boss-hunts/loadout", { session_id: common.data.session_id, client_action_id: "common-load", entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" }, b.data.token)).status).toBe(200);
     const commonState = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(common.data.session_id) as any).combat_state_json);
@@ -85,7 +87,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       state.wallet.essence = cap - remaining;
       db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(state), account.data.player_id);
       const current = (await request("/world/boss-hunts")).data;
-      const hunt = await request("/world/boss-hunts/start", { client_action_id: `cap-start-${remaining}`, hunt_id: "hunt_common", rotation_key: current.rotation_key }, account.data.token);
+      const hunt = await request("/world/boss-hunts/start", { client_action_id: `cap-start-${remaining}`, hunt_id: "hunt_common", rotation_key: current.rotation_key, zone_id: "zone_chaos", appearance_id: "chaos_astral_alchemist" }, account.data.token);
       expect(hunt.status).toBe(200);
       expect((await request("/world/boss-hunts/loadout", { session_id: hunt.data.session_id, client_action_id: `cap-load-${remaining}`, entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" }, account.data.token)).status).toBe(200);
       const combat = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(hunt.data.session_id) as any).combat_state_json);
@@ -167,7 +169,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     expect((await request(listPath, undefined, a.data.token)).data.defeated_count).toBe(0);
     const expired = await start("expire-start", guardians[0].guardian_id);
     expect(expired.status).toBe(200);
-    db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(Date.now() - 1, expired.data.session_id);
+    db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(Date.now() + clockOffset - 1, expired.data.session_id);
     await request("/world/boss-hunts/session", undefined, a.data.token);
     expect((db.query("SELECT status FROM solo_hunt_sessions WHERE session_id = ?").get(expired.data.session_id) as any).status).toBe("EXPIRED");
     expect((await request(listPath, undefined, a.data.token)).data.defeated_count).toBe(0);
@@ -222,12 +224,18 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       expect((db.query("SELECT COUNT(*) AS n FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").get(a.data.player_id, zone, special.id) as any).n).toBe(i + 1);
       expect((await start(`repeat-${i}`, guardian.guardian_id)).status).toBe(409);
       expect((await request(listPath, undefined, b.data.token)).data.defeated_count).toBe(0);
+      if (i === 0) {
+        expect((await request("/world/reroll", { client_action_id: "after-guardian-win", zone_id: zone }, a.data.token)).status).toBe(200);
+        const afterReroll = (await request(listPath, undefined, a.data.token)).data.guardians;
+        expect(afterReroll.map(({ defeated, ...definition }: any) => definition)).toEqual(guardians.map(({ defeated, ...definition }: any) => definition));
+        expect(afterReroll[0].defeated).toBe(true);
+      }
     }
     expect((await request(listPath, undefined, a.data.token)).data.boss_unlocked).toBe(true);
     const main = await start("unlocked");
     expect(main.status).toBe(200);
     server.kill(); await server.exited;
-    server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+    server = spawnServer();
     await wait();
     a = await request("/auth/dev_login", { name: "guardian_isolated_a" });
     expect((await request(listPath, undefined, a.data.token)).data.boss_unlocked).toBe(true);
@@ -241,19 +249,14 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
   }
 }, 180000);
 
-test("guardian rotations cover every zone portrait without changing identity", () => {
+test("rotation changes do not remap guardian identities or portraits", () => {
   const catalog = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/solo_bosses.json"), "utf8")).bosses;
   for (const zone of ["zone_chaos", "zone_corrupted", "zone_crystal"]) {
-    const dir = resolve(import.meta.dir, `../../../assets/lab/bosses/${zone.slice(5)}_zone_common`);
-    const expected = readdirSync(dir).filter((name: string) => name.endsWith(".png")).sort();
-    const found = new Set<string>();
     const first = guardiansFor(zone, "hunt_mythic", catalog, 0)!;
-    for (let rotation = 0; rotation < expected.length; rotation++) {
+    for (let rotation = 0; rotation < 20; rotation++) {
       const group = guardiansFor(zone, "hunt_mythic", catalog, rotation)!;
-      expect(group.map(g => g.guardian_id)).toEqual(first.map(g => g.guardian_id));
-      for (const g of group) found.add(g.texture_id.split("/").pop()!);
+      expect(group).toEqual(first);
     }
-    expect([...found].sort()).toEqual(expected);
   }
 });
 
