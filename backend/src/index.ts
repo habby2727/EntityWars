@@ -56,6 +56,7 @@ type Config = {
 	host: string;
 	port: number;
 	apiVersion: string;
+	minClientBuild: number;
 	dbPath: string;
 	maxBodyBytes: number;
 	rateLimit: RateLimitConfig;
@@ -261,7 +262,6 @@ const EXPENSIVE_RATE_MAX = getEnvNumber("EXPENSIVE_RATE_LIMIT_MAX", 60);
 const CORS_ORIGINS = parseCorsOrigins();
 const dbFilePath = ensureDbPath(config.dbPath);
 const db = new Database(dbFilePath);
-const globalChat = createGlobalChat(db);
 db.exec("PRAGMA busy_timeout = 5000;");
 for (let attempt = 0; ; attempt++) {
 	try {
@@ -272,6 +272,7 @@ for (let attempt = 0; ; attempt++) {
 		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
 	}
 }
+const globalChat = createGlobalChat(db);
 const getPlayerByIdStmt = db.prepare(
 	"SELECT player_id, display_name, state_json, updated_at FROM players WHERE player_id = ?"
 );
@@ -389,6 +390,12 @@ function loadConfig(): Config {
 		merged = mergeConfig(merged, prodConfig);
 	} else {
 		merged = mergeConfig(merged, devConfig);
+	}
+	const rawBuild = Bun.env.MIN_CLIENT_BUILD;
+	if (rawBuild !== undefined) {
+		if (!/^[1-9][0-9]*$/.test(rawBuild) || !Number.isSafeInteger(Number(rawBuild))) {
+			if (IS_PRODUCTION) throw new Error("MIN_CLIENT_BUILD must be a positive safe integer.");
+		} else merged.minClientBuild = Number(rawBuild);
 	}
 	merged.dbPath = Bun.env.DB_PATH || merged.dbPath;
 	merged.port = Math.max(1, Math.min(65535, Math.trunc(getEnvNumber("PORT", merged.port))));
@@ -588,7 +595,8 @@ async function staticVersionResponse(): Promise<Response> {
 		env: config.env,
 		server_time_unix_ms: Date.now(),
 		schema_version: schemaVersion,
-		static_version: staticVersion
+		static_version: staticVersion,
+		min_client_build: config.minClientBuild
 	};
 	let redisHealthy = true;
 	try {
@@ -598,7 +606,7 @@ async function staticVersionResponse(): Promise<Response> {
 		}
 		const cached = await redis.get(cacheKey);
 		if (cached) {
-			return jsonResponse(JSON.parse(cached));
+			return jsonResponse({ ...JSON.parse(cached), min_client_build: config.minClientBuild });
 		}
 	} catch (err) {
 		console.warn("[cache] static/version redis read failed", err);
@@ -1186,6 +1194,13 @@ async function startServer(): Promise<void> {
 						return;
 					}
 					return jsonResponse({ error: "Upgrade required" }, 426);
+				}
+
+				if (IS_PRODUCTION && !["/static/version", "/health", "/auth/dev_login", "/v1/auth/login"].includes(url.pathname) && !url.pathname.startsWith("/debug/")) {
+					const build = req.headers.get("X-EntityWars-Client-Build") ?? "";
+					if (!/^[1-9][0-9]*$/.test(build) || !Number.isSafeInteger(Number(build)) || Number(build) < config.minClientBuild) {
+						return jsonResponse({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: config.minClientBuild }, 426);
+					}
 				}
 
 				if (req.method == "POST" && (url.pathname == "/auth/register" || url.pathname == "/auth/login")) {

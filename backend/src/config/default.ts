@@ -3,6 +3,7 @@ export default {
 	host: "0.0.0.0",
 	port: 8787,
 	apiVersion: "v1",
+	minClientBuild: 5503,
 	dbPath: "data/dev.sqlite",
 	maxBodyBytes: 256 * 1024,
 	rateLimit: {
