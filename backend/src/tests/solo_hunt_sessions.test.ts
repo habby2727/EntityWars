@@ -4,6 +4,25 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
+import { commonAppearance } from "../solo_guardians";
+
+test("all zone common appearances are strictly whitelisted", () => {
+  const zones: Record<string, string[]> = {
+    zone_chaos: ["chaos_astral_alchemist", "chaos_astral_alchemist_variant", "chaos_astral_eagle", "chaos_cyber_warrior", "chaos_lion_warrior"],
+    zone_corrupted: ["corrupted_cocodragon", "corrupted_cybermantis", "corrupted_doctor", "corrupted_hipovenom", "corrupted_medusa", "corrupted_sphinx"],
+    zone_crystal: ["crystal_bear", "crystal_golem", "crystal_hydra", "crystal_mage", "crystal_sentinel", "crystal_wolf"],
+  };
+  expect(Object.values(zones).flat()).toHaveLength(17);
+  for (const [zone, ids] of Object.entries(zones)) for (const id of ids) {
+    const appearance = commonAppearance(zone, id)!;
+    expect(appearance.appearance_id).toBe(id);
+    expect(appearance.name.length).toBeGreaterThan(0);
+    expect(appearance.texture_id).toBe(`res://assets/lab/bosses/${zone.slice(5)}_zone_common/${id}.png`);
+    expect(commonAppearance(zone === "zone_chaos" ? "zone_crystal" : "zone_chaos", id)).toBeNull();
+  }
+  expect(commonAppearance("__proto__", "x")).toBeNull();
+  expect(commonAppearance("zone_chaos", "../x")).toBeNull();
+});
 
 test("solo hunts are isolated, persistent and idempotent without wallet changes", async () => {
   const port = await new Promise<number>((resolvePort) => {
@@ -66,10 +85,20 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((await start("bad-key", "hunt_common", key - 1)).status).toBe(409);
     const unavailable = schedule.bosses.find((boss: any) => boss.tier !== "common" && !boss.available);
     expect((await start("unavailable", unavailable.id)).status).toBe(409);
-    const concurrent = await Promise.all([start("concurrent"), start("concurrent")]);
+    const visualStart = { client_action_id: "visual", hunt_id: "hunt_common", rotation_key: key, zone_id: "zone_chaos", appearance_id: "chaos_astral_alchemist_variant" };
+    expect((await request("/world/boss-hunts/start", { ...visualStart, appearance_id: "crystal_bear" }, a.data.token)).status).toBe(400);
+    expect((await request("/world/boss-hunts/start", { ...visualStart, zone_id: undefined }, a.data.token)).status).toBe(400);
+    expect((await request("/world/boss-hunts/start", { ...visualStart, guardian_id: "fake" }, a.data.token)).status).toBe(400);
+    expect((await request("/world/boss-hunts/start", { ...visualStart, global_event_id: "fake" }, a.data.token)).status).toBe(400);
+    expect((await request("/world/boss-hunts/start", { ...visualStart, hunt_id: "hunt_mythic" }, a.data.token)).status).toBe(400);
+    const concurrent = await Promise.all([request("/world/boss-hunts/start", visualStart, a.data.token), request("/world/boss-hunts/start", visualStart, a.data.token)]);
     expect(concurrent.map(result => result.status)).toEqual([200, 200]);
     const session = concurrent[0].data;
     expect(concurrent[1].data.session_id).toBe(session.session_id);
+    expect(session.boss_definition.name).toBe("Astral Alchemist Ascendant");
+    expect(session.boss_definition.texture_id).toBe("res://assets/lab/bosses/chaos_zone_common/chaos_astral_alchemist_variant.png");
+    expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.session.boss_definition).toEqual(session.boss_definition);
+    expect((await request("/world/boss-hunts/start", { ...visualStart, appearance_id: "chaos_astral_eagle" }, a.data.token)).status).toBe(409);
     expect(session.expires_at - session.started_at).toBe(2700000);
     expect((await start("concurrent", "hunt_common", key - 1)).status).toBe(409);
     expect((await start("second")).status).toBe(409);
@@ -179,7 +208,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((await request("/world/boss-hunts/turn", turn, a.data.token)).data).toEqual(firstTurn.data);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, client_action_id: "after-forfeit" }, a.data.token)).status).toBe(409);
     expect((await forfeit()).data.duplicate).toBe(true);
-    expect((await start("concurrent")).data.status).toBe("FORFEIT");
+    expect((await request("/world/boss-hunts/start", visualStart, a.data.token)).data.status).toBe("FORFEIT");
     expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.session).toBeNull();
     const cooldown = await start("cooldown-after-forfeit");
     expect(cooldown.status).toBe(409);
@@ -213,7 +242,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     a.data.token = (await request("/auth/dev_login", { name: "hunt_test_a" })).data.token;
     b.data.token = (await request("/auth/dev_login", { name: "hunt_test_b" })).data.token;
     expect((await start("cooldown-after-restart")).data.cooldown_remaining_seconds).toBeGreaterThan(0);
-    expect((await start("concurrent")).data.session_id).toBe(session.session_id);
+    expect((await request("/world/boss-hunts/start", visualStart, a.data.token)).data.session_id).toBe(session.session_id);
     db.query("UPDATE solo_hunt_sessions SET finished_at = ? WHERE session_id = ?").run(testNow() - 61000, session.session_id);
     const competing = await Promise.all([start("next-a"), start("next-b")]);
     expect(competing.map(result => result.status).sort()).toEqual([200, 409]);

@@ -105,6 +105,8 @@ var _hunt_wants_session := false
 var _hunt_wants_guardians := false
 var _hunt_pending_start_payload: Dictionary = {}
 var _hunt_active: Dictionary = {}
+var _hunt_session_checked := false
+var _common_cooldown_until := 0
 var _hunt_active_owner := ""
 var _hunt_requests: Dictionary = {}
 var _hunt_action_id := ""
@@ -150,6 +152,8 @@ func _ready() -> void:
 	_request_global_boss()
 
 func _process(_delta: float) -> void:
+	if is_instance_valid(_world_modal) and _world_modal.visible and _hunt_selected.has("appearance_id"):
+		_update_common_details()
 	_global_poll_timer += _delta
 	if _global_poll_timer >= 20.0:
 		_request_global_boss()
@@ -273,7 +277,6 @@ func _setup_zone_view() -> void:
 	_boss_picker = OptionButton.new()
 	_boss_picker.visible = false
 	_boss_picker.disabled = true
-	_boss_picker.item_selected.connect(_on_boss_selected)
 	content.add_child(_boss_picker)
 	_boss_portrait = TextureRect.new()
 	_boss_portrait.custom_minimum_size = Vector2(0, 115)
@@ -283,7 +286,8 @@ func _setup_zone_view() -> void:
 	_boss_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(_boss_portrait)
 	_boss_status = Label.new()
-	_boss_status.text = "Waiting for server data."
+	_boss_status.text = ""
+	_boss_status.visible = false
 	_boss_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(_boss_status)
 	_boss_hp = ProgressBar.new()
@@ -325,6 +329,7 @@ func _setup_zone_view() -> void:
 	panel.reparent(_world_modal)
 	panel.visible = true
 	var close := Button.new()
+	close.name = "CloseEncounter"
 	close.text = "UI_CLOSE"
 	close.custom_minimum_size = Vector2(40, 40)
 	close.pressed.connect(func(): _world_modal.visible = false)
@@ -581,24 +586,42 @@ func _clear_guardian_preview() -> void:
 		_preview_status.visible = false
 		_hunt_fight.visible = false
 		_boss_picker.visible = false
-		_boss_status.visible = true
+		_boss_status.visible = false
 		_boss_open.visible = false
 
 func _show_common_details() -> void:
+	_hunt_selected = {"id": "hunt_common", "appearance_id": str(_debug_visual.get("id", ""))}
+	_hunt_guardian_id = ""
 	var texture_path := str(_debug_visual.get("texture", ""))
 	_boss_portrait.texture = load(texture_path) as Texture2D if texture_path.begins_with("res://assets/lab/bosses/") and not ".." in texture_path and ResourceLoader.exists(texture_path) else null
 	_boss_portrait.visible = _boss_portrait.texture != null
 	_view_guardians.visible = false
-	_preview_status.text = "%s\nVisual appearance; no server encounter assigned." % str(_debug_visual.get("name", "Common"))
 	_preview_status.visible = true
 	_boss_picker.visible = false
 	_boss_hp.visible = false
 	_boss_status.visible = false
 	_boss_open.visible = false
-	_hunt_fight.visible = false
-	_debug_fight.visible = _debug.unlock_all_buildings
-	_debug_fight.disabled = false
+	_hunt_fight.visible = true
+	_debug_fight.visible = false
 	_world_modal.visible = true
+	_update_common_details()
+
+func _update_common_details() -> void:
+	var active := _active_hunt_matches("")
+	var reason := ""
+	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty() or _global_connection_lost:
+		reason = "Offline. Connect and sign in to fight."
+	elif _hunt_requests.values().has("start") or not _hunt_pending_start_payload.is_empty():
+		reason = "Starting encounter..."
+	elif not _hunt_session_checked or _hunt_rotation < 0:
+		reason = "Checking hunt availability..."
+	elif not _hunt_active.is_empty() and not active and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms():
+		reason = "Another hunt is active. Resume or forfeit it first."
+	elif not active and _common_cooldown_until > 0 and _backend.get_server_time_unix_ms() < _common_cooldown_until:
+		reason = "Common hunt cooldown: %d seconds. Select again to retry." % ceili(float(_common_cooldown_until - _backend.get_server_time_unix_ms()) / 1000.0)
+	_hunt_fight.disabled = not reason.is_empty()
+	_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
+	_preview_status.text = "%s\nSolo Hunt%s" % [str(_debug_visual.get("name", "Common")), "\n" + reason if not reason.is_empty() else ""]
 
 func _common_display_name(id: String, zone: String) -> String:
 	if id == "chaos_astral_alchemist_variant":
@@ -782,7 +805,7 @@ func _hunt_action_context_key() -> String:
 	var global_id := str(_hunt_selected.get("global_event_id", ""))
 	if not global_id.is_empty():
 		return _get_zone_id() + ":" + global_id
-	return "%s:%s:%s:%d" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation]
+	return "%s:%s:%s:%d:%s" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation, str(_hunt_selected.get("appearance_id", ""))]
 
 func _request_global_boss() -> void:
 	_global_poll_timer = 0.0
@@ -858,7 +881,7 @@ func _open_global_boss() -> void:
 	var texture_id := str(_hunt_selected.get("texture_id", ""))
 	_boss_portrait.texture = _catalog.get_tex(texture_id) if _catalog.has(texture_id) else null
 	_boss_portrait.visible = _boss_portrait.texture != null
-	_preview_status.text = "%s [%s]\n%d/5\n%s" % [str(_hunt_selected.get("name", "Boss")), str(_hunt_selected.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0)), "Already defeated" if _global_event.get("reward_status") != null else "Reward delivered after five victories."]
+	_preview_status.text = "Global Boss Event: %s [%s]\n%d/5\n%s" % [str(_hunt_selected.get("name", "Boss")), str(_hunt_selected.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0)), "Already defeated" if _global_event.get("reward_status") != null else "Reward delivered after five victories."]
 	_preview_status.visible = true
 	_boss_picker.visible = false
 	_boss_hp.visible = false
@@ -935,6 +958,8 @@ func _active_hunt_matches(guardian_id: String) -> bool:
 		return false
 	if _hunt_selected.has("global_event_id"):
 		return str(_hunt_active.get("global_event_id", "")) == str(_hunt_selected.get("global_event_id", ""))
+	if _hunt_selected.has("appearance_id") and str(_hunt_active.get("boss_definition", {}).get("appearance_id", "")) != str(_hunt_selected.appearance_id):
+		return false
 	var parent := str(_hunt_active.get("parent_hunt_id", _hunt_active.get("hunt_id", "")))
 	return parent == str(_hunt_selected.get("id", "")) and str(_hunt_active.get("zone_id", "")) == _get_zone_id() and str(_hunt_active.get("guardian_id", "")) == guardian_id
 
@@ -1049,6 +1074,9 @@ func _start_map_hunt() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
 		return
 	if not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms():
+		if not _active_hunt_matches(_hunt_guardian_id):
+			_preview_status.text = "Another hunt is active. Resume or forfeit it first."
+			return
 		_enter_map_hunt(_hunt_active)
 		return
 	_hunt_active.clear()
@@ -1057,10 +1085,10 @@ func _start_map_hunt() -> void:
 		_preview_status.text = "Global event unavailable. Refreshing..."
 		_request_global_boss()
 		return
-	if global_id.is_empty() and (_hunt_progress_key != _guardian_key() or _hunt_progress_owner != _backend._verified_player_id or (_hunt_guardian_id.is_empty() and not bool(_hunt_progress.get("boss_unlocked", false)))):
+	if global_id.is_empty() and not _hunt_selected.has("appearance_id") and (_hunt_progress_key != _guardian_key() or _hunt_progress_owner != _backend._verified_player_id or (_hunt_guardian_id.is_empty() and not bool(_hunt_progress.get("boss_unlocked", false)))):
 		_preview_status.text = "Guardian progress unavailable or boss locked."
 		return
-	if global_id.is_empty() and (not bool(_hunt_selected.get("available", false)) or _hunt_rotation < 0 or (_hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary)):
+	if global_id.is_empty() and ((not _hunt_selected.has("appearance_id") and not bool(_hunt_selected.get("available", false))) or _hunt_rotation < 0 or (not _hunt_selected.has("appearance_id") and _hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary)):
 		_preview_status.text = "Encounter expired. Refreshing..."
 		_request_map_hunts()
 		return
@@ -1078,6 +1106,8 @@ func _start_map_hunt() -> void:
 	if _hunt_requests.values().has("start"):
 		return
 	var payload := {"client_action_id": _hunt_action_id, "hunt_id": str(_hunt_selected.get("id", "")), "rotation_key": _hunt_rotation, "zone_id": _get_zone_id()}
+	if _hunt_selected.has("appearance_id"):
+		payload["appearance_id"] = _hunt_selected.appearance_id
 	if not global_id.is_empty():
 		payload["global_event_id"] = global_id
 	if not _hunt_guardian_id.is_empty():
@@ -1240,42 +1270,6 @@ func _start_debug_hunt() -> void:
 		return
 	SceneRouter.go_to_solo_hunt(_debug_hunt_id, 0, "", "", _get_zone_id(), _debug_visual)
 
-func _refresh_bosses() -> void:
-	if _boss_picker == null:
-		return
-	_boss_picker.clear()
-	for boss in _bosses:
-		if not boss is Dictionary:
-			continue
-		var id := str(boss.get("boss_id", ""))
-		if id == "":
-			continue
-		_boss_picker.add_item(str(_db.bosses.get(id, {}).get("name", id)))
-		_boss_picker.set_item_metadata(_boss_picker.item_count - 1, boss)
-	_boss_picker.disabled = _boss_picker.item_count == 0
-	_boss_open.disabled = _boss_picker.disabled
-	if _boss_picker.disabled:
-		if not is_instance_valid(_world_modal) or not _world_modal.visible:
-			_boss_portrait.texture = null
-		_boss_hp.visible = false
-		_boss_status.text = "No world boss reported by the server."
-		return
-	_boss_picker.select(0)
-	_on_boss_selected(0)
-
-func _on_boss_selected(index: int) -> void:
-	if index < 0 or index >= _boss_picker.item_count:
-		return
-	var boss: Dictionary = _boss_picker.get_item_metadata(index)
-	var id := str(boss.get("boss_id", ""))
-	if not is_instance_valid(_world_modal) or not _world_modal.visible:
-		_boss_portrait.texture = _catalog.get_tex(id) if _catalog.has(id) else null
-	var hp := float(boss.get("hp", 0))
-	var max_hp := maxf(1, float(boss.get("max_hp", 1)))
-	_boss_hp.max_value = max_hp
-	_boss_hp.value = hp
-	_boss_hp.visible = true
-	_boss_status.text = "Global encounter  |  HP: %s / %s" % [int(hp), int(max_hp)]
 
 func _on_auth_changed(token: String) -> void:
 	_global_event.clear()
@@ -1290,6 +1284,8 @@ func _on_auth_changed(token: String) -> void:
 	_reroll_action = ""
 	_hunt_active.clear()
 	_hunt_active_owner = ""
+	_hunt_session_checked = false
+	_common_cooldown_until = 0
 	_hunt_schedule.clear()
 	_display_hunts.clear()
 	_world_art_order.clear()
@@ -1423,8 +1419,17 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			return
 		if not ok:
 			if kind == "start":
+				if str(data.get("error", "")) != "network_error":
+					_hunt_action_id = ""
+					_hunt_action_key = ""
+					_hunt_action_owner = ""
+					call_deferred("_request_hunt_session")
+				if int(data.get("cooldown_remaining_seconds", 0)) > 0:
+					_common_cooldown_until = _backend.get_server_time_unix_ms() + int(data.cooldown_remaining_seconds) * 1000
 				_preview_status.text = str(data.get("error", "Encounter unavailable."))
 				_hunt_fight.disabled = false
+			elif kind == "session" and _hunt_selected.has("appearance_id"):
+				_preview_status.text = "Hunt availability unavailable. Reconnect and retry."
 			elif kind == "guardians":
 				_hunt_progress.clear()
 				_hunt_progress_key = ""
@@ -1457,7 +1462,11 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			"session":
 				_hunt_active = data.get("session", {}) if data.get("session") is Dictionary else {}
 				_hunt_active_owner = _backend._verified_player_id
-				if not _hunt_selected.is_empty() and not _hunt_selected.has("global_event_id"):
+				_hunt_session_checked = true
+				_common_cooldown_until = int(data.get("common_cooldown_until", 0))
+				if _hunt_selected.has("appearance_id") and _world_modal.visible:
+					_update_common_details()
+				if not _hunt_selected.is_empty() and not _hunt_selected.has("appearance_id") and not _hunt_selected.has("global_event_id"):
 					call_deferred("_request_guardian_progress")
 			"guardians":
 				if _guardian_request_key != _guardian_key() or _guardian_request_owner.is_empty() or _guardian_request_owner != _backend._verified_player_id or str(data.get("zone_id", "")) != _get_zone_id() or str(data.get("hunt_id", "")) != str(_hunt_selected.get("id", "")):
@@ -1499,9 +1508,6 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 		return
 	if data.has("world_state"):
 		_world_state = data.get("world_state", {})
-		var bosses: Variant = _world_state.get("bosses", [])
-		_bosses = bosses if bosses is Array else []
-		_refresh_bosses()
 		var pw = data.get("player_world", null)
 		if typeof(pw) == TYPE_DICTIONARY:
 			_player_world = pw

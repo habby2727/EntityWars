@@ -25,7 +25,7 @@ import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpel
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
 import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
-import { guardiansFor } from "./solo_guardians";
+import { commonAppearance, guardiansFor } from "./solo_guardians";
 import { globalBossRoll, globalBossTier } from "./global_boss_rotation";
 import { incrementalBossTokens, worldDropAmount } from "./world_economy";
 
@@ -2354,7 +2354,9 @@ async function startServer(): Promise<void> {
 						const requested = url.searchParams.get("session_id");
 						const row = (requested ? db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND session_id = ?").get(playerId, requested) : db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) as SoloHuntRow | null;
 						if (requested && !row) throw new HttpError(404, "Session not found.");
-						return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now });
+						const latest = db.query("SELECT MAX(CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) AS ended_at FROM solo_hunt_sessions WHERE player_id = ? AND hunt_id = 'hunt_common' AND guardian_id IS NULL AND status IN ('VERIFIED_WIN', 'VERIFIED_LOSS', 'FORFEIT', 'EXPIRED')").get(playerId) as { ended_at: number | null };
+						const commonCooldownUntil = latest.ended_at === null ? 0 : latest.ended_at + staticData.soloBosses.rotation.common_cooldown_seconds * 1000;
+						return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now, common_cooldown_until: commonCooldownUntil });
 					}).immediate();
 				}
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts/guardians") {
@@ -2507,8 +2509,11 @@ async function startServer(): Promise<void> {
 					const actionId = typeof body?.client_action_id === "string" ? body.client_action_id.trim() : "";
 					if (!actionId || actionId.length > 64) throw new HttpError(400, "Invalid client_action_id.");
 					const start = url.pathname.endsWith("/start");
-					const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...(body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}), ...(body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {}), ...(body?.global_event_id !== undefined ? { global_event_id: body.global_event_id } : {}) } : { session_id: body?.session_id };
+					const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...(body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}), ...(body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {}), ...(body?.global_event_id !== undefined ? { global_event_id: body.global_event_id } : {}), ...(body?.appearance_id !== undefined ? { appearance_id: body.appearance_id } : {}) } : { session_id: body?.session_id };
 					const requestedGlobal = (payload as any).global_event_id;
+					const appearanceId = body?.appearance_id;
+					const appearance = appearanceId === undefined ? null : commonAppearance((payload as any).zone_id, appearanceId);
+					if (appearanceId !== undefined && (!start || requestedGlobal !== undefined || (payload as any).guardian_id !== undefined || payload.hunt_id !== "hunt_common" || !appearance)) throw new HttpError(400, "Invalid common appearance.");
 					if (start ? (requestedGlobal !== undefined ? typeof requestedGlobal !== "string" || !requestedGlobal : typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key)) : typeof payload.session_id !== "string" || !payload.session_id) throw new HttpError(400, "Invalid hunt request.");
 					const actionType = start ? "SOLO_HUNT_START" : "SOLO_HUNT_FORFEIT";
 					db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
@@ -2539,7 +2544,7 @@ async function startServer(): Promise<void> {
 							const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses, schedule.rotation_key, guardianSeed);
 							if ((zoneId !== undefined && !definitions) || (guardianId !== undefined && !definitions)) throw new HttpError(400, "Invalid guardian zone.");
 							if (!globalEvent && boss.tier !== "common" && !definitions) throw new HttpError(409, "Guardian zone required.");
-							let encounter = boss;
+							let encounter = appearance ? { ...boss, ...appearance, display_texture_id: appearance.texture_id } : boss;
 							if (guardianId !== undefined) {
 								const guardian = definitions!.find(entry => entry.guardian_id === guardianId);
 								if (!guardian) throw new HttpError(409, "Guardian not found.");

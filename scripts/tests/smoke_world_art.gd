@@ -31,16 +31,15 @@ func _run() -> void:
 		click.pressed = true
 		zone._world_companions[0].gui_input.emit(click)
 		assert(zone._debug_visual.id != zone._central_visual.id)
+		assert(zone._hunt_fight.visible and zone._hunt_fight.disabled)
+		assert(zone._preview_status.text.contains("Offline"))
+		assert(not zone._boss_hp.visible and not zone._boss_status.visible)
 		zone._world_modal.visible = false
 		zone._world_sprite.gui_input.emit(click)
 		assert(zone._debug_visual == zone._central_visual)
 		assert(zone._world_modal.visible)
-		var close_button: Button = null
-		for button in zone._world_modal.find_children("*", "Button", true, false):
-			if button.text == "Close":
-				close_button = button
-				break
-		assert(close_button != null and close_button.text == "Close")
+		var close_button := zone._world_modal.find_child("CloseEncounter", true, false) as Button
+		assert(close_button != null)
 		close_button.pressed.emit()
 		assert(not zone._world_modal.visible)
 		var tiers := ["mythic", "rare", "epic", "legendary"]
@@ -52,7 +51,7 @@ func _run() -> void:
 			assert(is_equal_approx(zone._global_actor.anchor_left, 0.16))
 			assert(zone._global_actor.get_child(1).text.contains("2/5"))
 			var icon: Button = zone._global_actor.get_child(2)
-			assert(zone._global_actor.get_child(3).text == "Global Boss")
+			assert(zone._global_actor.get_child(3).text == "WORLD_GLOBAL_BOSS")
 			assert(icon.position.y + icon.size.y <= zone._global_actor.get_child(1).position.y)
 			assert(zone._global_actor.get_child(3).position.y < icon.position.y)
 			icon.pressed.emit()

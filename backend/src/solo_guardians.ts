@@ -6,6 +6,12 @@ const ZONE_ART: Record<string, readonly string[]> = {
   zone_crystal: ["crystal_bear", "crystal_golem", "crystal_hydra", "crystal_mage", "crystal_sentinel", "crystal_wolf"],
 };
 
+export function commonAppearance(zoneId: unknown, appearanceId: unknown): { name: string; texture_id: string; appearance_id: string } | null {
+  if (typeof zoneId !== "string" || typeof appearanceId !== "string" || !Object.hasOwn(ZONE_ART, zoneId) || !ZONE_ART[zoneId].includes(appearanceId)) return null;
+  const name = appearanceId === "chaos_astral_alchemist_variant" ? "Astral Alchemist Ascendant" : appearanceId.slice(zoneId.length - 4).split("_").map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  return { appearance_id: appearanceId, name, texture_id: `res://assets/lab/bosses/${zoneId.slice(5)}_zone_common/${appearanceId}.png` };
+}
+
 const GROUPS: Record<string, readonly string[]> = {
   hunt_common: [],
   hunt_mythic: ["common", "common"],
