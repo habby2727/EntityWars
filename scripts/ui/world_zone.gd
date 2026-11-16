@@ -113,6 +113,8 @@ var _common_request_owner := ""
 var _common_wants_refresh := false
 var _common_picker: OptionButton
 var _special_picker: OptionButton
+var _actor_roster: Control
+var _boss_view := false
 var _return_encounter: Dictionary = {}
 var _restart_zone: Button
 var _restart_action := ""
@@ -266,26 +268,23 @@ func _setup_zone_view() -> void:
 	roster.position = Vector2(24, 24)
 	roster.custom_minimum_size = Vector2(260, 0)
 	add_child(roster)
-	var common_label := Label.new()
-	common_label.text = "Zone Commons"
-	roster.add_child(common_label)
-	_common_picker = OptionButton.new()
-	_common_picker.custom_minimum_size.y = 40
-	roster.add_child(_common_picker)
-	_common_picker.item_selected.connect(_select_common_roster)
+	var commons_button := Button.new()
+	commons_button.text = "Commons"
+	commons_button.custom_minimum_size = Vector2(260, 58)
+	MenuArt.button(commons_button)
+	commons_button.pressed.connect(func(): _set_boss_view(false))
+	roster.add_child(commons_button)
+	var hunts_button := Button.new()
+	hunts_button.text = "Boss Hunts"
+	hunts_button.custom_minimum_size = Vector2(260, 58)
+	MenuArt.button(hunts_button)
+	hunts_button.pressed.connect(func(): _set_boss_view(true))
+	roster.add_child(hunts_button)
 	_restart_zone = Button.new()
 	_restart_zone.text = "Restart Zone"
 	_restart_zone.visible = false
 	_restart_zone.pressed.connect(_restart_common_zone)
 	roster.add_child(_restart_zone)
-	var special_label := Label.new()
-	special_label.text = "Special Boss Hunts"
-	roster.add_child(special_label)
-	_special_picker = OptionButton.new()
-	_special_picker.custom_minimum_size.y = 40
-	_special_picker.add_item("Select a special boss")
-	roster.add_child(_special_picker)
-	_special_picker.item_selected.connect(_select_special_roster)
 	_refresh_common_picker()
 	var panel := PanelContainer.new()
 	panel.name = "WorldBossPanel"
@@ -460,6 +459,86 @@ func _setup_world_art() -> void:
 	name_panel.add_child(_world_name)
 
 	_change_world_art(0)
+	for child in stage.get_children():
+		child.visible = false
+	_actor_roster = Control.new()
+	_actor_roster.name = "ActorRoster"
+	_actor_roster.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_actor_roster.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage.add_child(_actor_roster)
+	_render_actor_roster()
+
+func _set_boss_view(value: bool) -> void:
+	_boss_view = value
+	_clear_guardian_preview()
+	_world_modal.visible = false
+	_render_actor_roster()
+
+func _render_actor_roster() -> void:
+	if not is_instance_valid(_actor_roster):
+		return
+	for child in _actor_roster.get_children():
+		_actor_roster.remove_child(child)
+		child.queue_free()
+	var entries: Array = []
+	if _boss_view:
+		for boss in _hunt_schedule:
+			if str(boss.get("tier", "")) != "common":
+				entries.append(boss)
+	else:
+		entries = _world_art_order if not _world_art_order.is_empty() else WORLD_ART.get(_get_zone_id(), [])
+	var columns := 2 if _boss_view else 3
+	for i in entries.size():
+		var item = entries[i]
+		var id := str(item.get("id", "")) if _boss_view else str(item)
+		var display := str(item.get("name", "Boss")) if _boss_view else _common_display_name(id, _get_zone_id())
+		var texture: Texture2D
+		if _boss_view:
+			var texture_id := str(item.get("display_texture_id", item.get("texture_id", "")))
+			if _catalog.has(texture_id):
+				texture = _catalog.get_tex(texture_id)
+			elif ResourceLoader.exists(texture_id):
+				texture = load(texture_id) as Texture2D
+		else:
+			texture = load("res://assets/lab/bosses/%s_zone_common/%s.png" % [_get_zone_id().trim_prefix("zone_"), id]) as Texture2D
+		var actor := TextureButton.new()
+		actor.name = "Roster_" + id
+		actor.set_meta("appearance_id", id)
+		actor.texture_normal = texture
+		actor.ignore_texture_size = true
+		actor.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+		var x := (0.43 + 0.28 * (i % columns)) if _boss_view else (0.36 + 0.20 * (i % columns))
+		var y := 0.37 + 0.26 * floori(float(i) / columns)
+		actor.anchor_left = x
+		actor.anchor_right = x
+		actor.anchor_top = y
+		actor.anchor_bottom = y
+		actor.offset_left = -75
+		actor.offset_right = 75
+		actor.offset_top = -65
+		actor.offset_bottom = 65
+		_actor_roster.add_child(actor)
+		var label := Label.new()
+		label.text = display + (" ? Defeated" if not _boss_view and _common_defeated(id) else "")
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+		label.offset_left = -20
+		label.offset_right = 20
+		label.offset_top = -38
+		label.offset_bottom = -2
+		label.add_theme_constant_override("outline_size", 4)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		actor.add_child(label)
+		if _boss_view:
+			var boss: Dictionary = item
+			actor.pressed.connect(func():
+				_show_map_hunt(boss)
+				_select_nearby_hunt(boss))
+		else:
+			actor.pressed.connect(func():
+				_debug_visual = {"id": id, "tier": "common", "texture": "res://assets/lab/bosses/%s_zone_common/%s.png" % [_get_zone_id().trim_prefix("zone_"), id], "name": display}
+				_show_common_details())
 
 # Isolated presentation only: no selection from this fixture authorizes a fight.
 func show_guardian_preview(main: Dictionary, guardians: Array) -> void:
@@ -671,13 +750,9 @@ func _common_defeated(id: String) -> bool:
 	return false
 
 func _refresh_common_picker() -> void:
-	if not is_instance_valid(_common_picker):
-		return
-	_common_picker.clear()
-	_common_picker.add_item("Select a common")
-	for id in WORLD_ART.get(_get_zone_id(), []):
-		_common_picker.add_item("%s%s" % [_common_display_name(id, _get_zone_id()), " — Defeated" if _common_defeated(id) else ""])
-	_restart_zone.visible = bool(_common_progress.get("complete", false))
+	if is_instance_valid(_restart_zone):
+		_restart_zone.visible = bool(_common_progress.get("complete", false))
+	_render_actor_roster()
 
 func _select_common_roster(index: int) -> void:
 	var entries: Array = WORLD_ART.get(_get_zone_id(), [])
@@ -869,8 +944,6 @@ func _apply_appearance_seed(value: int) -> void:
 		var swap = _world_art_order[i]
 		_world_art_order[i] = _world_art_order[j]
 		_world_art_order[j] = swap
-	# Keep unbeaten creatures in the visible positions whenever possible.
-	_world_art_order.sort_custom(func(a, b): return int(_common_defeated(str(a))) < int(_common_defeated(str(b))))
 	_world_art_index = 0
 	_debug_rare_index = rng.randi_range(0, 2)
 	_display_hunts = _hunt_schedule.duplicate()
@@ -883,6 +956,7 @@ func _apply_appearance_seed(value: int) -> void:
 	if _map_displayed_boss.is_empty():
 		_clear_guardian_preview()
 		_change_world_art(0)
+	_render_actor_roster()
 
 func _apply_reroll() -> void:
 	if _debug.unlock_all_buildings:
@@ -948,7 +1022,7 @@ func _render_global_boss() -> void:
 	sprite.pressed.connect(_open_global_boss)
 	_global_actor.add_child(sprite)
 	var label := Label.new()
-	label.text = "%s [%s]  %d/5" % [str(boss.get("name", "Boss")), str(boss.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0))]
+	label.text = "GLOBAL EVENT: %s [%s]  %d/5" % [str(boss.get("name", "Boss")), str(boss.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0))]
 	label.position = Vector2(-35, -28)
 	label.size = Vector2(220, 26)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1558,11 +1632,7 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 				for boss in data.get("bosses", []):
 					if boss is Dictionary:
 						_hunt_schedule.append(boss)
-				_special_picker.clear()
-				_special_picker.add_item("Select a special boss")
-				for boss in _hunt_schedule:
-					if str(boss.get("tier", "")) != "common":
-						_special_picker.add_item("%s — %s" % [str(boss.get("name", "Boss")), str(boss.get("tier", "")).capitalize()])
+				_render_actor_roster()
 				_hunt_rotation = int(data.get("rotation_key", -1))
 				_restore_reroll()
 				var now := _backend.get_server_time_unix_ms()
@@ -1584,7 +1654,6 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 					_common_owner = _backend._verified_player_id
 					_refresh_common_picker()
 					if is_instance_valid(_world_stage) and _world_stage.visible and not _world_modal.visible:
-						_world_art_order.sort_custom(func(a, b): return int(_common_defeated(str(a))) < int(_common_defeated(str(b))))
 						_world_art_index = 0
 						_change_world_art(0)
 					if _world_modal.visible and _hunt_selected.has("appearance_id"):

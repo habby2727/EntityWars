@@ -14,7 +14,36 @@ func _run() -> void:
 			await process_frame
 			var entries: Array = zone.WORLD_ART["zone_" + world.to_lower()]
 			assert(zone._world_stage.visible)
-			assert(zone._common_picker.item_count == entries.size() + 1)
+			assert(zone._actor_roster.get_child_count() == entries.size())
+			var gate = root.get_node("ConnectionGate")
+			gate._timer.stop()
+			gate.state = gate.State.CONNECTED
+			gate._layer.hide()
+			await process_frame
+			var actors: Array = zone._actor_roster.get_children()
+			for actor in actors:
+				for other in actors:
+					if actor != other:
+						assert(not actor.get_global_rect().intersects(other.get_global_rect()))
+				var point: Vector2 = root.get_canvas_transform() * actor.get_global_rect().get_center()
+				var motion := InputEventMouseMotion.new()
+				motion.position = point
+				motion.global_position = point
+				root.push_input(motion, true)
+				var press := InputEventMouseButton.new()
+				press.position = point
+				press.global_position = point
+				press.button_index = MOUSE_BUTTON_LEFT
+				press.pressed = true
+				root.push_input(press, true)
+				var release := InputEventMouseButton.new()
+				release.position = point
+				release.global_position = point
+				release.button_index = MOUSE_BUTTON_LEFT
+				root.push_input(release, true)
+				await process_frame
+				assert(zone._world_modal.visible and zone._hunt_selected.get("appearance_id") == actor.get_meta("appearance_id"), "actor=%s hovered=%s point=%s" % [actor.name, root.gui_get_hovered_control(), point])
+				zone._world_modal.visible = false
 			for i in entries.size():
 				zone._select_common_roster(i + 1)
 				assert(zone._hunt_selected.appearance_id == entries[i])
@@ -22,7 +51,7 @@ func _run() -> void:
 				zone._world_modal.visible = false
 			zone._apply_appearance_seed(17)
 			assert(zone._world_stage.visible)
-			assert(zone._common_picker.item_count == entries.size() + 1)
+			assert(zone._actor_roster.get_child_count() == entries.size())
 			zone._backend.token = "fixture"
 			zone._backend._verified_player_id = "player"
 			var special := {"id": "hunt_epic", "tier": "epic", "name": "Temporal Warden", "texture_id": "boss_temporal", "available": false}

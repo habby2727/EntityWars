@@ -143,8 +143,7 @@ func _run() -> void:
 		var previous_rotation: int = zone._debug_rotation
 		var rightmost: Control = zone._preview_stage.get_child(3)
 		var rightmost_sprite: Control = rightmost.get_child(0)
-		assert(not rightmost_sprite.get_global_rect().intersects(zone._common_picker.get_global_rect()))
-		assert(not rightmost_sprite.get_global_rect().intersects(zone._special_picker.get_global_rect()))
+		assert(not rightmost_sprite.get_global_rect().intersects(zone.get_node("EncounterNavigation").get_global_rect()))
 		# This fixture uses an offline backend; the connection overlay otherwise
 		# intercepts the real pointer before it reaches the world scene.
 		var gate = root.get_node("ConnectionGate")
