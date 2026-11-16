@@ -20,7 +20,12 @@ func _ready() -> void:
 
 func _on_node_added(node: Node) -> void:
 	if node is Control or node is PopupMenu:
-		_apply_font.call_deferred(node)
+		_apply_font_if_alive.call_deferred(node.get_instance_id())
+
+func _apply_font_if_alive(id: int) -> void:
+	var node := instance_from_id(id) as Node
+	if is_instance_valid(node):
+		_apply_font(node)
 
 func _excluded(node: Node) -> bool:
 	var current := node

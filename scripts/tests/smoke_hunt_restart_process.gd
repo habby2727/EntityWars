@@ -9,11 +9,12 @@ func _run() -> void:
 		_fail("isolated user directory required")
 		return
 	var phase := OS.get_environment("HUNT_RESTART_PHASE")
-	var client := BackendClient.new()
-	client.auto_dev_login = false
-	client.base_url = OS.get_environment("ENTITYWARS_BACKEND_URL")
-	root.add_child(client)
+	var client: BackendClient
 	if phase == "first":
+		client = BackendClient.new()
+		client.auto_dev_login = false
+		client.base_url = OS.get_environment("ENTITYWARS_BACKEND_URL")
+		root.add_child(client)
 		client.set_token(OS.get_environment("HUNT_RESTART_TOKEN"))
 		var deadline := Time.get_ticks_msec() + 20000
 		while (client._verified_player_id.is_empty() or root.get_node("ConnectionGate").blocked()) and Time.get_ticks_msec() < deadline:
@@ -33,13 +34,31 @@ func _run() -> void:
 			return
 		print("POST SUBMITTED")
 		return
+	if change_scene_to_file("res://scenes/ui/Auth.tscn") != OK:
+		_fail("could not open Auth")
+		return
+	await scene_changed
+	if current_scene == null or current_scene.scene_file_path != "res://scenes/ui/Auth.tscn":
+		_fail("restart did not start at Auth")
+		return
+	client = current_scene.client
 	var deadline := Time.get_ticks_msec() + 40000
 	while Time.get_ticks_msec() < deadline:
-		await create_timer(0.1).timeout
+		await process_frame
 		var gate := root.get_node("ConnectionGate")
+		if current_scene != null and current_scene.scene_file_path in ["res://scenes/MainMenu.tscn", "res://assets/ui/loading_screens/entity_wars_loading/scenes/loading_startup.tscn"]:
+			_fail("entered menu or loading before recovery")
+			return
+		if not gate.player_id.is_empty() and gate.player_id != OS.get_environment("HUNT_RESTART_PLAYER"):
+			_fail("verified the wrong account")
+			return
 		if OS.get_environment("RESTART_EXPECT_LOCK") == "1" and gate.state == gate.State.ERROR:
 			if not gate.blocked() or not client.request_api("POST", "/player/action", {}).is_empty():
 				_fail("invalid recovery journal allowed an action")
+				return
+			await create_timer(1.0).timeout
+			if not gate.blocked() or current_scene == null or current_scene.scene_file_path != "res://scenes/ui/Auth.tscn":
+				_fail("invalid recovery journal did not remain locked at Auth")
 				return
 			print("PASS invalid recovery journal remains locked")
 			quit(0)
@@ -50,11 +69,15 @@ func _run() -> void:
 			var entry := journal.load_entry()
 			var revision := int(current_scene._dungeon_session.get("combat_revision", 0)) if OS.get_environment("RESTART_MODE") == "dungeon" else int(current_scene._online_hunt_revision)
 			var terminal := OS.get_environment("RESTART_TERMINAL") == "1"
+			var win := OS.get_environment("RESTART_WIN") == "1"
 			var forfeit := OS.get_environment("RESTART_FORFEIT") == "1"
 			var expired := OS.get_environment("RESTART_EXPIRED") == "1"
 			var closed_status: String = str(current_scene._dungeon_session.get("status", "")) if OS.get_environment("RESTART_MODE") == "dungeon" else str(current_scene._online_hunt_session.get("status", ""))
-			var confirmed: bool = (entry.is_empty() and closed_status == ("LOSS" if terminal else "FORFEIT" if forfeit else "EXPIRED")) if terminal or forfeit or expired else (not entry.is_empty() and not entry.has("error") and entry.pending_kind == "")
+			var confirmed: bool = (entry.is_empty() and closed_status == ("VERIFIED_WIN" if win else "LOSS" if terminal else "FORFEIT" if forfeit else "EXPIRED")) if win or terminal or forfeit or expired else (not entry.is_empty() and not entry.has("error") and entry.pending_kind == "")
 			if confirmed and (forfeit or expired or revision == int(OS.get_environment("RESTART_REVISION"))):
+				if win and (str(current_scene._solo_context.get("session_id", "")) != OS.get_environment("HUNT_RESTART_SESSION") or current_scene._combat_identity != OS.get_environment("HUNT_RESTART_PLAYER")):
+					_fail("victory recovered a different player or session")
+					return
 				print("PASS recovered original hunt turn")
 				quit(0)
 				return

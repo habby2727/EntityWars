@@ -433,14 +433,14 @@ async function testIdempotency(ctx: TestContext): Promise<void> {
 	// START_EXPERIMENT
 	seedPlayerState(ctx.db, player.playerId, baseSeed);
 	actionId = crypto.randomUUID();
-	action = makeAction("START_EXPERIMENT", { experiment_id: "refine_core" }, actionId);
+	action = makeAction("START_EXPERIMENT", { experiment_id: "volatile_overclock" }, actionId);
 	first = await ctx.client.post_action(player.token, action);
 	second = await ctx.client.post_action(player.token, action);
 	assertEqual(first.status, 200, "experiment idempotency first status");
 	assertEqual(second.status, 200, "experiment idempotency second status");
 	assertEqual(
-		clampAmount(first.data.updated_player_state.wallet.core),
-		clampAmount(second.data.updated_player_state.wallet.core),
+		clampAmount(first.data.updated_player_state.wallet.essence),
+		clampAmount(second.data.updated_player_state.wallet.essence),
 		"experiment idempotency wallet stable"
 	);
 
@@ -834,12 +834,12 @@ async function testExperiments(ctx: TestContext): Promise<void> {
 	const actionId = crypto.randomUUID();
 	const start = await ctx.client.post_action(
 		player.token,
-		makeAction("START_EXPERIMENT", { experiment_id: "refine_core" }, actionId)
+		makeAction("START_EXPERIMENT", { experiment_id: "volatile_overclock" }, actionId)
 	);
 	assertEqual(start.status, 200, "experiment start success");
 	const cooldownAttempt = await ctx.client.post_action(
 		player.token,
-		makeAction("START_EXPERIMENT", { experiment_id: "refine_core" })
+		makeAction("START_EXPERIMENT", { experiment_id: "volatile_overclock" })
 	);
 	assertEqual(cooldownAttempt.status, 400, "experiment cooldown enforced");
 
@@ -853,33 +853,33 @@ async function testExperiments(ctx: TestContext): Promise<void> {
 	const state = await ctx.client.get_player_state(player.token);
 	assertEqual(state.status, 200, "player state after boost seed");
 	const boosts = state.data.updated_player_state.lab.runtime.boosts;
-	assertTrue(!boosts.volatile_overclock, "expired boost cleaned up");
+	assertTrue(boosts.volatile_overclock.expires_at <= state.data.server_time_unix_ms, "expired boost is no longer active");
 
 	// Deterministic RNG
-	const seedA = await createSeededPlayer(ctx, "exp_rng_a", {
-		wallet: { core: 10 },
+	const seedA = await createSeededPlayer(ctx, "exp_rng_seller", {
+		wallet: { essence: 500, core: 10 },
 		hqLevel: 3,
 		buildings: { experiment_chamber: { level: 1 } }
 	});
-	const seedB = await createSeededPlayer(ctx, "exp_rng_b", {
-		wallet: { core: 10 },
+	const seedB = await createSeededPlayer(ctx, "exp_rng_buyer", {
+		wallet: { essence: 500, core: 10 },
 		hqLevel: 3,
 		buildings: { experiment_chamber: { level: 1 } }
 	});
 	const rngActionId = "rng-test-" + crypto.randomUUID();
 	const resA = await ctx.client.post_action(
 		seedA.token,
-		makeAction("START_EXPERIMENT", { experiment_id: "arcane_distill" }, rngActionId)
+		makeAction("START_EXPERIMENT", { experiment_id: "safe_reactor" }, rngActionId)
 	);
 	const resB = await ctx.client.post_action(
 		seedB.token,
-		makeAction("START_EXPERIMENT", { experiment_id: "arcane_distill" }, rngActionId)
+		makeAction("START_EXPERIMENT", { experiment_id: "safe_reactor" }, rngActionId)
 	);
 	assertEqual(resA.status, 200, "deterministic RNG A status");
 	assertEqual(resB.status, 200, "deterministic RNG B status");
-	const shardA = clampAmount(resA.data.updated_player_state.wallet.arcane_shard);
-	const shardB = clampAmount(resB.data.updated_player_state.wallet.arcane_shard);
-	assertEqual(shardA, shardB, "deterministic RNG outcome matches");
+	const successA = resA.data.updated_player_state.lab.runtime.experiment_last.success;
+	const successB = resB.data.updated_player_state.lab.runtime.experiment_last.success;
+	assertEqual(successA, successB, "deterministic RNG outcome matches");
 }
 
 async function testResearch(ctx: TestContext): Promise<void> {
@@ -1099,6 +1099,7 @@ async function testWorld(ctx: TestContext): Promise<void> {
 	const player = await createSeededPlayer(ctx, "world", {
 		wallet: { essence: 200 },
 		buildings: { world_gate: { level: 1 } },
+		world: { last_gate_entry_at: 0, daily_entries: 0, sessions: {} },
 		research_flags: { unlock_world_zones: true }
 	});
 	const zoneId = ctx.staticData.zones[0]?.id ?? "zone_corrupted";

@@ -22,6 +22,14 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	var zone = current_scene
+	var gate := root.get_node("ConnectionGate")
+	var deadline := Time.get_ticks_msec() + 20000
+	while (gate.blocked() or gate.player_id.is_empty()) and Time.get_ticks_msec() < deadline:
+		await process_frame
+	if gate.blocked() or gate.player_id.is_empty():
+		push_error("A verified test account is required")
+		quit(1)
+		return
 	zone._show_debug_boss(2)
 	await process_frame
 	var click := InputEventMouseButton.new()
@@ -134,7 +142,7 @@ func _run() -> void:
 	combat._on_next_turn()
 	await process_frame
 	await process_frame
-	assert(current_scene is WorldZone and current_scene.zone_id_override == "zone_chaos")
+	assert(current_scene.scene_file_path == "res://scenes/ui/WorldZoneChaos.tscn" and current_scene.zone_id_override == "zone_chaos")
 	current_scene._show_debug_boss(2)
 	await process_frame
 	assert(current_scene._preview_stage.get_child_count() == 4)
