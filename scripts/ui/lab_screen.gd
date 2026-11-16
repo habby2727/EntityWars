@@ -137,6 +137,7 @@ func _enter_tree() -> void:
 			client.auto_flush = false
 
 func _ready() -> void:
+	add_child(preload("res://scripts/ui/global_chat_panel.gd").new())
 	_ui_scale = _compute_panel_scale()
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
 	_debug.reload()

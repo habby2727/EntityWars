@@ -1,4 +1,12 @@
 keys,en,es
+CHAT_ONLINE,Online,En línea
+CHAT_SEND,Send,Enviar
+CHAT_PLACEHOLDER,Type a message...,Escribe un mensaje...
+CHAT_UNAVAILABLE,Chat unavailable,Chat no disponible
+CHAT_TOO_LONG,Message too long,Mensaje demasiado largo
+CHAT_INVALID,Invalid message,Mensaje no válido
+CHAT_RATE_LIMIT,Please wait before sending,Espera antes de enviar
+CHAT_CLOSE,Close chat,Cerrar chat
 AUTH_LOGIN,Login,Iniciar sesión
 AUTH_REGISTER,Register,Registrarse
 AUTH_USERNAME,Username,Usuario

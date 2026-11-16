@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { createGlobalChat } from "./global_chat";
 import { createHash, createHmac } from "crypto";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
@@ -259,6 +260,7 @@ const EXPENSIVE_RATE_MAX = getEnvNumber("EXPENSIVE_RATE_LIMIT_MAX", 60);
 const CORS_ORIGINS = parseCorsOrigins();
 const dbFilePath = ensureDbPath(config.dbPath);
 const db = new Database(dbFilePath);
+const globalChat = createGlobalChat(db);
 db.exec("PRAGMA busy_timeout = 5000;");
 for (let attempt = 0; ; attempt++) {
 	try {
@@ -1320,6 +1322,15 @@ async function startServer(): Promise<void> {
 					await revokeSession(token);
 					await revokeAccessToken(token);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
+				}
+
+				if (req.method == "GET" && url.pathname == "/chat/state") {
+					return jsonResponse(globalChat.state(await requireAuth(req, ctx)));
+				}
+				if (req.method == "POST" && url.pathname == "/chat/send") {
+					const playerId = await requireAuth(req, ctx);
+					const result = globalChat.send(playerId, await readJson(req, config.maxBodyBytes));
+					return jsonResponse(result.data, result.status);
 				}
 
 				if (url.pathname == "/player/state") {
