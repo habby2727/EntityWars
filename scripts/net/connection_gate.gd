@@ -127,7 +127,9 @@ func _fail(next: State, message: String) -> void:
 	_loadout_session_verified = false
 	_title.text = "Disconnected (Reconnecting...)" if next == State.RECONNECTING else "Error"
 	_detail.text = message
-	_layer.show()
+	var auth_scene := get_tree().current_scene
+	if not (is_instance_valid(auth_scene) and auth_scene.has_method("auth_gate_screen")):
+		_layer.show()
 	if was_connected:
 		var scene := get_tree().current_scene
 		if is_instance_valid(scene) and scene.has_method("connection_gate_lost"):
@@ -380,6 +382,9 @@ func _unlock() -> void:
 			client.call_deferred("flush_queue")
 
 func _input(event: InputEvent) -> void:
+	var scene := get_tree().current_scene
+	if is_instance_valid(scene) and scene.has_method("auth_gate_screen"):
+		return
 	if blocked() and (event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion):
 		get_viewport().set_input_as_handled()
 

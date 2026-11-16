@@ -1,4 +1,20 @@
 keys,en,es
+AUTH_LOGIN,Login,Iniciar sesión
+AUTH_REGISTER,Register,Registrarse
+AUTH_USERNAME,Username,Usuario
+AUTH_PASSWORD,Password,Contraseña
+AUTH_CONFIRM,Confirm password,Confirmar contraseña
+AUTH_RETRY,Retry,Reintentar
+AUTH_VERIFYING,Verifying session…,Verificando sesión…
+AUTH_CONNECTION_ERROR,Connection error. Please retry.,Error de conexión. Inténtalo de nuevo.
+AUTH_SECURE_CONNECTION,A secure connection is required.,Se requiere una conexión segura.
+AUTH_SESSION_EXPIRED,Session expired. Please log in.,La sesión ha caducado. Inicia sesión.
+AUTH_INVALID_USERNAME,Username must be 3–20 letters digits or underscores.,El usuario debe tener de 3 a 20 letras números o guiones bajos.
+AUTH_SHORT_PASSWORD,Password must have at least 6 characters.,La contraseña debe tener al menos 6 caracteres.
+AUTH_PASSWORD_MISMATCH,Passwords do not match.,Las contraseñas no coinciden.
+AUTH_DUPLICATE,Username already taken.,El usuario ya existe.
+AUTH_INVALID_LOGIN,Invalid username or password.,Usuario o contraseña incorrectos.
+AUTH_RECOVERY_REQUIRED,Sign in with the account that owns the unfinished session.,Inicia sesión con la cuenta de la sesión pendiente.
 MENU_COMBAT,COMBAT,COMBATE
 MENU_INVENTORY,INVENTORY,INVENTARIO
 MENU_LABORATORY,LABORATORY,LABORATORIO

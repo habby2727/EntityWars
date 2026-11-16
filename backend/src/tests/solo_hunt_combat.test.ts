@@ -728,6 +728,13 @@ test("validated Mercury and Sodium defensive spells", () => {
   const hit = (_turn: number, draw: number) => [0, 0, 0.99][draw % 3];
   const cast = (state: any, spell_id: string, random = hit) => resolveCombatTurn(state, { turn: 1, spell_id, target: "boss" }, random);
   const decoy = cast(mercury(), "liquid_decoy");
+  const failedSupport = mercury();
+  failedSupport.boss.status.stun = 1;
+  failedSupport.spells.find((s: any) => s.id === "liquid_decoy").accuracy = 0;
+  const failedSupportResult = cast(failedSupport, "liquid_decoy", () => 0.5);
+  expect(failedSupportResult.events.filter((e: any) => e.kind === "miss" && e.actor === "player")).toEqual([{ actor: "player", kind: "miss", spell_id: "liquid_decoy", turn: 1 }]);
+  expect(failedSupportResult.next_state.player.status.shield_pct ?? 0).toBe(0);
+  expect(decoy.events.some((e: any) => e.kind === "miss" && e.actor === "player")).toBe(false);
   expect(decoy.next_state.player.hp).toBe(86);
   expect(decoy.next_state.player.status.shield_pct ?? 0).toBe(0);
   const stronger = mercury(); stronger.player.status.shield_pct = 0.3;

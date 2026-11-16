@@ -278,6 +278,8 @@ const getPlayerByNameStmt = db.prepare(
 const insertPlayerStmt = db.prepare(
 	"INSERT INTO players (player_id, display_name, state_json, updated_at) VALUES (?, ?, ?, ?)"
 );
+const getCredentialStmt = db.prepare("SELECT player_id, password_hash FROM credentials WHERE username = ?");
+const insertCredentialStmt = db.prepare("INSERT INTO credentials (username, player_id, password_hash, created_at) VALUES (?, ?, ?, ?)");
 const updatePlayerStmt = db.prepare(
 	"UPDATE players SET state_json = json_set(?, '$.state_revision', CASE WHEN json_valid(state_json) THEN MAX(0, CAST(COALESCE(json_extract(state_json, '$.state_revision'), 0) AS INTEGER)) + 1 ELSE 1 END), updated_at = ? WHERE player_id = ?"
 );
@@ -1181,6 +1183,36 @@ async function startServer(): Promise<void> {
 						return;
 					}
 					return jsonResponse({ error: "Upgrade required" }, 426);
+				}
+
+				if (req.method == "POST" && (url.pathname == "/auth/register" || url.pathname == "/auth/login")) {
+					await applyRateLimit(ctx, { keyPrefix: "rl:login", windowSeconds: getEnvNumber("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 600), max: getEnvNumber("LOGIN_RATE_LIMIT_MAX", 10), keyBy: "ip" });
+					const body = await readJson(req, config.maxBodyBytes);
+					const name = typeof body?.username == "string" ? body.username : "";
+					const password = typeof body?.password == "string" ? body.password : "";
+					if (!/^[A-Za-z0-9_]{3,20}$/.test(name) || password.length < 6 || password.length > 1024) throw new HttpError(400, "Invalid username or password.");
+					const normalized = name.toLowerCase();
+					let playerId: string;
+					if (url.pathname == "/auth/register") {
+						const hash = await Bun.password.hash(password, { algorithm: "argon2id" });
+						playerId = crypto.randomUUID();
+						const now = Date.now();
+						try {
+							db.transaction(() => {
+								insertPlayerStmt.run(playerId, name, JSON.stringify(createDefaultState(playerId, name, now, true)), now);
+								insertCredentialStmt.run(normalized, playerId, hash, now);
+							})();
+						} catch (err) {
+							if (getCredentialStmt.get(normalized)) throw new HttpError(409, "Username already taken.");
+							throw err;
+						}
+					} else {
+						const credential = getCredentialStmt.get(normalized) as { player_id: string; password_hash: string } | undefined;
+						if (!credential || !(await Bun.password.verify(password, credential.password_hash))) throw new HttpError(401, "Invalid username or password.");
+						playerId = credential.player_id;
+					}
+					if (await isUserDisabled(playerId)) throw new HttpError(403, "User disabled.");
+					return loginResponse(playerId, await issueToken(playerId));
 				}
 
 				if (req.method == "POST" && url.pathname == "/auth/dev_login") {
@@ -2222,7 +2254,7 @@ async function startServer(): Promise<void> {
 							combat.elite_traits_enabled = current.elite_traits_enabled === true;
 							combat.elite_trait_used = false;
 							combat.tactics_enabled = current.tactics_enabled === true;
-							combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
+							combat.player.hp = combat.player.max_hp;
 						}
 						if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
 						const response = { run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };

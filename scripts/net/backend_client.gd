@@ -53,7 +53,7 @@ func _ready() -> void:
 	_load_debug_flags()
 	_load_auth()
 	_connection_gate().observe_credentials(self)
-	if auto_dev_login and token == "" and not _auto_login_started and not _connection_gate().blocked() and _connection_gate().player_id.is_empty():
+	if OS.has_feature("editor") and auto_dev_login and token == "" and not _auto_login_started and not _connection_gate().blocked() and _connection_gate().player_id.is_empty():
 		_auto_login_started = true
 		var dev_name := _get_dev_name()
 		_last_login_name = dev_name
@@ -132,6 +132,8 @@ func _invalidate_external_session() -> void:
 	emit_signal("auth_changed", token)
 
 func ensure_dev_login() -> void:
+	if not OS.has_feature("editor"):
+		return
 	if _connection_gate().blocked() or not _connection_gate().player_id.is_empty():
 		return
 	if token != "":

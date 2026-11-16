@@ -487,7 +487,10 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       }
       if (target.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0))) success = hit(next.player, target, spell.accuracy, power, "player");
     }
-    else success = draw() < spell.accuracy;
+    else {
+      success = draw() < spell.accuracy;
+      if (!success) events.push({ actor: "player", kind: "miss", spell_id: spell.id });
+    }
     const targetId = target === next.boss ? "boss" : target.id;
     const conversion = spell.effects.find((effect: any) => effect.kind === "ward_convert");
     if (success && spell.category === "attack" && conversion && (next.player_spell_ward ?? 0) > 0) {

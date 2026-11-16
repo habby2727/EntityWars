@@ -289,6 +289,8 @@ func _run() -> void:
 	scene._log_online_spell("cinder_fist", true)
 	scene._log_online_hunt_event({"kind": "damage", "actor": "player", "target": "boss", "actual_damage": 7})
 	_check(scene.log_box.get_parsed_text().contains("deals 7 damage"), "verified damage uses combat log presentation")
+	scene._log_online_hunt_event({"kind": "miss", "actor": "player", "spell_id": "liquid_decoy"})
+	_check(scene.log_box.get_parsed_text().contains("spell misses"), "failed support spell appears in the hunt log")
 	if failures == 0:
 		print("PASS: solo boss focused smoke")
 	quit(1 if failures > 0 else 0)

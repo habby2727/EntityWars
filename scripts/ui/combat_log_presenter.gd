@@ -20,7 +20,7 @@ func append(label: RichTextLabel, turn: int, message: String, event: Dictionary 
 		label.add_text(actor)
 		label.pop()
 		if event.has("parent"):
-			label.add_text(" (homunculus of ")
+			label.add_text(TranslationServer.translate("LOG_HOMUNCULUS_OF"))
 			label.push_color(Color.from_string(str(event.get("parent_color", "cdd3d9")), Color.WHITE))
 			label.add_text(str(event.parent))
 			label.pop()
@@ -35,7 +35,7 @@ func append(label: RichTextLabel, turn: int, message: String, event: Dictionary 
 		if event.has("spell_id") and bool(event.get("show_spell_link", true)) and not str(event.spell_id).is_empty():
 			label.push_meta(event.get("spell_meta", str(event.spell_id)))
 			label.push_color(Color("e8c875"))
-			label.add_text(str(event.get("spell_name", event.spell_id)))
+			label.add_text(preload("res://scripts/ui/game_localization.gd").catalog("SPELL", str(event.spell_id), "NAME", str(event.get("spell_name", event.spell_id))))
 			label.pop()
 			label.pop()
 		label.push_color(color)
@@ -46,7 +46,7 @@ func append(label: RichTextLabel, turn: int, message: String, event: Dictionary 
 			label.add_text("  ")
 			label.add_image(_icon("advantage"), 18, 18)
 			label.push_color(Color("cdd3d9") if is_equal_approx(effectiveness, 1.0) else Color("ebc768"))
-			var matchup := "Neutral" if is_equal_approx(effectiveness, 1.0) else "Effective" if effectiveness > 1.0 else "Ineffective"
+			var matchup := TranslationServer.translate("LOG_NEUTRAL" if is_equal_approx(effectiveness, 1.0) else "LOG_EFFECTIVE" if effectiveness > 1.0 else "LOG_INEFFECTIVE")
 			label.add_text(" %s %s" % [matchup, preload("res://scripts/ui/stat_presentation.gd").percent(effectiveness)])
 			label.pop()
 	else:

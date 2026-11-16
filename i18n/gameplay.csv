@@ -179,3 +179,7 @@ TIER_MYTHIC_NAME,Mythic,Mítico
 TIER_RARE_NAME,Rare,Raro
 TIER_EPIC_NAME,Epic,Épico
 TIER_LEGENDARY_NAME,Legendary,Legendario
+LOG_HOMUNCULUS_OF, (homunculus of , (homúnculo de 
+LOG_NEUTRAL,Neutral,Neutral
+LOG_EFFECTIVE,Effective,Eficaz
+LOG_INEFFECTIVE,Ineffective,Poco eficaz

@@ -241,6 +241,7 @@ test("Dungeon direct hits consume damage statuses once for both fighters", () =>
   expect(second.events.some((e: any) => e.kind === "status_consumed")).toBe(false);
   const missState = initial(); missState.spells.find((s: any) => s.id === "cinder_fist").accuracy = 0;
   const miss = resolveDungeonTurn(missState, { turn: 1, spell_id: "cinder_fist" }, () => 0.5);
+  expect(miss.events.filter((e: any) => e.kind === "spell" && !e.hit).map((e: any) => e.actor).sort()).toEqual(["npc", "player"]);
   expect(miss.events.some((e: any) => e.kind === "status_consumed")).toBe(false);
   for (const id of ["player", "npc"]) expect(miss.next_state[id].status).toMatchObject({ atk_boost: 0.5, atk_down: 0.1, vuln: 0.2 });
   const reapplied = initial();
@@ -1009,9 +1010,14 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
       expect((await request("/dungeon/turn", action, token)).data).toEqual(won);
       expect((await request(`/dungeon/leaderboard?month=${started.data.season}`, undefined, token)).data.player.cleared_floor).toBe(floor);
       if (floor < 3) {
+        const finished = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(started.data.run_id) as any).combat_state_json);
+        finished.player.hp = floor === 1 ? 1 : Math.floor(finished.player.max_hp / 2);
+        db.query("UPDATE dungeon_runs SET combat_state_json = ? WHERE run_id = ?").run(JSON.stringify(finished), started.data.run_id);
         const next = { run_id: started.data.run_id, client_action_id: `next-${floor}`, expected_revision: revision };
         const advanced = await request("/dungeon/next", next, token);
         expect(advanced.status).toBe(200); revision = advanced.data.combat_revision;
+        expect(advanced.data.combat_state.player.hp).toBe(advanced.data.combat_state.player.max_hp);
+        expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.player.hp).toBe(advanced.data.combat_state.player.max_hp);
         expect(advanced.data.combat_state.elite).toBeUndefined();
         expect(advanced.data.combat_state.npc_personality).toBeUndefined();
         expect(JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(started.data.run_id) as any).combat_state_json).elites_enabled).toBe(false);
@@ -1155,7 +1161,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     expect(special.status).toBe(200); expect(duplicate.data).toEqual(special.data);
     const metadata = generateDungeonEncounter(seed, eliteRun.data.run_id, specialFloor, true);
     expect(special.data.combat_state.special_encounter).toEqual(metadata);
-    expect(special.data.combat_state.player.hp).toBe(Math.min(special.data.combat_state.player.max_hp, 1 + Math.floor(special.data.combat_state.player.max_hp * 0.25)));
+    expect(special.data.combat_state.player.hp).toBe(special.data.combat_state.player.max_hp);
     expect(special.data.combat_state.rng_counter).toBeUndefined(); expect(special.data.combat_state.seed).toBeUndefined(); expect(special.data.combat_state.spells).toBeUndefined();
     expect((await request("/dungeon/next", { ...specialAction, expected_revision: 4 }, token)).status).toBe(409);
     expect((await request("/dungeon/next", { ...specialAction, client_action_id: "special-stale" }, token)).status).toBe(409);

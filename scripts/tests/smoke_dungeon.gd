@@ -166,6 +166,13 @@ func _run() -> void:
 	var fighter := {"id": "sulfur_01", "type": "sulfur", "hp": 100, "max_hp": 100, "hom_id": "cinder", "hom_energy": 0, "status": {}, "cooldowns": {}, "spell_ids": ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"]}
 	combat._dungeon_rank_loaded = true
 	combat._dungeon_session = {"run_id": "presentation-fixture", "status": "ACTIVE", "phase": "COMBAT", "cleared_floor": 0, "combat_state": {"floor": 1, "turn": 0, "player": fighter.duplicate(true), "npc": fighter.duplicate(true)}}
+	combat._combat_backend._verified_player_id = "fixture-player"
+	combat._dungeon_pending = {"payload": {"client_action_id": "log-fixture", "expected_revision": 0}}
+	await combat._dungeon_present_events([{"kind": "spell", "actor": "player", "spell_id": "cinder_fist", "hit": false}, {"kind": "spell", "actor": "npc", "spell_id": "ash_temper", "hit": false}, {"kind": "spell", "actor": "player", "spell_id": "brimstone_crash", "hit": true}], "fixture-player", combat._combat_backend._session_generation, "fixture-run", "log-fixture", 1, combat._gate_epoch)
+	var spell_log: String = combat.log_box.get_parsed_text()
+	assert(spell_log.contains("Cinder Fist — misses.") and spell_log.contains("Ash Temper — misses."))
+	assert(spell_log.contains("Brimstone Crash") and not spell_log.contains("Brimstone Crash — misses."))
+	combat._dungeon_pending.clear()
 	var encounter: Dictionary = combat._dungeon_session.combat_state
 	encounter.floor = 3
 	encounter.blessing = {"pending": true, "offers": [{"id": "a", "name": "A", "description": "First"}, {"id": "b", "name": "B", "description": "Second"}, {"id": "c", "name": "C", "description": "Third"}]}

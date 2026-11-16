@@ -583,6 +583,9 @@ func _dungeon_present_events(events: Array, owner: String, generation: int, run_
 			formatted["verb"] = " uses " if kind == "spell" else " " + kind.replace("_", " ") + " with "
 			formatted["spell_id"] = str(event.spell_id)
 			formatted["spell_name"] = str(spell.get("name", event.spell_id))
+			if kind == "spell" and event.has("hit") and not bool(event.hit):
+				formatted["category"] = "miss"
+				formatted["suffix"] = " — misses."
 		if event.has("amount"):
 			formatted["suffix"] = " %d" % int(event.amount)
 		if kind == "elite_trait_triggered":
@@ -1394,7 +1397,7 @@ func _log_online_hunt_event(event: Dictionary) -> void:
 	if kind in ["damage", "true_damage", "corrosion", "hom_corrosion", "hom_damage"]:
 		entry["verb"] = " deals %d damage to" % damage
 	elif kind == "miss" or kind == "hom_miss":
-		entry["verb"] = " misses"
+		entry["verb"] = "'s spell misses" if kind == "miss" and event.has("spell_id") else " misses"
 	elif kind == "status_applied":
 		entry["verb"] = " applies %s to" % str(event.get("status", "effect")).replace("_", " ")
 	elif kind == "boss_action":
