@@ -1,10 +1,10 @@
 /**
  * PvP groundwork only. Inputs and subsequent states must come from trusted server
  * storage; this module does not authenticate ownership or persist decisions.
- * Resolution deliberately fails closed until normal combat parity is implemented.
+ * Effect-free attack exchanges are supported; all other actions fail closed.
  */
 export type PvpSide = "left" | "right";
-export type PvpError = { error: "UNTRUSTED_SETUP" | "INVALID_DECISION" | "PVP_COMBAT_PARITY_UNAVAILABLE" };
+export type PvpError = { error: "UNTRUSTED_SETUP" | "INVALID_DECISION" | "INVALID_RNG" | "PVP_COMBAT_PARITY_UNAVAILABLE" };
 export type PvpSnapshot = {
   player_id: string; entity_id: string; weapon_ids: (string | null)[];
   homunculus_id: string | null; spell_ids: string[];
@@ -37,6 +37,7 @@ const synergyKeys = new Set(["power_flat", "guard_flat", "tempo_flat", "type_adv
 const statusInitial = () => ({ poison: 0, stun: 0, shield_pct: 0, atk_boost: 0, vuln_pct: 0, atk_down: 0, hom_stun: 0, reflect_pct: 0, tempo_bonus: 0 });
 const validLevel = (v: any) => v === undefined || (Number.isInteger(v) && v >= 0 && v <= 10);
 const validCatalog = (entries: unknown): entries is any[] => Array.isArray(entries) && entries.every(e => object(e) && typeof e.id === "string" && e.id.length > 0) && new Set(entries.map(e => e.id)).size === entries.length;
+const displayName = (name: string) => name.trim().replaceAll("(TEMP)", "").replaceAll("(Temp)", "").replaceAll("TEMP", "").replaceAll("temp", "").trim();
 
 function effectiveWeapon(item: any, progress: any, catalogs: PvpCatalogs): any {
   if (!item) return null;
@@ -95,6 +96,7 @@ function fighter(snapshot: PvpSnapshot, catalogs: PvpCatalogs): PvpFighter | nul
   const level = entry.level ?? 0, me = mutation?.effects ?? {};
   const hom_bonus = hom ? { hp_flat: hom.buff_hp + level + (me.hp_flat ?? 0), power_flat: hom.buff_atk + Math.trunc(level / 5) + (me.power_flat ?? 0), guard_flat: hom.buff_def + Math.trunc(level / 3) + (me.guard_flat ?? 0), favorable_type_bonus: me.favorable_type_bonus ?? 0 } : { hp_flat: 0, power_flat: 0, guard_flat: 0, favorable_type_bonus: 0 };
   const base: PvpFighter = structuredClone({ player_id: snapshot.player_id, entity, weapons: weapons.map(w => effectiveWeapon(w, itemProgress, catalogs)), homunculus: hom, spells, item_progress: itemProgress, homunculus_progress: homProgress, spell_progress: snapshot.spell_progress ?? {}, active_weapon_slot: 1, spell_cooldowns: {}, hom_energy: 0, hom_spent: hom === null, ultra_used: false, id: entity.id, name: entity.name, type: entity.type, hp: 0, max_hp: 0, atk: 0, def: 0, hom_id: hom?.id ?? "", hom_name: hom?.name ?? "", hom_max_energy: 6, hom_ready_at: 3, hom_synergy: synergy, hom_bonus, mutation, mods: { atk_flat: 0, def_flat: 0 }, item_fx: {}, active_weapon: null, status: statusInitial(), spell_ids: [...snapshot.spell_ids], original_spell_ids: [...snapshot.spell_ids], inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false, temporary_spell_id: "", temporary_replaced_slot: -1, spell_hit_this_exchange: false, spell_hit_last_exchange: false, spell_neutralize_pending: 0, spell_neutralize_active: 0 });
+  base.name = displayName(base.name); base.hom_name = displayName(base.hom_name);
   const result = refreshPvpWeapon(base); result.hp = result.max_hp; return result;
 }
 
@@ -180,17 +182,133 @@ export function validatePvpDecision(state: PvpCombatState, side: PvpSide, decisi
   if (!state || !state.fighters || (side !== "left" && side !== "right") || !decision || typeof decision !== "object" || Array.isArray(decision) || Object.keys(decision).some(k => !["turn", "spell_id", "switch_slot", "hom_action", "ultra"].includes(k))) return { error: "INVALID_DECISION" };
   const f = state.fighters[side];
   if (!f || !Number.isSafeInteger(decision.turn) || decision.turn !== state.turn + 1 || (decision.spell_id !== undefined) === (decision.switch_slot !== undefined) || (decision.ultra !== undefined && typeof decision.ultra !== "boolean") || (decision.hom_action !== undefined && !["hold", "attack", "sacrifice"].includes(decision.hom_action))) return { error: "INVALID_DECISION" };
-  if (decision.spell_id !== undefined && (typeof decision.spell_id !== "string" || !f.spells.some(s => s.id === decision.spell_id) || (f.spell_cooldowns[decision.spell_id] ?? 0) > 0)) return { error: "INVALID_DECISION" };
+  if (decision.spell_id !== undefined && (typeof decision.spell_id !== "string" || !f.spell_ids.includes(decision.spell_id) || !f.spells.some(s => s.id === decision.spell_id) || (f.spell_cooldowns[decision.spell_id] ?? 0) > 0)) return { error: "INVALID_DECISION" };
   if (decision.switch_slot !== undefined && (![1, 2].includes(decision.switch_slot) || decision.switch_slot === f.active_weapon_slot || !f.weapons[decision.switch_slot - 1] || decision.ultra)) return { error: "INVALID_DECISION" };
   if (decision.hom_action && decision.hom_action !== "hold" && !pvpHomReady(f)) return { error: "INVALID_DECISION" };
   if (decision.ultra && (state.battle_index !== 3 || state.wins.left !== 1 || state.wins.right !== 1 || state.sudden_death || f.ultra_used)) return { error: "INVALID_DECISION" };
   return { ok: true };
 }
 
-/** No partial combat result is returned until the resolver has parity. */
-export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecision, rightDecision: PvpDecision, _rng: (turn: number, draw: number) => number): PvpError {
-  if ("error" in validatePvpDecision(state, "left", leftDecision) || "error" in validatePvpDecision(state, "right", rightDecision) || typeof _rng !== "function") return { error: "INVALID_DECISION" };
-  return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+/** Resolve effect-free attacks. RNG returns a uniform [0,1) value for each draw. */
+export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecision, rightDecision: PvpDecision, rng: (turn: number, draw: number) => number): PvpError | { state: PvpCombatState; events: any[] } {
+  if (!state || (state as any).battle_over || state.fighters?.left?.hp <= 0 || state.fighters?.right?.hp <= 0 || "error" in validatePvpDecision(state, "left", leftDecision) || "error" in validatePvpDecision(state, "right", rightDecision) || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  const decisions = { left: leftDecision, right: rightDecision };
+  const supportedStatuses = new Set(["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"]);
+  for (const side of ["left", "right"] as const) {
+    const f: any = state.fighters[side], d = decisions[side];
+    const spell = f.spells.find((s: any) => s.id === d.spell_id);
+    if (d.switch_slot !== undefined || (d.hom_action && d.hom_action !== "hold") || !["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(f.type) || !spell || spell.category !== "attack" || !(spell.power_mult > 0) || !Array.isArray(spell.effects) || spell.effects.length || f.inspiration_pending || f.strategic_trap || f.strategic_heal_suppression || Object.keys(f.status).some(key => !supportedStatuses.has(key))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+  }
+  if (state.physical_anomaly || state.strategic_delayed?.length || state.strategic_jams?.length) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+  const next = structuredClone(state), events: any[] = [], turn = state.turn + 1;
+  let counter = 0;
+  const draw = () => { const v = rng(turn, counter++); if (!number(v) || v < 0 || v >= 1) throw new Error("INVALID_RNG"); return v; };
+  const sides: PvpSide[] = ["left", "right"];
+  const other = (side: PvpSide): PvpSide => side === "left" ? "right" : "left";
+  const emit = (side: PvpSide, category: string, verb: string, extra: any = {}) => {
+    const fighter = next.fighters[side];
+    events.push({ turn, side, actor_side: side === "left" ? "player" : "enemy", actor: fighter.name, actor_kind: "entity", actor_color: side === "left" ? "69d7e8" : "f2a078", category, verb, ...extra });
+  };
+  const clearDefense = (f: any, field: string) => {
+    f.status[field] = 0; delete f[`weapon_${field}`]; delete f[`other_${field}`];
+    if (field === "shield_pct") { delete f.spell_ward; delete f.spell_ward_baseline; }
+    else { delete f.hom_reflect_active; delete f.hom_other_reflect; }
+  };
+  const applyOther = (f: any, field: string, value: number) => {
+    if (field === "reflect_pct" && f.hom_reflect_active) f.hom_other_reflect = Math.max(f.hom_other_reflect ?? 0, value);
+    if (f[`weapon_${field}`] !== undefined) f[`other_${field}`] = Math.max(f[`other_${field}`] ?? 0, value);
+    f.status[field] = Math.max(f.status[field] ?? 0, value);
+  };
+  const applyWeapon = (f: any, field: string, value: number) => {
+    if (f[`weapon_${field}`] === undefined) f[`other_${field}`] = f.status[field] ?? 0;
+    f[`weapon_${field}`] = Math.max(f[`weapon_${field}`] ?? 0, value);
+    f.status[field] = Math.max(f[`other_${field}`], f[`weapon_${field}`]);
+  };
+  const dmg = (actor: PvpSide, target: PvpSide, amount: number, kind: string, spell: any) => {
+    const victim = next.fighters[target]; victim.hp = Math.max(0, victim.hp - amount);
+    emit(actor, "damage", " hits ", { kind, target: victim.name, target_side: target, target_color: target === "left" ? "69d7e8" : "f2a078", spell_id: spell.id, show_spell_link: false, damage: amount, hp: victim.hp, suffix: ` for ${amount}.` });
+  };
+  try {
+    next.turn = turn;
+    for (const side of sides) {
+      const f = next.fighters[side];
+      f.spell_hit_last_exchange = f.spell_hit_this_exchange; f.spell_hit_this_exchange = false;
+      f.spell_neutralize_active = f.spell_neutralize_pending; f.spell_neutralize_pending = 0;
+      if (decisions[side].ultra) f.ultra_used = true;
+    }
+    const l = pvpInitiative(next.fighters.left), r = pvpInitiative(next.fighters.right);
+    next.fighters.left = l.fighter; next.fighters.right = r.fighter;
+    const order = normalInitiativeOrder(l.initiative, r.initiative);
+    for (const side of order) {
+      const opponent = other(side), a: any = next.fighters[side], b: any = next.fighters[opponent], decision = decisions[side];
+      if (a.hp <= 0 || b.hp <= 0) break;
+      const spell = a.spells.find((s: any) => s.id === decision.spell_id);
+      a.spell_cooldowns = normalActionCooldowns(a.spell_cooldowns, spell);
+      emit(side, "damage", " uses ", { kind: "spell", spell_id: spell.id, spell_name: spell.name, target_side: opponent });
+      if (a.status.stun > 0) { a.status.stun--; emit(side, "debuff", " is stunned and skips the spell.", { kind: "stun", spell_id: spell.id }); continue; }
+      const focus = a.status.focus_next ?? 0, misalign = a.status.misalign_next ?? 0;
+      if (focus > 0 || misalign > 0) { delete a.status.focus_next; delete a.status.misalign_next; }
+      if ((b.item_fx.evasion_pct ?? 0) > 0 && draw() < b.item_fx.evasion_pct) { emit(opponent, "miss", " evades.", { kind: "evade", target_side: side, spell_id: spell.id }); continue; }
+      let accuracy = spell.accuracy;
+      if (a.atk > b.def * 1.6) accuracy -= 0.08;
+      if (a.max_hp > b.max_hp && a.max_hp > 0) accuracy -= Math.max(0, Math.min(0.15, (a.max_hp - b.max_hp) / a.max_hp * 0.2));
+      if (focus > 0) accuracy = Math.min(0.99, accuracy + focus);
+      if (misalign > 0) accuracy = Math.max(0.55, accuracy - misalign);
+      if (draw() >= Math.max(0, Math.min(1, accuracy))) { emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id }); continue; }
+      const as = a.hom_spent ? {} : a.hom_synergy, bs = b.hom_spent ? {} : b.hom_synergy;
+      const mult = normalSpellMultiplier({ attacker_type: a.type, defender_type: b.type, spell_type: spell.type, primary_type: spell.primary_type, secondary_type: spell.secondary_type, effectiveness: (next.types as any).effectiveness, advantage_bonus: a.hom_spent ? 0 : (as.type_adv_bonus ?? 0) + (a.hom_bonus.favorable_type_bonus ?? 0), disadvantage_reduction: a.item_fx.disadvantage_reduction, attacker_neutralize: a.spell_neutralize_active, defender_neutralize: b.spell_neutralize_active, attacker_hom_neutralize: as.type_neutralize, defender_hom_neutralize: bs.type_neutralize });
+      const amount = normalDirectDamage({ attack: a.atk, defense: b.def, power: spell.power_mult, type_multiplier: mult, attack_down: a.status.atk_down, attack_boost: a.status.atk_boost, incoming_multiplier: bs.incoming_mult, vulnerability: b.status.vuln_pct, shield: b.status.shield_pct, ultra: decision.ultra });
+      if (a.status.atk_down > 0) emit(side, "debuff", " shakes off the weakness.", {kind: "status_consumed", status: "atk_down", spell_id: spell.id});
+      if (a.status.atk_boost > 0) emit(side, "combo", " expends the surge.", {kind: "status_consumed", status: "atk_boost", spell_id: spell.id});
+      if (b.status.vuln_pct > 0) emit(side, "combo", " exploits vulnerability.", {kind: "status_consumed", status: "vuln_pct", target_side: opponent, spell_id: spell.id});
+      a.status.atk_down = 0; a.status.atk_boost = 0; b.status.vuln_pct = 0;
+      if (b.status.shield_pct > 0) clearDefense(b, "shield_pct");
+      dmg(side, opponent, amount, "damage", spell); events[events.length - 1].effectiveness = mult;
+      if (amount > 0) b.spell_hit_this_exchange = true;
+      if (b.status.reflect_pct > 0) {
+        const ignored = (a.item_fx.ignore_reflect_chance ?? 0) > 0 && draw() < a.item_fx.ignore_reflect_chance;
+        const reflected = ignored ? 0 : Math.round(amount * b.status.reflect_pct);
+        if (reflected > 0) { dmg(opponent, side, reflected, "reflect", spell); a.spell_hit_this_exchange = true; }
+        if (!ignored && (b.status.poison_on_reflect ?? 0) > 0) a.status.poison = Math.max(a.status.poison, b.status.poison_on_reflect);
+        clearDefense(b, "reflect_pct"); delete b.status.poison_on_reflect;
+      }
+      for (const key of ["true_on_hit", "dot_true"]) {
+        const value = Math.trunc(a.item_fx[key] ?? 0);
+        if (value > 0) { dmg(side, opponent, value, key, spell); if (key === "dot_true" && a.item_fx.vuln_on_hit > 0) b.status.vuln_pct = Math.max(b.status.vuln_pct, a.item_fx.vuln_on_hit); }
+      }
+      const homDot = Math.max(0, Math.trunc(as.dot_true ?? 0)); if (homDot > 0) dmg(side, opponent, homDot, "hom_dot", spell);
+      const proc = Math.floor(draw() * 0x100000000) % 100;
+      if (a.type === "vitriol" && proc < 30) b.status.poison = 2;
+      if (a.type === "mercury" && proc < 20) b.status.stun = 1;
+      if (a.type === "sulfur" && proc < 20) b.status.atk_down = Math.max(b.status.atk_down, 0.15);
+      if (a.type === "sodium" && proc < 20) applyOther(a, "shield_pct", 0.12);
+      if (a.type === "aether" && proc < 20) b.status.vuln_pct = Math.max(b.status.vuln_pct, 0.12);
+      if (a.type === "gold" && proc < 20) { const before = a.hp; a.hp = Math.min(a.max_hp, a.hp + 3); if (a.hp !== before) emit(side, "heal", " restores 3 HP.", { kind: "elemental_heal", spell_id: spell.id, hp: a.hp, amount: a.hp - before }); }
+      if (proc < (a.type === "vitriol" ? 30 : 20) && a.type !== "gold") emit(side, a.type === "sodium" ? "shield" : "debuff", " triggers an elemental effect.", {kind: "elemental_proc", spell_id: spell.id, target_side: a.type === "sodium" ? side : opponent, status: ({vitriol:"poison",mercury:"stun",sulfur:"atk_down",sodium:"shield_pct",aether:"vuln_pct"} as Record<string,string>)[a.type]});
+    }
+    if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0) for (const side of sides) {
+      const f = next.fighters[side]; if (f.status.poison > 0) { f.status.poison--; f.hp = Math.max(0, f.hp - 2); f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage: 2, hp: f.hp }); }
+    }
+    for (const side of sides) { const f = next.fighters[side]; if (!f.hom_spent) f.hom_energy = Math.min(f.hom_max_energy, f.hom_energy + 1); f.spell_neutralize_active = 0; }
+    if (next.fighters.left.hp <= 0 || next.fighters.right.hp <= 0) {
+      (next as any).battle_over = true;
+      (next as any).battle_result = next.fighters.left.hp <= 0 && next.fighters.right.hp <= 0 ? "draw" : next.fighters.left.hp <= 0 ? "right" : "left";
+    } else {
+      next.player_turn = !next.player_turn;
+      if (!next.player_turn) {
+        next.round++;
+        for (const side of sides) {
+          const f: any = next.fighters[side], synergy = f.hom_spent ? {} : f.hom_synergy;
+          const reflect = Math.max(0, Math.min(1, synergy.reflect_pct ?? 0));
+          if (reflect > 0) { f.hom_other_reflect = f.status.reflect_pct; f.hom_reflect_active = reflect; if (f.weapon_reflect_pct !== undefined) f.other_reflect_pct = Math.max(f.other_reflect_pct ?? 0, reflect); f.status.reflect_pct = Math.max(f.status.reflect_pct, reflect); }
+          if (f.item_fx.ward_pct > 0) applyWeapon(f, "shield_pct", f.item_fx.ward_pct);
+          if (f.item_fx.reflect_pct > 0) applyWeapon(f, "reflect_pct", f.item_fx.reflect_pct);
+        }
+        if (next.round === 2 && next.fighters.left.hp !== next.fighters.right.hp) { const winner = next.fighters[next.fighters.left.hp > next.fighters.right.hp ? "left" : "right"]; if (winner.item_fx.tempo_on_win > 0) winner.status.tempo_bonus = winner.item_fx.tempo_on_win; }
+      }
+    }
+    return { state: next, events };
+  } catch (err) { if (err instanceof Error && err.message === "INVALID_RNG") return { error: "INVALID_RNG" }; throw err; }
 }
 
 /** Normal combat.gd battle-end scoring, not yet connected to resolution. */

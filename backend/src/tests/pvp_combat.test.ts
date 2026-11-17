@@ -30,12 +30,118 @@ test("ultra validation follows deciding-round conditions", () => {
  expect(validatePvpDecision(s, "left", d)).toEqual({ok: true});
  s.fighters.left.ultra_used = true; expect(validatePvpDecision(s, "left", d)).toEqual({error: "INVALID_DECISION"});
 });
-test("resolution fails closed without mutation or RNG draws", () => {
- const s = setup(), before = structuredClone(s), l = {turn: 1, spell_id: s.fighters.left.spells[0].id}, r = {turn: 1, spell_id: s.fighters.right.spells[0].id};
+test("unsupported effects fail closed without mutation or RNG draws", () => {
+ const s = setup(), before = structuredClone(s), l = {turn: 1, spell_id: s.fighters.left.spells.find((x: any) => x.effects.length > 0).id}, r = {turn: 1, spell_id: s.fighters.right.spells[0].id};
  let draws = 0; const rng = () => {draws++; return 0;};
  expect(resolvePvpExchange(s, l, r, rng)).toEqual({error: "PVP_COMBAT_PARITY_UNAVAILABLE"});
  expect(resolvePvpExchange(s, l, r, rng)).toEqual({error: "PVP_COMBAT_PARITY_UNAVAILABLE"});
  expect(draws).toBe(0); expect(s).toEqual(before);
+});
+
+test("both humans attack in order and deterministic draws preserve input", () => {
+ const s = setup(), before = structuredClone(s), l = {turn:1,spell_id:"cinder_fist"}, r = {turn:1,spell_id:"silver_needle"};
+ const result = resolvePvpExchange(s,l,r,()=>0.5) as any;
+ expect(result).toEqual(resolvePvpExchange(s,l,r,()=>0.5)); expect(s).toEqual(before);
+ expect(result.events.filter((e: any)=>e.kind === "damage").map((e: any)=>e.side)).toEqual(["left","right"]);
+ expect(result.state.fighters.left.hp).toBeLessThan(104); expect(result.state.fighters.right.hp).toBeLessThan(96);
+ expect(result.events.find((e: any)=>e.kind === "damage")).toMatchObject({actor_side:"player",category:"damage",spell_id:"cinder_fist",target_side:"right"});
+});
+
+test("faster human acts first, and lethal hits prevent the second action", () => {
+ const s = setup(); s.fighters.right.status.tempo_bonus = 2; s.fighters.left.hp = 1;
+ const result = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(result.events.filter((e: any)=>e.kind === "spell").map((e: any)=>e.side)).toEqual(["right"]);
+ expect(result.state.fighters.left.hp).toBe(0); expect(result.state.battle_result).toBe("right");
+});
+
+test("accuracy, evasion and stun resolve without spending wrong resources", () => {
+ const s = setup(), l = {turn:1,spell_id:"cinder_fist"}, r = {turn:1,spell_id:"silver_needle"};
+ s.fighters.right.item_fx.evasion_pct = 1;
+ const evade = resolvePvpExchange(s,l,r,()=>0.5) as any;
+ expect(evade.events.some((e: any)=>e.kind === "evade")).toBe(true);
+ expect(evade.state.fighters.right.hp).toBe(96);
+ s.fighters.right.item_fx.evasion_pct = 0; s.fighters.right.status.stun = 1;
+ const miss = resolvePvpExchange(s,l,r,()=>0.999999) as any;
+ expect(miss.events.some((e: any)=>e.kind === "miss")).toBe(true);
+ expect(miss.events.some((e: any)=>e.kind === "stun")).toBe(true);
+ expect(miss.state.fighters.right.status.stun).toBe(0);
+});
+
+test("boost, vulnerability, ward, reflection and on-hit effects are applied", () => {
+ const l = {...snapshot("a","sulfur"), weapon_ids:["bismuth_talisman",null]};
+ const s = createPvpCombatState(l,snapshot("b","mercury"),catalogs) as any;
+ s.fighters.left.status.atk_boost = 0.2; s.fighters.right.status.vuln_pct = 0.2;
+ s.fighters.right.status.shield_pct = 0.5; s.fighters.right.status.reflect_pct = 0.5;
+ const result = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(result.events.some((e: any)=>e.kind === "reflect")).toBe(true);
+ expect(result.events.some((e: any)=>e.kind === "true_on_hit")).toBe(true);
+ expect(result.state.fighters.left.status.atk_boost).toBe(0);
+ expect(result.state.fighters.right.status.vuln_pct).toBe(0);
+ expect(result.state.fighters.right.status.shield_pct).toBe(0);
+ expect(result.state.fighters.right.status.reflect_pct).toBe(0);
+});
+
+test("invalid decisions and RNG fail without modifying input", () => {
+ const s = setup(), before = structuredClone(s);
+ expect(resolvePvpExchange(s,{turn:2,spell_id:"cinder_fist"},{turn:1,spell_id:"silver_needle"},()=>0.5)).toEqual({error:"INVALID_DECISION"});
+ expect(resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"silver_needle"},()=>1)).toEqual({error:"INVALID_RNG"});
+ expect(s).toEqual(before);
+});
+
+test("three headless Godot exchange fixtures match damage, cooldowns, statuses and event order", () => {
+ const fixtures = [
+  {left:"sulfur",right:"mercury",a:"cinder_fist",b:"silver_needle",hp:[96,81],damage:[15,8],draws:[0.5,0,0.5,0.5],proc:"atk_down"},
+  {left:"aether",right:"sodium",a:"rift_touch",b:"crystal_ram",hp:[93,101],damage:[11,9],draws:[0.5,0,0.5,0.5],proc:"vuln_pct"},
+  {left:"vitriol",right:"gold",a:"etching_fang",b:"aurum_edge",hp:[93,93],damage:[11,11],draws:[0.5,0.5,0.5,0.5],proc:null},
+ ];
+ for (const f of fixtures) {
+  const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
+  const out = resolvePvpExchange(s,{turn:1,spell_id:f.a},{turn:1,spell_id:f.b},(_t,i)=>f.draws[i]) as any;
+  expect([out.state.fighters.left.hp,out.state.fighters.right.hp]).toEqual(f.hp);
+  expect([out.state.fighters.left.spell_cooldowns,out.state.fighters.right.spell_cooldowns]).toEqual([{[f.a]:0},{[f.b]:0}]);
+  expect(out.events.filter((e: any)=>e.kind === "damage").map((e: any)=>e.damage)).toEqual(f.damage);
+  expect(out.events.filter((e: any)=>e.kind === "spell").map((e: any)=>e.spell_id)).toEqual([f.a,f.b]);
+  expect(out.events.filter((e: any)=>e.kind === "elemental_proc").map((e: any)=>e.status)).toEqual(f.proc ? [f.proc] : []);
+  expect(out.state.fighters.right.status.vuln_pct).toBe(f.proc === "vuln_pct" ? 0.12 : 0);
+  expect(out.state.fighters.right.status.atk_down).toBe(0);
+ }
+});
+
+test("all seven real effect-free attacks resolve on either human side", () => {
+ for (const [type,id] of [["sulfur","cinder_fist"],["mercury","silver_needle"],["sodium","crystal_ram"],["aether","rift_touch"],["vitriol","etching_fang"],["gold","aurum_edge"],["sulfur","steady_script"]]) {
+  const source = snapshot("a",type); if (id === "steady_script") source.spell_ids[0] = id;
+  for (const side of ["left","right"]) {
+   const opponent = snapshot("b","mercury"), left = side === "left" ? source : {...opponent,player_id:"b"}, right = side === "left" ? opponent : {...source,player_id:"a"};
+   const state = createPvpCombatState(left,right,catalogs) as any;
+   const a = {turn:1,spell_id: side === "left" ? id : "silver_needle"}, b = {turn:1,spell_id: side === "right" ? id : "silver_needle"};
+   const result = resolvePvpExchange(state,a,b,()=>0.5) as any;
+   expect(result.events.some((e: any)=>e.kind === "damage" && e.side === side && e.spell_id === id)).toBe(true);
+  }
+ }
+});
+
+test("cooldown validation and ticks apply independently to each human", () => {
+ const s = setup(); s.fighters.left.spells.find((x: any)=>x.id === "cinder_fist").cooldown_turns = 2;
+ s.fighters.left.spell_cooldowns.old = 2; s.fighters.right.spell_cooldowns.old = 3;
+ const result = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(result.state.fighters.left.spell_cooldowns).toEqual({old:1,cinder_fist:2});
+ expect(result.state.fighters.right.spell_cooldowns).toEqual({old:2,silver_needle:0});
+ expect(validatePvpDecision(result.state,"left",{turn:2,spell_id:"cinder_fist"})).toEqual({error:"INVALID_DECISION"});
+});
+
+test("elemental advantage and all six on-hit passives use the acting fighter", () => {
+ for (const [type, spell, status] of [["sulfur","cinder_fist","atk_down"],["mercury","silver_needle","stun"],["sodium","crystal_ram","shield_pct"],["aether","rift_touch","vuln_pct"],["vitriol","etching_fang","poison"],["gold","aurum_edge","heal"]]) {
+  const s = createPvpCombatState(snapshot("a",type),snapshot("b","mercury"),catalogs) as any;
+  s.fighters.left.hp -= 5;
+  const draws = [0.5,0,0.5,0.5];
+  const out = resolvePvpExchange(s,{turn:1,spell_id:spell},{turn:1,spell_id:"silver_needle"},(_t,i)=>draws[i] ?? 0.5) as any;
+  if (status === "heal") expect(out.events.some((e: any)=>e.kind === "elemental_heal" && e.side === "left")).toBe(true);
+  else expect(out.events.some((e: any)=>e.kind === "elemental_proc" && e.side === "left" && e.status === status)).toBe(true);
+ }
+ const s = createPvpCombatState(snapshot("a","sulfur"),snapshot("b","vitriol"),catalogs) as any;
+ const out = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"etching_fang"},()=>0.5) as any;
+ expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").effectiveness).toBeCloseTo(1.12);
+ expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "right").effectiveness).toBeCloseTo(0.92);
 });
 test("bad setups and duplicate equipment are rejected", () => {
  const l = snapshot("a", "sulfur"), r = snapshot("b", "mercury"), item = catalogs.items.find((i: any) => i.slot === "build");
