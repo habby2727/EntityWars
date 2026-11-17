@@ -50,6 +50,7 @@ var btn_seal_attack: BaseButton = null
 var btn_seal_defense: BaseButton = null
 var btn_save: Button = null
 var btn_play: Button = null
+var ranked_queue: Node
 
 var lbl_title: Label = null
 var lbl_name: Label = null
@@ -287,8 +288,11 @@ func _ready() -> void:
 	_build_cards()
 	_cards_ready = true
 	if not _hunt_mode and not _dungeon_mode:
-		var ranked := preload("res://scripts/ui/ranked_queue.gd").new()
-		add_child(ranked)
+		ranked_queue = preload("res://scripts/ui/ranked_queue.gd").new()
+		add_child(ranked_queue)
+		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "PRACTICE"
+		$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseLabel.text = "RANKED PvP"
+		btn_seal_attack.set_pressed_no_signal(true)
 	if not _hunt_mode and not _dungeon_mode:
 		_restore_build_preferences(_verified_preferences_identity())
 	_refresh_details()
@@ -1638,6 +1642,8 @@ func _lore_for_entity(ent: Dictionary) -> String:
 	return "An unknown force watches from the edges of the seal."
 
 func _on_seal_attack() -> void:
+	if ranked_queue != null:
+		ranked_queue._select_practice()
 	if btn_seal_defense != null:
 		var notice := btn_seal_defense.get_node_or_null("ComingSoon") as Label
 		if notice != null:
@@ -1658,13 +1664,11 @@ func _on_seal_attack() -> void:
 
 func _on_seal_defense() -> void:
 	if not _hunt_mode and not _dungeon_mode:
-		if btn_seal_defense != null:
-			btn_seal_defense.set_pressed_no_signal(false)
-			var notice := btn_seal_defense.get_node_or_null("ComingSoon") as Label
-			if notice != null:
-				notice.show()
-		if btn_seal_attack != null:
-			btn_seal_attack.set_pressed_no_signal(true)
+		if ranked_queue != null:
+			if ranked_queue.selected:
+				_on_seal_attack()
+			else:
+				ranked_queue._select()
 		return
 	var changed := _mode != "defense"
 	_mode = "defense"
@@ -1689,6 +1693,29 @@ func _pulse_button(btn: BaseButton) -> void:
 	t.tween_property(btn, "modulate", Color(1, 1, 1, 1), 0.12)
 
 func _on_save_pressed() -> void:
+	if ranked_queue != null and ranked_queue.selected:
+		if _verified_preferences_identity().is_empty():
+			ranked_queue.info.text = "Sign in before saving loadout"
+			return
+		if not _spell_pending_id.is_empty() or not _spell_synced:
+			ranked_queue.info.text = "Wait for spell confirmation"
+			return
+		if _spell_backend == null:
+			ranked_queue.info.text = "Server spell loadout unavailable"
+			return
+		for action in _spell_backend.get_pending_actions():
+			if str(action.get("action_type", "")) == "SET_SPELL_LOADOUT":
+				ranked_queue.info.text = "Wait for spell confirmation"
+				return
+		if _has_duplicate_build_items():
+			ranked_queue.info.text = "Choose different weapons"
+			return
+		if not _save_seal("attack"):
+			ranked_queue.info.text = "Could not save loadout"
+			return
+		ranked_queue.info.text = "Loadout saved — press READY"
+		_update_save_button_label()
+		return
 	if _has_saved:
 		# If X area was clicked, skip loading.
 		if btn_save:
@@ -1708,6 +1735,8 @@ func _on_save_reset_pressed() -> void:
 	_update_save_button_label()
 
 func _on_save_gui_input(ev: InputEvent) -> void:
+	if ranked_queue != null and ranked_queue.selected:
+		return
 	if not _has_saved:
 		return
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and ev.pressed:
@@ -1722,6 +1751,9 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	if ranked_queue != null and ranked_queue.selected:
+		ranked_queue._join()
+		return
 	if _dungeon_mode:
 		_submit_dungeon_loadout()
 		return
@@ -1987,7 +2019,7 @@ func _save_build_preferences() -> void:
 	if not BuildPreferences.save_for(_preferences_owner, build):
 		_set_build_error("Could not save build preferences.")
 
-func _save_seal(which: String) -> void:
+func _save_seal(which: String) -> bool:
 	var payload := {
 		"mode": which,
 		"entity_id": _current_entity_id,
@@ -2005,14 +2037,19 @@ func _save_seal(which: String) -> void:
 		payload["player_id"] = identity
 	if _hunt_mode:
 		SceneRouter._hunt_loadout = payload
-		return
+		return true
 	var path := BuildPreferences.seal_path(_verified_preferences_identity(), which)
 	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(payload, "\t"))
-		f.close()
+	if not f:
+		return false
+	f.store_string(JSON.stringify(payload, "\t"))
+	var save_error := f.get_error()
+	f.close()
+	if save_error != OK:
+		return false
 	print("Saved SEAL %s -> %s" % [which.to_upper(), path])
 	_has_saved = true
+	return true
 
 func _load_seal(which: String) -> void:
 	var path := BuildPreferences.seal_path(_verified_preferences_identity(), which)
@@ -2194,6 +2231,10 @@ func _update_save_button_label() -> void:
 		return
 	var path := BuildPreferences.seal_path(_verified_preferences_identity(), _mode)
 	_has_saved = FileAccess.file_exists(path)
+	if ranked_queue != null and ranked_queue.selected:
+		btn_save.text = "Save Loadout"
+		btn_save.get_node("ResetMark").visible = false
+		return
 	btn_save.text = "Load Seal" if _has_saved else "Save Seal"
 	btn_save.get_node("ResetMark").visible = _has_saved
 
