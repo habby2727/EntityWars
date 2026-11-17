@@ -203,7 +203,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		rating_needed = false
 		var rank: Dictionary = data.get("player", {})
 		info.text = "%d MP · %s %s" % [int(rank.get("mp", 1000)), str(rank.get("league", "Copper")), str(rank.get("division", "IV"))]
-		ready_button.disabled = not synced
+		ready_button.disabled = not selected or not synced or queued
 		return
 	var state := str(data.get("state", ""))
 	if state == "MATCHED":

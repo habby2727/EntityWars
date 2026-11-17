@@ -27,6 +27,10 @@ var _effects: Array = []
 var _boss_mode := false
 var _extra_effects: Array = []
 
+func set_extra_effects(effects: Array) -> void:
+	_extra_effects = effects.duplicate(true)
+	queue_redraw()
+
 func set_boss_effects(enabled: bool, effects: Array) -> void:
 	_boss_mode = enabled
 	if is_instance_valid(victory_markers):

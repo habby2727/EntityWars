@@ -7,6 +7,47 @@ import { createPvpChat, createPvpMatches, createPvpQueue, pvpRandom, settlePvpMa
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir,"../../../data",name),"utf8"));
 const catalogs = {entities:read("entities.json").entities,items:read("items.json").items,spells:read("spells.json").spells,homunculi:read("homunculi.json").homunculi,types:read("types.json"),mutations:read("static/mutations.json").mutations,balance:read("static/balance.json").balance};
 const snapshot = (player_id: string) => ({player_id,entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:null,spell_ids:catalogs.spells.filter((s: any)=>s.type==="sulfur").slice(0,4).map((s: any)=>s.id)});
+
+test("0.61h targeted audit: queued server snapshot stays frozen when progression changes", () => {
+ const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
+ const states: Record<string,any> = {a:{player_id:"a",item_progress:{bismuth_talisman:{level:0}},homunculus_progress:{},spell_progress:{}},b:{player_id:"b",item_progress:{},homunculus_progress:{},spell_progress:{}}};
+ const selection={entity_id:"sulfur_01",weapon_ids:["bismuth_talisman",null],homunculus_id:null,spell_ids:snapshot("a").spell_ids,mode:"attack"};
+ const calls: string[]=[]; const queue=createPvpQueue(db,catalogs,(id,chosen)=>{calls.push(id); return trustedPvpSnapshot(id,chosen,states[id],catalogs);},()=>100);
+ expect(queue.join("a",selection).state).toBe("QUEUED");
+ states.a.item_progress.bismuth_talisman.level=7;
+ const match=queue.join("b",{...selection,weapon_ids:[null,null]}) as any;
+ const member=db.query("SELECT snapshot_json FROM pvp_match_players WHERE match_id = ? AND player_id = ?").get(match.match_id,"a") as any;
+ expect(JSON.parse(member.snapshot_json).item_progress.bismuth_talisman.level).toBe(0);
+ const combat=JSON.parse((db.query("SELECT combat_state_json FROM pvp_matches WHERE match_id = ?").get(match.match_id) as any).combat_state_json);
+ const fighter=[combat.fighters.left,combat.fighters.right].find((f: any)=>f.player_id==="a");
+ expect(fighter.weapons[0].forge_level).toBe(0); expect(calls).toEqual(["a","b"]);
+ db.close();
+});
+
+test("0.61h targeted audit: resolved status is public to both viewers without private state", () => {
+ const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
+ const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>100); queue.join("a",{}); const match=(queue.join("b",{}) as any).match_id;
+ const row=db.query("SELECT combat_state_json FROM pvp_matches WHERE match_id = ?").get(match) as any, state=JSON.parse(row.combat_state_json);
+ for(const side of ["left","right"]) {const f=state.fighters[side]; f.status.poison_on_reflect=2; f.spell_neutralize_active=0.2; f.spell_neutralize_pending=0.3; f.strategic_trap={value:0.25,activated_turn:1,expires_turn:3}; f.strategic_heal_suppression={expires_turn:3}; f.inspiration_used_this_battle=true; f.inspiration_pending=true; f.inspiration_offers=["private-offer-"+side]; f.item_progress={private_progress:"secret"};}
+ state.strategic_delayed=[{actor:"left",target:"right",amount:9,due_turn:2},{actor:"right",target:"left",amount:4,due_turn:2}];
+ db.query("UPDATE pvp_matches SET combat_state_json = ? WHERE match_id = ?").run(JSON.stringify(state),match);
+ const service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>100);
+ for(const id of ["a","b"]) {
+  const view=service.state(match,id); const viewerSide=state.fighters.left.player_id===id?"left":"right";
+  for(const [name,side] of [["player",viewerSide],["enemy",viewerSide==="left"?"right":"left"]]) {
+   const f=(view as any)[name]; expect(f.status.poison_on_reflect).toBe(2); expect(f.spell_neutralize_active).toBe(0.2); expect(f.spell_neutralize_pending).toBe(0.3);
+   expect(f.trap).toEqual({value:0.25,expires_turn:3}); expect(f.heal_suppression).toEqual({expires_turn:3}); expect(f.inspiration_used_this_battle).toBe(true);
+   expect(f.delayed_damage).toEqual([{amount:side==="left"?4:9,due_turn:2}]);
+  }
+  expect(view.player.inspiration_offers).toEqual(["private-offer-"+viewerSide]); expect(view.enemy.inspiration_offers).toBeUndefined(); expect(view.enemy.spell_ids).toBeUndefined();
+  const serialized=JSON.stringify(view); expect(serialized).not.toContain("private_progress"); expect(serialized).not.toContain("private-offer-"+(viewerSide==="left"?"right":"left")); expect(serialized).not.toContain("inspiration_catalog"); expect(serialized).not.toContain("rng_counter");
+ }
+ db.close();
+});
 test("trusted selection derives progress from server state and checks learned spells", () => {
  const base=snapshot("a"), selection={entity_id:base.entity_id,weapon_ids:base.weapon_ids,homunculus_id:null,spell_ids:base.spell_ids,mode:"attack"};
  const state={player_id:"a",item_progress:{},homunculus_progress:{},spell_progress:{learned_by_entity:{},equipped_by_mode:{}}};

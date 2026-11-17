@@ -147,6 +147,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		chat_input.clear()
 		chat_pending.clear()
 		next_poll = 0.0
+		refresh_controls()
 		return
 	if data.get("match_id", "") != match_id:
 		header.text = "Match unavailable"
@@ -169,12 +170,31 @@ func _fighter(data: Dictionary) -> Dictionary:
 	var statuses := {"poison": 0, "stun": 0, "shield_pct": 0.0, "atk_boost": 0.0, "vuln_pct": 0.0, "atk_down": 0.0, "hom_stun": 0, "reflect_pct": 0.0, "tempo_bonus": 0.0}
 	statuses.merge(data.get("status", {}), true)
 	fighter["status"] = statuses
+	if data.get("trap") is Dictionary:
+		fighter["strategic_trap"] = data.trap.duplicate(true)
+	if data.get("heal_suppression") is Dictionary:
+		fighter["strategic_heal_suppression"] = data.heal_suppression.duplicate(true)
 	fighter["hom_synergy"] = {}
 	var weapons: Array = data.get("weapon_ids", [])
 	for i in 2:
 		var weapon_id := str(weapons[i]) if i < weapons.size() and weapons[i] != null else ""
 		fighter["equip_%d" % (i + 1)] = host._find_by_id(host._items, weapon_id)
 	return fighter
+
+func _strategic_effects(fighter: Dictionary) -> Array:
+	var effects: Array = []
+	for delayed in fighter.get("delayed_damage", []):
+		var amount := int(delayed.get("amount", 0))
+		var due_turn := int(delayed.get("due_turn", 0))
+		effects.append({"icon": "hourglass", "label": str(amount), "tooltip": "Delayed damage: %d at the end of exchange %d." % [amount, due_turn]})
+	if fighter.has("strategic_trap"):
+		var trap: Dictionary = fighter.strategic_trap
+		var remaining := maxi(0, int(trap.get("expires_turn", 0)) - int(state.get("turn", 0)))
+		effects.append({"icon": "trap", "label": "%dT" % remaining, "tooltip": "Counter trap: %d%% of direct damage; %d exchanges remaining." % [roundi(float(trap.get("value", 0)) * 100), remaining]})
+	if fighter.has("strategic_heal_suppression"):
+		var remaining := maxi(0, int(fighter.strategic_heal_suppression.get("expires_turn", 0)) - int(state.get("turn", 0)))
+		effects.append({"icon": "heal_block", "label": "%dT" % remaining, "tooltip": "Healing reduced by 50%%; %d exchanges remaining." % remaining})
+	return effects
 
 func _render() -> void:
 	if not state.get("player") is Dictionary or not state.get("enemy") is Dictionary:
@@ -188,6 +208,8 @@ func _render() -> void:
 	host._turn = int(state.get("turn", 0))
 	host._combat_started = true
 	host._battle_over = str(state.get("status", "")) != "ACTIVE"
+	host.player_indicators.set_extra_effects(_strategic_effects(host.player))
+	host.enemy_indicators.set_extra_effects(_strategic_effects(host.enemy))
 	host._update_ui()
 	var anomaly: Variant = state.get("physical_anomaly")
 	if anomaly is Dictionary and not anomaly.is_empty():
@@ -254,6 +276,10 @@ func refresh_controls() -> void:
 		button.disabled = button.disabled or locked
 	host.switch_weapon_btn.disabled = host.switch_weapon_btn.disabled or locked
 	host.ultra_button.disabled = host.ultra_button.disabled or locked
+	var inspiration_locked := state.is_empty() or str(state.get("status", "")) != "ACTIVE" or not bool(state.get("player", {}).get("inspiration_pending", false)) or bool(state.get("ready", {}).get("player", false)) or not request_id.is_empty() or not pending.is_empty() or not choice.is_empty()
+	for card in host._inspiration_cards:
+		card.disabled = inspiration_locked
+	(host._inspiration_panel.get_node("Content/Cancel") as Button).disabled = inspiration_locked
 
 func spell(index: int) -> void:
 	if index < 0 or index >= host.spell_buttons.size() or host.spell_buttons[index].disabled:
@@ -316,11 +342,12 @@ func _refresh_inspiration() -> void:
 	host._inspiration_panel.show()
 
 func choose_inspiration(index: int) -> void:
-	if index >= 0 and index < host._inspiration_options.size():
+	if index >= 0 and index < host._inspiration_options.size() and not host._inspiration_cards[index].disabled:
 		_submit_decision({"kind": "choose", "spell_id": str(host._inspiration_options[index].get("id", ""))})
 
 func decline_inspiration() -> void:
-	_submit_decision({"kind": "decline"})
+	if not (host._inspiration_panel.get_node("Content/Cancel") as Button).disabled:
+		_submit_decision({"kind": "decline"})
 
 func _send_chat() -> void:
 	if chat_send.disabled or chat_input.text.strip_edges().is_empty():

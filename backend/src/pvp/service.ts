@@ -21,8 +21,8 @@ export function trustedPvpSnapshot(playerId: string, selection: any, state: any,
   return { player_id: playerId, entity_id: entity.id, weapon_ids: [...weapons], homunculus_id: selection.homunculus_id, spell_ids: [...ids], item_progress: structuredClone(state.item_progress ?? {}), homunculus_progress: structuredClone(state.homunculus_progress ?? {}), spell_progress: structuredClone(state.spell_progress ?? {}) };
 }
 
-/** The caller must authenticate the user and construct an ownership-verified snapshot
- * from authoritative storage. Never pass a client-supplied snapshot to this service. */
+/** The caller must authenticate the user and construct a snapshot from authoritative
+ * storage. Never pass a client-supplied snapshot to this service. */
 export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnapshot: (playerId: string, selection: unknown) => PvpSnapshot | null, clock: () => number = Date.now) {
   if (typeof trustedSnapshot !== "function") throw new Error("PVP_OWNERSHIP_VERIFIER_REQUIRED");
   const rankings = createPvpRanking(db, clock);
@@ -68,11 +68,11 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
         let opponent = first.get(playerId) as any, other: PvpSnapshot | null = null;
         while (opponent) {
           const stored = JSON.parse(opponent.snapshot_json);
-          other = trustedSnapshot(opponent.player_id, stored.selection);
+          other = stored.snapshot ?? null;
           if (other && other.player_id === opponent.player_id && other.player_id !== playerId && !("error" in createPvpFighter(other, catalogs))) break;
           remove.run(opponent.player_id); opponent = first.get(playerId) as any;
         }
-        if (!opponent || !other) { insert.run(playerId, now, now + 3_600_000, JSON.stringify({selection})); return { state: "QUEUED", joined_at: now, expires_at: now + 3_600_000 }; }
+        if (!opponent || !other) { insert.run(playerId, now, now + 3_600_000, JSON.stringify({selection, snapshot})); return { state: "QUEUED", joined_at: now, expires_at: now + 3_600_000 }; }
         const [left, right] = randomInt(2) === 0 ? [snapshot, other] : [other, snapshot];
         const combat = createPvpCombatState(left, right, catalogs);
         if ("error" in combat) throw new Error(combat.error);
@@ -185,9 +185,10 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
     const present = (side: PvpSide) => {
       const f = state.fighters[side], identity = entries.find(e => e.side.toLowerCase() === side);
       const status: any = {};
-      for (const k of ["poison","stun","shield_pct","atk_boost","vuln_pct","atk_down","hom_stun","reflect_pct","tempo_bonus","focus_next","misalign_next"]) if (typeof f.status?.[k] === "number") status[k] = f.status[k];
+      for (const k of ["poison","stun","shield_pct","atk_boost","vuln_pct","atk_down","hom_stun","reflect_pct","tempo_bonus","focus_next","misalign_next","poison_on_reflect"]) if (typeof f.status?.[k] === "number") status[k] = f.status[k];
       if (f.status?.hybrid_mark) status.hybrid_mark = { owner: f.status.hybrid_mark.owner === viewer ? "player" : "enemy", remaining: f.status.hybrid_mark.remaining };
-      return { player_id: identity.player_id, display_name: identity.display_name, entity_id: f.id, name: f.name, type: f.type, hp: f.hp, max_hp: f.max_hp, atk: f.atk, def: f.def, status, active_weapon_slot: f.active_weapon_slot, weapon_ids: f.weapons.map((weapon: any) => weapon?.id ?? null), hom_id: f.hom_id, hom_name: f.hom_name, hom_energy: f.hom_energy, hom_max_energy: f.hom_max_energy, hom_ready_at: f.hom_ready_at, hom_spent: f.hom_spent, ultra_used: f.ultra_used, inspiration: f.inspiration, inspiration_pending: !!f.inspiration_pending, ...(f.strategic_trap ? {trap: {value:f.strategic_trap.value, expires_turn:f.strategic_trap.expires_turn}} : {}), ...(f.strategic_heal_suppression ? {heal_suppression: {expires_turn:f.strategic_heal_suppression.expires_turn}} : {}), ...(side === viewer ? { spell_ids: [...f.spell_ids], spell_cooldowns: {...f.spell_cooldowns}, inspiration_offers: f.inspiration_pending ? [...f.inspiration_offers] : [] } : {}) };
+      const delayed_damage = (state.strategic_delayed ?? []).filter((entry: any) => entry.target === side).map((entry: any) => ({ amount: entry.amount, due_turn: entry.due_turn }));
+      return { player_id: identity.player_id, display_name: identity.display_name, entity_id: f.id, name: f.name, type: f.type, hp: f.hp, max_hp: f.max_hp, atk: f.atk, def: f.def, status, spell_neutralize_active: f.spell_neutralize_active, spell_neutralize_pending: f.spell_neutralize_pending, delayed_damage, active_weapon_slot: f.active_weapon_slot, weapon_ids: f.weapons.map((weapon: any) => weapon?.id ?? null), hom_id: f.hom_id, hom_name: f.hom_name, hom_energy: f.hom_energy, hom_max_energy: f.hom_max_energy, hom_ready_at: f.hom_ready_at, hom_spent: f.hom_spent, ultra_used: f.ultra_used, inspiration: f.inspiration, inspiration_pending: !!f.inspiration_pending, inspiration_used_this_battle: !!f.inspiration_used_this_battle, ...(f.strategic_trap ? {trap: {value:f.strategic_trap.value, expires_turn:f.strategic_trap.expires_turn}} : {}), ...(f.strategic_heal_suppression ? {heal_suppression: {expires_turn:f.strategic_heal_suppression.expires_turn}} : {}), ...(side === viewer ? { spell_ids: [...f.spell_ids], spell_cooldowns: {...f.spell_cooldowns}, inspiration_offers: f.inspiration_pending ? [...f.inspiration_offers] : [] } : {}) };
     };
     const finished = row.result_json ? JSON.parse(row.result_json) : null;
     const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season } : null;
