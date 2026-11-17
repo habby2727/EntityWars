@@ -6,6 +6,7 @@ var request_id := ""
 var request_kind := ""
 var selected := false
 var queued := false
+var cancel_requested := false
 var joined_at := 0
 var expires_at := 0
 var next_poll := 0.0
@@ -33,6 +34,7 @@ func _ready() -> void:
 	select_button = Button.new()
 	select_button.text = "RANKED PvP"
 	select_button.custom_minimum_size = Vector2(120, 55)
+	preload("res://scripts/ui/menu_art.gd").button(select_button)
 	column.add_child(select_button)
 	select_button.pressed.connect(_select)
 	host.btn_seal_attack.pressed.connect(_select_practice)
@@ -48,18 +50,20 @@ func _ready() -> void:
 	top_button.pressed.connect(SceneRouter.go_to_top_players)
 	ready_button = Button.new()
 	ready_button.text = "READY"
+	preload("res://scripts/ui/menu_art.gd").button(ready_button)
 	ready_button.disabled = true
 	column.add_child(ready_button)
 	ready_button.pressed.connect(_join)
 	cancel_button = Button.new()
 	cancel_button.text = "X Cancel"
+	preload("res://scripts/ui/menu_art.gd").button(cancel_button)
 	cancel_button.hide()
 	column.add_child(cancel_button)
 	cancel_button.pressed.connect(_cancel)
 	overlay = ColorRect.new()
 	overlay.color = Color(0, 0, 0, 0.4)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.z_as_relative = false
 	overlay.z_index = 100
 	overlay.hide()
@@ -121,14 +125,33 @@ func _send(method: String, path: String, body: Variant, kind: String) -> bool:
 func _join() -> void:
 	if not selected or queued or not synced or not request_id.is_empty():
 		return
+	var identity: String = backend._verified_player_id
+	if identity.is_empty() or host._verified_preferences_identity() != identity or host._spell_backend == null or host._spell_backend.token.is_empty() or host._spell_backend._verified_player_id != identity or str(host._spell_state.get("player_id", "")) != identity:
+		info.text = "Sign in with the same account to play Ranked"
+		return
+	if not host._spell_pending_id.is_empty():
+		info.text = "Wait for spell loadout confirmation"
+		return
+	for action in host._spell_backend.get_pending_actions():
+		if str(action.get("action_type", "")) == "SET_SPELL_LOADOUT":
+			info.text = "Wait for spell loadout confirmation"
+			return
+	if not host._spell_synced:
+		info.text = "Waiting for server spell loadout"
+		return
 	var path: String = preload("res://scripts/domain/build_preferences.gd").seal_path(backend._verified_player_id, "attack")
 	var loaded: Variant = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 	var seal: Dictionary = loaded if loaded is Dictionary and str(loaded.get("player_id", "")) == backend._verified_player_id else {}
 	var entity := str(seal.get("entity_id", ""))
 	if entity.is_empty():
-		info.text = "Save an attack loadout first"
+		info.text = "Save loadout first"
 		return
-	var progress: Dictionary = server_state.get("spell_progress", {})
+	var current := {"entity_id": host._current_entity_id, "homunculus_id": host._current_homunculus_id, "equip_1": host._idx_to_id(host._items, host.dd_item1), "equip_2": host._idx_to_id(host._items, host.dd_item2), "side_1": host._idx_to_id(host._items, host.dd_side1), "side_2": host._idx_to_id(host._items, host.dd_side2), "attack_tech": host._idx_to_id(host._atk_techs, host.dd_atktech), "defense_tech": host._idx_to_id(host._def_techs, host.dd_deftech)}
+	for key in current:
+		if str(seal.get(key, "")) != str(current[key]):
+			info.text = "Save loadout first"
+			return
+	var progress: Dictionary = host._spell_state.get("spell_progress", {})
 	var equipped: Dictionary = progress.get("equipped_by_mode", {}).get("attack", {})
 	var spells: Array = equipped.get(entity, preload("res://scripts/domain/spell_loadout.gd").initial_ids(host._reg, entity))
 	if spells.size() != 4:
@@ -145,8 +168,13 @@ func _join() -> void:
 		info.text = "Connection busy. Retry."
 
 func _cancel() -> void:
-	if not queued or not request_id.is_empty():
+	if not queued:
 		return
+	if not request_id.is_empty():
+		cancel_requested = true
+		info.text = "Cancelling queue..."
+		return
+	cancel_requested = false
 	if not _send("POST", "/pvp/queue/cancel", {"client_action_id": backend._make_uuid()}, "cancel"):
 		info.text = "Connection unavailable. Retry."
 
@@ -158,6 +186,7 @@ func _set_queued(value: bool) -> void:
 			if is_instance_valid(control):
 				control.disabled = disabled_before[control]
 		disabled_before.clear()
+		cancel_requested = false
 	queued = value
 	overlay.visible = value
 	ready_button.text = "Searching..." if value else "READY"
@@ -198,7 +227,15 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 			availability_blocked = true
 		if str(data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED"] or (int(data.get("http_status", 0)) >= 400 and int(data.get("http_status", 0)) < 500):
 			_set_queued(false)
-		info.text = "Ranked unavailable" if str(data.get("error", "")) == "PVP_DISABLED" else "Connection error — retrying"
+		var error := str(data.get("error", ""))
+		if error == "UNTRUSTED_SETUP":
+			info.text = "Loadout rejected — save and check your loadout"
+		elif error == "QUEUE_CONFLICT":
+			info.text = "Queue conflict — check your loadout and rejoin"
+		else:
+			info.text = "Ranked unavailable" if error == "PVP_DISABLED" else "Connection error — retrying"
+		if cancel_requested and queued:
+			_cancel()
 		next_poll = 3.0
 		return
 	if kind == "leaderboard":
@@ -217,6 +254,8 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		expires_at = int(data.get("expires_at", 0))
 		selected = true
 		_set_queued(true)
+		if cancel_requested:
+			_cancel()
 	elif state == "IDLE":
 		var was_queued := queued
 		_set_queued(false)

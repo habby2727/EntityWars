@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { pvpRank, pvpSeason } from "./pvp/ranking";
 
 // Message text is plain text. Consumers must render it as text, never HTML or BBCode.
 export function createGlobalChat(db: Database, clock: () => number = Date.now) {
@@ -10,6 +11,16 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now) {
 		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
 	const insert = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?)");
 	const prune = db.query("DELETE FROM global_chat_messages WHERE id NOT IN (SELECT id FROM global_chat_messages ORDER BY id DESC LIMIT 20)");
+	const profile = db.query(`SELECT p.player_id, p.display_name AS username, r.rating
+		FROM players p LEFT JOIN pvp_season_ratings r ON r.player_id = p.player_id AND r.season = ?
+		WHERE p.player_id = ?`);
+	function publicProfile(playerId: string, season: string) {
+		const row = profile.get(season, playerId) as { player_id: string; username: string; rating: number | null } | null;
+		return row ? { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) } : null;
+	}
+	function withLeague(row: any, season: string) {
+		return { ...row, league: publicProfile(row.player_id, season)?.league ?? null };
+	}
 	function onlineCount() {
 		const now = clock();
 		for (const [id, seen] of presence) if (now - seen >= 45_000) presence.delete(id);
@@ -17,11 +28,15 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now) {
 	}
 	return {
 		onlineCount,
-		close() { messages.finalize(); existing.finalize(); insert.finalize(); prune.finalize(); },
+		close() { messages.finalize(); existing.finalize(); insert.finalize(); prune.finalize(); profile.finalize(); },
 		state(playerId: string) {
 			const now = clock();
 			presence.set(playerId, now);
-			return { messages: messages.all().reverse(), online_count: onlineCount() };
+			onlineCount();
+			const season = pvpSeason(now);
+			const online_players = Array.from(presence.keys(), id => publicProfile(id, season)).filter(row => row !== null)
+				.sort((a, b) => a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
+			return { messages: messages.all().reverse().map(row => withLeague(row, season)), online_count: online_players.length, online_players };
 		},
 		send(playerId: string, body: any) {
 			const text = body?.text;

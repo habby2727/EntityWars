@@ -13,11 +13,14 @@ test("global chat retains history, deduplicates, throttles and expires presence"
 	try {
 		db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
 		db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite/0009_global_chat.sql"), "utf8"));
+		db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite/0012_pvp_seasons.sql"), "utf8"));
 		db.exec("INSERT INTO players VALUES ('a', 'Alice'), ('b', 'Bob')");
+		db.exec("INSERT INTO pvp_season_ratings VALUES ('1970-01', 'a', 3250, 0)");
 		let now = 100_000;
 		let chat = createGlobalChat(db, () => now);
 		expect(chat.state("a").online_count).toBe(1);
 		expect(chat.state("b").online_count).toBe(2);
+		expect(chat.state("b").online_players).toMatchObject([{ username: "Alice", league: "Amethyst" }, { username: "Bob", league: "Copper" }]);
 		const first = chat.send("a", { text: "hello", client_message_id: "0", username: "Bob" });
 		expect(first.data.message).toMatchObject({ username: "Alice", text: "hello" });
 		expect(chat.send("a", { text: "hello", client_message_id: "0" }).data.duplicate).toBe(true);
@@ -29,6 +32,7 @@ test("global chat retains history, deduplicates, throttles and expires presence"
 			expect(chat.send("a", { text: `message ${i}`, client_message_id: String(i) }).status).toBe(200);
 		}
 		expect(chat.state("a").messages).toHaveLength(20);
+		expect(chat.state("a").messages.at(-1)).toMatchObject({ username: "Alice", league: "Amethyst" });
 		expect(chat.state("a").messages[0]).toMatchObject({ username: "Bob", text: "reply" });
 		chat.close();
 		db.close();
@@ -38,6 +42,7 @@ test("global chat retains history, deduplicates, throttles and expires presence"
 		expect(chat.state("b").online_count).toBe(2);
 		now += 45_000;
 		expect(chat.state("a").online_count).toBe(1);
+		expect(chat.state("a").online_players).toMatchObject([{ username: "Alice" }]);
 		chat.close();
 	} finally {
 		db.close();

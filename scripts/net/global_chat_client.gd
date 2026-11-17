@@ -7,6 +7,7 @@ var messages: Array = []
 var latest_id := 0
 var unread := false
 var online_count := 0
+var online_players: Array = []
 var error_key := ""
 var panel_open := false
 var _initialized := false
@@ -40,6 +41,8 @@ func _process(_delta: float) -> void:
 	if not identity.is_empty() and identity != _identity:
 		_identity = identity
 		messages = []
+		online_players = []
+		online_count = 0
 		latest_id = 0
 		unread = false
 		_initialized = false
@@ -57,6 +60,7 @@ func _process(_delta: float) -> void:
 			_poll_busy = false
 			_send_busy = false
 			online_count = 0
+			online_players = []
 		updated.emit()
 	if connected and not _poll_busy and Time.get_ticks_msec() >= _next_poll:
 		poll_now()
@@ -103,6 +107,8 @@ func _apply_snapshot(data: Dictionary) -> void:
 	_initialized = true
 	messages = incoming
 	online_count = int(data.get("online_count", 0))
+	var players: Variant = data.get("online_players", [])
+	online_players = players if players is Array else []
 	updated.emit()
 
 func set_panel_open(value: bool) -> void:

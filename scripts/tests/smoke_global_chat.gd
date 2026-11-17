@@ -18,7 +18,7 @@ func _run() -> void:
 	_check(not chat.unread and chat.latest_id == 1 and chat.online_count == 2, "First snapshot or presence failed")
 	chat._apply_snapshot({"messages": [{"id": 2, "player_id": "mine", "username": "Me", "text": "hello"}], "online_count": 2})
 	_check(not chat.unread, "Own message marked unread")
-	chat._apply_snapshot({"messages": [{"id": 3, "player_id": "other", "username": "Alice", "text": "[b]<test>"}], "online_count": 2})
+	chat._apply_snapshot({"messages": [{"id": 3, "player_id": "other", "username": "Alice", "league": "Quartz", "text": "[b]<test>"}], "online_count": 2, "online_players": [{"player_id": "other", "username": "Alice", "league": "Quartz"}, {"player_id": "mine", "username": "Me", "league": "Copper"}]})
 	_check(chat.unread, "Other message did not mark unread")
 	for path in ["res://scenes/ui/LabHub.tscn", "res://scenes/ui/LabStructures.tscn", "res://scenes/ui/Lab.tscn"]:
 		var scene = load(path).instantiate()
@@ -36,6 +36,11 @@ func _run() -> void:
 		await process_frame
 		_check(panel._button.get_theme_font("font").has_char(0x1f4ac), "Emoji font lacks chat glyph")
 		_check(panel._scroll.get_v_scroll_bar() is VScrollBar, "Native scrollbar missing")
+		panel._online.pressed.emit()
+		_check(panel._online_panel.visible and panel._online_list.get_child_count() == 2, "Online list did not open")
+		_check(panel._online_list.get_child(0).get_child(0) is TextureRect, "League icon missing from online list")
+		panel._online.pressed.emit()
+		_check(not panel._online_panel.visible, "Online list did not close")
 		panel._open()
 		_check(panel._panel.visible and not chat.unread, "Opening did not clear badge")
 		_check(panel._log.get_parsed_text().contains("[b]<test>"), "Message markup was not kept as text")
@@ -45,7 +50,7 @@ func _run() -> void:
 		await process_frame
 	var many := []
 	for i in 25:
-		many.append({"id": i + 10, "player_id": "other", "username": "Alice", "text": "long message " + str(i)})
+		many.append({"id": i + 10, "player_id": "other", "username": "Alice", "text": ("long message " + str(i) + " ").repeat(16)})
 	chat._apply_snapshot({"messages": many, "online_count": 1})
 	_check(chat.messages.size() == 20, "History limit failed")
 	var scroll_panel = load("res://scripts/ui/global_chat_panel.gd").new()
