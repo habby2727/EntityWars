@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
+import { isRankedRoute, rankedAvailability } from "./pvp/availability";
 import { createHash, createHmac } from "crypto";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
@@ -1037,7 +1038,7 @@ function applyAction(
 		return { state: next };
 	}
 	if (actionType === "SYNC_START") {
-		if (next.lab.hqLevel < 4 || (next.lab.buildings.sync_nexus?.level ?? 0) < 1) return { state: next, error: "Sync Nexus unavailable." };
+		if (next.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (next.lab.buildings.sync_nexus?.level ?? 0) < 1) return { state: next, error: "Sync Nexus unavailable." };
 		if (runtime.sync_project) return { state: next, error: "Sync project already active." };
 		const duration = getBalanceNumber("sync_npc_duration_seconds", 28800);
 		if (!Number.isSafeInteger(duration) || duration <= 0) return { state: next, error: "Invalid sync duration." };
@@ -1338,6 +1339,13 @@ async function startServer(): Promise<void> {
 					await revokeSession(token);
 					await revokeAccessToken(token);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
+				}
+
+				if (isRankedRoute(req.method, url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const result = rankedAvailability(Bun.env);
+					return jsonResponse(result.data, result.status);
 				}
 
 				if (req.method == "GET" && url.pathname == "/chat/state") {
@@ -2319,7 +2327,7 @@ async function startServer(): Promise<void> {
 						let runId: string;
 						if (start) {
 							const state = ensurePlayerState(playerId);
-							if (state.lab.hqLevel < 4 || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
+							if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
 							if (db.query("SELECT 1 FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) throw new HttpError(409, "An active dungeon run already exists.");
 							runId = crypto.randomUUID();
 							const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {} };
@@ -2440,8 +2448,13 @@ async function startServer(): Promise<void> {
 							if (row.result_metadata_json) throw new HttpError(409, "Hunt settlement already exists.");
 							const source = row.guardian_id ? "guardian" : "boss";
 							const tier = JSON.parse(row.boss_snapshot_json).tier;
-							const grants = staticData.balance.solo_hunt_rewards?.[source]?.[tier];
-							if (!grants || typeof grants !== "object" || Array.isArray(grants) || Object.keys(grants).length === 0 || Object.entries(grants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) < 0)) throw new HttpError(500, "Invalid hunt reward configuration.");
+							const configuredGrants = staticData.balance.solo_hunt_rewards?.[source]?.[tier];
+							if (!configuredGrants || typeof configuredGrants !== "object" || Array.isArray(configuredGrants) || Object.keys(configuredGrants).length === 0 || Object.entries(configuredGrants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) < 0)) throw new HttpError(500, "Invalid hunt reward configuration.");
+							const grants = { ...configuredGrants };
+							if (source === "boss" && tier === "common") {
+								const roll = createHmac("sha256", WORLD_SECRET).update("solo-hunt-common-core:" + row.session_id).digest().readUInt32BE(0) / 0x100000000;
+								if (roll < 0.3) grants.core = 1;
+							}
 							const playerRow = getPlayerByIdStmt.get(playerId) as { state_json: string } | null;
 							if (!playerRow) throw new HttpError(404, "Player not found.");
 							let player: PlayerState;
@@ -4120,7 +4133,7 @@ const HQ_RULES: Record<string, { unlock: number; max: number; cap_per_hq: number
 	ultrahit_tower: { unlock: 2, max: 10, cap_per_hq: 1 },
 	experiment_chamber: { unlock: 3, max: 10, cap_per_hq: 1 },
 	arcane_archives: { unlock: 3, max: 10, cap_per_hq: 1 },
-	sync_nexus: { unlock: 4, max: 10, cap_per_hq: 1 },
+	sync_nexus: { unlock: 2, max: 10, cap_per_hq: 1 },
 	anomaly_containment: { unlock: 5, max: 10, cap_per_hq: 1 },
 	trade_hall: { unlock: 2, max: 10, cap_per_hq: 1 },
 	world_gate: { unlock: 1, max: 10, cap_per_hq: 1 }

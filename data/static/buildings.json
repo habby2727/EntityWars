@@ -395,7 +395,7 @@
       "id": "sync_nexus",
       "name": "Sync Nexus",
       "display_name": "Sync Nexus",
-      "unlock_hq": 4,
+      "unlock_hq": 2,
       "routes": [],
       "costs": {
         "1": {

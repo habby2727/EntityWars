@@ -10,7 +10,7 @@ const DEFAULT_RULES := {
 	"ultrahit_tower": {"unlock": 2, "max": 10, "cap_per_hq": 1},
 	"experiment_chamber": {"unlock": 3, "max": 10, "cap_per_hq": 1},
 	"arcane_archives": {"unlock": 3, "max": 10, "cap_per_hq": 1},
-	"sync_nexus": {"unlock": 4, "max": 10, "cap_per_hq": 1},
+	"sync_nexus": {"unlock": 2, "max": 10, "cap_per_hq": 1},
 	"anomaly_containment": {"unlock": 5, "max": 10, "cap_per_hq": 1},
 	"trade_hall": {"unlock": 2, "max": 10, "cap_per_hq": 1},
 	"world_gate": {"unlock": 1, "max": 10, "cap_per_hq": 1}

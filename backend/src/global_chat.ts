@@ -10,13 +10,18 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now) {
 		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
 	const insert = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?)");
 	const prune = db.query("DELETE FROM global_chat_messages WHERE id NOT IN (SELECT id FROM global_chat_messages ORDER BY id DESC LIMIT 20)");
+	function onlineCount() {
+		const now = clock();
+		for (const [id, seen] of presence) if (now - seen >= 45_000) presence.delete(id);
+		return presence.size;
+	}
 	return {
+		onlineCount,
 		close() { messages.finalize(); existing.finalize(); insert.finalize(); prune.finalize(); },
 		state(playerId: string) {
 			const now = clock();
-			for (const [id, seen] of presence) if (now - seen >= 45_000) presence.delete(id);
 			presence.set(playerId, now);
-			return { messages: messages.all().reverse(), online_count: presence.size };
+			return { messages: messages.all().reverse(), online_count: onlineCount() };
 		},
 		send(playerId: string, body: any) {
 			const text = body?.text;

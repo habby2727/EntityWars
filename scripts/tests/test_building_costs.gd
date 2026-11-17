@@ -57,6 +57,10 @@ static func _test_costs_and_lab_display() -> void:
 					failures += 1
 					push_error("FAIL: displayed cost for %s level %s path %s" % [id, level, path])
 	_assert_eq(HqRules.get_unlock_level("world_gate"), 1, "world gate unlocks at HQ 1")
+	_assert_eq(HqRules.get_unlock_level("sync_nexus"), 2, "Sync Nexus unlocks at HQ 2")
+	_assert_eq(int(db.buildings.sync_nexus.unlock_hq), 2, "Sync Nexus catalog unlock")
+	_assert_false(HqRules.can_upgrade("sync_nexus", 0, 1), "Sync Nexus purchase locked at HQ 1")
+	_assert_false(not HqRules.can_upgrade("sync_nexus", 0, 2), "Sync Nexus purchase allowed at HQ 2")
 	screen._catalog.free()
 	screen._db.free()
 	screen._debug.free()

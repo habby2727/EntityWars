@@ -20,11 +20,19 @@ func _run() -> void:
 	root.add_child(panel)
 	var registry := DataRegistry.new()
 	panel.setup(registry, backend, false, 20, 10)
-	var state := {"lab": {"hqLevel": 4, "buildings": {"sync_nexus": {"level": 1}}, "runtime": {}}}
+	var state := {"lab": {"hqLevel": 1, "buildings": {"sync_nexus": {"level": 1}}, "runtime": {}}}
 	panel.show_building("sync_nexus", state, {}, {}, true)
 	panel._update_sync_status()
 	assert(panel._lab_buttons.size() == 1)
 	assert(panel._lab_buttons[0].text == "START")
+	assert(panel._lab_buttons[0].disabled)
+	state.lab.hqLevel = 2
+	state.lab.buildings.sync_nexus.level = 0
+	panel.update_lab_status(state, 0, false, {})
+	assert(panel._lab_buttons[0].disabled)
+	state.lab.buildings.sync_nexus.level = 1
+	panel.update_lab_status(state, 0, false, {})
+	assert(not panel._lab_buttons[0].disabled)
 	var cards := panel.get_child(0) as HFlowContainer
 	assert(cards != null and cards.get_child_count() == 2)
 	assert(panel._lab_buttons[0].custom_minimum_size == Vector2(165, 52))
@@ -97,6 +105,8 @@ func _run() -> void:
 	assert(loadout._spell_button.get_theme_stylebox("normal") != disabled_style)
 	assert(loadout._build_warning.visible and not loadout._spell_warning.visible)
 	loadout._on_equip_button_pressed(loadout.dd_item1)
+	assert(loadout._weapon_overlay.visible)
+	loadout._choose_weapon("bismuth_talisman")
 	assert(not loadout._build_warning.visible)
 	loadout._set_button_selection(loadout.dd_item1, loadout._items, "")
 	assert(loadout._build_warning.visible)
@@ -105,6 +115,7 @@ func _run() -> void:
 	loadout._on_card_picked("entity", "sulfur_01")
 	assert(loadout._spell_warning.visible and not loadout._spell_button.disabled)
 	loadout._spell_draft = loadout._equipped_spells("attack", "sulfur_01").duplicate()
+	assert(loadout._spell_draft.size() == 4)
 	loadout._spell_draft[0] = "steady_script"
 	loadout._confirm_spell_dialog()
 	assert(not loadout._spell_warning.visible)
@@ -245,7 +256,7 @@ func _run() -> void:
 	indicators.set_boss_effects(true, [{"icon": "hourglass", "label": "8", "tooltip": "Delayed damage"}, {"icon": "trap", "label": "2T", "tooltip": "Counter trap"}, {"icon": "heal_block", "label": "1T", "tooltip": "Healing suppression"}])
 	indicators.set_fighter(0, {"status": {"poison": 2, "shield_pct": 0.25, "reflect_pct": 0.16}})
 	assert(indicators._visible_effects().size() == 6)
-	assert(indicators._get_tooltip(indicators._boss_slots()[0].get_center()) == "Delayed damage")
+	assert(indicators._get_tooltip(indicators._slots()[0].get_center()) == "Delayed damage")
 	indicators.set_boss_effects(true, [])
 	indicators.set_fighter(0, {"status": {}})
 	assert(indicators._visible_effects().is_empty())

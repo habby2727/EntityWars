@@ -368,12 +368,13 @@ func _update_sync_status() -> void:
 	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
 	var level := int(_forge_state.get("lab", {}).get("buildings", {}).get("sync_nexus", {}).get("level", 0))
 	var hq := int(_forge_state.get("lab", {}).get("hqLevel", 0))
-	if not active and not _forge_debug and (level < 1 or hq < 4):
+	var sync_unlock := HqRules.get_unlock_level("sync_nexus")
+	if not active and not _forge_debug and (level < 1 or hq < sync_unlock):
 		_lab_status.text += "\n" + tr("SYNC_REQUIRES") % [level, hq]
 	_lab_buttons[0].text = (_clock(remaining) if remaining > 0 else tr("SYNC_CLAIM")) if active else tr("SYNC_START")
 	if is_instance_valid(_sync_badge):
 		_sync_badge.visible = active and remaining <= 0 and ready and not _sync_pending
-	_lab_buttons[0].disabled = not ready or _sync_pending or (active and remaining > 0) or (not active and not _forge_debug and (level < 1 or hq < 4))
+	_lab_buttons[0].disabled = not ready or _sync_pending or (active and remaining > 0) or (not active and not _forge_debug and (level < 1 or hq < sync_unlock))
 	if is_instance_valid(_dungeon_ranking_button):
 		_dungeon_ranking_button.disabled = _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty()
 	if is_instance_valid(_dungeon_entry_button):

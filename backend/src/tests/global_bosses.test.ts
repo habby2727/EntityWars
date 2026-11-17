@@ -144,6 +144,8 @@ test("global bosses persist per zone and use trusted sessions", async () => {
     expect((await request("/world/global-bosses", undefined, players[fifth].token)).data.events[0].reward_status).toBe("PAID");
     expect((await request("/world/global-bosses", undefined, players[sixth].token)).data.events[0].reward_status).toBeNull();
     for (const i of [0, 1, 2, 3, fifth]) {
+      expect(wallet(i).essence - before[i].essence).toBe(({ common: 18, mythic: 36, rare: 54, epic: 72, legendary: 96 } as Record<string, number>)[event.tier]);
+      expect(wallet(i).core).toBe(before[i].core);
       for (const [id, amount] of Object.entries(grants)) expect(wallet(i)[id] - (before[i][id] ?? 0)).toBe(Number(amount));
       expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = 'GLOBAL_BOSS_REWARD'").get(sessions[i]) as any).n).toBe(1);
     }
