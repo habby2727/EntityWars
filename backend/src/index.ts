@@ -1,6 +1,8 @@
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
+import { createPvpChat, createPvpMatches, createPvpQueue, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
+import { createPvpRanking } from "./pvp/ranking";
 import { createHash, createHmac } from "crypto";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
@@ -274,9 +276,26 @@ for (let attempt = 0; ; attempt++) {
 	}
 }
 const globalChat = createGlobalChat(db);
+let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking> } | null = null;
+function getRankedServices() {
+	if (rankedServices) return rankedServices;
+	const secret = Bun.env.PVP_RNG_SECRET;
+	if (!secret || new TextEncoder().encode(secret).length < 32) return null;
+	const dataDir = resolve(import.meta.dir, "..", "..", "data");
+	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
+	if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance) throw new Error("PVP_CATALOG_UNAVAILABLE");
+	const matches = createPvpMatches(db, new TextEncoder().encode(secret));
+	rankedServices = { db, matches, queue: createPvpQueue(db, catalogs, (id, selection) => trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs)), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+	const timer = setInterval(() => { try { matches.sweep(); } catch (error) { logError("pvp deadline sweep failed", { error: String(error) }); } }, 1000);
+	timer.unref();
+	return rankedServices;
+}
 const getPlayerByIdStmt = db.prepare(
 	"SELECT player_id, display_name, state_json, updated_at FROM players WHERE player_id = ?"
 );
+if (Bun.env.PVP_ENABLED === "1") {
+	try { getRankedServices(); } catch (error) { logError("pvp initialization failed", { error: String(error) }); }
+}
 const getPlayerByNameStmt = db.prepare(
 	"SELECT player_id, display_name, state_json, updated_at FROM players WHERE display_name = ?"
 );
@@ -1344,8 +1363,20 @@ async function startServer(): Promise<void> {
 				if (isRankedRoute(req.method, url.pathname)) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
-					const result = rankedAvailability(Bun.env);
-					return jsonResponse(result.data, result.status);
+					if (Bun.env.PVP_ENABLED !== "1") { const result = rankedAvailability(Bun.env); return jsonResponse(result.data, result.status); }
+					try {
+						const services = getRankedServices();
+						if (!services) return jsonResponse({ error: "PVP_SECRET_REQUIRED" }, 503);
+						const body = req.method === "POST" ? await readJson(req, config.maxBodyBytes) : undefined;
+						return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams));
+					} catch (error) {
+						const code = error instanceof Error ? error.message : "PVP_UNAVAILABLE";
+						if (code === "MATCH_NOT_FOUND") return jsonResponse({ error: code }, 404);
+						if (code === "CHAT_RATE_LIMIT") return jsonResponse({ error: code }, 429);
+						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT"].includes(code)) return jsonResponse({ error: code }, 409);
+						if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code)) return jsonResponse({ error: code }, 400);
+						logError("pvp request failed", { error: String(error) }); return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
+					}
 				}
 
 				if (req.method == "GET" && url.pathname == "/chat/state") {

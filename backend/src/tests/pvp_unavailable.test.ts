@@ -21,7 +21,7 @@ test("ranked routes require authentication and fail closed with either flag sett
   const dir = mkdtempSync(join(tmpdir(), "ew-pvp-off-")), db = new Database(join(dir, "test.sqlite"));
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: join(dir, "test.sqlite"), NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", PVP_ENABLED: "0" };
+  const env = { ...process.env, DB_PATH: join(dir, "test.sqlite"), NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", PVP_ENABLED: "0", PVP_RNG_SECRET: "" };
   const spawn = () => Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   let server = spawn();
   const request = async (path: string, body?: unknown, token?: string) => { const response = await fetch(`http://127.0.0.1:${port}${path}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: response.status, data: await response.json() as any }; };
@@ -33,10 +33,10 @@ test("ranked routes require authentication and fail closed with either flag sett
       const a = (await request("/auth/dev_login", { name: "pvp_test_a" })).data;
       const b = (await request("/auth/dev_login", { name: "pvp_test_b" })).data;
       expect(a.token).toBeTruthy(); expect(b.token).toBeTruthy();
-      const routes: [string, unknown?][] = [["/pvp/queue/state"], ["/pvp/queue/join", {}], ["/pvp/queue/cancel", {}], ["/pvp/match/state"], ["/pvp/match/decision", {}], ["/pvp/match/forfeit", {}], ["/pvp/match/chat", {}]];
+      const routes: [string, unknown?][] = [["/pvp/queue/state"], ["/pvp/queue/join", {}], ["/pvp/queue/cancel", {}], ["/pvp/match/state"], ["/pvp/match/decision", {}], ["/pvp/match/forfeit", {}], ["/pvp/match/chat", {}], ["/pvp/leaderboard"]];
       for (const [path, body] of routes) {
         expect((await request(path, body)).status).toBe(401);
-        for (const token of [a.token, b.token]) { const response = await request(path, body, token); expect(response.status).toBe(503); expect(response.data.error).toBe(enabled === "0" ? "PVP_DISABLED" : "PVP_COMBAT_PARITY_UNAVAILABLE"); }
+        for (const token of [a.token, b.token]) { const response = await request(path, body, token); expect(response.status).toBe(503); expect(response.data.error).toBe(enabled === "0" ? "PVP_DISABLED" : "PVP_SECRET_REQUIRED"); }
       }
       expect((db.query("SELECT COUNT(*) AS n FROM pvp_queue").get() as any).n).toBe(0);
       expect((db.query("SELECT COUNT(*) AS n FROM pvp_matches").get() as any).n).toBe(0);
