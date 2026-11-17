@@ -27,6 +27,13 @@ static var _hunt_loadout_active := false
 static var _hunt_loadout := {}
 static var _debug_guardian_wins := {}
 static var _dungeon_context := {}
+static var _ranked_context := {}
+
+static func go_to_ranked_combat(match_id: String) -> void:
+	if _connection_gate().blocked():
+		return
+	_ranked_context = {"match_id": match_id}
+	_go_to(SCENE_COMBAT, "Combat")
 
 static func go_to_dungeon_loadout(run_id: String, player_id: String) -> void:
 	_dungeon_context["run_id"] = run_id

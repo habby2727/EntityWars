@@ -55,6 +55,7 @@ var _spell_detail: AcceptDialog
 var _highlights := {"damage": 0, "damage_text": "", "reflection": 0, "reflection_text": ""}
 var _spell_damage_totals := {}
 var _combat_backend: BackendClient
+var _ranked_controller: Node
 var _combat_started := false
 var _combat_session_invalid := false
 var _combat_identity := ""
@@ -1039,6 +1040,10 @@ func _layout_dungeon_floor_header() -> void:
 	_dungeon_floor_label.size = Vector2(spell_panel.size.x, 26)
 
 func _begin_combat_initialization() -> void:
+	if not str(SceneRouter._ranked_context.get("match_id", "")).is_empty():
+		_ranked_controller = preload("res://scripts/ui/ranked_combat.gd").new()
+		add_child(_ranked_controller)
+		return
 	if not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
 		_dungeon_guard = true
 		_apply_dungeon_combat_visuals()
@@ -1841,6 +1846,9 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 	_align_health_panels()
 
 func _on_back_pressed() -> void:
+	if _ranked_controller:
+		_ranked_controller.back()
+		return
 	if not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
 		if not _dungeon_pending.is_empty() or not _dungeon_request.is_empty():
 			_dungeon_show_retry("Resolve the pending Dungeon request before leaving.")
@@ -1874,6 +1882,9 @@ func _on_confirm_stay() -> void:
 func _on_confirm_leave() -> void:
 	if confirm_popup:
 		confirm_popup.hide()
+	if _ranked_controller:
+		_ranked_controller.forfeit()
+		return
 	if _online_hunt_guard:
 		if _online_hunt_session.has("global_event_id") and str(_online_hunt_session.get("status", "")) == "ACTIVE":
 			_request_solo_forfeit()
@@ -2955,6 +2966,9 @@ func _finish_inspiration_exchange() -> void:
 	_update_ui()
 
 func _choose_inspiration(index: int) -> void:
+	if _ranked_controller:
+		_ranked_controller.choose_inspiration(index)
+		return
 	if _dungeon_guard:
 		if index >= 0 and index < _inspiration_options.size():
 			_send_dungeon_inspiration({"kind": "choose", "spell_id": str(_inspiration_options[index].get("id", ""))})
@@ -2973,6 +2987,9 @@ func _choose_inspiration(index: int) -> void:
 	_refresh_spell_buttons()
 
 func _on_inspiration_cancel() -> void:
+	if _ranked_controller:
+		_ranked_controller.decline_inspiration()
+		return
 	if _dungeon_guard:
 		_send_dungeon_inspiration({"kind": "decline"})
 		return
@@ -3095,6 +3112,9 @@ func _notification(what: int) -> void:
 			turn_label.set_meta("localized_cleared_text", turn_label.text)
 
 func _on_next_turn() -> void:
+	if _ranked_controller:
+		_ranked_controller.return_to_loadout()
+		return
 	if _dungeon_guard:
 		if _next_turn_action == "retry":
 			_dungeon_recover()
@@ -3129,6 +3149,9 @@ func _on_next_turn() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _on_spell_chosen(index: int) -> void:
+	if _ranked_controller:
+		_ranked_controller.spell(index)
+		return
 	if _dungeon_guard:
 		if index < 0 or index >= spell_buttons.size() or spell_buttons[index].disabled or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or not _dungeon_hom_choice.is_empty():
 			return
@@ -3180,6 +3203,8 @@ func _ultra_available(fighter: Dictionary) -> bool:
 func _on_ultra_toggled(armed: bool) -> void:
 	_ultra_armed = armed and _ultra_available(player) and not _resolving_exchange and not _processing_steps and not _inspiration_panel.visible and _pending_hom_action.is_empty()
 	_refresh_spell_buttons()
+	if _ranked_controller:
+		_ranked_controller.refresh_controls()
 
 func _commit_ultra(fighter: Dictionary, action: Dictionary) -> void:
 	if action.get("kind", "spell") != "spell" or not bool(action.get("ultra", false)) or not _ultra_available(fighter):
@@ -3194,6 +3219,9 @@ func _commit_ultra(fighter: Dictionary, action: Dictionary) -> void:
 	_append_combat_log("", _combat_event(fighter, "inspiration", " activates ULTRATURN x2; consumed for this battle.", {}))
 
 func _on_switch_weapon() -> void:
+	if _ranked_controller:
+		_ranked_controller.switch_weapon()
+		return
 	if _dungeon_guard:
 		if switch_weapon_btn.disabled or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
 			return
@@ -3237,6 +3265,9 @@ func _queue_combat_action(action: Dictionary) -> void:
 	await _start_weapon_exchange(action)
 
 func _on_hom_choice(choice: String) -> void:
+	if _ranked_controller:
+		_ranked_controller.hom_choice(choice)
+		return
 	if _dungeon_guard:
 		if choice not in ["hold", "attack"] or _dungeon_hom_choice.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
 			return

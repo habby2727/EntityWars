@@ -287,6 +287,9 @@ func _ready() -> void:
 	_build_cards()
 	_cards_ready = true
 	if not _hunt_mode and not _dungeon_mode:
+		var ranked := preload("res://scripts/ui/ranked_queue.gd").new()
+		add_child(ranked)
+	if not _hunt_mode and not _dungeon_mode:
 		_restore_build_preferences(_verified_preferences_identity())
 	_refresh_details()
 	_update_save_button_label()

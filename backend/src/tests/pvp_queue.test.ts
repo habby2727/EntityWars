@@ -89,11 +89,14 @@ test("private simultaneous decisions resolve once, preserve revisions and enforc
  expect(first.combat_revision).toBe(1); expect(first.ready).toEqual({player:true,enemy:false});
  const other=service.state(match,"b"); expect(other.ready).toEqual({player:false,enemy:true});
  expect(JSON.stringify(other)).not.toContain("decision_json"); expect(JSON.stringify(other)).not.toContain("inspiration_catalog");
+ expect(other.enemy.spell_ids).toBeUndefined(); expect(other.enemy.spell_cooldowns).toBeUndefined();
  expect(service.decide(match,"a","action-a",1,decision)).toEqual(first);
  expect(()=>service.decide(match,"a","action-a",1,{turn:1,spell_id:"ash_temper"})).toThrow("ACTION_CONFLICT");
  const resolved=service.decide(match,"b","action-b",1,decision); expect(resolved.combat_revision).toBe(2); expect(resolved.turn).toBe(1);
  expect(resolved.events.filter((e: any)=>e.kind==="spell")).toHaveLength(2);
  const last=resolved.events[resolved.events.length-1].id; expect(service.state(match,"b",last).events).toEqual([]);
+ db.query("INSERT INTO pvp_events (match_id,seq,kind,visibility,payload_json,created_at) VALUES (?,?,?,'public',?,?)").run(match,last+1,"damage",JSON.stringify({kind:"damage",side:"left",target_side:"right",spell_id:"cinder_fist",show_spell_link:false,effectiveness:1.12,spell_meta:{internal:"secret"}}),now);
+ const safe=service.state(match,"b",last).events[0]; expect(safe.effectiveness).toBe(1.12); expect(safe.show_spell_link).toBe(false); expect(safe.spell_meta).toBeUndefined();
  expect(()=>service.state(match,"c")).toThrow("MATCH_NOT_FOUND");
  now+=60000; expect(service.state(match,"a").result.result).toBe("draw");
  expect(service.state(match,"b").result.result).toBe("draw"); db.close();

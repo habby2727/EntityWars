@@ -492,8 +492,10 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 		emit_signal("api_completed", request_id, false, {"error": "network_error"})
 		return
 	if response_code < 200 or response_code >= 300:
-		_connection_gate().report_failure(self, "http", response_code)
 		var err_data = _parse_json(body)
+		# Ranked can be intentionally unavailable while the rest of the game is online.
+		if not (typeof(err_data) == TYPE_DICTIONARY and str(err_data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED", "PVP_UNAVAILABLE"]):
+			_connection_gate().report_failure(self, "http", response_code)
 		if typeof(err_data) == TYPE_DICTIONARY and err_data.has("error"):
 			err_data["http_status"] = response_code
 			emit_signal("api_completed", request_id, false, err_data)
