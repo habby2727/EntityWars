@@ -6,6 +6,7 @@ const read = (n: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "..
 const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
 const snapshot = (player_id: string, type: string) => ({ player_id, entity_id: `${type}_01`, weapon_ids: [null, null], homunculus_id: null, spell_ids: catalogs.spells.filter((s: any) => s.type === type).slice(0, 4).map((s: any) => s.id) });
 const setup = () => createPvpCombatState(snapshot("a", "sulfur"), snapshot("b", "mercury"), catalogs) as any;
+const equip = (fighter: any, id: string) => { const spell = catalogs.spells.find((s: any) => s.id === id); fighter.spells = fighter.spells.filter((s: any) => s.id !== id); fighter.spells.push(structuredClone(spell)); fighter.spell_ids[0] = id; };
 test("real loadouts are independent and cloned", () => {
  const l = snapshot("a", "sulfur"), r = snapshot("b", "mercury"), before = structuredClone({l, r, catalogs});
  const state = createPvpCombatState(l, r, catalogs) as any;
@@ -31,7 +32,9 @@ test("ultra validation follows deciding-round conditions", () => {
  s.fighters.left.ultra_used = true; expect(validatePvpDecision(s, "left", d)).toEqual({error: "INVALID_DECISION"});
 });
 test("unsupported effects fail closed without mutation or RNG draws", () => {
- const s = setup(), before = structuredClone(s), l = {turn: 1, spell_id: s.fighters.left.spells.find((x: any) => x.effects.length > 0).id}, r = {turn: 1, spell_id: s.fighters.right.spells[0].id};
+ const s = setup(), spell = catalogs.spells.find((x: any) => x.id === "pyrolytic_fuse");
+ s.fighters.left.spells.push(structuredClone(spell)); s.fighters.left.spell_ids[0] = spell.id;
+ const before = structuredClone(s), l = {turn: 1, spell_id: spell.id}, r = {turn: 1, spell_id: s.fighters.right.spells[0].id};
  let draws = 0; const rng = () => {draws++; return 0;};
  expect(resolvePvpExchange(s, l, r, rng)).toEqual({error: "PVP_COMBAT_PARITY_UNAVAILABLE"});
  expect(resolvePvpExchange(s, l, r, rng)).toEqual({error: "PVP_COMBAT_PARITY_UNAVAILABLE"});
@@ -142,6 +145,151 @@ test("elemental advantage and all six on-hit passives use the acting fighter", (
  const out = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"etching_fang"},()=>0.5) as any;
  expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").effectiveness).toBeCloseTo(1.12);
  expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "right").effectiveness).toBeCloseTo(0.92);
+});
+
+test("three Godot support and attack-effect fixtures match HP, status, cooldown and event categories", () => {
+ const fixtures = [
+  {left:"sulfur",right:"mercury",a:"ash_temper",b:"silver_needle",hp:[94,96],damage:[10],draws:[0.775193333625793,0.54944521188736,0.714087608503178],categories:["buff","buff","buff","damage","damage"],status:"atk_boost",value:0.2,recipient:"left",cd:2,inspiration:0},
+  {left:"sodium",right:"aether",a:"brine_mend",b:"rift_touch",hp:[101,102],damage:[11],draws:[0.0138160288333893,0.28386664390564,0.93741182051599],categories:["buff","buff","heal","damage","damage","debuff"],status:"vuln_pct",value:0.12,recipient:"left",cd:3,inspiration:0},
+  {left:"vitriol",right:"gold",a:"caustic_mark",b:"aurum_edge",hp:[93,94],damage:[8,11],draws:[0.801872670650482,0.909451206680387,0.222710683941841,0.41610933537595],categories:["damage","damage","debuff","inspiration","damage","damage","debuff"],status:"poison",value:1,recipient:"right",cd:2,inspiration:1},
+ ];
+ for (const f of fixtures) {
+  const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
+  if (f.a === "brine_mend") s.fighters.left.hp = 105;
+  const used: number[] = [];
+  const out = resolvePvpExchange(s,{turn:1,spell_id:f.a},{turn:1,spell_id:f.b},(_t,i)=>{used.push(i); return f.draws[i];}) as any;
+  expect(used).toEqual(f.draws.map((_v,i)=>i));
+  expect([out.state.fighters.left.hp,out.state.fighters.right.hp]).toEqual(f.hp);
+  expect(out.state.fighters[f.recipient].status[f.status]).toBe(f.value);
+  expect(out.state.fighters.left.spell_cooldowns[f.a]).toBe(f.cd);
+  expect(out.state.fighters.right.spell_cooldowns[f.b]).toBe(0);
+  expect(out.state.fighters.left.inspiration).toBe(f.inspiration);
+  expect(out.events.filter((e: any)=>e.kind === "damage").map((e: any)=>e.damage)).toEqual(f.damage);
+  expect(out.events.map((e: any)=>e.category)).toEqual(f.categories);
+  expect(out.events[0]).toMatchObject({spell_meta:{id:f.a,context:{spell:{id:f.a}}},spell_id:f.a,category:f.categories[0]});
+ }
+});
+
+test("shield provenance, neutralization, cleanse priority and toxic reflection", () => {
+ const s = setup(); equip(s.fighters.left,"clear_thread"); equip(s.fighters.right,"liquid_decoy");
+ s.fighters.left.status.poison = 2; s.fighters.left.status.vuln_pct = 0.4; s.fighters.left.status.atk_down = 0.3;
+ let out = resolvePvpExchange(s,{turn:1,spell_id:"clear_thread"},{turn:1,spell_id:"liquid_decoy"},()=>0.5) as any;
+ expect(out.state.fighters.left.status.poison).toBe(0); expect(out.state.fighters.left.status.vuln_pct).toBe(0.4);
+ expect(out.state.fighters.right.status.shield_pct).toBe(0.18); expect((out.state.fighters.right as any).spell_ward).toBe(0.18);
+ equip(out.state.fighters.left,"cinder_fist"); equip(out.state.fighters.right,"silver_needle");
+ out = resolvePvpExchange(out.state,{turn:2,spell_id:"cinder_fist"},{turn:2,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(out.state.fighters.right.status.shield_pct).toBe(0); expect((out.state.fighters.right as any).spell_ward).toBeUndefined();
+ const t = createPvpCombatState(snapshot("a","aether"),snapshot("b","sulfur"),catalogs) as any;
+ out = resolvePvpExchange(t,{turn:1,spell_id:"paradox_fold"},{turn:1,spell_id:"cinder_fist"},()=>0.5) as any;
+ expect(out.state.fighters.left.spell_neutralize_pending).toBe(0.5);
+ const t2 = out.state; equip(t2.fighters.left,"rift_touch");
+ out = resolvePvpExchange(t2,{turn:2,spell_id:"rift_touch"},{turn:2,spell_id:"cinder_fist"},()=>0.5) as any;
+ expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").effectiveness).toBeCloseTo(1.06);
+ expect(out.state.fighters.left.spell_neutralize_pending).toBe(0);
+ const m = createPvpCombatState(snapshot("a","mercury"),snapshot("b","sulfur"),catalogs) as any; equip(m.fighters.left,"toxic_mirror");
+ out = resolvePvpExchange(m,{turn:1,spell_id:"toxic_mirror"},{turn:1,spell_id:"cinder_fist"},()=>0.5) as any;
+ expect(out.events.some((e: any)=>e.kind === "reflect")).toBe(true);
+ expect(out.events.some((e: any)=>e.kind === "poison" && e.side === "right" && e.damage === 2)).toBe(true);
+ expect(out.state.fighters.right.status.poison).toBe(0);
+ expect(out.state.fighters.right.hp).toBeLessThan(104);
+});
+
+test("inspiration increases only on stronger opposing debuffs and blocks the next exchange at three", () => {
+ let state = createPvpCombatState(snapshot("a","vitriol"),snapshot("b","gold"),catalogs) as any;
+ state.fighters.left.inspiration = 2; state.fighters.right.status.poison = 0;
+ const out = resolvePvpExchange(state,{turn:1,spell_id:"caustic_mark"},{turn:1,spell_id:"aurum_edge"},()=>0.5) as any;
+ expect(out.state.fighters.left.inspiration).toBe(3); expect(out.state.fighters.left.inspiration_pending).toBe(true);
+ expect(out.events.find((e: any)=>e.kind === "inspiration")).toMatchObject({side:"left",value:3,source:"poison"});
+ const before = structuredClone(out.state); let draws = 0;
+ expect(resolvePvpExchange(out.state,{turn:2,spell_id:"etching_fang"},{turn:2,spell_id:"aurum_edge"},()=>{draws++;return 0.5;})).toEqual({error:"PVP_COMBAT_PARITY_UNAVAILABLE"});
+ expect(draws).toBe(0); expect(out.state).toEqual(before);
+ state.fighters.right.status.poison = 3;
+ const unchanged = resolvePvpExchange(state,{turn:1,spell_id:"caustic_mark"},{turn:1,spell_id:"aurum_edge"},()=>0.5) as any;
+ expect(unchanged.state.fighters.left.inspiration).toBe(2);
+ state.fighters.right.status.poison = 0;
+ const values = [0.5,0,0.5,0.5];
+ const passiveFirst = resolvePvpExchange(state,{turn:1,spell_id:"caustic_mark"},{turn:1,spell_id:"aurum_edge"},(_t,i)=>values[i]) as any;
+ expect(passiveFirst.state.fighters.left.inspiration).toBe(2);
+});
+
+test("three successive different debuffs accrue inspiration from zero", () => {
+ let state = setup();
+ for (const [index,id] of ["brimstone_crash","crooked_rune","fuming_distillate"].entries()) {
+  equip(state.fighters.left,id);
+  const out = resolvePvpExchange(state,{turn:index+1,spell_id:id},{turn:index+1,spell_id:"silver_needle"},()=>0.5) as any;
+  expect(out.state.fighters.left.inspiration).toBe(index+1);
+  expect(out.events.find((e: any)=>e.kind === "inspiration").value).toBe(index+1);
+  state = out.state;
+ }
+ expect(state.fighters.left.inspiration_pending).toBe(true);
+});
+
+test("all catalog spells restricted to the fourteen supported effect kinds resolve", () => {
+ const supported = new Set(["heal","shield","reflect","atk_boost","atk_down","vuln","poison","hom_stun","type_neutralize","focus_next","misalign_next","tempo_shift","cleanse_one","poison_on_reflect"]);
+ const spells = catalogs.spells.filter((s: any)=>s.effects.every((e: any)=>supported.has(e.kind)));
+ expect(spells).toHaveLength(45);
+ for (const spell of spells) {
+  const type = ["universal","hybrid"].includes(spell.type) ? spell.eligible_types[0] : spell.type;
+  for (const side of ["left","right"] as const) {
+   const a = snapshot("a",type), b = snapshot("b","gold"), state = createPvpCombatState(side === "left" ? a : b, side === "left" ? b : a, catalogs) as any;
+   equip(state.fighters[side],spell.id);
+   const selected = {turn:1,spell_id:spell.id}, other = {turn:1,spell_id:"aurum_edge"};
+   const out = resolvePvpExchange(state,side === "left" ? selected : other,side === "left" ? other : selected,()=>0.5) as any;
+   expect(out.error).toBeUndefined(); expect(out.events.some((e: any)=>e.kind === "spell" && e.side === side && e.spell_id === spell.id)).toBe(true);
+  }
+ }
+});
+
+test("ultra scales support effects; stun and misses prevent effects", () => {
+ const s = setup(); s.battle_index = 3; s.wins = {left:1,right:1};
+ let out = resolvePvpExchange(s,{turn:1,spell_id:"ash_temper",ultra:true},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(out.state.fighters.left.status.atk_boost).toBe(0.4); expect(out.state.fighters.left.ultra_used).toBe(true);
+ const stunned = setup(); stunned.fighters.left.status.stun = 1;
+ out = resolvePvpExchange(stunned,{turn:1,spell_id:"ash_temper"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(out.state.fighters.left.status.atk_boost).toBe(0); expect(out.state.fighters.left.spell_cooldowns.ash_temper).toBe(2);
+ const miss = setup(); equip(miss.fighters.left,"crooked_rune");
+ out = resolvePvpExchange(miss,{turn:1,spell_id:"crooked_rune"},{turn:1,spell_id:"silver_needle"},()=>0.999) as any;
+ expect(out.state.fighters.right.status.misalign_next).toBeUndefined(); expect(out.state.fighters.left.inspiration).toBe(0);
+});
+
+test("focus, misalignment, tempo and homunculus stun affect their recipient independently", () => {
+ let s = setup(); equip(s.fighters.left,"quiet_focus"); equip(s.fighters.right,"crooked_rune");
+ let out = resolvePvpExchange(s,{turn:1,spell_id:"quiet_focus"},{turn:1,spell_id:"crooked_rune"},()=>0.5) as any;
+ expect(out.state.fighters.left.status.focus_next).toBe(0.12);
+ expect(out.state.fighters.left.status.misalign_next).toBe(0.10);
+ expect(out.state.fighters.right.inspiration).toBe(1);
+ equip(out.state.fighters.left,"cinder_fist"); equip(out.state.fighters.right,"silver_needle");
+ out = resolvePvpExchange(out.state,{turn:2,spell_id:"cinder_fist"},{turn:2,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(out.state.fighters.left.status.focus_next).toBeUndefined(); expect(out.state.fighters.left.status.misalign_next).toBeUndefined();
+ s = createPvpCombatState(snapshot("a","aether"),snapshot("b","mercury"),catalogs) as any;
+ out = resolvePvpExchange(s,{turn:1,spell_id:"null_stitch"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(out.state.fighters.right.status.hom_stun).toBe(1); expect(out.state.fighters.left.inspiration).toBe(1);
+ s = setup(); equip(s.fighters.left,"second_measure");
+ out = resolvePvpExchange(s,{turn:1,spell_id:"second_measure"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(out.state.fighters.left.status.tempo_bonus).toBe(2);
+ equip(out.state.fighters.left,"cinder_fist");
+ const later = resolvePvpExchange(out.state,{turn:2,spell_id:"cinder_fist"},{turn:2,spell_id:"silver_needle"},()=>0.5) as any;
+ expect(later.events.find((e: any)=>e.kind === "spell").side).toBe("left");
+ expect(later.state.fighters.left.status.tempo_bonus).toBe(0);
+});
+
+test("effect preflight rejects either unsupported decision before RNG and ultra clamps shields", () => {
+ const s = setup(); equip(s.fighters.right,"pyrolytic_fuse");
+ const saved = structuredClone(s); let count = 0;
+ expect(resolvePvpExchange(s,{turn:1,spell_id:"ash_temper"},{turn:1,spell_id:"pyrolytic_fuse"},()=>{count++;return 0.5;})).toEqual({error:"PVP_COMBAT_PARITY_UNAVAILABLE"});
+ expect(count).toBe(0); expect(s).toEqual(saved);
+ const t = setup(); t.battle_index = 3; t.wins = {left:1,right:1};
+ const shield = t.fighters.right.spells.find((x: any)=>x.id === "liquid_decoy"); shield.effects[0].value = 0.8;
+ const out = resolvePvpExchange(t,{turn:1,spell_id:"ash_temper"},{turn:1,spell_id:"liquid_decoy",ultra:true},()=>0.5) as any;
+ expect(out.state.fighters.right.status.shield_pct).toBe(0.95);
+ const p = createPvpCombatState(snapshot("a","vitriol"),snapshot("b","gold"),catalogs) as any;
+ p.battle_index = 3; p.wins = {left:1,right:1};
+ const poisoned = resolvePvpExchange(p,{turn:1,spell_id:"caustic_mark",ultra:true},{turn:1,spell_id:"aurum_edge"},()=>0.5) as any;
+ expect(poisoned.state.fighters.right.status.poison).toBe(3);
+ const n = createPvpCombatState(snapshot("a","aether"),snapshot("b","sulfur"),catalogs) as any;
+ n.battle_index = 3; n.wins = {left:1,right:1};
+ const neutral = resolvePvpExchange(n,{turn:1,spell_id:"paradox_fold",ultra:true},{turn:1,spell_id:"cinder_fist"},()=>0.5) as any;
+ expect(neutral.state.fighters.left.spell_neutralize_pending).toBe(1);
 });
 test("bad setups and duplicate equipment are rejected", () => {
  const l = snapshot("a", "sulfur"), r = snapshot("b", "mercury"), item = catalogs.items.find((i: any) => i.slot === "build");
