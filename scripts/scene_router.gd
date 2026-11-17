@@ -14,6 +14,7 @@ const SCENE_WORLD_ZONE_CRYSTAL := "res://scenes/ui/WorldZoneCrystal.tscn"
 const SCENE_WORLD_ZONE_CHAOS := "res://scenes/ui/WorldZoneChaos.tscn"
 const SCENE_COMBAT := "res://scenes/Combat.tscn"
 const SCENE_LOADOUT := "res://scenes/LoadoutGrid.tscn"
+const SCENE_TOP_PLAYERS := "res://scenes/ui/TopPlayers.tscn"
 
 static var _next_lab_focus_id: String = ""
 static var _next_inventory_tab: String = ""
@@ -164,6 +165,9 @@ static func go_to_combat() -> void:
 
 static func go_to_loadout() -> void:
 	_go_to(SCENE_LOADOUT, "LoadoutGrid")
+
+static func go_to_top_players() -> void:
+	_go_to(SCENE_TOP_PLAYERS, "TopPlayers")
 
 static func _go_to(scene_path: String, label: String) -> void:
 	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL]

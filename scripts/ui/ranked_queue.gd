@@ -15,6 +15,7 @@ var rating_needed := false
 var availability_blocked := false
 var column: VBoxContainer
 var select_button: Button
+var top_button: Button
 var ready_button: Button
 var cancel_button: Button
 var info: Label
@@ -40,11 +41,11 @@ func _ready() -> void:
 	info.text = "Ranked"
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(info)
-	var top := Button.new()
-	top.text = "Top Players"
-	top.disabled = true
-	top.tooltip_text = "Coming in 0.61i"
-	column.add_child(top)
+	top_button = Button.new()
+	top_button.text = "Top Players"
+	preload("res://scripts/ui/menu_art.gd").button(top_button)
+	column.add_child(top_button)
+	top_button.pressed.connect(SceneRouter.go_to_top_players)
 	ready_button = Button.new()
 	ready_button.text = "READY"
 	ready_button.disabled = true
@@ -163,6 +164,7 @@ func _set_queued(value: bool) -> void:
 	ready_button.disabled = value or not synced or not selected
 	cancel_button.visible = value
 	select_button.disabled = value
+	top_button.disabled = value
 
 func _lock_controls(node: Node) -> void:
 	if node == column or node == self:

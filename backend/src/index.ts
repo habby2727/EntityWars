@@ -1374,7 +1374,7 @@ async function startServer(): Promise<void> {
 						if (code === "MATCH_NOT_FOUND") return jsonResponse({ error: code }, 404);
 						if (code === "CHAT_RATE_LIMIT") return jsonResponse({ error: code }, 429);
 						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT"].includes(code)) return jsonResponse({ error: code }, 409);
-						if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code)) return jsonResponse({ error: code }, 400);
+						if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code)) return jsonResponse({ error: code }, 400);
 						logError("pvp request failed", { error: String(error) }); return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
 					}
 				}

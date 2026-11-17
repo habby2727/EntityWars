@@ -277,7 +277,7 @@ export function dispatchPvpRequest(services: {db: Database; queue: ReturnType<ty
   const fields = (v: any, allowed: string[]) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every(k=>allowed.includes(k));
   const cursor = () => { const raw=query.get("after") ?? "0"; if (!/^\d+$/.test(raw)) throw new Error("INVALID_CURSOR"); const value=Number(raw); if (!Number.isSafeInteger(value)) throw new Error("INVALID_CURSOR"); return value; };
   if (method === "GET" && path === "/pvp/queue/state") return queue.state(player);
-  if (method === "GET" && path === "/pvp/leaderboard") return ranking.leaderboard(player);
+  if (method === "GET" && path === "/pvp/leaderboard") { if (query.getAll("season").length > 1) throw new Error("INVALID_SEASON"); return ranking.leaderboard(player, query.get("season")); }
   if (method === "GET" && path === "/pvp/match/state") { const id=query.get("match_id") ?? matches.locate(player); if (!id) return {match:null}; const raw=query.get("chat_after") ?? "0", chatAfter=Number(raw); if (!/^\d+$/.test(raw) || !Number.isSafeInteger(chatAfter)) throw new Error("INVALID_CURSOR"); return { ...matches.state(id,player,cursor()), chat: chat.list(id,player,chatAfter) }; }
   if (method === "POST" && path === "/pvp/queue/join") {
     if (!fields(body,["client_action_id","selection"])) throw new Error("INVALID_REQUEST");

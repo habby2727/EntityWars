@@ -29,3 +29,26 @@ test("leaderboards cache lists, keep personal ranks live and preserve monthly hi
  expect((db.query("SELECT rating FROM pvp_season_ratings WHERE season = ? AND player_id = ?").get("2026-01","p00") as any).rating).toBe(1400);
  expect(nextPvpSeason(now)).toBe(Date.UTC(2026,2,1)); db.close();
 });
+
+test("historical global rankings validate UTC months and retain current personal and division data", () => {
+ const db = new Database(":memory:");
+ db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
+ db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite/0012_pvp_seasons.sql"),"utf8"));
+ for (let i=0; i<12; i++) {
+  const id = `p${String(i).padStart(2,"0")}`;
+  db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
+  db.query("INSERT INTO pvp_season_ratings VALUES (?, ?, ?, ?)").run("2025-12",id,1500,0);
+ }
+ let now = Date.UTC(2026,0,1); const ranking = createPvpRanking(db,()=>now);
+ const current = ranking.leaderboard("p00");
+ expect(current.season).toBe("2026-01"); expect(current.previous_season).toBe("2025-12");
+ const past = ranking.leaderboard("p00", "2025-12");
+ expect(past.view_season).toBe("2025-12");
+ expect(past.global_top_10.map(row => row.player_id)).toEqual(Array.from({length:10},(_,i)=>`p${String(i).padStart(2,"0")}`));
+ expect(past.player).toEqual(current.player); expect(past.division_top_10).toEqual(current.division_top_10);
+ expect(ranking.leaderboard("p00", "2026-01").view_season).toBe("2026-01");
+ for (const invalid of ["", "2025-11", "2026-02", "2026-1", "bad"]) expect(() => ranking.leaderboard("p00", invalid)).toThrow("INVALID_SEASON");
+ now = Date.UTC(2026,1,1); expect(ranking.leaderboard("p00", "2026-01").global_top_10).toHaveLength(1);
+ now = Date.UTC(2026,3,1); expect(ranking.leaderboard("p00", "2026-03").global_top_10).toHaveLength(0);
+ db.close();
+});

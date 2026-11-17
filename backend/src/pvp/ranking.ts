@@ -24,28 +24,42 @@ export function nextPvpSeason(now: number): number {
   const date = new Date(now); pvpSeason(now);
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
 }
+export function previousPvpSeason(now: number): string {
+  const date = new Date(now); pvpSeason(now);
+  return pvpSeason(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1));
+}
 
 /** Ranking data is cached, while the viewer's own rating and ranks are always read live. */
 export function createPvpRanking(db: Database, clock: () => number = Date.now) {
   const insert = db.prepare("INSERT OR IGNORE INTO pvp_season_ratings (season, player_id, rating, updated_at) VALUES (?, ?, 1000, ?)");
   const get = db.prepare("SELECT rating, updated_at FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
   const list = db.prepare("SELECT r.player_id, p.display_name, r.rating, r.updated_at FROM pvp_season_ratings r JOIN players p ON p.player_id = r.player_id WHERE r.season = ? ORDER BY r.rating DESC, r.player_id ASC");
-  let cache: { season: string; time: number; rows: any[] } | null = null;
+  const cache = new Map<string, { time: number; rows: any[] }>();
   const ensure = (season: string, playerId: string, now: number) => { insert.run(season, playerId, now); return get.get(season, playerId) as { rating: number; updated_at: number }; };
   return {
     ensure,
-    invalidate() { cache = null; },
-    leaderboard(playerId: string) {
-      const now = clock(), season = pvpSeason(now);
+    invalidate() { cache.clear(); },
+    leaderboard(playerId: string, requestedSeason?: string | null) {
+      const now = clock(), season = pvpSeason(now), previous = previousPvpSeason(now);
+      const viewSeason = requestedSeason ?? season;
+      if (viewSeason !== season && viewSeason !== previous) throw new Error("INVALID_SEASON");
       if (typeof playerId !== "string" || !playerId) throw new Error("INVALID_PLAYER");
       const current = ensure(season, playerId, now), division = pvpRank(current.rating);
       const live = list.all(season) as any[];
       const index = live.findIndex(row => row.player_id === playerId);
       const same = (row: any) => { const rank = pvpRank(row.rating); return rank.league === division.league && rank.division === division.division; };
       const personal = { mp: current.rating, ...division, global_rank: index + 1, division_rank: live.filter(same).findIndex(row => row.player_id === playerId) + 1 };
-      if (!cache || cache.season !== season || now < cache.time || now - cache.time >= 1_200_000) cache = { season, time: now, rows: live };
+      for (const key of cache.keys()) if (key !== season && key !== previous) cache.delete(key);
+      const cached = (key: string, rows?: any[]) => {
+        let entry = cache.get(key);
+        if (!entry || now < entry.time || now - entry.time >= 1_200_000) {
+          entry = { time: now, rows: rows ?? list.all(key) as any[] }; cache.set(key, entry);
+        }
+        return entry;
+      };
+      const currentCache = cached(season, live), viewCache = cached(viewSeason, viewSeason === season ? live : undefined);
       const publicRow = (row: any, rank: number) => ({ player_id: row.player_id, display_name: row.display_name, mp: row.rating, rank, ...pvpRank(row.rating) });
-      return { season, player: personal, global_top_10: cache.rows.slice(0, 10).map((row, i) => publicRow(row, i + 1)), division_top_10: cache.rows.filter(same).slice(0, 10).map((row, i) => publicRow(row, i + 1)), thresholds: PVP_THRESHOLDS, updated_at: cache.time, next_update_at: Math.min(cache.time + 1_200_000, nextPvpSeason(now)) };
+      return { season, view_season: viewSeason, previous_season: previous, player: personal, global_top_10: viewCache.rows.slice(0, 10).map((row, i) => publicRow(row, i + 1)), division_top_10: currentCache.rows.filter(same).slice(0, 10).map((row, i) => publicRow(row, i + 1)), thresholds: PVP_THRESHOLDS, updated_at: viewCache.time, next_update_at: Math.min(viewCache.time + 1_200_000, currentCache.time + 1_200_000, nextPvpSeason(now)) };
     }
   };
 }
