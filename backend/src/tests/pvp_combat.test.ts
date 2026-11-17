@@ -1,9 +1,9 @@
-﻿import { expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createPvpCombatState, validatePvpDecision, resolvePvpExchange } from "../pvp/combat";
+import { createPvpCombatState, validatePvpDecision, resolvePvpExchange, refreshPvpWeapon, resetPvpFighter, startPvpBattle, pvpInitiative } from "../pvp/combat";
 const read = (n: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", n), "utf8"));
-const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, types: read("types.json") };
+const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
 const snapshot = (player_id: string, type: string) => ({ player_id, entity_id: `${type}_01`, weapon_ids: [null, null], homunculus_id: null, spell_ids: catalogs.spells.filter((s: any) => s.type === type).slice(0, 4).map((s: any) => s.id) });
 const setup = () => createPvpCombatState(snapshot("a", "sulfur"), snapshot("b", "mercury"), catalogs) as any;
 test("real loadouts are independent and cloned", () => {
@@ -93,4 +93,81 @@ test("normal action cooldowns decrement before the chosen spell cooldown is set"
  expect(normalActionCooldowns(cooldowns)).toEqual({a: 0, b: 1});
  expect(() => normalActionCooldowns(cooldowns, {id: "b", cooldown_turns: 2})).toThrow("INVALID_COOLDOWN");
  expect(cooldowns).toEqual(before);
+});
+
+test("six real unarmed entities have normal base stats on either side", () => {
+ const fixtures: Record<string, number[]> = {sulfur: [104,21,11], mercury: [96,18,10], sodium: [112,16,16], aether: [102,20,12], vitriol: [104,19,12], gold: [104,18,14]};
+ for (const [type, expected] of Object.entries(fixtures)) for (const side of ["left", "right"] as const) {
+  const a = snapshot("a", type), b = snapshot("b", type), state = createPvpCombatState(a, b, catalogs) as any;
+  const f = state.fighters[side];
+  expect([f.hp, f.max_hp, f.atk, f.def]).toEqual([expected[0], expected[0], expected[1], expected[2]]);
+  expect(f.hom_spent).toBe(true); expect(pvpInitiative(f).initiative).toBe(10);
+ }
+});
+
+test("real progression applies independently with upgrades, mutation and synergy", () => {
+ const left = {...snapshot("a", "sulfur"), weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", item_progress: {bismuth_talisman: {level: 5}, wind_amulet: {level: 3}}, homunculus_progress: {cinder: {level: 5, mutation_id: "catalyst"}}};
+ const right = {...snapshot("b", "mercury"), weapon_ids: ["wind_amulet", "saltstone_charm"], homunculus_id: "silphide", item_progress: {wind_amulet: {level: 3}, saltstone_charm: {level: 0}}, homunculus_progress: {silphide: {level: 3, mutation_id: "vitality"}}};
+ const original = structuredClone({left, right, catalogs});
+ const state = createPvpCombatState(left, right, catalogs) as any, l = state.fighters.left, r = state.fighters.right;
+ expect([l.hp,l.max_hp,l.atk,l.def]).toEqual([109,109,34,13]);
+ expect([r.hp,r.max_hp,r.atk,r.def]).toEqual([105,105,19,12]);
+ expect([l.item_fx.true_on_hit, r.item_fx.evasion_pct]).toEqual([1,0.08]);
+ expect([pvpInitiative(l).initiative,pvpInitiative(r).initiative]).toEqual([10,17]);
+ const switched = refreshPvpWeapon(l, 2);
+ expect([switched.hp,switched.max_hp,switched.atk,switched.def,pvpInitiative(switched).initiative]).toEqual([109,109,29,12,14]);
+ expect([l.active_weapon_slot,l.atk,l.def]).toEqual([1,34,13]);
+ expect(refreshPvpWeapon(switched, 1).atk).toBe(34);
+ const mirror = createPvpCombatState({...right, player_id: "a"}, {...left, player_id: "b"}, catalogs) as any;
+ expect([mirror.fighters.left.atk, mirror.fighters.right.atk]).toEqual([19,34]);
+ expect({left, right, catalogs}).toEqual(original);
+});
+
+test("real scaled weapon and forged traits retain Godot truncation", () => {
+ const l = {...snapshot("a", "sulfur"), weapon_ids: ["bismuth_talisman", null], homunculus_id: "nighty", item_progress: {bismuth_talisman: {level: 5, specialization: "aggressive", traits: [{id: "power_flat",points: 2},{id: "true_on_hit",points: 1},{id: "dot_true",points: 0}]}}, homunculus_progress: {nighty: {level: 3, mutation_id: "resonance"}}};
+ const f = (createPvpCombatState(l, snapshot("b", "sulfur"), catalogs) as any).fighters.left;
+ expect([f.max_hp,f.atk,f.def]).toEqual([110,29,14]);
+ expect(f.active_weapon.effects.power_flat[0]).toBeCloseTo(8.4);
+ expect(f.item_fx.true_on_hit).toBeCloseTo(2.1);
+ expect(f.hom_bonus.favorable_type_bonus).toBe(0.03);
+});
+
+test("battle reset preserves score, equipment, sacrifice and ultra use while clearing combat state", () => {
+ const s = setup(), f = s.fighters.left;
+ s.turn = 8; s.battle_index = 3; s.wins = {left: 1,right: 1}; s.physical_anomaly = {id:"x"};
+ Object.assign(f, {hp: 2, hom_energy: 5, ultra_used: true, inspiration: 3, inspiration_pending: true, temporary_spell_id: "temporary", temporary_replaced_slot: 0, strategic_trap: {value: 1}, spell_hit_this_exchange: true});
+ f.spell_ids[0] = "temporary"; f.status.poison = 2; f.spell_cooldowns.abc = 2;
+ const before = structuredClone(s), reset = startPvpBattle(s), x = reset.fighters.left;
+ expect([reset.turn,reset.battle_index,reset.wins]).toEqual([0,3,{left:1,right:1}]);
+ expect([x.hp,x.hom_energy,x.ultra_used,x.hom_spent,x.inspiration,x.inspiration_pending]).toEqual([x.max_hp,0,true,true,0,false]);
+ expect(x.spell_ids).toEqual(f.original_spell_ids); expect(x.spell_cooldowns).toEqual({});
+ expect(x.status).toEqual({poison:0,stun:0,shield_pct:0,atk_boost:0,vuln_pct:0,atk_down:0,hom_stun:0,reflect_pct:0,tempo_bonus:0});
+ expect((x as any).strategic_trap).toBeUndefined(); expect(reset.physical_anomaly).toBeNull();
+ expect(s).toEqual(before); expect(resetPvpFighter(f).hp).toBe(f.max_hp);
+});
+
+test("malformed selected progression and catalogs fail closed", () => {
+ const left = {...snapshot("a", "sulfur"), weapon_ids: ["bismuth_talisman", null], homunculus_id: "cinder"};
+ const right = snapshot("b", "mercury");
+ for (const change of [{item_progress: {bismuth_talisman: {level: 11}}}, {item_progress: []}, {homunculus_progress: {cinder: {level: -1}}}, {homunculus_progress: {cinder: {mutation_id: "missing"}}}, {item_progress: {bismuth_talisman: {level: 5, specialization: "aggressive", traits: [{id: "power_flat",points: 9}]}}}]) {
+  expect(createPvpCombatState({...left,...change},right,catalogs)).toEqual({error:"UNTRUSTED_SETUP"});
+ }
+ expect(createPvpCombatState(left,right,{...catalogs, entities: [null]})).toEqual({error:"UNTRUSTED_SETUP"});
+ expect(createPvpCombatState(left,right,{...catalogs, types: {effectiveness: {}}})).toEqual({error:"UNTRUSTED_SETUP"});
+});
+
+test("empty first slot, fusion, switching defenses and initiative consumption", () => {
+ const l = {...snapshot("a", "aether"), weapon_ids: [null, "bismuth_talisman"], homunculus_id: "drakon", item_progress: {bismuth_talisman: {level: 3, fusion: {donor_id: "wind_amulet"}}, wind_amulet: {level: 3}}, homunculus_progress: {drakon: {level: 0}}};
+ const state = createPvpCombatState(l, snapshot("b", "sodium"), catalogs) as any, f = state.fighters.left;
+ expect([f.active_weapon_slot, f.atk, f.def, f.max_hp, f.hom_synergy.type_adv_bonus]).toEqual([1,22,13,102,0.1]);
+ f.status.tempo_bonus = 2; const init = pvpInitiative(f);
+ expect(init.initiative).toBe(12); expect(init.fighter.status.tempo_bonus).toBe(0); expect(f.status.tempo_bonus).toBe(2);
+ f.status.shield_pct = 0.4; f.weapon_shield_pct = 0.4; f.other_shield_pct = 0.2;
+ const switched = refreshPvpWeapon(f, 2);
+ expect([switched.atk, switched.def, switched.item_fx.true_on_hit, switched.item_fx.evasion_pct]).toEqual([26,14,1,0.02]);
+ expect(switched.status.shield_pct).toBe(0.2); expect(f.status.shield_pct).toBe(0.4);
+ const spent = structuredClone(switched); spent.hom_spent = true;
+ const afterSacrifice = refreshPvpWeapon(spent);
+ expect([afterSacrifice.max_hp,afterSacrifice.atk,afterSacrifice.def]).toEqual([102,24,13]);
+ expect(resetPvpFighter(afterSacrifice).hom_spent).toBe(true);
 });
