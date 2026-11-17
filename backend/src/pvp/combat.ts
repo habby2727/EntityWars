@@ -1,7 +1,7 @@
 /**
  * PvP groundwork only. Inputs and subsequent states must come from trusted server
  * storage; this module does not authenticate ownership or persist decisions.
- * Basic spell effects are supported; unimplemented actions fail closed.
+ * Non-strategic spell effects are supported; unimplemented actions fail closed.
  */
 export type PvpSide = "left" | "right";
 export type PvpError = { error: "UNTRUSTED_SETUP" | "INVALID_DECISION" | "INVALID_RNG" | "PVP_COMBAT_PARITY_UNAVAILABLE" };
@@ -189,16 +189,16 @@ export function validatePvpDecision(state: PvpCombatState, side: PvpSide, decisi
   return { ok: true };
 }
 
-/** Resolve attacks and basic spell effects. RNG returns a uniform [0,1) value. */
+/** Resolve supported spell effects. RNG returns a uniform [0,1) value. */
 export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecision, rightDecision: PvpDecision, rng: (turn: number, draw: number) => number): PvpError | { state: PvpCombatState; events: any[] } {
   if (!state || (state as any).battle_over || state.fighters?.left?.hp <= 0 || state.fighters?.right?.hp <= 0 || "error" in validatePvpDecision(state, "left", leftDecision) || "error" in validatePvpDecision(state, "right", rightDecision) || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const decisions = { left: leftDecision, right: rightDecision };
-  const supportedStatuses = new Set(["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"]);
-  const supportedEffects = new Set(["heal", "shield", "reflect", "atk_boost", "atk_down", "vuln", "poison", "hom_stun", "type_neutralize", "focus_next", "misalign_next", "tempo_shift", "cleanse_one", "poison_on_reflect"]);
+  const supportedStatuses = new Set(["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect", "hybrid_mark"]);
+  const supportedEffects = new Set(["heal", "shield", "reflect", "atk_boost", "atk_down", "vuln", "poison", "hom_stun", "type_neutralize", "focus_next", "misalign_next", "tempo_shift", "cleanse_one", "poison_on_reflect", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "recoil", "life_leech", "consume_poison", "hybrid_mark", "shield_by_order", "ward_convert"]);
   for (const side of ["left", "right"] as const) {
     const f: any = state.fighters[side], d = decisions[side];
     const spell = f.spells.find((s: any) => s.id === d.spell_id);
-    if (d.switch_slot !== undefined || (d.hom_action && d.hom_action !== "hold") || !["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(f.type) || !spell || !((spell.category === "attack" && spell.power_mult > 0) || (spell.category === "support" && spell.power_mult === 0)) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !object(e) || !supportedEffects.has(e.kind) || !["self", "enemy"].includes(e.target) || !number(e.value) || (e.kind !== "tempo_shift" && e.value < 0)) || f.inspiration_pending || f.strategic_trap || f.strategic_heal_suppression || Object.keys(f.status).some(key => !supportedStatuses.has(key))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+    if (d.switch_slot !== undefined || (d.hom_action && d.hom_action !== "hold") || !["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(f.type) || !spell || !((spell.category === "attack" && spell.power_mult > 0) || (spell.category === "support" && spell.power_mult === 0)) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !object(e) || !supportedEffects.has(e.kind) || !["self", "enemy"].includes(e.target) || !number(e.value) || (e.kind !== "tempo_shift" && e.value < 0) || ["threshold", "max_heal", "second_value"].some(k => e[k] !== undefined && (!number(e[k]) || e[k] < 0)) || (e.threshold !== undefined && e.threshold > 1) || (e.kind === "hybrid_mark" && (!Number.isSafeInteger(e.value) || e.value < 1)) || (e.kind === "ward_convert" && (e.value > 1 || spell.category !== "attack"))) || f.inspiration_pending || f.strategic_trap || f.strategic_heal_suppression || Object.keys(f.status).some(key => !supportedStatuses.has(key)) || (f.status.hybrid_mark !== undefined && (!object(f.status.hybrid_mark) || !["left", "right"].includes(f.status.hybrid_mark.owner) || !Number.isSafeInteger(f.status.hybrid_mark.remaining) || f.status.hybrid_mark.remaining < 1))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   }
   if (state.physical_anomaly || state.strategic_delayed?.length || state.strategic_jams?.length) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   const next = structuredClone(state), events: any[] = [], turn = state.turn + 1;
@@ -245,9 +245,21 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       if (a.hp <= 0 || b.hp <= 0) break;
       const spell = a.spells.find((s: any) => s.id === decision.spell_id);
       a.spell_cooldowns = normalActionCooldowns(a.spell_cooldowns, spell);
+      const mark = b.status.hybrid_mark;
+      const marked = !!mark && mark.owner === side && mark.remaining > 0;
+      const poisonedBefore = b.status.poison > 0;
+      if (marked) { mark.remaining--; if (mark.remaining <= 0) delete b.status.hybrid_mark; emit(side, "debuff", "'s mark approaches expiry.", {kind: "mark_tick", target_side: opponent, remaining: mark.remaining}); }
       emit(side, spell.category === "attack" && a.status.stun <= 0 ? "damage" : "buff", " uses ", { kind: "spell", spell_id: spell.id, spell_name: spell.name, spell_meta: { id: spell.id, context: { spell: structuredClone(spell), actual_damage: 0, direct_damage: 0, pierce: 0, dispel: 0, ultra: !!decision.ultra } }, suffix: ".", target_side: opponent });
       const spellContext = events[events.length - 1].spell_meta.context;
       if (a.status.stun > 0) { a.status.stun--; emit(side, "debuff", " is stunned and skips the spell.", { kind: "stun", spell_id: spell.id }); continue; }
+      let power = spell.power_mult;
+      for (const effect of spell.effects) {
+        if (effect.kind === "bonus_if_poisoned" && poisonedBefore) power *= 1 + effect.value;
+        else if (effect.kind === "bonus_if_hit_last_exchange" && a.spell_hit_last_exchange) power *= 1 + effect.value;
+        else if ((effect.kind === "bonus_if_low_hp" && a.hp < a.max_hp * (effect.threshold ?? 0.4)) || (effect.kind === "bonus_if_marked" && marked) || (effect.kind === "bonus_power_if_poisoned" && poisonedBefore) || (effect.kind === "bonus_if_shielded" && a.status.shield_pct > 0) || (effect.kind === "bonus_power_if_hit_last_exchange" && a.spell_hit_last_exchange)) power += effect.value;
+        else if (effect.kind === "pierce_ward") spellContext.pierce = effect.value;
+        else if (effect.kind === "ward_dispel") spellContext.dispel = effect.value;
+      }
       if (spell.category === "attack") {
       const focus = a.status.focus_next ?? 0, misalign = a.status.misalign_next ?? 0;
       if (focus > 0 || misalign > 0) { delete a.status.focus_next; delete a.status.misalign_next; }
@@ -260,7 +272,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       if (draw() >= Math.max(0, Math.min(1, accuracy))) { emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id }); continue; }
       const as = a.hom_spent ? {} : a.hom_synergy, bs = b.hom_spent ? {} : b.hom_synergy;
       const mult = normalSpellMultiplier({ attacker_type: a.type, defender_type: b.type, spell_type: spell.type, primary_type: spell.primary_type, secondary_type: spell.secondary_type, effectiveness: (next.types as any).effectiveness, advantage_bonus: a.hom_spent ? 0 : (as.type_adv_bonus ?? 0) + (a.hom_bonus.favorable_type_bonus ?? 0), disadvantage_reduction: a.item_fx.disadvantage_reduction, attacker_neutralize: a.spell_neutralize_active, defender_neutralize: b.spell_neutralize_active, attacker_hom_neutralize: as.type_neutralize, defender_hom_neutralize: bs.type_neutralize });
-      const amount = normalDirectDamage({ attack: a.atk, defense: b.def, power: spell.power_mult, type_multiplier: mult, attack_down: a.status.atk_down, attack_boost: a.status.atk_boost, incoming_multiplier: bs.incoming_mult, vulnerability: b.status.vuln_pct, shield: b.status.shield_pct, ultra: decision.ultra });
+      const amount = normalDirectDamage({ attack: a.atk, defense: b.def, power, type_multiplier: mult, attack_down: a.status.atk_down, attack_boost: a.status.atk_boost, incoming_multiplier: bs.incoming_mult, vulnerability: b.status.vuln_pct, shield: b.status.shield_pct, pierce: spellContext.pierce, dispel: spellContext.dispel, ultra: decision.ultra });
       if (a.status.atk_down > 0) emit(side, "debuff", " shakes off the weakness.", {kind: "status_consumed", status: "atk_down", spell_id: spell.id});
       if (a.status.atk_boost > 0) emit(side, "combo", " expends the surge.", {kind: "status_consumed", status: "atk_boost", spell_id: spell.id});
       if (b.status.vuln_pct > 0) emit(side, "combo", " exploits vulnerability.", {kind: "status_consumed", status: "vuln_pct", target_side: opponent, spell_id: spell.id});
@@ -293,12 +305,24 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         if (draw() >= spell.accuracy) { emit(side, "miss", "'s spell misses.", {kind: "miss", spell_id: spell.id}); continue; }
         emit(side, "buff", "'s spell succeeds.", {kind: "support_hit", spell_id: spell.id, show_spell_link: false});
       }
+      if (spell.type === "hybrid" && marked) { delete b.status.hybrid_mark; emit(side, "combo", " consumes the hybrid mark.", {kind: "mark_consumed", target_side: opponent, spell_id: spell.id, show_spell_link: false}); }
+      for (const effect of spell.effects) if (effect.kind === "ward_convert" && spell.category === "attack") {
+        const ward = a.spell_ward ?? 0;
+        if (ward > 0) {
+          const baseline = a.spell_ward_baseline ?? 0;
+          delete a.spell_ward; delete a.spell_ward_baseline;
+          a.status.shield_pct = Math.max(baseline, a.weapon_shield_pct ?? 0);
+          if (a.weapon_shield_pct !== undefined) a.other_shield_pct = baseline;
+          const converted = Math.min(b.hp, Math.floor(b.max_hp * 0.2), Math.floor(a.max_hp * ward * effect.value));
+          dmg(side, opponent, converted, "ward_convert", spell);
+        }
+      }
       for (const effect of spell.effects) {
         const targetSide: PvpSide = effect.target === "self" ? side : opponent;
         const recipient: any = next.fighters[targetSide];
         const kind: string = effect.kind;
         let value: number = effect.value;
-        if (decision.ultra && kind !== "cleanse_one") {
+        if (decision.ultra && ["heal", "recoil", "atk_boost", "atk_down", "shield", "reflect", "vuln", "poison", "hom_stun", "focus_next", "misalign_next", "tempo_shift", "hybrid_mark", "type_neutralize", "poison_on_reflect"].includes(kind)) {
           value *= 2;
           if (["atk_boost", "atk_down", "shield", "reflect", "vuln", "focus_next", "misalign_next", "type_neutralize"].includes(kind)) value = Math.max(0, Math.min(kind === "shield" || kind === "reflect" ? 0.95 : 1, value));
         }
@@ -307,7 +331,32 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
           a.inspiration++; a.inspiration_pending = a.inspiration === 3;
           emit(side, "inspiration", ` gains inspiration (${a.inspiration}/3).`, {kind: "inspiration", source: kind, value: a.inspiration, target_side: targetSide, spell_id: spell.id, show_spell_link: false});
         };
-        if (kind === "heal") {
+        if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "ward_convert"].includes(kind)) continue;
+        if (kind === "recoil") {
+          const amount = Math.trunc(value); if (recipient.hp > 0 && amount > 0) recipient.spell_hit_this_exchange = true;
+          recipient.hp = Math.max(0, recipient.hp - amount);
+          emit(targetSide, "damage", ` takes ${amount} recoil.`, {kind: "recoil", damage: amount, hp: recipient.hp, spell_id: spell.id, show_spell_link: false, source_side: side});
+        } else if (kind === "life_leech") {
+          const cap = Math.trunc(effect.max_heal ?? 0) * (decision.ultra ? 2 : 1);
+          emit(targetSide, "heal", " siphons health.", {kind: "life_leech", spell_id: spell.id, show_spell_link: false, source_side: side});
+          if (recipient.hp > 0) {
+            const before = recipient.hp; recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.min(cap, Math.floor(spellContext.actual_damage * value)));
+            emit(targetSide, "heal", ` restores ${recipient.hp - before} HP from life leech.`, {kind: "life_leech_heal", amount: recipient.hp - before, hp: recipient.hp, spell_id: spell.id, show_spell_link: false, source_side: side});
+          }
+        } else if (kind === "consume_poison") {
+          if (poisonedBefore) { recipient.status.poison = Math.max(0, Math.trunc(recipient.status.poison) - Math.trunc(value)); emit(side, "combo", " consumes poison.", {kind, target_side: targetSide, spell_id: spell.id, show_spell_link: false}); }
+        } else if (kind === "hybrid_mark") {
+          const before = JSON.stringify(recipient.status.hybrid_mark ?? {});
+          recipient.status.hybrid_mark = {owner: side, remaining: Math.trunc(value)};
+          emit(side, "debuff", " marks the target.", {kind, target_side: targetSide, value: structuredClone(recipient.status.hybrid_mark), spell_id: spell.id, show_spell_link: false});
+          if (before !== JSON.stringify(recipient.status.hybrid_mark)) award();
+        } else if (kind === "shield_by_order") {
+          let shield = side === order[1] ? effect.second_value ?? value : value;
+          if (decision.ultra) shield = Math.min(shield * 2, 0.95);
+          if (recipient.spell_ward_baseline === undefined) recipient.spell_ward_baseline = recipient.status.shield_pct;
+          recipient.spell_ward = Math.max(recipient.spell_ward ?? 0, shield); applyOther(recipient, "shield_pct", shield);
+          emit(targetSide, "shield", " gains a shield.", {kind, value: shield, spell_id: spell.id, show_spell_link: false, source_side: side});
+        } else if (kind === "heal") {
           const before = recipient.hp; recipient.hp = Math.min(recipient.max_hp, recipient.hp + Math.trunc(value));
           emit(targetSide, "heal", ` restores ${recipient.hp - before} HP.`, {kind: "heal", spell_id: spell.id, show_spell_link: false, hp: recipient.hp, amount: recipient.hp - before, source_side: side});
         } else if (kind === "cleanse_one") {
