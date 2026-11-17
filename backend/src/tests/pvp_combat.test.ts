@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createPvpCombatState, validatePvpDecision, resolvePvpExchange, refreshPvpWeapon, resetPvpFighter, startPvpBattle, pvpInitiative } from "../pvp/combat";
+import { createPvpCombatState, validatePvpDecision, resolvePvpExchange, resolvePvpInspiration, publicPvpCombatState, refreshPvpWeapon, resetPvpFighter, startPvpBattle, pvpInitiative } from "../pvp/combat";
 const read = (n: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", n), "utf8"));
 const catalogs = { entities: read("entities.json").entities, items: read("items.json").items, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
 const snapshot = (player_id: string, type: string) => ({ player_id, entity_id: `${type}_01`, weapon_ids: [null, null], homunculus_id: null, spell_ids: catalogs.spells.filter((s: any) => s.type === type).slice(0, 4).map((s: any) => s.id) });
@@ -32,7 +32,7 @@ test("ultra validation follows deciding-round conditions", () => {
  s.fighters.left.ultra_used = true; expect(validatePvpDecision(s, "left", d)).toEqual({error: "INVALID_DECISION"});
 });
 test("unsupported effects fail closed without mutation or RNG draws", () => {
- const s = setup(), spell = catalogs.spells.find((x: any) => x.id === "pyrolytic_fuse");
+ const s = setup(), spell = structuredClone(catalogs.spells.find((x: any) => x.id === "pyrolytic_fuse")); spell.effects[0].kind = "unsupported_effect";
  s.fighters.left.spells.push(structuredClone(spell)); s.fighters.left.spell_ids[0] = spell.id;
  const before = structuredClone(s), l = {turn: 1, spell_id: spell.id}, r = {turn: 1, spell_id: s.fighters.right.spells[0].id};
  let draws = 0; const rng = () => {draws++; return 0;};
@@ -51,7 +51,7 @@ test("both humans attack in order and deterministic draws preserve input", () =>
 });
 
 test("faster human acts first, and lethal hits prevent the second action", () => {
- const s = setup(); s.fighters.right.status.tempo_bonus = 2; s.fighters.left.hp = 1;
+ const s = setup(); s.battle_index = 3; s.wins.right = 1; s.fighters.right.status.tempo_bonus = 2; s.fighters.left.hp = 1;
  const result = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
  expect(result.events.filter((e: any)=>e.kind === "spell").map((e: any)=>e.side)).toEqual(["right"]);
  expect(result.state.fighters.left.hp).toBe(0); expect(result.state.battle_result).toBe("right");
@@ -271,7 +271,7 @@ test("four headless Godot advanced fixtures match HP, cooldowns, statuses and dr
   const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any; equip(s.fighters.left,f.a);
   if (f.mode === "mark") s.fighters.right.status.hybrid_mark = {owner:"left",remaining:2};
   if (f.mode === "ward") Object.assign(s.fighters.left,{spell_ward:0.3,spell_ward_baseline:0.1,weapon_shield_pct:0.2,other_shield_pct:0.35}), s.fighters.left.status.shield_pct=0.35;
-  if (f.mode === "recoil") s.fighters.left.hp=4;
+  if (f.mode === "recoil") { s.fighters.left.hp=4; s.battle_index=3; s.wins.right=1; }
   if (f.mode === "leech") s.fighters.left.hp=60;
   const seen: number[] = [];
   const out = resolvePvpExchange(s,{turn:1,spell_id:f.a},{turn:1,spell_id:f.b},(_t,i)=>{seen.push(i);return f.draws[i];}) as any;
@@ -439,7 +439,7 @@ test("focus, misalignment, tempo and homunculus stun affect their recipient inde
 });
 
 test("effect preflight rejects either unsupported decision before RNG and ultra clamps shields", () => {
- const s = setup(); equip(s.fighters.right,"pyrolytic_fuse");
+ const s = setup(); equip(s.fighters.right,"pyrolytic_fuse"); s.fighters.right.spells.find((x: any)=>x.id === "pyrolytic_fuse").effects[0].kind = "unsupported_effect";
  const saved = structuredClone(s); let count = 0;
  expect(resolvePvpExchange(s,{turn:1,spell_id:"ash_temper"},{turn:1,spell_id:"pyrolytic_fuse"},()=>{count++;return 0.5;})).toEqual({error:"PVP_COMBAT_PARITY_UNAVAILABLE"});
  expect(count).toBe(0); expect(s).toEqual(saved);
@@ -589,4 +589,156 @@ test("empty first slot, fusion, switching defenses and initiative consumption", 
  const afterSacrifice = refreshPvpWeapon(spent);
  expect([afterSacrifice.max_hp,afterSacrifice.atk,afterSacrifice.def]).toEqual([102,24,13]);
  expect(resetPvpFighter(afterSacrifice).hom_spent).toBe(true);
+});
+
+test("switch actions tick cooldowns, respect stun and resolve for both humans", () => {
+ const left = {...snapshot("a", "sulfur"), weapon_ids: [null, "bismuth_talisman"]};
+ const right = {...snapshot("b", "mercury"), weapon_ids: [null, "bismuth_talisman"]};
+ const state = createPvpCombatState(left, right, catalogs) as any;
+ state.fighters.left.spell_cooldowns.cinder_fist = 2;
+ state.fighters.right.spell_cooldowns.silver_needle = 1;
+ state.fighters.right.status.stun = 1;
+ const before = structuredClone(state);
+ const out = resolvePvpExchange(state, {turn: 1, switch_slot: 2}, {turn: 1, switch_slot: 2}, () => 0.5) as any;
+ expect(state).toEqual(before);
+ expect(out.state.fighters.left.active_weapon_slot).toBe(2);
+ expect(out.state.fighters.right.active_weapon_slot).toBe(1);
+ expect(out.state.fighters.right.status.stun).toBe(0);
+ expect(out.state.fighters.left.spell_cooldowns.cinder_fist).toBe(1);
+ expect(out.state.fighters.right.spell_cooldowns.silver_needle).toBe(0);
+ expect(out.events.filter((e: any) => ["switch", "stun"].includes(e.kind)).map((e: any) => [e.side, e.kind])).toEqual([["left", "switch"], ["right", "stun"]]);
+});
+
+test("all 94 catalog spells resolve on either human side", () => {
+ expect(catalogs.spells).toHaveLength(94);
+ for (const spell of catalogs.spells) {
+  const type = ["universal", "hybrid"].includes(spell.type) ? spell.eligible_types[0] : spell.type;
+  for (const side of ["left", "right"] as const) {
+   const a = snapshot("a", type), b = snapshot("b", "gold");
+   const state = createPvpCombatState(side === "left" ? a : b, side === "left" ? b : a, catalogs) as any;
+   equip(state.fighters[side], spell.id);
+   const action = {turn: 1, spell_id: spell.id}, other = {turn: 1, spell_id: "aurum_edge"};
+   const out = resolvePvpExchange(state, side === "left" ? action : other, side === "left" ? other : action, () => 0.5) as any;
+   expect([spell.id, side, out.error]).toEqual([spell.id, side, undefined]);
+   expect(out.events.some((e: any) => e.kind === "spell" && e.side === side && e.spell_id === spell.id)).toBe(true);
+  }
+ }
+});
+
+test("both homunculi act after their owners; sacrifice and stun persist correctly", () => {
+ const a = {...snapshot("a", "sulfur"), homunculus_id: "drakon"};
+ const b = {...snapshot("b", "mercury"), homunculus_id: "drakon"};
+ const state = createPvpCombatState(a, b, catalogs) as any;
+ state.fighters.left.hom_energy = 6; state.fighters.right.hom_energy = 3;
+ state.fighters.right.status.hom_stun = 1;
+ const out = resolvePvpExchange(state, {turn: 1, spell_id: "ash_temper", hom_action: "attack"}, {turn: 1, spell_id: "liquid_decoy", hom_action: "attack"}, () => 0.5) as any;
+ expect(out.events.filter((e: any) => ["spell", "hom_attack", "hom_stun"].includes(e.kind)).map((e: any) => [e.side, e.kind])).toEqual([["left", "spell"], ["left", "hom_attack"], ["right", "spell"], ["right", "hom_stun"]]);
+ expect(out.events.find((e: any) => e.kind === "hom_attack").boosted).toBe(true);
+ expect(out.state.fighters.left.hom_energy).toBe(1);
+ expect(out.state.fighters.right.hom_energy).toBe(1);
+ const sacrifice = structuredClone(state); sacrifice.fighters.left.hp = 20; sacrifice.fighters.left.hom_energy = 3;
+ const result = resolvePvpExchange(sacrifice, {turn: 1, spell_id: "ash_temper", hom_action: "sacrifice"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
+ expect(result.state.fighters.left.hom_spent).toBe(true);
+ expect(result.events.find((e: any) => e.kind === "hom_sacrifice").amount).toBe(30);
+ expect(resetPvpFighter(result.state.fighters.left).hom_spent).toBe(true);
+});
+
+test("simultaneous Inspiration offers are private, block turns and restore loadouts", () => {
+ const state = createPvpCombatState(snapshot("a", "vitriol"), snapshot("b", "vitriol"), catalogs) as any;
+ state.fighters.left.inspiration = 2; state.fighters.right.inspiration = 2;
+ const result = resolvePvpExchange(state, {turn: 1, spell_id: "caustic_mark"}, {turn: 1, spell_id: "caustic_mark"}, () => 0.5) as any;
+ expect(result.state.fighters.left.inspiration_offers).toHaveLength(3);
+ expect(result.state.fighters.right.inspiration_offers).toHaveLength(3);
+ expect(publicPvpCombatState(result.state, "left").fighters.right.inspiration_offers).toEqual([]);
+ const choice = result.state.fighters.left.inspiration_offers[0];
+ const left = resolvePvpInspiration(result.state, "left", {kind: "choose", spell_id: choice}, () => 0.75) as any;
+ expect(left.state.turn).toBe(1); expect(left.state.fighters.left.spell_ids[3]).toBe(choice);
+ expect(resolvePvpExchange(left.state, {turn: 2, spell_id: choice}, {turn: 2, spell_id: "etching_fang"}, () => 0.5)).toEqual({error: "PVP_COMBAT_PARITY_UNAVAILABLE"});
+ const right = resolvePvpInspiration(left.state, "right", {kind: "decline"}, () => 0.5) as any;
+ expect(right.state.fighters.right.inspiration_pending).toBe(false);
+ const cast = resolvePvpExchange(right.state, {turn: 2, spell_id: choice}, {turn: 2, spell_id: "etching_fang"}, () => 0.5) as any;
+ expect(cast.error).toBeUndefined();
+ expect(cast.events.some((e: any) => e.kind === "spell" && e.spell_id === choice)).toBe(true);
+ expect(resetPvpFighter(right.state.fighters.left).spell_ids).toEqual(state.fighters.left.spell_ids);
+});
+
+test("delayed lethal damage scores once, resets battles and ends a two-win match", () => {
+ let state = setup();
+ state.fighters.right.hp = 3;
+ state.strategic_delayed = [{actor: "left", target: "right", amount: 3, due_turn: 1}];
+ let out = resolvePvpExchange(state, {turn: 1, spell_id: "ash_temper"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
+ expect(out.events.filter((e: any) => e.kind === "delayed_damage")).toHaveLength(1);
+ expect(out.events.filter((e: any) => e.kind === "battle_result")).toHaveLength(1);
+ expect(out.state.wins).toEqual({left: 1, right: 0});
+ expect(out.state.battle_index).toBe(2); expect(out.state.turn).toBe(0);
+ expect(out.state.fighters.right.hp).toBe(out.state.fighters.right.max_hp);
+ expect(out.state.match_result).toBeUndefined();
+ state = out.state; state.fighters.right.hp = 1;
+ out = resolvePvpExchange(state, {turn: 1, spell_id: "cinder_fist"}, {turn: 1, spell_id: "silver_needle"}, () => 0.5) as any;
+ expect(out.state.match_result).toBe("left"); expect(out.state.wins).toEqual({left: 2, right: 0});
+ expect(out.events.filter((e: any) => e.kind === "match_result")).toHaveLength(1);
+ expect(resolvePvpExchange(out.state, {turn: 2, spell_id: "cinder_fist"}, {turn: 2, spell_id: "silver_needle"}, () => 0.5)).toEqual({error: "INVALID_DECISION"});
+});
+
+test("third battle draw enters sudden death and a further draw ends the match", () => {
+ let state = setup(); state.battle_index = 3; state.wins = {left: 1, right: 1};
+ const drawBattle = (s: any) => {
+  s.fighters.left.hp = 1; s.fighters.right.hp = 1;
+  s.strategic_delayed = [{actor: "left", target: "right", amount: 1, due_turn: 1}, {actor: "right", target: "left", amount: 1, due_turn: 1}];
+  return resolvePvpExchange(s, {turn: 1, spell_id: "ash_temper", ultra: !s.sudden_death}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
+ };
+ let out = drawBattle(state);
+ expect(out.state.sudden_death).toBe(true); expect(out.state.battle_index).toBe(4);
+ expect(out.state.fighters.left.ultra_used).toBe(true);
+ out = drawBattle(out.state);
+ expect(out.state.match_result).toBe("draw"); expect(out.state.wins).toEqual({left: 1, right: 1});
+});
+
+test("strategic traps, transfer and suppression follow exchange timing", () => {
+ const s = setup(); equip(s.fighters.left, "void_purge");
+ s.fighters.left.status.poison = 2; s.fighters.left.inspiration = 2;
+ s.fighters.right.strategic_trap = {value: 0.5, activated_turn: 0, expires_turn: 2};
+ let out = resolvePvpExchange(s, {turn: 1, spell_id: "void_purge"}, {turn: 1, spell_id: "silver_needle"}, () => 0.5) as any;
+ expect(out.events.some((e: any) => e.kind === "debuff_transfer")).toBe(true);
+ expect(out.state.fighters.left.inspiration_pending).toBe(true);
+ expect(out.state.fighters.right.strategic_trap).toBeDefined();
+ const t = setup(); t.fighters.left.strategic_heal_suppression = {expires_turn: 1}; t.fighters.left.hp = 50;
+ equip(t.fighters.left, "brine_mend");
+ out = resolvePvpExchange(t, {turn: 1, spell_id: "brine_mend"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
+ const heal = out.events.find((e: any) => e.kind === "heal" && e.side === "left");
+ expect(heal.amount).toBe(Math.floor(catalogs.spells.find((x: any) => x.id === "brine_mend").effects.find((e: any) => e.kind === "heal").value / 2));
+ expect(out.state.fighters.left.strategic_heal_suppression).toBeUndefined();
+ expect(out.events.some((e: any) => e.kind === "heal_suppression_expired")).toBe(true);
+});
+
+test("anomaly, trap and jam apply at their reference exchange boundaries", () => {
+ const s = setup(); equip(s.fighters.left, "toxic_smog");
+ let out = resolvePvpExchange(s, {turn: 1, spell_id: "toxic_smog"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
+ expect(out.state.physical_anomaly.remaining_exchanges).toBe(3);
+ out = resolvePvpExchange(out.state, {turn: 2, spell_id: "ash_temper"}, {turn: 2, spell_id: "silver_needle"}, () => 0.5) as any;
+ expect(out.state.physical_anomaly.remaining_exchanges).toBe(2);
+ const trap = setup(); trap.fighters.right.strategic_trap = {value: 0.5, activated_turn: 0, expires_turn: 1};
+ out = resolvePvpExchange(trap, {turn: 1, spell_id: "cinder_fist"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
+ expect(out.events.filter((e: any) => e.kind === "counter_trap_triggered")).toHaveLength(1);
+ expect(out.state.fighters.right.strategic_trap).toBeUndefined();
+ const jam = setup(); equip(jam.fighters.left, "signal_jam");
+ jam.fighters.left.strategic_heal_suppression = {expires_turn: 1};
+ out = resolvePvpExchange(jam, {turn: 1, spell_id: "signal_jam"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
+ const event = out.events.find((e: any) => e.kind === "cooldown_jam");
+ expect(event).toBeDefined(); expect(out.state.fighters.right.spell_cooldowns[event.spell_id]).toBe(event.value);
+ expect(out.state.strategic_jams).toEqual([]);
+ expect(out.events.findIndex((e: any) => e.kind === "cooldown_jam")).toBeLessThan(out.events.findIndex((e: any) => e.kind === "heal_suppression_expired"));
+});
+
+test("malformed state and either illegal decision are rejected before RNG", () => {
+ for (const change of [
+  (s: any) => {s.fighters.left.spell_cooldowns.cinder_fist = -1;},
+  (s: any) => {s.fighters.right.status.poison = NaN;},
+  (s: any) => {s.strategic_delayed = [{actor: "left", target: "right", amount: -1, due_turn: 1}];},
+  (s: any) => {s.fighters.right.spells = [null];},
+ ]) {
+  const s = setup(); change(s); const before = structuredClone(s); let draws = 0;
+  const out = resolvePvpExchange(s, {turn: 1, spell_id: "cinder_fist"}, {turn: 1, spell_id: "silver_needle"}, () => {draws++; return 0.5;}) as any;
+  expect(out.error).toBeDefined(); expect(draws).toBe(0); expect(s).toEqual(before);
+ }
 });
