@@ -154,7 +154,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
 export function createCombatState(setup: any, serverRng?: (turn: number, draw: number) => number): any {
   if (!setup || !validated.has(setup)) return { error: "UNTRUSTED_SETUP" };
   setup = validated.get(setup);
-  const fighter = (e: any, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
+  const fighter = (e: any, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, tempo: e.base_stats.tempo ?? 10, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
   const player = fighter(setup.entity);
   const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
   const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
@@ -225,6 +225,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   if (state.boss_intent === "Shield" && (!state.boss_shield_config || state.boss.hp >= state.boss.max_hp || state.boss_shield_turns > 0 || state.boss_shield_cooldown > 0 || state.boss_shield_phases.includes(state.boss.hp * 2 > state.boss.max_hp ? "high" : "low"))) return { error: "UNSUPPORTED_MECHANIC" };
   if (state.boss_intent === "Special" && (!state.boss_signature || state.boss_signature.id !== state.selected_signature || !castableSpell(state.boss_signature, state.boss_signature.type) || (state.boss_cooldowns?.[state.selected_signature] ?? 0) > 0 || state.boss_signature.category !== "attack" || state.boss_signature.effects.some((effect: any) => !["atk_down", "vuln", "poison", "hom_stun", "bonus_if_poisoned", "bonus_if_hit_last_exchange"].includes(effect.kind)))) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
+  let vitriolCorrosionUsed = 0;
   const target = switching ? null : decision.target === "boss" ? next.boss : next.minions.find((m: any) => m.id === decision.target);
   const minionsAtStart = next.minions.filter((m: any) => m.hp > 0).map((m: any) => m.id);
   const shieldAtStart = next.boss_shield_turns > 0;
@@ -282,7 +283,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     const targetId = d === next.player ? "player" : d === next.boss ? "boss" : d.id;
     if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor: actorId, target: targetId, kind: "miss" }); return false; }
     const relation = next.types?.effectiveness?.[signatureType ?? a.type]?.[d.type] ?? 1;
-    let baseMult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
+    let baseMult = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
     if (actor === "player" && spell.type === a.type && relation < 1) baseMult = Math.min(1, baseMult + (next.item_effects?.disadvantage_reduction ?? 0));
     if (actor === "player" && spell.type === "universal") baseMult = 1;
     if (actor === "player" && spell.type === "hybrid") {
@@ -343,11 +344,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       events.push({ actor, target: targetId, kind: "true_damage", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
     }
     if (actor === "player" && (next.item_effects?.dot_true ?? 0) > 0) {
-      const bonus = Math.trunc(next.item_effects.dot_true);
-      const dealtBonus = Math.min(d.hp, bonus);
-      actualDamage += dealtBonus;
-      d.hp = Math.max(0, d.hp - bonus);
-      events.push({ actor, target: targetId, kind: "corrosion", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
+      let bonus = Math.trunc(next.item_effects.dot_true);
+      if (next.item_id === "vitriol_vial") { bonus = Math.max(0, Math.min(bonus, 4 - vitriolCorrosionUsed)); vitriolCorrosionUsed += bonus; }
+      if (bonus > 0) {
+        const dealtBonus = Math.min(d.hp, bonus);
+        actualDamage += dealtBonus;
+        d.hp = Math.max(0, d.hp - bonus);
+        events.push({ actor, target: targetId, kind: "corrosion", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
+      }
       if ((next.item_effects.vuln_on_hit ?? 0) > 0) d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, next.item_effects.vuln_on_hit);
     }
     if (actor === "player" && !next.hom_spent && (next.hom_synergy?.dot_true ?? 0) > 0) {
@@ -369,7 +373,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     return true;
   };
   try {
-    const playerFirst = (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.status.tempo_bonus ?? 0);
+    const playerFirst = (next.player.tempo ?? 10) + (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.tempo ?? 10) + (next.boss.status.tempo_bonus ?? 0);
   for (const [id, fighter] of [["player", next.player], ["boss", next.boss]] as [string, any][]) {
     if (fighter.status.tempo_bonus) events.push({ actor: id, kind: "status_consumed", target: id, status: "tempo_bonus", previous: fighter.status.tempo_bonus });
     delete fighter.status.tempo_bonus;
@@ -596,7 +600,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       hit(minion, next.player, 0.9, 1, "minion");
       events.push({ actor: id, kind: "minion_attack" });
     }
-    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { fighter.status.poison--; const damage = Math.min(2, fighter.hp); fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id, damage, hp: fighter.hp, remaining: fighter.status.poison }); }
+    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { fighter.status.poison--; const damage = Math.min(3, fighter.hp); fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id, damage, hp: fighter.hp, remaining: fighter.status.poison }); }
     if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   finishStrategicExchange(next, { player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m: any) => [m.id, m])) }, next.turn + 1, events);

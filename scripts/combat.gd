@@ -540,12 +540,12 @@ func _dungeon_present_events(events: Array, owner: String, generation: int, run_
 		var kind := str(event.get("kind", ""))
 		var actor := str(event.get("actor", ""))
 		var target := str(event.get("side", event.get("target", "")))
-		if target not in ["player", "npc"] and actor in ["player", "npc"] and kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage"]:
+		if target not in ["player", "npc"] and actor in ["player", "npc"] and kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "hom_dot", "delayed_damage"]:
 			target = "npc" if actor == "player" else "player"
 		elif target not in ["player", "npc"] and event.has("hp") and actor in ["player", "npc"]:
 			target = actor
 		var combo := _dungeon_strategic_event(event)
-		var category := "combo" if not combo.is_empty() else "switch" if kind == "switch" else "damage" if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison"] else "heal" if kind == "heal" else "debuff" if kind == "status_applied" else "system"
+		var category := "combo" if not combo.is_empty() else "switch" if kind == "switch" else "damage" if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "hom_dot", "delayed_damage", "poison"] else "heal" if kind == "heal" else "debuff" if kind == "status_applied" else "system"
 		var actor_id := actor if actor in ["player", "npc"] else target
 		var fighter: Dictionary = view.get(actor_id, {})
 		var actor_sprite: Control = player_entity if actor_id == "player" else enemy_entity
@@ -2591,6 +2591,7 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		"hom_spent": hom.is_empty(),
 		"atk": atk,
 		"def": def,
+		"tempo": float(ent.get("base_stats", {}).get("tempo", 10)),
 		"max_hp": hp,
 		"hp": hp,
 		"mods": mods,
@@ -3579,12 +3580,12 @@ func _apply_spell_poison(fighter: Dictionary) -> void:
 	if _solo_boss_mode and is_same(fighter, enemy) and _solo_has_minions():
 		return
 	if fighter.status.poison > 0:
-		_log_step("%s suffers poison (2)." % fighter.name, func():
-			_record_highlight("damage", mini(int(fighter.hp), 2), "%s: poison" % fighter.name)
+		_log_step("%s suffers poison (3)." % fighter.name, func():
+			_record_highlight("damage", mini(int(fighter.hp), 3), "%s: poison" % fighter.name)
 			fighter.status.poison -= 1
-			fighter.hp = max(0, fighter.hp - 2)
+			fighter.hp = max(0, fighter.hp - 3)
 			fighter.spell_hit_this_exchange = true
-		, _combat_event(fighter, "debuff", " suffers 2 poison damage.", {}))
+		, _combat_event(fighter, "debuff", " suffers 3 poison damage.", {}))
 
 func _refresh_spell_buttons() -> void:
 	var options := _fighter_spell_options(player)
@@ -3716,6 +3717,7 @@ func _fighter_spell_options(fighter: Dictionary) -> Array:
 func _begin_spell_exchange() -> void:
 	_spell_exchange_active = true
 	for fighter in [player, enemy]:
+		fighter.vitriol_corrosion_used = 0
 		fighter.spell_hit_last_exchange = fighter.get("spell_hit_this_exchange", false)
 		fighter.spell_hit_this_exchange = false
 		fighter.spell_neutralize_active = fighter.get("spell_neutralize_pending", 0.0)
@@ -4159,6 +4161,9 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			_animate_hit(_fighter_sprite(defender), true_bonus, defender.max_hp)
 		, _combat_event(attacker, "damage", "'s %s adds +%d true damage." % [_item_label(t_item), true_bonus], {}))
 	var dot_true: int = _dot_on_hit(attacker)
+	if str(_get_active_weapon(attacker).get("id", "")) == "vitriol_vial":
+		dot_true = mini(dot_true, maxi(0, 4 - int(attacker.get("vitriol_corrosion_used", 0))))
+		attacker.vitriol_corrosion_used = int(attacker.get("vitriol_corrosion_used", 0)) + dot_true
 	if dot_true > 0:
 		var d_item := _item_with_effect([_get_active_weapon(attacker)], "dot_true")
 		_log_step("%s's %s corrodes for %d." % [attacker.name, _item_label(d_item), dot_true], func():
@@ -4206,8 +4211,8 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 
 	if not spell_attack and defender.status.poison > 0:
 		defender.status.poison -= 1
-		defender.hp = max(0, defender.hp - 2)
-		_log("%s suffers poison (2)." % defender.name, _combat_event(defender, "debuff", " suffers 2 poison damage.", {}))
+		defender.hp = max(0, defender.hp - 3)
+		_log("%s suffers poison (3)." % defender.name, _combat_event(defender, "debuff", " suffers 3 poison damage.", {}))
 	return true
 
 func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: bool = false) -> void:
@@ -4692,13 +4697,13 @@ func _type_multiplier(attacker: Dictionary, defender: Dictionary, emit_log: bool
 	var relationship := float(row.get(str(defender.type), 1.0))
 	var multiplier := 1.0
 	if relationship > 1.0:
-		multiplier = 1.12 + _hom_advantage_bonus(attacker)
+		multiplier = 1.18 + _hom_advantage_bonus(attacker)
 	elif relationship < 1.0:
 		var red: float = float(attacker.item_fx.get("disadvantage_reduction", 0.0))
 		if red > 0.0 and emit_log:
 			var d_item := _item_with_effect([_get_active_weapon(attacker)], "disadvantage_reduction")
 			_log("%s steadies the disadvantage via %s." % [attacker.name, _item_label(d_item)], _combat_event(attacker, "advantage", " steadies the disadvantage via %s." % _item_label(d_item), {}))
-		multiplier = min(0.92 + red, 1.0)
+		multiplier = min(0.84 + red, 1.0)
 	var neutralize := maxf(maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0))), maxf(float(_hom_synergy(attacker).get("type_neutralize", 0.0)), float(_hom_synergy(defender).get("type_neutralize", 0.0))))
 	return 1.0 + (multiplier - 1.0) * (1.0 - neutralize)
 
@@ -4851,7 +4856,7 @@ func _apply_tempo_win_bonus(f: Dictionary, _is_player: bool) -> void:
 	, _combat_event(f, "buff", " accelerates via %s." % _item_label(_item_with_effect([_get_active_weapon(f)], "tempo_on_win")), {}))
 
 func _initiative(f: Dictionary) -> float:
-	var score: float = 10.0
+	var score: float = float(f.get("tempo", 10.0))
 	score += _item_initiative(_get_active_weapon(f)) + float(_hom_synergy(f).get("tempo_flat", 0.0))
 	score += float(f.status.get("tempo_bonus", 0.0))
 	f.status.tempo_bonus = 0.0

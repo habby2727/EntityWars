@@ -8,7 +8,7 @@
       "desc": "Power bonus; true damage on hit; +1 Guard.",
       "base_effects": { "power_flat": 1 },
       "effects": {
-        "power_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
+        "power_flat": [2, 3, 4, 5, 6, 6, 7, 7, 8, 8],
         "true_on_hit": [1],
         "guard_flat": [1]
       }
@@ -21,7 +21,7 @@
       "desc": "Tempo bonus; 8% evasion; +1 Power.",
       "base_effects": { "tempo_flat": 1 },
       "effects": {
-        "tempo_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
+        "tempo_flat": [2, 3, 4, 5, 6, 6, 7, 7, 8, 8],
         "evasion_pct": [0.08],
         "power_flat": [1]
       }
@@ -31,11 +31,11 @@
       "name": "Saltstone Hammer",
       "rarity": "basic",
       "slot": "build",
-      "desc": "Guard bonus; 12% ward each round; +1 Power.",
+      "desc": "Guard bonus; 10% ward each round; +1 Power.",
       "base_effects": { "guard_flat": 1 },
       "effects": {
-        "guard_flat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12],
-        "ward_pct": [0.12],
+        "guard_flat": [2, 3, 4, 5, 6, 7, 7, 8, 8, 9],
+        "ward_pct": [0.10],
         "power_flat": [1]
       }
     },
@@ -60,7 +60,7 @@
       "desc": "True corrosion damage on hit; 10% vulnerability; +1 Power.",
       "base_effects": { "dot_true": 0 },
       "effects": {
-        "dot_true": [1, 2, 2, 3, 3, 4, 4, 5, 6, 7],
+        "dot_true": [1, 1, 1, 2, 2, 2, 2, 3, 3, 3],
         "vuln_on_hit": [0.1],
         "power_flat": [1]
       }

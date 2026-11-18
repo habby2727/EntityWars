@@ -52,13 +52,13 @@ test("blessing damage, poison remainder and energy are bounded", () => {
   expect(b.events.find((e: any) => e.kind === "reflect").amount).toBe(a.events.find((e: any) => e.kind === "reflect").amount);
   let ward = make("toxin_ward"); ward.player.status.poison = 4;
   const ticks = []; for (let i = 0; i < 4; i++) { const r = turn(ward); ticks.push(r.events.find((e: any) => e.kind === "poison" && e.side === "player").amount); ward = r.next_state; }
-  expect(ticks).toEqual([2, 2, 1, 2]);
+  expect(ticks).toEqual([3, 2, 3, 2]);
   for (const [floor, percentage] of [[3, 20], [6, 25], [9, 30], [21, 50], [30, 50]] as const) {
     const info = publicDungeonBlessing(createDungeonBlessing(new Uint8Array(32).fill(2), "run", floor, true));
     expect(info.offers.find((offer: any) => offer.id === "toxin_ward").description).toContain(`${percentage}%`);
     let state = make("toxin_ward", floor); state.player.status.poison = 5;
     let damage = 0; for (let i = 0; i < 5; i++) { const result = turn(state); damage += result.events.find((event: any) => event.kind === "poison" && event.side === "player").amount; state = result.next_state; }
-    expect(damage).toBe(10 - Math.floor(10 * percentage / 100));
+    expect(damage).toBe(15 - Math.floor(15 * percentage / 100));
   }
   let resonance = make("homunculus_resonance", 15); resonance.player.hom_energy = 0;
   for (let i = 0; i < 6; i++) resonance = turn(resonance).next_state;
@@ -563,7 +563,7 @@ test("physical anomalies affect Dungeon direct attacks and expire without stacki
   expect(resolveDungeonTurn(homBoosted, homAction, random).events.find((e: any) => e.kind === "hom_attack" && e.actor === "player").amount).toBe(resolveDungeonTurn(homBase, homAction, random).events.find((e: any) => e.kind === "hom_attack" && e.actor === "player").amount);
   const poisonState = structuredClone(activated.next_state); poisonState.npc.status.poison = 2;
   const poisoned = resolveDungeonTurn(poisonState, action, random);
-  expect(poisoned.events.find((e: any) => e.kind === "damage" && e.actor === "player").hp - poisoned.next_state.npc.hp).toBe(2);
+  expect(poisoned.events.find((e: any) => e.kind === "damage" && e.actor === "player").hp - poisoned.next_state.npc.hp).toBe(3);
   expect(boosted.next_state.physical_anomaly.remaining_exchanges).toBe(2);
   let next = boosted.next_state;
   for (let turn = 3; turn <= 4; turn++) next = resolveDungeonTurn(next, { turn, spell_id: "cinder_fist" }, random).next_state;
@@ -624,6 +624,7 @@ test("pure dungeon combat resolves damage, effects, cooldowns, homunculus and te
   const sodiumSetup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "sodium_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: sodiumIds, mode: "attack" }, all);
   const sodiumState = createDungeonCombatState(sodiumSetup, enemy, all);
   expect(sodiumState.error).toBeUndefined();
+  sodiumState.player.tempo = sodiumState.npc.tempo; // Exercise reflection when the player acts first.
   for (const id of sodiumState.npc.spell_ids) if (id !== "cinder_fist") sodiumState.npc.cooldowns[id] = 9;
   const reflection = resolveDungeonTurn(sodiumState, { turn: 1, spell_id: "bastion_return" }, () => 0.5);
   expect(reflection.events.some((event: any) => event.kind === "reflect" && event.actor === "player" && event.amount > 0)).toBe(true);
@@ -1280,3 +1281,55 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     for (let i = 0; i < 10; i++) { try { rmSync(dir, { recursive: true, force: true }); break; } catch { await Bun.sleep(100); } }
   }
 }, 120000);
+
+test("0.61s trusted Dungeon homunculus and initiative parity", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {}, item_progress: { vitriol_vial: { level: 10 } } };
+  const selection = { entity_id: "sulfur_01", weapon_ids: ["vitriol_vial", null], homunculus_id: "pyritc", spell_ids: ids, mode: "attack" };
+  const setup = buildTrustedCombatSetup(snapshot, selection, all, { independentLoadout: true });
+  const enemy = { floor: 3, entity_id: "sulfur_01", type: "sulfur", hp: 1000, attack: 1, defense: 1, homunculus_id: "cinder", homunculus_level: 1, spell_ids: ids };
+  const s = createDungeonCombatState(setup, enemy, all); expect(s.player.tempo).toBe(12); expect(s.npc.tempo).toBe(12);
+  expect(s.item_effects.dot_true).toBe(3); s.item_effects.dot_true = 10;
+  const result = resolveDungeonTurn(s, { turn: 1, spell_id: "cinder_fist" }, () => 0.5);
+  expect(result.events.filter((e: any) => e.kind === "dot_true").map((e: any) => e.amount)).toEqual([4]);
+  expect(result.events.filter((e: any) => e.kind === "hom_dot").map((e: any) => e.amount)).toEqual([1]);
+  expect(result.events.find((e: any) => e.kind === "hom_dot").hp).toBe(result.next_state.npc.hp);
+});
+
+test("0.61s Dungeon trusted defense and scaling do not stack", () => {
+ const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+ const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+ const snapshot = { player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {}, item_progress: {vitriol_vial: {level: 10}} };
+ const enemy = { floor: 3, entity_id: "sulfur_01", type: "sulfur", hp: 1000, attack: 1, defense: 1, homunculus_id: "cinder", homunculus_level: 1, spell_ids: ids };
+ const make = (homunculus_id: string) => createDungeonCombatState(buildTrustedCombatSetup(snapshot, {entity_id: "sulfur_01", weapon_ids: ["vitriol_vial", "bismuth_talisman"], homunculus_id, spell_ids: ids, mode: "attack"}, all, {independentLoadout: true}), enemy, all);
+ const sodi = make("sodium"), noHom = make(null as any); expect(sodi.player.def - noHom.player.def).toBe(3);
+ const nighty = make("nighty"); expect(nighty.item_effects.dot_true).toBeCloseTo(3.15);
+ const mothy = make("mothy"); expect(mothy.hom_synergy.type_neutralize).toBe(0.25);
+ const switched = resolveDungeonTurn(nighty, {turn: 1, switch_slot: 2}, () => 0.5).next_state;
+ expect(switched.item_id).toBe("bismuth_talisman"); expect(switched.item_effects.dot_true ?? 0).toBe(0);
+});
+
+
+test("0.61s Dungeon Mothy neutralizes native advantage", () => {
+ const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+ const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], enemyIds = ["etching_fang", "caustic_mark", "bitter_haze", "rot_harvest"];
+ const setup = buildTrustedCombatSetup({player_id:"test",state_revision:1,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{}}, {entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:"mothy",spell_ids:ids,mode:"attack"}, all, {independentLoadout:true});
+ const enemy = {floor:3,entity_id:"vitriol_01",type:"vitriol",hp:1000,attack:1,defense:1,homunculus_id:"cinder",homunculus_level:1,spell_ids:enemyIds};
+ const state = createDungeonCombatState(setup,enemy,all); state.player.atk = 100; state.npc.def=0;
+ const plain = structuredClone(state); plain.hom_synergy.type_neutralize = 0;
+ const act = (s: any) => resolveDungeonTurn(s,{turn:1,spell_id:"cinder_fist"},()=>0.5).events.find((e: any)=>e.kind === "damage" && e.actor === "player").amount;
+ expect(act(plain)).toBe(Math.round(100 * 1.18 * 0.95));
+ expect(act(state)).toBe(Math.round(100 * (1 + 0.18 * 0.75) * 0.95));
+});
+
+test("0.61s Dungeon homunculus reflection applies once and survives switching", () => {
+ const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+ const ids = ["aurum_edge", "gilded_reprisal", "debt_seal", "tribunal_strike"], enemyIds = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+ const setup = buildTrustedCombatSetup({player_id:"test",state_revision:1,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{}}, {entity_id:"gold_01",weapon_ids:["bismuth_talisman","wind_amulet"],homunculus_id:"sodium",spell_ids:ids,mode:"attack"}, all, {independentLoadout:true});
+ const state = createDungeonCombatState(setup,{floor:3,entity_id:"sulfur_01",type:"sulfur",hp:1000,attack:100,defense:1,homunculus_id:"cinder",homunculus_level:1,spell_ids:enemyIds},all);
+ state.player.hp=state.player.max_hp=1000; for (const id of enemyIds.slice(1)) state.npc.cooldowns[id]=99;
+ const first = resolveDungeonTurn(state,{turn:1,spell_id:"aurum_edge"},()=>0.5); expect(first.next_state.player.status.reflect).toBe(0.01);
+ const second = resolveDungeonTurn(first.next_state,{turn:2,switch_slot:2},()=>0.5);
+ const hits = second.events.filter((e: any)=>e.kind === "reflect" && e.actor === "player"); expect(hits).toHaveLength(1); expect(hits[0].amount).toBe(1);
+});

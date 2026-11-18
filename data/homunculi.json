@@ -185,7 +185,7 @@
       "rarity": "advanced",
       "desc": "Build-oriented familiar. Improves item effects slightly.",
       "buff_atk": 0,
-      "buff_def": 1,
+      "buff_def": 2,
       "buff_hp": 3,
       "per_type": {
         "sulfur": {
@@ -218,22 +218,22 @@
       "buff_hp": 1,
       "per_type": {
         "sulfur": {
-          "type_neutralize": 0.1
+          "type_neutralize": 0.25
         },
         "mercury": {
-          "type_neutralize": 0.1
+          "type_neutralize": 0.25
         },
         "sodium": {
-          "type_neutralize": 0.1
+          "type_neutralize": 0.25
         },
         "aether": {
-          "type_neutralize": 0.1
+          "type_neutralize": 0.25
         },
         "vitriol": {
-          "type_neutralize": 0.1
+          "type_neutralize": 0.25
         },
         "gold": {
-          "type_neutralize": 0.1
+          "type_neutralize": 0.25
         }
       }
     }

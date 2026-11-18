@@ -176,7 +176,7 @@ export function pvpHomReady(fighter: PvpFighter): boolean {
 /** _initiative consumes tempo_bonus; return the new fighter without mutating input. */
 export function pvpInitiative(fighter: PvpFighter): { initiative: number; fighter: PvpFighter } {
   const next = structuredClone(fighter);
-  const value = 10 + (next.active_weapon?.effects?.tempo_flat?.[0] ?? 0) + (next.hom_spent ? 0 : next.hom_synergy.tempo_flat ?? 0) + (next.status.tempo_bonus ?? 0);
+  const value = (next.entity?.base_stats?.tempo ?? 10) + (next.active_weapon?.effects?.tempo_flat?.[0] ?? 0) + (next.hom_spent ? 0 : next.hom_synergy.tempo_flat ?? 0) + (next.status.tempo_bonus ?? 0);
   next.status.tempo_bonus = 0;
   return { initiative: value, fighter: next };
 }
@@ -209,6 +209,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
     if ((f.strategic_trap && (!object(f.strategic_trap) || !number(f.strategic_trap.value) || f.strategic_trap.value < 0 || f.strategic_trap.value > 0.5 || !Number.isSafeInteger(f.strategic_trap.activated_turn) || !Number.isSafeInteger(f.strategic_trap.expires_turn) || f.strategic_trap.expires_turn <= state.turn)) || (f.strategic_heal_suppression && (!object(f.strategic_heal_suppression) || !Number.isSafeInteger(f.strategic_heal_suppression.expires_turn) || f.strategic_heal_suppression.expires_turn <= state.turn))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   }
   const next = structuredClone(state), events: any[] = [], turn = state.turn + 1;
+  const vitriolCorrosionUsed = { left: 0, right: 0 };
   let counter = 0;
   const draw = () => { const v = rng(turn, counter++); if (!number(v) || v < 0 || v >= 1) throw new Error("INVALID_RNG"); return v; };
   const sides: PvpSide[] = ["left", "right"];
@@ -314,7 +315,8 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         clearDefense(b, "reflect_pct"); delete b.status.poison_on_reflect;
       }
       for (const key of ["true_on_hit", "dot_true"]) {
-        const value = Math.trunc(a.item_fx[key] ?? 0);
+        let value = Math.trunc(a.item_fx[key] ?? 0);
+        if (key === "dot_true" && a.active_weapon?.id === "vitriol_vial") { value = Math.max(0, Math.min(value, 4 - vitriolCorrosionUsed[side])); vitriolCorrosionUsed[side] += value; }
         if (value > 0) { spellContext.actual_damage += Math.min(b.hp, value); dmg(side, opponent, value, key, spell); if (key === "dot_true" && a.item_fx.vuln_on_hit > 0) b.status.vuln_pct = Math.max(b.status.vuln_pct, a.item_fx.vuln_on_hit); }
       }
       const homDot = Math.max(0, Math.trunc(as.dot_true ?? 0)); if (homDot > 0) dmg(side, opponent, homDot, "hom_dot", spell);
@@ -458,7 +460,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       }
     }
     if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0) for (const side of sides) {
-      const f = next.fighters[side]; if (f.status.poison > 0) { f.status.poison--; f.hp = Math.max(0, f.hp - 2); f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage: 2, hp: f.hp }); }
+      const f = next.fighters[side]; if (f.status.poison > 0) { f.status.poison--; const damage = Math.min(3, f.hp); f.hp -= damage; f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp }); }
     }
     for (const side of sides) { const f = next.fighters[side]; if (!f.hom_spent) f.hom_energy = Math.min(f.hom_max_energy, f.hom_energy + 1); f.spell_neutralize_active = 0; }
     // The shared helper also expires effects; defer that part until after jams.
@@ -588,7 +590,7 @@ export function normalSpellMultiplier(input: {
     if (multiplier > 1) multiplier += advantage;
   } else {
     const value = relation(input.attacker_type);
-    multiplier = value > 1 ? 1.12 + advantage : value < 1 ? Math.min(0.92 + (input.disadvantage_reduction ?? 0), 1) : 1;
+    multiplier = value > 1 ? 1.18 + advantage : value < 1 ? Math.min(0.84 + (input.disadvantage_reduction ?? 0), 1) : 1;
   }
   const neutralize = Math.max(input.attacker_neutralize ?? 0, input.defender_neutralize ?? 0, input.attacker_hom_neutralize ?? 0, input.defender_hom_neutralize ?? 0);
   return 1 + (multiplier - 1) * (1 - neutralize);

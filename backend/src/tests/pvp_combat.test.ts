@@ -45,9 +45,9 @@ test("both humans attack in order and deterministic draws preserve input", () =>
  const s = setup(), before = structuredClone(s), l = {turn:1,spell_id:"cinder_fist"}, r = {turn:1,spell_id:"silver_needle"};
  const result = resolvePvpExchange(s,l,r,()=>0.5) as any;
  expect(result).toEqual(resolvePvpExchange(s,l,r,()=>0.5)); expect(s).toEqual(before);
- expect(result.events.filter((e: any)=>e.kind === "damage").map((e: any)=>e.side)).toEqual(["left","right"]);
+ expect(result.events.filter((e: any)=>e.kind === "damage").map((e: any)=>e.side)).toEqual(["right","left"]);
  expect(result.state.fighters.left.hp).toBeLessThan(104); expect(result.state.fighters.right.hp).toBeLessThan(96);
- expect(result.events.find((e: any)=>e.kind === "damage")).toMatchObject({actor_side:"player",category:"damage",spell_id:"cinder_fist",target_side:"right"});
+ expect(result.events.find((e: any)=>e.kind === "damage" && e.side === "left")).toMatchObject({actor_side:"player",category:"damage",spell_id:"cinder_fist",target_side:"right"});
 });
 
 test("faster human acts first, and lethal hits prevent the second action", () => {
@@ -93,12 +93,13 @@ test("invalid decisions and RNG fail without modifying input", () => {
 
 test("three headless Godot exchange fixtures match damage, cooldowns, statuses and event order", () => {
  const fixtures = [
-  {left:"sulfur",right:"mercury",a:"cinder_fist",b:"silver_needle",hp:[96,81],damage:[15,8],draws:[0.5,0,0.5,0.5],proc:"atk_down"},
+  {left:"sulfur",right:"mercury",a:"cinder_fist",b:"silver_needle",hp:[94,81],damage:[15,10],draws:[0.5,0,0.5,0.5],proc:"atk_down"},
   {left:"aether",right:"sodium",a:"rift_touch",b:"crystal_ram",hp:[93,101],damage:[11,9],draws:[0.5,0,0.5,0.5],proc:"vuln_pct"},
-  {left:"vitriol",right:"gold",a:"etching_fang",b:"aurum_edge",hp:[93,93],damage:[11,11],draws:[0.5,0.5,0.5,0.5],proc:null},
+  {left:"vitriol",right:"gold",a:"etching_fang",b:"aurum_edge",hp:[100,93],damage:[11,10],draws:[0.5,0.5,0.5,0.5],proc:null},
  ];
  for (const f of fixtures) {
   const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
+  s.fighters.left.entity.base_stats.tempo = s.fighters.right.entity.base_stats.tempo;
   const out = resolvePvpExchange(s,{turn:1,spell_id:f.a},{turn:1,spell_id:f.b},(_t,i)=>f.draws[i]) as any;
   expect([out.state.fighters.left.hp,out.state.fighters.right.hp]).toEqual(f.hp);
   expect([out.state.fighters.left.spell_cooldowns,out.state.fighters.right.spell_cooldowns]).toEqual([{[f.a]:0},{[f.b]:0}]);
@@ -136,6 +137,7 @@ test("elemental advantage and all six on-hit passives use the acting fighter", (
  for (const [type, spell, status] of [["sulfur","cinder_fist","atk_down"],["mercury","silver_needle","stun"],["sodium","crystal_ram","shield_pct"],["aether","rift_touch","vuln_pct"],["vitriol","etching_fang","poison"],["gold","aurum_edge","heal"]]) {
   const s = createPvpCombatState(snapshot("a",type),snapshot("b","mercury"),catalogs) as any;
   s.fighters.left.hp -= 5;
+  s.fighters.left.entity.base_stats.tempo = 100;
   const draws = [0.5,0,0.5,0.5];
   const out = resolvePvpExchange(s,{turn:1,spell_id:spell},{turn:1,spell_id:"silver_needle"},(_t,i)=>draws[i] ?? 0.5) as any;
   if (status === "heal") expect(out.events.some((e: any)=>e.kind === "elemental_heal" && e.side === "left")).toBe(true);
@@ -143,18 +145,19 @@ test("elemental advantage and all six on-hit passives use the acting fighter", (
  }
  const s = createPvpCombatState(snapshot("a","sulfur"),snapshot("b","vitriol"),catalogs) as any;
  const out = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"etching_fang"},()=>0.5) as any;
- expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").effectiveness).toBeCloseTo(1.12);
- expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "right").effectiveness).toBeCloseTo(0.92);
+ expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").effectiveness).toBeCloseTo(1.18);
+ expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "right").effectiveness).toBeCloseTo(0.84);
 });
 
 test("three Godot support and attack-effect fixtures match HP, status, cooldown and event categories", () => {
  const fixtures = [
-  {left:"sulfur",right:"mercury",a:"ash_temper",b:"silver_needle",hp:[94,96],damage:[10],draws:[0.775193333625793,0.54944521188736,0.714087608503178],categories:["buff","buff","buff","damage","damage"],status:"atk_boost",value:0.2,recipient:"left",cd:2,inspiration:0},
+  {left:"sulfur",right:"mercury",a:"ash_temper",b:"silver_needle",hp:[91,96],damage:[13],draws:[0.775193333625793,0.54944521188736,0.714087608503178],categories:["buff","buff","buff","damage","damage"],status:"atk_boost",value:0.2,recipient:"left",cd:2,inspiration:0},
   {left:"sodium",right:"aether",a:"brine_mend",b:"rift_touch",hp:[101,102],damage:[11],draws:[0.0138160288333893,0.28386664390564,0.93741182051599],categories:["buff","buff","heal","damage","damage","debuff"],status:"vuln_pct",value:0.12,recipient:"left",cd:3,inspiration:0},
-  {left:"vitriol",right:"gold",a:"caustic_mark",b:"aurum_edge",hp:[93,94],damage:[8,11],draws:[0.801872670650482,0.909451206680387,0.222710683941841,0.41610933537595],categories:["damage","damage","debuff","inspiration","damage","damage","debuff"],status:"poison",value:1,recipient:"right",cd:2,inspiration:1},
+  {left:"vitriol",right:"gold",a:"caustic_mark",b:"aurum_edge",hp:[100,93],damage:[8,10],draws:[0.801872670650482,0.909451206680387,0.222710683941841,0.41610933537595],categories:["damage","damage","debuff","inspiration","damage","damage","debuff"],status:"poison",value:1,recipient:"right",cd:2,inspiration:1},
  ];
  for (const f of fixtures) {
   const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
+  s.fighters.left.entity.base_stats.tempo = s.fighters.right.entity.base_stats.tempo;
   if (f.a === "brine_mend") s.fighters.left.hp = 105;
   const used: number[] = [];
   const out = resolvePvpExchange(s,{turn:1,spell_id:f.a},{turn:1,spell_id:f.b},(_t,i)=>{used.push(i); return f.draws[i];}) as any;
@@ -184,12 +187,12 @@ test("shield provenance, neutralization, cleanse priority and toxic reflection",
  expect(out.state.fighters.left.spell_neutralize_pending).toBe(0.5);
  const t2 = out.state; equip(t2.fighters.left,"rift_touch");
  out = resolvePvpExchange(t2,{turn:2,spell_id:"rift_touch"},{turn:2,spell_id:"cinder_fist"},()=>0.5) as any;
- expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").effectiveness).toBeCloseTo(1.06);
+ expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").effectiveness).toBeCloseTo(1.09);
  expect(out.state.fighters.left.spell_neutralize_pending).toBe(0);
  const m = createPvpCombatState(snapshot("a","mercury"),snapshot("b","sulfur"),catalogs) as any; equip(m.fighters.left,"toxic_mirror");
  out = resolvePvpExchange(m,{turn:1,spell_id:"toxic_mirror"},{turn:1,spell_id:"cinder_fist"},()=>0.5) as any;
  expect(out.events.some((e: any)=>e.kind === "reflect")).toBe(true);
- expect(out.events.some((e: any)=>e.kind === "poison" && e.side === "right" && e.damage === 2)).toBe(true);
+ expect(out.events.some((e: any)=>e.kind === "poison" && e.side === "right" && e.damage === 3)).toBe(true);
  expect(out.state.fighters.right.status.poison).toBe(0);
  expect(out.state.fighters.right.hp).toBeLessThan(104);
 });
@@ -265,10 +268,11 @@ test("four headless Godot advanced fixtures match HP, cooldowns, statuses and dr
   {left:"gold",right:"sodium",a:"gilded_exception",b:"crystal_ram",mode:"mark",hp:[96,97],damage:[15,8],draws:common,cd:3},
   {left:"aether",right:"sodium",a:"crystal_dividend",b:"crystal_ram",mode:"ward",hp:[102,81],damage:[13],draws:[0.167608201503754,0.540733559522778,0.988577008247375],cd:3},
   {left:"sulfur",right:"mercury",a:"last_axiom",b:"silver_needle",mode:"recoil",hp:[0,72],damage:[24],draws:common.slice(0,2),cd:3},
-  {left:"sulfur",right:"mercury",a:"echo_siphon",b:"silver_needle",mode:"leech",hp:[52,85],damage:[11,10],draws:common,cd:2},
+  {left:"sulfur",right:"mercury",a:"echo_siphon",b:"silver_needle",mode:"leech",hp:[49,85],damage:[11,13],draws:common,cd:2},
  ];
  for (const f of fixtures) {
-  const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any; equip(s.fighters.left,f.a);
+  const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
+  s.fighters.left.entity.base_stats.tempo = s.fighters.right.entity.base_stats.tempo; equip(s.fighters.left,f.a);
   if (f.mode === "mark") s.fighters.right.status.hybrid_mark = {owner:"left",remaining:2};
   if (f.mode === "ward") Object.assign(s.fighters.left,{spell_ward:0.3,spell_ward_baseline:0.1,weapon_shield_pct:0.2,other_shield_pct:0.35}), s.fighters.left.status.shield_pct=0.35;
   if (f.mode === "recoil") { s.fighters.left.hp=4; s.battle_index=3; s.wins.right=1; }
@@ -313,7 +317,7 @@ test("conditional modifiers use poison, prior hits, marks and HP before the hit"
 });
 
 test("ward pierce, dispel, initiative shields and conversion preserve defenses", () => {
- for (const [type,id,expected] of [["sulfur","needle_etch",9],["mercury","quicksilver_solvent",7]] as const) {
+ for (const [type,id,expected] of [["sulfur","needle_etch",9],["mercury","quicksilver_solvent",8]] as const) {
   const s = createPvpCombatState(snapshot("a",type),snapshot("b",type === "sulfur" ? "gold" : "sulfur"),catalogs) as any;
   equip(s.fighters.left,id); s.fighters.right.status.shield_pct=0.5;
   const right = type === "sulfur" ? "aurum_edge" : "cinder_fist";
@@ -323,7 +327,7 @@ test("ward pierce, dispel, initiative shields and conversion preserve defenses",
  }
  for (const second of [false,true]) {
   const s = createPvpCombatState(snapshot("a","mercury"),snapshot("b","sulfur"),catalogs) as any; equip(s.fighters.left,"fluid_anchor");
-  if (second) s.fighters.right.status.tempo_bonus=1;
+  if (second) s.fighters.right.status.tempo_bonus=5;
   const out = resolvePvpExchange(s,{turn:1,spell_id:"fluid_anchor"},{turn:1,spell_id:"ash_temper"},()=>0.5) as any;
   expect(out.state.fighters.left.status.shield_pct).toBe(second ? 0.18 : 0.08);
  }
@@ -369,7 +373,7 @@ test("ultra scales recoil, marks, order shields and leech caps but not conversio
   out = resolvePvpExchange(s,{turn:1,spell_id:"paradox_edict",ultra},{turn:1,spell_id:"brine_mend"},()=>0.5) as any;
   expect(out.state.fighters.right.status.hybrid_mark.remaining).toBe(ultra ? 4 : 2);
   s = createPvpCombatState(snapshot("a","mercury"),snapshot("b","sulfur"),catalogs) as any;
-  s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"fluid_anchor"); s.fighters.right.status.tempo_bonus=1;
+  s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"fluid_anchor"); s.fighters.right.status.tempo_bonus=5;
   out = resolvePvpExchange(s,{turn:1,spell_id:"fluid_anchor",ultra},{turn:1,spell_id:"ash_temper"},()=>0.5) as any;
   expect(out.state.fighters.left.status.shield_pct).toBe(ultra ? 0.36 : 0.18);
   s = createPvpCombatState(snapshot("a","gold"),snapshot("b","sodium"),catalogs) as any;
@@ -378,10 +382,10 @@ test("ultra scales recoil, marks, order shields and leech caps but not conversio
   out = resolvePvpExchange(s,{turn:1,spell_id:"gilded_lien",ultra},{turn:1,spell_id:"brine_mend"},()=>0.5) as any;
   expect(out.events.find((e: any)=>e.kind === "ward_convert").damage).toBe(14);
  }
- const s = setup(); s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"last_axiom"); s.fighters.left.hp=6;
+ const s = setup(); s.fighters.left.entity.base_stats.tempo = 100; s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"last_axiom"); s.fighters.left.hp=6;
  const lethal = resolvePvpExchange(s,{turn:1,spell_id:"last_axiom",ultra:true},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
  expect(lethal.state.fighters.left.hp).toBe(0); expect(lethal.events.find((e: any)=>e.kind === "recoil").damage).toBe(8);
- const capped = setup(); equip(capped.fighters.left,"echo_siphon"); capped.fighters.left.hp=50; capped.fighters.right.hp=3;
+ const capped = setup(); capped.fighters.left.entity.base_stats.tempo = 100; equip(capped.fighters.left,"echo_siphon"); capped.fighters.left.hp=50; capped.fighters.right.hp=3;
  const hit = resolvePvpExchange(capped,{turn:1,spell_id:"echo_siphon"},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
  expect(hit.events.find((e: any)=>e.kind === "spell").spell_meta.context.actual_damage).toBe(3);
  expect(hit.events.find((e: any)=>e.kind === "life_leech_heal").amount).toBe(0);
@@ -434,7 +438,7 @@ test("focus, misalignment, tempo and homunculus stun affect their recipient inde
  expect(out.state.fighters.left.status.tempo_bonus).toBe(2);
  equip(out.state.fighters.left,"cinder_fist");
  const later = resolvePvpExchange(out.state,{turn:2,spell_id:"cinder_fist"},{turn:2,spell_id:"silver_needle"},()=>0.5) as any;
- expect(later.events.find((e: any)=>e.kind === "spell").side).toBe("left");
+ expect(later.events.find((e: any)=>e.kind === "spell").side).toBe("right");
  expect(later.state.fighters.left.status.tempo_bonus).toBe(0);
 });
 
@@ -483,10 +487,10 @@ test("normal spell multipliers follow catalog relationships and hybrid weights",
  const entries = Object.entries(matrix).flatMap(([a, row]: [string, any]) => Object.entries(row).map(([d, value]) => ({a, d, value: value as number})));
  const strong = entries.find(x => x.value > 1)!, weak = entries.find(x => x.value < 1)!;
  const input = (a: string, d: string, spell_type = a) => ({attacker_type: a, defender_type: d, spell_type, effectiveness: matrix});
- expect(normalSpellMultiplier(input(strong.a, strong.d))).toBeCloseTo(1.12);
- expect(normalSpellMultiplier(input(weak.a, weak.d))).toBeCloseTo(0.92);
- expect(normalSpellMultiplier({...input(weak.a, weak.d), disadvantage_reduction: 0.04})).toBeCloseTo(0.96);
- expect(normalSpellMultiplier({...input(strong.a, strong.d), advantage_bonus: 0.1})).toBeCloseTo(1.22);
+ expect(normalSpellMultiplier(input(strong.a, strong.d))).toBeCloseTo(1.18);
+ expect(normalSpellMultiplier(input(weak.a, weak.d))).toBeCloseTo(0.84);
+ expect(normalSpellMultiplier({...input(weak.a, weak.d), disadvantage_reduction: 0.04})).toBeCloseTo(0.88);
+ expect(normalSpellMultiplier({...input(strong.a, strong.d), advantage_bonus: 0.1})).toBeCloseTo(1.28);
  expect(normalSpellMultiplier({...input(strong.a, strong.d), defender_neutralize: 1})).toBe(1);
  expect(normalSpellMultiplier(input(strong.a, strong.d, "universal"))).toBe(1);
  const h = {...input(strong.a, strong.d, "hybrid"), primary_type: strong.a, secondary_type: strong.d};
@@ -515,12 +519,12 @@ test("normal action cooldowns decrement before the chosen spell cooldown is set"
 });
 
 test("six real unarmed entities have normal base stats on either side", () => {
- const fixtures: Record<string, number[]> = {sulfur: [104,21,11], mercury: [96,18,10], sodium: [112,16,16], aether: [102,20,12], vitriol: [104,19,12], gold: [104,18,14]};
+ const fixtures: Record<string, number[]> = {sulfur: [104,21,11], mercury: [96,19,10], sodium: [112,16,16], aether: [102,20,12], vitriol: [110,19,14], gold: [104,18,14]};
  for (const [type, expected] of Object.entries(fixtures)) for (const side of ["left", "right"] as const) {
   const a = snapshot("a", type), b = snapshot("b", type), state = createPvpCombatState(a, b, catalogs) as any;
   const f = state.fighters[side];
   expect([f.hp, f.max_hp, f.atk, f.def]).toEqual([expected[0], expected[0], expected[1], expected[2]]);
-  expect(f.hom_spent).toBe(true); expect(pvpInitiative(f).initiative).toBe(10);
+  expect(f.hom_spent).toBe(true); expect(pvpInitiative(f).initiative).toBe(f.entity.base_stats.tempo);
  }
 });
 
@@ -530,22 +534,22 @@ test("real progression applies independently with upgrades, mutation and synergy
  const original = structuredClone({left, right, catalogs});
  const state = createPvpCombatState(left, right, catalogs) as any, l = state.fighters.left, r = state.fighters.right;
  expect([l.hp,l.max_hp,l.atk,l.def]).toEqual([109,109,34,13]);
- expect([r.hp,r.max_hp,r.atk,r.def]).toEqual([105,105,19,12]);
+ expect([r.hp,r.max_hp,r.atk,r.def]).toEqual([105,105,20,12]);
  expect([l.item_fx.true_on_hit, r.item_fx.evasion_pct]).toEqual([1,0.08]);
- expect([pvpInitiative(l).initiative,pvpInitiative(r).initiative]).toEqual([10,17]);
+ expect([pvpInitiative(l).initiative,pvpInitiative(r).initiative]).toEqual([12,23]);
  const switched = refreshPvpWeapon(l, 2);
- expect([switched.hp,switched.max_hp,switched.atk,switched.def,pvpInitiative(switched).initiative]).toEqual([109,109,29,12,14]);
+ expect([switched.hp,switched.max_hp,switched.atk,switched.def,pvpInitiative(switched).initiative]).toEqual([109,109,29,12,16]);
  expect([l.active_weapon_slot,l.atk,l.def]).toEqual([1,34,13]);
  expect(refreshPvpWeapon(switched, 1).atk).toBe(34);
  const mirror = createPvpCombatState({...right, player_id: "a"}, {...left, player_id: "b"}, catalogs) as any;
- expect([mirror.fighters.left.atk, mirror.fighters.right.atk]).toEqual([19,34]);
+ expect([mirror.fighters.left.atk, mirror.fighters.right.atk]).toEqual([20,34]);
  expect({left, right, catalogs}).toEqual(original);
 });
 
 test("real scaled weapon and forged traits retain Godot truncation", () => {
  const l = {...snapshot("a", "sulfur"), weapon_ids: ["bismuth_talisman", null], homunculus_id: "nighty", item_progress: {bismuth_talisman: {level: 5, specialization: "aggressive", traits: [{id: "power_flat",points: 2},{id: "true_on_hit",points: 1},{id: "dot_true",points: 0}]}}, homunculus_progress: {nighty: {level: 3, mutation_id: "resonance"}}};
  const f = (createPvpCombatState(l, snapshot("b", "sulfur"), catalogs) as any).fighters.left;
- expect([f.max_hp,f.atk,f.def]).toEqual([110,29,14]);
+ expect([f.max_hp,f.atk,f.def]).toEqual([110,29,15]);
  expect(f.active_weapon.effects.power_flat[0]).toBeCloseTo(8.4);
  expect(f.item_fx.true_on_hit).toBeCloseTo(2.1);
  expect(f.hom_bonus.favorable_type_bonus).toBe(0.03);
@@ -580,7 +584,7 @@ test("empty first slot, fusion, switching defenses and initiative consumption", 
  const state = createPvpCombatState(l, snapshot("b", "sodium"), catalogs) as any, f = state.fighters.left;
  expect([f.active_weapon_slot, f.atk, f.def, f.max_hp, f.hom_synergy.type_adv_bonus]).toEqual([1,22,13,102,0.1]);
  f.status.tempo_bonus = 2; const init = pvpInitiative(f);
- expect(init.initiative).toBe(12); expect(init.fighter.status.tempo_bonus).toBe(0); expect(f.status.tempo_bonus).toBe(2);
+ expect(init.initiative).toBe(15); expect(init.fighter.status.tempo_bonus).toBe(0); expect(f.status.tempo_bonus).toBe(2);
  f.status.shield_pct = 0.4; f.weapon_shield_pct = 0.4; f.other_shield_pct = 0.2;
  const switched = refreshPvpWeapon(f, 2);
  expect([switched.atk, switched.def, switched.item_fx.true_on_hit, switched.item_fx.evasion_pct]).toEqual([26,14,1,0.02]);
@@ -606,7 +610,7 @@ test("switch actions tick cooldowns, respect stun and resolve for both humans", 
  expect(out.state.fighters.right.status.stun).toBe(0);
  expect(out.state.fighters.left.spell_cooldowns.cinder_fist).toBe(1);
  expect(out.state.fighters.right.spell_cooldowns.silver_needle).toBe(0);
- expect(out.events.filter((e: any) => ["switch", "stun"].includes(e.kind)).map((e: any) => [e.side, e.kind])).toEqual([["left", "switch"], ["right", "stun"]]);
+ expect(out.events.filter((e: any) => ["switch", "stun"].includes(e.kind)).map((e: any) => [e.side, e.kind])).toEqual([["right", "stun"], ["left", "switch"]]);
 });
 
 test("all 94 catalog spells resolve on either human side", () => {
@@ -632,7 +636,7 @@ test("both homunculi act after their owners; sacrifice and stun persist correctl
  state.fighters.left.hom_energy = 6; state.fighters.right.hom_energy = 3;
  state.fighters.right.status.hom_stun = 1;
  const out = resolvePvpExchange(state, {turn: 1, spell_id: "ash_temper", hom_action: "attack"}, {turn: 1, spell_id: "liquid_decoy", hom_action: "attack"}, () => 0.5) as any;
- expect(out.events.filter((e: any) => ["spell", "hom_attack", "hom_stun"].includes(e.kind)).map((e: any) => [e.side, e.kind])).toEqual([["left", "spell"], ["left", "hom_attack"], ["right", "spell"], ["right", "hom_stun"]]);
+ expect(out.events.filter((e: any) => ["spell", "hom_attack", "hom_stun"].includes(e.kind)).map((e: any) => [e.side, e.kind])).toEqual([["right", "spell"], ["right", "hom_stun"], ["left", "spell"], ["left", "hom_attack"]]);
  expect(out.events.find((e: any) => e.kind === "hom_attack").boosted).toBe(true);
  expect(out.state.fighters.left.hom_energy).toBe(1);
  expect(out.state.fighters.right.hom_energy).toBe(1);
@@ -741,4 +745,41 @@ test("malformed state and either illegal decision are rejected before RNG", () =
   const out = resolvePvpExchange(s, {turn: 1, spell_id: "cinder_fist"}, {turn: 1, spell_id: "silver_needle"}, () => {draws++; return 0.5;}) as any;
   expect(out.error).toBeDefined(); expect(draws).toBe(0); expect(s).toEqual(before);
  }
+});
+
+test("0.61s native type and equipment Tempo values", async () => {
+ const { normalSpellMultiplier } = await import("../pvp/combat");
+ const types = catalogs.types.effectiveness;
+ const relation = (a: string, d: string, reduction = 0) => normalSpellMultiplier({ attacker_type: a, defender_type: d, spell_type: a, effectiveness: types, disadvantage_reduction: reduction });
+ for (const [a, row] of Object.entries(types) as [string, Record<string, number>][]) for (const [d, value] of Object.entries(row)) expect(relation(a, d)).toBeCloseTo(value > 1 ? 1.18 : value < 1 ? 0.84 : 1);
+ const pair = Object.entries(types).flatMap(([a, row]: [string, any]) => Object.entries(row).filter(([,v]) => (v as number) < 1).map(([d]) => [a,d]))[0];
+ expect(relation(pair[0], pair[1], 0.15)).toBeCloseTo(0.99);
+ for (const [id,key,max] of [["bismuth_talisman","power_flat",8],["wind_amulet","tempo_flat",8],["saltstone_charm","guard_flat",9]] as const) {
+  const i = catalogs.items.find((v: any) => v.id === id); expect(i.effects[key][9]).toBe(max); expect(i.base_effects[key]).toBe(1);
+ }
+ const m = createPvpCombatState(snapshot("a","mercury"), snapshot("b","sulfur"), catalogs) as any;
+ expect(pvpInitiative(m.fighters.left).initiative).toBe(16); expect(pvpInitiative(m.fighters.right).initiative).toBe(12);
+ const sodium = createPvpCombatState(snapshot("a","sodium"),snapshot("b","mercury"),catalogs) as any;
+ expect(pvpInitiative(sodium.fighters.left).initiative).toBe(10);
+ const l = {...snapshot("a","sulfur"), weapon_ids:["bismuth_talisman","wind_amulet"]};
+ const f = (createPvpCombatState(l,snapshot("b","sulfur"),catalogs) as any).fighters.left;
+ expect(pvpInitiative(refreshPvpWeapon(f,2)).initiative).toBeGreaterThan(pvpInitiative(f).initiative);
+});
+
+test("0.61r PvP poison clamps at zero and dagger corrosion stays separate", () => {
+ for (const hp of [1, 2]) {
+  const s = setup(); s.battle_index=3; s.wins={left:1,right:1}; s.fighters.left.hp=hp; s.fighters.left.status.poison=1;
+  const r = resolvePvpExchange(s,{turn:1,spell_id:"ash_temper"},{turn:1,spell_id:"liquid_decoy"},()=>0.5) as any;
+  const tick = r.events.find((e: any) => e.kind === "poison" && e.side === "left"); expect(tick.damage).toBe(hp); expect(tick.hp).toBe(0);
+ }
+ const l = {...snapshot("a","sulfur"),weapon_ids:["vitriol_vial",null],homunculus_id:"pyritc",item_progress:{vitriol_vial:{level:10}}};
+ const s = createPvpCombatState(l,snapshot("b","sulfur"),catalogs) as any; s.fighters.left.item_fx.dot_true=20;
+ const r = resolvePvpExchange(s,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"ash_temper"},()=>0.5) as any;
+ expect(r.events.filter((e: any)=>e.kind === "dot_true" && e.side === "left").map((e: any)=>e.damage)).toEqual([4]);
+ expect(r.events.filter((e: any)=>e.kind === "hom_dot" && e.side === "left").map((e: any)=>e.damage)).toEqual([1]);
+});
+
+test("0.61s legacy PvP fighters fall back to ten Tempo", () => {
+ const fighter = setup().fighters.left; delete fighter.entity.base_stats.tempo;
+ expect(pvpInitiative(fighter).initiative).toBe(10);
 });
