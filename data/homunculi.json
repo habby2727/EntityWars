@@ -131,7 +131,7 @@
       "buff_hp": 2,
       "per_type": {
         "vitriol": {
-          "dot_true": 3
+          "dot_true": 2
         },
         "sulfur": {
           "dot_true": 1

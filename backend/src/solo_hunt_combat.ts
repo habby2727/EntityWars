@@ -275,10 +275,15 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   };
   const hit = (a: any, d: any, accuracy: number, power: number, actor: string, signatureType?: string) => {
     if ((actor === "boss" || actor === "minion") && (next.item_effects?.evasion_pct ?? 0) > 0 && draw() < next.item_effects.evasion_pct) { events.push({ actor: "player", target: actor === "minion" ? a.id : actor, kind: "evade" }); return false; }
-    let acc = accuracy - (a.atk > d.def * 1.6 ? 0.08 : 0);
-    if (a.max_hp > d.max_hp) acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
-    if (accuracyFocus > 0) acc = Math.min(0.99, acc + accuracyFocus);
-    if (accuracyMisalign > 0) acc = Math.max(0.55, acc - accuracyMisalign);
+    let acc = accuracy;
+    if (actor === "player" || signatureType !== undefined) {
+      acc += accuracyFocus - accuracyMisalign;
+    } else {
+      if (a.atk > d.def * 1.6) acc -= 0.08;
+      if (a.max_hp > d.max_hp) acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
+      if (accuracyFocus > 0) acc = Math.min(0.99, acc + accuracyFocus);
+      if (accuracyMisalign > 0) acc = Math.max(0.55, acc - accuracyMisalign);
+    }
     const actorId = actor === "minion" ? a.id : actor;
     const targetId = d === next.player ? "player" : d === next.boss ? "boss" : d.id;
     if (draw() >= Math.max(0, Math.min(1, acc))) { events.push({ actor: actorId, target: targetId, kind: "miss" }); return false; }

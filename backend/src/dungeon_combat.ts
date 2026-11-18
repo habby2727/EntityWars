@@ -349,8 +349,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     if (marked && --mark.remaining <= 0) delete target.status.hybrid_mark;
     let accuracy = chosen.accuracy;
     if (chosen.category === "attack") {
-      if (actor.status.focus_next > 0) accuracy = Math.min(0.99, accuracy + actor.status.focus_next);
-      if (actor.status.misalign_next > 0) accuracy = Math.max(0.55, accuracy - actor.status.misalign_next);
+      accuracy = Math.max(0, Math.min(1, accuracy + (actor.status.focus_next ?? 0) - (actor.status.misalign_next ?? 0)));
       delete actor.status.focus_next; delete actor.status.misalign_next;
     }
     const hit = draw() < accuracy;

@@ -1333,3 +1333,18 @@ test("0.61s Dungeon homunculus reflection applies once and survives switching", 
  const second = resolveDungeonTurn(first.next_state,{turn:2,switch_slot:2},()=>0.5);
  const hits = second.events.filter((e: any)=>e.kind === "reflect" && e.actor === "player"); expect(hits).toHaveLength(1); expect(hits[0].amount).toBe(1);
 });
+
+
+test("Dungeon spell accuracy clamps focus and misalignment without affecting support", () => {
+ const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+ const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+ const setup = buildTrustedCombatSetup({player_id:"test",state_revision:1,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{}}, {entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:null,spell_ids:ids,mode:"attack"}, all, {independentLoadout:true});
+ const make = () => { const s = createDungeonCombatState(setup, {floor:1,entity_id:"sulfur_01",type:"sulfur",hp:1000,attack:1,defense:1,homunculus_id:"cinder",homunculus_level:1,spell_ids:ids}, all); s.player.atk=100; s.player.max_hp=1000; return s; };
+ const cast = (s: any, id: string, n: number) => resolveDungeonTurn(s, {turn:1,spell_id:id}, () => n);
+ const s=make(); expect(cast(s,"cinder_fist",0.999999).events.filter((e: any) => e.kind === "damage" && e.actor === "player")).toHaveLength(1);
+ s.player.status.misalign_next=0.1; expect(cast(s,"cinder_fist",0.95).events.some((e: any) => e.kind === "spell" && e.actor === "player" && !e.hit)).toBe(true);
+ s.player.status.focus_next=0.2; expect(cast(s,"cinder_fist",0.999999).events.some((e: any) => e.kind === "damage" && e.actor === "player")).toBe(true);
+ expect(cast(make(),"furnace_rush",0.9).events.some((e: any) => e.kind === "spell" && e.actor === "player" && !e.hit)).toBe(true);
+ const support=make(); support.spells.find((x: any) => x.id === "ash_temper").accuracy=0.9; support.player.status.focus_next=0.2;
+ expect(cast(support,"ash_temper",0.95).events.some((e: any) => e.kind === "spell" && e.actor === "player" && !e.hit)).toBe(true);
+});

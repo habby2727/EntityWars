@@ -4046,7 +4046,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		var ev_item := _item_with_effect([_get_active_weapon(defender)], "evasion_pct")
 		_log_step("%s evades the strike via %s." % [defender.name, _item_label(ev_item)], func(): _animate_item_effect(defender, "evasion_pct"), _combat_event(defender, "miss", " evades via %s." % _item_label(ev_item), {}))
 		return false
-	if not _roll_hit(attacker, defender, accuracy, spell_attack, accuracy_focus, accuracy_misalign):
+	if not _roll_hit(attacker, defender, accuracy, spell_attack, accuracy_focus, accuracy_misalign, spell_attack and not context.is_empty()):
 		_log_step("%s's attack misses %s." % [attacker.name, defender.name], Callable(), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}))
 		return false
 
@@ -4788,21 +4788,24 @@ func _try_ignore_reflect(attacker: Dictionary) -> bool:
 		return false
 	return randf() < chance
 
-func _roll_hit(attacker: Dictionary, defender: Dictionary, base_accuracy: float, spell_attack: bool = false, accuracy_focus: float = 0.0, accuracy_misalign: float = 0.0) -> bool:
+func _roll_hit(attacker: Dictionary, defender: Dictionary, base_accuracy: float, spell_attack: bool = false, accuracy_focus: float = 0.0, accuracy_misalign: float = 0.0, spell_accuracy: bool = false) -> bool:
 	var acc := base_accuracy
-	var atk := float(attacker.get("atk", 0))
-	var def := float(defender.get("def", 0))
-	if atk > def * 1.6:
-		acc -= 0.08
-	var max_hp := float(attacker.get("max_hp", 0))
-	var def_hp := float(defender.get("max_hp", 0))
-	if max_hp > def_hp and max_hp > 0.0:
-		var diff_ratio := (max_hp - def_hp) / max_hp
-		acc -= clamp(diff_ratio * 0.2, 0.0, 0.15)
-	if accuracy_focus > 0.0:
-		acc = minf(0.99, acc + accuracy_focus)
-	if accuracy_misalign > 0.0:
-		acc = maxf(0.55, acc - accuracy_misalign)
+	if spell_accuracy:
+		acc += accuracy_focus - accuracy_misalign
+	else:
+		var atk := float(attacker.get("atk", 0))
+		var def := float(defender.get("def", 0))
+		if atk > def * 1.6:
+			acc -= 0.08
+		var max_hp := float(attacker.get("max_hp", 0))
+		var def_hp := float(defender.get("max_hp", 0))
+		if max_hp > def_hp and max_hp > 0.0:
+			var diff_ratio := (max_hp - def_hp) / max_hp
+			acc -= clamp(diff_ratio * 0.2, 0.0, 0.15)
+		if accuracy_focus > 0.0:
+			acc = minf(0.99, acc + accuracy_focus)
+		if accuracy_misalign > 0.0:
+			acc = maxf(0.55, acc - accuracy_misalign)
 	acc = clamp(acc, 0.0 if spell_attack else 0.6, 1.0 if spell_attack else 0.98)
 	return randf() < acc
 

@@ -302,6 +302,7 @@ test("summon before player initiative protects boss without redirecting the chos
 test("minion stun and poison expire independently without affecting the other minion", () => {
   const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_rare" }, selection, catalogs);
   let state = createCombatState(setup);
+  state.spells.find((s: any) => s.id === "cinder_fist").accuracy = 0.9;
   for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
   state.minions[0].status = { stun: 1, poison: 2 };
   const result = resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "minion_1" }, () => 0.99);
@@ -614,6 +615,7 @@ test("boss commits a shield after a damaging exchange and does not choose it twi
 test("Common power opportunity and Fury survive invalid decisions and stun", () => {
   let state = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs));
   state.boss.hp = 55;
+  state.spells.find((s: any) => s.id === "cinder_fist").accuracy = 0.9;
   state.boss_shield_phases = ["low"];
   for (let turn = 1; turn <= 4; turn++) {
     const result = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99);
@@ -663,7 +665,7 @@ test("validated setup and deterministic direct exchange", () => {
   expect(result.next_state.turn).toBe(1);
   expect(resolveCombatTurn(state, decision, rng)).toEqual(result);
   const missed = resolveCombatTurn(state, decision, () => 0.99);
-  expect([missed.next_state.player.hp, missed.next_state.boss.hp, missed.next_state.rng_counter]).toEqual([104, 112, 2]);
+  expect([missed.next_state.player.hp, missed.next_state.boss.hp, missed.next_state.rng_counter]).toEqual([104, 100, 3]);
   expect(resolveCombatTurn({ ...state, terminal_result: "WIN" }, decision, rng)).toEqual({ error: "INVALID_DECISION" });
   expect(state).toEqual(before);
   expect(resolveCombatTurn(state, { ...decision, hp: 999 }, rng)).toEqual({ error: "INVALID_DECISION" });
@@ -756,7 +758,7 @@ test("validated Mercury and Sodium defensive spells", () => {
   const snare = cast(mercury(), "mercury_snare", () => 0);
   expect(snare.next_state.boss.status.hom_stun).toBe(1);
   const miss = cast(mercury(), "mercury_snare", () => 0.99);
-  expect(miss.next_state.boss.hp).toBe(112);
+  expect(miss.next_state.boss.hp).toBe(106);
   expect(miss.next_state.cooldowns.mercury_snare).toBe(3);
   expect(cast(sodium(), "bastion_return")).toEqual(reflected);
   for (const [state, id] of [[mercury(), "silver_needle"], [mercury(), "false_signal"], [sodium(), "crystal_ram"]] as const) {
@@ -814,23 +816,23 @@ test("Gold spells and received-hit tracking across exchanges", () => {
   const fixture = () => createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, entity_id: "gold_01", spell_ids: spells }, catalogs));
   const action = (turn: number, spell_id: string) => ({ turn, spell_id, target: "boss" });
   const state = fixture();
-  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([104, 18, 14]);
+  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([104, 19, 14]);
   for (const spell of spells) {
     const result = resolveCombatTurn(fixture(), action(1, spell), rng);
     expect(result.error).toBeUndefined();
     expect(result.next_state.cooldowns[spell]).toBe(state.spells.find((s: any) => s.id === spell).cooldown_turns);
   }
   const normal = resolveCombatTurn(fixture(), action(1, "tribunal_strike"), rng);
-  expect(normal.next_state.boss.hp).toBe(99);
+  expect(normal.next_state.boss.hp).toBe(98);
   const first = resolveCombatTurn(fixture(), action(1, "aurum_edge"), rng).next_state;
   expect(first.player.spell_hit_this_exchange).toBe(true);
   const boosted = resolveCombatTurn(first, action(2, "tribunal_strike"), rng);
-  expect(boosted.events.find((e: any) => e.actor === "player" && e.kind === "damage").damage).toBe(16);
+  expect(boosted.events.find((e: any) => e.actor === "player" && e.kind === "damage").damage).toBe(18);
   expect(boosted).toEqual(resolveCombatTurn(first, action(2, "tribunal_strike"), rng));
   const outgoing = fixture(); outgoing.boss.status.stun = 1;
   const onlyHit = resolveCombatTurn(outgoing, action(1, "aurum_edge"), rng).next_state;
   expect(onlyHit.player.spell_hit_this_exchange).toBe(false);
-  expect(resolveCombatTurn(onlyHit, action(2, "tribunal_strike"), rng).events[0].damage).toBe(13);
+  expect(resolveCombatTurn(onlyHit, action(2, "tribunal_strike"), rng).events[0].damage).toBe(14);
   const missed = resolveCombatTurn(fixture(), action(1, "aurum_edge"), () => 0.99).next_state;
   expect(missed.player.spell_hit_this_exchange).toBe(false);
   const blocked = fixture(); blocked.player.status.shield_pct = 1;
@@ -1072,18 +1074,18 @@ test("synergy damage, neutralization, corrosion and incoming reduction", () => {
   expect(m.events.find((e: any) => e.kind === "damage").damage).toBe(15);
   const pyritc = fixture("vitriol_01", "pyritc", "sodium_01"); pyritc.boss.status.stun = 1;
   const p = resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng);
-  expect(p.events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 3, actual_damage: 3, hp: p.next_state.boss.hp });
+  expect(p.events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 2, actual_damage: 2, hp: p.next_state.boss.hp });
   const partial = structuredClone(pyritc); partial.boss.hp = p.events.find((e: any) => e.kind === "damage" && e.actor === "player").actual_damage + 2;
-  expect(resolveCombatTurn(partial, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng).events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 3, actual_damage: 2, hp: 0 });
+  expect(resolveCombatTurn(partial, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng).events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 2, actual_damage: 2, hp: 0 });
   const lethal = structuredClone(pyritc); lethal.boss.hp = 1;
-  expect(resolveCombatTurn(lethal, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng).events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 3, actual_damage: 0, hp: 0 });
+  expect(resolveCombatTurn(lethal, { turn: 1, spell_id: "etching_fang", target: "boss" }, rng).events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "boss", damage: 2, actual_damage: 0, hp: 0 });
   const guarded = structuredClone(pyritc);
   guarded.minions = [{ id: "minion_0", hp: 2, max_hp: 20, atk: 1, def: 0, type: "", status: {} }, { id: "minion_1", hp: 20, max_hp: 20, atk: 1, def: 0, type: "", status: { stun: 1 } }];
   guarded.summoned = true;
   const minionHit = resolveCombatTurn(guarded, { turn: 1, spell_id: "etching_fang", target: "minion_0" }, rng);
-  expect(minionHit.events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "minion_0", damage: 3, actual_damage: 0, hp: 0 });
+  expect(minionHit.events.find((e: any) => e.kind === "hom_corrosion")).toMatchObject({ target: "minion_0", damage: 2, actual_damage: 0, hp: 0 });
   expect(minionHit.next_state.minions[1].hp).toBe(20);
-  expect(resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, () => 0.99).events.some((e: any) => e.kind === "hom_corrosion")).toBe(false);
+  expect(resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, () => 0.999999).events.some((e: any) => e.kind === "hom_corrosion")).toBe(true);
   const silk = fixture("sodium_01", "silphide", "sodium_01");
   const reduced = resolveCombatTurn(silk, { turn: 1, spell_id: "salt_barrier", target: "boss" }, (_t, i) => [0, 0, 0.99][i % 3]);
   expect(reduced.next_state.player.hp).toBe(107);
@@ -1164,7 +1166,7 @@ test("weapon evasion, ward, corrosion and reflection prevention activate", () =>
   const mirror = fixture("mirror_sigel", 5); mirror.boss.status.stun = 1;
   const guarded = resolveCombatTurn(mirror, action("ash_temper"), rng).next_state;
   expect([guarded.player.status.shield_pct, guarded.player.status.reflect_pct]).toEqual([0.08, 0.07]);
-  const returned = resolveCombatTurn(guarded, { turn: 2, spell_id: "cinder_fist", target: "boss" }, rng);
+  const returned = resolveCombatTurn(guarded, { turn: 2, spell_id: "cinder_fist", target: "boss" }, () => 0.5);
   expect(returned.events.find((event: any) => event.kind === "reflect").damage).toBe(1);
   expect(returned.next_state.player.status.reflect_pct).toBeUndefined();
   const corrosion = fixture("vitriol_vial", 5); corrosion.boss.status.stun = 1;
@@ -1415,4 +1417,14 @@ test("inspiration catalog includes compatible new universal and secondary hybrid
   const vitriol = { ...selection, entity_id: "vitriol_01", spell_ids: ["etching_fang", "caustic_mark", "bitter_haze", "rot_harvest"] };
   const other = createCombatState(buildTrustedCombatSetup(snapshot, vitriol, catalogs));
   expect(other.inspiration_catalog.some((spell: any) => spell.id === "septic_echo")).toBe(true);
+});
+
+
+test("Hunt spell accuracy respects debuffs and does not penalize guaranteed spells", () => {
+ const make = () => { const s = createCombatState(buildTrustedCombatSetup(snapshot, selection, catalogs)); s.boss.status.stun = 1; s.player.atk = 100; s.player.max_hp = 1000; return s; };
+ const cast = (s: any, id: string, n: number) => resolveCombatTurn(s, {turn:1,spell_id:id,target:"boss"}, () => n);
+ const s = make(); expect(cast(s,"cinder_fist",0.999999).events.filter((e: any) => e.kind === "damage" && e.actor === "player")).toHaveLength(1);
+ s.player.status.misalign_next = 0.1; expect(cast(s,"cinder_fist",0.95).events.some((e: any) => e.kind === "miss" && e.actor === "player")).toBe(true);
+ s.player.status.focus_next = 0.2; expect(cast(s,"cinder_fist",0.999999).events.some((e: any) => e.kind === "damage" && e.actor === "player")).toBe(true);
+ expect(cast(make(),"furnace_rush",0.9).events.some((e: any) => e.kind === "miss" && e.actor === "player")).toBe(true);
 });

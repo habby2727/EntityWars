@@ -290,11 +290,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       const focus = a.status.focus_next ?? 0, misalign = a.status.misalign_next ?? 0;
       if (focus > 0 || misalign > 0) { delete a.status.focus_next; delete a.status.misalign_next; }
       if ((b.item_fx.evasion_pct ?? 0) > 0 && draw() < b.item_fx.evasion_pct) { emit(opponent, "miss", " evades.", { kind: "evade", target_side: side, spell_id: spell.id }); return; }
-      let accuracy = spell.accuracy;
-      if (a.atk > b.def * 1.6) accuracy -= 0.08;
-      if (a.max_hp > b.max_hp && a.max_hp > 0) accuracy -= Math.max(0, Math.min(0.15, (a.max_hp - b.max_hp) / a.max_hp * 0.2));
-      if (focus > 0) accuracy = Math.min(0.99, accuracy + focus);
-      if (misalign > 0) accuracy = Math.max(0.55, accuracy - misalign);
+      const accuracy = spell.accuracy + focus - misalign;
       if (draw() >= Math.max(0, Math.min(1, accuracy))) { emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id }); return; }
       const as = a.hom_spent ? {} : a.hom_synergy, bs = b.hom_spent ? {} : b.hom_synergy;
       const mult = normalSpellMultiplier({ attacker_type: a.type, defender_type: b.type, spell_type: spell.type, primary_type: spell.primary_type, secondary_type: spell.secondary_type, effectiveness: (next.types as any).effectiveness, advantage_bonus: a.hom_spent ? 0 : (as.type_adv_bonus ?? 0) + (a.hom_bonus.favorable_type_bonus ?? 0), disadvantage_reduction: a.item_fx.disadvantage_reduction, attacker_neutralize: a.spell_neutralize_active, defender_neutralize: b.spell_neutralize_active, attacker_hom_neutralize: as.type_neutralize, defender_hom_neutralize: bs.type_neutralize });
