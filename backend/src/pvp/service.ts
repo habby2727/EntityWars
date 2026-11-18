@@ -3,6 +3,8 @@ import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { createPvpCombatState, createPvpFighter, validatePvpDecision, resolvePvpExchange, resolvePvpInspiration, type PvpSide, type PvpCatalogs, type PvpSnapshot } from "./combat";
 import { createPvpRanking, pvpRank, pvpRatingDelta, pvpSeason } from "./ranking";
 
+const PVP_TURN_TIMEOUT_MS = 90_000;
+
 export function pvpRandom(secret: Uint8Array, matchId: string, battle: number, turn: number, draw: number): number {
   if (!(secret instanceof Uint8Array) || secret.length < 32 || typeof matchId !== "string" || !matchId || ![battle, turn, draw].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error("INVALID_PVP_RNG_INPUT");
   return createHmac("sha256", secret).update(JSON.stringify(["ranked-pvp-v1", matchId, battle, turn, draw])).digest().readUInt32BE(0) / 0x100000000;
@@ -80,7 +82,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
         const season = pvpSeason(now);
         const leftRating = rankings.ensure(season, left.player_id, now).rating;
         const rightRating = rankings.ensure(season, right.player_id, now).rating;
-        match.run(id, now, now, JSON.stringify(combat), season, now + 60_000);
+        match.run(id, now, now, JSON.stringify(combat), season, now + PVP_TURN_TIMEOUT_MS);
         member.run(id, left.player_id, "LEFT", JSON.stringify(left), now, leftRating);
         member.run(id, right.player_id, "RIGHT", JSON.stringify(right), now, rightRating);
         remove.run(other.player_id);
@@ -221,7 +223,7 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
       if ("error" in out) throw new Error(out.error);
       state = out.state; for (const e of out.events) event(row.match_id,e,now);
     }
-    db.query("UPDATE pvp_matches SET combat_state_json = ?, revision = revision + 1, updated_at = ?, decision_deadline = ? WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(state),now,now+60_000,row.match_id);
+    db.query("UPDATE pvp_matches SET combat_state_json = ?, revision = revision + 1, updated_at = ?, decision_deadline = ? WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(state),now,now+PVP_TURN_TIMEOUT_MS,row.match_id);
     if (state.match_result) settlePvpMatch(db,row.match_id,state.match_result,now);
   };
   const checkTimeout = (row: any, now: number) => { if (row.status === "ACTIVE" && row.decision_deadline <= now) advance(row,now,true); };

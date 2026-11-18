@@ -125,6 +125,7 @@ test("private simultaneous decisions resolve once, preserve revisions and enforc
  for(const id of ["a","b","c"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now); queue.join("a",{});
  const match=(queue.join("b",{}) as any).match_id, service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);
+ expect(service.state(match,"a").deadline).toBe(now + 90_000);
  const decision={turn:1,spell_id:"cinder_fist"};
  const first=service.decide(match,"a","action-a",1,decision);
  expect(first.combat_revision).toBe(1); expect(first.ready).toEqual({player:true,enemy:false});
@@ -134,12 +135,14 @@ test("private simultaneous decisions resolve once, preserve revisions and enforc
  expect(service.decide(match,"a","action-a",1,decision)).toEqual(first);
  expect(()=>service.decide(match,"a","action-a",1,{turn:1,spell_id:"ash_temper"})).toThrow("ACTION_CONFLICT");
  const resolved=service.decide(match,"b","action-b",1,decision); expect(resolved.combat_revision).toBe(2); expect(resolved.turn).toBe(1);
+ expect(resolved.deadline).toBe(now + 90_000);
  expect(resolved.events.filter((e: any)=>e.kind==="spell")).toHaveLength(2);
  const last=resolved.events[resolved.events.length-1].id; expect(service.state(match,"b",last).events).toEqual([]);
  db.query("INSERT INTO pvp_events (match_id,seq,kind,visibility,payload_json,created_at) VALUES (?,?,?,'public',?,?)").run(match,last+1,"damage",JSON.stringify({kind:"damage",side:"left",target_side:"right",spell_id:"cinder_fist",show_spell_link:false,effectiveness:1.12,spell_meta:{internal:"secret"}}),now);
  const safe=service.state(match,"b",last).events[0]; expect(safe.effectiveness).toBe(1.12); expect(safe.show_spell_link).toBe(false); expect(safe.spell_meta).toBeUndefined();
  expect(()=>service.state(match,"c")).toThrow("MATCH_NOT_FOUND");
- now+=60000; expect(service.state(match,"a").result.result).toBe("draw");
+ now+=89_000; expect(service.state(match,"a").status).toBe("ACTIVE");
+ now+=1_000; expect(service.state(match,"a").result.result).toBe("draw");
  expect(service.state(match,"b").result.result).toBe("draw"); db.close();
 });
 
@@ -149,7 +152,7 @@ test("missing decisions forfeit and pending Inspiration auto-declines on timeout
  for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now); queue.join("a",{});
  let id=(queue.join("b",{}) as any).match_id; const service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);
- service.decide(id,"a","a1",1,{turn:1,spell_id:"cinder_fist"}); now+=60000;
+ service.decide(id,"a","a1",1,{turn:1,spell_id:"cinder_fist"}); now+=90_000;
  const win = service.state(id,"a").result, loss = service.state(id,"b").result;
  expect(win).toMatchObject({result:"win", mp_delta:24, mp_total_after:1024, league:"Copper", division:"IV"});
  expect(loss).toMatchObject({result:"loss", mp_delta:-12, mp_total_after:988, league:"Copper", division:"IV"});
@@ -160,6 +163,6 @@ test("missing decisions forfeit and pending Inspiration auto-declines on timeout
  for(const side of ["left","right"]) { const f=state.fighters[side]; f.inspiration=3; f.inspiration_pending=true; f.inspiration_offers=f.inspiration_catalog.slice(0,3).map((s: any)=>s.id); }
  db.query("UPDATE pvp_matches SET combat_state_json = ? WHERE match_id = ?").run(JSON.stringify(state),id);
  expect(service.state(id,"a").enemy.inspiration_offers).toBeUndefined();
- now+=60000; const after=service.state(id,"a"); expect(after.status).toBe("ACTIVE"); expect(after.turn).toBe(0); expect(after.player.inspiration_pending).toBe(false); expect(after.enemy.inspiration_pending).toBe(false); expect(after.combat_revision).toBe(2);
+ now+=90_000; const after=service.state(id,"a"); expect(after.status).toBe("ACTIVE"); expect(after.turn).toBe(0); expect(after.player.inspiration_pending).toBe(false); expect(after.enemy.inspiration_pending).toBe(false); expect(after.combat_revision).toBe(2);
  db.close();
 });

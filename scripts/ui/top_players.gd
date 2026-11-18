@@ -17,6 +17,7 @@ var season_label: Label
 var footer_label: Label
 var status: Label
 var toggle: Button
+var recovering_previous := false
 
 func _ready() -> void:
 	_build_ui()
@@ -26,6 +27,11 @@ func _ready() -> void:
 	backend.auth_changed.connect(_on_auth_changed)
 	backend.api_completed.connect(_on_response)
 	add_child(backend)
+	var refresh_timer := Timer.new()
+	refresh_timer.wait_time = 60.0
+	refresh_timer.timeout.connect(_refresh_rankings)
+	add_child(refresh_timer)
+	refresh_timer.start()
 	if backend.token.is_empty():
 		status.text = "Sign in to view rankings."
 	else:
@@ -43,8 +49,13 @@ func _on_identity(state: Dictionary) -> void:
 func _on_auth_changed(_token: String) -> void:
 	request_id = ""
 	data.clear()
+	recovering_previous = false
 	toggle.disabled = false
 	status.text = "Sign in to view rankings."
+
+func _refresh_rankings() -> void:
+	if request_id.is_empty() and not backend.token.is_empty() and not backend._verified_player_id.is_empty():
+		_request(showing_previous if not data.is_empty() else false)
 
 func _request(previous: bool) -> void:
 	if not request_id.is_empty():
@@ -58,6 +69,7 @@ func _request(previous: bool) -> void:
 	requested_previous = previous
 	request_id = backend.request_api("GET", path, null)
 	if request_id.is_empty():
+		recovering_previous = false
 		status.text = "Connection unavailable. Return and try again."
 		return
 	toggle.disabled = true
@@ -70,13 +82,27 @@ func _on_response(id: String, ok: bool, response: Dictionary) -> void:
 	toggle.disabled = false
 	if not ok:
 		var error := str(response.get("error", ""))
+		if error == "INVALID_SEASON" and requested_previous and not recovering_previous:
+			recovering_previous = true
+			_request(false)
+			return
+		recovering_previous = false
 		status.text = "Ranked is currently unavailable." if error == "PVP_DISABLED" else "Could not load rankings. Please try again."
 		return
 	data = response
 	showing_previous = requested_previous
 	toggle.text = "Current Season" if showing_previous else "Previous Season"
 	status.text = ""
+	var card_position := (cards.get_parent() as ScrollContainer).scroll_vertical
+	var global_position := (global_rows.get_parent() as ScrollContainer).scroll_vertical
+	var division_position := (division_rows.get_parent() as ScrollContainer).scroll_vertical
 	_render()
+	(cards.get_parent() as ScrollContainer).set_deferred("scroll_vertical", card_position)
+	(global_rows.get_parent() as ScrollContainer).set_deferred("scroll_vertical", global_position)
+	(division_rows.get_parent() as ScrollContainer).set_deferred("scroll_vertical", division_position)
+	if recovering_previous:
+		recovering_previous = false
+		_request(true)
 
 func _build_ui() -> void:
 	var margin := MarginContainer.new()
@@ -144,6 +170,7 @@ func _build_ui() -> void:
 	right.add_child(tables)
 	var global_box := _table(tables, "Global Top 10")
 	var global_header := HBoxContainer.new()
+	global_header.alignment = BoxContainer.ALIGNMENT_CENTER
 	global_box.add_child(global_header)
 	var season_background := _panel(Vector4(8, 4, 8, 4))
 	season_background.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -156,10 +183,14 @@ func _build_ui() -> void:
 	Art.button(toggle)
 	global_header.add_child(toggle)
 	toggle.pressed.connect(func(): _request(not showing_previous))
-	global_box.add_child(_backed_label("RANK    PLAYER                         LEAGUE / DIVISION      MP", 14, GOLD))
+	var global_columns := _backed_label("RANK    PLAYER    LEAGUE / DIVISION    MP", 14, GOLD)
+	global_columns.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	global_box.add_child(global_columns)
 	global_rows = _table_rows(global_box)
 	var division_box := _table(tables, "Top 10 of Your Division")
-	division_box.add_child(_backed_label("RANK     PLAYER                                                MP", 14, GOLD))
+	var division_columns := _backed_label("RANK    PLAYER    MP", 14, GOLD)
+	division_columns.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	division_box.add_child(division_columns)
 	division_rows = _table_rows(division_box)
 	var footer := HBoxContainer.new()
 	outer.add_child(footer)
@@ -207,7 +238,9 @@ func _table(parent: Control, title: String) -> VBoxContainer:
 	box.custom_minimum_size.x = 520
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	parent.add_child(box)
-	box.add_child(_backed_label(title, 25, GOLD))
+	var heading := _backed_label(title, 25, GOLD)
+	heading.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(heading)
 	return box
 
 func _table_rows(box: VBoxContainer) -> VBoxContainer:
@@ -282,33 +315,31 @@ func _month(season: String) -> String:
 func _render_rows(container: VBoxContainer, rows: Array, global: bool) -> void:
 	_clear(container)
 	if rows.is_empty():
-		container.add_child(_backed_label("No rankings from this season" if global else "No rankings in your division", 19, CYAN))
+		var empty := _backed_label("No rankings from this season" if global else "No rankings in your division", 19, CYAN)
+		empty.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		container.add_child(empty)
 		return
 	for entry in rows:
 		if not entry is Dictionary:
 			continue
 		var viewer := str(entry.get("player_id", "")) == backend._verified_player_id
 		var panel := _panel(Vector4(8, 4, 8, 4))
+		panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		if viewer:
 			panel.modulate = Color(1.2, 1.1, 0.78)
 		container.add_child(panel)
 		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
 		panel.add_child(row)
 		var rank := int(entry.get("rank", 0))
 		var rank_color := GOLD if rank == 1 else (Color("c8d0d6") if rank == 2 else (Color("c58f68") if rank == 3 else Color.WHITE))
 		var rank_label := _label("#%d" % rank, 18, rank_color)
-		rank_label.custom_minimum_size.x = 40
 		row.add_child(rank_label)
 		row.add_child(_icon(str(entry.get("league", "")), 128, 40))
 		var name_label := _label(str(entry.get("display_name", "")), 18, GOLD if viewer else Color.WHITE)
-		name_label.custom_minimum_size.x = 120
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_label.clip_text = true
 		row.add_child(name_label)
 		if global:
 			var league_label := _label("%s %s" % [entry.get("league", ""), entry.get("division", "")], 16, CYAN)
-			league_label.custom_minimum_size.x = 110
 			row.add_child(league_label)
 		var mp_label := _label("%d MP" % int(entry.get("mp", 0)), 18, GOLD)
-		mp_label.custom_minimum_size.x = 80
 		row.add_child(mp_label)

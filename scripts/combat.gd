@@ -128,6 +128,8 @@ var _online_processed_turns := {}
 var _online_presenting_events := false
 var _online_terminal_shown := false
 var _reward_popup_shown := false
+static var _global_reward_presented := {}
+var _global_reward_popup_layer: CanvasLayer
 var _online_identity_invalid := false
 var _online_event_turn := -1
 var _online_hunt_info: Label
@@ -1453,15 +1455,28 @@ func _present_online_terminal() -> void:
 	_online_hunt_info.text = "Server result: " + ("VICTORY" if status == "VERIFIED_WIN" else "DEFEAT")
 	if status == "VERIFIED_WIN":
 		if _online_hunt_session.has("global_event_id"):
-			var global_status: Dictionary = _online_hunt_session.get("global_status", {})
+			var global_value: Variant = _online_hunt_session.get("global_status", {})
+			var global_status: Dictionary = global_value if global_value is Dictionary else {}
+			var session_key := str(_online_hunt_session.get("session_id", ""))
+			if session_key.is_empty():
+				session_key = str(get_instance_id())
+			var presented: Dictionary = _global_reward_presented.get(session_key, {})
 			if global_status.get("reward_status") == "WAITING":
 				_online_hunt_info.text = "Victory registered — awaiting other players (%d/5)" % int(global_status.get("winner_count", 0))
+				if not presented.get("waiting", false) and not presented.get("paid", false):
+					presented["waiting"] = true
+					_global_reward_presented[session_key] = presented
+					_show_global_rewards(global_status, false)
 			elif global_status.get("reward_status") == "PAID":
 				_online_hunt_info.text = "Victory registered — reward delivered (5/5)"
+				if not presented.get("paid", false) and global_status.get("reward") is Dictionary:
+					presented["paid"] = true
+					_global_reward_presented[session_key] = presented
+					_show_global_rewards(global_status, true)
 			else:
 				_online_hunt_info.text = "Victory after event completion — no reward registered."
 		var reward: Variant = _online_hunt_session.get("pve_reward", {})
-		if reward is Dictionary and reward.get("grants") is Dictionary:
+		if not _online_hunt_session.has("global_event_id") and reward is Dictionary and reward.get("grants") is Dictionary:
 			var parts: Array[String] = []
 			for resource in reward.grants:
 				parts.append("+%s %s" % [str(reward.grants[resource]), str(resource).replace("_", " ").capitalize()])
@@ -4458,8 +4473,10 @@ func _result_popup(title: String) -> VBoxContainer:
 	glow.bind_node(layer)
 	return body
 
-func _show_pve_rewards(grants: Dictionary) -> void:
+func _show_pve_rewards(grants: Dictionary, possible: Dictionary = {}, global_status: Dictionary = {}) -> void:
 	var body := _result_popup("REWARDS")
+	if not global_status.is_empty():
+		_global_reward_popup_layer = body.get_parent().get_parent().get_parent().get_parent() as CanvasLayer
 	var catalog := AssetCatalog.new()
 	for resource in grants:
 		var row := HBoxContainer.new()
@@ -4474,7 +4491,12 @@ func _show_pve_rewards(grants: Dictionary) -> void:
 			icon.texture = catalog.get_tex(str(resource))
 		row.add_child(icon)
 		var label := Label.new()
-		label.text = "+%s  %s" % [str(grants[resource]), _reward_resource_name(str(resource)).replace("_", " ").capitalize()]
+		var prefix := "Potential: " if global_status.get("reward_status") == "WAITING" else "+"
+		label.text = "%s%s  %s" % [prefix, str(grants[resource]), _reward_resource_name(str(resource)).replace("_", " ").capitalize()]
+		if possible.has(resource):
+			label.text += "\nPossible drop (%s%% chance)" % str(snappedf(float(possible[resource]) * 100.0, 0.1))
+		elif global_status.get("reward_status") == "WAITING":
+			label.text += "\nGuaranteed on completion"
 		label.add_theme_font_size_override("font_size", 24)
 		label.add_theme_color_override("font_color", Color("d9f7f4"))
 		row.add_child(label)
@@ -4484,6 +4506,37 @@ func _show_pve_rewards(grants: Dictionary) -> void:
 		pulse.tween_property(icon, "scale", Vector2.ONE, 0.8).set_trans(Tween.TRANS_SINE)
 		pulse.bind_node(icon)
 	catalog.free()
+	if not global_status.is_empty():
+		var pending: bool = global_status.get("reward_status") == "WAITING"
+		var count := clampi(int(global_status.get("winner_count", 0)), 0, 5)
+		var message := Label.new()
+		message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		message.add_theme_font_size_override("font_size", 20)
+		message.add_theme_color_override("font_color", Color("e7d293") if pending else Color("92d8dc"))
+		message.text = "REWARDS PENDING\nNot credited yet.\nWaiting for %d more players to defeat this Global Boss.\nProgress: %d/5 victories" % [maxi(0, 5 - count), count] if pending else "REWARDS RECEIVED\nGlobal Boss completed — 5/5 victories."
+		body.add_child(message)
+
+func _show_global_rewards(global_status: Dictionary, paid: bool) -> void:
+	if is_instance_valid(_global_reward_popup_layer):
+		_global_reward_popup_layer.queue_free()
+	if paid:
+		_show_pve_rewards(global_status.get("reward", {}), {}, global_status)
+		return
+	var file := FileAccess.open("res://data/static/balance.json", FileAccess.READ)
+	var parsed: Variant = JSON.parse_string(file.get_as_text()) if file else {}
+	var balance: Dictionary = parsed.get("balance", {}) if parsed is Dictionary else {}
+	var boss: Variant = _online_hunt_session.get("boss_definition", {})
+	var tier := str(boss.get("tier", "")) if boss is Dictionary else ""
+	var grants: Dictionary = balance.get("solo_hunt_rewards", {}).get("boss", {}).get(tier, {}).duplicate()
+	var bonuses: Dictionary = balance.get("solo_hunt_bonus_loot", {}).get(tier, {})
+	var chances := {}
+	for resource in bonuses:
+		var drop: Variant = bonuses[resource]
+		if drop is Dictionary:
+			grants[resource] = drop.get("quantity", 0)
+			chances[resource] = drop.get("chance", 0.0)
+	_show_pve_rewards(grants, chances, global_status)
 
 func _show_highlights() -> void:
 	var lines: Array[String] = []
