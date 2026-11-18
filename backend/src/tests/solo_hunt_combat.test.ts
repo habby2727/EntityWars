@@ -962,9 +962,9 @@ test("server Bismuth and Cinder progression applies without trusting client stat
   const selected = { ...selection, weapon_ids: ["bismuth_talisman", null], homunculus_id: "cinder" };
   const progress = { ...snapshot, item_progress: { bismuth_talisman: { level: 5 } }, homunculus_progress: { cinder: { level: 5 } } };
   const state = createCombatState(buildTrustedCombatSetup(progress, selected, catalogs));
-  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([109, 33, 13]);
+  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([109, 32, 13]);
   const base = createCombatState(buildTrustedCombatSetup(snapshot, selected, catalogs));
-  expect([base.player.hp, base.player.atk, base.player.def]).toEqual([104, 27, 12]);
+  expect([base.player.hp, base.player.atk, base.player.def]).toEqual([104, 26, 12]);
   state.boss.status.stun = 1;
   const before = structuredClone(state);
   const result = resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "hold" }, rng);
@@ -980,7 +980,7 @@ test("server Bismuth and Cinder progression applies without trusting client stat
   expect(nullified.events.some((e: any) => e.kind === "hom_damage")).toBe(false);
   expect([nullified.next_state.player.status.hom_stun, nullified.next_state.hom_energy]).toEqual([0, 1]);
   ready.hom_energy = 6;
-  expect(resolveCombatTurn(ready, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, rng).events.find((e: any) => e.kind === "hom_damage").damage).toBe(20);
+  expect(resolveCombatTurn(ready, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "attack" }, rng).events.find((e: any) => e.kind === "hom_damage").damage).toBe(19);
   ready.hom_energy = 3; ready.player.hp = 50;
   const sacrificed = resolveCombatTurn(ready, { turn: 1, spell_id: "cinder_fist", target: "boss", hom_action: "sacrifice" }, rng).next_state;
   expect([sacrificed.player.hp, sacrificed.player.max_hp, sacrificed.player.atk, sacrificed.player.def, sacrificed.hom_spent]).toEqual([80, 104, 27, 12, true]);
@@ -997,15 +997,15 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   const selected = { ...selection, weapon_ids: ["bismuth_talisman", null], homunculus_id: "cinder" };
   const progress = { ...snapshot, item_progress: { bismuth_talisman: { level: 5, specialization: "aggressive", traits: [{ id: "power_flat", points: 2 }, { id: "true_on_hit", points: 1 }, { id: "dot_true", points: 0 }] } }, homunculus_progress: { cinder: { level: 5, mutation_id: "vitality" } } };
   const enhanced = createCombatState(buildTrustedCombatSetup(progress, selected, catalogs));
-  expect([enhanced.player.hp, enhanced.player.atk, enhanced.item_effects.true_on_hit]).toEqual([114, 35, 2]);
+  expect([enhanced.player.hp, enhanced.player.atk, enhanced.item_effects.true_on_hit]).toEqual([114, 34, 2]);
   enhanced.boss.status.stun = 1;
-  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(110);
+  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(111);
   const supported = structuredClone(progress); supported.item_progress.bismuth_talisman.specialization = "technical";
   supported.item_progress.bismuth_talisman.traits = [{ id: "guard_flat", points: 2 }, { id: "power_flat", points: 1 }, { id: "tempo_flat", points: 0 }];
   expect(buildTrustedCombatSetup(supported, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
   const vitality = { ...snapshot, homunculus_progress: { cinder: { level: 5, mutation_id: "vitality" } } };
   const state = createCombatState(buildTrustedCombatSetup(vitality, selected, catalogs));
-  expect([state.player.hp, state.player.atk]).toEqual([114, 28]);
+  expect([state.player.hp, state.player.atk]).toEqual([114, 27]);
   const sodium = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, homunculus_id: "sodium" }, catalogs));
   expect(sodium.hom_id).toBe("sodium");
   sodium.boss.status.stun = 1;
@@ -1014,7 +1014,7 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   silphide.boss.status.tempo_bonus = 1;
   expect(resolveCombatTurn(silphide, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).events.find((e: any) => ["boss_action", "damage", "miss"].includes(e.kind)).actor).toBe("player");
   const catalyst = { ...snapshot, homunculus_progress: { cinder: { level: 5, mutation_id: "catalyst" } } };
-  expect(createCombatState(buildTrustedCombatSetup(catalyst, selected, catalogs)).player.atk).toBe(29);
+  expect(createCombatState(buildTrustedCombatSetup(catalyst, selected, catalogs)).player.atk).toBe(28);
   expect(buildTrustedCombatSetup({ ...snapshot, homunculus_progress: { cinder: { level: 99 } } }, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
 });
 
@@ -1172,7 +1172,7 @@ test("weapon evasion, ward, corrosion and reflection prevention activate", () =>
   const corrosion = fixture("vitriol_vial", 5); corrosion.boss.status.stun = 1;
   const corroded = resolveCombatTurn(corrosion, action("cinder_fist"), rng);
   expect(corroded.events.find((event: any) => event.kind === "corrosion").damage).toBe(2);
-  expect(corroded.next_state.boss.status.vuln_pct).toBe(0.1);
+  expect(corroded.next_state.boss.status.vuln_pct).toBe(0.06);
   const protectedPlayer = fixture("aether_knot", 10); protectedPlayer.boss.status.reflect_pct = 1; protectedPlayer.boss.status.stun = 1;
   const ignored = resolveCombatTurn(protectedPlayer, action("cinder_fist"), () => 0);
   expect(ignored.next_state.player.hp).toBe(104);

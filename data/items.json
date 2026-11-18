@@ -57,11 +57,11 @@
       "name": "Vitriol Dagger",
       "rarity": "advanced",
       "slot": "build",
-      "desc": "True corrosion damage on hit; 10% vulnerability; +1 Power.",
+      "desc": "True corrosion damage on hit; 6% vulnerability; +1 Power.",
       "base_effects": { "dot_true": 0 },
       "effects": {
         "dot_true": [1, 1, 1, 2, 2, 2, 2, 3, 3, 3],
-        "vuln_on_hit": [0.1],
+        "vuln_on_hit": [0.06],
         "power_flat": [1]
       }
     },

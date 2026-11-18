@@ -10,7 +10,7 @@
       "buff_hp": 0,
       "per_type": {
         "sulfur": {
-          "power_flat": 3
+          "power_flat": 2
         },
         "mercury": {
           "tempo_flat": 1

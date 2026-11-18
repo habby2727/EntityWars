@@ -534,16 +534,16 @@ test("real progression applies independently with upgrades, mutation and synergy
  const right = {...snapshot("b", "mercury"), weapon_ids: ["wind_amulet", "saltstone_charm"], homunculus_id: "silphide", item_progress: {wind_amulet: {level: 3}, saltstone_charm: {level: 0}}, homunculus_progress: {silphide: {level: 3, mutation_id: "vitality"}}};
  const original = structuredClone({left, right, catalogs});
  const state = createPvpCombatState(left, right, catalogs) as any, l = state.fighters.left, r = state.fighters.right;
- expect([l.hp,l.max_hp,l.atk,l.def]).toEqual([109,109,34,13]);
+ expect([l.hp,l.max_hp,l.atk,l.def]).toEqual([109,109,33,13]);
  expect([r.hp,r.max_hp,r.atk,r.def]).toEqual([105,105,20,12]);
  expect([l.item_fx.true_on_hit, r.item_fx.evasion_pct]).toEqual([1,0.08]);
  expect([pvpInitiative(l).initiative,pvpInitiative(r).initiative]).toEqual([12,23]);
  const switched = refreshPvpWeapon(l, 2);
- expect([switched.hp,switched.max_hp,switched.atk,switched.def,pvpInitiative(switched).initiative]).toEqual([109,109,29,12,16]);
- expect([l.active_weapon_slot,l.atk,l.def]).toEqual([1,34,13]);
- expect(refreshPvpWeapon(switched, 1).atk).toBe(34);
+ expect([switched.hp,switched.max_hp,switched.atk,switched.def,pvpInitiative(switched).initiative]).toEqual([109,109,28,12,16]);
+ expect([l.active_weapon_slot,l.atk,l.def]).toEqual([1,33,13]);
+ expect(refreshPvpWeapon(switched, 1).atk).toBe(33);
  const mirror = createPvpCombatState({...right, player_id: "a"}, {...left, player_id: "b"}, catalogs) as any;
- expect([mirror.fighters.left.atk, mirror.fighters.right.atk]).toEqual([20,34]);
+ expect([mirror.fighters.left.atk, mirror.fighters.right.atk]).toEqual([20,33]);
  expect({left, right, catalogs}).toEqual(original);
 });
 
@@ -815,4 +815,15 @@ test("level 10 aggressive dagger resets its allowance and switches cleanly", () 
  const off = play(second.state,3,{switch_slot:2}); expect(off.state.fighters.left.item_fx.dot_true).toBe(0);
  const back = play(off.state,4,{switch_slot:1}); expect(back.state.fighters.left.item_fx.dot_true).toBe(4);
  const again = play(back.state,5,{spell_id:"etching_fang"}); expect(again.events.filter((e: any) => e.side === "left" && e.kind === "dot_true").map((e: any) => e.damage)).toEqual([4]);
+});
+
+
+test("Sulfur Cinder grants four Power and dagger applies six percent vulnerability", () => {
+ const bare = createPvpCombatState(snapshot("a","sulfur"),snapshot("b","sodium"),catalogs) as any;
+ const withCinder = createPvpCombatState({...snapshot("a","sulfur"),homunculus_id:"cinder"},snapshot("b","sodium"),catalogs) as any;
+ expect(bare.fighters.left.atk).toBe(21); expect(withCinder.fighters.left.atk).toBe(25);
+ const dagger = createPvpCombatState({...snapshot("a","vitriol"),weapon_ids:["vitriol_vial",null],item_progress:{vitriol_vial:{level:1}}},snapshot("b","sodium"),catalogs) as any;
+ const result = resolvePvpExchange(dagger,{turn:1,spell_id:"etching_fang"},{turn:1,spell_id:"salt_barrier"},()=>0.5) as any;
+ expect(result.state.fighters.right.status.vuln_pct).toBe(0.06);
+ expect(result.events.filter((e: any)=>e.side === "left" && e.kind === "dot_true")).toHaveLength(1);
 });
