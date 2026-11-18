@@ -1,5 +1,7 @@
 ﻿extends Node
 
+const SETTINGS_PATH := "user://settings.cfg"
+
 var host
 var backend: BackendClient
 var request_id := ""
@@ -92,6 +94,10 @@ func _ready() -> void:
 	backend.auth_changed.connect(_on_auth)
 	backend.api_completed.connect(_on_response)
 	add_child(backend)
+	var config := ConfigFile.new()
+	config.load(SETTINGS_PATH)
+	if str(config.get_value("combat", "selected_seal", "practice")) == "pvp":
+		_select()
 
 func _make_selected_label(seal: BaseButton) -> Label:
 	var label := Label.new()
@@ -132,10 +138,18 @@ func _on_identity(state: Dictionary) -> void:
 	synced = true
 	next_poll = 0.0
 
+func _save_selection(value: String) -> void:
+	var config := ConfigFile.new()
+	config.load(SETTINGS_PATH)
+	config.set_value("combat", "selected_seal", value)
+	if config.save(SETTINGS_PATH) != OK:
+		push_warning("Could not save combat seal preference.")
+
 func _select() -> void:
 	if queued:
 		return
 	selected = true
+	_save_selection("pvp")
 	_update_selected_labels()
 	host._update_save_button_label()
 	availability_blocked = false
@@ -148,6 +162,7 @@ func _select() -> void:
 func _select_practice() -> void:
 	if not queued:
 		selected = false
+		_save_selection("practice")
 		_update_selected_labels()
 		host._update_save_button_label()
 		info.text = "Ranked"

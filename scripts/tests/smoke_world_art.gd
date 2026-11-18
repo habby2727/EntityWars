@@ -310,11 +310,8 @@ func _run_real_guardian() -> void:
 		return
 	loadout._on_play_pressed()
 	deadline = Time.get_ticks_msec() + 20000
-	while int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1 and Time.get_ticks_msec() < deadline:
+	while current_scene == loadout and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
-	loadout._on_play_pressed()
-	await process_frame
-	await process_frame
 	var combat = current_scene
 	if combat == loadout or not combat._online_hunt_guard:
 		push_error("Guardian combat entry failed")

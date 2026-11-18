@@ -101,6 +101,7 @@ var _hunt_submit_request := ""
 var _hunt_identity := ""
 var _hunt_payload: Dictionary = {}
 var _hunt_recovered := false
+var _hunt_ready_requested := false
 var _spell_debug := DebugFlags.new()
 var _preferences_owner := ""
 var _preferences_ready := false
@@ -292,7 +293,7 @@ func _ready() -> void:
 		add_child(ranked_queue)
 		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "PRACTICE"
 		$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseLabel.text = "RANKED PvP"
-		btn_seal_attack.set_pressed_no_signal(true)
+		btn_seal_attack.set_pressed_no_signal(not ranked_queue.selected)
 	if not _hunt_mode and not _dungeon_mode:
 		_restore_build_preferences(_verified_preferences_identity())
 	_refresh_details()
@@ -325,6 +326,8 @@ func _ready() -> void:
 		_set_build_error("Verifying account for Boss Hunt...")
 
 func _on_hunt_auth_changed(_token: String) -> void:
+	if not _hunt_identity.is_empty():
+		_hunt_ready_requested = false
 	_preferences_ready = false
 	_preferences_owner = ""
 	_hunt_recovered = false
@@ -376,12 +379,14 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 			_hunt_payload.clear()
 			SceneRouter._solo_hunt_context.erase("pending_loadout")
-			_set_build_error("Combat ready; connection pending.")
+			_hunt_recovered = true
+			_continue_hunt_ready()
 			return
 		if not ok and str(data.get("error", "")) in ["Invalid or unsupported hunt loadout.", "Invalid hunt loadout selection.", "Invalid hunt loadout request."]:
 			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 			_hunt_payload.clear()
 			SceneRouter._solo_hunt_context.erase("pending_loadout")
+			_hunt_ready_requested = false
 			_set_build_error("Loadout rejected: " + str(data.get("error")))
 			return
 		_hunt_recovered = false
@@ -402,6 +407,7 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 		return
 	if not ok or not session is Dictionary or not _accept_hunt_session(session):
 		_hunt_recovered = false
+		_hunt_ready_requested = false
 		_set_build_error("Boss Hunt unavailable or connection failed. Return to World Zone and retry.")
 		return
 	_hunt_recovered = true
@@ -414,11 +420,25 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 		_hunt_payload.clear()
 		SceneRouter._solo_hunt_context.erase("pending_loadout")
-		_set_build_error("Combat ready; connection pending.")
+		_continue_hunt_ready()
 	else:
 		_set_build_error("Session recovered. Retry the same loadout." if not _hunt_payload.is_empty() else "Session recovered. Select your loadout.")
 		if _hunt_payload.is_empty() and not SceneRouter._solo_hunt_context.has("pending_loadout"):
 			_restore_build_preferences(_hunt_identity)
+		if _hunt_ready_requested:
+			call_deferred("_submit_hunt_loadout")
+
+func _continue_hunt_ready() -> void:
+	if not _hunt_ready_requested:
+		_set_build_error("Combat ready. Press Ready to continue.")
+		return
+	_hunt_ready_requested = false
+	SceneRouter._hunt_loadout_active = false
+	var gate := get_node("/root/ConnectionGate")
+	if gate.blocked():
+		gate.recovery_to_combat()
+	else:
+		SceneRouter.go_to_combat()
 
 func _accept_hunt_session(session: Dictionary) -> bool:
 	if _hunt_identity.is_empty() or _hunt_backend == null or _hunt_backend._verified_player_id != _hunt_identity or str(session.get("session_id", "")) != str(SceneRouter._solo_hunt_context.get("session_id", "")):
@@ -1758,6 +1778,7 @@ func _on_play_pressed() -> void:
 		_submit_dungeon_loadout()
 		return
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
+		_hunt_ready_requested = true
 		_submit_hunt_loadout()
 		return
 	if _spell_pending_id != "":
@@ -1912,21 +1933,23 @@ func _submit_hunt_loadout() -> void:
 		if not _hunt_payload.is_empty() or SceneRouter._solo_hunt_context.has("pending_loadout") or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
 			_set_build_error("Combat session is not ready. Recover it and retry.")
 			return
-		SceneRouter._hunt_loadout_active = false
-		SceneRouter.go_to_combat()
+		_continue_hunt_ready()
 		return
 	if _hunt_payload.is_empty():
 		if _has_duplicate_build_items() or _current_entity_id.is_empty():
+			_hunt_ready_requested = false
 			_set_build_error("Choose an entity and two different weapons.")
 			return
 		var spells: Array = _equipped_spells(_mode, _current_entity_id)
 		var unique := {}
 		for id in spells:
 			if not id is String or id.is_empty() or unique.has(id):
+				_hunt_ready_requested = false
 				_set_build_error("Choose four distinct spells.")
 				return
 			unique[id] = true
 		if spells.size() != 4:
+			_hunt_ready_requested = false
 			_set_build_error("Choose four distinct spells.")
 			return
 		var first := _idx_to_id(_items, dd_item1)
