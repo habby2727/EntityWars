@@ -99,6 +99,7 @@ theme_override_font_sizes/font_size = 14
 script = ExtResource("3_back_button")
 target = "lab_hub"
 mouse_filter = 0
+visible = false
 
 [node name="LeftPanel" type="Panel" parent="Background/ContentMargin/RootHBox"]
 custom_minimum_size = Vector2(360, 0)
@@ -127,7 +128,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 8
 
-[node name="TopRow" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox"]
+[node name="TopRow" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
@@ -141,7 +142,6 @@ mouse_filter = 0
 theme_override_font_sizes/font_size = 14
 script = ExtResource("3_back_button")
 target = "lab_hub"
-visible = false
 
 [node name="ResourceBarPanel" type="PanelContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow"]
 layout_mode = 2
@@ -154,10 +154,10 @@ theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 4
 
-[node name="ResourceBar" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/ResourceBarPanel/BarMargin"]
+[node name="ResourceBar" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/ResourceBarPanel/BarMargin"]
 layout_mode = 2
-theme_override_constants/separation = 10
-alignment = 1
+theme_override_constants/separation = 0
+alignment = 0
 
 [node name="Scroll" type="ScrollContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox"]
 layout_mode = 2

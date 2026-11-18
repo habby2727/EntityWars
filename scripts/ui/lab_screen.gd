@@ -74,7 +74,7 @@ var _specialized_panel
 var _grid: GridContainer = null
 var _background_panel: PanelContainer = null
 var _resource_bar_panel: PanelContainer = null
-var _resource_bar: HBoxContainer = null
+var _resource_bar: VBoxContainer = null
 var _left_panel: Panel = null
 var _right_panel: Panel = null
 var _detail_icon: TextureRect = null
@@ -204,13 +204,6 @@ func _setup_compact_navigation() -> void:
 		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		overlay.z_index = 50
 		_background_panel.get_node("ContentMargin").add_child(overlay)
-	if overlay != null and _resource_bar_panel != null:
-		_resource_bar_panel.reparent(overlay)
-		_resource_bar_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
-		_resource_bar_panel.offset_left = -400
-		_resource_bar_panel.offset_right = 400
-		_resource_bar_panel.offset_top = -50
-		_resource_bar_panel.offset_bottom = -10
 	var heading := _right_panel.get_node_or_null("Margin/DetailVBox/CostHeader") as Label
 	if heading != null:
 		heading.add_theme_font_size_override("font_size", 14)
@@ -346,7 +339,7 @@ func _resolve_nodes() -> void:
 	_grid = get_node_or_null(grid_path) as GridContainer
 	_background_panel = get_node_or_null(background_panel_path) as PanelContainer
 	_resource_bar_panel = get_node_or_null(resource_bar_panel_path) as PanelContainer
-	_resource_bar = get_node_or_null(resource_bar_path) as HBoxContainer
+	_resource_bar = get_node_or_null(resource_bar_path) as VBoxContainer
 	_left_panel = get_node_or_null(left_panel_path) as Panel
 	_right_panel = get_node_or_null(right_panel_path) as Panel
 	_detail_icon = get_node_or_null(detail_icon_path) as TextureRect
@@ -1031,8 +1024,7 @@ func _update_detail() -> void:
 			var level := _get_building_level("storage_vault")
 			var route := _get_building_route("storage_vault")
 			var hq_path := _get_building_route("lab_th")
-			metrics["capacity"] = Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
-			metrics["next_capacity"] = Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance) if level < HqRules.get_max_level("storage_vault") else "MAX"
+			metrics["vault_details"] = ResourceBars.vault_details(_state, _db.balance, level, HqRules.get_max_level("storage_vault"), route, hq_path)
 		# Give the Vat catalog the top of the detail panel; keep other buildings' layout unchanged.
 		var detail: Node = _specialized_panel.get_parent()
 		detail.move_child(_specialized_panel, 0 if _selected_id == "homunculus_vat" else detail.get_child_count() - 1)

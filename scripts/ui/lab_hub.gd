@@ -71,7 +71,7 @@ var _background: TextureRect = null
 var _icon_layer: Control = null
 var _placeholder_popup: PopupPanel = null
 var _resource_bar_panel: PanelContainer = null
-var _resource_bar: HBoxContainer = null
+var _resource_bar: VBoxContainer = null
 var _structures_button: Button = null
 
 var _buttons: Dictionary = {}
@@ -115,7 +115,7 @@ func _resolve_nodes() -> void:
 	_icon_layer = get_node_or_null(icon_layer_path) as Control
 	_placeholder_popup = get_node_or_null(placeholder_popup_path) as PopupPanel
 	_resource_bar_panel = get_node_or_null(resource_bar_panel_path) as PanelContainer
-	_resource_bar = get_node_or_null(resource_bar_path) as HBoxContainer
+	_resource_bar = get_node_or_null(resource_bar_path) as VBoxContainer
 	_structures_button = get_node_or_null(structures_button_path) as Button
 	if _canvas != null:
 		_canvas.resized.connect(_on_canvas_resized)

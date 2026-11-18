@@ -64,6 +64,16 @@ test("authenticated claims are atomic, idempotent and survive server restart", a
   expect((await request("/world/missions/claim",claim,token)).status).toBe(409);
   record(db,id,Date.now(),{guardian:false,win:true,tier:"common"});
   const wallet=()=>JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(id) as any).state_json).wallet.essence;
+  const row=db.query("SELECT state_json FROM players WHERE player_id=?").get(id) as any;
+  const full=JSON.parse(row.state_json); full.wallet.essence=1312;
+  db.query("UPDATE players SET state_json=? WHERE player_id=?").run(JSON.stringify(full),id);
+  const rejected=await request("/world/missions/claim",claim,token);
+  expect(rejected.status).toBe(409); expect(rejected.data.error).toContain("Storage full");
+  expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(id) as any).state_json)).toEqual(full);
+  expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE player_id=? AND reason='WORLD_MISSION_CLAIM'").get(id) as any).n).toBe(0);
+  expect((await request("/world/missions",undefined,token)).data.daily.missions.find((m:any)=>m.id==="daily_boss").claimed).toBe(false);
+  expect((db.query("SELECT COUNT(*) AS n FROM action_log WHERE player_id=? AND client_action_id=?").get(id,claim.client_action_id) as any).n).toBe(0);
+  full.wallet.essence=1212; db.query("UPDATE players SET state_json=? WHERE player_id=?").run(JSON.stringify(full),id);
   const original=wallet();
   const results=await Promise.all([request("/world/missions/claim",claim,token),request("/world/missions/claim",claim,token)]);
   expect(results.map(r=>r.status)).toEqual([200,200]); expect(wallet()).toBe(original+100);

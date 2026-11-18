@@ -4,13 +4,32 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	for path in ["res://scenes/ui/LabHub.tscn", "res://scenes/ui/LabStructures.tscn"]:
+	for path in ["res://scenes/ui/LabHub.tscn", "res://scenes/ui/LabStructures.tscn", "res://scenes/ui/Lab.tscn"]:
 		var scene = load(path).instantiate()
 		root.add_child(scene)
 		await process_frame
 		scene._debug.unlock_all_buildings = true
 		scene._state = {"wallet": {"essence": 525, "core": 52, "arcane_shard": 26, "time_crystal": 10}, "wallet_capacities": {"essence": 9999}, "lab": {"hqPath": "Scientific", "buildings": {"storage_vault": {"level": 0, "route": ""}}}}
 		scene._update_resource_bar()
+		await process_frame
+		assert(scene._resource_bar is VBoxContainer)
+		var last_y := -1.0
+		for resource_id in ["essence", "core", "arcane_shard", "time_crystal"]:
+			var row: Control = scene._resource_rows[resource_id].row
+			assert(row.position.y > last_y, "vertical resource order")
+			last_y = row.position.y
+		for viewport_size in [Vector2i(1280, 720), Vector2i(1920, 1080)]:
+			root.size = viewport_size
+			await process_frame
+			await process_frame
+			var first_row: Control = scene._resource_rows.essence.row
+			var last_row: Control = scene._resource_rows.time_crystal.row
+			var back: Control = scene.get_node("Aspect/Canvas/TopOverlay/BackButton") if path.ends_with("LabHub.tscn") else scene.get_node("Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/BackButton")
+			assert(back.visible and not back.get_global_rect().intersects(first_row.get_global_rect()), "back remains accessible")
+			assert(first_row.get_global_rect().position.y >= back.get_global_rect().end.y, "resources below back")
+			if not path.ends_with("LabHub.tscn"):
+				var scroll: Control = scene.get_node("Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/Scroll")
+				assert(last_row.get_global_rect().end.y <= scroll.get_global_rect().position.y, "resources do not cover cards")
 		var expected := {"essence": 1312, "core": 131, "arcane_shard": 65, "time_crystal": 26}
 		var colors := {"essence": "46c77a", "core": "f29b42", "arcane_shard": "a56df2", "time_crystal": "45c9e8"}
 		for id in expected:
@@ -50,7 +69,14 @@ func _run() -> void:
 		scene._state.wallet_capacities = {"essence": 2500}
 		scene._update_resource_bar()
 		assert(int(scene._resource_rows.essence.bar.max_value) == 2500, "online uses server capacity")
-		print("PASS resource bars: ", path)
+		var bars = load("res://scripts/ui/lab_resource_bars.gd")
+		var details: String = bars.vault_details({"wallet_capacities": {"essence": 9999}}, scene._db.balance, 2, 10, "Reactive", "Industrial")
+		assert(details.contains("Essence | 9999 | 2646"))
+		assert(details.contains("Core | 226 | 264"))
+		assert(details.contains("Reactor pending-production capacity"))
+		var max_details: String = bars.vault_details({}, scene._db.balance, 10, 10, "", "Scientific")
+		assert(max_details.count("MAX") == 5)
+		print("PASS resource bars and vault details: ", path)
 		scene.queue_free()
 		await process_frame
 	quit()

@@ -140,7 +140,7 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 		"anomaly_containment": _anomaly_controls()
 		"lab_th": _hq(state, building_names)
 		"essence_reactor": _reactor_controls()
-		"storage_vault": _message("PANEL_STORAGE", tr("PANEL_STORAGE_TEXT").replace("\\n", "\n") % [metrics.get("capacity", "-"), metrics.get("next_capacity", "-"), _format_values(state.get("wallet", {}))])
+		"storage_vault": _message("PANEL_STORAGE", str(metrics.get("vault_details", "")))
 		"trade_hall": _message("PANEL_MARKET", "PANEL_MARKET_TEXT")
 		"world_gate": _message("PANEL_WORLD", "PANEL_WORLD_TEXT")
 		_:
@@ -176,7 +176,7 @@ func _notification(what: int) -> void:
 	elif _current_id == "storage_vault":
 		var description := find_child("LocalizationMessageBody", true, false) as Label
 		if description != null:
-			description.text = tr("PANEL_STORAGE_TEXT").replace("\\n", "\n") % [_lab_metrics.get("capacity", "-"), _lab_metrics.get("next_capacity", "-"), _format_values(_forge_state.get("wallet", {}))]
+			description.text = str(_lab_metrics.get("vault_details", ""))
 	elif _current_id == "lab_th":
 		var description := find_child("LocalizationMessageBody", true, false) as Label
 		if description != null:

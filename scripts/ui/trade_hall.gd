@@ -838,7 +838,7 @@ func _refresh_orders() -> void:
 		var price = int(entry.get("price_amount", 0))
 		var price_res = str(entry.get("price_resource_id", "essence"))
 		var info := Label.new()
-		info.text = "%s %s ? %s %s each (seller fee: %.2f%%)" % [amount, _resource_name(res_id), price, _resource_name(price_res), float(entry.get("fee_bps", 0)) / 100.0]
+		info.text = "%s %s for %s %s each (seller fee: %.2f%%)" % [amount, _resource_name(res_id), price, _resource_name(price_res), float(entry.get("fee_bps", 0)) / 100.0]
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var qty := LineEdit.new()
 		qty.custom_minimum_size = Vector2(int(round(60.0 * _ui_scale)), 0)
@@ -876,7 +876,7 @@ func _refresh_my_orders() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
 		var label := Label.new()
-		label.text = "%s %s ? %s %s each" % [entry.get("remaining", entry.get("amount", 0)), _resource_name(str(entry.get("resource_id", ""))), entry.get("price_amount", 0), _resource_name(str(entry.get("price_resource_id", "essence")))]
+		label.text = "%s %s for %s %s each" % [entry.get("remaining", entry.get("amount", 0)), _resource_name(str(entry.get("resource_id", ""))), entry.get("price_amount", 0), _resource_name(str(entry.get("price_resource_id", "essence")))]
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var cancel_btn := Button.new()
 		cancel_btn.text = "Cancel"
@@ -903,7 +903,7 @@ func _refresh_jobs() -> void:
 		var commission = int(entry.get("commission_amount", 0))
 		var commission_res = str(entry.get("commission_resource_id", "essence"))
 		var label := Label.new()
-		label.text = "You provide: %s %s\nPossible reward: %s?%s %s\nService fee: %s %s\nProcessing time: %ss ? %s" % [entry.get("input_amount", 0), _resource_name(str(entry.get("input_resource_id", ""))), out_min, out_max, _resource_name(out_res), commission, _resource_name(commission_res), duration, "%d/%d slots available" % [maxi(0, int(entry.get("queue_limit", 0)) - int(entry.get("pending_count", 0))), int(entry.get("queue_limit", 0))]]
+		label.text = "You provide: %s %s\nPossible reward: %s to %s %s\nService fee: %s %s\nProcessing time: %ss - %s" % [entry.get("input_amount", 0), _resource_name(str(entry.get("input_resource_id", ""))), out_min, out_max, _resource_name(out_res), commission, _resource_name(commission_res), duration, "%d/%d slots available" % [maxi(0, int(entry.get("queue_limit", 0)) - int(entry.get("pending_count", 0))), int(entry.get("queue_limit", 0))]]
 		label.tooltip_text = "The reward varies within the range. The service fee is charged for the service. Processing time determines when you can claim. Concurrent jobs are limited by the provider."
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var submit_btn := Button.new()

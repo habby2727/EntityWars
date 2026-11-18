@@ -1,4 +1,4 @@
-﻿extends RefCounted
+extends RefCounted
 
 const COLORS := {"essence": "46c77a", "core": "f29b42", "arcane_shard": "a56df2", "time_crystal": "45c9e8"}
 
@@ -94,3 +94,27 @@ static func update(rows: Dictionary, state: Dictionary, debug_mode: bool = false
 		bar.value = ratio * bar.max_value
 		label.text = "%d / %d" % [amount, cap] if cap > 0 else "%d / ?" % amount
 		clip.size.x = maxf(0.0, width - 4.0) * ratio
+
+static func wallet_capacities(level: int, route: String, hq_path: String, balance: Dictionary) -> Dictionary:
+	var capacity := Capacity.compute_total_capacity(level, route, hq_path, balance)
+	var multiplier: Variant = balance.get("wallet_storage_capacity_mult", 1.25)
+	if not (multiplier is int or multiplier is float) or not is_finite(float(multiplier)):
+		multiplier = 1.25
+	var base := int(floor(capacity * maxf(0.0, float(multiplier))))
+	return {"essence": maxi(1, base), "core": maxi(1, int(floor(base * 0.10))), "arcane_shard": maxi(1, int(floor(base * 0.05))), "time_crystal": maxi(1, int(floor(base * 0.02)))}
+
+static func vault_details(state: Dictionary, balance: Dictionary, level: int, max_level: int, route: String, hq_path: String) -> String:
+	var current := wallet_capacities(level, route, hq_path, balance)
+	var authoritative: Variant = state.get("wallet_capacities", {})
+	if authoritative is Dictionary:
+		for id in current:
+			if authoritative.has(id):
+				current[id] = authoritative[id]
+	var next := wallet_capacities(level + 1, route, hq_path, balance)
+	var lines := ["Resource | Current capacity | Next-level capacity"]
+	for pair in [["Essence", "essence"], ["Core", "core"], ["Arcane Shard", "arcane_shard"], ["Time Crystal", "time_crystal"]]:
+		lines.append("%s | %s | %s" % [pair[0], current[pair[1]], str(next[pair[1]]) if level < max_level else "MAX"])
+	var reactor := Capacity.compute_total_capacity(level, route, hq_path, balance)
+	var reactor_next := str(Capacity.compute_total_capacity(level + 1, route, hq_path, balance)) if level < max_level else "MAX"
+	lines.append("Reactor pending-production capacity: %s | %s" % [reactor, reactor_next])
+	return "\n".join(lines)

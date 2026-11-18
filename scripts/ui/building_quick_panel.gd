@@ -1,5 +1,7 @@
 extends PanelContainer
 
+const ResourceBars := preload("res://scripts/ui/lab_resource_bars.gd")
+
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 signal manage_requested(building_id: String)
 signal debug_state_changed(state: Dictionary)
@@ -193,13 +195,11 @@ func _refresh() -> void:
 		var current_rate := 0.0 if level <= 0 else engine._compute_output_rate(level, route, storage_route, hq_path, balance) * 3600.0
 		var next_rate: float = engine._compute_output_rate(level + 1, route, storage_route, hq_path, balance) * 3600.0
 		_detail.text = tr("LAB_ESTIMATED_RATE") % [current_rate, next_rate]
-	elif _building_id == "storage_vault" and level < max_level:
+	elif _building_id == "storage_vault":
 		var storage: Dictionary = buildings.get("storage_vault", {})
 		var route := str(storage.get("route", ""))
 		var hq_path := str(lab.get("hqPath", "Scientific"))
-		var current_capacity := Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
-		var next_capacity := Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance)
-		_detail.text = tr("LAB_CAPACITY") % [current_capacity, next_capacity]
+		_detail.text = ResourceBars.vault_details(_state, _db.balance, level, max_level, route, hq_path)
 	_icon.texture = _catalog.get_tex(_building_id) if _catalog.has(_building_id) else null
 	_level.text = tr("LAB_LEVEL_RANGE") % [level, max_level, ("  →  %s" % (level + 1)) if level < max_level else ""]
 	_requirement.text = ""

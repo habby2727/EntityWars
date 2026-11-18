@@ -2420,8 +2420,9 @@ async function startServer(): Promise<void> {
 						const player = JSON.parse(playerRow.state_json) as PlayerState;
 						if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(mission.reward).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
 						assertWalletInvariant(player.wallet);
-						const before = {...player.wallet}, credited: Record<string,number> = {};
-						for (const [id,amount] of Object.entries(mission.reward)) credited[id] = Math.min(amount, Math.max(0,(walletCapacities(player)[id] ?? getWalletCap(id))-(player.wallet[id] ?? 0)));
+						const capacities = walletCapacities(player);
+						if (Object.entries(mission.reward).some(([id, amount]) => amount > (capacities[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0))) throw new HttpError(409, "Storage full. Free space for the full mission reward.");
+						const before = {...player.wallet}, credited = {...mission.reward};
 						applyWalletGrant(player.wallet,credited); assertWalletInvariant(player.wallet);
 						player.updated_at = now;
 						if (updatePlayerStmt.run(JSON.stringify(player),now,playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
