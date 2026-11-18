@@ -521,7 +521,7 @@ func _update_npc_buttons() -> void:
 			if int(wallet.get(resource, 0)) < int(offer.pay[resource]):
 				affordable = false
 		var lab: Dictionary = _state.get("lab", {})
-		var available := int(lab.get("hqLevel", 0)) >= 2 and int(lab.get("buildings", {}).get("trade_hall", {}).get("level", 0)) >= 1
+		var available := int(lab.get("hqLevel", 0)) >= 1 and int(lab.get("buildings", {}).get("trade_hall", {}).get("level", 0)) >= 1
 		button.disabled = _busy or _npc_fetch_pending or _npc_expired or _backend == null or _backend.token == "" or int(offer.get("remaining", 0)) <= 0 or not affordable or not available
 
 func _update_npc_timers() -> void:

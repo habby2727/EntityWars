@@ -56,6 +56,8 @@ var _highlights := {"damage": 0, "damage_text": "", "reflection": 0, "reflection
 var _spell_damage_totals := {}
 var _combat_backend: BackendClient
 var _ranked_controller: Node
+var _hom_action_outlines: Array[Panel] = []
+var _hom_outline_tween: Tween
 var _combat_started := false
 var _combat_session_invalid := false
 var _combat_identity := ""
@@ -1040,6 +1042,15 @@ func _layout_dungeon_floor_header() -> void:
 	_dungeon_floor_label.size = Vector2(spell_panel.size.x, 26)
 
 func _begin_combat_initialization() -> void:
+	if bool(SceneRouter._ranked_context.get("debug_visual", false)) and ConnectionGate.debug_lab_navigation_allowed():
+		_combat_debug = true
+		var debug := DebugFlags.new()
+		_combat_spell_state = debug.load_lab_state()
+		debug.free()
+		_start_combat()
+		_ranked_controller = preload("res://scripts/ui/ranked_combat.gd").new()
+		add_child(_ranked_controller)
+		return
 	if not str(SceneRouter._ranked_context.get("match_id", "")).is_empty():
 		_ranked_controller = preload("res://scripts/ui/ranked_combat.gd").new()
 		add_child(_ranked_controller)
@@ -2708,13 +2719,17 @@ func _setup_hom_ui() -> void:
 	_player_hom_status.position = Vector2(28, 540)
 	add_child(_player_hom_status)
 	hom_decision.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_setup_hom_action_outlines()
 	hom_decision.visibility_changed.connect(func():
 		if hom_decision.visible:
+			_set_hom_action_outline_active(true)
 			call_deferred("_position_hom_decision")
-		elif _decision_spacer_before >= 0.0:
-			$PlayerPanel/PlayerBottomSpacer.custom_minimum_size.y = _decision_spacer_before
-			$PlayerPanel.grow_vertical = _decision_growth_before
-			_decision_spacer_before = -1.0
+		else:
+			_set_hom_action_outline_active(false)
+			if _decision_spacer_before >= 0.0:
+				$PlayerPanel/PlayerBottomSpacer.custom_minimum_size.y = _decision_spacer_before
+				$PlayerPanel.grow_vertical = _decision_growth_before
+				_decision_spacer_before = -1.0
 	)
 	_enemy_hom_status = CombatHomStatus.new()
 	_enemy_hom_status.position = Vector2(1652, 540)
@@ -2765,6 +2780,35 @@ func _setup_combat_labels() -> void:
 		style.set_corner_radius_all(3)
 		panel.add_theme_stylebox_override("panel", style)
 		label.add_child(panel)
+
+func _setup_hom_action_outlines() -> void:
+	for button in [hom_decision.get_node("Hold"), hom_decision.get_node("Attack"), hom_decision.get_node("Sacrifice")]:
+		var outline := Panel.new()
+		outline.name = "ActionHighlight"
+		outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var style := StyleBoxFlat.new()
+		style.draw_center = false
+		style.border_color = Color("ffe329")
+		style.set_border_width_all(3)
+		style.set_corner_radius_all(4)
+		outline.add_theme_stylebox_override("panel", style)
+		button.add_child(outline)
+		outline.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_hom_action_outlines.append(outline)
+
+func _set_hom_action_outline_active(active: bool) -> void:
+	if _hom_outline_tween != null and _hom_outline_tween.is_valid():
+		_hom_outline_tween.kill()
+	if not active:
+		return
+	_hom_outline_tween = create_tween().set_loops()
+	_hom_outline_tween.set_parallel(true)
+	for outline in _hom_action_outlines:
+		outline.modulate.a = 1.0
+		_hom_outline_tween.tween_property(outline, "modulate:a", 0.2, 0.55)
+	_hom_outline_tween.chain().tween_property(_hom_action_outlines[0], "modulate:a", 1.0, 0.55)
+	for i in range(1, _hom_action_outlines.size()):
+		_hom_outline_tween.parallel().tween_property(_hom_action_outlines[i], "modulate:a", 1.0, 0.55)
 
 func _position_hom_decision() -> void:
 	var minimum := hom_decision.get_combined_minimum_size()

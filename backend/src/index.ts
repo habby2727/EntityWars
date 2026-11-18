@@ -1,3 +1,4 @@
+import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
@@ -1041,7 +1042,7 @@ function applyAction(
 		return applyClaim(next, payload, now);
 	}
 	if (actionType === "NPC_TRADE") {
-		if (next.lab.hqLevel < 2 || (next.lab.buildings.trade_hall?.level ?? 0) < 1) return { state: next, error: "Trade Hall unavailable." };
+		if (next.lab.hqLevel < HQ_RULES.trade_hall.unlock || (next.lab.buildings.trade_hall?.level ?? 0) < 1) return { state: next, error: "Trade Hall unavailable." };
 		const listing = npcTradeOffers(runtime, now);
 		const offer = listing.offers.find(entry => entry.id === payload?.offer_id && entry.period_key === payload?.period_key);
 		if (!offer || offer.remaining <= 0) return { state: next, error: "NPC offer unavailable or expired." };
@@ -2375,6 +2376,45 @@ async function startServer(): Promise<void> {
 						return jsonResponse(response);
 					}).immediate();
 				}
+				if (req.method == "GET" && url.pathname == "/world/missions") {
+					const playerId = await requireAuth(req, ctx);
+					return db.transaction(() => jsonResponse(missions.snapshot(db, playerId, Date.now()))).immediate();
+				}
+				if (req.method == "POST" && url.pathname == "/world/missions/claim") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !["client_action_id", "mission_id", "period_type", "period_key"].includes(k)) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || typeof body.mission_id !== "string" || !["daily", "weekly"].includes(body.period_type) || typeof body.period_key !== "string") throw new HttpError(400, "Invalid mission claim.");
+					const actionId = body.client_action_id.trim(), payload = {mission_id:body.mission_id, period_type:body.period_type, period_key:body.period_key};
+					return db.transaction(() => {
+						const now = Date.now();
+						const prior = getActionStmt.get(playerId, actionId) as {action_type:string; payload_json:string; result_state_json:string|null}|null;
+						if (prior) {
+							if (prior.action_type !== "WORLD_MISSION_CLAIM" || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+							return jsonResponse(JSON.parse(prior.result_state_json!));
+						}
+						const type = body.period_type as missions.Period;
+						if (body.period_key !== missions.period(now,type).key) throw new HttpError(409, "Mission period expired.");
+						const mission = missions.active(now,type).find(m => m.id === body.mission_id);
+						if (!mission) throw new HttpError(409, "Mission is not active.");
+						const data = missions.load(db,playerId,type,now), value = data.progress[mission.id];
+						if (data.claimed[mission.id] || (Array.isArray(value) ? value.length : (value ?? 0)) < mission.target) throw new HttpError(409, "Mission unavailable for claim.");
+						const playerRow = getPlayerByIdStmt.get(playerId) as {state_json:string}|null;
+						if (!playerRow) throw new HttpError(404, "Player not found.");
+						const player = JSON.parse(playerRow.state_json) as PlayerState;
+						if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(mission.reward).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
+						assertWalletInvariant(player.wallet);
+						const before = {...player.wallet}, credited: Record<string,number> = {};
+						for (const [id,amount] of Object.entries(mission.reward)) credited[id] = Math.min(amount, Math.max(0,getWalletCap(id)-(player.wallet[id] ?? 0)));
+						applyWalletGrant(player.wallet,credited); assertWalletInvariant(player.wallet);
+						player.updated_at = now;
+						if (updatePlayerStmt.run(JSON.stringify(player),now,playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+						auditWalletMutation(playerId,computeWalletDelta(before,player.wallet),"WORLD_MISSION_CLAIM",actionId,now);
+						data.claimed[mission.id]=true; missions.save(db,playerId,type,now,data);
+						const response = {...missions.snapshot(db,playerId,now), credited};
+						insertActionStmt.run(playerId,actionId,"WORLD_MISSION_CLAIM",JSON.stringify(payload),JSON.stringify(response),now);
+						return jsonResponse(response);
+					}).immediate();
+				}
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts") {
 					return jsonResponse(soloBossSchedule(Date.now()));
 				}
@@ -2482,10 +2522,7 @@ async function startServer(): Promise<void> {
 							const configuredGrants = staticData.balance.solo_hunt_rewards?.[source]?.[tier];
 							if (!configuredGrants || typeof configuredGrants !== "object" || Array.isArray(configuredGrants) || Object.keys(configuredGrants).length === 0 || Object.entries(configuredGrants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || (amount as number) < 0)) throw new HttpError(500, "Invalid hunt reward configuration.");
 							const grants = { ...configuredGrants };
-							if (source === "boss" && tier === "common") {
-								const roll = createHmac("sha256", WORLD_SECRET).update("solo-hunt-common-core:" + row.session_id).digest().readUInt32BE(0) / 0x100000000;
-								if (roll < 0.3) grants.core = 1;
-							}
+							if (source === "boss") Object.assign(grants, bossBonusLoot(tier, row.session_id, WORLD_SECRET));
 							const playerRow = getPlayerByIdStmt.get(playerId) as { state_json: string } | null;
 							if (!playerRow) throw new HttpError(404, "Player not found.");
 							let player: PlayerState;
@@ -2504,6 +2541,11 @@ async function startServer(): Promise<void> {
 						}
 						const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ?, result_metadata_json = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, metadata, row.session_id, playerId, row.combat_revision, now);
 						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
+						if (!row.global_event_id) {
+							const boss = JSON.parse(row.boss_snapshot_json);
+							const damage = missions.bossDamage(result.events);
+							missions.record(db, playerId, now, {guardian:!!row.guardian_id, win:status === "VERIFIED_WIN", tier:boss.tier, zone:row.guardian_zone_id, appearance:boss.appearance_id, damage});
+						}
 						if (status === "VERIFIED_WIN" && row.global_event_id) settleGlobalBoss(row, now);
 						if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
 							db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
@@ -2542,6 +2584,7 @@ async function startServer(): Promise<void> {
 						const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1 WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), row.session_id, playerId, row.combat_revision, now);
 						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
 						const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId) as SoloHuntRow;
+						if (!row.global_event_id && !row.guardian_id && body.decision.kind === "choose") missions.record(db,playerId,now,{guardian:false,choose:true,session:row.session_id});
 						const response = soloHuntResponse(current);
 						insertActionStmt.run(playerId, actionId, "SOLO_HUNT_INSPIRATION", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
@@ -2963,6 +3006,20 @@ function globalBossForZone(zone: string, playerId: string, now: number) {
 	return { event_id: event.event_id, zone_id: zone, tier: event.tier, boss: JSON.parse(event.boss_snapshot_json), spawned_at: event.spawned_at, completed_at: event.completed_at, ...globalBossStatus(event.event_id, playerId) };
 }
 
+function bossBonusLoot(tier: string, sessionId: string, secret: string): Record<string, number> {
+	const config = staticData.balance.solo_hunt_bonus_loot?.[tier];
+	if (!config || ["core", "arcane_shard"].some(id => {
+		const drop = config[id];
+		return !staticData.resources.has(id) || !drop || typeof drop.chance !== "number" || !Number.isFinite(drop.chance) || drop.chance < 0 || drop.chance > 1 || !Number.isSafeInteger(drop.quantity) || drop.quantity < 0;
+	})) throw new HttpError(500, "Invalid boss bonus loot configuration.");
+	const grants: Record<string, number> = {};
+	for (const id of ["core", "arcane_shard"]) {
+		const roll = createHmac("sha256", secret).update(`solo-hunt-bonus:${id}:${sessionId}`).digest().readUInt32BE(0) / 0x100000000;
+		if (roll < config[id].chance) grants[id] = config[id].quantity;
+	}
+	return grants;
+}
+
 function settleGlobalBoss(row: SoloHuntRow, now: number) {
 	const event = db.query("SELECT * FROM global_boss_events WHERE event_id = ?").get(row.global_event_id) as any;
 	// A battle already in progress may finish after completion, without becoming a sixth winner.
@@ -2977,14 +3034,15 @@ function settleGlobalBoss(row: SoloHuntRow, now: number) {
 	const winners = db.query("SELECT player_id, session_id FROM global_boss_winners WHERE event_id = ? AND status = 'WAITING'").all(event.event_id) as { player_id: string; session_id: string }[];
 	if (winners.length !== 5) throw new HttpError(409, "Invalid global winner queue.");
 	for (const winner of winners) {
+		const winnerGrants = { ...grants, ...bossBonusLoot(event.tier, winner.session_id, WORLD_SECRET) };
 		const playerRow = getPlayerByIdStmt.get(winner.player_id) as { state_json: string } | null;
 		if (!playerRow) throw new HttpError(404, "Player not found.");
 		const player: PlayerState = JSON.parse(playerRow.state_json);
-		if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
+		if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(winnerGrants).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
 		const before = { ...player.wallet };
 		assertWalletInvariant(player.wallet);
 		const credited: Record<string, number> = {};
-		for (const [id, amount] of Object.entries(grants)) credited[id] = Math.min(amount as number, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+		for (const [id, amount] of Object.entries(winnerGrants)) credited[id] = Math.min(amount as number, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
 		applyWalletGrant(player.wallet, credited);
 		assertWalletInvariant(player.wallet);
 		player.updated_at = now;
@@ -4166,7 +4224,7 @@ const HQ_RULES: Record<string, { unlock: number; max: number; cap_per_hq: number
 	arcane_archives: { unlock: 3, max: 10, cap_per_hq: 1 },
 	sync_nexus: { unlock: 2, max: 10, cap_per_hq: 1 },
 	anomaly_containment: { unlock: 5, max: 10, cap_per_hq: 1 },
-	trade_hall: { unlock: 2, max: 10, cap_per_hq: 1 },
+	trade_hall: { unlock: 1, max: 10, cap_per_hq: 1 },
 	world_gate: { unlock: 1, max: 10, cap_per_hq: 1 }
 };
 

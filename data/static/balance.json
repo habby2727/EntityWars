@@ -5,6 +5,13 @@
       "guardian": {"common": {"essence": 3}, "mythic": {"essence": 5}, "rare": {"essence": 8}, "epic": {"essence": 12}},
       "boss": {"common": {"essence": 18}, "mythic": {"essence": 36}, "rare": {"essence": 54}, "epic": {"essence": 72}, "legendary": {"essence": 96}}
     },
+    "solo_hunt_bonus_loot": {
+      "common": {"core": {"chance": 0.50, "quantity": 1}, "arcane_shard": {"chance": 0.10, "quantity": 1}},
+      "mythic": {"core": {"chance": 0.50, "quantity": 1}, "arcane_shard": {"chance": 0.20, "quantity": 2}},
+      "rare": {"core": {"chance": 0.50, "quantity": 1}, "arcane_shard": {"chance": 0.30, "quantity": 2}},
+      "epic": {"core": {"chance": 0.50, "quantity": 1}, "arcane_shard": {"chance": 0.40, "quantity": 3}},
+      "legendary": {"core": {"chance": 0.50, "quantity": 1}, "arcane_shard": {"chance": 0.50, "quantity": 4}}
+    },
     "combat_rewards": [
       { "resource_id": "arcane_shard", "amount": 1, "weight": 0.30 },
       { "resource_id": "time_crystal", "amount": 1, "weight": 0.15 },

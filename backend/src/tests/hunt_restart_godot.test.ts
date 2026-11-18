@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
@@ -18,7 +18,7 @@ for (const [mode, kind, committed] of [["hunt", "victory", true], ["hunt", "turn
   const listener = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("reserved") });
   const port = listener.port;
   listener.stop();
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: process.env.NETR13_TEST_DATABASE_URL || "postgres://x:x@127.0.0.1:1/test", REDIS_URL: process.env.NETR13_TEST_REDIS_URL || "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", LOGIN_RATE_LIMIT_MAX: "500", RATE_LIMIT_MAX: "500" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: process.env.NETR13_TEST_DATABASE_URL || "postgres://x:x@127.0.0.1:1/test", REDIS_URL: process.env.NETR13_TEST_REDIS_URL || "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", WORLD_SECRET: "test-hunt-world-secret", LOGIN_RATE_LIMIT_MAX: "500", RATE_LIMIT_MAX: "500" };
   const server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   const base = `http://127.0.0.1:${port}`;
   const request = async (path: string, body?: unknown, token?: string) => {
@@ -170,7 +170,12 @@ for (const [mode, kind, committed] of [["hunt", "victory", true], ["hunt", "turn
     }
     if (kind === "victory") {
       const balance = JSON.parse(readFileSync(resolve(project, "data/static/balance.json"), "utf8")).balance;
-      const reward = balance.solo_hunt_rewards.boss.common as Record<string, number>;
+      const reward = { ...balance.solo_hunt_rewards.boss.common } as Record<string, number>;
+      for (const id of ["core", "arcane_shard"]) {
+        const drop = balance.solo_hunt_bonus_loot.common[id];
+        const roll = createHmac("sha256", env.WORLD_SECRET || "dev_world_secret").update(`solo-hunt-bonus:${id}:${sessionId}`).digest().readUInt32BE(0) / 0x100000000;
+        if (roll < drop.chance) reward[id] = drop.quantity;
+      }
       const expectedWallet = { ...walletAtStart };
       for (const [id, amount] of Object.entries(reward)) expectedWallet[id] = Math.min((balance.wallet_caps[id] ?? balance.wallet_max_per_resource), (expectedWallet[id] ?? 0) + amount);
       expect(victoryResponse.pve_reward).toEqual({ grants: reward, source: "boss", tier: "common" });

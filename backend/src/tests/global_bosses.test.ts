@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "bun:test";
+import { createHmac } from "node:crypto";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,7 +21,7 @@ test("global bosses persist per zone and use trusted sessions", async () => {
   const db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0" };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", WORLD_SECRET: "global-test-secret" };
   const spawn = () => Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   let server = spawn();
   const request = async (path: string, body?: unknown, token?: string) => {
@@ -145,7 +146,15 @@ test("global bosses persist per zone and use trusted sessions", async () => {
     expect((await request("/world/global-bosses", undefined, players[sixth].token)).data.events[0].reward_status).toBeNull();
     for (const i of [0, 1, 2, 3, fifth]) {
       expect(wallet(i).essence - before[i].essence).toBe(({ common: 18, mythic: 36, rare: 54, epic: 72, legendary: 96 } as Record<string, number>)[event.tier]);
-      expect(wallet(i).core).toBe(before[i].core);
+      const bonus = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance.solo_hunt_bonus_loot[event.tier];
+      const expected = { ...grants };
+      for (const id of ["core", "arcane_shard"]) {
+        const roll = createHmac("sha256", env.WORLD_SECRET).update(`solo-hunt-bonus:${id}:${sessions[i]}`).digest().readUInt32BE(0) / 0x100000000;
+        if (roll < bonus[id].chance) expected[id] = bonus[id].quantity;
+        expect((wallet(i)[id] ?? 0) - (before[i][id] ?? 0)).toBe(expected[id] ?? 0);
+      }
+      const paid = db.query("SELECT reward_json FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(event.event_id, players[i].player_id) as any;
+      expect(JSON.parse(paid.reward_json)).toEqual(expected);
       for (const [id, amount] of Object.entries(grants)) expect(wallet(i)[id] - (before[i][id] ?? 0)).toBe(Number(amount));
       expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = 'GLOBAL_BOSS_REWARD'").get(sessions[i]) as any).n).toBe(1);
     }

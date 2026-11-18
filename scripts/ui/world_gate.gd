@@ -124,6 +124,11 @@ var _hunt_start_id := ""
 var _hunt_start_payload := {}
 var _hunt_active := {}
 var _hunt_active_owner := ""
+var _missions_data: Dictionary = {}
+var _mission_period := "daily"
+var _mission_list: VBoxContainer
+var _mission_countdown: Label
+var _mission_reset_requested := false
 
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
@@ -157,6 +162,8 @@ func _ready() -> void:
 	_setup_farm_options()
 	_load_state()
 	_build_zone_cards()
+	_build_missions_panel()
+	_send_api_request("GET", "/world/missions", null, "missions", false)
 	_request_world_state()
 	_schedule_poll()
 
@@ -297,6 +304,7 @@ func _process(_delta: float) -> void:
 	if _hunt_elapsed >= 1.0:
 		_hunt_elapsed = 0.0
 		_update_hunt_countdowns()
+		_update_mission_countdown()
 	var remaining := _gate_remaining()
 	if remaining != _gate_display_seconds:
 		_gate_display_seconds = remaining
@@ -700,7 +708,14 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 		_flush_api_queue()
 		return
 	var kind = str(info.get("kind", ""))
-	if kind == "hunt_schedule":
+	if kind == "missions" or kind == "mission_claim":
+		_missions_data = data
+		_mission_reset_requested = false
+		_render_missions()
+		if kind == "mission_claim":
+			_backend.refresh_state()
+			_send_api_request("GET", "/world/missions", null, "missions", false)
+	elif kind == "hunt_schedule":
 		_hunt_loading = false
 		_hunt_bosses = data.get("bosses", []) if data.get("bosses", []) is Array else []
 		_hunt_rotation_key = int(data.get("rotation_key", -1))
@@ -756,6 +771,10 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 func _handle_api_error(info: Dictionary, data: Dictionary) -> void:
 	var kind = str(info.get("kind", ""))
 	var err = str(data.get("error", "Request failed."))
+	if kind == "missions" or kind == "mission_claim":
+		if _mission_countdown != null:
+			_mission_countdown.text = "Missions unavailable: %s" % err
+		return
 	if kind == "hunt_schedule":
 		_hunt_loading = false
 		_hunt_disconnected()
@@ -797,6 +816,7 @@ func _on_state_updated(state: Dictionary) -> void:
 		_hunt_start_id = ""
 		_hunt_start_payload.clear()
 		if not _player_id.is_empty():
+			_send_api_request("GET", "/world/missions", null, "missions", false)
 			_send_api_request("GET", "/world/boss-hunts/session", null, "hunt_session", false)
 	_player_world = state.get("world", {})
 	if typeof(_player_world) != TYPE_DICTIONARY:
@@ -1225,3 +1245,128 @@ func _count_farm_queue() -> int:
 		if str(entry.get("kind", "")) == "farm":
 			count += 1
 	return count
+
+func _build_missions_panel() -> void:
+	if _zone_list == null:
+		return
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.02, 0.07, 0.08, 0.94)
+	style.border_color = Color("8c7845")
+	style.set_border_width_all(1)
+	style.set_content_margin_all(14)
+	panel.add_theme_stylebox_override("panel", style)
+	_zone_list.get_parent().add_child(panel)
+	_zone_list.get_parent().move_child(panel, _zone_list.get_index() + 1)
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_child(column)
+	var header := Label.new()
+	header.text = "MISSIONS"
+	header.add_theme_color_override("font_color", Color("e8ce83"))
+	header.add_theme_font_size_override("font_size", 22)
+	column.add_child(header)
+	_mission_countdown = Label.new()
+	column.add_child(_mission_countdown)
+	var tabs := HBoxContainer.new()
+	column.add_child(tabs)
+	for period_name in ["daily", "weekly"]:
+		var button := Button.new()
+		button.text = "%s MISSIONS" % str(period_name).to_upper()
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		MenuArt.button(button)
+		button.pressed.connect(_select_mission_period.bind(period_name))
+		tabs.add_child(button)
+	_mission_list = VBoxContainer.new()
+	_mission_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mission_list.custom_minimum_size.x = 320
+	column.add_child(_mission_list)
+	_render_missions()
+
+func _select_mission_period(period_name: String) -> void:
+	_mission_period = period_name
+	_render_missions()
+
+func _update_mission_countdown() -> void:
+	if _mission_countdown == null:
+		return
+	var group: Dictionary = _missions_data.get(_mission_period, {})
+	var reset := int(group.get("next_reset_at", 0))
+	if reset <= 0:
+		_mission_countdown.text = "Loading missions..."
+		return
+	var remaining := reset - _get_server_now_ms()
+	_mission_countdown.text = "Resets in %s" % _hunt_clock(maxi(0, remaining))
+	if remaining <= 0 and not _mission_reset_requested:
+		_mission_reset_requested = true
+		_send_api_request("GET", "/world/missions", null, "missions", false)
+
+func _render_missions() -> void:
+	if _mission_list == null:
+		return
+	_clear_container(_mission_list)
+	_update_mission_countdown()
+	var group: Dictionary = _missions_data.get(_mission_period, {})
+	for mission in group.get("missions", []):
+		if not mission is Dictionary:
+			continue
+		var card := PanelContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.04, 0.10, 0.11, 0.95)
+		style.border_color = Color("647f7a")
+		style.set_border_width_all(1)
+		style.set_content_margin_all(10)
+		card.add_theme_stylebox_override("panel", style)
+		_mission_list.add_child(card)
+		var col := VBoxContainer.new()
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_child(col)
+		var title := Label.new()
+		title.text = str(mission.get("title", ""))
+		title.add_theme_color_override("font_color", Color("e8ce83"))
+		col.add_child(title)
+		var description := Label.new()
+		description.text = str(mission.get("description", ""))
+		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		description.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.add_child(description)
+		var progress := Label.new()
+		progress.text = "%d / %d" % [int(mission.get("progress", 0)), int(mission.get("target", 1))]
+		col.add_child(progress)
+		var bar := ProgressBar.new()
+		bar.max_value = int(mission.get("target", 1))
+		bar.value = int(mission.get("progress", 0))
+		bar.show_percentage = false
+		bar.custom_minimum_size.y = 8
+		col.add_child(bar)
+		var reward_row := HBoxContainer.new()
+		col.add_child(reward_row)
+		var rewards: Dictionary = mission.get("reward", {})
+		for resource in rewards:
+			var icon := TextureRect.new()
+			icon.custom_minimum_size = Vector2(24, 24)
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.texture = _catalog.get_tex(str(resource))
+			reward_row.add_child(icon)
+			var amount := Label.new()
+			amount.text = "%s %s" % [str(rewards[resource]), str(resource).capitalize()]
+			reward_row.add_child(amount)
+		var spacer := Control.new()
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		reward_row.add_child(spacer)
+		if bool(mission.get("claimed", false)):
+			var claimed := Label.new()
+			claimed.text = "CLAIMED"
+			reward_row.add_child(claimed)
+		elif bool(mission.get("completed", false)):
+			var claim := Button.new()
+			claim.text = "CLAIM"
+			MenuArt.button(claim)
+			claim.pressed.connect(_claim_mission.bind(str(mission.get("id", "")), _mission_period, str(group.get("period_key", ""))))
+			reward_row.add_child(claim)
+
+func _claim_mission(mission_id: String, period_name: String, period_key: String) -> void:
+	_send_api_request("POST", "/world/missions/claim", {"client_action_id": _make_client_id(), "mission_id": mission_id, "period_type": period_name, "period_key": period_key}, "mission_claim", false)

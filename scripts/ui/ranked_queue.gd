@@ -16,6 +16,7 @@ var rating_needed := false
 var availability_blocked := false
 var column: VBoxContainer
 var top_button: Button
+var debug_button: Button
 var cancel_button: Button
 var info: Label
 var overlay: ColorRect
@@ -59,6 +60,14 @@ func _ready() -> void:
 	preload("res://scripts/ui/menu_art.gd").button(top_button)
 	column.add_child(top_button)
 	top_button.pressed.connect(SceneRouter.go_to_top_players)
+	if ConnectionGate.debug_lab_navigation_allowed():
+		debug_button = Button.new()
+		debug_button.text = "PVP_DEBUG_COMBAT"
+		debug_button.custom_minimum_size.y = 48
+		preload("res://scripts/ui/menu_art.gd").button(debug_button)
+		column.add_child(debug_button)
+		debug_button.hide()
+		debug_button.pressed.connect(SceneRouter.go_to_debug_ranked_combat)
 	cancel_button = Button.new()
 	cancel_button.text = "X Cancel"
 	preload("res://scripts/ui/menu_art.gd").button(cancel_button)
@@ -104,6 +113,8 @@ func _make_selected_label(seal: BaseButton) -> Label:
 func _update_selected_labels() -> void:
 	practice_selected_label.visible = not selected
 	ranked_selected_label.visible = selected
+	if is_instance_valid(debug_button):
+		debug_button.visible = selected and ConnectionGate.debug_lab_navigation_allowed()
 
 func _on_auth(_token: String) -> void:
 	request_id = ""

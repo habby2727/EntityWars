@@ -36,6 +36,7 @@ var _lab_buttons: Array[Button] = []
 var _lab_metrics: Dictionary = {}
 var _vat_item := ""
 var _vat_info: Label
+var _vat_synergies: Label
 var _vat_status: Label
 var _vat_upgrade: Button
 var _vat_mutations: Array[Button] = []
@@ -779,7 +780,14 @@ func _catalog(homunculi: bool) -> void:
 	selected.set_border_width_all(1)
 	list.add_theme_stylebox_override("selected", selected)
 	list.add_theme_stylebox_override("selected_focus", selected)
-	row.add_child(list)
+	var catalog_column: VBoxContainer
+	if homunculi:
+		catalog_column = VBoxContainer.new()
+		row.add_child(catalog_column)
+		list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		catalog_column.add_child(list)
+	else:
+		row.add_child(list)
 	var preview := TextureRect.new()
 	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -796,7 +804,7 @@ func _catalog(homunculi: bool) -> void:
 	if not homunculi:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.add_child(heading)
-	var stats_area: BoxContainer = VBoxContainer.new() if homunculi else HBoxContainer.new()
+	var stats_area: BoxContainer = HBoxContainer.new()
 	stats_area.name = "CatalogStatsArea"
 	stats_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stats_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -805,7 +813,11 @@ func _catalog(homunculi: bool) -> void:
 	var preview_center := CenterContainer.new()
 	preview_center.name = "PreviewSlot"
 	preview_center.custom_minimum_size = Vector2(150, 150) if homunculi else Vector2(190, 190)
-	stats_area.add_child(preview_center)
+	if homunculi:
+		catalog_column.add_child(preview_center)
+		catalog_column.move_child(preview_center, 0)
+	else:
+		stats_area.add_child(preview_center)
 	var frame := TextureRect.new()
 	frame.custom_minimum_size = preview_center.custom_minimum_size
 	frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
@@ -823,7 +835,7 @@ func _catalog(homunculi: bool) -> void:
 	scroll.name = "StatsScroll"
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size.y = 135
+	scroll.custom_minimum_size.y = 60 if homunculi else 135
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	stats_area.add_child(scroll)
 	var info := Label.new()
@@ -834,7 +846,18 @@ func _catalog(homunculi: bool) -> void:
 		_vat_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	scroll.add_child(info)
+	if homunculi:
+		var text_column := VBoxContainer.new()
+		text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(text_column)
+		text_column.add_child(info)
+		_vat_synergies = Label.new()
+		_vat_synergies.add_theme_font_size_override("font_size", 15)
+		_vat_synergies.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_vat_synergies.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		text_column.add_child(_vat_synergies)
+	else:
+		scroll.add_child(info)
 	var actions := HBoxContainer.new()
 	if not homunculi:
 		actions.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -972,6 +995,12 @@ func _update_vat_status() -> void:
 	var mutations := HomProgress.mutation_catalog()
 	var active := str(entry.get("mutation_id", ""))
 	_vat_info.text = tr("VAT_DESCRIPTION").replace("\\n", "\n") % [GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", ""))), level, GameLocalization.catalog("mutation", active, "name", str(mutations.get(active, {}).get("name", tr("SPECIALIZATION_NONE_NAME")))), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
+	var synergy_values := _format_values(hom.get("per_type", {}))
+	if not synergy_values.is_empty() and _vat_info.text.ends_with(synergy_values):
+		_vat_info.text = _vat_info.text.left(_vat_info.text.length() - synergy_values.length()).strip_edges()
+		_vat_synergies.text = synergy_values
+	else:
+		_vat_synergies.text = ""
 	var wallet: Dictionary = _forge_state.get("wallet", {})
 	var essence_cost := 25 + 15 * level
 	var core_cost := 1 if level >= 5 else 0

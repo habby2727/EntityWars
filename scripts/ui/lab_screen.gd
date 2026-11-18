@@ -1054,6 +1054,9 @@ func _update_detail() -> void:
 			var hq_path := _get_building_route("lab_th")
 			metrics["capacity"] = Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
 			metrics["next_capacity"] = Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance) if level < HqRules.get_max_level("storage_vault") else "MAX"
+		# Give the Vat catalog the top of the detail panel; keep other buildings' layout unchanged.
+		var detail: Node = _specialized_panel.get_parent()
+		detail.move_child(_specialized_panel, 0 if _selected_id == "homunculus_vat" else detail.get_child_count() - 1)
 		_specialized_panel.show_building(_selected_id, _state, names, metrics, _spell_state_synced)
 		_update_lab_status()
 

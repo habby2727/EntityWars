@@ -43,7 +43,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
   const clockOffset = Math.floor(Date.now() / 900000) * 900000 + 120000 - Date.now();
-  const env = { ...process.env, DB_PATH: join(directory, "test.sqlite"), NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", TEST_CLOCK_OFFSET: String(clockOffset), WORLD_SECRET: "test-guardian-world-secret" };
+  const env = { ...process.env, DB_PATH: join(directory, "test.sqlite"), NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", LOGIN_RATE_LIMIT_MAX: "500", RATE_LIMIT_MAX: "500", TEST_CLOCK_OFFSET: String(clockOffset), WORLD_SECRET: "test-guardian-world-secret" };
   const spawnServer = () => Bun.spawn([process.execPath, "-e", "const realNow = Date.now.bind(Date); Date.now = () => realNow() + Number(process.env.TEST_CLOCK_OFFSET); await import('./src/index.ts');"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   let server = spawnServer();
   const request = async (path: string, body?: unknown, token?: string) => {
@@ -69,6 +69,21 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     expect((await action("sync-unbuilt-start", "SYNC_START")).status).toBe(400);
     expect((await action("sync-build", "UPGRADE_BUILDING")).status).toBe(200);
     expect((await action("sync-start", "SYNC_START")).status).toBe(200);
+    const trader = (await request("/auth/dev_login", { name: "trade_hq_test" })).data;
+    const tradeState = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(trader.player_id) as any).state_json);
+    tradeState.wallet = { ...tradeState.wallet, essence: 1000, core: 50, arcane_shard: 20, time_crystal: 20 };
+    tradeState.lab.hqLevel = 1; tradeState.lab.buildings.trade_hall = { level: 0 };
+    db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(tradeState), trader.player_id);
+    const offer = (await request("/trade/npc/offers", undefined, trader.token)).data.offers[0];
+    const tradeAction = (id: string, action_type: string, payload: any) => request("/player/action", { client_action_id: id, action_type, payload, client_time_unix_ms: Date.now() + clockOffset }, trader.token);
+    expect((await tradeAction("trade-unbuilt", "NPC_TRADE", { offer_id: offer.id, period_key: offer.period_key })).status).toBe(400);
+    expect((await tradeAction("trade-build", "UPGRADE_BUILDING", { building_id: "trade_hall" })).status).toBe(200);
+    expect((await tradeAction("trade-built", "NPC_TRADE", { offer_id: offer.id, period_key: offer.period_key })).status).toBe(200);
+    const existing = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(trader.player_id) as any).state_json);
+    existing.lab.hqLevel = 5; existing.lab.buildings.trade_hall.level = 3;
+    db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(existing), trader.player_id);
+    const nextOffer = (await request("/trade/npc/offers", undefined, trader.token)).data.offers.find((o: any) => o.remaining > 0);
+    expect((await tradeAction("trade-existing", "NPC_TRADE", { offer_id: nextOffer.id, period_key: nextOffer.period_key })).status).toBe(200);
     const rewards = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance.solo_hunt_rewards;
     expect(rewards.boss).toEqual({ common: { essence: 18 }, mythic: { essence: 36 }, rare: { essence: 54 }, epic: { essence: 72 }, legendary: { essence: 96 } });
     expect(rewards.guardian).toEqual({ common: { essence: 3 }, mythic: { essence: 5 }, rare: { essence: 8 }, epic: { essence: 12 } });
@@ -76,7 +91,9 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     const beforeA = wallet(a.data.player_id).essence;
     const beforeB = wallet(b.data.player_id).essence;
     const beforeCore = wallet(b.data.player_id).core;
-    const coreDrop = (id: string) => createHmac("sha256", env.WORLD_SECRET).update("solo-hunt-common-core:" + id).digest().readUInt32BE(0) / 0x100000000 < 0.3;
+    const drop = (id: string, resource: string, chance: number) => createHmac("sha256", env.WORLD_SECRET).update(`solo-hunt-bonus:${resource}:${id}`).digest().readUInt32BE(0) / 0x100000000 < chance;
+    const coreDrop = (id: string) => drop(id, "core", 0.5);
+    const shardDrop = (id: string) => drop(id, "arcane_shard", 0.1);
     const commonSchedule = (await request("/world/boss-hunts")).data;
     const common = await request("/world/boss-hunts/start", { client_action_id: "common-start", hunt_id: "hunt_common", rotation_key: commonSchedule.rotation_key, zone_id: "zone_chaos", appearance_id: "chaos_astral_alchemist" }, b.data.token);
     expect(common.status).toBe(200);
@@ -94,15 +111,22 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       if (commonResult.status === "VERIFIED_WIN") break;
     }
     expect(commonResult.status).toBe("VERIFIED_WIN");
-    expect(commonResult.pve_reward).toEqual({ grants: { essence: 18, ...(coreDrop(common.data.session_id) ? { core: 1 } : {}) }, source: "boss", tier: "common" });
+    expect(commonResult.pve_reward).toEqual({ grants: { essence: 18, ...(coreDrop(common.data.session_id) ? { core: 1 } : {}), ...(shardDrop(common.data.session_id) ? { arcane_shard: 1 } : {}) }, source: "boss", tier: "common" });
     expect(wallet(b.data.player_id).core).toBe(beforeCore + Number(coreDrop(common.data.session_id)));
     expect(wallet(b.data.player_id).essence).toBe(beforeB + 18);
     expect(wallet(a.data.player_id).essence).toBe(beforeA);
     expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(common.data.session_id, "SOLO_HUNT_REWARD") as any).n).toBe(1);
     const balance = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance;
     const cap = balance.wallet_caps?.essence ?? balance.wallet_max_per_resource;
+    const loot = balance.solo_hunt_bonus_loot;
+    const tierNames = ["common", "mythic", "rare", "epic", "legendary"];
+    expect(tierNames.map(tier => [loot[tier].core.chance, loot[tier].core.quantity, loot[tier].arcane_shard.chance, loot[tier].arcane_shard.quantity])).toEqual([[0.5, 1, 0.1, 1], [0.5, 1, 0.2, 2], [0.5, 1, 0.3, 2], [0.5, 1, 0.4, 3], [0.5, 1, 0.5, 4]]);
+    const combinations = new Set(Array.from({length: 100}, (_, i) => `${coreDrop(String(i))}:${shardDrop(String(i))}`));
+    expect(combinations.size).toBe(4);
+    expect(coreDrop("repeat")).toBe(coreDrop("repeat"));
+    expect(shardDrop("repeat")).toBe(shardDrop("repeat"));
     const outcomes = new Set<boolean>([coreDrop(common.data.session_id)]);
-    for (let attempt = 0; attempt < 40 && (attempt < 2 || outcomes.size < 2); attempt++) {
+    for (let attempt = 0; attempt < 40 && (attempt < 5 || outcomes.size < 2); attempt++) {
       const remaining = attempt === 0 ? 0 : 1;
       const account = await request("/auth/dev_login", { name: `guardian_cap_${attempt}` });
       const state = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(account.data.player_id) as any).state_json);
@@ -112,9 +136,15 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       const hunt = await request("/world/boss-hunts/start", { client_action_id: `cap-start-${remaining}`, hunt_id: "hunt_common", rotation_key: current.rotation_key, zone_id: "zone_chaos", appearance_id: "chaos_astral_alchemist" }, account.data.token);
       expect(hunt.status).toBe(200);
       expect((await request("/world/boss-hunts/loadout", { session_id: hunt.data.session_id, client_action_id: `cap-load-${remaining}`, entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" }, account.data.token)).status).toBe(200);
+      const tier = tierNames[attempt % tierNames.length];
+      const snapshot = JSON.parse((db.query("SELECT boss_snapshot_json FROM solo_hunt_sessions WHERE session_id = ?").get(hunt.data.session_id) as any).boss_snapshot_json);
+      snapshot.tier = tier;
+      db.query("UPDATE solo_hunt_sessions SET boss_snapshot_json = ? WHERE session_id = ?").run(JSON.stringify(snapshot), hunt.data.session_id);
+      const expectedShard = drop(hunt.data.session_id, "arcane_shard", loot[tier].arcane_shard.chance) ? loot[tier].arcane_shard.quantity : 0;
       const expectedCore = coreDrop(hunt.data.session_id);
       outcomes.add(expectedCore);
       const coreBefore = wallet(account.data.player_id).core;
+      const shardBefore = wallet(account.data.player_id).arcane_shard ?? 0;
       const combat = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(hunt.data.session_id) as any).combat_state_json);
       combat.boss.hp = 1; combat.boss.status.stun = 100;
       db.query("UPDATE solo_hunt_sessions SET combat_state_json = ? WHERE session_id = ?").run(JSON.stringify(combat), hunt.data.session_id);
@@ -133,8 +163,10 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       expect(terminal.pve_reward.grants.essence).toBe(remaining);
       expect(terminal.pve_reward.grants.core ?? 0).toBe(Number(expectedCore));
       expect(wallet(account.data.player_id).core).toBe(coreBefore + Number(expectedCore));
+      expect(terminal.pve_reward.grants.arcane_shard ?? 0).toBe(expectedShard);
+      expect(wallet(account.data.player_id).arcane_shard ?? 0).toBe(shardBefore + expectedShard);
       expect(wallet(account.data.player_id).essence).toBe(cap);
-      expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(hunt.data.session_id, "SOLO_HUNT_REWARD") as any).n).toBe(Number(remaining > 0 || coreDrop(hunt.data.session_id)));
+      expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(hunt.data.session_id, "SOLO_HUNT_REWARD") as any).n).toBe(Number(remaining > 0 || coreDrop(hunt.data.session_id) || expectedShard > 0));
     }
     expect(outcomes.size).toBe(2);
     expect((await request("/world/boss-hunts/guardians?zone_id=zone_chaos&hunt_id=hunt_rare")).status).toBe(401);

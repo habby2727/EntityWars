@@ -493,7 +493,7 @@
       "id": "trade_hall",
       "name": "Trade Hall",
       "display_name": "Trade Hall",
-      "unlock_hq": 2,
+      "unlock_hq": 1,
       "routes": [],
       "costs": {
         "1": {

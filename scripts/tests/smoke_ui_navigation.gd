@@ -124,9 +124,24 @@ func _run() -> void:
 	current_scene._select_building("homunculus_vat")
 	await process_frame
 	var vat_area: Control = current_scene._specialized_panel.find_child("CatalogStatsArea", true, false)
-	if not vat_area is VBoxContainer or vat_area.get_node_or_null("PreviewSlot") == null or vat_area.get_node("PreviewSlot").get_child(0).texture == null:
-		_fail("Homunculus preview needs a framed slot above its statistics")
+	var vat_panel_layout = current_scene._specialized_panel
+	var vat_list: ItemList = vat_panel_layout.find_child("LocalizationCatalogItems", true, false)
+	var vat_preview: Control = vat_panel_layout.find_child("PreviewSlot", true, false)
+	var vat_scroll: ScrollContainer = vat_area.get_node("StatsScroll")
+	if not vat_area is HBoxContainer or vat_preview == null or vat_panel_layout.get_index() != 0:
+		_fail("Homunculus preview and details must start at the top of the panel")
 		return
+	for locale in ["en", "es"]:
+		TranslationServer.set_locale(locale)
+		for index in range(vat_list.item_count):
+			vat_list.select(index)
+			vat_list.item_selected.emit(index)
+			await process_frame
+			var panel_rect: Rect2 = current_scene._right_panel.get_global_rect()
+			if vat_list.get_global_rect().intersects(vat_preview.get_global_rect()) or vat_list.get_global_rect().intersects(vat_scroll.get_global_rect()) or not panel_rect.encloses(vat_scroll.get_global_rect()):
+				_fail("Homunculus details must stay inside the panel and clear of the list")
+				return
+	TranslationServer.set_locale("en")
 	for building_id in current_scene.BUILDING_ORDER:
 		current_scene._select_building(building_id)
 		await process_frame

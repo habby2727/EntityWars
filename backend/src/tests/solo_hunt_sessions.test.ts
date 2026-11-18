@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { createHmac } from "node:crypto";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +36,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
   for (const file of readdirSync(migrations).filter(name => name.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
   const clockOffset = Math.floor(Date.now() / 900000) * 900000 + 120000 - Date.now();
   const testNow = () => Date.now() + clockOffset;
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", TEST_CLOCK_OFFSET: String(clockOffset) };
+  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", WORLD_SECRET: "test-hunt-world-secret", TEST_CLOCK_OFFSET: String(clockOffset) };
   const spawnServer = () => Bun.spawn([process.execPath, "-e", "const realNow = Date.now.bind(Date); Date.now = () => realNow() + Number(process.env.TEST_CLOCK_OFFSET); await import('./src/index.ts');"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
   let server = spawnServer();
   const request = async (path: string, body?: unknown, token?: string) => {
@@ -73,7 +74,8 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json).wallet.essence).toBe(lootBefore + 7);
     const wallet = (id: string) => JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(id) as any).state_json).wallet;
     const beforeA = wallet(a.data.player_id), beforeB = wallet(b.data.player_id);
-    const commonReward = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance.solo_hunt_rewards.boss.common;
+    const balance = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance;
+    const commonReward = { ...balance.solo_hunt_rewards.boss.common };
     const fixture = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(a.data.player_id) as any).state_json);
     fixture.spell_progress = { learned_by_entity: { sulfur_01: ["steady_script"] }, active_research: null, equipped_by_mode: { attack: { sulfur_01: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"] }, defense: {} } };
     db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(fixture), a.data.player_id);
@@ -351,6 +353,11 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
       expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.common_cooldown_until).toBe(0);
       const expectedWallet = { ...walletBeforeBattle };
       if (outcome === "WIN") {
+        for (const id of ["core", "arcane_shard"]) {
+          const drop = balance.solo_hunt_bonus_loot.common[id];
+          const roll = createHmac("sha256", env.WORLD_SECRET || "dev_world_secret").update(`solo-hunt-bonus:${id}:${sessionId}`).digest().readUInt32BE(0) / 0x100000000;
+          if (roll < drop.chance) commonReward[id] = drop.quantity;
+        }
         for (const [resource, amount] of Object.entries(commonReward)) expectedWallet[resource] = (expectedWallet[resource] ?? 0) + Number(amount);
         expect(finalResponse.pve_reward).toEqual({ grants: commonReward, source: "boss", tier: "common" });
       } else expect(finalResponse.pve_reward).toBeUndefined();
@@ -360,7 +367,13 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         expect(wallet(a.data.player_id)).toEqual(expectedWallet);
       }
       expect(finalResponse.events.filter((e: any) => e.kind === "combat_terminal")).toHaveLength(1);
+      const missionsBeforeRetry = (await request("/world/missions", undefined, a.data.token)).data;
+      if (outcome === "WIN") {
+        expect(missionsBeforeRetry.daily.missions.find((m: any) => m.id === "daily_boss").progress).toBe(1);
+        expect(missionsBeforeRetry.daily.missions.find((m: any) => m.id === "daily_damage").progress).toBeGreaterThan(0);
+      }
       expect((await request("/world/boss-hunts/turn", finalRequest, a.data.token)).data).toEqual(finalResponse);
+      expect((await request("/world/missions", undefined, a.data.token)).data.daily).toEqual(missionsBeforeRetry.daily);
       expect(wallet(a.data.player_id)).toEqual(expectedWallet);
       expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(sessionId, "SOLO_HUNT_REWARD") as any).n).toBe(outcome === "WIN" ? 1 : 0);
       expect((await request("/world/boss-hunts/turn", { ...finalRequest, client_action_id: `closed-${outcome}` }, a.data.token)).status).toBe(409);

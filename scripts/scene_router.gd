@@ -36,6 +36,12 @@ static func go_to_ranked_combat(match_id: String) -> void:
 	_ranked_context = {"match_id": match_id}
 	_go_to(SCENE_COMBAT, "Combat")
 
+static func go_to_debug_ranked_combat() -> void:
+	if not _connection_gate().debug_lab_navigation_allowed():
+		return
+	_ranked_context = {"debug_visual": true}
+	_go_to(SCENE_COMBAT, "Combat")
+
 static func go_to_dungeon_loadout(run_id: String, player_id: String) -> void:
 	_dungeon_context["run_id"] = run_id
 	_dungeon_context["player_id"] = player_id
@@ -171,6 +177,10 @@ static func go_to_top_players() -> void:
 
 static func _go_to(scene_path: String, label: String) -> void:
 	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL]
+	if _connection_gate().debug_lab_navigation_allowed():
+		local_debug_scenes.append(SCENE_LOADOUT)
+		if bool(_ranked_context.get("debug_visual", false)):
+			local_debug_scenes.append(SCENE_COMBAT)
 	if _connection_gate().blocked() and not (_connection_gate().debug_lab_navigation_allowed() and scene_path in local_debug_scenes):
 		return
 	if scene_path == "":

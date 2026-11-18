@@ -61,6 +61,8 @@ EFFECT_BONUS_POISONED,Power +%d %% if the enemy is already poisoned,Potencia +%d
 EFFECT_BONUS_HIT,Power +%d %% if hit in the previous exchange,Potencia +%d %% si recibió daño en el intercambio anterior
 EFFECT_NONE,No additional effect,Sin efecto adicional
 INVENTORY_EFFECTS,Effects: %s,Efectos: %s
+PVP_DEBUG_COMBAT,VIEW DEBUG COMBAT,VER COMBATE DEBUG
+PVP_DEBUG_PREVIEW,LOCAL PVP PREVIEW,VISTA LOCAL DE PVP
 INVENTORY_OPEN_LOADOUT,OPEN LOADOUT,ABRIR EQUIPO
 UI_BACK_UPPER,BACK,VOLVER
 UI_CLOSE,Close,Cerrar
