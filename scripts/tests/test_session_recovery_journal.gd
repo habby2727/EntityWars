@@ -3,6 +3,9 @@ extends SceneTree
 const Journal := preload("res://scripts/net/session_recovery_journal.gd")
 
 func _initialize() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
 	var root := OS.get_environment("JOURNAL_TEST_ROOT").replace("\\", "/").to_lower()
 	if root.is_empty() or not OS.get_user_data_dir().replace("\\", "/").to_lower().begins_with(root + "/"):
 		_fail("isolated user directory required")
@@ -37,7 +40,34 @@ func _initialize() -> void:
 	file.close()
 	assert(journal.load_entry().has("error"))
 	assert(journal.remove())
-	print("PASS recovery journal persistence, ownership and malformed data")
+	# A stale journal must survive an attempted action for another session.
+	var gate := get_root().get_node("ConnectionGate")
+	gate.player_id = "owner"
+	var client := BackendClient.new()
+	client._verified_player_id = "owner"
+	assert(journal.save_entry(entry))
+	var new_action := {"session_id": "new-session", "client_action_id": "new-action"}
+	assert(not gate.journal_pending(client, "hunt", "forfeit", new_action))
+	assert(gate.state == gate.State.RECONNECTING and not gate._journal_checked)
+	assert(journal.load_entry() == loaded)
+	# Unresolved actions cannot be discarded, even for the matching session.
+	assert(not gate.journal_close("hunt", "session"))
+	assert(journal.load_entry() == loaded)
+	gate.state = gate.State.CONNECTED
+	assert(gate.journal_confirm("action"))
+	assert(gate.journal_close("hunt", "session"))
+	assert(journal.load_entry().is_empty())
+	# A malformed journal remains locked and untouched.
+	file = FileAccess.open("user://session_recovery_%s.json" % "owner".sha256_text(), FileAccess.WRITE)
+	file.store_string("{invalid")
+	file.close()
+	assert(not gate.journal_pending(client, "hunt", "forfeit", new_action))
+	assert(gate.state == gate.State.ERROR and journal.load_entry().has("error"))
+	assert(journal.remove())
+	client.free()
+	client = null
+	await process_frame
+	print("PASS recovery journal persistence, ownership, malformed data and stale-session recovery")
 	quit(0)
 
 func _fail(message: String) -> void:

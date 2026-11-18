@@ -39,6 +39,7 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 			expect(await response.json()).toEqual({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: 5504 });
 		}
 		expect((await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5504" } })).status).not.toBe(426);
+		expect((await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5504", Authorization: "Bearer unavailable" } })).status).toBe(503);
 		for (const route of ["/auth/dev_login", "/v1/auth/login"]) {
 			const response = await fetch(base + route, { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Bypass": "1" }, body: JSON.stringify({ name: "fixture" }) });
 			expect(response.status).toBe(403);

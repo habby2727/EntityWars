@@ -18,6 +18,7 @@ import {
     revokeRefreshToken,
     rotateRefreshToken
 } from "./auth/tokens";
+import { AuthStorageUnavailableError } from "./auth/storage_error";
 import { AccountStatusUnavailableError, isUserDisabled, pingPostgres, postgresExample, upsertUser } from "./db/postgres";
 import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
@@ -2829,8 +2830,8 @@ async function startServer(): Promise<void> {
 			} catch (err) {
 				recordError();
 				const sqliteBusy = typeof err === "object" && err !== null && typeof (err as { code?: unknown }).code === "string" && String((err as { code: string }).code).startsWith("SQLITE_BUSY");
-				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError ? err.message : "Internal server error";
-				const status = sqliteBusy || err instanceof AccountStatusUnavailableError ? 503 : err instanceof HttpError || err instanceof CombatRewardError ? err.status : 500;
+				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
+				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof CombatRewardError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);

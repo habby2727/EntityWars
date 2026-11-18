@@ -66,25 +66,44 @@ func _run() -> void:
 		_fail("Common combat appearance mismatch")
 		return
 	combat._on_back_pressed()
+	if not combat.confirm_popup.visible:
+		_fail("Active hunt did not request confirmation")
+		return
+	combat._on_confirm_stay()
+	if current_scene != combat:
+		_fail("Canceling leave exited the active hunt")
+		return
+	combat._on_back_pressed()
+	combat._on_confirm_leave()
+	deadline = Time.get_ticks_msec() + 20000
+	while current_scene == combat and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	zone = current_scene
+	if zone == null or zone.scene_file_path != SceneRouter.SCENE_WORLD_ZONE_CHAOS:
+		_fail("Forfeit did not return to the original zone")
+		return
+	var journal := SessionRecoveryJournal.new()
+	journal.set_identity(OS.get_environment("EW_COMMON_PLAYER"))
+	if not journal.load_entry().is_empty():
+		_fail("Forfeit left a recovery journal")
+		return
+	SceneRouter.go_to_world_zone("zone_crystal")
 	await process_frame
 	await process_frame
 	zone = current_scene
 	deadline = Time.get_ticks_msec() + 30000
-	while (zone._hunt_active.is_empty() or zone._hunt_active_owner.is_empty() or zone._common_progress.is_empty()) and Time.get_ticks_msec() < deadline:
+	while (zone._backend._verified_player_id.is_empty() or zone._hunt_rotation < 0 or not zone._hunt_session_checked or zone._common_progress.is_empty()) and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
-	if zone._hunt_active.is_empty():
-		_fail("Common session did not recover")
-		return
-	zone._debug_visual = {"id": appearance, "name": expected_name, "texture": expected_texture, "tier": "common"}
-	zone._show_common_details()
-	if not zone._active_hunt_matches("") or zone._hunt_fight.disabled:
-		_fail("Common resume unavailable: " + zone._preview_status.text)
+	zone._world_sprite.gui_input.emit(click)
+	if zone._hunt_fight.disabled:
+		_fail("Next zone boss unavailable")
 		return
 	zone._start_map_hunt()
-	await process_frame
-	await process_frame
-	if str(SceneRouter._solo_hunt_context.get("session_id", "")) != session_id:
-		_fail("Resume changed common session")
+	deadline = Time.get_ticks_msec() + 20000
+	while current_scene == zone and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if current_scene == zone or str(SceneRouter._solo_hunt_context.get("session_id", "")) in ["", session_id] or root.get_node("ConnectionGate").blocked():
+		_fail("Next zone hunt did not start")
 		return
-	print("PASS common appearance -> session -> loadout -> combat -> resume")
+	print("PASS common appearance -> one-click Ready -> confirmed forfeit -> next zone")
 	quit(0)

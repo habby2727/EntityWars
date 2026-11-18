@@ -23,12 +23,14 @@ test("Godot common appearance reaches trusted combat and resumes", async () => {
     expect(ready).toBe(true);
     const login = await fetch(base + "/auth/dev_login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "common_e2e" }) });
     expect(login.status).toBe(200);
-    const account = await login.json() as { token: string };
+    const account = await login.json() as { token: string; player_id: string };
     const log = join(dir, "godot.log");
-    const child = Bun.spawn([godot, "--headless", "--path", resolve(import.meta.dir, "../../.."), "--log-file", log, "--script", "res://scripts/tests/smoke_common_e2e.gd"], { env: { ...env, APPDATA: dir, LOCALAPPDATA: dir, EW_COMMON_ROOT: dir, EW_COMMON_TOKEN: account.token, ENTITYWARS_BACKEND_URL: base }, stdout: "ignore", stderr: "ignore" });
+    const child = Bun.spawn([godot, "--headless", "--path", resolve(import.meta.dir, "../../.."), "--log-file", log, "--script", "res://scripts/tests/smoke_common_e2e.gd"], { env: { ...env, APPDATA: dir, LOCALAPPDATA: dir, EW_COMMON_ROOT: dir, EW_COMMON_TOKEN: account.token, EW_COMMON_PLAYER: account.player_id, ENTITYWARS_BACKEND_URL: base }, stdout: "ignore", stderr: "ignore" });
     const code = await Promise.race([child.exited, Bun.sleep(90000).then(() => { child.kill(); throw new Error("Godot common E2E timed out"); })]);
     const output = existsSync(log) ? readFileSync(log, "utf8") : "missing Godot log";
-    expect({ code, output }).toEqual({ code: 0, output: expect.stringContaining("PASS common appearance -> session -> loadout -> combat -> resume") });
+    expect({ code, output }).toEqual({ code: 0, output: expect.stringContaining("PASS common appearance -> one-click Ready -> confirmed forfeit -> next zone") });
     expect(output).not.toMatch(/SCRIPT ERROR|ERROR:/);
+    const row = db.query("SELECT status FROM solo_hunt_sessions WHERE player_id = ? AND status = 'FORFEIT'").get(account.player_id) as any;
+    expect(row.status).toBe("FORFEIT");
   } finally { server.kill(); await server.exited; db.close(); rmSync(dir, { recursive: true, force: true }); }
 }, 120000);

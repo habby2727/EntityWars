@@ -421,6 +421,9 @@ func _on_request_completed(result: int, response_code: int, _headers: PackedStri
 	if response_code < 200 or response_code >= 300:
 		_connection_gate().report_failure(self, "http", response_code)
 		var err_data = _parse_json(body)
+		if kind == "action" and response_code == 401:
+			emit_signal("action_uncertain", action_id, "authentication_required")
+			return
 		if kind == "action" and (response_code >= 500 or response_code < 400 or response_code == 408):
 			_handle_request_failure(kind, action, action_key, "uncertain_http_%s" % response_code, was_queued)
 			return

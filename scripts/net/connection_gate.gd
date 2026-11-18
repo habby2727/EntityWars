@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const RecoveryJournal := preload("res://scripts/net/session_recovery_journal.gd")
@@ -22,6 +22,10 @@ var _layer: CanvasLayer
 var _title: Label
 var _detail: Label
 var _retry: Button
+var _sign_in: Button
+var _suspended_scene: Node
+var _suspended_process_mode: int
+var _suspended_visible := true
 var _debug_lab_button: Button
 var debug_offline_enabled := false
 
@@ -65,6 +69,42 @@ func require_update() -> void:
 func require_authentication() -> void:
 	_fail(State.AUTH_REQUIRED, "Authentication required")
 
+func sign_in_again() -> void:
+	if state != State.AUTH_REQUIRED or is_instance_valid(_suspended_scene):
+		return
+	var scene := get_tree().current_scene
+	var auth: Node = preload("res://scenes/ui/Auth.tscn").instantiate()
+	if not is_instance_valid(scene) or auth == null:
+		return
+	_suspended_scene = scene
+	_suspended_process_mode = scene.process_mode
+	scene.process_mode = Node.PROCESS_MODE_DISABLED
+	if scene is CanvasItem:
+		_suspended_visible = scene.visible
+		scene.hide()
+	get_tree().root.add_child(auth)
+	get_tree().current_scene = auth
+	_layer.hide()
+
+func resume_after_sign_in(identity: String, new_token: String) -> bool:
+	if not is_instance_valid(_suspended_scene):
+		return true
+	if identity != player_id:
+		return false
+	var auth_scene := get_tree().current_scene
+	get_tree().current_scene = _suspended_scene
+	_suspended_scene.process_mode = _suspended_process_mode
+	if _suspended_scene is CanvasItem and _suspended_visible:
+		_suspended_scene.show()
+	_suspended_scene = null
+	for client in get_tree().get_nodes_in_group("backend_session_clients"):
+		if not auth_scene.is_ancestor_of(client):
+			client.token = new_token
+			client.call_deferred("refresh_state")
+	auth_scene.queue_free()
+	_layer.show()
+	return true
+
 func begin_explicit_login() -> bool:
 	if _identity_mismatch:
 		return false
@@ -76,7 +116,7 @@ func begin_explicit_login() -> bool:
 	for filename in directory.get_files():
 		if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
 			session_active = true
-	if not session_active:
+	if not session_active and not is_instance_valid(_suspended_scene):
 		player_id = ""
 	token = ""
 	_generation += 1
@@ -139,10 +179,12 @@ func report_failure(client: Node, reason: String, status: int = 0) -> void:
 	if str(client.token).is_empty():
 		return
 	observe_credentials(client)
-	if status in [401, 403] or reason == "identity_mismatch":
+	if status == 401 or reason == "identity_mismatch":
 		if reason == "identity_mismatch":
 			_identity_mismatch = true
-		_fail(State.AUTH_REQUIRED if status in [401, 403] else State.ERROR, "Authentication required" if status in [401, 403] else "Account changed. Sign in with the original account.")
+		_fail(State.AUTH_REQUIRED if status == 401 else State.ERROR, "Authentication required" if status == 401 else "Account changed. Sign in with the original account.")
+	elif status == 403:
+		_fail(State.ERROR, "Access forbidden. Your account or this action is not permitted.")
 	elif reason in ["network_error", "bad_json", "bad_state"] or status >= 500 or status == 408:
 		_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
 
@@ -157,7 +199,10 @@ func _fail(next: State, message: String) -> void:
 	_loadout_session_requested = false
 	_loadout_session_verified = false
 	_title.text = "Update required" if next == State.UPDATE_REQUIRED else ("Disconnected (Reconnecting...)" if next == State.RECONNECTING else "Error")
-	_retry.visible = next != State.UPDATE_REQUIRED
+	_retry.visible = next in [State.RECONNECTING, State.ERROR]
+	_sign_in.visible = next == State.AUTH_REQUIRED
+	if next != State.RECONNECTING:
+		_timer.stop()
 	if is_instance_valid(_debug_lab_button):
 		_debug_lab_button.visible = next != State.UPDATE_REQUIRED
 	_detail.text = message
@@ -182,7 +227,7 @@ func _schedule_retry() -> void:
 	_timer.start(delay)
 
 func _check() -> void:
-	if debug_offline_enabled or state == State.UPDATE_REQUIRED or _checking or _identity_mismatch or token.is_empty():
+	if debug_offline_enabled or state in [State.UPDATE_REQUIRED, State.AUTH_REQUIRED] or _checking or _identity_mismatch or token.is_empty():
 		return
 	_timer.stop()
 	_checking = true
@@ -202,8 +247,11 @@ func _on_check_completed(result: int, code: int, _headers: PackedStringArray, bo
 		return
 	if state == State.UPDATE_REQUIRED:
 		return
-	if code in [401, 403]:
+	if code == 401:
 		_fail(State.AUTH_REQUIRED, "Authentication required")
+		return
+	if code == 403:
+		_fail(State.ERROR, "Access forbidden. Your account is not permitted.")
 		return
 	if result != HTTPRequest.RESULT_SUCCESS or code < 200 or code >= 300:
 		_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
@@ -264,6 +312,7 @@ func _restore_journal() -> bool:
 		return true
 	var kind := str(entry.pending_kind)
 	if entry.mode == "hunt":
+		SceneRouter._dungeon_context.clear()
 		SceneRouter._solo_hunt_context = entry.context.duplicate(true)
 		SceneRouter._solo_hunt_context["session_id"] = entry.session_id
 		SceneRouter._solo_hunt_context["loadout_identity"] = player_id
@@ -273,6 +322,8 @@ func _restore_journal() -> bool:
 		elif not kind.is_empty():
 			SceneRouter._solo_hunt_context["pending_action"] = {"kind": kind, "payload": entry.payload.duplicate(true)}
 	else:
+		SceneRouter._solo_hunt_context.clear()
+		SceneRouter._hunt_loadout_active = false
 		SceneRouter._dungeon_context = {"run_id": entry.session_id, "player_id": player_id}
 		if kind == "loadout":
 			SceneRouter._dungeon_context["pending_loadout"] = entry.payload.duplicate(true)
@@ -293,7 +344,9 @@ func journal_pending(client: Node, mode: String, kind: String, payload: Dictiona
 		return false
 	var session_id := str(payload.get("session_id" if mode == "hunt" else "run_id", ""))
 	if not previous.is_empty() and (previous.mode != mode or previous.session_id != session_id):
-		_fail(State.ERROR, "A different session requires recovery.")
+		_journal_checked = false
+		_fail(State.RECONNECTING, "Recovering the previous session before continuing...")
+		call_deferred("_check")
 		return false
 	if not previous.is_empty() and not str(previous.pending_kind).is_empty() and JSON.stringify(previous.payload) != JSON.stringify(JSON.parse_string(JSON.stringify(payload))):
 		_fail(State.ERROR, "Another session action requires recovery.")
@@ -331,7 +384,7 @@ func journal_close(mode: String, session_id: String) -> bool:
 	var journal := RecoveryJournal.new()
 	if not journal.set_identity(player_id): return false
 	var entry := journal.load_entry()
-	if entry.has("error") or (not entry.is_empty() and (entry.mode != mode or entry.session_id != session_id or not journal.remove())):
+	if entry.has("error") or (not entry.is_empty() and (entry.mode != mode or entry.session_id != session_id or (mode == "hunt" and not str(entry.pending_kind).is_empty()) or not journal.remove())):
 		_fail(State.ERROR, "Cannot close session recovery.")
 		return false
 	return true
@@ -471,6 +524,13 @@ func _create_overlay() -> void:
 	MenuArt.button(_retry)
 	_retry.pressed.connect(_check)
 	box.add_child(_retry)
+	_sign_in = Button.new()
+	_sign_in.text = "Sign in again"
+	_sign_in.custom_minimum_size = Vector2(220, 48)
+	_sign_in.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	MenuArt.button(_sign_in)
+	_sign_in.pressed.connect(sign_in_again)
+	box.add_child(_sign_in)
 	if OS.has_feature("editor"):
 		_debug_lab_button = Button.new()
 		_debug_lab_button.text = tr("AUTH_DEBUG_LAB")

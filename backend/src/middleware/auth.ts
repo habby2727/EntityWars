@@ -1,3 +1,4 @@
+import { AuthStorageUnavailableError } from "../auth/storage_error";
 ﻿import { ensureRedisReady, getRedis } from "../db/redis";
 
 export type SessionRecord = {
@@ -77,6 +78,7 @@ export async function getSession(token: string): Promise<SessionRecord | null> {
 	try {
 		const redis = getRedis();
 		if (!(await ensureRedisReady())) {
+			if (production) throw new AuthStorageUnavailableError();
 			return !production && cached && cached.expiresAt > Date.now() ? cached : null;
 		}
 		const raw = await redis.get(makeSessionKey(token));
@@ -94,6 +96,7 @@ export async function getSession(token: string): Promise<SessionRecord | null> {
 		inMemorySessions.set(token, parsed);
 		return parsed;
 	} catch (err) {
+		if (production) throw new AuthStorageUnavailableError();
 		console.warn("[auth] redis session read failed", err);
 		return !production && cached && cached.expiresAt > Date.now() ? cached : null;
 	}

@@ -69,6 +69,8 @@ func _run() -> void:
 	loadout._on_play_pressed()
 	assert(current_scene == loadout and SceneRouter._hunt_loadout_active)
 	assert("Recover the authenticated" in loadout.lbl_build_error.text)
+	# The following synthetic callbacks exercise recovery without navigating on Ready.
+	loadout._hunt_ready_requested = false
 	var backend := BackendClient.new()
 	backend.token = "test-token"
 	backend._verified_player_id = "test-player"
@@ -220,18 +222,10 @@ func _run_online() -> void:
 		push_error("Loadout session did not recover automatically")
 		quit(1)
 		return
-	if int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1:
-		loadout._on_play_pressed()
-		while int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) < 1 and Time.get_ticks_msec() < deadline:
-			await create_timer(0.1).timeout
-	var session: Dictionary = SceneRouter._solo_hunt_context.get("recovered_session", {})
-	if int(session.get("combat_revision", 0)) != 1 or current_scene != loadout:
-		push_error("Initialization failed: " + loadout.lbl_build_error.text)
-		quit(1)
-		return
 	loadout._on_play_pressed()
-	await process_frame
-	await process_frame
+	deadline = Time.get_ticks_msec() + 20000
+	while current_scene == loadout and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
 	var combat = current_scene
 	if combat == null or not combat._online_hunt_guard:
 		push_error("Initialized session did not enter protected combat")

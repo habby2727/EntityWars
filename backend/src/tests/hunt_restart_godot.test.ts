@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from "node:fs";
 import { createHash, createHmac } from "node:crypto";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -8,7 +8,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 const godot = process.env.GODOT_BIN || join(process.env.USERPROFILE || "", "Desktop", "Godot_v4.6.exe");
 const project = resolve(import.meta.dir, "../../..");
 
-for (const [mode, kind, committed] of [["hunt", "victory", true], ["hunt", "turn", false], ["hunt", "turn", true], ["hunt", "loadout", false], ["hunt", "loadout", true], ["hunt", "forfeit", false], ["hunt", "forfeit", true], ["hunt", "expired", false], ["hunt", "expired_loadout", false], ["hunt", "wrong_owner", false], ["hunt", "malformed", false], ["dungeon", "turn", false], ["dungeon", "turn", true], ["dungeon", "loadout", false], ["dungeon", "loadout", true], ["dungeon", "inspiration", false], ["dungeon", "inspiration", true], ["dungeon", "terminal", false], ["dungeon", "terminal", true], ["dungeon", "expired", false], ["dungeon", "expired_loadout", false]] as const) test(`Godot restart recovers ${committed ? "committed" : "uncommitted"} ${mode} ${kind}`, async () => {
+for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victory", true], ["hunt", "turn", false], ["hunt", "turn", true], ["hunt", "loadout", false], ["hunt", "loadout", true], ["hunt", "forfeit", false], ["hunt", "forfeit", true], ["hunt", "expired", false], ["hunt", "expired_loadout", false], ["hunt", "wrong_owner", false], ["hunt", "malformed", false], ["dungeon", "turn", false], ["dungeon", "turn", true], ["dungeon", "loadout", false], ["dungeon", "loadout", true], ["dungeon", "inspiration", false], ["dungeon", "inspiration", true], ["dungeon", "terminal", false], ["dungeon", "terminal", true], ["dungeon", "expired", false], ["dungeon", "expired_loadout", false]] as const) test(`Godot restart recovers ${committed ? "committed" : "uncommitted"} ${mode} ${kind}`, async () => {
   expect(existsSync(godot)).toBe(true);
   const directory = mkdtempSync(join(tmpdir(), "ew-restart-"));
   const dbPath = join(directory, "test.sqlite");
@@ -78,8 +78,23 @@ for (const [mode, kind, committed] of [["hunt", "victory", true], ["hunt", "turn
     expect(started.status).toBe(200);
     const sessionId = mode === "hunt" ? started.data.session_id : started.data.run_id;
     const loadout = mode === "hunt" ? { session_id: sessionId, client_action_id: "loadout", entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["steady_script", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" } : { run_id: sessionId, client_action_id: "loadout", entity_id: "sulfur_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
-    const isLoadout = kind === "loadout" || kind === "expired_loadout";
+    const isLoadout = kind === "loadout" || kind === "expired_loadout" || kind === "back";
     const isExpired = kind === "expired" || kind === "expired_loadout";
+    if (kind === "back") {
+      const smokeRoot = join(directory, "loadout-smoke"), smokeData = join(smokeRoot, "Godot", "app_userdata", "EntityWars");
+      mkdirSync(smokeData, { recursive: true }); writeFileSync(join(smokeData, "auth.json"), JSON.stringify({ token }));
+      const smoke = Bun.spawn([godot, "--headless", "--path", project, "--script", "res://scripts/tests/smoke_hunt_loadout.gd"], { env: { ...env, APPDATA: smokeRoot, LOCALAPPDATA: smokeRoot, ENTITYWARS_BACKEND_URL: base, HUNT_TEST_ROOT: smokeRoot }, stdout: "pipe", stderr: "pipe" });
+      const smokeCode = await Promise.race([smoke.exited, Bun.sleep(35000).then(() => { smoke.kill(); return -1; })]);
+      const smokeOutput = await new Response(smoke.stdout).text() + await new Response(smoke.stderr).text();
+      expect({ smokeCode, smokeOutput }).toEqual({ smokeCode: 0, smokeOutput: expect.stringContaining("PASS hunt loadout") });
+      const user = join(directory, "back-user");
+      const child = Bun.spawn([godot, "--headless", "--path", project, "--script", "res://scripts/tests/smoke_hunt_restart_process.gd"], { env: { ...env, APPDATA: user, LOCALAPPDATA: user, ENTITYWARS_BACKEND_URL: base, HUNT_RESTART_ROOT: user, HUNT_RESTART_PHASE: "loadout_back", HUNT_RESTART_SESSION: sessionId, HUNT_RESTART_PLAYER: playerId, HUNT_RESTART_TOKEN: token }, stdout: "pipe", stderr: "pipe" });
+      const code = await Promise.race([child.exited, Bun.sleep(30000).then(() => { child.kill(); throw new Error("loadout Back timed out"); })]);
+      const output = await new Response(child.stdout).text() + await new Response(child.stderr).text();
+      expect({ code, output }).toEqual({ code: 0, output: expect.stringContaining("PASS loadout Back closed original hunt") });
+      expect((db.query("SELECT status FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId) as any).status).toBe("FORFEIT");
+      return;
+    }
     if (!isLoadout) {
       const loaded = await request(mode === "hunt" ? "/world/boss-hunts/loadout" : "/dungeon/loadout", loadout, token);
       expect(loaded.status).toBe(200);

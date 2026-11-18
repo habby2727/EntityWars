@@ -138,6 +138,8 @@ var _online_visible_minions: Array[String] = []
 var _solo_context := {}
 var _solo_forfeit_request := ""
 var _solo_forfeit_action := ""
+var _online_exit_reconciled := false
+var _online_closed_recovery := ""
 var _solo_def := {}
 var _solo_texture: Texture2D
 var _solo_minion_texture: Texture2D
@@ -1212,15 +1214,29 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		_solo_forfeit_request = ""
 		if _connection_gate().blocked() and not _gate_session_verified:
 			return
-		if ok and str(data.get("status", "")) == "FORFEIT" and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity:
+		if _online_closed_recovery in ["EXPIRED", "VERIFIED_WIN", "VERIFIED_LOSS"] and not ok and int(data.get("http_status", 0)) == 409 and str(data.get("error", "")) == "Session is already closed." and _combat_backend != null and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity:
 			if not _connection_gate().journal_confirm(_solo_forfeit_action): return
 			if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
 			_solo_forfeit_action = ""
-			if _connection_gate().blocked():
-				_show_closed_online_session("FORFEIT")
-				_connection_gate().recovery_completed()
+			var closed_status := _online_closed_recovery
+			_online_closed_recovery = ""
+			_online_exit_reconciled = true
+			if closed_status == "EXPIRED":
+				_show_closed_online_session(closed_status)
 			else:
-				_return_from_solo_hunt()
+				_present_online_terminal()
+			if _connection_gate().blocked(): _connection_gate().recovery_completed()
+			if closed_status == "EXPIRED": _return_from_solo_hunt()
+			return
+		if ok and str(data.get("status", "")) == "FORFEIT" and str(data.get("session_id", "")) == str(_solo_context.get("session_id", "")) and _combat_backend != null and not _online_identity_invalid and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity:
+			if not _connection_gate().journal_confirm(_solo_forfeit_action): return
+			if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
+			_solo_forfeit_action = ""
+			_show_closed_online_session("FORFEIT")
+			_online_exit_reconciled = true
+			if _connection_gate().blocked():
+				_connection_gate().recovery_completed()
+			_return_from_solo_hunt()
 		else:
 			_log_immediate("Forfeit not confirmed. Reconnect and retry; the session remains active.")
 		return
@@ -1232,6 +1248,18 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		if _combat_wait_timer:
 			_combat_wait_timer.stop()
 		var inspiration_action := str(_online_turn_payload.get("decision", {}).get("kind", "")) in ["choose", "decline"]
+		if not _online_closed_recovery.is_empty() and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity:
+			var rejected := not ok and int(data.get("http_status", 0)) == 409 and str(data.get("error", "")) == ("Session unavailable for inspiration." if inspiration_action else "Session unavailable for turn.")
+			var replayed := ok and str(data.get("session_id", "")) == str(_solo_context.get("session_id", "")) and int(data.get("combat_revision", 0)) == int(_online_turn_payload.get("expected_revision", -2)) + 1 and _valid_online_result(data)
+			if rejected or replayed:
+				if not _connection_gate().journal_confirm(str(_online_turn_payload.get("client_action_id", ""))): return
+				if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
+				_online_turn_payload.clear()
+				_online_exit_reconciled = true
+				_show_closed_online_session(_online_closed_recovery)
+				_online_closed_recovery = ""
+				connection_gate_recover()
+				return
 		if not ok or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(data.get("session_id", "")) != str(_solo_context.get("session_id", "")) or not _valid_online_result(data) or int(data.get("combat_revision", 0)) != int(_online_turn_payload.get("expected_revision", -2)) + 1 or not data.get("combat_state") is Dictionary or not data.get("combat_loadout") is Dictionary or (not inspiration_action and not data.get("events") is Array):
 			_online_turn_unresolved()
 			return
@@ -1301,6 +1329,7 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 		if not _connection_gate().journal_confirm(str(_online_turn_payload.get("client_action_id", ""))): return
 		if str(data.get("status", "")) in ["VERIFIED_WIN", "VERIFIED_LOSS"]:
 			if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
+			_online_exit_reconciled = true
 		_online_turn_payload.clear()
 		_refresh_online_spell_buttons()
 		_refresh_online_inspiration()
@@ -1313,14 +1342,29 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 	if _connection_gate().blocked() and not _connection_gate()._player_verified:
 		return
 	var session: Variant = data.get("session")
-	if ok and session is Dictionary and str(session.get("session_id", "")) == str(_solo_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"] and _combat_backend._verified_player_id == _combat_identity:
-		if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
-		_online_turn_payload.clear()
+	if ok and session is Dictionary and str(session.get("session_id", "")) == str(_solo_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"] and not _online_identity_invalid and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity:
 		_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
-		_solo_forfeit_action = ""
-		if _online_turn_payload.is_empty():
-			_show_closed_online_session(str(session.status))
-			connection_gate_recover()
+		if not _online_turn_payload.is_empty():
+			_online_closed_recovery = str(session.status)
+			_send_online_pending_turn()
+			return
+		if not _solo_forfeit_action.is_empty():
+			if str(session.status) == "FORFEIT":
+				if not _connection_gate().journal_confirm(_solo_forfeit_action): return
+				_solo_forfeit_action = ""
+			else:
+				_online_closed_recovery = str(session.status)
+				_solo_forfeit_request = _combat_backend.request_api("POST", "/world/boss-hunts/forfeit", {"session_id": str(_solo_context.session_id), "client_action_id": _solo_forfeit_action}, false, _connection_gate().blocked())
+				return
+		if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
+		_online_exit_reconciled = true
+		_show_closed_online_session(str(session.status))
+		connection_gate_recover()
+		return
+	# A forfeit may have been journaled on the loadout screen before combat existed.
+	if ok and session is Dictionary and not _solo_forfeit_action.is_empty() and _online_turn_payload.is_empty() and not _online_identity_invalid and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity and str(session.get("session_id", "")) == str(_solo_context.get("session_id", "")) and str(session.get("status", "")) == "ACTIVE" and int(session.get("combat_revision", -1)) == 0:
+		_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
+		_solo_forfeit_request = _combat_backend.request_api("POST", "/world/boss-hunts/forfeit", {"session_id": str(_solo_context.session_id), "client_action_id": _solo_forfeit_action}, false, _connection_gate().blocked())
 		return
 	if not ok or not session is Dictionary or _online_identity_invalid or _combat_backend._verified_player_id != _combat_identity or _combat_identity.is_empty() or str(session.get("session_id", "")) != str(_solo_context.get("session_id", "")) or not _valid_online_result(session) or int(session.get("combat_revision", 0)) < maxi(1, _online_hunt_revision) or not session.get("combat_state") is Dictionary or not session.get("combat_loadout") is Dictionary or session.get("combat_state", {}).is_empty() or session.get("combat_loadout", {}).is_empty():
 		_hide_online_hunt_view()
@@ -1346,7 +1390,16 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 			return
 		_send_online_pending_turn()
 		return
-	if str(session.status) in ["VERIFIED_WIN", "VERIFIED_LOSS"] and not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
+	if not _solo_forfeit_action.is_empty() and not _connection_gate().blocked():
+		if str(session.status) in ["VERIFIED_WIN", "VERIFIED_LOSS"]:
+			_online_closed_recovery = str(session.status)
+		_request_solo_forfeit()
+		return
+	if str(session.status) in ["VERIFIED_WIN", "VERIFIED_LOSS"] and not _solo_forfeit_action.is_empty():
+		_online_closed_recovery = str(session.status)
+	if str(session.status) in ["VERIFIED_WIN", "VERIFIED_LOSS"] and _solo_forfeit_action.is_empty():
+		if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
+		_online_exit_reconciled = true
 	_refresh_online_spell_buttons()
 	_refresh_online_inspiration()
 	next_turn_btn.hide()
@@ -1866,7 +1919,7 @@ func _apply_dungeon_combat_visuals() -> void:
 	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(layer)
 	move_child(layer, background.get_index() + 1)
-	for entry in [[player_hom, Vector2(190, 530), Vector2(165, 190)], [player_entity, Vector2(480, 530), Vector2(250, 275)], [enemy_entity, Vector2(1438, 530), Vector2(250, 275)], [enemy_hom, Vector2(1730, 530), Vector2(165, 190)]]:
+	for entry in [[player_hom, Vector2(190, 555), Vector2(165, 190)], [player_entity, Vector2(480, 555), Vector2(250, 275)], [enemy_entity, Vector2(1438, 555), Vector2(250, 275)], [enemy_hom, Vector2(1730, 555), Vector2(165, 190)]]:
 		var sprite: TextureRect = entry[0]
 		var center: Vector2 = entry[1]
 		var dimensions: Vector2 = entry[2]
@@ -1925,16 +1978,7 @@ func _on_back_pressed() -> void:
 		SceneRouter.return_from_dungeon()
 		return
 	if _online_hunt_guard:
-		if not _online_turn_payload.is_empty() or not _online_hom_payload.is_empty() or not _online_turn_request.is_empty() or not _online_hunt_request.is_empty():
-			_log_immediate("Pending turn must be recovered before leaving.")
-			return
-		if _online_hunt_session.is_empty() and not _online_identity_invalid:
-			_log_immediate("Recover the encounter before leaving.")
-			return
-		if _online_hunt_session.has("global_event_id") and str(_online_hunt_session.get("status", "")) == "ACTIVE":
-			confirm_popup.popup_centered(Vector2i(600, 240))
-			return
-		_return_from_solo_hunt()
+		_online_hunt_exit(false)
 		return
 	if confirm_popup == null:
 		push_warning("Combat: ConfirmLeave popup missing, leaving combat directly.")
@@ -1955,10 +1999,7 @@ func _on_confirm_leave() -> void:
 		_ranked_controller.forfeit()
 		return
 	if _online_hunt_guard:
-		if _online_hunt_session.has("global_event_id") and str(_online_hunt_session.get("status", "")) == "ACTIVE":
-			_request_solo_forfeit()
-			return
-		_return_from_solo_hunt()
+		_online_hunt_exit(true)
 		return
 	if _solo_boss_mode and not str(_solo_context.get("session_id", "")).is_empty():
 		if _resolving_exchange or _processing_steps:
@@ -1967,6 +2008,27 @@ func _on_confirm_leave() -> void:
 		_request_solo_forfeit()
 		return
 	_leave_combat()
+
+func _online_hunt_exit(confirmed: bool) -> void:
+	if _connection_gate().blocked() or _online_identity_invalid or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity or _combat_backend.token.is_empty() or str(_solo_context.get("session_id", "")).is_empty():
+		_log_immediate("Recover the authenticated encounter before leaving.")
+		return
+	if not _solo_forfeit_request.is_empty() or not _online_turn_payload.is_empty() or not _online_hom_payload.is_empty() or not _online_turn_request.is_empty() or not _online_hunt_request.is_empty() or _online_presenting_events:
+		_log_immediate("Pending encounter action must be recovered before leaving.")
+		return
+	var status := str(_online_hunt_session.get("status", ""))
+	if status == "ACTIVE":
+		if not _solo_forfeit_action.is_empty():
+			_on_online_hunt_identity({"player_id": _combat_identity})
+		elif confirmed:
+			_request_solo_forfeit()
+		elif confirm_popup:
+			confirm_popup.popup_centered(Vector2i(600, 240))
+	elif status in ["VERIFIED_WIN", "VERIFIED_LOSS", "EXPIRED", "FORFEIT"] and _online_exit_reconciled and _solo_forfeit_action.is_empty():
+		_return_from_solo_hunt()
+	else:
+		_log_immediate("Recover the encounter before leaving.")
+		_on_online_hunt_identity({"player_id": _combat_identity})
 
 func _request_solo_forfeit() -> void:
 	if not _solo_forfeit_request.is_empty():
@@ -2000,6 +2062,8 @@ func _leave_combat() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _return_from_solo_hunt() -> void:
+	if _online_hunt_guard and (not _online_exit_reconciled or not _solo_forfeit_request.is_empty() or not _solo_forfeit_action.is_empty() or _connection_gate().blocked() or _online_identity_invalid or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity):
+		return
 	var zone := str(_solo_context.get("visual_zone_id", ""))
 	SceneRouter._world_encounter_return = _solo_context.get("return_view", {}).duplicate(true)
 	if SceneRouter._world_encounter_return.is_empty() and not _combat_identity.is_empty() and not _online_hunt_session.is_empty():
@@ -3238,7 +3302,7 @@ func _on_next_turn() -> void:
 			next_turn_btn.hide()
 			_on_online_hunt_identity({"player_id": _combat_identity})
 		else:
-			_return_from_solo_hunt()
+			_online_hunt_exit(false)
 		return
 	if not _combat_started and _combat_backend != null:
 		next_turn_btn.hide()

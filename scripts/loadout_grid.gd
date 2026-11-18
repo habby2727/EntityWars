@@ -102,6 +102,11 @@ var _hunt_identity := ""
 var _hunt_payload: Dictionary = {}
 var _hunt_recovered := false
 var _hunt_ready_requested := false
+var _hunt_exit_requested := false
+var _hunt_exit_after_loadout := false
+var _hunt_exit_request := ""
+var _hunt_exit_action := ""
+var _hunt_closed_recovery := ""
 var _spell_debug := DebugFlags.new()
 var _preferences_owner := ""
 var _preferences_ready := false
@@ -240,7 +245,7 @@ func _ready() -> void:
 		var original_back := Callable(back, "_on_pressed")
 		if back.pressed.is_connected(original_back):
 			back.pressed.disconnect(original_back)
-		back.pressed.connect(SceneRouter.return_from_dungeon if _dungeon_mode else SceneRouter.cancel_hunt_loadout)
+		back.pressed.connect(SceneRouter.return_from_dungeon if _dungeon_mode else _on_hunt_back)
 	if tooltip_panel:
 		tooltip_panel.visible = false
 		if tooltip_panel.get_parent() != self:
@@ -325,6 +330,50 @@ func _ready() -> void:
 		add_child(_hunt_backend)
 		_set_build_error("Verifying account for Boss Hunt...")
 
+func _on_hunt_back() -> void:
+	var session_id := str(SceneRouter._solo_hunt_context.get("session_id", ""))
+	if session_id.is_empty():
+		SceneRouter.cancel_hunt_loadout()
+		return
+	_hunt_ready_requested = false
+	if _hunt_backend == null or _hunt_identity.is_empty() or _hunt_backend._verified_player_id != _hunt_identity or _hunt_backend.token.is_empty() or get_node("/root/ConnectionGate").blocked():
+		_set_build_error("Recover the authenticated Boss Hunt before leaving.")
+		return
+	if not _hunt_submit_request.is_empty() or not _hunt_recovery_request.is_empty() or not _hunt_exit_request.is_empty():
+		_set_build_error("Wait for the pending Boss Hunt request to recover.")
+		return
+	if not _hunt_payload.is_empty() or SceneRouter._solo_hunt_context.has("pending_loadout"):
+		_hunt_exit_after_loadout = true
+		_set_build_error("Recover the pending loadout before leaving.")
+		_hunt_recovered = false
+		_recover_hunt_session()
+		return
+	_hunt_exit_requested = true
+	# A fresh server snapshot also resolves an uncertain forfeit response.
+	_recover_hunt_session()
+
+func _send_hunt_exit(session_id: String) -> void:
+	if _hunt_exit_action.is_empty():
+		_hunt_exit_action = _hunt_backend._make_uuid()
+	_hunt_exit_request = _hunt_backend.request_api("POST", "/world/boss-hunts/forfeit", {"session_id": session_id, "client_action_id": _hunt_exit_action}, false, get_node("/root/ConnectionGate").blocked())
+	if _hunt_exit_request.is_empty():
+		_set_build_error("Forfeit not confirmed. Recover the session and retry.")
+		_hunt_recovered = false
+	else:
+		_set_build_error("Confirming Boss Hunt forfeit...")
+
+func _finish_hunt_exit(session_id: String) -> void:
+	var gate := get_node("/root/ConnectionGate")
+	if gate.blocked() and not gate._player_verified:
+		return
+	if not _hunt_exit_action.is_empty():
+		if not gate.journal_confirm(_hunt_exit_action): return
+		_hunt_exit_action = ""
+	if not gate.journal_close("hunt", session_id): return
+	_hunt_exit_requested = false
+	if gate.blocked(): gate.recovery_completed()
+	SceneRouter.cancel_hunt_loadout()
+
 func _on_hunt_auth_changed(_token: String) -> void:
 	if not _hunt_identity.is_empty():
 		_hunt_ready_requested = false
@@ -367,6 +416,18 @@ func _recover_hunt_session() -> void:
 		_set_build_error("Recovering Boss Hunt session...")
 
 func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id == _hunt_exit_request and not request_id.is_empty():
+		_hunt_exit_request = ""
+		if _hunt_closed_recovery in ["EXPIRED", "VERIFIED_WIN", "VERIFIED_LOSS"] and not ok and int(data.get("http_status", 0)) == 409 and str(data.get("error", "")) == "Session is already closed." and not _hunt_identity.is_empty() and _hunt_backend._verified_player_id == _hunt_identity:
+			_hunt_closed_recovery = ""
+			_finish_hunt_exit(str(SceneRouter._solo_hunt_context.get("session_id", "")))
+			return
+		if ok and str(data.get("status", "")) == "FORFEIT" and str(data.get("session_id", "")) == str(SceneRouter._solo_hunt_context.get("session_id", "")) and not _hunt_identity.is_empty() and _hunt_backend._verified_player_id == _hunt_identity:
+			_finish_hunt_exit(str(SceneRouter._solo_hunt_context.get("session_id", "")))
+		else:
+			_hunt_recovered = false
+			_set_build_error("Forfeit not confirmed. Recover the session and retry.")
+		return
 	if request_id == _hunt_submit_request and not request_id.is_empty():
 		_hunt_submit_request = ""
 		if btn_play:
@@ -375,18 +436,38 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 			_hunt_recovered = false
 			_set_build_error("Account changed. Return to World Zone.")
 			return
+		if not _hunt_closed_recovery.is_empty() and not _hunt_payload.is_empty():
+			var rejected := not ok and int(data.get("http_status", 0)) == 409 and str(data.get("error", "")) == "Session unavailable for initialization."
+			var replayed := ok and str(data.get("session_id", "")) == str(SceneRouter._solo_hunt_context.get("session_id", "")) and _hunt_loadout_matches(data)
+			if rejected or replayed:
+				var gate := get_node("/root/ConnectionGate")
+				if not gate.journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
+				if not gate.journal_close("hunt", str(SceneRouter._solo_hunt_context.get("session_id", ""))): return
+				_hunt_payload.clear()
+				SceneRouter._solo_hunt_context.erase("pending_loadout")
+				_hunt_closed_recovery = ""
+				if gate.blocked(): gate.recovery_to_combat()
+				else: SceneRouter.go_to_combat()
+				return
 		if ok and _accept_hunt_session(data) and int(data.get("combat_revision", 0)) >= 1 and data.get("combat_state") is Dictionary and _hunt_loadout_matches(data):
 			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 			_hunt_payload.clear()
 			SceneRouter._solo_hunt_context.erase("pending_loadout")
 			_hunt_recovered = true
-			_continue_hunt_ready()
+			if _hunt_exit_after_loadout:
+				_hunt_exit_after_loadout = false
+				call_deferred("_on_hunt_back")
+			else:
+				_continue_hunt_ready()
 			return
 		if not ok and str(data.get("error", "")) in ["Invalid or unsupported hunt loadout.", "Invalid hunt loadout selection.", "Invalid hunt loadout request."]:
 			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 			_hunt_payload.clear()
 			SceneRouter._solo_hunt_context.erase("pending_loadout")
 			_hunt_ready_requested = false
+			if _hunt_exit_after_loadout:
+				_hunt_exit_after_loadout = false
+				call_deferred("_on_hunt_back")
 			_set_build_error("Loadout rejected: " + str(data.get("error")))
 			return
 		_hunt_recovered = false
@@ -397,8 +478,29 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 		return
 	_hunt_recovery_request = ""
 	var session: Variant = data.get("session")
+	if _hunt_exit_requested:
+		var session_id := str(SceneRouter._solo_hunt_context.get("session_id", ""))
+		if not ok or not session is Dictionary or session_id.is_empty() or str(session.get("session_id", "")) != session_id or _hunt_identity.is_empty() or _hunt_backend._verified_player_id != _hunt_identity or not _hunt_payload.is_empty() or SceneRouter._solo_hunt_context.has("pending_loadout"):
+			_hunt_recovered = false
+			_set_build_error("Boss Hunt exit is uncertain. Recover and retry.")
+			return
+		var status := str(session.get("status", ""))
+		if status == "ACTIVE":
+			_send_hunt_exit(session_id)
+		elif not _hunt_exit_action.is_empty() and (status == "EXPIRED" or (status in ["VERIFIED_WIN", "VERIFIED_LOSS"] and _accept_hunt_session(session))):
+			_hunt_closed_recovery = status
+			_send_hunt_exit(session_id)
+		elif status == "FORFEIT" or (status in ["EXPIRED", "VERIFIED_WIN", "VERIFIED_LOSS"] and _hunt_exit_action.is_empty() and (status == "EXPIRED" or _accept_hunt_session(session))):
+			_finish_hunt_exit(session_id)
+		else:
+			_set_build_error("Boss Hunt exit is uncertain. Recover and retry.")
+		return
 	if ok and session is Dictionary and not _hunt_identity.is_empty() and _hunt_backend._verified_player_id == _hunt_identity and str(session.get("session_id", "")) == str(SceneRouter._solo_hunt_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"]:
 		var gate := get_node("/root/ConnectionGate")
+		if not _hunt_payload.is_empty():
+			_hunt_closed_recovery = str(session.status)
+			_hunt_submit_request = _hunt_backend.request_api("POST", "/world/boss-hunts/loadout", _hunt_payload.duplicate(true), false, gate.blocked() and gate._player_verified)
+			return
 		if not gate.journal_close("hunt", str(session.session_id)): return
 		_hunt_payload.clear()
 		SceneRouter._solo_hunt_context.erase("pending_loadout")
@@ -420,12 +522,16 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 			if _hunt_payload.has("session_id") and not get_node("/root/ConnectionGate").journal_confirm(str(_hunt_payload.get("client_action_id", ""))): return
 		_hunt_payload.clear()
 		SceneRouter._solo_hunt_context.erase("pending_loadout")
-		_continue_hunt_ready()
+		if _hunt_exit_after_loadout:
+			_hunt_exit_after_loadout = false
+			call_deferred("_on_hunt_back")
+		else:
+			_continue_hunt_ready()
 	else:
 		_set_build_error("Session recovered. Retry the same loadout." if not _hunt_payload.is_empty() else "Session recovered. Select your loadout.")
 		if _hunt_payload.is_empty() and not SceneRouter._solo_hunt_context.has("pending_loadout"):
 			_restore_build_preferences(_hunt_identity)
-		if _hunt_ready_requested:
+		if _hunt_ready_requested or _hunt_exit_after_loadout:
 			call_deferred("_submit_hunt_loadout")
 
 func _continue_hunt_ready() -> void:
@@ -1917,7 +2023,7 @@ func _submit_dungeon_loadout() -> void:
 		_set_build_error("Confirming Dungeon loadout...")
 
 func _submit_hunt_loadout() -> void:
-	if not _hunt_submit_request.is_empty() or not _hunt_recovery_request.is_empty():
+	if _hunt_exit_requested or not _hunt_exit_request.is_empty() or not _hunt_submit_request.is_empty() or not _hunt_recovery_request.is_empty():
 		return
 	if not _hunt_recovered or _hunt_backend == null or _hunt_identity.is_empty() or _hunt_backend._verified_player_id != _hunt_identity or _hunt_backend.token.is_empty():
 		_set_build_error("Recover the authenticated Boss Hunt before submitting a loadout.")

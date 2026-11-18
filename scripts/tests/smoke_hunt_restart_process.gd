@@ -10,6 +10,33 @@ func _run() -> void:
 		return
 	var phase := OS.get_environment("HUNT_RESTART_PHASE")
 	var client: BackendClient
+	if phase == "loadout_back":
+		var auth := FileAccess.open("user://auth.json", FileAccess.WRITE)
+		auth.store_string(JSON.stringify({"token": OS.get_environment("HUNT_RESTART_TOKEN")}))
+		auth.close()
+		SceneRouter._solo_hunt_context = {"session_id": OS.get_environment("HUNT_RESTART_SESSION"), "hunt_id": "hunt_common", "visual_zone_id": "zone_chaos"}
+		SceneRouter._hunt_loadout_active = true
+		change_scene_to_file(SceneRouter.SCENE_LOADOUT)
+		await process_frame
+		await process_frame
+		var loadout = current_scene
+		var limit := Time.get_ticks_msec() + 20000
+		while (not loadout._hunt_recovered or root.get_node("ConnectionGate").blocked()) and Time.get_ticks_msec() < limit:
+			await create_timer(0.05).timeout
+		if not loadout._hunt_recovered:
+			_fail("loadout did not recover")
+			return
+		loadout._on_hunt_back()
+		while current_scene == loadout and Time.get_ticks_msec() < limit:
+			await create_timer(0.05).timeout
+		var journal := SessionRecoveryJournal.new()
+		journal.set_identity(OS.get_environment("HUNT_RESTART_PLAYER"))
+		if current_scene == null or current_scene.scene_file_path != SceneRouter.SCENE_WORLD_ZONE_CHAOS or not journal.load_entry().is_empty():
+			_fail("loadout Back did not close the session and return to its zone")
+			return
+		print("PASS loadout Back closed original hunt")
+		quit(0)
+		return
 	if phase == "first":
 		client = BackendClient.new()
 		client.auto_dev_login = false
@@ -63,6 +90,13 @@ func _run() -> void:
 			print("PASS invalid recovery journal remains locked")
 			quit(0)
 			return
+		if OS.get_environment("RESTART_FORFEIT") == "1" and not gate.player_id.is_empty() and not gate.blocked() and current_scene != null and current_scene.scene_file_path in [SceneRouter.SCENE_WORLD_GATE, SceneRouter.SCENE_WORLD_ZONE, SceneRouter.SCENE_WORLD_ZONE_CHAOS, SceneRouter.SCENE_WORLD_ZONE_CORRUPTED, SceneRouter.SCENE_WORLD_ZONE_CRYSTAL]:
+			var journal := SessionRecoveryJournal.new()
+			journal.set_identity(gate.player_id)
+			if journal.load_entry().is_empty():
+				print("PASS recovered original hunt turn")
+				quit(0)
+				return
 		if not gate.player_id.is_empty() and not gate.blocked() and current_scene != null and current_scene.has_method("_on_online_hunt_response"):
 			var journal := SessionRecoveryJournal.new()
 			journal.set_identity(gate.player_id)

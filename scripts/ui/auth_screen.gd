@@ -93,6 +93,9 @@ func _process(_delta: float) -> void:
 	elif ConnectionGate.state == ConnectionGate.State.CONNECTED and not ConnectionGate.player_id.is_empty() and client._verified_player_id == ConnectionGate.player_id:
 		verifying = false
 		get_tree().change_scene_to_file(LOADING)
+	elif ConnectionGate.state == ConnectionGate.State.ERROR and "Access forbidden" in ConnectionGate._detail.text:
+		message.text = ConnectionGate._detail.text
+		retry.hide()
 	elif ConnectionGate.state == ConnectionGate.State.RECONNECTING or ConnectionGate.state == ConnectionGate.State.ERROR:
 		message.text = tr("AUTH_CONNECTION_ERROR")
 		retry.show()
@@ -237,6 +240,9 @@ func _on_auth_response(result: int, code: int, _headers: PackedStringArray, body
 		message.text = tr("AUTH_CONNECTION_ERROR")
 		retry.show()
 		return
+	if code == 403:
+		message.text = "Access forbidden. Your account is not permitted."
+		return
 	if code < 200 or code >= 300:
 		message.text = tr("AUTH_DUPLICATE") if code == 409 else tr("AUTH_INVALID_LOGIN")
 		return
@@ -248,6 +254,9 @@ func _on_auth_response(result: int, code: int, _headers: PackedStringArray, body
 	var identity := str(data.get("player_id", ""))
 	var dir := DirAccess.open("user://")
 	if identity.is_empty() or dir == null:
+		message.text = tr("AUTH_RECOVERY_REQUIRED")
+		return
+	if is_instance_valid(ConnectionGate._suspended_scene) and identity != ConnectionGate.player_id:
 		message.text = tr("AUTH_RECOVERY_REQUIRED")
 		return
 	var expected_journal := "session_recovery_%s.json" % identity.sha256_text()
@@ -265,6 +274,7 @@ func _on_auth_response(result: int, code: int, _headers: PackedStringArray, body
 	tabs.hide()
 	message.text = tr("AUTH_VERIFYING")
 	client.set_token(str(data.token))
+	ConnectionGate.resume_after_sign_in(identity, str(data.token))
 
 func _auth_finished() -> void:
 	busy = false

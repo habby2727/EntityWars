@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 
 var _fault_server: TCPServer
 var _fault_peer: StreamPeerTCP
@@ -72,7 +72,28 @@ func _run() -> void:
 		push_error("HTTP authentication rejection did not lock")
 		quit(1)
 		return
-	gate.authentication_changed(valid_token, url)
+	var original_id: String = gate.player_id
+	var game_scene := Control.new()
+	root.add_child(game_scene)
+	current_scene = game_scene
+	gate.sign_in_again()
+	var auth_scene := current_scene
+	if auth_scene == game_scene or not auth_scene.has_method("auth_gate_screen") or game_scene.process_mode != Node.PROCESS_MODE_DISABLED:
+		push_error("Sign in did not preserve the game scene")
+		quit(1)
+		return
+	var wrong_login := JSON.stringify({"token": valid_token, "player_id": "wrong-account"}).to_utf8_buffer()
+	auth_scene._on_auth_response(HTTPRequest.RESULT_SUCCESS, 200, PackedStringArray(), wrong_login)
+	if current_scene != auth_scene or gate.player_id != original_id:
+		push_error("A different account escaped the recovery lock")
+		quit(1)
+		return
+	var accepted := JSON.stringify({"token": valid_token, "player_id": original_id}).to_utf8_buffer()
+	auth_scene._on_auth_response(HTTPRequest.RESULT_SUCCESS, 200, PackedStringArray(), accepted)
+	if current_scene != game_scene or gate.player_id != original_id:
+		push_error("Sign in did not restore the original session")
+		quit(1)
+		return
 	deadline = Time.get_ticks_msec() + 20000
 	while gate.blocked() and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
@@ -100,7 +121,7 @@ func _run() -> void:
 			push_error("Game-rule rejection incorrectly locked gameplay")
 			quit(1)
 			return
-	for fault in [[500, "{}", gate.State.RECONNECTING], [200, "invalid-json", gate.State.ERROR], [403, "{}", gate.State.AUTH_REQUIRED]]:
+	for fault in [[500, "{}", gate.State.RECONNECTING], [503, "{}", gate.State.RECONNECTING], [200, "invalid-json", gate.State.ERROR], [403, "{}", gate.State.ERROR]]:
 		_fault_code = fault[0]
 		_fault_body = fault[1]
 		_fault_server = TCPServer.new()

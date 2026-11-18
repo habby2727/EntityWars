@@ -1,3 +1,4 @@
+import { AuthStorageUnavailableError } from "./storage_error";
 ﻿import { ensureRedisReady, getRedis } from "../db/redis";
 
 export type TokenRecord = {
@@ -93,6 +94,7 @@ export async function getAccessToken(token: string): Promise<TokenRecord | null>
 	try {
 		const redis = getRedis();
 		if (!(await ensureRedisReady())) {
+			if (production) throw new AuthStorageUnavailableError();
 			return null;
 		}
 		const raw = await redis.get(accessKey(token));
@@ -110,6 +112,7 @@ export async function getAccessToken(token: string): Promise<TokenRecord | null>
 		accessMemory.set(token, parsed);
 		return parsed;
 	} catch (err) {
+		if (production) throw new AuthStorageUnavailableError();
 		console.warn("[auth] access token read failed", err);
 		return null;
 	}
