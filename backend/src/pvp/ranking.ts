@@ -34,6 +34,8 @@ export function createPvpRanking(db: Database, clock: () => number = Date.now) {
   const insert = db.prepare("INSERT OR IGNORE INTO pvp_season_ratings (season, player_id, rating, updated_at) VALUES (?, ?, 1000, ?)");
   const get = db.prepare("SELECT rating, updated_at FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
   const list = db.prepare("SELECT r.player_id, p.display_name, r.rating, r.updated_at FROM pvp_season_ratings r JOIN players p ON p.player_id = r.player_id WHERE r.season = ? ORDER BY r.rating DESC, r.player_id ASC");
+  const prune = db.prepare("DELETE FROM pvp_season_ratings WHERE season < ?");
+  let prunedThrough = "";
   const cache = new Map<string, { time: number; rows: any[] }>();
   const ensure = (season: string, playerId: string, now: number) => { insert.run(season, playerId, now); return get.get(season, playerId) as { rating: number; updated_at: number }; };
   return {
@@ -41,6 +43,7 @@ export function createPvpRanking(db: Database, clock: () => number = Date.now) {
     invalidate() { cache.clear(); },
     leaderboard(playerId: string, requestedSeason?: string | null) {
       const now = clock(), season = pvpSeason(now), previous = previousPvpSeason(now);
+      if (prunedThrough !== previous) { prune.run(previous); prunedThrough = previous; }
       const viewSeason = requestedSeason ?? season;
       if (viewSeason !== season && viewSeason !== previous) throw new Error("INVALID_SEASON");
       if (typeof playerId !== "string" || !playerId) throw new Error("INVALID_PLAYER");
@@ -52,14 +55,14 @@ export function createPvpRanking(db: Database, clock: () => number = Date.now) {
       for (const key of cache.keys()) if (key !== season && key !== previous) cache.delete(key);
       const cached = (key: string, rows?: any[]) => {
         let entry = cache.get(key);
-        if (!entry || now < entry.time || now - entry.time >= 1_200_000) {
+        if (!entry || now < entry.time || now - entry.time >= 60_000) {
           entry = { time: now, rows: rows ?? list.all(key) as any[] }; cache.set(key, entry);
         }
         return entry;
       };
       const currentCache = cached(season, live), viewCache = cached(viewSeason, viewSeason === season ? live : undefined);
       const publicRow = (row: any, rank: number) => ({ player_id: row.player_id, display_name: row.display_name, mp: row.rating, rank, ...pvpRank(row.rating) });
-      return { season, view_season: viewSeason, previous_season: previous, player: personal, global_top_10: viewCache.rows.slice(0, 10).map((row, i) => publicRow(row, i + 1)), division_top_10: currentCache.rows.filter(same).slice(0, 10).map((row, i) => publicRow(row, i + 1)), thresholds: PVP_THRESHOLDS, updated_at: viewCache.time, next_update_at: Math.min(viewCache.time + 1_200_000, currentCache.time + 1_200_000, nextPvpSeason(now)) };
+      return { season, view_season: viewSeason, previous_season: previous, player: personal, global_top_10: viewCache.rows.slice(0, 10).map((row, i) => publicRow(row, i + 1)), division_top_10: currentCache.rows.filter(same).slice(0, 10).map((row, i) => publicRow(row, i + 1)), thresholds: PVP_THRESHOLDS, updated_at: viewCache.time, next_update_at: Math.min(viewCache.time + 60_000, currentCache.time + 60_000, nextPvpSeason(now)) };
     }
   };
 }

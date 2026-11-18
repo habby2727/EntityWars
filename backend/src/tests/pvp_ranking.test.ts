@@ -24,7 +24,7 @@ test("leaderboards cache lists, keep personal ranks live and preserve monthly hi
  expect(first.global_top_10[0].player_id).toBe("p11"); expect(first.player.global_rank).toBe(2);
  db.query("UPDATE pvp_season_ratings SET rating = 1400 WHERE player_id = ?").run("p00");
  const live = ranking.leaderboard("p00"); expect(live.player.mp).toBe(1400); expect(live.player.global_rank).toBe(1); expect(live.global_top_10[0].player_id).toBe("p11");
- now += 1_200_000; expect(ranking.leaderboard("p00").global_top_10[0].player_id).toBe("p00");
+ now += 60_000; expect(ranking.leaderboard("p00").global_top_10[0].player_id).toBe("p00");
  now = Date.UTC(2026,1,1); const next = ranking.leaderboard("p00"); expect(next.season).toBe("2026-02"); expect(next.player.mp).toBe(1000);
  expect((db.query("SELECT rating FROM pvp_season_ratings WHERE season = ? AND player_id = ?").get("2026-01","p00") as any).rating).toBe(1400);
  expect(nextPvpSeason(now)).toBe(Date.UTC(2026,2,1)); db.close();
@@ -40,7 +40,10 @@ test("historical global rankings validate UTC months and retain current personal
   db.query("INSERT INTO pvp_season_ratings VALUES (?, ?, ?, ?)").run("2025-12",id,1500,0);
  }
  let now = Date.UTC(2026,0,1); const ranking = createPvpRanking(db,()=>now);
+ db.query("INSERT INTO pvp_season_ratings VALUES (?, ?, ?, ?)").run("2025-11","p00",1300,0);
  const current = ranking.leaderboard("p00");
+ expect((db.query("SELECT COUNT(*) n FROM pvp_season_ratings WHERE season = ?").get("2025-11") as any).n).toBe(0);
+ expect(current.next_update_at - now).toBe(60_000);
  expect(current.season).toBe("2026-01"); expect(current.previous_season).toBe("2025-12");
  const past = ranking.leaderboard("p00", "2025-12");
  expect(past.view_season).toBe("2025-12");

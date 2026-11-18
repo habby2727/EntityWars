@@ -150,7 +150,11 @@ test("missing decisions forfeit and pending Inspiration auto-declines on timeout
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now); queue.join("a",{});
  let id=(queue.join("b",{}) as any).match_id; const service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);
  service.decide(id,"a","a1",1,{turn:1,spell_id:"cinder_fist"}); now+=60000;
- expect(service.state(id,"a").result.result).toBe("win"); expect(service.state(id,"b").result.result).toBe("loss");
+ const win = service.state(id,"a").result, loss = service.state(id,"b").result;
+ expect(win).toMatchObject({result:"win", mp_delta:24, mp_total_after:1024, league:"Copper", division:"IV"});
+ expect(loss).toMatchObject({result:"loss", mp_delta:-12, mp_total_after:988, league:"Copper", division:"IV"});
+ db.query("UPDATE pvp_season_ratings SET rating = 2500 WHERE player_id = ?").run("a");
+ expect(service.state(id,"a").result).toEqual(win);
  queue.join("a",{}); id=(queue.join("b",{}) as any).match_id;
  const row=db.query("SELECT combat_state_json FROM pvp_matches WHERE match_id = ?").get(id) as any, state=JSON.parse(row.combat_state_json);
  for(const side of ["left","right"]) { const f=state.fighters[side]; f.inspiration=3; f.inspiration_pending=true; f.inspiration_offers=f.inspiration_catalog.slice(0,3).map((s: any)=>s.id); }

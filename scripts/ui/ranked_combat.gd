@@ -26,6 +26,7 @@ var timer_label: Label
 var event_queue: Array = []
 var event_delay := 0.0
 var highlights_shown := false
+var result_popup_shown := false
 var debug_visual := false
 
 func _ready() -> void:
@@ -213,6 +214,7 @@ func _process(delta: float) -> void:
 	if str(state.get("status", "")) == "FINISHED" and event_queue.is_empty() and not highlights_shown:
 		highlights_shown = true
 		host._show_highlights()
+		_show_result_popup()
 	if not state.is_empty() and str(state.get("status", "")) == "ACTIVE":
 		var seconds := maxi(0, ceili(float(state.get("deadline", 0)) / 1000.0 - Time.get_unix_time_from_system()))
 		timer_panel.show()
@@ -500,3 +502,40 @@ func return_to_loadout() -> void:
 		return
 	SceneRouter._ranked_context.clear()
 	SceneRouter.go_to_loadout()
+
+func _show_result_popup() -> void:
+	if result_popup_shown:
+		return
+	var result: Dictionary = state.get("result", {})
+	if result.is_empty():
+		return
+	result_popup_shown = true
+	var outcome := str(result.get("result", "draw"))
+	var body: VBoxContainer = host._result_popup("VICTORY" if outcome == "win" else "DEFEAT" if outcome == "loss" else "DRAW")
+	var delta := int(result.get("mp_delta", 0))
+	var amount := Label.new()
+	amount.text = "%+d MP" % delta
+	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	amount.add_theme_font_size_override("font_size", 42)
+	amount.add_theme_color_override("font_color", Color("80e8a3") if delta > 0 else Color("f08787") if delta < 0 else Color("e7d293"))
+	body.add_child(amount)
+	var accent := Label.new()
+	accent.text = "*  +  *" if delta > 0 else "-  *  -" if delta < 0 else "*  -  *"
+	accent.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	accent.add_theme_color_override("font_color", Color("80e8a3") if delta > 0 else Color("f08787") if delta < 0 else Color("e7d293"))
+	body.add_child(accent)
+	if result.has("mp_total_after"):
+		var league := str(result.get("league", ""))
+		var icon := TextureRect.new()
+		icon.custom_minimum_size = Vector2(64, 64)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		var path := "res://assets/ui/pvp/league_icons_128x128/%s_league.png" % league.to_lower()
+		if ResourceLoader.exists(path):
+			icon.texture = load(path) as Texture2D
+		body.add_child(icon)
+		var rank := Label.new()
+		rank.text = "%s League - Division %s\nCurrent MP: %d" % [league, str(result.get("division", "")), int(result.mp_total_after)]
+		rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		rank.add_theme_font_size_override("font_size", 22)
+		body.add_child(rank)

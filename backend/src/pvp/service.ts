@@ -1,7 +1,7 @@
 ﻿import type { Database } from "bun:sqlite";
 import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { createPvpCombatState, createPvpFighter, validatePvpDecision, resolvePvpExchange, resolvePvpInspiration, type PvpSide, type PvpCatalogs, type PvpSnapshot } from "./combat";
-import { createPvpRanking, pvpRatingDelta, pvpSeason } from "./ranking";
+import { createPvpRanking, pvpRank, pvpRatingDelta, pvpSeason } from "./ranking";
 
 export function pvpRandom(secret: Uint8Array, matchId: string, battle: number, turn: number, draw: number): number {
   if (!(secret instanceof Uint8Array) || secret.length < 32 || typeof matchId !== "string" || !matchId || ![battle, turn, draw].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error("INVALID_PVP_RNG_INPUT");
@@ -119,7 +119,9 @@ export function settlePvpMatch(db: Database, matchId: string, winner: "left" | "
     if (match.season === currentSeason) for (const [row, change] of [[left,ld],[right,rd]] as [any,number][]) {
       if (db.query("UPDATE pvp_season_ratings SET rating = MAX(0, rating + ?), updated_at = ? WHERE season = ? AND player_id = ?").run(change, now, match.season, row.player_id).changes !== 1) throw new Error("INVALID_RATING_STATE");
     }
-    const result = { result: winner, season: match.season, deltas: { left: ld, right: rd } };
+    const currentRating = db.query("SELECT rating FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
+    const totals = { left: (currentRating.get(currentSeason, left.player_id) as any)?.rating ?? 1000, right: (currentRating.get(currentSeason, right.player_id) as any)?.rating ?? 1000 };
+    const result = { result: winner, season: match.season, deltas: { left: ld, right: rd }, totals };
     db.query("UPDATE pvp_matches SET status = 'FINISHED', result_json = ?, settled_at = ?, updated_at = ?, revision = revision + 1 WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(result),now,now,matchId);
     db.query("UPDATE pvp_match_players SET active = 0 WHERE match_id = ?").run(matchId);
     return result;
@@ -191,7 +193,8 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
       return { player_id: identity.player_id, display_name: identity.display_name, entity_id: f.id, name: f.name, type: f.type, hp: f.hp, max_hp: f.max_hp, atk: f.atk, def: f.def, status, spell_neutralize_active: f.spell_neutralize_active, spell_neutralize_pending: f.spell_neutralize_pending, delayed_damage, active_weapon_slot: f.active_weapon_slot, weapon_ids: f.weapons.map((weapon: any) => weapon?.id ?? null), hom_id: f.hom_id, hom_name: f.hom_name, hom_energy: f.hom_energy, hom_max_energy: f.hom_max_energy, hom_ready_at: f.hom_ready_at, hom_spent: f.hom_spent, ultra_used: f.ultra_used, inspiration: f.inspiration, inspiration_pending: !!f.inspiration_pending, inspiration_used_this_battle: !!f.inspiration_used_this_battle, ...(f.strategic_trap ? {trap: {value:f.strategic_trap.value, expires_turn:f.strategic_trap.expires_turn}} : {}), ...(f.strategic_heal_suppression ? {heal_suppression: {expires_turn:f.strategic_heal_suppression.expires_turn}} : {}), ...(side === viewer ? { spell_ids: [...f.spell_ids], spell_cooldowns: {...f.spell_cooldowns}, inspiration_offers: f.inspiration_pending ? [...f.inspiration_offers] : [] } : {}) };
     };
     const finished = row.result_json ? JSON.parse(row.result_json) : null;
-    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season } : null;
+    const total = finished?.totals?.[viewer];
+    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...(Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {}) } : null;
     const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
     return { match_id: row.match_id, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizeEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
   };
