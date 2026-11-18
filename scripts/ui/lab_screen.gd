@@ -3,6 +3,7 @@ class_name LabScreen
 
 const LabActionAlert := preload("res://scripts/ui/lab_action_alert.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const ResourceBars := preload("res://scripts/ui/lab_resource_bars.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 const SpecializedPanel := preload("res://scripts/ui/lab_specialized_panel.gd")
 @export var backend_path: NodePath
@@ -197,16 +198,26 @@ func _setup_compact_navigation() -> void:
 	if scroll != null:
 		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var overlay := _background_panel.get_node_or_null("ContentMargin/TopOverlay") as Control
+	if overlay == null and _background_panel != null:
+		overlay = Control.new()
+		overlay.name = "TopOverlay"
+		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overlay.z_index = 50
+		_background_panel.get_node("ContentMargin").add_child(overlay)
 	if overlay != null and _resource_bar_panel != null:
 		_resource_bar_panel.reparent(overlay)
-		_resource_bar_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		_resource_bar_panel.position = Vector2(110, -42)
-		_resource_bar_panel.custom_minimum_size = Vector2(500, 34)
+		_resource_bar_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		_resource_bar_panel.offset_left = -400
+		_resource_bar_panel.offset_right = 400
+		_resource_bar_panel.offset_top = -50
+		_resource_bar_panel.offset_bottom = -10
 	var heading := _right_panel.get_node_or_null("Margin/DetailVBox/CostHeader") as Label
 	if heading != null:
 		heading.add_theme_font_size_override("font_size", 14)
 	if overlay != null:
-		MenuArt.button(overlay.get_node("BackButton") as Button)
+		var back := overlay.get_node_or_null("BackButton") as Button
+		if back != null:
+			MenuArt.button(back)
 	var background := StyleBoxFlat.new()
 	background.bg_color = Color(0.02, 0.07, 0.08, 0.9)
 	background.border_color = Color(0.47, 0.4, 0.25, 0.8)
@@ -311,6 +322,7 @@ func _process(delta: float) -> void:
 	_status_refresh_elapsed += delta
 	if _status_refresh_elapsed >= 1.0:
 		_status_refresh_elapsed = 0.0
+		_update_essence_tooltip()
 		if _debug.unlock_all_buildings:
 			_advance_debug_research()
 		_update_cards()
@@ -492,31 +504,8 @@ func _apply_card_scale(card: BuildingCard) -> void:
 func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
 		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-	if _resource_bar == null:
-		return
-	for child in _resource_bar.get_children():
-		child.queue_free()
-	_resource_rows.clear()
-	for res_id in StaticDB.REQUIRED_RESOURCE_IDS:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 4)
-		var icon := TextureRect.new()
-		var icon_size = int(round(36.0 * _ui_scale))
-		icon.custom_minimum_size = Vector2(icon_size, icon_size)
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.texture = _catalog.get_tex(res_id)
-		var label := Label.new()
-		label.text = "0"
-		label.add_theme_font_size_override("font_size", int(round(24.0 * _ui_scale)))
-		row.add_child(icon)
-		row.add_child(label)
-		_resource_bar.add_child(row)
-		_resource_rows[res_id] = {
-			"row": row,
-			"icon": icon,
-			"label": label
-		}
+	if _resource_bar != null:
+		_resource_rows = ResourceBars.build(_resource_bar, _catalog, true, -10)
 
 func _build_experiments() -> void:
 	if _experiment_list == null:
@@ -975,28 +964,18 @@ func _update_cards() -> void:
 		badge.visible = verified and LabActionAlert.available(id, _state, _db, now, _is_pending_building(id))
 
 func _update_resource_bar() -> void:
-	if _resource_bar == null:
+	ResourceBars.update(_resource_rows, _state, _debug.unlock_all_buildings, _db.balance)
+	for res_id in _resource_rows:
+		var row: Control = _resource_rows[res_id].row
+		row.tooltip_text = _get_resource_name(res_id)
+	_update_essence_tooltip()
+
+func _update_essence_tooltip() -> void:
+	if not _resource_rows.has("essence"):
 		return
-	var wallet = _state.get("wallet", {})
-	if typeof(wallet) != TYPE_DICTIONARY:
-		wallet = {}
-	var per_hour = _get_production_per_hour()
-	for res_id in _resource_rows.keys():
-		var row_data = _resource_rows.get(res_id, {})
-		if typeof(row_data) != TYPE_DICTIONARY:
-			continue
-		var row: Control = row_data.get("row", null)
-		var label: Label = row_data.get("label", null)
-		var icon: TextureRect = row_data.get("icon", null)
-		if icon != null and icon.texture == null:
-			icon.texture = _catalog.get_tex(res_id)
-		var amount = int(wallet.get(res_id, 0))
-		if label != null:
-			label.text = str(amount)
-		if row != null:
-			var res_name = _get_resource_name(res_id)
-			var rate = float(per_hour.get(res_id, 0.0))
-			row.tooltip_text = "%s\n+%s / hr" % [res_name, _format_number(rate)]
+	var row: Control = _resource_rows.essence.row
+	var rate := float(_get_production_per_hour().get("essence", 0.0))
+	row.tooltip_text = "%s\n+%s / h" % [_get_resource_name("essence"), _format_number(rate)]
 
 func _update_detail() -> void:
 	if _selected_id == "":

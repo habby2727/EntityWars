@@ -20,6 +20,7 @@ market_refresh_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/Ma
 market_orders_list_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/OrdersList")
 sell_resource_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource/SellResource")
 sell_amount_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount/SellAmount")
+sell_currency_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowCurrency/SellCurrency")
 sell_price_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice/SellPrice")
 sell_create_button_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/CreateSellButton")
 sell_error_label_path = NodePath("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/SellErrorLabel")
@@ -86,6 +87,14 @@ size_flags_horizontal = 3
 layout_mode = 2
 text = "UI_BACK_UPPER"
 
+[node name="ResourceWallet" type="CenterContainer" parent="Background/Margin/RootVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Resources" type="HBoxContainer" parent="Background/Margin/RootVBox/ResourceWallet"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
 [node name="Tabs" type="TabContainer" parent="Background/Margin/RootVBox"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -135,7 +144,7 @@ theme_override_constants/separation = 6
 
 [node name="CreateHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
-text = "TRADE_CREATE_SELL"
+text = "Create Sell Offer"
 
 [node name="CreateSell" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox"]
 layout_mode = 2
@@ -147,7 +156,7 @@ theme_override_constants/separation = 8
 
 [node name="ResourceLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource"]
 layout_mode = 2
-text = "TRADE_RESOURCE"
+text = "Resource you're selling"
 
 [node name="SellResource" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowResource"]
 layout_mode = 2
@@ -159,7 +168,7 @@ theme_override_constants/separation = 8
 
 [node name="AmountLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount"]
 layout_mode = 2
-text = "TRADE_AMOUNT"
+text = "Quantity to sell"
 
 [node name="SellAmount" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowAmount"]
 layout_mode = 2
@@ -172,12 +181,27 @@ theme_override_constants/separation = 8
 
 [node name="PriceLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice"]
 layout_mode = 2
-text = "TRADE_PRICE"
+text = "Price per unit"
 
 [node name="SellPrice" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowPrice"]
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "e.g., 5"
+
+[node name="RowCurrency" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
+layout_mode = 2
+
+[node name="CurrencyLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowCurrency"]
+layout_mode = 2
+text = "Receive payment in"
+
+[node name="SellCurrency" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/RowCurrency"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Preview" type="Label" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
+layout_mode = 2
+autowrap_mode = 2
 
 [node name="CreateSellButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell"]
 layout_mode = 2
@@ -214,6 +238,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
+[node name="Explanation" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
+layout_mode = 2
+text = "Players provide resources for a service. After the processing time, they can claim the result."
+autowrap_mode = 2
+
 [node name="JobsHeaderRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
@@ -241,7 +270,7 @@ theme_override_constants/separation = 6
 
 [node name="CreateJobHeader" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
-text = "TRADE_CREATE_JOB"
+text = "Advanced: Create Job"
 
 [node name="CreateJob" type="VBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox"]
 layout_mode = 2
@@ -253,7 +282,7 @@ theme_override_constants/separation = 8
 
 [node name="InputLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
 layout_mode = 2
-text = "TRADE_INPUT"
+text = "You provide"
 
 [node name="JobInput" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
 layout_mode = 2
@@ -262,7 +291,7 @@ size_flags_horizontal = 3
 [node name="JobInputAmount" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowInput"]
 layout_mode = 2
 custom_minimum_size = Vector2(80, 0)
-placeholder_text = "Amount"
+placeholder_text = "Amount you provide"
 
 [node name="RowOutput" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
 layout_mode = 2
@@ -270,7 +299,7 @@ theme_override_constants/separation = 8
 
 [node name="OutputLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
 layout_mode = 2
-text = "TRADE_OUTPUT"
+text = "You can receive"
 
 [node name="JobOutput" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
 layout_mode = 2
@@ -279,12 +308,12 @@ size_flags_horizontal = 3
 [node name="JobOutputMin" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
 layout_mode = 2
 custom_minimum_size = Vector2(70, 0)
-placeholder_text = "Min"
+placeholder_text = "Minimum reward"
 
 [node name="JobOutputMax" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowOutput"]
 layout_mode = 2
 custom_minimum_size = Vector2(70, 0)
-placeholder_text = "Max"
+placeholder_text = "Maximum reward"
 
 [node name="RowDuration" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob"]
 layout_mode = 2
@@ -292,7 +321,7 @@ theme_override_constants/separation = 8
 
 [node name="DurationLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowDuration"]
 layout_mode = 2
-text = "TRADE_DURATION"
+text = "Processing time"
 
 [node name="JobDuration" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowDuration"]
 layout_mode = 2
@@ -305,7 +334,7 @@ theme_override_constants/separation = 8
 
 [node name="CommissionLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission"]
 layout_mode = 2
-text = "TRADE_COMMISSION"
+text = "Service fee"
 
 [node name="JobCommission" type="OptionButton" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowCommission"]
 layout_mode = 2
@@ -322,7 +351,7 @@ theme_override_constants/separation = 8
 
 [node name="QueueLabel" type="Label" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowQueue"]
 layout_mode = 2
-text = "TRADE_QUEUE_LIMIT"
+text = "Maximum concurrent jobs"
 
 [node name="JobQueueLimit" type="LineEdit" parent="Background/Margin/RootVBox/Tabs/TradeJobs/Scroll/TradeVBox/CreateJob/RowQueue"]
 layout_mode = 2

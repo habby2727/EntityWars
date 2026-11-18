@@ -3263,25 +3263,25 @@ var require_lodash = __commonJS((exports, module) => {
     }
     return result;
   }
-  function assignInDefaults(objValue, srcValue, key, object) {
-    if (objValue === undefined || eq(objValue, objectProto[key]) && !hasOwnProperty.call(object, key)) {
+  function assignInDefaults(objValue, srcValue, key, object2) {
+    if (objValue === undefined || eq(objValue, objectProto[key]) && !hasOwnProperty.call(object2, key)) {
       return srcValue;
     }
     return objValue;
   }
-  function assignValue(object, key, value) {
-    var objValue = object[key];
-    if (!(hasOwnProperty.call(object, key) && eq(objValue, value)) || value === undefined && !(key in object)) {
-      object[key] = value;
+  function assignValue(object2, key, value) {
+    var objValue = object2[key];
+    if (!(hasOwnProperty.call(object2, key) && eq(objValue, value)) || value === undefined && !(key in object2)) {
+      object2[key] = value;
     }
   }
-  function baseKeysIn(object) {
-    if (!isObject(object)) {
-      return nativeKeysIn(object);
+  function baseKeysIn(object2) {
+    if (!isObject(object2)) {
+      return nativeKeysIn(object2);
     }
-    var isProto = isPrototype(object), result = [];
-    for (var key in object) {
-      if (!(key == "constructor" && (isProto || !hasOwnProperty.call(object, key)))) {
+    var isProto = isPrototype(object2), result = [];
+    for (var key in object2) {
+      if (!(key == "constructor" && (isProto || !hasOwnProperty.call(object2, key)))) {
         result.push(key);
       }
     }
@@ -3303,45 +3303,45 @@ var require_lodash = __commonJS((exports, module) => {
       return apply(func, this, otherArgs);
     };
   }
-  function copyObject(source, props, object, customizer) {
-    object || (object = {});
+  function copyObject(source, props, object2, customizer) {
+    object2 || (object2 = {});
     var index = -1, length = props.length;
     while (++index < length) {
       var key = props[index];
-      var newValue = customizer ? customizer(object[key], source[key], key, object, source) : undefined;
-      assignValue(object, key, newValue === undefined ? source[key] : newValue);
+      var newValue = customizer ? customizer(object2[key], source[key], key, object2, source) : undefined;
+      assignValue(object2, key, newValue === undefined ? source[key] : newValue);
     }
-    return object;
+    return object2;
   }
   function createAssigner(assigner) {
-    return baseRest(function(object, sources) {
+    return baseRest(function(object2, sources) {
       var index = -1, length = sources.length, customizer = length > 1 ? sources[length - 1] : undefined, guard = length > 2 ? sources[2] : undefined;
       customizer = assigner.length > 3 && typeof customizer == "function" ? (length--, customizer) : undefined;
       if (guard && isIterateeCall(sources[0], sources[1], guard)) {
         customizer = length < 3 ? undefined : customizer;
         length = 1;
       }
-      object = Object(object);
+      object2 = Object(object2);
       while (++index < length) {
         var source = sources[index];
         if (source) {
-          assigner(object, source, index, customizer);
+          assigner(object2, source, index, customizer);
         }
       }
-      return object;
+      return object2;
     });
   }
   function isIndex(value, length) {
     length = length == null ? MAX_SAFE_INTEGER : length;
     return !!length && (typeof value == "number" || reIsUint.test(value)) && (value > -1 && value % 1 == 0 && value < length);
   }
-  function isIterateeCall(value, index, object) {
-    if (!isObject(object)) {
+  function isIterateeCall(value, index, object2) {
+    if (!isObject(object2)) {
       return false;
     }
     var type = typeof index;
-    if (type == "number" ? isArrayLike(object) && isIndex(index, object.length) : type == "string" && (index in object)) {
-      return eq(object[index], value);
+    if (type == "number" ? isArrayLike(object2) && isIndex(index, object2.length) : type == "string" && (index in object2)) {
+      return eq(object2[index], value);
     }
     return false;
   }
@@ -3349,10 +3349,10 @@ var require_lodash = __commonJS((exports, module) => {
     var Ctor = value && value.constructor, proto = typeof Ctor == "function" && Ctor.prototype || objectProto;
     return value === proto;
   }
-  function nativeKeysIn(object) {
+  function nativeKeysIn(object2) {
     var result = [];
-    if (object != null) {
-      for (var key in Object(object)) {
+    if (object2 != null) {
+      for (var key in Object(object2)) {
         result.push(key);
       }
     }
@@ -3385,15 +3385,15 @@ var require_lodash = __commonJS((exports, module) => {
   function isObjectLike(value) {
     return !!value && typeof value == "object";
   }
-  var assignInWith = createAssigner(function(object, source, srcIndex, customizer) {
-    copyObject(source, keysIn(source), object, customizer);
+  var assignInWith = createAssigner(function(object2, source, srcIndex, customizer) {
+    copyObject(source, keysIn(source), object2, customizer);
   });
   var defaults = baseRest(function(args) {
     args.push(undefined, assignInDefaults);
     return apply(assignInWith, undefined, args);
   });
-  function keysIn(object) {
-    return isArrayLike(object) ? arrayLikeKeys(object, true) : baseKeysIn(object);
+  function keysIn(object2) {
+    return isArrayLike(object2) ? arrayLikeKeys(object2, true) : baseKeysIn(object2);
   }
   module.exports = defaults;
 });
@@ -3734,8 +3734,8 @@ var require_common = __commonJS((exports, module) => {
 // node_modules/debug/src/browser.js
 var require_browser = __commonJS((exports, module) => {
   exports.formatArgs = formatArgs;
-  exports.save = save;
-  exports.load = load;
+  exports.save = save2;
+  exports.load = load2;
   exports.useColors = useColors;
   exports.storage = localstorage();
   exports.destroy = (() => {
@@ -3856,7 +3856,7 @@ var require_browser = __commonJS((exports, module) => {
     args.splice(lastC, 0, c);
   }
   exports.log = console.debug || console.log || (() => {});
-  function save(namespaces) {
+  function save2(namespaces) {
     try {
       if (namespaces) {
         exports.storage.setItem("debug", namespaces);
@@ -3865,7 +3865,7 @@ var require_browser = __commonJS((exports, module) => {
       }
     } catch (error) {}
   }
-  function load() {
+  function load2() {
     let r;
     try {
       r = exports.storage.getItem("debug") || exports.storage.getItem("DEBUG");
@@ -3898,8 +3898,8 @@ var require_node = __commonJS((exports, module) => {
   exports.init = init;
   exports.log = log;
   exports.formatArgs = formatArgs;
-  exports.save = save;
-  exports.load = load;
+  exports.save = save2;
+  exports.load = load2;
   exports.useColors = useColors;
   exports.destroy = util.deprecate(() => {}, "Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");
   exports.colors = [6, 2, 3, 4, 5, 1];
@@ -4032,14 +4032,14 @@ var require_node = __commonJS((exports, module) => {
     return process.stderr.write(util.formatWithOptions(exports.inspectOpts, ...args) + `
 `);
   }
-  function save(namespaces) {
+  function save2(namespaces) {
     if (namespaces) {
       process.env.DEBUG = namespaces;
     } else {
       delete process.env.DEBUG;
     }
   }
-  function load() {
+  function load2() {
     return process.env.DEBUG;
   }
   function init(debug) {
@@ -5781,15 +5781,15 @@ var require_util = __commonJS((exports) => {
   exports.getUniqueHostnamesFromOptions = getUniqueHostnamesFromOptions;
   function groupSrvRecords(records) {
     const recordsByPriority = {};
-    for (const record of records) {
-      if (!recordsByPriority.hasOwnProperty(record.priority)) {
-        recordsByPriority[record.priority] = {
-          totalWeight: record.weight,
-          records: [record]
+    for (const record2 of records) {
+      if (!recordsByPriority.hasOwnProperty(record2.priority)) {
+        recordsByPriority[record2.priority] = {
+          totalWeight: record2.weight,
+          records: [record2]
         };
       } else {
-        recordsByPriority[record.priority].totalWeight += record.weight;
-        recordsByPriority[record.priority].records.push(record);
+        recordsByPriority[record2.priority].totalWeight += record2.weight;
+        recordsByPriority[record2.priority].records.push(record2);
       }
     }
     return recordsByPriority;
@@ -5802,12 +5802,12 @@ var require_util = __commonJS((exports) => {
     }
     const random = Math.floor(Math.random() * (recordsGroup.totalWeight + recordsGroup.records.length));
     let total = 0;
-    for (const [i, record] of recordsGroup.records.entries()) {
-      total += 1 + record.weight;
+    for (const [i, record2] of recordsGroup.records.entries()) {
+      total += 1 + record2.weight;
       if (total > random) {
-        recordsGroup.totalWeight -= record.weight;
+        recordsGroup.totalWeight -= record2.weight;
         recordsGroup.records.splice(i, 1);
-        return record;
+        return record2;
       }
     }
   }
@@ -7489,13 +7489,13 @@ var require_cluster = __commonJS((exports) => {
             if (!sortedKeys.length) {
               return reject(err2);
             }
-            const key = sortedKeys[0], group = groupedRecords[key], record = (0, util_1.weightSrvRecords)(group);
+            const key = sortedKeys[0], group = groupedRecords[key], record2 = (0, util_1.weightSrvRecords)(group);
             if (!group.records.length) {
               sortedKeys.shift();
             }
-            self.dnsLookup(record.name).then((host) => resolve({
+            self.dnsLookup(record2.name).then((host) => resolve({
               host,
-              port: record.port
+              port: record2.port
             }), tryFirstOne);
           }
           tryFirstOne();
@@ -8078,7 +8078,7 @@ var require_parser = __commonJS((exports, module) => {
   function parseSimpleNumbers(parser) {
     const length = parser.buffer.length - 1;
     var offset = parser.offset;
-    var number = 0;
+    var number2 = 0;
     var sign = 1;
     if (parser.buffer[offset] === 45) {
       sign = -1;
@@ -8088,15 +8088,15 @@ var require_parser = __commonJS((exports, module) => {
       const c1 = parser.buffer[offset++];
       if (c1 === 13) {
         parser.offset = offset + 1;
-        return sign * number;
+        return sign * number2;
       }
-      number = number * 10 + (c1 - 48);
+      number2 = number2 * 10 + (c1 - 48);
     }
   }
   function parseStringNumbers(parser) {
     const length = parser.buffer.length - 1;
     var offset = parser.offset;
-    var number = 0;
+    var number2 = 0;
     var res = "";
     if (parser.buffer[offset] === 45) {
       res += "-";
@@ -8106,17 +8106,17 @@ var require_parser = __commonJS((exports, module) => {
       var c1 = parser.buffer[offset++];
       if (c1 === 13) {
         parser.offset = offset + 1;
-        if (number !== 0) {
-          res += number;
+        if (number2 !== 0) {
+          res += number2;
         }
         return res;
-      } else if (number > 429496728) {
-        res += number * 10 + (c1 - 48);
-        number = 0;
-      } else if (c1 === 48 && number === 0) {
+      } else if (number2 > 429496728) {
+        res += number2 * 10 + (c1 - 48);
+        number2 = 0;
+      } else if (c1 === 48 && number2 === 0) {
         res += 0;
       } else {
-        number = number * 10 + (c1 - 48);
+        number2 = number2 * 10 + (c1 - 48);
       }
     }
   }
@@ -8138,14 +8138,14 @@ var require_parser = __commonJS((exports, module) => {
   function parseLength(parser) {
     const length = parser.buffer.length - 1;
     var offset = parser.offset;
-    var number = 0;
+    var number2 = 0;
     while (offset < length) {
       const c1 = parser.buffer[offset++];
       if (c1 === 13) {
         parser.offset = offset + 1;
-        return number;
+        return number2;
       }
-      number = number * 10 + (c1 - 48);
+      number2 = number2 * 10 + (c1 - 48);
     }
   }
   function parseInteger(parser) {
@@ -9600,9 +9600,1669 @@ var require_built3 = __commonJS((exports, module) => {
   exports.print = print;
 });
 
+// src/world_missions.ts
+var DAILY = [
+  { id: "daily_boss", title: "Boss Hunter", description: "Defeat 1 boss in Solo Hunt.", target: 1, reward: { essence: 100 } },
+  { id: "daily_damage", title: "Heavy Hitter", description: "Deal 500 HP of damage to bosses.", target: 500, reward: { essence: 100 } },
+  { id: "daily_elite", title: "Elite Slayer", description: "Defeat 1 Mythic, Rare, Epic or Legendary boss.", target: 1, reward: { essence: 100, core: 1 } }
+];
+var WEEKLY = [
+  { id: "weekly_boss", title: "Boss Hunter", description: "Defeat 5 bosses in Solo Hunt.", target: 5, reward: { essence: 300 } },
+  { id: "weekly_elite", title: "Elite Slayer", description: "Defeat 3 non-common bosses.", target: 3, reward: { essence: 250, core: 2 } },
+  { id: "weekly_rare", title: "Rising Threat", description: "Defeat 1 Rare, Epic or Legendary boss.", target: 1, reward: { essence: 200, core: 2 } },
+  { id: "weekly_guardians", title: "Guardian Breaker", description: "Defeat 5 guardians in Solo Hunt.", target: 5, reward: { essence: 300, core: 1 } },
+  { id: "weekly_common", title: "Common Exterminator", description: "Defeat 4 different Common Boss appearances.", target: 4, reward: { essence: 250, core: 1 } },
+  { id: "weekly_inspiration", title: "Inspired Warrior", description: "Choose an Inspiration spell in 3 different boss fights.", target: 3, reward: { essence: 200, core: 2 } }
+];
+var DAY = 86400000;
+var WEEK = 7 * DAY;
+var MONDAY_EPOCH = Date.UTC(1970, 0, 5);
+function period(now, type) {
+  const start = type === "daily" ? Math.floor(now / DAY) * DAY : Math.floor((now - MONDAY_EPOCH) / WEEK) * WEEK + MONDAY_EPOCH;
+  return { key: new Date(start).toISOString().slice(0, 10), next_reset_at: start + (type === "daily" ? DAY : WEEK), week: Math.floor((start - MONDAY_EPOCH) / WEEK) };
+}
+function active(now, type) {
+  if (type === "daily")
+    return DAILY;
+  const week = period(now, type).week;
+  const start = (week % 6 + 6) % 6;
+  return [0, 1, 2].map((i) => WEEKLY[(start + i) % 6]);
+}
+var lastPrune = 0;
+function load(db, player, type, now) {
+  if (now - lastPrune > 3600000) {
+    db.query("DELETE FROM world_mission_progress WHERE (period_type = 'daily' AND period_key <> ?) OR (period_type = 'weekly' AND period_key <> ?)").run(period(now, "daily").key, period(now, "weekly").key);
+    lastPrune = now;
+  }
+  const key = period(now, type).key;
+  const row = db.query("SELECT period_key, progress_json, claimed_json FROM world_mission_progress WHERE player_id = ? AND period_type = ?").get(player, type);
+  if (!row || row.period_key !== key) {
+    db.query("INSERT INTO world_mission_progress (player_id,period_type,period_key,progress_json,claimed_json,updated_at) VALUES (?,?,?,'{}','{}',?) ON CONFLICT(player_id,period_type) DO UPDATE SET period_key=excluded.period_key,progress_json='{}',claimed_json='{}',updated_at=excluded.updated_at").run(player, type, key, now);
+    return { progress: {}, claimed: {} };
+  }
+  return { progress: JSON.parse(row.progress_json), claimed: JSON.parse(row.claimed_json) };
+}
+function save(db, player, type, now, data) {
+  db.query("UPDATE world_mission_progress SET progress_json=?,claimed_json=?,updated_at=? WHERE player_id=? AND period_type=?").run(JSON.stringify(data.progress), JSON.stringify(data.claimed), now, player, type);
+}
+function snapshot(db, player, now) {
+  const result = { server_time_unix_ms: now };
+  for (const type of ["daily", "weekly"]) {
+    const p = period(now, type), d = load(db, player, type, now);
+    result[type] = { period_key: p.key, next_reset_at: p.next_reset_at, missions: active(now, type).map((m) => {
+      const progress = Array.isArray(d.progress[m.id]) ? d.progress[m.id].length : d.progress[m.id] ?? 0;
+      return { ...m, progress, completed: progress >= m.target, claimed: !!d.claimed[m.id] };
+    }) };
+  }
+  return result;
+}
+function record(db, player, now, event) {
+  const tier = (event.tier ?? "").toLowerCase();
+  for (const type of ["daily", "weekly"]) {
+    const data = load(db, player, type, now), enabled = new Map(active(now, type).map((m) => [m.id, m]));
+    const add = (id, n) => {
+      const m = enabled.get(id);
+      if (m && n > 0)
+        data.progress[id] = Math.min(m.target, (data.progress[id] ?? 0) + n);
+    };
+    const unique = (id, key, limit) => {
+      if (!enabled.has(id) || !key)
+        return;
+      const a = data.progress[id] ?? [];
+      if (a.length < limit && !a.includes(key))
+        a.push(key);
+      data.progress[id] = a;
+    };
+    if (event.guardian) {
+      if (event.win)
+        add("weekly_guardians", 1);
+    } else {
+      add("daily_damage", event.damage ?? 0);
+      if (event.win) {
+        add("daily_boss", 1);
+        add("weekly_boss", 1);
+        if (["mythic", "rare", "epic", "legendary"].includes(tier)) {
+          add("daily_elite", 1);
+          add("weekly_elite", 1);
+        }
+        if (["rare", "epic", "legendary"].includes(tier))
+          add("weekly_rare", 1);
+        if (tier === "common" && event.zone && event.appearance)
+          unique("weekly_common", JSON.stringify([event.zone, event.appearance]), 4);
+      }
+      if (event.choose && event.session)
+        unique("weekly_inspiration", event.session, 3);
+    }
+    save(db, player, type, now, data);
+  }
+}
+function bossDamage(events) {
+  return events.reduce((sum, e) => sum + (e.actor === "player" && e.target === "boss" && Number.isSafeInteger(e.actual_damage) && e.actual_damage > 0 ? e.actual_damage : 0), 0);
+}
+
 // src/index.ts
 import { Database } from "bun:sqlite";
-import { createHash as createHash2, createHmac as createHmac4 } from "crypto";
+
+// src/pvp/ranking.ts
+var PVP_THRESHOLDS = ["Copper", "Quartz", "Amethyst", "Obsidian"].flatMap((league, l) => ["IV", "III", "II", "I"].map((division, d) => ({ league, division, minimum: 1000 + l * 1000 + d * 250 })));
+var clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+var validMp = (mp) => Number.isSafeInteger(mp) && mp >= 0;
+function pvpRank(mp) {
+  if (!validMp(mp))
+    throw new Error("INVALID_MP");
+  return PVP_THRESHOLDS[clamp(Math.floor((mp - 1000) / 250), 0, 15)];
+}
+function pvpRatingDelta(player, opponent, outcome) {
+  if (!validMp(player) || !validMp(opponent) || !["win", "loss", "draw"].includes(outcome))
+    throw new Error("INVALID_RATING_INPUT");
+  if (outcome === "draw")
+    return 0;
+  const rank = pvpRank(player), index = ["Copper", "Quartz", "Amethyst", "Obsidian"].indexOf(rank.league);
+  const adjustment = clamp(Math.round((opponent - player) / 300) * 2, -10, 10);
+  return outcome === "win" ? clamp([24, 22, 20, 18][index] + adjustment, 1, 30) : -Math.min(player, clamp([12, 20, 30, 40][index] - adjustment, 1, 50));
+}
+function pvpSeason(now) {
+  if (!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(new Date(now).getTime()))
+    throw new Error("INVALID_TIME");
+  return new Date(now).toISOString().slice(0, 7);
+}
+function nextPvpSeason(now) {
+  const date = new Date(now);
+  pvpSeason(now);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+}
+function previousPvpSeason(now) {
+  const date = new Date(now);
+  pvpSeason(now);
+  return pvpSeason(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1));
+}
+function createPvpRanking(db, clock = Date.now) {
+  const insert = db.prepare("INSERT OR IGNORE INTO pvp_season_ratings (season, player_id, rating, updated_at) VALUES (?, ?, 1000, ?)");
+  const get = db.prepare("SELECT rating, updated_at FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
+  const list = db.prepare("SELECT r.player_id, p.display_name, r.rating, r.updated_at FROM pvp_season_ratings r JOIN players p ON p.player_id = r.player_id WHERE r.season = ? ORDER BY r.rating DESC, r.player_id ASC");
+  const prune = db.prepare("DELETE FROM pvp_season_ratings WHERE season < ?");
+  let prunedThrough = "";
+  const cache = new Map;
+  const ensure = (season, playerId, now) => {
+    insert.run(season, playerId, now);
+    return get.get(season, playerId);
+  };
+  return {
+    ensure,
+    invalidate() {
+      cache.clear();
+    },
+    leaderboard(playerId, requestedSeason) {
+      const now = clock(), season = pvpSeason(now), previous = previousPvpSeason(now);
+      if (prunedThrough !== previous) {
+        prune.run(previous);
+        prunedThrough = previous;
+      }
+      const viewSeason = requestedSeason ?? season;
+      if (viewSeason !== season && viewSeason !== previous)
+        throw new Error("INVALID_SEASON");
+      if (typeof playerId !== "string" || !playerId)
+        throw new Error("INVALID_PLAYER");
+      const current = ensure(season, playerId, now), division = pvpRank(current.rating);
+      const live = list.all(season);
+      const index = live.findIndex((row) => row.player_id === playerId);
+      const same = (row) => {
+        const rank = pvpRank(row.rating);
+        return rank.league === division.league && rank.division === division.division;
+      };
+      const personal = { mp: current.rating, ...division, global_rank: index + 1, division_rank: live.filter(same).findIndex((row) => row.player_id === playerId) + 1 };
+      for (const key of cache.keys())
+        if (key !== season && key !== previous)
+          cache.delete(key);
+      const cached = (key, rows) => {
+        let entry = cache.get(key);
+        if (!entry || now < entry.time || now - entry.time >= 60000) {
+          entry = { time: now, rows: rows ?? list.all(key) };
+          cache.set(key, entry);
+        }
+        return entry;
+      };
+      const currentCache = cached(season, live), viewCache = cached(viewSeason, viewSeason === season ? live : undefined);
+      const publicRow = (row, rank) => ({ player_id: row.player_id, display_name: row.display_name, mp: row.rating, rank, ...pvpRank(row.rating) });
+      return { season, view_season: viewSeason, previous_season: previous, player: personal, global_top_10: viewCache.rows.slice(0, 10).map((row, i) => publicRow(row, i + 1)), division_top_10: currentCache.rows.filter(same).slice(0, 10).map((row, i) => publicRow(row, i + 1)), thresholds: PVP_THRESHOLDS, updated_at: viewCache.time, next_update_at: Math.min(viewCache.time + 60000, currentCache.time + 60000, nextPvpSeason(now)) };
+    }
+  };
+}
+
+// src/global_chat.ts
+function createGlobalChat(db, clock = Date.now) {
+  const presence = new Map;
+  const lastSend = new Map;
+  const messages = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
+		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
+  const existing = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
+		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
+  const insert = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?)");
+  const prune = db.query("DELETE FROM global_chat_messages WHERE id NOT IN (SELECT id FROM global_chat_messages ORDER BY id DESC LIMIT 20)");
+  const profile = db.query(`SELECT p.player_id, p.display_name AS username, r.rating
+		FROM players p LEFT JOIN pvp_season_ratings r ON r.player_id = p.player_id AND r.season = ?
+		WHERE p.player_id = ?`);
+  function publicProfile(playerId, season) {
+    const row = profile.get(season, playerId);
+    return row ? { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) } : null;
+  }
+  function withLeague(row, season) {
+    return { ...row, league: publicProfile(row.player_id, season)?.league ?? null };
+  }
+  function onlineCount() {
+    const now = clock();
+    for (const [id, seen] of presence)
+      if (now - seen >= 45000)
+        presence.delete(id);
+    return presence.size;
+  }
+  return {
+    onlineCount,
+    close() {
+      messages.finalize();
+      existing.finalize();
+      insert.finalize();
+      prune.finalize();
+      profile.finalize();
+    },
+    state(playerId) {
+      const now = clock();
+      presence.set(playerId, now);
+      onlineCount();
+      const season = pvpSeason(now);
+      const online_players = Array.from(presence.keys(), (id) => publicProfile(id, season)).filter((row) => row !== null).sort((a, b) => a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
+      return { messages: messages.all().reverse().map((row) => withLeague(row, season)), online_count: online_players.length, online_players };
+    },
+    send(playerId, body) {
+      const text = body?.text;
+      const clientId = body?.client_message_id;
+      if (typeof text !== "string" || !text.trim() || [...text].length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(text) || typeof clientId !== "string" || !clientId.trim() || clientId.length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(clientId)) {
+        return { status: 400, data: { error: "Invalid message or client_message_id." } };
+      }
+      return db.transaction(() => {
+        const previous = existing.get(playerId, clientId);
+        if (previous)
+          return { status: 200, data: { message: previous, duplicate: true } };
+        const now = clock();
+        const last = lastSend.get(playerId);
+        if (last !== undefined && now - last < 2000)
+          return { status: 429, data: { error: "Send rate limit exceeded." } };
+        insert.run(playerId, clientId, text, now);
+        prune.run();
+        const message = existing.get(playerId, clientId);
+        lastSend.set(playerId, now);
+        return { status: 200, data: { message, duplicate: false } };
+      }).immediate();
+    }
+  };
+}
+
+// src/pvp/availability.ts
+function rankedAvailability(env) {
+  if (env.PVP_ENABLED !== "1")
+    return { status: 503, data: { error: "PVP_DISABLED" } };
+  return { status: 503, data: { error: "PVP_SECRET_REQUIRED" } };
+}
+function isRankedRoute(method, path) {
+  return method === "GET" && ["/pvp/queue/state", "/pvp/match/state", "/pvp/leaderboard"].includes(path) || method === "POST" && ["/pvp/queue/join", "/pvp/queue/cancel", "/pvp/match/decision", "/pvp/match/forfeit", "/pvp/match/chat"].includes(path);
+}
+
+// src/pvp/service.ts
+import { createHmac, randomInt, randomUUID } from "crypto";
+
+// src/physical_anomaly.ts
+var TYPES = new Set(["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"]);
+function validPhysicalAnomalySpell(spell) {
+  if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || spell.category !== "support" || spell.power_mult !== 0 || !Array.isArray(spell.effects))
+    return false;
+  const effects = spell.effects.filter((e) => e?.kind === "physical_anomaly");
+  if (effects.length !== 1 || effects[0].target !== "self" || effects[0].value !== 1)
+    return false;
+  const metadata = effects[0].favored_type === undefined ? spell : effects[0];
+  return TYPES.has(metadata.favored_type) && TYPES.has(metadata.weakened_type) && metadata.favored_type !== metadata.weakened_type && metadata.outgoing_bonus === 0.15 && metadata.outgoing_penalty === 0.15 && metadata.duration_exchanges === 3;
+}
+function castPhysicalAnomaly(spell, exchange) {
+  if (!validPhysicalAnomalySpell(spell) || !Number.isSafeInteger(exchange) || exchange < 1)
+    throw new Error("INVALID_PHYSICAL_ANOMALY");
+  const effect = spell.effects.find((e) => e.kind === "physical_anomaly");
+  const metadata = effect.favored_type === undefined ? spell : effect;
+  return { id: spell.id, favored_type: metadata.favored_type, weakened_type: metadata.weakened_type, remaining_exchanges: 3, activated_exchange: exchange };
+}
+function physicalAnomalyMultiplier(anomaly, attackerType) {
+  if (!anomaly)
+    return 1;
+  return anomaly.favored_type === attackerType ? 1.15 : anomaly.weakened_type === attackerType ? 0.85 : 1;
+}
+function tickPhysicalAnomaly(anomaly, exchange) {
+  if (!anomaly)
+    return null;
+  if (anomaly.activated_exchange >= exchange)
+    return anomaly;
+  return anomaly.remaining_exchanges <= 1 ? null : { ...anomaly, remaining_exchanges: anomaly.remaining_exchanges - 1 };
+}
+
+// src/strategic_effects.ts
+function transferStrategicStatus(kind, actor, target, actorId, targetId, fields, events, clear, apply) {
+  const negative = ["poison", fields.vuln, "atk_down"];
+  const positive = ["atk_boost", fields.shield, fields.reflect];
+  const source = kind === "debuff_transfer" ? actor : target;
+  const destination = kind === "debuff_transfer" ? target : actor;
+  const sourceId = kind === "debuff_transfer" ? actorId : targetId;
+  const destinationId = kind === "debuff_transfer" ? targetId : actorId;
+  const field = (kind === "debuff_transfer" ? negative : positive).find((key) => (source.status[key] ?? 0) > 0);
+  if (!field)
+    return;
+  const old = source.status[field];
+  const value = kind === "debuff_transfer" ? old : Math.min(0.2, old * 0.5);
+  const previous = destination.status[field] ?? 0;
+  clear(source, field);
+  apply(destination, field, value);
+  events.push({ kind, actor: actorId, source: sourceId, target: destinationId, status: field, removed: old, previous, value: destination.status[field] ?? 0 });
+}
+function validStrategicStatusEffect(effect) {
+  return effect && (["debuff_transfer", "cooldown_jam"].includes(effect.kind) && effect.value === 1 || ["buff_steal", "heal_suppression"].includes(effect.kind) && effect.value === 0.5 || effect.kind === "hom_energy_siphon" && effect.value === 2 || ["delayed_damage", "ward_convert", "counter_trap"].includes(effect.kind) && typeof effect.value === "number" && Number.isFinite(effect.value) && effect.value >= 0 && effect.value <= (effect.kind === "counter_trap" ? 0.5 : 1));
+}
+var STRATEGIC_EFFECTS = ["debuff_transfer", "buff_steal", "cooldown_jam", "hom_energy_siphon", "delayed_damage", "counter_trap", "ward_convert", "heal_suppression"];
+function queueDelayedDamage(state, actor, target, value, damage, turn, events) {
+  if (damage <= 0)
+    return;
+  const amount = Math.floor(damage * value);
+  state.strategic_delayed ??= [];
+  state.strategic_delayed = state.strategic_delayed.filter((entry) => entry.actor !== actor || entry.target !== target);
+  if (amount > 0)
+    state.strategic_delayed.push({ actor, target, amount, due_turn: turn + 1 });
+  events.push({ kind: "delayed_damage_queued", actor, target, amount, due_turn: turn + 1 });
+}
+function strategicCounter(defender, attacker, defenderId, attackerId, damage, turn, events) {
+  const trap = defender.strategic_trap;
+  if (!trap || turn <= trap.activated_turn || turn > trap.expires_turn || damage <= 0)
+    return;
+  delete defender.strategic_trap;
+  const amount = Math.min(attacker.hp, Math.floor(attacker.max_hp * 0.2), Math.floor(damage * trap.value));
+  attacker.hp -= amount;
+  events.push({ kind: "counter_trap_triggered", actor: defenderId, target: attackerId, amount, hp: attacker.hp });
+}
+function strategicHeal(fighter, amount) {
+  return fighter.strategic_heal_suppression ? Math.floor(amount * 0.5) : amount;
+}
+function finishStrategicExchange(state, fighters, turn, events) {
+  const remaining = [];
+  for (const entry of state.strategic_delayed ?? []) {
+    if (entry.due_turn > turn) {
+      remaining.push(entry);
+      continue;
+    }
+    const target = fighters[entry.target];
+    if (target && target.hp > 0) {
+      const amount = Math.min(target.hp, entry.amount);
+      target.hp -= amount;
+      events.push({ kind: "delayed_damage", actor: entry.actor, target: entry.target, amount, hp: target.hp });
+    }
+  }
+  state.strategic_delayed = remaining;
+  for (const [id, fighter] of Object.entries(fighters)) {
+    for (const [field, kind] of [["strategic_trap", "counter_trap_expired"], ["strategic_heal_suppression", "heal_suppression_expired"]]) {
+      if (fighter[field]?.expires_turn <= turn) {
+        delete fighter[field];
+        events.push({ kind, target: id });
+      }
+    }
+  }
+}
+function jamStrategicCooldown(spells, cooldowns, actor, target, events) {
+  const eligible = spells.filter((s) => s && s.id !== "basic_attack" && Number.isFinite(s.power_mult) && s.power_mult >= 0 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns > 0).sort((a, b) => b.power_mult - a.power_mult || a.id.localeCompare(b.id));
+  const chosen = eligible[0];
+  if (!chosen)
+    return;
+  const previous = cooldowns[chosen.id] ?? 0;
+  const value = Math.min(4, previous + 1);
+  if (value <= previous)
+    return;
+  cooldowns[chosen.id] = value;
+  events.push({ kind: "cooldown_jam", actor, target, spell_id: chosen.id, previous, value });
+}
+
+// src/pvp/combat.ts
+var object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+var number = (x) => typeof x === "number" && Number.isFinite(x);
+var itemKeys = new Set(["power_flat", "guard_flat", "tempo_flat", "true_on_hit", "dot_true", "vuln_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
+var pctKeys = new Set(["ward_pct", "reflect_pct", "evasion_pct", "disadvantage_reduction", "ignore_reflect_chance", "vuln_on_hit"]);
+var synergyKeys = new Set(["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"]);
+var supportedEffects = new Set(["heal", "shield", "reflect", "atk_boost", "atk_down", "vuln", "poison", "hom_stun", "type_neutralize", "focus_next", "misalign_next", "tempo_shift", "cleanse_one", "poison_on_reflect", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "recoil", "life_leech", "consume_poison", "hybrid_mark", "shield_by_order", "ward_convert", "physical_anomaly", ...STRATEGIC_EFFECTS]);
+var statusInitial = () => ({ poison: 0, stun: 0, shield_pct: 0, atk_boost: 0, vuln_pct: 0, atk_down: 0, hom_stun: 0, reflect_pct: 0, tempo_bonus: 0 });
+var validLevel = (v) => v === undefined || Number.isInteger(v) && v >= 0 && v <= 10;
+var validCatalog = (entries) => Array.isArray(entries) && entries.every((e) => object(e) && typeof e.id === "string" && e.id.length > 0) && new Set(entries.map((e) => e.id)).size === entries.length;
+var displayName = (name) => name.trim().replaceAll("(TEMP)", "").replaceAll("(Temp)", "").replaceAll("TEMP", "").replaceAll("temp", "").trim();
+function effectiveWeapon(item, progress, catalogs) {
+  if (!item)
+    return null;
+  if (!object(item.effects) || item.base_effects !== undefined && !object(item.base_effects))
+    throw new Error("INVALID_ITEM");
+  const entry = progress[item.id] ?? {};
+  if (!object(entry) || !validLevel(entry.level))
+    throw new Error("INVALID_PROGRESS");
+  const level = entry.level ?? 0, effects = {};
+  for (const [key, values] of Object.entries(item.effects)) {
+    if (!itemKeys.has(key) || !Array.isArray(values) || values.length === 0 || !values.every(number))
+      throw new Error("INVALID_ITEM");
+    const base = item.base_effects?.[key];
+    if (base !== undefined && !number(base))
+      throw new Error("INVALID_ITEM");
+    effects[key] = [level === 0 && values.length === 10 && base !== undefined ? base : values[Math.min(Math.max(level - 1, 0), values.length - 1)]];
+  }
+  const add = (key, amount) => {
+    if (!itemKeys.has(key) || !number(amount))
+      throw new Error("INVALID_PROGRESS");
+    const value = (effects[key]?.[0] ?? 0) + amount;
+    effects[key] = [pctKeys.has(key) ? Math.max(0, Math.min(1, value)) : value];
+  };
+  if (entry.specialization !== undefined || entry.traits !== undefined) {
+    const pool = catalogs.balance?.forge_trait_pool?.[entry.specialization], traits = entry.traits;
+    if (!object(pool) || !Array.isArray(traits) || traits.length !== 3)
+      throw new Error("INVALID_PROGRESS");
+    let allocated = 0;
+    const seen = new Set;
+    for (const trait of traits) {
+      if (!object(trait) || typeof trait.id !== "string" || seen.has(trait.id) || !Number.isInteger(trait.points) || trait.points < 0 || trait.points > 4 || (allocated += trait.points) > level || !number(pool[trait.id]) || pool[trait.id] <= 0 || !itemKeys.has(trait.id))
+        throw new Error("INVALID_PROGRESS");
+      seen.add(trait.id);
+      if (trait.points)
+        add(trait.id, pool[trait.id] * trait.points);
+    }
+  }
+  if (entry.fusion !== undefined && entry.fusion !== null) {
+    const donor = entry.fusion?.donor_id, imprint = catalogs.balance?.forge_fusion_imprints?.[donor];
+    if (!object(entry.fusion) || Object.keys(entry.fusion).some((k) => k !== "donor_id") || typeof donor !== "string" || donor === item.id || !catalogs.items.some((i) => i?.id === donor) || level < 3 || !object(progress[donor]) || !validLevel(progress[donor].level) || (progress[donor].level ?? 0) < 3 || !object(imprint) || Object.keys(imprint).length !== 1)
+      throw new Error("INVALID_PROGRESS");
+    for (const [key, value] of Object.entries(imprint)) {
+      if (!["true_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "dot_true", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"].includes(key) || !number(value) || value <= 0)
+        throw new Error("INVALID_PROGRESS");
+      add(key, value);
+    }
+  }
+  return { ...structuredClone(item), forge_level: level, effects };
+}
+function fighter(snapshot2, catalogs) {
+  if (!snapshot2 || typeof snapshot2.player_id !== "string" || !snapshot2.player_id || typeof snapshot2.entity_id !== "string" || !Array.isArray(snapshot2.weapon_ids) || snapshot2.weapon_ids.length !== 2 || !Array.isArray(snapshot2.spell_ids) || snapshot2.spell_ids.length !== 4 || new Set(snapshot2.spell_ids).size !== 4 || !snapshot2.spell_ids.every((id) => typeof id === "string" && id.length > 0) || !(snapshot2.homunculus_id === null || typeof snapshot2.homunculus_id === "string"))
+    return null;
+  if (![snapshot2.item_progress ?? {}, snapshot2.homunculus_progress ?? {}, snapshot2.spell_progress ?? {}].every(object) || snapshot2.weapon_ids.some((id) => id !== null && (typeof id !== "string" || !id)))
+    return null;
+  const entity = catalogs.entities.find((e) => e?.id === snapshot2.entity_id);
+  if (!entity || typeof entity.name !== "string" || typeof entity.type !== "string" || !object(entity.base_stats) || ![entity.base_stats.hp, entity.base_stats.power, entity.base_stats.guard].every(number) || entity.base_stats.hp <= 0 || entity.base_stats.power < 0 || entity.base_stats.guard < 0)
+    return null;
+  const weapons = snapshot2.weapon_ids.map((id) => id === null ? null : catalogs.items.find((i) => i?.id === id && i.slot === "build"));
+  if (weapons.some((w) => w === undefined) || snapshot2.weapon_ids[0] !== null && snapshot2.weapon_ids[0] === snapshot2.weapon_ids[1])
+    return null;
+  const hom = snapshot2.homunculus_id === null ? null : catalogs.homunculi.find((h) => h?.id === snapshot2.homunculus_id);
+  if (hom === undefined)
+    return null;
+  const spells = snapshot2.spell_ids.map((id) => catalogs.spells.find((s) => s?.id === id && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type))));
+  if (spells.some((s) => !s || !["attack", "support"].includes(s.category) || !number(s.power_mult) || s.power_mult < 0 || !number(s.accuracy) || s.accuracy < 0 || s.accuracy > 1 || !Number.isSafeInteger(s.cooldown_turns) || s.cooldown_turns < 0 || !Array.isArray(s.effects) || s.effects.some((e) => !object(e) || typeof e.kind !== "string" || !number(e.value) || !["self", "enemy"].includes(e.target))))
+    return null;
+  const itemProgress = snapshot2.item_progress ?? {}, homProgress = snapshot2.homunculus_progress ?? {};
+  if (Object.values(itemProgress).some((e) => !object(e) || !validLevel(e.level)) || Object.values(homProgress).some((e) => !object(e) || !validLevel(e.level)))
+    return null;
+  const entry = hom ? homProgress[hom.id] ?? {} : {};
+  if (!object(entry) || !validLevel(entry.level) || entry.mutation_id !== undefined && (typeof entry.mutation_id !== "string" || !entry.mutation_id || (entry.level ?? 0) < 3))
+    return null;
+  const mutation = entry.mutation_id ? catalogs.mutations?.find((m) => m?.id === entry.mutation_id) : null;
+  if (entry.mutation_id && (!mutation || !object(mutation.effects) || Object.entries(mutation.effects).some(([key, v]) => !["hp_flat", "power_flat", "guard_flat", "favorable_type_bonus"].includes(key) || !number(v))))
+    return null;
+  if (hom && (typeof hom.name !== "string" || ![hom.buff_hp, hom.buff_atk, hom.buff_def].every(number) || !object(hom.per_type)))
+    return null;
+  const synergy = hom?.per_type?.[entity.type] ?? {};
+  if (!object(synergy) || Object.entries(synergy).some(([key, v]) => !synergyKeys.has(key) || !number(v)))
+    return null;
+  const level = entry.level ?? 0, me = mutation?.effects ?? {};
+  const hom_bonus = hom ? { hp_flat: hom.buff_hp + level + (me.hp_flat ?? 0), power_flat: hom.buff_atk + Math.trunc(level / 5) + (me.power_flat ?? 0), guard_flat: hom.buff_def + Math.trunc(level / 3) + (me.guard_flat ?? 0), favorable_type_bonus: me.favorable_type_bonus ?? 0 } : { hp_flat: 0, power_flat: 0, guard_flat: 0, favorable_type_bonus: 0 };
+  const base = structuredClone({ player_id: snapshot2.player_id, entity, weapons: weapons.map((w) => effectiveWeapon(w, itemProgress, catalogs)), homunculus: hom, spells, item_progress: itemProgress, homunculus_progress: homProgress, spell_progress: snapshot2.spell_progress ?? {}, active_weapon_slot: 1, spell_cooldowns: {}, hom_energy: 0, hom_spent: hom === null, ultra_used: false, id: entity.id, name: entity.name, type: entity.type, hp: 0, max_hp: 0, atk: 0, def: 0, hom_id: hom?.id ?? "", hom_name: hom?.name ?? "", hom_max_energy: 6, hom_ready_at: 3, hom_synergy: synergy, hom_bonus, mutation, mods: { atk_flat: 0, def_flat: 0 }, item_fx: {}, active_weapon: null, status: statusInitial(), spell_ids: [...snapshot2.spell_ids], original_spell_ids: [...snapshot2.spell_ids], inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false, inspiration_offers: [], inspiration_catalog: catalogs.spells.filter((s) => !snapshot2.spell_ids.includes(s.id) && ["attack", "support"].includes(s.category) && number(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && number(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isSafeInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e) => object(e) && supportedEffects.has(e.kind) && number(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["self", "enemy"].includes(e.target) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e))) && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type))).sort((a, b) => a.id.localeCompare(b.id)), temporary_spell_id: "", temporary_replaced_slot: -1, spell_hit_this_exchange: false, spell_hit_last_exchange: false, spell_neutralize_pending: 0, spell_neutralize_active: 0 });
+  base.name = displayName(base.name);
+  base.hom_name = displayName(base.hom_name);
+  const result = refreshPvpWeapon(base);
+  result.hp = result.max_hp;
+  return result;
+}
+function createPvpCombatState(left, right, catalogs) {
+  if (!catalogs || ![catalogs.entities, catalogs.items, catalogs.spells, catalogs.homunculi].every(validCatalog) || catalogs.mutations !== undefined && !validCatalog(catalogs.mutations) || !object(catalogs.types) || !object(catalogs.types.effectiveness) || !left || !right || left.player_id === right.player_id)
+    return { error: "UNTRUSTED_SETUP" };
+  try {
+    const l = fighter(left, catalogs), r = fighter(right, catalogs);
+    if (!l || !r || !object(catalogs.types.effectiveness[l.type]) || !object(catalogs.types.effectiveness[r.type]) || !number(catalogs.types.effectiveness[l.type][r.type]) || !number(catalogs.types.effectiveness[r.type][l.type]))
+      return { error: "UNTRUSTED_SETUP" };
+    return { turn: 0, round: 1, player_turn: true, battle_index: 1, wins: { left: 0, right: 0 }, sudden_death: false, fighters: { left: l, right: r }, types: structuredClone(catalogs.types), physical_anomaly: null, strategic_delayed: [], strategic_jams: [], rng_counter: 0 };
+  } catch {
+    return { error: "UNTRUSTED_SETUP" };
+  }
+}
+function createPvpFighter(snapshot2, catalogs) {
+  if (!catalogs || ![catalogs.entities, catalogs.items, catalogs.spells, catalogs.homunculi].every(validCatalog) || catalogs.mutations !== undefined && !validCatalog(catalogs.mutations))
+    return { error: "UNTRUSTED_SETUP" };
+  try {
+    return fighter(snapshot2, catalogs) ?? { error: "UNTRUSTED_SETUP" };
+  } catch {
+    return { error: "UNTRUSTED_SETUP" };
+  }
+}
+function refreshPvpWeapon(fighter2, slot = fighter2.active_weapon_slot) {
+  if (![1, 2].includes(slot) || slot !== fighter2.active_weapon_slot && !fighter2.weapons[slot - 1])
+    throw new Error("INVALID_WEAPON_SLOT");
+  const f = structuredClone(fighter2);
+  if (slot !== f.active_weapon_slot) {
+    for (const field of ["shield_pct", "reflect_pct"])
+      if (Object.hasOwn(f, `weapon_${field}`)) {
+        f.status[field] = f[`other_${field}`] ?? 0;
+        delete f[`weapon_${field}`];
+        delete f[`other_${field}`];
+      }
+  }
+  f.active_weapon_slot = slot;
+  const synergy = f.hom_spent ? {} : f.hom_synergy;
+  const weapon = f.weapons[slot - 1];
+  f.active_weapon = weapon ? structuredClone(weapon) : null;
+  const scale = Math.max(0, Math.min(2, synergy.item_effect_mult ?? 1));
+  if (f.active_weapon)
+    for (const values of Object.values(f.active_weapon.effects))
+      values[0] *= scale;
+  const effect = (key) => f.active_weapon?.effects?.[key]?.[0] ?? 0;
+  f.mods = { atk_flat: Math.trunc(effect("power_flat")), def_flat: Math.trunc(effect("guard_flat")) };
+  const stats = f.entity.base_stats, bonus = f.hom_spent ? {} : f.hom_bonus;
+  f.atk = Math.trunc(stats.power) + Math.trunc(bonus.power_flat ?? 0) + Math.trunc(synergy.power_flat ?? 0) + f.mods.atk_flat;
+  f.def = Math.trunc(stats.guard) + Math.trunc(bonus.guard_flat ?? 0) + Math.trunc(synergy.guard_flat ?? 0) + f.mods.def_flat;
+  f.max_hp = Math.trunc(stats.hp) + Math.trunc(bonus.hp_flat ?? 0);
+  f.hp = Math.min(f.hp, f.max_hp);
+  f.item_fx = {};
+  for (const key of ["true_on_hit", "dot_true", "vuln_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"])
+    f.item_fx[key] = ["true_on_hit", "dot_true"].includes(key) ? effect(key) : Math.max(0, effect(key));
+  return f;
+}
+function resetPvpFighter(fighter2) {
+  const f = structuredClone(fighter2);
+  if (f.temporary_spell_id) {
+    f.spell_ids = [...f.original_spell_ids];
+    f.spells = f.spells.filter((s) => s.id !== f.temporary_spell_id || f.original_spell_ids.includes(s.id));
+    delete f.spell_cooldowns[f.temporary_spell_id];
+  }
+  f.original_spell_ids = [...f.spell_ids];
+  f.temporary_spell_id = "";
+  f.temporary_replaced_slot = -1;
+  f.inspiration = 0;
+  f.inspiration_pending = false;
+  f.inspiration_used_this_battle = false;
+  f.inspiration_offers = [];
+  for (const key of ["strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline", "hom_reflect_active", "hom_other_reflect", "weapon_shield_pct", "other_shield_pct", "weapon_reflect_pct", "other_reflect_pct"])
+    delete f[key];
+  f.hom_energy = 0;
+  f.hp = f.max_hp;
+  f.spell_cooldowns = {};
+  f.status = statusInitial();
+  f.spell_hit_this_exchange = false;
+  f.spell_hit_last_exchange = false;
+  f.spell_neutralize_pending = 0;
+  f.spell_neutralize_active = 0;
+  return f;
+}
+function startPvpBattle(state) {
+  const next = structuredClone(state);
+  next.turn = 0;
+  next.rng_counter = 0;
+  next.round = 1;
+  next.player_turn = true;
+  next.fighters.left = resetPvpFighter(next.fighters.left);
+  next.fighters.right = resetPvpFighter(next.fighters.right);
+  next.physical_anomaly = null;
+  next.strategic_delayed = [];
+  next.strategic_jams = [];
+  return next;
+}
+function pvpHomReady(fighter2) {
+  return !fighter2.hom_spent && fighter2.hom_energy >= fighter2.hom_ready_at;
+}
+function pvpInitiative(fighter2) {
+  const next = structuredClone(fighter2);
+  const value = 10 + (next.active_weapon?.effects?.tempo_flat?.[0] ?? 0) + (next.hom_spent ? 0 : next.hom_synergy.tempo_flat ?? 0) + (next.status.tempo_bonus ?? 0);
+  next.status.tempo_bonus = 0;
+  return { initiative: value, fighter: next };
+}
+function validatePvpDecision(state, side, decision) {
+  if (!state || state.battle_over || state.match_result || !state.fighters || side !== "left" && side !== "right" || !decision || typeof decision !== "object" || Array.isArray(decision) || Object.keys(decision).some((k) => !["turn", "spell_id", "switch_slot", "hom_action", "ultra"].includes(k)))
+    return { error: "INVALID_DECISION" };
+  const f = state.fighters[side];
+  if (!f || !Array.isArray(f.spell_ids) || !Array.isArray(f.spells) || !f.spells.every(object) || !Array.isArray(f.weapons) || !object(f.spell_cooldowns) || !Number.isSafeInteger(decision.turn) || decision.turn !== state.turn + 1 || decision.spell_id !== undefined === (decision.switch_slot !== undefined) || decision.ultra !== undefined && typeof decision.ultra !== "boolean" || decision.hom_action !== undefined && !["hold", "attack", "sacrifice"].includes(decision.hom_action))
+    return { error: "INVALID_DECISION" };
+  if (decision.spell_id !== undefined && (typeof decision.spell_id !== "string" || !f.spell_ids.includes(decision.spell_id) || !f.spells.some((s) => s.id === decision.spell_id) || (f.spell_cooldowns[decision.spell_id] ?? 0) > 0))
+    return { error: "INVALID_DECISION" };
+  if (decision.switch_slot !== undefined && (![1, 2].includes(decision.switch_slot) || decision.switch_slot === f.active_weapon_slot || !f.weapons[decision.switch_slot - 1] || decision.ultra))
+    return { error: "INVALID_DECISION" };
+  if (decision.hom_action && decision.hom_action !== "hold" && !pvpHomReady(f))
+    return { error: "INVALID_DECISION" };
+  if (decision.ultra && (state.battle_index !== 3 || state.wins.left !== 1 || state.wins.right !== 1 || state.sudden_death || f.ultra_used))
+    return { error: "INVALID_DECISION" };
+  return { ok: true };
+}
+function resolvePvpExchange(state, leftDecision, rightDecision, rng) {
+  if (!state || !Number.isSafeInteger(state.turn) || state.turn < 0 || !Number.isSafeInteger(state.round) || state.round < 1 || !Number.isSafeInteger(state.battle_index) || state.battle_index < 1 || !object(state.wins) || ![state.wins.left, state.wins.right].every((v) => Number.isSafeInteger(v) && v >= 0 && v < 2) || typeof state.sudden_death !== "boolean" || typeof state.player_turn !== "boolean" || !object(state.types) || !object(state.types.effectiveness) || !Number.isSafeInteger(state.rng_counter) || state.rng_counter < 0 || state.battle_over || state.match_result || state.fighters?.left?.hp <= 0 || state.fighters?.right?.hp <= 0 || "error" in validatePvpDecision(state, "left", leftDecision) || "error" in validatePvpDecision(state, "right", rightDecision) || typeof rng !== "function")
+    return { error: "INVALID_DECISION" };
+  const decisions = { left: leftDecision, right: rightDecision };
+  const supportedStatuses = new Set(["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect", "hybrid_mark"]);
+  for (const side of ["left", "right"]) {
+    const f = state.fighters[side], d = decisions[side];
+    const spell = f.spells.find((s) => s.id === d.spell_id);
+    if (!object(f.status) || !object(f.item_fx) || !object(f.hom_synergy) || ![f.hp, f.max_hp, f.atk, f.def, f.hom_energy, f.hom_max_energy, f.hom_ready_at].every(number) || f.hp <= 0 || f.hp > f.max_hp || f.max_hp <= 0 || f.hom_energy < 0 || f.hom_energy > f.hom_max_energy || !Object.entries(f.spell_cooldowns).every(([id, value]) => typeof id === "string" && Number.isSafeInteger(value) && value >= 0) || !Object.entries(f.status).every(([key, value]) => key === "hybrid_mark" || number(value) && (key === "tempo_bonus" || value >= 0)) || !object(state.types.effectiveness[f.type]) || !number(state.types.effectiveness[f.type][state.fighters[side === "left" ? "right" : "left"].type]))
+      return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+    if (!["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(f.type) || d.spell_id !== undefined && (!spell || !number(spell.power_mult) || !number(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !(spell.category === "attack" && spell.power_mult > 0 || spell.category === "support" && spell.power_mult === 0) || !Array.isArray(spell.effects) || spell.effects.some((e) => !object(e) || !supportedEffects.has(e.kind) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(spell) || STRATEGIC_EFFECTS.includes(e.kind) && !validStrategicStatusEffect(e) || !["self", "enemy"].includes(e.target) || !number(e.value) || e.kind !== "tempo_shift" && e.value < 0 || ["threshold", "max_heal", "second_value"].some((k) => e[k] !== undefined && (!number(e[k]) || e[k] < 0)) || e.threshold !== undefined && e.threshold > 1 || e.kind === "hybrid_mark" && (!Number.isSafeInteger(e.value) || e.value < 1) || e.kind === "ward_convert" && (e.value > 1 || spell.category !== "attack"))) || f.inspiration_pending || Object.keys(f.status).some((key) => !supportedStatuses.has(key)) || f.status.hybrid_mark !== undefined && (!object(f.status.hybrid_mark) || !["left", "right"].includes(f.status.hybrid_mark.owner) || !Number.isSafeInteger(f.status.hybrid_mark.remaining) || f.status.hybrid_mark.remaining < 1))
+      return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+  }
+  if (!Array.isArray(state.strategic_delayed) || !Array.isArray(state.strategic_jams) || state.strategic_jams.length || state.strategic_delayed.some((e) => !object(e) || !["left", "right"].includes(e.actor) || !["left", "right"].includes(e.target) || e.actor === e.target || !Number.isSafeInteger(e.amount) || e.amount <= 0 || !Number.isSafeInteger(e.due_turn) || e.due_turn <= state.turn) || state.physical_anomaly && (!object(state.physical_anomaly) || typeof state.physical_anomaly.id !== "string" || !["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(state.physical_anomaly.favored_type) || !["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(state.physical_anomaly.weakened_type) || state.physical_anomaly.favored_type === state.physical_anomaly.weakened_type || !Number.isSafeInteger(state.physical_anomaly.remaining_exchanges) || state.physical_anomaly.remaining_exchanges < 1 || state.physical_anomaly.remaining_exchanges > 3 || !Number.isSafeInteger(state.physical_anomaly.activated_exchange) || state.physical_anomaly.activated_exchange > state.turn))
+    return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+  for (const f of Object.values(state.fighters)) {
+    if (f.strategic_trap && (!object(f.strategic_trap) || !number(f.strategic_trap.value) || f.strategic_trap.value < 0 || f.strategic_trap.value > 0.5 || !Number.isSafeInteger(f.strategic_trap.activated_turn) || !Number.isSafeInteger(f.strategic_trap.expires_turn) || f.strategic_trap.expires_turn <= state.turn) || f.strategic_heal_suppression && (!object(f.strategic_heal_suppression) || !Number.isSafeInteger(f.strategic_heal_suppression.expires_turn) || f.strategic_heal_suppression.expires_turn <= state.turn))
+      return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+  }
+  const next = structuredClone(state), events = [], turn = state.turn + 1;
+  let counter = 0;
+  const draw = () => {
+    const v = rng(turn, counter++);
+    if (!number(v) || v < 0 || v >= 1)
+      throw new Error("INVALID_RNG");
+    return v;
+  };
+  const sides = ["left", "right"];
+  const other = (side) => side === "left" ? "right" : "left";
+  const emit = (side, category, verb, extra = {}) => {
+    const fighter2 = next.fighters[side];
+    events.push({ turn, side, actor_side: side === "left" ? "player" : "enemy", actor: fighter2.name, actor_kind: "entity", actor_color: side === "left" ? "69d7e8" : "f2a078", category, verb, ...extra });
+  };
+  const clearDefense = (f, field) => {
+    f.status[field] = 0;
+    delete f[`weapon_${field}`];
+    delete f[`other_${field}`];
+    if (field === "shield_pct") {
+      delete f.spell_ward;
+      delete f.spell_ward_baseline;
+    } else {
+      delete f.hom_reflect_active;
+      delete f.hom_other_reflect;
+    }
+  };
+  const applyOther = (f, field, value) => {
+    if (field === "reflect_pct" && f.hom_reflect_active)
+      f.hom_other_reflect = Math.max(f.hom_other_reflect ?? 0, value);
+    if (f[`weapon_${field}`] !== undefined)
+      f[`other_${field}`] = Math.max(f[`other_${field}`] ?? 0, value);
+    f.status[field] = Math.max(f.status[field] ?? 0, value);
+  };
+  const applyWeapon = (f, field, value) => {
+    if (f[`weapon_${field}`] === undefined)
+      f[`other_${field}`] = f.status[field] ?? 0;
+    f[`weapon_${field}`] = Math.max(f[`weapon_${field}`] ?? 0, value);
+    f.status[field] = Math.max(f[`other_${field}`], f[`weapon_${field}`]);
+  };
+  const dmg = (actor, target, amount, kind, spell) => {
+    const victim = next.fighters[target];
+    victim.hp = Math.max(0, victim.hp - amount);
+    emit(actor, "damage", " hits ", { kind, target: victim.name, target_side: target, target_color: target === "left" ? "69d7e8" : "f2a078", spell_id: spell.id, show_spell_link: false, damage: amount, hp: victim.hp, suffix: ` for ${amount}.` });
+  };
+  const strategicEvents = (entries) => {
+    for (const entry of entries) {
+      const side = entry.actor ?? entry.target;
+      const { actor, target, ...rest } = entry;
+      emit(side, "strategic", " triggers a strategic effect.", { ...rest, ...target ? { target_side: target } : {} });
+    }
+  };
+  try {
+    next.turn = turn;
+    for (const side of sides) {
+      const f = next.fighters[side];
+      f.spell_hit_last_exchange = f.spell_hit_this_exchange;
+      f.spell_hit_this_exchange = false;
+      f.spell_neutralize_active = f.spell_neutralize_pending;
+      f.spell_neutralize_pending = 0;
+      if (decisions[side].ultra)
+        f.ultra_used = true;
+    }
+    const l = pvpInitiative(next.fighters.left), r = pvpInitiative(next.fighters.right);
+    next.fighters.left = l.fighter;
+    next.fighters.right = r.fighter;
+    const order = normalInitiativeOrder(l.initiative, r.initiative);
+    for (const side of order) {
+      const opponent = other(side), a = next.fighters[side], b = next.fighters[opponent], decision = decisions[side];
+      if (a.hp <= 0 || b.hp <= 0)
+        break;
+      const act = () => {
+        const spell = a.spells.find((s) => s.id === decision.spell_id);
+        a.spell_cooldowns = normalActionCooldowns(a.spell_cooldowns, spell);
+        if (decision.switch_slot !== undefined) {
+          if (a.status.stun > 0) {
+            a.status.stun--;
+            emit(side, "debuff", " is stunned and cannot switch.", { kind: "stun" });
+          } else {
+            next.fighters[side] = refreshPvpWeapon(a, decision.switch_slot);
+            emit(side, "switch", " switches weapons.", { kind: "switch", slot: decision.switch_slot });
+          }
+          return;
+        }
+        const mark = b.status.hybrid_mark;
+        const marked = !!mark && mark.owner === side && mark.remaining > 0;
+        const poisonedBefore = b.status.poison > 0;
+        if (marked) {
+          mark.remaining--;
+          if (mark.remaining <= 0)
+            delete b.status.hybrid_mark;
+          emit(side, "debuff", "'s mark approaches expiry.", { kind: "mark_tick", target_side: opponent, remaining: mark.remaining });
+        }
+        emit(side, spell.category === "attack" && a.status.stun <= 0 ? "damage" : "buff", " uses ", { kind: "spell", spell_id: spell.id, spell_name: spell.name, spell_meta: { id: spell.id, context: { spell: structuredClone(spell), actual_damage: 0, direct_damage: 0, pierce: 0, dispel: 0, ultra: !!decision.ultra } }, suffix: ".", target_side: opponent });
+        const spellContext = events[events.length - 1].spell_meta.context;
+        if (a.status.stun > 0) {
+          a.status.stun--;
+          emit(side, "debuff", " is stunned and skips the spell.", { kind: "stun", spell_id: spell.id });
+          return;
+        }
+        let power = spell.power_mult;
+        for (const effect of spell.effects) {
+          if (effect.kind === "bonus_if_poisoned" && poisonedBefore)
+            power *= 1 + effect.value;
+          else if (effect.kind === "bonus_if_hit_last_exchange" && a.spell_hit_last_exchange)
+            power *= 1 + effect.value;
+          else if (effect.kind === "bonus_if_low_hp" && a.hp < a.max_hp * (effect.threshold ?? 0.4) || effect.kind === "bonus_if_marked" && marked || effect.kind === "bonus_power_if_poisoned" && poisonedBefore || effect.kind === "bonus_if_shielded" && a.status.shield_pct > 0 || effect.kind === "bonus_power_if_hit_last_exchange" && a.spell_hit_last_exchange)
+            power += effect.value;
+          else if (effect.kind === "pierce_ward")
+            spellContext.pierce = effect.value;
+          else if (effect.kind === "ward_dispel")
+            spellContext.dispel = effect.value;
+        }
+        if (spell.category === "attack") {
+          const focus = a.status.focus_next ?? 0, misalign = a.status.misalign_next ?? 0;
+          if (focus > 0 || misalign > 0) {
+            delete a.status.focus_next;
+            delete a.status.misalign_next;
+          }
+          if ((b.item_fx.evasion_pct ?? 0) > 0 && draw() < b.item_fx.evasion_pct) {
+            emit(opponent, "miss", " evades.", { kind: "evade", target_side: side, spell_id: spell.id });
+            return;
+          }
+          let accuracy = spell.accuracy;
+          if (a.atk > b.def * 1.6)
+            accuracy -= 0.08;
+          if (a.max_hp > b.max_hp && a.max_hp > 0)
+            accuracy -= Math.max(0, Math.min(0.15, (a.max_hp - b.max_hp) / a.max_hp * 0.2));
+          if (focus > 0)
+            accuracy = Math.min(0.99, accuracy + focus);
+          if (misalign > 0)
+            accuracy = Math.max(0.55, accuracy - misalign);
+          if (draw() >= Math.max(0, Math.min(1, accuracy))) {
+            emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id });
+            return;
+          }
+          const as = a.hom_spent ? {} : a.hom_synergy, bs = b.hom_spent ? {} : b.hom_synergy;
+          const mult = normalSpellMultiplier({ attacker_type: a.type, defender_type: b.type, spell_type: spell.type, primary_type: spell.primary_type, secondary_type: spell.secondary_type, effectiveness: next.types.effectiveness, advantage_bonus: a.hom_spent ? 0 : (as.type_adv_bonus ?? 0) + (a.hom_bonus.favorable_type_bonus ?? 0), disadvantage_reduction: a.item_fx.disadvantage_reduction, attacker_neutralize: a.spell_neutralize_active, defender_neutralize: b.spell_neutralize_active, attacker_hom_neutralize: as.type_neutralize, defender_hom_neutralize: bs.type_neutralize });
+          const amount = normalDirectDamage({ attack: a.atk, defense: b.def, power, type_multiplier: mult, anomaly_multiplier: physicalAnomalyMultiplier(next.physical_anomaly, a.type), attack_down: a.status.atk_down, attack_boost: a.status.atk_boost, incoming_multiplier: bs.incoming_mult, vulnerability: b.status.vuln_pct, shield: b.status.shield_pct, pierce: spellContext.pierce, dispel: spellContext.dispel, ultra: decision.ultra });
+          if (a.status.atk_down > 0)
+            emit(side, "debuff", " shakes off the weakness.", { kind: "status_consumed", status: "atk_down", spell_id: spell.id });
+          if (a.status.atk_boost > 0)
+            emit(side, "combo", " expends the surge.", { kind: "status_consumed", status: "atk_boost", spell_id: spell.id });
+          if (b.status.vuln_pct > 0)
+            emit(side, "combo", " exploits vulnerability.", { kind: "status_consumed", status: "vuln_pct", target_side: opponent, spell_id: spell.id });
+          a.status.atk_down = 0;
+          a.status.atk_boost = 0;
+          b.status.vuln_pct = 0;
+          if (b.status.shield_pct > 0)
+            clearDefense(b, "shield_pct");
+          spellContext.direct_damage = Math.min(b.hp, amount);
+          spellContext.actual_damage += spellContext.direct_damage;
+          dmg(side, opponent, amount, "damage", spell);
+          events[events.length - 1].effectiveness = mult;
+          if (amount > 0)
+            b.spell_hit_this_exchange = true;
+          if (b.status.reflect_pct > 0) {
+            const ignored = (a.item_fx.ignore_reflect_chance ?? 0) > 0 && draw() < a.item_fx.ignore_reflect_chance;
+            const reflected = ignored ? 0 : Math.round(amount * b.status.reflect_pct);
+            if (reflected > 0) {
+              dmg(opponent, side, reflected, "reflect", spell);
+              a.spell_hit_this_exchange = true;
+            }
+            if (!ignored && (b.status.poison_on_reflect ?? 0) > 0)
+              a.status.poison = Math.max(a.status.poison, b.status.poison_on_reflect);
+            clearDefense(b, "reflect_pct");
+            delete b.status.poison_on_reflect;
+          }
+          for (const key of ["true_on_hit", "dot_true"]) {
+            const value = Math.trunc(a.item_fx[key] ?? 0);
+            if (value > 0) {
+              spellContext.actual_damage += Math.min(b.hp, value);
+              dmg(side, opponent, value, key, spell);
+              if (key === "dot_true" && a.item_fx.vuln_on_hit > 0)
+                b.status.vuln_pct = Math.max(b.status.vuln_pct, a.item_fx.vuln_on_hit);
+            }
+          }
+          const homDot = Math.max(0, Math.trunc(as.dot_true ?? 0));
+          if (homDot > 0)
+            dmg(side, opponent, homDot, "hom_dot", spell);
+          const proc = Math.floor(draw() * 4294967296) % 100;
+          if (a.type === "vitriol" && proc < 30)
+            b.status.poison = 2;
+          if (a.type === "mercury" && proc < 20)
+            b.status.stun = 1;
+          if (a.type === "sulfur" && proc < 20)
+            b.status.atk_down = Math.max(b.status.atk_down, 0.15);
+          if (a.type === "sodium" && proc < 20)
+            applyOther(a, "shield_pct", 0.12);
+          if (a.type === "aether" && proc < 20)
+            b.status.vuln_pct = Math.max(b.status.vuln_pct, 0.12);
+          if (a.type === "gold" && proc < 20) {
+            const before = a.hp;
+            a.hp = Math.min(a.max_hp, a.hp + strategicHeal(a, 3));
+            if (a.hp !== before)
+              emit(side, "heal", " restores 3 HP.", { kind: "elemental_heal", spell_id: spell.id, hp: a.hp, amount: a.hp - before });
+          }
+          if (proc < (a.type === "vitriol" ? 30 : 20) && a.type !== "gold")
+            emit(side, a.type === "sodium" ? "shield" : "debuff", " triggers an elemental effect.", { kind: "elemental_proc", spell_id: spell.id, target_side: a.type === "sodium" ? side : opponent, status: { vitriol: "poison", mercury: "stun", sulfur: "atk_down", sodium: "shield_pct", aether: "vuln_pct" }[a.type] });
+        } else {
+          if (draw() >= spell.accuracy) {
+            emit(side, "miss", "'s spell misses.", { kind: "miss", spell_id: spell.id });
+            return;
+          }
+          emit(side, "buff", "'s spell succeeds.", { kind: "support_hit", spell_id: spell.id, show_spell_link: false });
+        }
+        if (spell.type === "hybrid" && marked) {
+          delete b.status.hybrid_mark;
+          emit(side, "combo", " consumes the hybrid mark.", { kind: "mark_consumed", target_side: opponent, spell_id: spell.id, show_spell_link: false });
+        }
+        for (const effect of spell.effects)
+          if (effect.kind === "ward_convert" && spell.category === "attack") {
+            const ward = a.spell_ward ?? 0;
+            if (ward > 0) {
+              const baseline = a.spell_ward_baseline ?? 0;
+              delete a.spell_ward;
+              delete a.spell_ward_baseline;
+              a.status.shield_pct = Math.max(baseline, a.weapon_shield_pct ?? 0);
+              if (a.weapon_shield_pct !== undefined)
+                a.other_shield_pct = baseline;
+              const converted = Math.min(b.hp, Math.floor(b.max_hp * 0.2), Math.floor(a.max_hp * ward * effect.value));
+              dmg(side, opponent, converted, "ward_convert", spell);
+            }
+          }
+        for (const effect of spell.effects) {
+          const targetSide = effect.target === "self" ? side : opponent;
+          const recipient = next.fighters[targetSide];
+          const kind = effect.kind;
+          let value = effect.value;
+          if (decision.ultra && ["heal", "recoil", "atk_boost", "atk_down", "shield", "reflect", "vuln", "poison", "hom_stun", "focus_next", "misalign_next", "tempo_shift", "hybrid_mark", "type_neutralize", "poison_on_reflect"].includes(kind)) {
+            value *= 2;
+            if (["atk_boost", "atk_down", "shield", "reflect", "vuln", "focus_next", "misalign_next", "type_neutralize"].includes(kind))
+              value = Math.max(0, Math.min(kind === "shield" || kind === "reflect" ? 0.95 : 1, value));
+          }
+          const award = (awardedTarget = targetSide) => {
+            if (awardedTarget === side || a.inspiration_used_this_battle || a.inspiration >= 3)
+              return;
+            a.inspiration++;
+            a.inspiration_pending = a.inspiration === 3;
+            emit(side, "inspiration", ` gains inspiration (${a.inspiration}/3).`, { kind: "inspiration", source: kind, value: a.inspiration, target_side: awardedTarget, spell_id: spell.id, show_spell_link: false });
+          };
+          if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "ward_convert"].includes(kind))
+            continue;
+          if (kind === "physical_anomaly") {
+            next.physical_anomaly = castPhysicalAnomaly(spell, turn);
+            emit(side, "strategic", " creates an anomaly.", { kind: "physical_anomaly_cast", anomaly: structuredClone(next.physical_anomaly) });
+          } else if (kind === "delayed_damage") {
+            const ev = [];
+            if (spell.category === "attack")
+              queueDelayedDamage(next, side, opponent, value, spellContext.direct_damage, turn, ev);
+            strategicEvents(ev);
+          } else if (kind === "debuff_transfer" || kind === "buff_steal") {
+            const ev = [];
+            transferStrategicStatus(kind, a, b, side, opponent, { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }, ev, (f, field) => {
+              if (["shield_pct", "reflect_pct"].includes(field))
+                clearDefense(f, field);
+              else
+                f.status[field] = 0;
+            }, (f, field, amount) => {
+              if (["shield_pct", "reflect_pct"].includes(field))
+                applyOther(f, field, amount);
+              else
+                f.status[field] = Math.max(f.status[field] ?? 0, amount);
+            });
+            strategicEvents(ev);
+            if (kind === "debuff_transfer" && ev[0] && ev[0].value > ev[0].previous)
+              award(opponent);
+          } else if (kind === "cooldown_jam") {
+            next.strategic_jams.push({ actor: side, target: opponent });
+          } else if (kind === "counter_trap") {
+            a.strategic_trap = { value, activated_turn: turn, expires_turn: turn + 2 };
+            emit(side, "strategic", " arms a trap.", { kind: "counter_trap_armed", value, expires_turn: turn + 2 });
+          } else if (kind === "heal_suppression") {
+            b.strategic_heal_suppression = { expires_turn: turn + 2 };
+            emit(side, "strategic", " suppresses healing.", { kind: "heal_suppression_applied", target_side: opponent, expires_turn: turn + 2 });
+          } else if (kind === "hom_energy_siphon") {
+            const amount = !a.hom_spent && !b.hom_spent && a.hom_id && b.hom_id ? Math.min(2, b.hom_energy, a.hom_max_energy - a.hom_energy) : 0;
+            if (amount > 0) {
+              a.hom_energy += amount;
+              b.hom_energy -= amount;
+              emit(side, "strategic", " siphons energy.", { kind, target_side: opponent, amount });
+            }
+          } else if (kind === "recoil") {
+            const amount = Math.trunc(value);
+            if (recipient.hp > 0 && amount > 0)
+              recipient.spell_hit_this_exchange = true;
+            recipient.hp = Math.max(0, recipient.hp - amount);
+            emit(targetSide, "damage", ` takes ${amount} recoil.`, { kind: "recoil", damage: amount, hp: recipient.hp, spell_id: spell.id, show_spell_link: false, source_side: side });
+          } else if (kind === "life_leech") {
+            const cap = Math.trunc(effect.max_heal ?? 0) * (decision.ultra ? 2 : 1);
+            emit(targetSide, "heal", " siphons health.", { kind: "life_leech", spell_id: spell.id, show_spell_link: false, source_side: side });
+            if (recipient.hp > 0) {
+              const before = recipient.hp;
+              recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, Math.min(cap, Math.floor(spellContext.actual_damage * value))));
+              emit(targetSide, "heal", ` restores ${recipient.hp - before} HP from life leech.`, { kind: "life_leech_heal", amount: recipient.hp - before, hp: recipient.hp, spell_id: spell.id, show_spell_link: false, source_side: side });
+            }
+          } else if (kind === "consume_poison") {
+            if (poisonedBefore) {
+              recipient.status.poison = Math.max(0, Math.trunc(recipient.status.poison) - Math.trunc(value));
+              emit(side, "combo", " consumes poison.", { kind, target_side: targetSide, spell_id: spell.id, show_spell_link: false });
+            }
+          } else if (kind === "hybrid_mark") {
+            const before = JSON.stringify(recipient.status.hybrid_mark ?? {});
+            recipient.status.hybrid_mark = { owner: side, remaining: Math.trunc(value) };
+            emit(side, "debuff", " marks the target.", { kind, target_side: targetSide, value: structuredClone(recipient.status.hybrid_mark), spell_id: spell.id, show_spell_link: false });
+            if (before !== JSON.stringify(recipient.status.hybrid_mark))
+              award();
+          } else if (kind === "shield_by_order") {
+            let shield = side === order[1] ? effect.second_value ?? value : value;
+            if (decision.ultra)
+              shield = Math.min(shield * 2, 0.95);
+            if (recipient.spell_ward_baseline === undefined)
+              recipient.spell_ward_baseline = recipient.status.shield_pct;
+            recipient.spell_ward = Math.max(recipient.spell_ward ?? 0, shield);
+            applyOther(recipient, "shield_pct", shield);
+            emit(targetSide, "shield", " gains a shield.", { kind, value: shield, spell_id: spell.id, show_spell_link: false, source_side: side });
+          } else if (kind === "heal") {
+            const before = recipient.hp;
+            recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, Math.trunc(value)));
+            emit(targetSide, "heal", ` restores ${recipient.hp - before} HP.`, { kind: "heal", spell_id: spell.id, show_spell_link: false, hp: recipient.hp, amount: recipient.hp - before, source_side: side });
+          } else if (kind === "cleanse_one") {
+            const field = ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"].find((k) => (recipient.status[k] ?? 0) > 0);
+            if (field)
+              recipient.status[field] = 0;
+            emit(targetSide, "buff", " cleanses one negative status.", { kind: "cleanse_one", status: field ?? null, spell_id: spell.id, show_spell_link: false, source_side: side });
+          } else if (kind === "type_neutralize") {
+            recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending, value);
+            emit(targetSide, "buff", " prepares type neutralization.", { kind, value: recipient.spell_neutralize_pending, spell_id: spell.id, show_spell_link: false, source_side: side });
+          } else if (kind === "poison_on_reflect") {
+            recipient.status.poison_on_reflect = Math.trunc(value);
+            emit(targetSide, "shield", " prepares a toxic reflection.", { kind, value: recipient.status.poison_on_reflect, spell_id: spell.id, show_spell_link: false, source_side: side });
+          } else if (kind === "tempo_shift") {
+            const before = recipient.status.tempo_bonus ?? 0;
+            recipient.status.tempo_bonus = value;
+            emit(targetSide, "buff", "'s initiative shifts.", { kind, value, spell_id: spell.id, show_spell_link: false, source_side: side });
+            if (value < 0 && value < before)
+              award();
+          } else {
+            const field = { shield: "shield_pct", reflect: "reflect_pct", vuln: "vuln_pct" }[kind] ?? kind;
+            const before = recipient.status[field] ?? 0;
+            if (kind === "shield" || kind === "reflect") {
+              if (kind === "shield") {
+                if (recipient.spell_ward_baseline === undefined)
+                  recipient.spell_ward_baseline = before;
+                recipient.spell_ward = Math.max(recipient.spell_ward ?? 0, value);
+              }
+              applyOther(recipient, field, value);
+            } else
+              recipient.status[field] = Math.max(before, value);
+            emit(targetSide, kind === "shield" || kind === "reflect" ? "shield" : kind === "atk_boost" || kind === "focus_next" ? "buff" : "debuff", ` gains ${kind}.`, { kind: "status_applied", status: field, value: recipient.status[field], previous: before, spell_id: spell.id, show_spell_link: false, source_side: side });
+            if (["atk_down", "vuln", "poison", "hom_stun", "misalign_next"].includes(kind) && recipient.status[field] > before)
+              award();
+          }
+        }
+        if (spell.category === "attack") {
+          const ev = [];
+          strategicCounter(b, a, opponent, side, spellContext.direct_damage, turn, ev);
+          strategicEvents(ev);
+        }
+      };
+      act();
+      const actor = next.fighters[side];
+      if (actor.hp <= 0 || b.hp <= 0 && decision.hom_action !== "sacrifice" || !pvpHomReady(actor))
+        continue;
+      if (decision.hom_action === "sacrifice") {
+        actor.hom_spent = true;
+        actor.hom_energy = 0;
+        if (actor.hom_reflect_active !== undefined) {
+          actor.status.reflect_pct = Math.max(actor.hom_other_reflect ?? 0, actor.weapon_reflect_pct ?? 0);
+          if (actor.other_reflect_pct !== undefined)
+            actor.other_reflect_pct = actor.hom_other_reflect ?? 0;
+          delete actor.hom_reflect_active;
+          delete actor.hom_other_reflect;
+        }
+        const refreshed = refreshPvpWeapon(actor);
+        const before = refreshed.hp;
+        refreshed.hp = Math.min(refreshed.max_hp, refreshed.hp + strategicHeal(refreshed, 30));
+        next.fighters[side] = refreshed;
+        emit(side, "heal", " sacrifices its homunculus.", { kind: "hom_sacrifice", amount: refreshed.hp - before, hp: refreshed.hp });
+      } else if (decision.hom_action === "attack") {
+        const boosted = actor.hom_energy >= 6;
+        actor.hom_energy = 0;
+        if (actor.status.hom_stun > 0) {
+          actor.status.hom_stun--;
+          emit(side, "debuff", "'s homunculus is nullified.", { kind: "hom_stun" });
+        } else if (draw() >= Math.max(0.6, Math.min(0.98, 0.95 - (actor.atk > b.def * 1.6 ? 0.08 : 0) - (actor.max_hp > b.max_hp ? Math.min(0.15, (actor.max_hp - b.max_hp) / actor.max_hp * 0.2) : 0))))
+          emit(side, "miss", "'s homunculus misses.", { kind: "hom_miss", target_side: opponent });
+        else {
+          const incoming = b.hom_spent ? 1 : Math.max(0.1, Math.min(1, b.hom_synergy.incoming_mult ?? 1));
+          const amount = Math.max(1, Math.round(actor.atk * (boosted ? 0.6 : 0.4) * incoming));
+          b.hp = Math.max(0, b.hp - amount);
+          b.spell_hit_this_exchange = true;
+          emit(side, "homunculus", " strikes.", { kind: "hom_attack", target_side: opponent, damage: amount, hp: b.hp, boosted });
+        }
+      }
+    }
+    if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0)
+      for (const side of sides) {
+        const f = next.fighters[side];
+        if (f.status.poison > 0) {
+          f.status.poison--;
+          f.hp = Math.max(0, f.hp - 2);
+          f.spell_hit_this_exchange = true;
+          emit(side, "debuff", " suffers poison.", { kind: "poison", damage: 2, hp: f.hp });
+        }
+      }
+    for (const side of sides) {
+      const f = next.fighters[side];
+      if (!f.hom_spent)
+        f.hom_energy = Math.min(f.hom_max_energy, f.hom_energy + 1);
+      f.spell_neutralize_active = 0;
+    }
+    const expiry = {};
+    for (const side of sides) {
+      const f = next.fighters[side];
+      expiry[side] = { trap: f.strategic_trap, suppression: f.strategic_heal_suppression };
+      delete f.strategic_trap;
+      delete f.strategic_heal_suppression;
+    }
+    {
+      const ev = [];
+      finishStrategicExchange(next, next.fighters, turn, ev);
+      strategicEvents(ev);
+    }
+    for (const side of sides) {
+      const f = next.fighters[side];
+      if (expiry[side].trap)
+        f.strategic_trap = expiry[side].trap;
+      if (expiry[side].suppression)
+        f.strategic_heal_suppression = expiry[side].suppression;
+    }
+    for (const jam of next.strategic_jams) {
+      const f = next.fighters[jam.target];
+      const ev = [];
+      jamStrategicCooldown(f.spell_ids.map((id) => f.spells.find((s) => s.id === id)), f.spell_cooldowns, jam.actor, jam.target, ev);
+      strategicEvents(ev);
+    }
+    next.strategic_jams = [];
+    {
+      const ev = [];
+      finishStrategicExchange(next, next.fighters, turn, ev);
+      strategicEvents(ev);
+    }
+    next.physical_anomaly = tickPhysicalAnomaly(next.physical_anomaly, turn);
+    if (next.fighters.left.hp <= 0 || next.fighters.right.hp <= 0) {
+      const defeated = { left: next.fighters.left.hp <= 0, right: next.fighters.right.hp <= 0 };
+      const outcome = normalBattleOutcome({ ...next.wins, battle_index: next.battle_index, sudden_death: next.sudden_death }, defeated);
+      const battleResult = defeated.left && defeated.right ? "draw" : defeated.left ? "right" : "left";
+      next.wins = outcome.wins;
+      next.battle_index = outcome.battle_index;
+      next.sudden_death = outcome.sudden_death;
+      events.push({ turn, kind: "battle_result", result: battleResult, wins: structuredClone(next.wins) });
+      if (outcome.result !== null) {
+        next.battle_over = true;
+        next.battle_result = battleResult;
+        next.match_result = outcome.result;
+        for (const side of sides) {
+          const f = next.fighters[side];
+          if (f.temporary_spell_id) {
+            f.spell_ids = [...f.original_spell_ids];
+            f.spells = f.spells.filter((s) => s.id !== f.temporary_spell_id || f.original_spell_ids.includes(s.id));
+            delete f.spell_cooldowns[f.temporary_spell_id];
+          }
+          f.temporary_spell_id = "";
+          f.temporary_replaced_slot = -1;
+          f.inspiration_pending = false;
+          f.inspiration_offers = [];
+        }
+        events.push({ turn, kind: "match_result", result: outcome.result, wins: structuredClone(next.wins) });
+      } else {
+        const reset = startPvpBattle(next);
+        reset.battle_result = battleResult;
+        return { state: reset, events };
+      }
+    } else {
+      for (const side of sides) {
+        const f = next.fighters[side];
+        if (f.inspiration_pending && !f.inspiration_used_this_battle) {
+          if (!Array.isArray(f.inspiration_catalog))
+            return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+          const choices = f.inspiration_catalog.filter((s) => !f.spell_ids.includes(s.id));
+          if (choices.length < 3)
+            return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+          f.inspiration_offers = [];
+          for (let i = 0;i < 3; i++)
+            f.inspiration_offers.push(choices.splice(Math.floor(draw() * choices.length), 1)[0].id);
+          emit(side, "inspiration", " considers temporary spells.", { kind: "inspiration_offered" });
+        }
+      }
+      next.player_turn = !next.player_turn;
+      if (!next.player_turn) {
+        next.round++;
+        for (const side of sides) {
+          const f = next.fighters[side], synergy = f.hom_spent ? {} : f.hom_synergy;
+          const reflect = Math.max(0, Math.min(1, synergy.reflect_pct ?? 0));
+          if (reflect > 0) {
+            f.hom_other_reflect = f.status.reflect_pct;
+            f.hom_reflect_active = reflect;
+            if (f.weapon_reflect_pct !== undefined)
+              f.other_reflect_pct = Math.max(f.other_reflect_pct ?? 0, reflect);
+            f.status.reflect_pct = Math.max(f.status.reflect_pct, reflect);
+          }
+          if (f.item_fx.ward_pct > 0)
+            applyWeapon(f, "shield_pct", f.item_fx.ward_pct);
+          if (f.item_fx.reflect_pct > 0)
+            applyWeapon(f, "reflect_pct", f.item_fx.reflect_pct);
+        }
+        if (next.round === 2 && next.fighters.left.hp !== next.fighters.right.hp) {
+          const winner = next.fighters[next.fighters.left.hp > next.fighters.right.hp ? "left" : "right"];
+          if (winner.item_fx.tempo_on_win > 0)
+            winner.status.tempo_bonus = winner.item_fx.tempo_on_win;
+        }
+      }
+    }
+    next.rng_counter = counter;
+    return { state: next, events };
+  } catch (err) {
+    if (err instanceof Error && err.message === "INVALID_RNG")
+      return { error: "INVALID_RNG" };
+    throw err;
+  }
+}
+function resolvePvpInspiration(state, side, decision, rng) {
+  if (!state || state.match_result || !["left", "right"].includes(side) || typeof rng !== "function" || !object(decision))
+    return { error: "INVALID_DECISION" };
+  const f = state.fighters?.[side];
+  if (!f?.inspiration_pending || f.inspiration_used_this_battle || !Array.isArray(f.inspiration_offers) || f.inspiration_offers.length !== 3 || new Set(f.inspiration_offers).size !== 3)
+    return { error: "INVALID_DECISION" };
+  const keys = Object.keys(decision).sort().join(",");
+  if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && f.inspiration_offers.includes(decision.spell_id)))
+    return { error: "INVALID_DECISION" };
+  const next = structuredClone(state), fighter2 = next.fighters[side];
+  if (decision.kind === "choose") {
+    const spell = fighter2.inspiration_catalog.find((s) => s.id === decision.spell_id);
+    if (!spell || fighter2.spell_ids.includes(spell.id))
+      return { error: "INVALID_DECISION" };
+    const roll = rng(next.turn, next.rng_counter);
+    if (!number(roll) || roll < 0 || roll >= 1)
+      return { error: "INVALID_RNG" };
+    const slot = Math.floor(roll * 4);
+    next.rng_counter++;
+    fighter2.spell_ids[slot] = spell.id;
+    fighter2.temporary_spell_id = spell.id;
+    fighter2.temporary_replaced_slot = slot;
+    if (!fighter2.spells.some((s) => s.id === spell.id))
+      fighter2.spells.push(structuredClone(spell));
+  } else
+    fighter2.inspiration = 0;
+  fighter2.inspiration_pending = false;
+  fighter2.inspiration_used_this_battle = true;
+  fighter2.inspiration_offers = [];
+  return { state: next, events: [{ turn: next.turn, side, kind: decision.kind === "choose" ? "inspiration_chosen" : "inspiration_declined" }] };
+}
+function normalBattleOutcome(score, defeated) {
+  if (!Number.isSafeInteger(score.left) || !Number.isSafeInteger(score.right) || score.left < 0 || score.right < 0 || !Number.isSafeInteger(score.battle_index) || score.battle_index < 1 || typeof score.sudden_death !== "boolean" || typeof defeated.left !== "boolean" || typeof defeated.right !== "boolean" || !defeated.left && !defeated.right)
+    throw new Error("INVALID_BATTLE_OUTCOME");
+  const wins = { left: score.left + Number(defeated.right && !defeated.left), right: score.right + Number(defeated.left && !defeated.right) };
+  if (wins.left >= 2 || wins.right >= 2)
+    return { wins, battle_index: score.battle_index, sudden_death: score.sudden_death, result: wins.left === wins.right ? "draw" : wins.left > wins.right ? "left" : "right" };
+  if (score.battle_index >= 3) {
+    if (wins.left === wins.right && !score.sudden_death)
+      return { wins, battle_index: score.battle_index + 1, sudden_death: true, result: null };
+    return { wins, battle_index: score.battle_index, sudden_death: score.sudden_death, result: wins.left === wins.right ? "draw" : wins.left > wins.right ? "left" : "right" };
+  }
+  return { wins, battle_index: score.battle_index + 1, sudden_death: score.sudden_death, result: null };
+}
+function normalInitiativeOrder(left, right) {
+  if (!Number.isFinite(left) || !Number.isFinite(right))
+    throw new Error("INVALID_INITIATIVE");
+  return left >= right ? ["left", "right"] : ["right", "left"];
+}
+function normalSpellMultiplier(input) {
+  if (input.spell_type === "universal")
+    return 1;
+  const relation = (type) => input.effectiveness[type]?.[input.defender_type] ?? 1;
+  const advantage = Math.max(0, Math.min(0.5, input.advantage_bonus ?? 0));
+  let multiplier;
+  if (input.spell_type === "hybrid") {
+    const factor = (type) => relation(type) > 1 ? 1.25 : relation(type) < 1 ? 0.8 : 1;
+    multiplier = Math.max(0.8, Math.min(1.25, Math.pow(factor(input.primary_type ?? ""), 0.65) * Math.pow(factor(input.secondary_type ?? ""), 0.35)));
+    if (multiplier > 1)
+      multiplier += advantage;
+  } else {
+    const value = relation(input.attacker_type);
+    multiplier = value > 1 ? 1.12 + advantage : value < 1 ? Math.min(0.92 + (input.disadvantage_reduction ?? 0), 1) : 1;
+  }
+  const neutralize = Math.max(input.attacker_neutralize ?? 0, input.defender_neutralize ?? 0, input.attacker_hom_neutralize ?? 0, input.defender_hom_neutralize ?? 0);
+  return 1 + (multiplier - 1) * (1 - neutralize);
+}
+function normalDirectDamage(input) {
+  const round = (n) => n < 0 ? -Math.round(-n) : Math.round(n);
+  const clamp2 = (n, low, high) => Math.max(low, Math.min(high, n));
+  let attack = Math.trunc(input.attack);
+  if ((input.attack_down ?? 0) > 0)
+    attack = round(attack * (1 - input.attack_down));
+  if ((input.attack_boost ?? 0) > 0)
+    attack = round(attack * (1 + input.attack_boost));
+  let damage = Math.max(1, round((attack - Math.trunc(input.defense * 0.5)) * input.type_multiplier * input.power * (input.anomaly_multiplier ?? 1)));
+  damage = Math.max(1, round(damage * clamp2(input.incoming_multiplier ?? 1, 0.1, 1)));
+  if ((input.vulnerability ?? 0) > 0)
+    damage = round(damage * (1 + input.vulnerability));
+  if ((input.shield ?? 0) > 0)
+    damage = round(damage * (1 - input.shield * (1 - clamp2(input.dispel ?? 0, 0, 1)) * (1 - clamp2(input.pierce ?? 0, 0, 1))));
+  return input.ultra ? damage * 2 : damage;
+}
+function normalActionCooldowns(cooldowns, spell) {
+  const next = {};
+  for (const [id, value] of Object.entries(cooldowns)) {
+    if (!Number.isSafeInteger(value) || value < 0)
+      throw new Error("INVALID_COOLDOWN");
+    next[id] = Math.max(0, value - 1);
+  }
+  if (spell) {
+    if (!spell.id || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || (cooldowns[spell.id] ?? 0) > 0)
+      throw new Error("INVALID_COOLDOWN");
+    next[spell.id] = spell.cooldown_turns;
+  }
+  return next;
+}
+
+// src/pvp/service.ts
+var PVP_TURN_TIMEOUT_MS = 90000;
+function pvpRandom(secret, matchId, battle, turn, draw) {
+  if (!(secret instanceof Uint8Array) || secret.length < 32 || typeof matchId !== "string" || !matchId || ![battle, turn, draw].every((n) => Number.isSafeInteger(n) && n >= 0))
+    throw new Error("INVALID_PVP_RNG_INPUT");
+  return createHmac("sha256", secret).update(JSON.stringify(["ranked-pvp-v1", matchId, battle, turn, draw])).digest().readUInt32BE(0) / 4294967296;
+}
+function trustedPvpSnapshot(playerId, selection, state, catalogs) {
+  if (!selection || typeof selection !== "object" || Array.isArray(selection) || Object.keys(selection).some((k) => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)) || !state || state.player_id !== playerId || !["attack", "defense"].includes(selection.mode))
+    return null;
+  const entity = catalogs.entities.find((e) => e.id === selection.entity_id);
+  const { weapon_ids: weapons, spell_ids: ids } = selection;
+  if (!entity || !Array.isArray(weapons) || weapons.length !== 2 || weapons.some((id) => id !== null && (typeof id !== "string" || !catalogs.items.some((i) => i.id === id && i.slot === "build"))) || weapons[0] !== null && weapons[0] === weapons[1] || !(selection.homunculus_id === null || typeof selection.homunculus_id === "string" && catalogs.homunculi.some((h) => h.id === selection.homunculus_id)) || !Array.isArray(ids) || ids.length !== 4 || new Set(ids).size !== 4)
+    return null;
+  const learned = state.spell_progress?.learned_by_entity?.[entity.id] ?? [];
+  const defaults = catalogs.spells.filter((s) => s.type === entity.type).map((s) => s.id);
+  const equipped = state.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
+  if (!Array.isArray(learned) || !Array.isArray(equipped) || JSON.stringify(ids) !== JSON.stringify(equipped) || ids.some((id) => typeof id !== "string" || !catalogs.spells.some((s) => s.id === id && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type) && learned.includes(id)))))
+    return null;
+  return { player_id: playerId, entity_id: entity.id, weapon_ids: [...weapons], homunculus_id: selection.homunculus_id, spell_ids: [...ids], item_progress: structuredClone(state.item_progress ?? {}), homunculus_progress: structuredClone(state.homunculus_progress ?? {}), spell_progress: structuredClone(state.spell_progress ?? {}) };
+}
+function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
+  if (typeof trustedSnapshot !== "function")
+    throw new Error("PVP_OWNERSHIP_VERIFIER_REQUIRED");
+  const rankings = createPvpRanking(db, clock);
+  const expire = db.prepare("DELETE FROM pvp_queue WHERE expires_at <= ?");
+  const queued = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id = ?");
+  const active2 = db.prepare("SELECT match_id FROM pvp_match_players WHERE player_id = ? AND active = 1");
+  const first = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id <> ? ORDER BY queued_at, rowid LIMIT 1");
+  const insert = db.prepare("INSERT INTO pvp_queue (player_id, queued_at, expires_at, snapshot_json) VALUES (?, ?, ?, ?)");
+  const remove = db.prepare("DELETE FROM pvp_queue WHERE player_id = ?");
+  const match = db.prepare("INSERT INTO pvp_matches (match_id, status, created_at, updated_at, revision, combat_state_json, season, decision_deadline) VALUES (?, 'ACTIVE', ?, ?, 1, ?, ?, ?)");
+  const member = db.prepare("INSERT INTO pvp_match_players (match_id, player_id, side, snapshot_json, active, last_seen_at, start_rating) VALUES (?, ?, ?, ?, 1, ?, ?)");
+  const validId = (id) => typeof id === "string" && id.length > 0 && id.length <= 256;
+  return {
+    state(playerId) {
+      if (!validId(playerId))
+        throw new Error("INVALID_PLAYER");
+      return db.transaction(() => {
+        expire.run(clock());
+        const found = queued.get(playerId), current = active2.get(playerId);
+        return current ? { state: "MATCHED", match_id: current.match_id } : found ? { state: "QUEUED", joined_at: found.queued_at, expires_at: found.expires_at } : { state: "IDLE" };
+      }).immediate();
+    },
+    cancel(playerId) {
+      if (!validId(playerId))
+        throw new Error("INVALID_PLAYER");
+      return db.transaction(() => {
+        expire.run(clock());
+        remove.run(playerId);
+        const current = active2.get(playerId);
+        return current ? { state: "MATCHED", match_id: current.match_id } : { state: "IDLE" };
+      }).immediate();
+    },
+    join(playerId, selection) {
+      if (!validId(playerId))
+        throw new Error("INVALID_PLAYER");
+      return db.transaction(() => {
+        const now = clock();
+        expire.run(now);
+        const current = active2.get(playerId);
+        if (current)
+          return { state: "MATCHED", match_id: current.match_id };
+        const previous = queued.get(playerId);
+        if (previous) {
+          if (JSON.stringify(JSON.parse(previous.snapshot_json).selection) !== JSON.stringify(selection))
+            throw new Error("QUEUE_CONFLICT");
+          return { state: "QUEUED", joined_at: previous.queued_at, expires_at: previous.expires_at };
+        }
+        const snapshot2 = trustedSnapshot(playerId, selection);
+        if (!snapshot2 || snapshot2.player_id !== playerId || "error" in createPvpFighter(snapshot2, catalogs))
+          throw new Error("UNTRUSTED_SETUP");
+        let opponent = first.get(playerId), other = null;
+        while (opponent) {
+          const stored = JSON.parse(opponent.snapshot_json);
+          other = stored.snapshot ?? null;
+          if (other && other.player_id === opponent.player_id && other.player_id !== playerId && !("error" in createPvpFighter(other, catalogs)))
+            break;
+          remove.run(opponent.player_id);
+          opponent = first.get(playerId);
+        }
+        if (!opponent || !other) {
+          insert.run(playerId, now, now + 3600000, JSON.stringify({ selection, snapshot: snapshot2 }));
+          return { state: "QUEUED", joined_at: now, expires_at: now + 3600000 };
+        }
+        const [left, right] = randomInt(2) === 0 ? [snapshot2, other] : [other, snapshot2];
+        const combat = createPvpCombatState(left, right, catalogs);
+        if ("error" in combat)
+          throw new Error(combat.error);
+        const id = randomUUID();
+        const season = pvpSeason(now);
+        const leftRating = rankings.ensure(season, left.player_id, now).rating;
+        const rightRating = rankings.ensure(season, right.player_id, now).rating;
+        match.run(id, now, now, JSON.stringify(combat), season, now + PVP_TURN_TIMEOUT_MS);
+        member.run(id, left.player_id, "LEFT", JSON.stringify(left), now, leftRating);
+        member.run(id, right.player_id, "RIGHT", JSON.stringify(right), now, rightRating);
+        remove.run(other.player_id);
+        return { state: "MATCHED", match_id: id };
+      }).immediate();
+    }
+  };
+}
+function queueAction(db, player, clientId, request, perform, clock = Date.now) {
+  if (typeof clientId !== "string" || !clientId.trim() || clientId.length > 64 || /[\u0000-\u001f\u007f-\u009f]/u.test(clientId))
+    throw new Error("INVALID_ACTION_ID");
+  return db.transaction(() => {
+    const payload = JSON.stringify(request);
+    const prior = db.query("SELECT request_json, response_json FROM pvp_actions WHERE player_id = ? AND client_action_id = ?").get(player, clientId);
+    if (prior) {
+      if (prior.request_json !== payload)
+        throw new Error("ACTION_CONFLICT");
+      return JSON.parse(prior.response_json);
+    }
+    const response = perform();
+    db.query("INSERT INTO pvp_actions (player_id, client_action_id, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?)").run(player, clientId, payload, JSON.stringify(response), clock());
+    return response;
+  }).immediate();
+}
+function settlePvpMatch(db, matchId, winner, now) {
+  if (typeof matchId !== "string" || !matchId || !["left", "right", "draw"].includes(winner))
+    throw new Error("INVALID_RESULT");
+  const currentSeason = pvpSeason(now);
+  return db.transaction(() => {
+    const match = db.query("SELECT status, season, result_json FROM pvp_matches WHERE match_id = ?").get(matchId);
+    if (!match)
+      throw new Error("MATCH_NOT_FOUND");
+    if (match.status === "FINISHED") {
+      const prior = JSON.parse(match.result_json);
+      if (prior.result !== winner)
+        throw new Error("RESULT_CONFLICT");
+      return prior;
+    }
+    const rows = db.query("SELECT player_id, side, start_rating FROM pvp_match_players WHERE match_id = ?").all(matchId);
+    const left = rows.find((r) => r.side === "LEFT"), right = rows.find((r) => r.side === "RIGHT");
+    if (rows.length !== 2 || !left || !right || ![left.start_rating, right.start_rating].every((n) => Number.isSafeInteger(n) && n >= 0) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(match.season ?? ""))
+      throw new Error("INVALID_MATCH_STATE");
+    const delta = (own, rival, side) => match.season !== currentSeason || winner === "draw" ? 0 : pvpRatingDelta(own.start_rating, rival.start_rating, winner === side ? "win" : "loss");
+    const ld = delta(left, right, "left"), rd = delta(right, left, "right");
+    if (match.season === currentSeason)
+      for (const [row, change] of [[left, ld], [right, rd]]) {
+        if (db.query("UPDATE pvp_season_ratings SET rating = MAX(0, rating + ?), updated_at = ? WHERE season = ? AND player_id = ?").run(change, now, match.season, row.player_id).changes !== 1)
+          throw new Error("INVALID_RATING_STATE");
+      }
+    const currentRating = db.query("SELECT rating FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
+    const totals = { left: currentRating.get(currentSeason, left.player_id)?.rating ?? 1000, right: currentRating.get(currentSeason, right.player_id)?.rating ?? 1000 };
+    const result = { result: winner, season: match.season, deltas: { left: ld, right: rd }, totals };
+    db.query("UPDATE pvp_matches SET status = 'FINISHED', result_json = ?, settled_at = ?, updated_at = ?, revision = revision + 1 WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(result), now, now, matchId);
+    db.query("UPDATE pvp_match_players SET active = 0 WHERE match_id = ?").run(matchId);
+    return result;
+  }).immediate();
+}
+function createPvpChat(db, clock = Date.now) {
+  const participant = db.prepare("SELECT 1 FROM pvp_match_players WHERE match_id = ? AND player_id = ?");
+  const previous = db.prepare("SELECT id, match_id, player_id, client_message_id, text, created_at FROM pvp_chat WHERE match_id = ? AND player_id = ? AND client_message_id = ?");
+  const recent = db.prepare("SELECT created_at FROM pvp_chat WHERE player_id = ? ORDER BY id DESC LIMIT 1");
+  const messages = db.prepare("SELECT id, player_id, text, created_at FROM pvp_chat WHERE match_id = ? AND id > ? ORDER BY id ASC LIMIT 100");
+  const insert = db.prepare("INSERT INTO pvp_chat (match_id, player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?, ?)");
+  const textValid = (value, max) => typeof value === "string" && !!value.trim() && [...value].length <= max && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+  const authorize = (match, player) => {
+    if (!textValid(match, 256) || !textValid(player, 256) || !participant.get(match, player))
+      throw new Error("MATCH_NOT_FOUND");
+  };
+  return {
+    list(match, player, after = 0) {
+      authorize(match, player);
+      if (!Number.isSafeInteger(after) || after < 0)
+        throw new Error("INVALID_CURSOR");
+      return messages.all(match, after);
+    },
+    send(match, player, clientId, text) {
+      if (!textValid(clientId, 200) || !textValid(text, 200))
+        throw new Error("INVALID_CHAT");
+      return db.transaction(() => {
+        authorize(match, player);
+        const existing = previous.get(match, player, clientId);
+        if (existing) {
+          if (existing.text !== text)
+            throw new Error("ACTION_CONFLICT");
+          return { message: existing, duplicate: true };
+        }
+        const now = clock(), last = recent.get(player);
+        if (last && now - last.created_at < 1e4)
+          throw new Error("CHAT_RATE_LIMIT");
+        insert.run(match, player, clientId, text, now);
+        return { message: previous.get(match, player, clientId), duplicate: false };
+      }).immediate();
+    }
+  };
+}
+function createPvpMatches(db, secret, clock = Date.now) {
+  if (!(secret instanceof Uint8Array) || secret.length < 32)
+    throw new Error("PVP_SECRET_REQUIRED");
+  const get = db.prepare("SELECT m.*, p.side FROM pvp_matches m JOIN pvp_match_players p ON p.match_id = m.match_id WHERE m.match_id = ? AND p.player_id = ?");
+  const pending = db.prepare("SELECT player_id, decision_json FROM pvp_decisions WHERE match_id = ? AND revision = ?");
+  const players = db.prepare("SELECT p.player_id, p.side, u.display_name FROM pvp_match_players p JOIN players u ON u.player_id = p.player_id WHERE p.match_id = ?");
+  const action = db.prepare("SELECT request_json, response_json FROM pvp_actions WHERE player_id = ? AND client_action_id = ?");
+  const eventRows = db.prepare("SELECT seq, payload_json FROM pvp_events WHERE match_id = ? AND seq > ? ORDER BY seq LIMIT 500");
+  const sides = ["left", "right"];
+  const parse = (row) => JSON.parse(row.combat_state_json);
+  const rng = (id, state) => (turn, draw) => pvpRandom(secret, id, state.battle_index, turn, draw);
+  const members = (id) => players.all(id);
+  const event = (id, entry, now) => {
+    const n = db.query("SELECT COALESCE(MAX(seq),0)+1 n FROM pvp_events WHERE match_id = ?").get(id).n;
+    db.query("INSERT INTO pvp_events (match_id, seq, kind, visibility, payload_json, created_at) VALUES (?, ?, ?, 'public', ?, ?)").run(id, n, String(entry.kind ?? "event"), JSON.stringify(entry), now);
+  };
+  const sanitizeEvent = (entry, viewer, seq) => {
+    const rel = (v) => v === viewer ? "player" : v === "left" || v === "right" ? "enemy" : undefined;
+    const out = { id: seq, kind: entry.kind, turn: entry.turn };
+    for (const key of ["category", "verb", "suffix", "spell_id", "spell_name", "show_spell_link", "effectiveness", "actor_kind", "damage", "amount", "hp", "status", "value", "previous", "remaining", "boosted", "result"])
+      if (["string", "number", "boolean"].includes(typeof entry[key]) || entry[key] === null)
+        out[key] = entry[key];
+    if (entry.side)
+      out.actor = rel(entry.side);
+    if (entry.target_side)
+      out.target = rel(entry.target_side);
+    if (["left", "right"].includes(entry.result))
+      out.result = rel(entry.result);
+    return out;
+  };
+  const dto = (row, viewerId, after) => {
+    const state = parse(row), viewer = row.side.toLowerCase(), rival = viewer === "left" ? "right" : "left", entries = members(row.match_id), decisions = pending.all(row.match_id, row.revision);
+    const present = (side) => {
+      const f = state.fighters[side], identity = entries.find((e) => e.side.toLowerCase() === side);
+      const status = {};
+      for (const k of ["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"])
+        if (typeof f.status?.[k] === "number")
+          status[k] = f.status[k];
+      if (f.status?.hybrid_mark)
+        status.hybrid_mark = { owner: f.status.hybrid_mark.owner === viewer ? "player" : "enemy", remaining: f.status.hybrid_mark.remaining };
+      const delayed_damage = (state.strategic_delayed ?? []).filter((entry) => entry.target === side).map((entry) => ({ amount: entry.amount, due_turn: entry.due_turn }));
+      return { player_id: identity.player_id, display_name: identity.display_name, entity_id: f.id, name: f.name, type: f.type, hp: f.hp, max_hp: f.max_hp, atk: f.atk, def: f.def, status, spell_neutralize_active: f.spell_neutralize_active, spell_neutralize_pending: f.spell_neutralize_pending, delayed_damage, active_weapon_slot: f.active_weapon_slot, weapon_ids: f.weapons.map((weapon) => weapon?.id ?? null), hom_id: f.hom_id, hom_name: f.hom_name, hom_energy: f.hom_energy, hom_max_energy: f.hom_max_energy, hom_ready_at: f.hom_ready_at, hom_spent: f.hom_spent, ultra_used: f.ultra_used, inspiration: f.inspiration, inspiration_pending: !!f.inspiration_pending, inspiration_used_this_battle: !!f.inspiration_used_this_battle, ...f.strategic_trap ? { trap: { value: f.strategic_trap.value, expires_turn: f.strategic_trap.expires_turn } } : {}, ...f.strategic_heal_suppression ? { heal_suppression: { expires_turn: f.strategic_heal_suppression.expires_turn } } : {}, ...side === viewer ? { spell_ids: [...f.spell_ids], spell_cooldowns: { ...f.spell_cooldowns }, inspiration_offers: f.inspiration_pending ? [...f.inspiration_offers] : [] } : {} };
+    };
+    const finished = row.result_json ? JSON.parse(row.result_json) : null;
+    const total = finished?.totals?.[viewer];
+    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {} } : null;
+    const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
+    return { match_id: row.match_id, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some((d) => d.player_id === viewerId), enemy: decisions.some((d) => d.player_id !== viewerId) }, result, events: eventRows.all(row.match_id, after).map((e) => sanitizeEvent(JSON.parse(e.payload_json), viewer, e.seq)) };
+  };
+  const advance = (row, now, timeout) => {
+    let state = parse(row);
+    const entries = members(row.match_id), choices = pending.all(row.match_id, row.revision);
+    const bySide = {};
+    for (const c of choices) {
+      const m = entries.find((e) => e.player_id === c.player_id);
+      if (m)
+        bySide[m.side.toLowerCase()] = JSON.parse(c.decision_json);
+    }
+    const inspiration = sides.filter((side) => state.fighters[side].inspiration_pending);
+    if (inspiration.length) {
+      if (!timeout && inspiration.some((side) => !bySide[side]))
+        return;
+      for (const side of inspiration) {
+        const decision = bySide[side] ?? { kind: "decline" };
+        const out = resolvePvpInspiration(state, side, decision, rng(row.match_id, state));
+        if ("error" in out)
+          throw new Error(out.error);
+        state = out.state;
+        for (const e of out.events)
+          event(row.match_id, e, now);
+      }
+    } else {
+      const missing = sides.filter((side) => !bySide[side]);
+      if (missing.length) {
+        if (!timeout)
+          return;
+        const winner = missing.length === 2 ? "draw" : missing[0] === "left" ? "right" : "left";
+        settlePvpMatch(db, row.match_id, winner, now);
+        event(row.match_id, { kind: "match_timeout", result: winner, turn: state.turn }, now);
+        return;
+      }
+      const out = resolvePvpExchange(state, bySide.left, bySide.right, rng(row.match_id, state));
+      if ("error" in out)
+        throw new Error(out.error);
+      state = out.state;
+      for (const e of out.events)
+        event(row.match_id, e, now);
+    }
+    db.query("UPDATE pvp_matches SET combat_state_json = ?, revision = revision + 1, updated_at = ?, decision_deadline = ? WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(state), now, now + PVP_TURN_TIMEOUT_MS, row.match_id);
+    if (state.match_result)
+      settlePvpMatch(db, row.match_id, state.match_result, now);
+  };
+  const checkTimeout = (row, now) => {
+    if (row.status === "ACTIVE" && row.decision_deadline <= now)
+      advance(row, now, true);
+  };
+  const lookup = (id, player) => {
+    const row = get.get(id, player);
+    if (!row)
+      throw new Error("MATCH_NOT_FOUND");
+    return row;
+  };
+  const transactAction = (id, player, clientId, request, fn) => {
+    if (typeof clientId !== "string" || !clientId.trim() || clientId.length > 64 || /[\u0000-\u001f\u007f-\u009f]/u.test(clientId))
+      throw new Error("INVALID_ACTION_ID");
+    return db.transaction(() => {
+      let row = lookup(id, player);
+      const body = JSON.stringify({ match_id: id, ...request }), old = action.get(player, clientId);
+      if (old) {
+        if (old.request_json !== body)
+          throw new Error("ACTION_CONFLICT");
+        return JSON.parse(old.response_json);
+      }
+      const now = clock(), timedOut = row.status === "ACTIVE" && row.decision_deadline <= now;
+      checkTimeout(row, now);
+      row = lookup(id, player);
+      if (!timedOut) {
+        if (row.status !== "ACTIVE")
+          throw new Error("MATCH_FINISHED");
+        fn(row, now);
+        row = lookup(id, player);
+      }
+      const response = dto(row, player, 0);
+      db.query("INSERT INTO pvp_actions (player_id, client_action_id, request_json, response_json, created_at) VALUES (?, ?, ?, ?, ?)").run(player, clientId, body, JSON.stringify(response), now);
+      return response;
+    }).immediate();
+  };
+  return {
+    locate(player) {
+      const row = db.query("SELECT m.match_id FROM pvp_match_players p JOIN pvp_matches m ON m.match_id = p.match_id WHERE p.player_id = ? ORDER BY p.active DESC, m.created_at DESC, m.match_id DESC LIMIT 1").get(player);
+      return row?.match_id ?? null;
+    },
+    sweep() {
+      const now = clock(), expired = db.query("SELECT match_id FROM pvp_matches WHERE status = 'ACTIVE' AND decision_deadline <= ? ORDER BY decision_deadline LIMIT 100").all(now);
+      for (const item of expired)
+        db.transaction(() => {
+          const member = db.query("SELECT player_id FROM pvp_match_players WHERE match_id = ? LIMIT 1").get(item.match_id);
+          if (member)
+            checkTimeout(lookup(item.match_id, member.player_id), now);
+        }).immediate();
+      return expired.length;
+    },
+    state(id, player, after = 0) {
+      if (!Number.isSafeInteger(after) || after < 0)
+        throw new Error("INVALID_CURSOR");
+      return db.transaction(() => {
+        const row = lookup(id, player);
+        checkTimeout(row, clock());
+        return dto(lookup(id, player), player, after);
+      }).immediate();
+    },
+    decide(id, player, clientId, revision, decision) {
+      return transactAction(id, player, clientId, { kind: "decision", revision, decision }, (row, now) => {
+        if (!Number.isSafeInteger(revision) || revision !== row.revision)
+          throw new Error("STALE_REVISION");
+        const state = parse(row), side = row.side.toLowerCase();
+        if (state.fighters.left.inspiration_pending || state.fighters.right.inspiration_pending) {
+          if (!state.fighters[side].inspiration_pending)
+            throw new Error("INVALID_DECISION");
+          if ("error" in resolvePvpInspiration(state, side, decision, rng(id, state)))
+            throw new Error("INVALID_DECISION");
+        } else if ("error" in validatePvpDecision(state, side, decision))
+          throw new Error("INVALID_DECISION");
+        if (pending.all(id, row.revision).some((e) => e.player_id === player))
+          throw new Error("DECISION_ALREADY_SUBMITTED");
+        db.query("INSERT INTO pvp_decisions (match_id, player_id, revision, client_action_id, decision_json, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, player, row.revision, clientId, JSON.stringify(decision), now);
+        advance(row, now, false);
+      });
+    },
+    forfeit(id, player, clientId) {
+      return transactAction(id, player, clientId, { kind: "forfeit" }, (row, now) => {
+        const winner = row.side === "LEFT" ? "right" : "left";
+        settlePvpMatch(db, id, winner, now);
+        event(id, { kind: "forfeit", result: winner, side: row.side.toLowerCase(), turn: parse(row).turn }, now);
+      });
+    }
+  };
+}
+function dispatchPvpRequest(services, player, method, path, body, query) {
+  const { db, queue, matches, chat, ranking } = services;
+  const fields = (v, allowed) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => allowed.includes(k));
+  const cursor = () => {
+    const raw = query.get("after") ?? "0";
+    if (!/^\d+$/.test(raw))
+      throw new Error("INVALID_CURSOR");
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value))
+      throw new Error("INVALID_CURSOR");
+    return value;
+  };
+  if (method === "GET" && path === "/pvp/queue/state")
+    return queue.state(player);
+  if (method === "GET" && path === "/pvp/leaderboard") {
+    if (query.getAll("season").length > 1)
+      throw new Error("INVALID_SEASON");
+    return ranking.leaderboard(player, query.get("season"));
+  }
+  if (method === "GET" && path === "/pvp/match/state") {
+    const id = query.get("match_id") ?? matches.locate(player);
+    if (!id)
+      return { match: null };
+    const raw = query.get("chat_after") ?? "0", chatAfter = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(chatAfter))
+      throw new Error("INVALID_CURSOR");
+    return { ...matches.state(id, player, cursor()), chat: chat.list(id, player, chatAfter) };
+  }
+  if (method === "POST" && path === "/pvp/queue/join") {
+    if (!fields(body, ["client_action_id", "selection"]))
+      throw new Error("INVALID_REQUEST");
+    return queueAction(db, player, body.client_action_id, { kind: "queue_join", selection: body.selection }, () => queue.join(player, body.selection));
+  }
+  if (method === "POST" && path === "/pvp/queue/cancel") {
+    if (!fields(body, ["client_action_id"]))
+      throw new Error("INVALID_REQUEST");
+    return queueAction(db, player, body.client_action_id, { kind: "queue_cancel" }, () => queue.cancel(player));
+  }
+  if (method === "POST" && path === "/pvp/match/decision") {
+    if (!fields(body, ["match_id", "client_action_id", "combat_revision", "decision"]) || typeof body.match_id !== "string")
+      throw new Error("INVALID_REQUEST");
+    return matches.decide(body.match_id, player, body.client_action_id, body.combat_revision, body.decision);
+  }
+  if (method === "POST" && path === "/pvp/match/forfeit") {
+    if (!fields(body, ["match_id", "client_action_id"]) || typeof body.match_id !== "string")
+      throw new Error("INVALID_REQUEST");
+    return matches.forfeit(body.match_id, player, body.client_action_id);
+  }
+  if (method === "POST" && path === "/pvp/match/chat") {
+    if (!fields(body, ["match_id", "client_message_id", "text"]) || typeof body.match_id !== "string")
+      throw new Error("INVALID_REQUEST");
+    const sent = chat.send(body.match_id, player, body.client_message_id, body.text);
+    return { message: sent.message, duplicate: sent.duplicate };
+  }
+  throw new Error("UNKNOWN_ROUTE");
+}
+
+// src/index.ts
+import { createHash as createHash2, createHmac as createHmac5 } from "crypto";
 import { existsSync, mkdirSync, readFileSync as readFileSync2 } from "fs";
 import { dirname, resolve as resolve2 } from "path";
 
@@ -9612,6 +11272,7 @@ var default_default = {
   host: "0.0.0.0",
   port: 8787,
   apiVersion: "v1",
+  minClientBuild: 5504,
   dbPath: "data/dev.sqlite",
   maxBodyBytes: 256 * 1024,
   rateLimit: {
@@ -9709,18 +11370,18 @@ function accessKey(token) {
 function refreshKey(token) {
   return `refresh:${token}`;
 }
-function isExpired(record, now) {
-  return record.expiresAt <= now;
+function isExpired(record2, now) {
+  return record2.expiresAt <= now;
 }
 async function issueAccessToken(userId, ttlMs) {
   const token = crypto.randomUUID();
   const now = Date.now();
-  const record = { userId, createdAt: now, expiresAt: now + ttlMs };
+  const record2 = { userId, createdAt: now, expiresAt: now + ttlMs };
   let persisted = false;
   try {
     const redis2 = getRedis();
     if (await ensureRedisReady()) {
-      await redis2.set(accessKey(token), JSON.stringify(record), "PX", ttlMs);
+      await redis2.set(accessKey(token), JSON.stringify(record2), "PX", ttlMs);
       persisted = true;
     }
   } catch (err) {
@@ -9728,18 +11389,18 @@ async function issueAccessToken(userId, ttlMs) {
   }
   if (production && !persisted)
     throw new Error("Token storage unavailable");
-  accessMemory.set(token, record);
+  accessMemory.set(token, record2);
   return token;
 }
 async function issueRefreshToken(userId, ttlMs, fingerprint) {
   const token = crypto.randomUUID();
   const now = Date.now();
-  const record = { userId, createdAt: now, expiresAt: now + ttlMs, fingerprint };
+  const record2 = { userId, createdAt: now, expiresAt: now + ttlMs, fingerprint };
   let persisted = false;
   try {
     const redis2 = getRedis();
     if (await ensureRedisReady()) {
-      await redis2.set(refreshKey(token), JSON.stringify(record), "PX", ttlMs);
+      await redis2.set(refreshKey(token), JSON.stringify(record2), "PX", ttlMs);
       persisted = true;
     }
   } catch (err) {
@@ -9749,7 +11410,7 @@ async function issueRefreshToken(userId, ttlMs, fingerprint) {
     throw new Error("Token storage unavailable");
   if (!persisted)
     localOnlyRefresh.add(token);
-  refreshMemory.set(token, record);
+  refreshMemory.set(token, record2);
   return token;
 }
 async function issueTokenPair(userId, accessTtlMs, refreshTtlMs, fingerprint) {
@@ -9827,14 +11488,14 @@ async function revokeRefreshToken(token) {
 }
 async function rotateRefreshToken(oldToken, refreshTtlMs, fingerprint) {
   if (!production && localOnlyRefresh.has(oldToken)) {
-    const record = refreshMemory.get(oldToken);
-    if (!record || revokedRefresh.has(oldToken) || isExpired(record, Date.now()))
+    const record2 = refreshMemory.get(oldToken);
+    if (!record2 || revokedRefresh.has(oldToken) || isExpired(record2, Date.now()))
       return null;
     localOnlyRefresh.delete(oldToken);
     revokedRefresh.add(oldToken);
     refreshMemory.delete(oldToken);
-    const refreshToken2 = await issueRefreshToken(record.userId, refreshTtlMs, fingerprint ?? record.fingerprint);
-    return { record, refreshToken: refreshToken2 };
+    const refreshToken2 = await issueRefreshToken(record2.userId, refreshTtlMs, fingerprint ?? record2.fingerprint);
+    return { record: record2, refreshToken: refreshToken2 };
   }
   if (!await ensureRedisReady())
     return null;
@@ -9854,11 +11515,11 @@ async function rotateRefreshToken(oldToken, refreshTtlMs, fingerprint) {
     const raw = await getRedis().eval(script, 2, refreshKey(oldToken), refreshKey(refreshToken), now, refreshTtlMs, fingerprint ?? "");
     if (typeof raw !== "string")
       return null;
-    const record = JSON.parse(raw);
+    const record2 = JSON.parse(raw);
     revokedRefresh.add(oldToken);
     refreshMemory.delete(oldToken);
-    refreshMemory.set(refreshToken, { userId: record.userId, createdAt: now, expiresAt: now + refreshTtlMs, fingerprint: fingerprint ?? record.fingerprint });
-    return { record, refreshToken };
+    refreshMemory.set(refreshToken, { userId: record2.userId, createdAt: now, expiresAt: now + refreshTtlMs, fingerprint: fingerprint ?? record2.fingerprint });
+    return { record: record2, refreshToken };
   } catch (err) {
     console.warn("[auth] refresh rotation failed", err);
     return null;
@@ -10885,13 +12546,13 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       while (x[index++] !== 0)
         ;
       const table = x.readUInt32BE(index);
-      const number = x.readUInt16BE(index + 4);
+      const number2 = x.readUInt16BE(index + 4);
       const type = x.readUInt32BE(index + 6);
       query.statement.columns[i] = {
         name: transform.column.from ? transform.column.from(x.toString("utf8", start, index - 1)) : x.toString("utf8", start, index - 1),
         parser: parsers2[type],
         table,
-        number,
+        number: number2,
         type
       };
       index += 18;
@@ -11942,7 +13603,7 @@ function extractToken(req) {
 async function issueSession(userId, ttlMs) {
   const token = crypto.randomUUID();
   const now = Date.now();
-  const record = {
+  const record2 = {
     userId,
     createdAt: now,
     expiresAt: now + ttlMs
@@ -11951,7 +13612,7 @@ async function issueSession(userId, ttlMs) {
   try {
     const redis2 = getRedis();
     if (await ensureRedisReady()) {
-      await redis2.set(makeSessionKey(token), JSON.stringify(record), "PX", ttlMs);
+      await redis2.set(makeSessionKey(token), JSON.stringify(record2), "PX", ttlMs);
       persisted = true;
     }
   } catch (err) {
@@ -11959,7 +13620,7 @@ async function issueSession(userId, ttlMs) {
   }
   if (production2 && !persisted)
     throw new Error("Session storage unavailable");
-  inMemorySessions.set(token, record);
+  inMemorySessions.set(token, record2);
   return token;
 }
 async function revokeSession(token) {
@@ -12240,9 +13901,9 @@ function normalizeSpellProgress(raw) {
     }
   }
   const project = raw?.active_research;
-  let active = null;
+  let active2 = null;
   if (project && typeof project.entity_id === "string" && typeof project.spell_id === "string" && isResearchable(project.entity_id, project.spell_id) && Number.isFinite(project.started_at) && Number.isFinite(project.completes_at) && project.started_at >= 0 && project.completes_at >= project.started_at && !learned[project.entity_id]?.includes(project.spell_id)) {
-    active = { entity_id: project.entity_id, spell_id: project.spell_id, started_at: project.started_at, completes_at: project.completes_at };
+    active2 = { entity_id: project.entity_id, spell_id: project.spell_id, started_at: project.started_at, completes_at: project.completes_at };
   }
   const equipped = { attack: {}, defense: {} };
   for (const mode of ["attack", "defense"]) {
@@ -12254,7 +13915,7 @@ function normalizeSpellProgress(raw) {
         equipped[mode][entityId] = [...ids];
     }
   }
-  return { learned_by_entity: learned, active_research: active, equipped_by_mode: equipped };
+  return { learned_by_entity: learned, active_research: active2, equipped_by_mode: equipped };
 }
 function setSpellLoadout(state, payload) {
   const mode = typeof payload?.mode === "string" ? payload.mode : "";
@@ -12309,10 +13970,10 @@ function claimSpellResearch(state, payload, now) {
   const progress = state.spell_progress;
   if (progress.learned_by_entity[entityId]?.includes(spellId))
     return null;
-  const active = progress.active_research;
-  if (!active || active.entity_id !== entityId || active.spell_id !== spellId)
+  const active2 = progress.active_research;
+  if (!active2 || active2.entity_id !== entityId || active2.spell_id !== spellId)
     return "Spell research mismatch.";
-  if (active.completes_at > now)
+  if (active2.completes_at > now)
     return "Spell research not complete.";
   const learned = progress.learned_by_entity[entityId] ?? [];
   if (learned.length >= researchableCount(entityId))
@@ -12356,121 +14017,7 @@ function claimVerifiedCombatReward(db, matchId, playerId, apply) {
 }
 
 // src/solo_hunt_combat.ts
-import { createHmac } from "crypto";
-
-// src/physical_anomaly.ts
-var TYPES = new Set(["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"]);
-function validPhysicalAnomalySpell(spell) {
-  if (!spell || typeof spell.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(spell.id) || spell.category !== "support" || spell.power_mult !== 0 || !Array.isArray(spell.effects))
-    return false;
-  const effects = spell.effects.filter((e) => e?.kind === "physical_anomaly");
-  if (effects.length !== 1 || effects[0].target !== "self" || effects[0].value !== 1)
-    return false;
-  const metadata = effects[0].favored_type === undefined ? spell : effects[0];
-  return TYPES.has(metadata.favored_type) && TYPES.has(metadata.weakened_type) && metadata.favored_type !== metadata.weakened_type && metadata.outgoing_bonus === 0.15 && metadata.outgoing_penalty === 0.15 && metadata.duration_exchanges === 3;
-}
-function castPhysicalAnomaly(spell, exchange) {
-  if (!validPhysicalAnomalySpell(spell) || !Number.isSafeInteger(exchange) || exchange < 1)
-    throw new Error("INVALID_PHYSICAL_ANOMALY");
-  const effect = spell.effects.find((e) => e.kind === "physical_anomaly");
-  const metadata = effect.favored_type === undefined ? spell : effect;
-  return { id: spell.id, favored_type: metadata.favored_type, weakened_type: metadata.weakened_type, remaining_exchanges: 3, activated_exchange: exchange };
-}
-function physicalAnomalyMultiplier(anomaly, attackerType) {
-  if (!anomaly)
-    return 1;
-  return anomaly.favored_type === attackerType ? 1.15 : anomaly.weakened_type === attackerType ? 0.85 : 1;
-}
-function tickPhysicalAnomaly(anomaly, exchange) {
-  if (!anomaly)
-    return null;
-  if (anomaly.activated_exchange >= exchange)
-    return anomaly;
-  return anomaly.remaining_exchanges <= 1 ? null : { ...anomaly, remaining_exchanges: anomaly.remaining_exchanges - 1 };
-}
-
-// src/strategic_effects.ts
-function transferStrategicStatus(kind, actor, target, actorId, targetId, fields, events, clear, apply) {
-  const negative = ["poison", fields.vuln, "atk_down"];
-  const positive = ["atk_boost", fields.shield, fields.reflect];
-  const source = kind === "debuff_transfer" ? actor : target;
-  const destination = kind === "debuff_transfer" ? target : actor;
-  const sourceId = kind === "debuff_transfer" ? actorId : targetId;
-  const destinationId = kind === "debuff_transfer" ? targetId : actorId;
-  const field = (kind === "debuff_transfer" ? negative : positive).find((key) => (source.status[key] ?? 0) > 0);
-  if (!field)
-    return;
-  const old = source.status[field];
-  const value = kind === "debuff_transfer" ? old : Math.min(0.2, old * 0.5);
-  const previous = destination.status[field] ?? 0;
-  clear(source, field);
-  apply(destination, field, value);
-  events.push({ kind, actor: actorId, source: sourceId, target: destinationId, status: field, removed: old, previous, value: destination.status[field] ?? 0 });
-}
-function validStrategicStatusEffect(effect) {
-  return effect && (["debuff_transfer", "cooldown_jam"].includes(effect.kind) && effect.value === 1 || ["buff_steal", "heal_suppression"].includes(effect.kind) && effect.value === 0.5 || effect.kind === "hom_energy_siphon" && effect.value === 2 || ["delayed_damage", "ward_convert", "counter_trap"].includes(effect.kind) && typeof effect.value === "number" && Number.isFinite(effect.value) && effect.value >= 0 && effect.value <= (effect.kind === "counter_trap" ? 0.5 : 1));
-}
-var STRATEGIC_EFFECTS = ["debuff_transfer", "buff_steal", "cooldown_jam", "hom_energy_siphon", "delayed_damage", "counter_trap", "ward_convert", "heal_suppression"];
-function queueDelayedDamage(state, actor, target, value, damage, turn, events) {
-  if (damage <= 0)
-    return;
-  const amount = Math.floor(damage * value);
-  state.strategic_delayed ??= [];
-  state.strategic_delayed = state.strategic_delayed.filter((entry) => entry.actor !== actor || entry.target !== target);
-  if (amount > 0)
-    state.strategic_delayed.push({ actor, target, amount, due_turn: turn + 1 });
-  events.push({ kind: "delayed_damage_queued", actor, target, amount, due_turn: turn + 1 });
-}
-function strategicCounter(defender, attacker, defenderId, attackerId, damage, turn, events) {
-  const trap = defender.strategic_trap;
-  if (!trap || turn <= trap.activated_turn || turn > trap.expires_turn || damage <= 0)
-    return;
-  delete defender.strategic_trap;
-  const amount = Math.min(attacker.hp, Math.floor(attacker.max_hp * 0.2), Math.floor(damage * trap.value));
-  attacker.hp -= amount;
-  events.push({ kind: "counter_trap_triggered", actor: defenderId, target: attackerId, amount, hp: attacker.hp });
-}
-function strategicHeal(fighter, amount) {
-  return fighter.strategic_heal_suppression ? Math.floor(amount * 0.5) : amount;
-}
-function finishStrategicExchange(state, fighters, turn, events) {
-  const remaining = [];
-  for (const entry of state.strategic_delayed ?? []) {
-    if (entry.due_turn > turn) {
-      remaining.push(entry);
-      continue;
-    }
-    const target = fighters[entry.target];
-    if (target && target.hp > 0) {
-      const amount = Math.min(target.hp, entry.amount);
-      target.hp -= amount;
-      events.push({ kind: "delayed_damage", actor: entry.actor, target: entry.target, amount, hp: target.hp });
-    }
-  }
-  state.strategic_delayed = remaining;
-  for (const [id, fighter] of Object.entries(fighters)) {
-    for (const [field, kind] of [["strategic_trap", "counter_trap_expired"], ["strategic_heal_suppression", "heal_suppression_expired"]]) {
-      if (fighter[field]?.expires_turn <= turn) {
-        delete fighter[field];
-        events.push({ kind, target: id });
-      }
-    }
-  }
-}
-function jamStrategicCooldown(spells2, cooldowns, actor, target, events) {
-  const eligible = spells2.filter((s) => s && s.id !== "basic_attack" && Number.isFinite(s.power_mult) && s.power_mult >= 0 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns > 0).sort((a, b2) => b2.power_mult - a.power_mult || a.id.localeCompare(b2.id));
-  const chosen = eligible[0];
-  if (!chosen)
-    return;
-  const previous = cooldowns[chosen.id] ?? 0;
-  const value = Math.min(4, previous + 1);
-  if (value <= previous)
-    return;
-  cooldowns[chosen.id] = value;
-  events.push({ kind: "cooldown_jam", actor, target, spell_id: chosen.id, previous, value });
-}
-
-// src/solo_hunt_combat.ts
+import { createHmac as createHmac2 } from "crypto";
 var validated = new WeakMap;
 var SUPPORTED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "hom_stun", "poison", "type_neutralize", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "bonus_if_low_hp", "recoil", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "focus_next", "misalign_next", "life_leech", "hybrid_mark", "bonus_if_marked", "poison_on_reflect", "tempo_shift", "shield_by_order", "physical_anomaly", ...STRATEGIC_EFFECTS]);
 function castableSpell(spell, element) {
@@ -12512,14 +14059,14 @@ function bossStrikeMultiplier(hp, maxHp) {
 function deterministicDraw(secret, sessionId, turn, draw) {
   if (secret.length < 32 || !sessionId || !Number.isSafeInteger(turn) || turn < 0 || !Number.isSafeInteger(draw) || draw < 0)
     throw new Error("Invalid server RNG input");
-  return createHmac("sha256", secret).update(JSON.stringify(["solo-hunt-v1", sessionId, turn, draw])).digest().readUInt32BE(0) / 4294967296;
+  return createHmac2("sha256", secret).update(JSON.stringify(["solo-hunt-v1", sessionId, turn, draw])).digest().readUInt32BE(0) / 4294967296;
 }
-function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
-  if (!snapshot || typeof snapshot.player_id !== "string" || !Number.isSafeInteger(snapshot.state_revision) || snapshot.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some((k) => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)))
+function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
+  if (!snapshot2 || typeof snapshot2.player_id !== "string" || !Number.isSafeInteger(snapshot2.state_revision) || snapshot2.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some((k) => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)))
     return { error: "UNTRUSTED_SETUP" };
   const entity = catalogs.entities?.find((v) => v.id === selection.entity_id);
-  const bossEntity = catalogs.entities?.find((v) => v.id === snapshot.boss_entity_id);
-  const boss = catalogs.bosses?.find((v) => v.id === snapshot.boss_id);
+  const bossEntity = catalogs.entities?.find((v) => v.id === snapshot2.boss_entity_id);
+  const boss = catalogs.bosses?.find((v) => v.id === snapshot2.boss_id);
   if (!entity || !bossEntity || !boss || !Array.isArray(selection.weapon_ids) || selection.weapon_ids.length !== 2 || !Array.isArray(selection.spell_ids) || selection.spell_ids.length !== 4 || new Set(selection.spell_ids).size !== 4 || !["attack", "defense"].includes(selection.mode))
     return { error: "UNTRUSTED_SETUP" };
   if (!Array.isArray(catalogs.spells) || !validBossCatalogEntry(boss, catalogs.spells))
@@ -12530,8 +14077,8 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
   if (selection.homunculus_id && !catalogs.homunculi?.some((v) => v.id === selection.homunculus_id))
     return { error: "UNTRUSTED_SETUP" };
   const defaults = catalogs.spells.filter((s) => s.type === entity.type).map((s) => s.id);
-  const learned = snapshot.spell_progress?.learned_by_entity?.[entity.id] ?? [];
-  const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
+  const learned = snapshot2.spell_progress?.learned_by_entity?.[entity.id] ?? [];
+  const equipped = snapshot2.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
   if (!Array.isArray(learned) || !options.independentLoadout && (!Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids)) || selection.spell_ids.some((id) => !catalogs.spells.some((s) => s.id === id && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))
     return { error: "UNTRUSTED_SETUP" };
   if (selection.spell_ids.some((id) => !castableSpell(catalogs.spells.find((s) => s.id === id), entity.type)))
@@ -12559,30 +14106,30 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
       return null;
     let highest = 0;
     for (const entry of entries) {
-      const record = progress[entry.id];
-      if (record === undefined)
+      const record2 = progress[entry.id];
+      if (record2 === undefined)
         continue;
-      if (!record || typeof record !== "object" || Array.isArray(record) || record.level !== undefined && (!Number.isInteger(record.level) || record.level < 0 || record.level > 10))
+      if (!record2 || typeof record2 !== "object" || Array.isArray(record2) || record2.level !== undefined && (!Number.isInteger(record2.level) || record2.level < 0 || record2.level > 10))
         return null;
-      highest = Math.max(highest, record.level ?? 0);
+      highest = Math.max(highest, record2.level ?? 0);
     }
     return highest;
   };
-  const ownedWeapon = highestLevel(snapshot.item_progress, catalogs.items.filter((v) => v.slot === "build"));
-  const ownedHom = highestLevel(snapshot.homunculus_progress, catalogs.homunculi);
+  const ownedWeapon = highestLevel(snapshot2.item_progress, catalogs.items.filter((v) => v.slot === "build"));
+  const ownedHom = highestLevel(snapshot2.homunculus_progress, catalogs.homunculi);
   if (ownedWeapon === null || ownedHom === null)
     return { error: "UNTRUSTED_SETUP" };
-  const selectedWeapon = Math.max(0, ...selection.weapon_ids.map((id) => snapshot.item_progress?.[id]?.level ?? 0));
-  const selectedHom = selection.homunculus_id ? snapshot.homunculus_progress?.[selection.homunculus_id] : null;
+  const selectedWeapon = Math.max(0, ...selection.weapon_ids.map((id) => snapshot2.item_progress?.[id]?.level ?? 0));
+  const selectedHom = selection.homunculus_id ? snapshot2.homunculus_progress?.[selection.homunculus_id] : null;
   const mutationBonus = selectedHom?.mutation_id && catalogs.mutations?.some((v) => v.id === selectedHom.mutation_id) ? 0.05 : 0;
   const rating = 0.65 * Math.max(selectedWeapon / 10, ownedWeapon / 20) + 0.35 * Math.min(1, Math.max((selectedHom?.level ?? 0) / 10, ownedHom / 20) + mutationBonus);
   if (!Number.isFinite(rating) || rating < 0 || rating > 1)
     return { error: "UNTRUSTED_SETUP" };
   if (selection.weapon_ids[1]) {
-    const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs, options);
+    const first = buildTrustedCombatSetup(snapshot2, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs, options);
     if (first.error)
       return first;
-    const second = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs, options);
+    const second = buildTrustedCombatSetup(snapshot2, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs, options);
     if (second.error)
       return second;
     const base = validated.get(first), other = validated.get(second);
@@ -12591,12 +14138,12 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
     return Object.freeze(combined);
   }
   const item = selection.weapon_ids[0] ? catalogs.items.find((v) => v.id === selection.weapon_ids[0]) : null;
-  const itemProgress = snapshot.item_progress?.[selection.weapon_ids[0]] ?? {};
-  const homProgress = snapshot.homunculus_progress?.[selection.homunculus_id] ?? {};
+  const itemProgress = snapshot2.item_progress?.[selection.weapon_ids[0]] ?? {};
+  const homProgress = snapshot2.homunculus_progress?.[selection.homunculus_id] ?? {};
   if (typeof itemProgress !== "object" || Array.isArray(itemProgress) || typeof homProgress !== "object" || Array.isArray(homProgress))
     return { error: "UNTRUSTED_SETUP" };
-  const validLevel = (v) => v === undefined || Number.isInteger(v) && v >= 0 && v <= 10;
-  if (!validLevel(itemProgress.level) || !validLevel(homProgress.level))
+  const validLevel2 = (v) => v === undefined || Number.isInteger(v) && v >= 0 && v <= 10;
+  if (!validLevel2(itemProgress.level) || !validLevel2(homProgress.level))
     return { error: "UNTRUSTED_SETUP" };
   const itemLevel = Math.max(0, Math.min(10, Number.isFinite(Number(itemProgress.level)) ? Math.trunc(Number(itemProgress.level)) : 0));
   const homLevel = Math.max(0, Math.min(10, Number.isFinite(Number(homProgress.level)) ? Math.trunc(Number(homProgress.level)) : 0));
@@ -12627,7 +14174,7 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
   if (item && itemProgress.fusion) {
     const donor = itemProgress.fusion.donor_id;
     const imprint = catalogs.balance?.forge_fusion_imprints?.[donor];
-    const donorLevel = snapshot.item_progress?.[donor]?.level;
+    const donorLevel = snapshot2.item_progress?.[donor]?.level;
     if (typeof itemProgress.fusion !== "object" || Array.isArray(itemProgress.fusion) || Object.keys(itemProgress.fusion).some((key) => key !== "donor_id") || typeof donor !== "string" || donor === item.id || !catalogs.items.some((entry) => entry.id === donor) || itemLevel < 3 || !Number.isInteger(donorLevel) || donorLevel < 3 || donorLevel > 10 || !imprint || Object.keys(imprint).length !== 1)
       return { error: "UNTRUSTED_SETUP" };
     for (const [key, amount] of Object.entries(imprint)) {
@@ -12651,7 +14198,7 @@ function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
   if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value)))
     return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  const result = { rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot2.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -12659,12 +14206,12 @@ function createCombatState(setup, serverRng) {
   if (!setup || !validated.has(setup))
     return { error: "UNTRUSTED_SETUP" };
   setup = validated.get(setup);
-  const fighter = (e, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
-  const player = fighter(setup.entity);
+  const fighter2 = (e, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
+  const player = fighter2(setup.entity);
   const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
   const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
-  const active = weapons[activeSlot - 1];
-  const activeEffects = scaleWeapon(active.effects, setup.hom_id ? setup.hom_synergy.item_effect_mult : 1);
+  const active2 = weapons[activeSlot - 1];
+  const activeEffects = scaleWeapon(active2.effects, setup.hom_id ? setup.hom_synergy.item_effect_mult : 1);
   player.atk += setup.bonuses.atk + Math.trunc(activeEffects.power_flat ?? 0);
   player.def += setup.bonuses.def + Math.trunc(activeEffects.guard_flat ?? 0);
   player.max_hp += setup.bonuses.hp;
@@ -12675,9 +14222,9 @@ function createCombatState(setup, serverRng) {
   const signature = setup.boss_signatures[Math.floor(signatureDraw * setup.boss_signatures.length)];
   const minionRatios = { common: 0, mythic: 0.18, rare: 0.2, epic: 0.25, legendary: 0.3 };
   const minionConfig = { count: setup.boss.minions, hp: Math.max(1, Math.round(setup.bossEntity.base_stats.hp * minionRatios[setup.boss.tier])), atk: Math.max(1, Math.round(setup.bossEntity.base_stats.power * 0.25)), type: setup.bossEntity.type, def: setup.bossEntity.base_stats.guard };
-  const bossFighter = fighter(setup.bossEntity, setup.boss.hp_mult * (1 + setup.rating * setup.scaling.max_hp_bonus), setup.boss.attack_mult * (1 + setup.rating * setup.scaling.max_attack_bonus));
+  const bossFighter = fighter2(setup.bossEntity, setup.boss.hp_mult * (1 + setup.rating * setup.scaling.max_hp_bonus), setup.boss.attack_mult * (1 + setup.rating * setup.scaling.max_attack_bonus));
   bossFighter.def = Math.round(bossFighter.def * (1 + setup.rating * setup.scaling.max_defense_bonus));
-  return { physical_anomaly: null, player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
+  return { physical_anomaly: null, player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active2.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
 }
 function scaleWeapon(effects, multiplier = 1) {
   const factor = Math.max(0, Math.min(2, multiplier ?? 1));
@@ -12759,33 +14306,33 @@ function resolveCombatTurn(state, decision, rng) {
   };
   next.weapon_defenses ??= {};
   next.other_defenses ??= {};
-  const otherDefense = (fighter, field, value) => {
-    if (fighter === next.player && field === "reflect_pct" && next.hom_reflect_active !== undefined)
+  const otherDefense = (fighter2, field, value) => {
+    if (fighter2 === next.player && field === "reflect_pct" && next.hom_reflect_active !== undefined)
       next.hom_other_reflect = Math.max(next.hom_other_reflect ?? 0, value);
-    if (fighter === next.player && next.weapon_defenses[field] !== undefined)
+    if (fighter2 === next.player && next.weapon_defenses[field] !== undefined)
       next.other_defenses[field] = Math.max(next.other_defenses[field] ?? 0, value);
-    fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
+    fighter2.status[field] = Math.max(fighter2.status[field] ?? 0, value);
   };
-  const clearDefense = (fighter, field) => {
-    delete fighter.status[field];
-    if (fighter === next.player) {
+  const clearDefense = (fighter2, field) => {
+    delete fighter2.status[field];
+    if (fighter2 === next.player) {
       delete next.weapon_defenses[field];
       delete next.other_defenses[field];
     }
-    if (fighter === next.player && field === "reflect_pct") {
+    if (fighter2 === next.player && field === "reflect_pct") {
       delete next.hom_reflect_active;
       delete next.hom_other_reflect;
     }
-    if (fighter === next.player && field === "shield_pct") {
+    if (fighter2 === next.player && field === "shield_pct") {
       delete next.player_spell_ward;
       delete next.player_spell_ward_baseline;
     }
   };
-  for (const fighter of [next.player, next.boss, ...next.minions]) {
-    fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
-    fighter.spell_hit_this_exchange = false;
-    fighter.spell_neutralize_active = fighter.spell_neutralize_pending ?? 0;
-    fighter.spell_neutralize_pending = 0;
+  for (const fighter2 of [next.player, next.boss, ...next.minions]) {
+    fighter2.spell_hit_last_exchange = fighter2.spell_hit_this_exchange ?? false;
+    fighter2.spell_hit_this_exchange = false;
+    fighter2.spell_neutralize_active = fighter2.spell_neutralize_pending ?? 0;
+    fighter2.spell_neutralize_pending = 0;
   }
   let counter = next.rng_counter;
   let actualDamage = 0;
@@ -12949,10 +14496,10 @@ function resolveCombatTurn(state, decision, rng) {
   };
   try {
     const playerFirst = (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.status.tempo_bonus ?? 0);
-    for (const [id, fighter] of [["player", next.player], ["boss", next.boss]]) {
-      if (fighter.status.tempo_bonus)
-        events.push({ actor: id, kind: "status_consumed", target: id, status: "tempo_bonus", previous: fighter.status.tempo_bonus });
-      delete fighter.status.tempo_bonus;
+    for (const [id, fighter2] of [["player", next.player], ["boss", next.boss]]) {
+      if (fighter2.status.tempo_bonus)
+        events.push({ actor: id, kind: "status_consumed", target: id, status: "tempo_bonus", previous: fighter2.status.tempo_bonus });
+      delete fighter2.status.tempo_bonus;
     }
     const bossAction = () => {
       for (const key of Object.keys(next.boss_cooldowns ?? {}))
@@ -13093,8 +14640,11 @@ function resolveCombatTurn(state, decision, rng) {
           }
           if (target.hp > 0 && (target !== next.boss || !next.minions.some((m) => m.hp > 0)))
             success = hit(next.player, target, spell.accuracy, power, "player");
-        } else
+        } else {
           success = draw() < spell.accuracy;
+          if (!success)
+            events.push({ actor: "player", kind: "miss", spell_id: spell.id });
+        }
         const targetId = target === next.boss ? "boss" : target.id;
         const conversion = spell.effects.find((effect) => effect.kind === "ward_convert");
         if (success && spell.category === "attack" && conversion && (next.player_spell_ward ?? 0) > 0) {
@@ -13150,16 +14700,16 @@ function resolveCombatTurn(state, decision, rng) {
             if (effect.kind === "hom_energy_siphon")
               continue;
             if (effect.kind === "debuff_transfer" || effect.kind === "buff_steal") {
-              transferStrategicStatus(effect.kind, next.player, target, "player", target === next.boss ? "boss" : target.id, { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }, events, (fighter, field) => {
+              transferStrategicStatus(effect.kind, next.player, target, "player", target === next.boss ? "boss" : target.id, { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }, events, (fighter2, field) => {
                 if (["shield_pct", "reflect_pct"].includes(field))
-                  clearDefense(fighter, field);
+                  clearDefense(fighter2, field);
                 else
-                  delete fighter.status[field];
-              }, (fighter, field, value) => {
+                  delete fighter2.status[field];
+              }, (fighter2, field, value) => {
                 if (["shield_pct", "reflect_pct"].includes(field))
-                  otherDefense(fighter, field, value);
+                  otherDefense(fighter2, field, value);
                 else
-                  fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
+                  fighter2.status[field] = Math.max(fighter2.status[field] ?? 0, value);
               });
               continue;
             }
@@ -13313,13 +14863,13 @@ function resolveCombatTurn(state, decision, rng) {
       hit(minion, next.player, 0.9, 1, "minion");
       events.push({ actor: id, kind: "minion_attack" });
     }
-    for (const fighter of [next.player, next.boss, ...next.minions])
-      if (fighter.hp > 0 && fighter.status.poison > 0) {
-        fighter.status.poison--;
-        const damage = Math.min(2, fighter.hp);
-        fighter.hp -= damage;
-        fighter.spell_hit_this_exchange = true;
-        events.push({ kind: "status_tick", status: "poison", target: fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id, damage, hp: fighter.hp, remaining: fighter.status.poison });
+    for (const fighter2 of [next.player, next.boss, ...next.minions])
+      if (fighter2.hp > 0 && fighter2.status.poison > 0) {
+        fighter2.status.poison--;
+        const damage = Math.min(2, fighter2.hp);
+        fighter2.hp -= damage;
+        fighter2.spell_hit_this_exchange = true;
+        events.push({ kind: "status_tick", status: "poison", target: fighter2 === next.player ? "player" : fighter2 === next.boss ? "boss" : fighter2.id, damage, hp: fighter2.hp, remaining: fighter2.status.poison });
       }
     if (next.hom_id && !next.hom_spent)
       next.hom_energy = Math.min(6, next.hom_energy + 1);
@@ -13365,8 +14915,8 @@ function resolveCombatTurn(state, decision, rng) {
     if (next.turn === 1 && next.player.hp > next.boss.hp && (next.item_effects?.tempo_on_win ?? 0) > 0)
       next.player.status.tempo_bonus = next.item_effects.tempo_on_win;
   }
-  for (const fighter of [next.player, next.boss])
-    fighter.spell_neutralize_active = 0;
+  for (const fighter2 of [next.player, next.boss])
+    fighter2.spell_neutralize_active = 0;
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.boss.hp <= 0 && !next.minions.some((m) => m.hp > 0) ? "WIN" : null;
   next.physical_anomaly = next.terminal_result ? null : tickPhysicalAnomaly(next.physical_anomaly, next.turn);
   if (next.power_turn_active) {
@@ -13379,9 +14929,9 @@ function resolveCombatTurn(state, decision, rng) {
   }
   if (next.terminal_result) {
     next.strategic_delayed = [];
-    for (const fighter of [next.player, next.boss, ...next.minions]) {
-      delete fighter.strategic_trap;
-      delete fighter.strategic_heal_suppression;
+    for (const fighter2 of [next.player, next.boss, ...next.minions]) {
+      delete fighter2.strategic_trap;
+      delete fighter2.strategic_heal_suppression;
     }
     events.push({ kind: "combat_terminal", result: next.terminal_result, player_hp: next.player.hp, boss_hp: next.boss.hp });
     next.fury_pending = false;
@@ -13415,10 +14965,10 @@ function resolveCombatTurn(state, decision, rng) {
   if (!next.terminal_result)
     events.push({ actor: "boss", kind: "boss_intent", intent: next.boss_intent, tier: next.boss_tier });
   const beforeFighters = { player: state.player, boss: state.boss, ...Object.fromEntries((state.minions ?? []).map((m) => [m.id, m])) };
-  for (const [id, fighter] of Object.entries({ player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m) => [m.id, m])) })) {
+  for (const [id, fighter2] of Object.entries({ player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m) => [m.id, m])) })) {
     const previous = beforeFighters[id]?.status ?? {};
-    if (JSON.stringify(previous) !== JSON.stringify(fighter.status ?? {}))
-      events.push({ kind: "status_snapshot", target: id, status: structuredClone(fighter.status ?? {}) });
+    if (JSON.stringify(previous) !== JSON.stringify(fighter2.status ?? {}))
+      events.push({ kind: "status_snapshot", target: id, status: structuredClone(fighter2.status ?? {}) });
   }
   next.rng_counter = counter;
   for (const event of events)
@@ -13470,7 +15020,7 @@ function resolveInspirationDecision(state, decision, rng) {
 }
 
 // src/dungeon_combat.ts
-import { createHmac as createHmac2 } from "crypto";
+import { createHmac as createHmac3 } from "crypto";
 function dungeonSeason(timeMs) {
   if (!Number.isSafeInteger(timeMs) || timeMs < 0)
     throw new Error("INVALID_DUNGEON_TIME");
@@ -13494,7 +15044,7 @@ function dungeonLeaderboard(db, season, playerId) {
 function generateDungeonEncounter(seed, runId, floor, enabled) {
   if (!enabled || floor < 5 || floor % 10 === 0)
     return null;
-  const draw = (domain) => createHmac2("sha256", seed).update(JSON.stringify(["dungeon-encounter-v1", runId, floor, domain])).digest().readUInt32BE(0);
+  const draw = (domain) => createHmac3("sha256", seed).update(JSON.stringify(["dungeon-encounter-v1", runId, floor, domain])).digest().readUInt32BE(0);
   if (draw("chance") >= Math.floor(4294967296 * 0.1))
     return null;
   return [
@@ -13506,7 +15056,7 @@ function generateDungeonEncounter(seed, runId, floor, enabled) {
 function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous, elitesEnabled = false, tacticsEnabled = false, trackBase = elitesEnabled) {
   if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1))
     throw new Error("INVALID_DUNGEON_SETUP");
-  const draw = (domain) => createHmac2("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
+  const draw = (domain) => createHmac3("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
   const entities2 = [...catalogs.entities].filter((e) => e && typeof e.id === "string" && typeof e.type === "string" && e.base_stats && [e.base_stats.hp, e.base_stats.power, e.base_stats.guard].every((v) => Number.isSafeInteger(v) && v > 0)).sort((a, b2) => a.id.localeCompare(b2.id));
   const homunculi = [...catalogs.homunculi].filter((h) => h && typeof h.id === "string").sort((a, b2) => a.id.localeCompare(b2.id));
   if (!entities2.length || !homunculi.length)
@@ -13725,37 +15275,37 @@ function hydrateDungeonInspiration(state, spells2) {
   if (!state?.player || !state?.npc || !Array.isArray(spells2))
     return false;
   for (const who of ["player", "npc"]) {
-    const fighter = state[who];
-    if (!Array.isArray(fighter.spell_ids) || fighter.spell_ids.length !== 4 || typeof fighter.type !== "string")
+    const fighter2 = state[who];
+    if (!Array.isArray(fighter2.spell_ids) || fighter2.spell_ids.length !== 4 || typeof fighter2.type !== "string")
       return false;
-    const candidates = dungeonInspirationCandidates(fighter.type, fighter.original_spell_ids ?? fighter.spell_ids, spells2);
+    const candidates = dungeonInspirationCandidates(fighter2.type, fighter2.original_spell_ids ?? fighter2.spell_ids, spells2);
     if (candidates.length < 3)
       return false;
     state.inspiration_catalog ??= {};
     state.inspiration_catalog[who] = candidates;
-    fighter.inspiration ??= 0;
-    fighter.inspiration_pending ??= false;
-    fighter.inspiration_used ??= false;
-    fighter.inspiration_offers ??= [];
-    fighter.original_spell_ids ??= [...fighter.spell_ids];
-    fighter.temporary_spell_id ??= null;
-    fighter.temporary_replaced_slot ??= null;
+    fighter2.inspiration ??= 0;
+    fighter2.inspiration_pending ??= false;
+    fighter2.inspiration_used ??= false;
+    fighter2.inspiration_offers ??= [];
+    fighter2.original_spell_ids ??= [...fighter2.spell_ids];
+    fighter2.temporary_spell_id ??= null;
+    fighter2.temporary_replaced_slot ??= null;
   }
   state.inspiration_catalog_version = 2;
   return true;
 }
-function restoreDungeonInspiration(state, fighter) {
-  if (fighter.temporary_spell_id) {
-    delete fighter.cooldowns[fighter.temporary_spell_id];
-    fighter.spell_ids = [...fighter.original_spell_ids];
-    const id = fighter.temporary_spell_id;
+function restoreDungeonInspiration(state, fighter2) {
+  if (fighter2.temporary_spell_id) {
+    delete fighter2.cooldowns[fighter2.temporary_spell_id];
+    fighter2.spell_ids = [...fighter2.original_spell_ids];
+    const id = fighter2.temporary_spell_id;
     if (!state.player.spell_ids.includes(id) && !state.npc.spell_ids.includes(id))
       state.spells = state.spells.filter((s) => s.id !== id);
   }
-  fighter.inspiration_pending = false;
-  fighter.inspiration_offers = [];
-  fighter.temporary_spell_id = null;
-  fighter.temporary_replaced_slot = null;
+  fighter2.inspiration_pending = false;
+  fighter2.inspiration_offers = [];
+  fighter2.temporary_spell_id = null;
+  fighter2.temporary_replaced_slot = null;
 }
 function createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot = 0) {
   if (!setup?.entity?.base_stats || !Array.isArray(setup.spell_ids) || setup.spell_ids.length !== 4 || new Set(setup.spell_ids).size !== 4 || !enemy || !catalogs || !Array.isArray(enemy.spell_ids) || enemy.spell_ids.length !== 4 || !Array.isArray(catalogs.spells) || !Array.isArray(catalogs.homunculi) || !catalogs.types?.effectiveness)
@@ -13797,8 +15347,8 @@ function createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot = 0
   const inspirationCatalog = { player: dungeonInspirationCandidates(player.type, player.spell_ids, catalogs.spells), npc: dungeonInspirationCandidates(npc.type, npc.spell_ids, catalogs.spells) };
   if (inspirationCatalog.player.length < 3 || inspirationCatalog.npc.length < 3)
     return { error: "UNSUPPORTED_MECHANIC" };
-  for (const fighter of [player, npc])
-    Object.assign(fighter, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
+  for (const fighter2 of [player, npc])
+    Object.assign(fighter2, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter2.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
   return { player, npc, ...!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}, ...enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}, ...enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}, inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 function createDungeonBlessing(seed, runId, floor, hasHom) {
@@ -13807,7 +15357,7 @@ function createDungeonBlessing(seed, runId, floor, hasHom) {
   const tier = Math.min(7, Math.floor(floor / 3));
   const offers = ["elemental_surge", hasHom ? "homunculus_resonance" : "player_shield", "toxin_ward"];
   for (let i = offers.length - 1;i > 0; i--) {
-    const draw = createHmac2("sha256", seed).update(JSON.stringify(["dungeon-blessing-v1", runId, floor, i])).digest().readUInt32BE(0);
+    const draw = createHmac3("sha256", seed).update(JSON.stringify(["dungeon-blessing-v1", runId, floor, i])).digest().readUInt32BE(0);
     const j = draw % (i + 1);
     [offers[i], offers[j]] = [offers[j], offers[i]];
   }
@@ -13846,11 +15396,11 @@ function resolveDungeonTurn(state, decision, rng) {
   if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
     return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events = [];
-  for (const fighter of [next.player, next.npc]) {
-    fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
-    fighter.spell_hit_this_exchange = false;
-    fighter.spell_neutralize_active = fighter.spell_neutralize_pending ?? 0;
-    fighter.spell_neutralize_pending = 0;
+  for (const fighter2 of [next.player, next.npc]) {
+    fighter2.spell_hit_last_exchange = fighter2.spell_hit_this_exchange ?? false;
+    fighter2.spell_hit_this_exchange = false;
+    fighter2.spell_neutralize_active = fighter2.spell_neutralize_pending ?? 0;
+    fighter2.spell_neutralize_pending = 0;
   }
   next.weapon_defenses ??= {};
   next.other_defenses ??= {};
@@ -13871,17 +15421,17 @@ function resolveDungeonTurn(state, decision, rng) {
       throw err;
     npcSpell = { id: "basic_attack", type: next.npc.type, category: "attack", accuracy: 0.9, power_mult: 1, cooldown_turns: 0, effects: [] };
   }
-  const clearDefense = (fighter, field) => {
-    delete fighter.status[field];
-    if (fighter === next.player) {
+  const clearDefense = (fighter2, field) => {
+    delete fighter2.status[field];
+    if (fighter2 === next.player) {
       delete next.weapon_defenses[field];
       delete next.other_defenses[field];
     }
   };
-  const applyDefense = (fighter, field, value) => {
-    if (fighter === next.player && next.weapon_defenses[field] !== undefined)
+  const applyDefense = (fighter2, field, value) => {
+    if (fighter2 === next.player && next.weapon_defenses[field] !== undefined)
       next.other_defenses[field] = Math.max(next.other_defenses[field] ?? 0, value);
-    fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
+    fighter2.status[field] = Math.max(fighter2.status[field] ?? 0, value);
   };
   const awardInspiration = (actor, who, source) => {
     if (actor.inspiration_used || actor.inspiration_pending || actor.inspiration >= 3)
@@ -13954,11 +15504,11 @@ function resolveDungeonTurn(state, decision, rng) {
           power += effect.value;
       }
       const base = (actor.atk * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc(target.def * 0.5)) * mult * physicalAnomalyMultiplier(next.physical_anomaly, actor.type) * (1 + (target.status.vuln ?? 0));
-      for (const [fighter, id, fields] of [[actor, who, ["atk_boost", "atk_down"]], [target, who === "player" ? "npc" : "player", ["vuln"]]]) {
+      for (const [fighter2, id, fields] of [[actor, who, ["atk_boost", "atk_down"]], [target, who === "player" ? "npc" : "player", ["vuln"]]]) {
         for (const status of fields) {
-          const previous = fighter.status[status] ?? 0;
+          const previous = fighter2.status[status] ?? 0;
           if (previous > 0) {
-            delete fighter.status[status];
+            delete fighter2.status[status];
             events.push({ kind: "status_consumed", target: id, status, previous, remaining: 0 });
           }
         }
@@ -14238,23 +15788,23 @@ function resolveDungeonTurn(state, decision, rng) {
     if (next.player.hp > 0 && next.npc.hp > 0)
       playerAction();
   }
-  for (const fighter of [next.player, next.npc]) {
-    if (fighter.hp > 0 && fighter.status.poison > 0) {
+  for (const fighter2 of [next.player, next.npc]) {
+    if (fighter2.hp > 0 && fighter2.status.poison > 0) {
       let tick = 2;
-      if (fighter === next.player && next.blessing?.selected === "toxin_ward") {
+      if (fighter2 === next.player && next.blessing?.selected === "toxin_ward") {
         const b2 = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * (b2.tier - 1)) + b2.poison_remainder;
         const prevented = Math.min(1, Math.floor(mitigation / 100));
         b2.poison_remainder = mitigation % 100;
         tick -= prevented;
       }
-      const amount = Math.min(tick, fighter.hp);
-      fighter.hp -= amount;
-      fighter.spell_hit_this_exchange = true;
-      fighter.status.poison--;
-      events.push({ kind: "poison", target: fighter.id, side: fighter === next.player ? "player" : "npc", amount, hp: fighter.hp, remaining: fighter.status.poison });
+      const amount = Math.min(tick, fighter2.hp);
+      fighter2.hp -= amount;
+      fighter2.spell_hit_this_exchange = true;
+      fighter2.status.poison--;
+      events.push({ kind: "poison", target: fighter2.id, side: fighter2 === next.player ? "player" : "npc", amount, hp: fighter2.hp, remaining: fighter2.status.poison });
     }
-    for (const id of Object.keys(fighter.cooldowns))
-      fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
+    for (const id of Object.keys(fighter2.cooldowns))
+      fighter2.cooldowns[id] = Math.max(0, fighter2.cooldowns[id] - 1);
   }
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);
   triggerEliteTrait("end");
@@ -14279,36 +15829,36 @@ function resolveDungeonTurn(state, decision, rng) {
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
   if (next.terminal_result) {
     next.strategic_delayed = [];
-    for (const fighter of [next.player, next.npc]) {
-      delete fighter.strategic_trap;
-      delete fighter.strategic_heal_suppression;
-      restoreDungeonInspiration(next, fighter);
+    for (const fighter2 of [next.player, next.npc]) {
+      delete fighter2.strategic_trap;
+      delete fighter2.strategic_heal_suppression;
+      restoreDungeonInspiration(next, fighter2);
     }
   } else {
     for (const who of ["npc", "player"]) {
-      const fighter = next[who];
-      if (fighter.hp <= 0 || fighter.inspiration_used || fighter.inspiration_pending || fighter.inspiration < 3)
+      const fighter2 = next[who];
+      if (fighter2.hp <= 0 || fighter2.inspiration_used || fighter2.inspiration_pending || fighter2.inspiration < 3)
         continue;
-      const choices = (next.inspiration_catalog?.[who] ?? []).filter((s) => !fighter.spell_ids.includes(s.id));
+      const choices = (next.inspiration_catalog?.[who] ?? []).filter((s) => !fighter2.spell_ids.includes(s.id));
       if (choices.length < 3)
         return { error: "UNSUPPORTED_MECHANIC" };
-      fighter.inspiration_offers = [];
+      fighter2.inspiration_offers = [];
       for (let i = 0;i < 3; i++)
-        fighter.inspiration_offers.push(choices.splice(Math.floor(draw() * choices.length), 1)[0].id);
-      fighter.inspiration_pending = true;
-      events.push({ kind: "inspiration_offered", actor: who, ...who === "player" ? { offers: [...fighter.inspiration_offers] } : {} });
+        fighter2.inspiration_offers.push(choices.splice(Math.floor(draw() * choices.length), 1)[0].id);
+      fighter2.inspiration_pending = true;
+      events.push({ kind: "inspiration_offered", actor: who, ...who === "player" ? { offers: [...fighter2.inspiration_offers] } : {} });
       if (who === "npc") {
-        const selected = fighter.inspiration_offers[Math.floor(draw() * 3)];
+        const selected = fighter2.inspiration_offers[Math.floor(draw() * 3)];
         const slot = Math.floor(draw() * 4);
         const chosen = next.inspiration_catalog.npc.find((s) => s.id === selected);
-        fighter.spell_ids[slot] = selected;
-        fighter.temporary_spell_id = selected;
-        fighter.temporary_replaced_slot = slot;
+        fighter2.spell_ids[slot] = selected;
+        fighter2.temporary_spell_id = selected;
+        fighter2.temporary_replaced_slot = slot;
         if (!next.spells.some((s) => s.id === selected))
           next.spells.push(structuredClone(chosen));
-        fighter.inspiration_used = true;
-        fighter.inspiration_pending = false;
-        fighter.inspiration_offers = [];
+        fighter2.inspiration_used = true;
+        fighter2.inspiration_pending = false;
+        fighter2.inspiration_offers = [];
         events.push({ kind: "inspiration_chosen", actor: who, spell_id: selected, slot });
       }
     }
@@ -14318,11 +15868,11 @@ function resolveDungeonTurn(state, decision, rng) {
   return { next_state: next, events, terminal_result: next.terminal_result };
 }
 function resolveDungeonInspiration(state, decision, rng) {
-  const fighter = state?.player;
-  if (!state || state.terminal_result || state.blessing?.pending || !fighter?.inspiration_pending || fighter.inspiration_used || !Array.isArray(fighter.inspiration_offers) || fighter.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function")
+  const fighter2 = state?.player;
+  if (!state || state.terminal_result || state.blessing?.pending || !fighter2?.inspiration_pending || fighter2.inspiration_used || !Array.isArray(fighter2.inspiration_offers) || fighter2.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function")
     return { error: "INVALID_DECISION" };
   const keys = Object.keys(decision).sort().join(",");
-  if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && typeof decision.spell_id === "string" && fighter.inspiration_offers.includes(decision.spell_id)))
+  if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && typeof decision.spell_id === "string" && fighter2.inspiration_offers.includes(decision.spell_id)))
     return { error: "INVALID_DECISION" };
   const next = structuredClone(state), p = next.player, events = [];
   if (decision.kind === "choose") {
@@ -14355,6 +15905,15 @@ var ZONE_ART = {
   zone_corrupted: ["corrupted_cocodragon", "corrupted_cybermantis", "corrupted_doctor", "corrupted_hipovenom", "corrupted_medusa", "corrupted_sphinx"],
   zone_crystal: ["crystal_bear", "crystal_golem", "crystal_hydra", "crystal_mage", "crystal_sentinel", "crystal_wolf"]
 };
+function commonAppearance(zoneId, appearanceId) {
+  if (typeof zoneId !== "string" || typeof appearanceId !== "string" || !Object.hasOwn(ZONE_ART, zoneId) || !ZONE_ART[zoneId].includes(appearanceId))
+    return null;
+  const name = appearanceId === "chaos_astral_alchemist_variant" ? "Astral Alchemist Ascendant" : appearanceId.slice(zoneId.length - 4).split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  return { appearance_id: appearanceId, name, texture_id: `res://assets/lab/bosses/${zoneId.slice(5)}_zone_common/${appearanceId}.png` };
+}
+function commonAppearances(zoneId) {
+  return Object.hasOwn(ZONE_ART, zoneId) ? ZONE_ART[zoneId].map((id) => commonAppearance(zoneId, id)) : null;
+}
 var GROUPS = {
   hunt_common: [],
   hunt_mythic: ["common", "common"],
@@ -14362,7 +15921,7 @@ var GROUPS = {
   hunt_epic: ["rare", "common", "common", "common"],
   hunt_legendary: ["epic", "common", "common", "common", "common"]
 };
-function guardiansFor(zoneId, parentId, bosses, rotation = 0, seed) {
+function guardiansFor(zoneId, parentId, bosses, _rotation = 0, seed) {
   if (!Object.hasOwn(ZONE_ART, zoneId) || !Object.hasOwn(GROUPS, parentId) || !Array.isArray(bosses))
     return null;
   const source = ZONE_ART[zoneId];
@@ -14370,7 +15929,7 @@ function guardiansFor(zoneId, parentId, bosses, rotation = 0, seed) {
     const score = (id) => createHash("sha256").update(`${seed}:${zoneId}:${id}`).digest("hex");
     return score(a).localeCompare(score(b2));
   });
-  const offset = seed === undefined ? rotation : 0;
+  const offset = 0;
   const groups = GROUPS[parentId];
   const result = [];
   let commonIndex = 0;
@@ -14389,9 +15948,9 @@ function guardiansFor(zoneId, parentId, bosses, rotation = 0, seed) {
 }
 
 // src/global_boss_rotation.ts
-import { createHmac as createHmac3 } from "crypto";
+import { createHmac as createHmac4 } from "crypto";
 function globalBossRoll(secret, zone, rotationKey) {
-  return createHmac3("sha256", secret).update(`global-boss:${zone}:${rotationKey}`).digest();
+  return createHmac4("sha256", secret).update(`global-boss:${zone}:${rotationKey}`).digest();
 }
 function globalBossTier(roll, weights) {
   let cumulative = 0;
@@ -14401,6 +15960,14 @@ function globalBossTier(roll, weights) {
       return tier;
   }
   return "legendary";
+}
+
+// src/world_economy.ts
+function worldDropAmount(min, max, roll) {
+  return Math.min(max, min + Math.floor((max - min + 1) * roll));
+}
+function incrementalBossTokens(previous, current, divisor) {
+  return Math.floor(current / divisor) - Math.floor(previous / divisor);
 }
 
 // src/index.ts
@@ -14479,10 +16046,60 @@ for (let attempt = 0;; attempt++) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
   }
 }
+var globalChat = createGlobalChat(db);
+var rankedServices = null;
+function getRankedServices() {
+  if (rankedServices)
+    return rankedServices;
+  const secret = Bun.env.PVP_RNG_SECRET;
+  if (!secret || new TextEncoder().encode(secret).length < 32)
+    return null;
+  const dataDir = resolve2(import.meta.dir, "..", "..", "data");
+  const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve2(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance };
+  if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance)
+    throw new Error("PVP_CATALOG_UNAVAILABLE");
+  const matches = createPvpMatches(db, new TextEncoder().encode(secret));
+  rankedServices = { db, matches, queue: createPvpQueue(db, catalogs, (id, selection) => trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs)), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+  const timer2 = setInterval(() => {
+    try {
+      matches.sweep();
+    } catch (error) {
+      logError("pvp deadline sweep failed", { error: String(error) });
+    }
+  }, 1000);
+  timer2.unref();
+  return rankedServices;
+}
 var getPlayerByIdStmt = db.prepare("SELECT player_id, display_name, state_json, updated_at FROM players WHERE player_id = ?");
+if (Bun.env.PVP_ENABLED === "1") {
+  try {
+    getRankedServices();
+  } catch (error) {
+    logError("pvp initialization failed", { error: String(error) });
+  }
+}
 var getPlayerByNameStmt = db.prepare("SELECT player_id, display_name, state_json, updated_at FROM players WHERE display_name = ?");
 var insertPlayerStmt = db.prepare("INSERT INTO players (player_id, display_name, state_json, updated_at) VALUES (?, ?, ?, ?)");
-var updatePlayerStmt = db.prepare("UPDATE players SET state_json = json_set(?, '$.state_revision', CASE WHEN json_valid(state_json) THEN MAX(0, CAST(COALESCE(json_extract(state_json, '$.state_revision'), 0) AS INTEGER)) + 1 ELSE 1 END), updated_at = ? WHERE player_id = ?");
+var getCredentialStmt = db.prepare("SELECT player_id, password_hash FROM credentials WHERE username = ?");
+var insertCredentialStmt = db.prepare("INSERT INTO credentials (username, player_id, password_hash, created_at) VALUES (?, ?, ?, ?)");
+var updatePlayerSql = db.prepare("UPDATE players SET state_json = json_set(?, '$.state_revision', CASE WHEN json_valid(state_json) THEN MAX(0, CAST(COALESCE(json_extract(state_json, '$.state_revision'), 0) AS INTEGER)) + 1 ELSE 1 END), updated_at = ? WHERE player_id = ?");
+var updatePlayerStmt = {
+  run(serialized, updatedAt, playerId) {
+    const previous = getPlayerByIdStmt.get(playerId);
+    if (previous) {
+      const before = JSON.parse(previous.state_json);
+      const after = JSON.parse(serialized);
+      const caps = walletCapacities(after);
+      for (const [id, cap] of Object.entries(caps)) {
+        const oldAmount = before.wallet?.[id] ?? 0;
+        const newAmount = after.wallet?.[id] ?? 0;
+        if (newAmount > cap && newAmount > oldAmount)
+          throw new HttpError(400, `Storage capacity exceeded for ${id}.`);
+      }
+    }
+    return updatePlayerSql.run(serialized, updatedAt, playerId);
+  }
+};
 var getActionStmt = db.prepare("SELECT player_id, action_type, payload_json, result_state_json FROM action_log WHERE player_id = ? AND client_action_id = ?");
 var insertActionStmt = db.prepare("INSERT INTO action_log (player_id, client_action_id, action_type, payload_json, result_state_json, created_at) VALUES (?, ?, ?, ?, ?, ?)");
 var insertOrderStmt = db.prepare("INSERT INTO market_orders (order_id, seller_id, type, resource_id, amount, price_resource_id, price_amount, fee_bps, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -14547,6 +16164,14 @@ function loadConfig() {
     merged = mergeConfig(merged, prod_default);
   } else {
     merged = mergeConfig(merged, dev_local_default);
+  }
+  const rawBuild = Bun.env.MIN_CLIENT_BUILD;
+  if (rawBuild !== undefined) {
+    if (!/^[1-9][0-9]*$/.test(rawBuild) || !Number.isSafeInteger(Number(rawBuild))) {
+      if (IS_PRODUCTION)
+        throw new Error("MIN_CLIENT_BUILD must be a positive safe integer.");
+    } else
+      merged.minClientBuild = Number(rawBuild);
   }
   merged.dbPath = Bun.env.DB_PATH || merged.dbPath;
   merged.port = Math.max(1, Math.min(65535, Math.trunc(getEnvNumber("PORT", merged.port))));
@@ -14719,7 +16344,8 @@ async function staticVersionResponse() {
     env: config.env,
     server_time_unix_ms: Date.now(),
     schema_version: schemaVersion,
-    static_version: staticVersion
+    static_version: staticVersion,
+    min_client_build: config.minClientBuild
   };
   let redisHealthy = true;
   try {
@@ -14729,7 +16355,7 @@ async function staticVersionResponse() {
     }
     const cached = await redis2.get(cacheKey);
     if (cached) {
-      return jsonResponse(JSON.parse(cached));
+      return jsonResponse({ ...JSON.parse(cached), min_client_build: config.minClientBuild });
     }
   } catch (err) {
     console.warn("[cache] static/version redis read failed", err);
@@ -14774,7 +16400,7 @@ function stateResponse(state, ok = true, error, status = 200) {
   return jsonResponse({
     ok,
     server_time_unix_ms: Date.now(),
-    updated_player_state: authoritative,
+    updated_player_state: { ...authoritative, wallet_capacities: walletCapacities(authoritative) },
     error: error ?? null
   }, status);
 }
@@ -14784,7 +16410,7 @@ function stateResponseExtra(state, extra = {}) {
   return jsonResponse({
     ok: true,
     server_time_unix_ms: Date.now(),
-    updated_player_state: authoritative,
+    updated_player_state: { ...authoritative, wallet_capacities: walletCapacities(authoritative) },
     ...extra
   });
 }
@@ -14919,13 +16545,13 @@ function canonicalActionPayload(value) {
   }
   return JSON.stringify(value) ?? "null";
 }
-function safeParseState(stateJson, playerId, displayName) {
+function safeParseState(stateJson, playerId, displayName2) {
   try {
     const parsed = JSON.parse(stateJson);
     if (typeof parsed != "object" || parsed == null) {
       return null;
     }
-    const resolvedName = displayName || (typeof parsed.display_name == "string" ? parsed.display_name : "");
+    const resolvedName = displayName2 || (typeof parsed.display_name == "string" ? parsed.display_name : "");
     const wallet = normalizeWallet(parsed.wallet);
     const lab = normalizeLab(parsed.lab);
     const world = normalizeWorld(parsed.world, Date.now());
@@ -14948,14 +16574,14 @@ function safeParseState(stateJson, playerId, displayName) {
     return null;
   }
 }
-function createDefaultState(playerId, displayName, now, newAccount = false) {
+function createDefaultState(playerId, displayName2, now, newAccount = false) {
   const wallet = normalizeWallet(newAccount ? { essence: 120, core: 5 } : {});
   const lab = normalizeLab({});
   const world = normalizeWorld({}, now);
   return {
     player_id: playerId,
     state_revision: 0,
-    display_name: displayName,
+    display_name: displayName2,
     wallet,
     lab,
     world,
@@ -15099,7 +16725,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     if (isChoose && (!pending || pending.slot !== slot || !Array.isArray(pending.options) || pending.options.length !== 3 || new Set(pending.options).size !== 3 || pending.options.some((option) => typeof option !== "string" || !ids.includes(option) || traits.some((t) => t.id === option)) || typeof payload?.trait_id !== "string" || !pending.options.includes(payload.trait_id)))
       return { state: next, error: "Invalid or stale reroll selection." };
     const chooseTrait = (candidates, slotIndex) => {
-      const digest = createHmac4("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
+      const digest = createHmac5("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
       return candidates[digest.readUInt32BE(0) % candidates.length];
     };
     if (isReroll && ids.filter((candidate) => !traits.some((t) => t.id === candidate)).length < 3)
@@ -15125,7 +16751,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const options = [];
       for (let i = 0;i < 3; i++) {
         const candidates = ids.filter((candidate) => !traits.some((t) => t.id === candidate) && !options.includes(candidate));
-        const digest = createHmac4("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
+        const digest = createHmac5("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
         options.push(candidates[digest.readUInt32BE(0) % candidates.length]);
       }
       next.item_progress[id] = { ...current, specialization: path, traits, pending_reroll: { slot, options } };
@@ -15148,7 +16774,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     return applyClaim(next, payload, now);
   }
   if (actionType === "NPC_TRADE") {
-    if (next.lab.hqLevel < 2 || (next.lab.buildings.trade_hall?.level ?? 0) < 1)
+    if (next.lab.hqLevel < HQ_RULES.trade_hall.unlock || (next.lab.buildings.trade_hall?.level ?? 0) < 1)
       return { state: next, error: "Trade Hall unavailable." };
     const listing = npcTradeOffers(runtime, now);
     const offer = listing.offers.find((entry) => entry.id === payload?.offer_id && entry.period_key === payload?.period_key);
@@ -15174,7 +16800,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     return { state: next };
   }
   if (actionType === "SYNC_START") {
-    if (next.lab.hqLevel < 4 || (next.lab.buildings.sync_nexus?.level ?? 0) < 1)
+    if (next.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (next.lab.buildings.sync_nexus?.level ?? 0) < 1)
       return { state: next, error: "Sync Nexus unavailable." };
     if (runtime.sync_project)
       return { state: next, error: "Sync project already active." };
@@ -15212,7 +16838,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const outcomes = staticData.balance.anomaly_investigate_outcomes;
       if (!Array.isArray(outcomes) || !outcomes.length || outcomes.some((entry) => !entry || typeof entry.weight !== "number" || !Number.isFinite(entry.weight) || entry.weight < 0 || !validReward2(entry.reward)) || Math.abs(outcomes.reduce((sum, entry) => sum + entry.weight, 0) - 1) > 0.000001)
         return { state: next, error: "Invalid anomaly outcome configuration." };
-      const digest = createHmac4("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
+      const digest = createHmac5("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
       const roll = digest.readUInt32BE(0) / 4294967296;
       let cumulative = 0;
       reward = outcomes[outcomes.length - 1].reward;
@@ -15267,12 +16893,12 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     const id = typeof payload?.research_id === "string" ? payload.research_id.trim() : "";
     const node = staticData.research[id];
     const activeId = runtime.research.active_id ?? "";
-    const active = staticData.research[activeId];
-    if (!node || !active || id === activeId || runtime.research.queued_id || next.research_flags[node.flag_id])
+    const active2 = staticData.research[activeId];
+    if (!node || !active2 || id === activeId || runtime.research.queued_id || next.research_flags[node.flag_id])
       return { state: next, error: "Research queue unavailable." };
     if (next.lab.hqLevel < (HQ_RULES.arcane_archives?.unlock ?? 3) || (next.lab.buildings.arcane_archives?.level ?? 0) < 1)
       return { state: next, error: "Arcane Archives not built or locked." };
-    if (node.requires.some((req) => !next.research_flags[req] && req !== active.flag_id))
+    if (node.requires.some((req) => !next.research_flags[req] && req !== active2.flag_id))
       return { state: next, error: "Research requirements not met." };
     const fee = getBalanceNumber("archive_queue_fee_essence", 10);
     if (!Number.isSafeInteger(fee) || fee < 0)
@@ -15357,6 +16983,45 @@ async function startServer() {
             }
             return jsonResponse({ error: "Upgrade required" }, 426);
           }
+          if (IS_PRODUCTION && !["/static/version", "/health", "/auth/dev_login", "/v1/auth/login"].includes(url.pathname) && !url.pathname.startsWith("/debug/")) {
+            const build = req.headers.get("X-EntityWars-Client-Build") ?? "";
+            if (!/^[1-9][0-9]*$/.test(build) || !Number.isSafeInteger(Number(build)) || Number(build) < config.minClientBuild) {
+              return jsonResponse({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: config.minClientBuild }, 426);
+            }
+          }
+          if (req.method == "POST" && (url.pathname == "/auth/register" || url.pathname == "/auth/login")) {
+            await applyRateLimit(ctx, { keyPrefix: "rl:login", windowSeconds: getEnvNumber("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 600), max: getEnvNumber("LOGIN_RATE_LIMIT_MAX", 10), keyBy: "ip" });
+            const body = await readJson(req, config.maxBodyBytes);
+            const name = typeof body?.username == "string" ? body.username : "";
+            const password = typeof body?.password == "string" ? body.password : "";
+            if (!/^[A-Za-z0-9_]{3,20}$/.test(name) || password.length < 6 || password.length > 1024)
+              throw new HttpError(400, "Invalid username or password.");
+            const normalized = name.toLowerCase();
+            let playerId;
+            if (url.pathname == "/auth/register") {
+              const hash = await Bun.password.hash(password, { algorithm: "argon2id" });
+              playerId = crypto.randomUUID();
+              const now = Date.now();
+              try {
+                db.transaction(() => {
+                  insertPlayerStmt.run(playerId, name, JSON.stringify(createDefaultState(playerId, name, now, true)), now);
+                  insertCredentialStmt.run(normalized, playerId, hash, now);
+                })();
+              } catch (err) {
+                if (getCredentialStmt.get(normalized))
+                  throw new HttpError(409, "Username already taken.");
+                throw err;
+              }
+            } else {
+              const credential = getCredentialStmt.get(normalized);
+              if (!credential || !await Bun.password.verify(password, credential.password_hash))
+                throw new HttpError(401, "Invalid username or password.");
+              playerId = credential.player_id;
+            }
+            if (await isUserDisabled(playerId))
+              throw new HttpError(403, "User disabled.");
+            return loginResponse(playerId, await issueToken(playerId));
+          }
           if (req.method == "POST" && url.pathname == "/auth/dev_login") {
             const address = server2.requestIP(req)?.address;
             if (!developmentLoginAllowed(address, req.headers.get("origin"))) {
@@ -15394,13 +17059,13 @@ async function startServer() {
             const body = await readJson(req, config.maxBodyBytes);
             const emailRaw = typeof body?.email == "string" ? body.email.trim() : "";
             const nameRaw = typeof body?.name == "string" ? body.name.trim() : "";
-            const displayName = nameRaw || (emailRaw ? emailRaw.split("@")[0] : "");
-            if (!displayName) {
+            const displayName2 = nameRaw || (emailRaw ? emailRaw.split("@")[0] : "");
+            if (!displayName2) {
               throw new HttpError(400, "Missing email or name.");
             }
-            const player = findOrCreatePlayer(displayName);
-            const email = emailRaw ? emailRaw.toLowerCase() : normalizeLoginEmail(displayName);
-            await upsertUser({ id: player.player_id, email, displayName });
+            const player = findOrCreatePlayer(displayName2);
+            const email = emailRaw ? emailRaw.toLowerCase() : normalizeLoginEmail(displayName2);
+            await upsertUser({ id: player.player_id, email, displayName: displayName2 });
             if (await isUserDisabled(player.player_id)) {
               throw new HttpError(403, "User disabled.");
             }
@@ -15451,6 +17116,41 @@ async function startServer() {
             await revokeSession(token);
             await revokeAccessToken(token);
             return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
+          }
+          if (isRankedRoute(req.method, url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+            if (Bun.env.PVP_ENABLED !== "1") {
+              const result = rankedAvailability(Bun.env);
+              return jsonResponse(result.data, result.status);
+            }
+            try {
+              const services = getRankedServices();
+              if (!services)
+                return jsonResponse({ error: "PVP_SECRET_REQUIRED" }, 503);
+              const body = req.method === "POST" ? await readJson(req, config.maxBodyBytes) : undefined;
+              return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams));
+            } catch (error) {
+              const code = error instanceof Error ? error.message : "PVP_UNAVAILABLE";
+              if (code === "MATCH_NOT_FOUND")
+                return jsonResponse({ error: code }, 404);
+              if (code === "CHAT_RATE_LIMIT")
+                return jsonResponse({ error: code }, 429);
+              if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT"].includes(code))
+                return jsonResponse({ error: code }, 409);
+              if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code))
+                return jsonResponse({ error: code }, 400);
+              logError("pvp request failed", { error: String(error) });
+              return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
+            }
+          }
+          if (req.method == "GET" && url.pathname == "/chat/state") {
+            return jsonResponse(globalChat.state(await requireAuth(req, ctx)));
+          }
+          if (req.method == "POST" && url.pathname == "/chat/send") {
+            const playerId = await requireAuth(req, ctx);
+            const result = globalChat.send(playerId, await readJson(req, config.maxBodyBytes));
+            return jsonResponse(result.data, result.status);
           }
           if (url.pathname == "/player/state") {
             const playerId = await requireAuth(req, ctx);
@@ -16236,7 +17936,7 @@ async function startServer() {
               const setup = buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
-              const seed = createHmac4("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
+              const seed = createHmac5("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
               const elitesEnabled = Bun.env.DUNGEON_ELITES_ENABLED === "1";
               const tacticsEnabled = Bun.env.DUNGEON_TACTICS_ENABLED === "1";
               const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
@@ -16276,7 +17976,7 @@ async function startServer() {
                 throw new HttpError(404, "Dungeon run not found.");
               if (row.status !== "ACTIVE" || row.expires_at <= now || !row.combat_state_json || row.combat_revision !== body.expected_revision)
                 throw new HttpError(409, "Dungeon run unavailable or stale.");
-              const current = JSON.parse(row.combat_state_json), seed = createHmac4("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
+              const current = JSON.parse(row.combat_state_json), seed = createHmac5("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
               if ((isTurn || isInspiration) && current.inspiration_catalog_version !== 2) {
                 const spells2 = readJsonFile(resolve2(import.meta.dir, "..", "..", "data", "spells.json"))?.spells;
                 if (!hydrateDungeonInspiration(current, spells2))
@@ -16339,7 +18039,7 @@ async function startServer() {
                 combat.elite_traits_enabled = current.elite_traits_enabled === true;
                 combat.elite_trait_used = false;
                 combat.tactics_enabled = current.tactics_enabled === true;
-                combat.player.hp = Math.min(combat.player.max_hp, current.player.hp + Math.floor(combat.player.max_hp * 0.25));
+                combat.player.hp = combat.player.max_hp;
               }
               if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1)
                 throw new HttpError(409, "Dungeon run changed.");
@@ -16353,10 +18053,12 @@ async function startServer() {
             return db.transaction(() => {
               const now = Date.now();
               db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
-              const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId);
+              const runId = url.searchParams.get("run_id");
+              const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json";
+              const row = runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'`).get(playerId);
               const session = row ? (({ loadout_json, combat_state_json, player_snapshot_json, ...rest }) => {
                 const combat = combat_state_json ? JSON.parse(combat_state_json) : null;
-                return { ...rest, ...!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}, ...loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}, ...combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {} };
+                return { ...rest, ...!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}, ...loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}, ...combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: rest.status === "LOSS" ? "LOSS" : combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {} };
               })(row) : null;
               return jsonResponse({ session, server_time_unix_ms: now });
             }).immediate();
@@ -16381,13 +18083,13 @@ async function startServer() {
               let runId;
               if (start) {
                 const state = ensurePlayerState(playerId);
-                if (state.lab.hqLevel < 4 || (state.lab.buildings.sync_nexus?.level ?? 0) < 1)
+                if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1)
                   throw new HttpError(409, "Sync Nexus unavailable.");
                 if (db.query("SELECT 1 FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId))
                   throw new HttpError(409, "An active dungeon run already exists.");
                 runId = crypto.randomUUID();
-                const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {} };
-                db.query("INSERT INTO dungeon_runs (run_id,player_id,season,status,started_at,expires_at,player_snapshot_json) VALUES (?,?,?,'ACTIVE',?,?,?)").run(runId, playerId, dungeonSeason(now), now, now + 86400000, JSON.stringify(snapshot));
+                const snapshot2 = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {} };
+                db.query("INSERT INTO dungeon_runs (run_id,player_id,season,status,started_at,expires_at,player_snapshot_json) VALUES (?,?,?,'ACTIVE',?,?,?)").run(runId, playerId, dungeonSeason(now), now, now + 86400000, JSON.stringify(snapshot2));
               } else {
                 runId = body.run_id;
                 const row = db.query("SELECT status FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId);
@@ -16400,6 +18102,56 @@ async function startServer() {
               }
               const response = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId);
               insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
+              return jsonResponse(response);
+            }).immediate();
+          }
+          if (req.method == "GET" && url.pathname == "/world/missions") {
+            const playerId = await requireAuth(req, ctx);
+            return db.transaction(() => jsonResponse(snapshot(db, playerId, Date.now()))).immediate();
+          }
+          if (req.method == "POST" && url.pathname == "/world/missions/claim") {
+            const playerId = await requireAuth(req, ctx);
+            const body = await readJson(req, config.maxBodyBytes);
+            if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !["client_action_id", "mission_id", "period_type", "period_key"].includes(k)) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || typeof body.mission_id !== "string" || !["daily", "weekly"].includes(body.period_type) || typeof body.period_key !== "string")
+              throw new HttpError(400, "Invalid mission claim.");
+            const actionId = body.client_action_id.trim(), payload = { mission_id: body.mission_id, period_type: body.period_type, period_key: body.period_key };
+            return db.transaction(() => {
+              const now = Date.now();
+              const prior = getActionStmt.get(playerId, actionId);
+              if (prior) {
+                if (prior.action_type !== "WORLD_MISSION_CLAIM" || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload))
+                  throw new HttpError(409, "Action ID already used with different content.");
+                return jsonResponse(JSON.parse(prior.result_state_json));
+              }
+              const type = body.period_type;
+              if (body.period_key !== period(now, type).key)
+                throw new HttpError(409, "Mission period expired.");
+              const mission = active(now, type).find((m) => m.id === body.mission_id);
+              if (!mission)
+                throw new HttpError(409, "Mission is not active.");
+              const data = load(db, playerId, type, now), value = data.progress[mission.id];
+              if (data.claimed[mission.id] || (Array.isArray(value) ? value.length : value ?? 0) < mission.target)
+                throw new HttpError(409, "Mission unavailable for claim.");
+              const playerRow = getPlayerByIdStmt.get(playerId);
+              if (!playerRow)
+                throw new HttpError(404, "Player not found.");
+              const player = JSON.parse(playerRow.state_json);
+              if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(mission.reward).some((id) => !Number.isSafeInteger(player.wallet[id] ?? 0)))
+                throw new HttpError(409, "Invalid player wallet.");
+              assertWalletInvariant(player.wallet);
+              const before = { ...player.wallet }, credited = {};
+              for (const [id, amount] of Object.entries(mission.reward))
+                credited[id] = Math.min(amount, Math.max(0, (walletCapacities(player)[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
+              applyWalletGrant(player.wallet, credited);
+              assertWalletInvariant(player.wallet);
+              player.updated_at = now;
+              if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1)
+                throw new HttpError(409, "Player unavailable.");
+              auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "WORLD_MISSION_CLAIM", actionId, now);
+              data.claimed[mission.id] = true;
+              save(db, playerId, type, now, data);
+              const response = { ...snapshot(db, playerId, now), credited };
+              insertActionStmt.run(playerId, actionId, "WORLD_MISSION_CLAIM", JSON.stringify(payload), JSON.stringify(response), now);
               return jsonResponse(response);
             }).immediate();
           }
@@ -16422,21 +18174,60 @@ async function startServer() {
               const row = requested ? db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND session_id = ?").get(playerId, requested) : db.query("SELECT * FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId);
               if (requested && !row)
                 throw new HttpError(404, "Session not found.");
-              return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now });
+              return jsonResponse({ session: row ? soloHuntResponse(row) : null, server_time_unix_ms: now, common_cooldown_until: 0 });
             }).immediate();
           }
           if (req.method == "GET" && url.pathname == "/world/boss-hunts/guardians") {
             const playerId = await requireAuth(req, ctx);
             const zoneId = url.searchParams.get("zone_id") ?? "";
             const huntId = url.searchParams.get("hunt_id") ?? "";
-            const seed = ensurePlayerWorld(ensurePlayerState(playerId), Date.now()).reroll_seeds[zoneId] ?? createHash2("sha256").update(`${playerId}:${zoneId}`).digest().readUInt32BE(0);
-            const definitions = guardiansFor(zoneId, huntId, staticData.soloBosses.bosses, soloBossSchedule(Date.now()).rotation_key, seed);
-            if (!definitions)
-              throw new HttpError(400, "Invalid zone or boss hunt.");
-            const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId);
-            const defeated = new Set(rows.map((row) => row.guardian_id));
-            const guardians = definitions.map((definition) => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
-            return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter((g) => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every((g) => g.defeated) });
+            return db.transaction(() => {
+              const definitions = guardianRoster(playerId, zoneId, huntId, Date.now());
+              if (!definitions)
+                throw new HttpError(400, "Invalid zone or boss hunt.");
+              const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId);
+              const defeated = new Set(rows.map((row) => row.guardian_id));
+              const guardians = definitions.map((definition) => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
+              return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter((g) => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every((g) => g.defeated) });
+            }).immediate();
+          }
+          if (req.method == "GET" && url.pathname == "/world/boss-hunts/commons") {
+            const playerId = await requireAuth(req, ctx);
+            const zoneId = url.searchParams.get("zone_id") ?? "";
+            const appearances = commonAppearances(zoneId);
+            if (!appearances)
+              throw new HttpError(400, "Invalid zone.");
+            const cycle = db.query("SELECT cycle FROM solo_common_cycles WHERE player_id = ? AND zone_id = ?").get(playerId, zoneId)?.cycle ?? 1;
+            const wins = db.query("SELECT appearance_id FROM solo_common_victories WHERE player_id = ? AND zone_id = ? AND cycle = ?").all(playerId, zoneId, cycle);
+            const defeated = new Set(wins.map((win) => win.appearance_id));
+            return jsonResponse({ zone_id: zoneId, cycle, commons: appearances.map((entry) => ({ ...entry, defeated: defeated.has(entry.appearance_id) })), complete: appearances.every((entry) => defeated.has(entry.appearance_id)) });
+          }
+          if (req.method == "POST" && url.pathname == "/world/boss-hunts/commons/restart") {
+            const playerId = await requireAuth(req, ctx);
+            const body = await readJson(req, config.maxBodyBytes);
+            if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !["zone_id", "client_action_id"].includes(k)) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || typeof body.zone_id !== "string")
+              throw new HttpError(400, "Invalid restart request.");
+            const appearances = commonAppearances(body.zone_id);
+            if (!appearances)
+              throw new HttpError(400, "Invalid zone.");
+            return db.transaction(() => {
+              const actionId = body.client_action_id.trim(), payload = { zone_id: body.zone_id };
+              const prior = getActionStmt.get(playerId, actionId);
+              if (prior) {
+                if (prior.action_type !== "SOLO_COMMON_RESTART" || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload))
+                  throw new HttpError(409, "Action ID already used with different content.");
+                return jsonResponse(JSON.parse(prior.result_state_json));
+              }
+              const cycle = db.query("SELECT cycle FROM solo_common_cycles WHERE player_id = ? AND zone_id = ?").get(playerId, body.zone_id)?.cycle ?? 1;
+              const wins = db.query("SELECT appearance_id FROM solo_common_victories WHERE player_id = ? AND zone_id = ? AND cycle = ?").all(playerId, body.zone_id, cycle);
+              const defeated = new Set(wins.map((win) => win.appearance_id));
+              if (!appearances.every((entry) => defeated.has(entry.appearance_id)))
+                throw new HttpError(409, "Defeat all zone commons first.");
+              db.query("INSERT INTO solo_common_cycles (player_id, zone_id, cycle) VALUES (?, ?, ?) ON CONFLICT(player_id, zone_id) DO UPDATE SET cycle = excluded.cycle").run(playerId, body.zone_id, cycle + 1);
+              const response = { zone_id: body.zone_id, cycle: cycle + 1 };
+              insertActionStmt.run(playerId, actionId, "SOLO_COMMON_RESTART", JSON.stringify(payload), JSON.stringify(response), Date.now());
+              return jsonResponse(response);
+            }).immediate();
           }
           if (req.method == "POST" && url.pathname == "/world/boss-hunts/turn") {
             const playerId = await requireAuth(req, ctx);
@@ -16471,7 +18262,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (state.player?.inspiration_pending)
                 throw new HttpError(409, "Inspiration decision pending.");
-              const seed = createHmac4("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac5("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveCombatTurn(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -16479,14 +18270,23 @@ async function startServer() {
               if (result.terminal_result && !["WIN", "LOSS"].includes(result.terminal_result))
                 throw new HttpError(409, "Unsupported combat result.");
               let metadata = null;
+              if (status === "VERIFIED_WIN" && row.common_cycle !== null && row.guardian_zone_id && !row.guardian_id && !row.global_event_id) {
+                const appearanceId = JSON.parse(row.boss_snapshot_json).appearance_id;
+                if (!commonAppearance(row.guardian_zone_id, appearanceId))
+                  throw new HttpError(409, "Invalid common encounter.");
+                db.query("INSERT INTO solo_common_victories (player_id, zone_id, cycle, appearance_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?)").run(playerId, row.guardian_zone_id, row.common_cycle, appearanceId, row.session_id, now);
+              }
               if (status === "VERIFIED_WIN" && !row.global_event_id) {
                 if (row.result_metadata_json)
                   throw new HttpError(409, "Hunt settlement already exists.");
                 const source = row.guardian_id ? "guardian" : "boss";
                 const tier = JSON.parse(row.boss_snapshot_json).tier;
-                const grants = staticData.balance.solo_hunt_rewards?.[source]?.[tier];
-                if (!grants || typeof grants !== "object" || Array.isArray(grants) || Object.keys(grants).length === 0 || Object.entries(grants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || amount < 0))
+                const configuredGrants = staticData.balance.solo_hunt_rewards?.[source]?.[tier];
+                if (!configuredGrants || typeof configuredGrants !== "object" || Array.isArray(configuredGrants) || Object.keys(configuredGrants).length === 0 || Object.entries(configuredGrants).some(([id, amount]) => !staticData.resources.has(id) || !Number.isSafeInteger(amount) || amount < 0))
                   throw new HttpError(500, "Invalid hunt reward configuration.");
+                const grants = { ...configuredGrants };
+                if (source === "boss")
+                  Object.assign(grants, bossBonusLoot(tier, row.session_id, WORLD_SECRET));
                 const playerRow = getPlayerByIdStmt.get(playerId);
                 if (!playerRow)
                   throw new HttpError(404, "Player not found.");
@@ -16502,7 +18302,7 @@ async function startServer() {
                 assertWalletInvariant(player.wallet);
                 const credited = {};
                 for (const [id, amount] of Object.entries(grants))
-                  credited[id] = Math.min(amount, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+                  credited[id] = Math.min(amount, Math.max(0, (walletCapacities(player)[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
                 applyWalletGrant(player.wallet, credited);
                 assertWalletInvariant(player.wallet);
                 player.updated_at = now;
@@ -16514,6 +18314,11 @@ async function startServer() {
               const updated = db.query("UPDATE solo_hunt_sessions SET combat_state_json = ?, combat_revision = combat_revision + 1, status = ?, finished_at = ?, result_metadata_json = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE' AND combat_revision = ? AND expires_at > ?").run(JSON.stringify(result.next_state), status, status === "ACTIVE" ? null : now, metadata, row.session_id, playerId, row.combat_revision, now);
               if (updated.changes !== 1)
                 throw new HttpError(409, "Combat session changed.");
+              if (!row.global_event_id) {
+                const boss = JSON.parse(row.boss_snapshot_json);
+                const damage = bossDamage(result.events);
+                record(db, playerId, now, { guardian: !!row.guardian_id, win: status === "VERIFIED_WIN", tier: boss.tier, zone: row.guardian_zone_id, appearance: boss.appearance_id, damage });
+              }
               if (status === "VERIFIED_WIN" && row.global_event_id)
                 settleGlobalBoss(row, now);
               if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
@@ -16558,7 +18363,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (!state.player?.inspiration_pending)
                 throw new HttpError(409, "No inspiration decision pending.");
-              const seed = createHmac4("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac5("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveInspirationDecision(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -16566,6 +18371,8 @@ async function startServer() {
               if (updated.changes !== 1)
                 throw new HttpError(409, "Combat session changed.");
               const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId);
+              if (!row.global_event_id && !row.guardian_id && body.decision.kind === "choose")
+                record(db, playerId, now, { guardian: false, choose: true, session: row.session_id });
               const response = soloHuntResponse(current);
               insertActionStmt.run(playerId, actionId, "SOLO_HUNT_INSPIRATION", JSON.stringify(payload), JSON.stringify(response), now);
               return jsonResponse(response);
@@ -16605,7 +18412,7 @@ async function startServer() {
               const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported hunt loadout.");
-              const seed = createHmac4("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac5("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const combat = createCombatState(setup, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (combat.error)
                 throw new HttpError(400, "Unable to initialize combat.");
@@ -16619,12 +18426,21 @@ async function startServer() {
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
             const body = await readJson(req, config.maxBodyBytes);
+            const isStartRequest = url.pathname.endsWith("/start");
+            if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !(isStartRequest ? ["client_action_id", "hunt_id", "rotation_key", "zone_id", "guardian_id", "global_event_id", "appearance_id"] : ["client_action_id", "session_id"]).includes(k)))
+              throw new HttpError(400, "Invalid hunt request.");
             const actionId = typeof body?.client_action_id === "string" ? body.client_action_id.trim() : "";
             if (!actionId || actionId.length > 64)
               throw new HttpError(400, "Invalid client_action_id.");
             const start = url.pathname.endsWith("/start");
-            const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}, ...body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {}, ...body?.global_event_id !== undefined ? { global_event_id: body.global_event_id } : {} } : { session_id: body?.session_id };
+            const payload = start ? { hunt_id: body?.hunt_id, rotation_key: body?.rotation_key, ...body?.zone_id !== undefined ? { zone_id: body.zone_id } : {}, ...body?.guardian_id !== undefined ? { guardian_id: body.guardian_id } : {}, ...body?.global_event_id !== undefined ? { global_event_id: body.global_event_id } : {}, ...body?.appearance_id !== undefined ? { appearance_id: body.appearance_id } : {} } : { session_id: body?.session_id };
             const requestedGlobal = payload.global_event_id;
+            const appearanceId = body?.appearance_id;
+            const appearance = appearanceId === undefined ? null : commonAppearance(payload.zone_id, appearanceId);
+            if (appearanceId !== undefined && (!start || requestedGlobal !== undefined || payload.guardian_id !== undefined || payload.hunt_id !== "hunt_common" || !appearance))
+              throw new HttpError(400, "Invalid common appearance.");
+            if (start && !requestedGlobal && payload.hunt_id === "hunt_common" && payload.guardian_id === undefined && !appearance)
+              throw new HttpError(400, "Select a zone common appearance.");
             if (start ? requestedGlobal !== undefined ? typeof requestedGlobal !== "string" || !requestedGlobal : typeof payload.hunt_id !== "string" || !Number.isSafeInteger(payload.rotation_key) : typeof payload.session_id !== "string" || !payload.session_id)
               throw new HttpError(400, "Invalid hunt request.");
             const actionType = start ? "SOLO_HUNT_START" : "SOLO_HUNT_FORFEIT";
@@ -16646,30 +18462,32 @@ async function startServer() {
                 const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(result.session_id, playerId);
                 if (!existing)
                   throw new HttpError(409, "Session unavailable.");
-                return jsonResponse({ ...soloHuntResponse(existing), duplicate: true });
+                return jsonResponse({ ...soloHuntResponse(existing), replaced_session_id: result.replaced_session_id ?? null, duplicate: true });
               }
               let row;
+              let replacedSessionId = null;
               if (start) {
                 const schedule = soloBossSchedule(now);
                 const globalEvent = requestedGlobal ? db.query("SELECT * FROM global_boss_events WHERE event_id = ? AND status = 'ACTIVE'").get(requestedGlobal) : null;
                 if (requestedGlobal && (!globalEvent || payload.guardian_id !== undefined))
                   throw new HttpError(409, "Global event unavailable.");
+                if (globalEvent && payload.zone_id !== undefined && payload.zone_id !== globalEvent.zone_id)
+                  throw new HttpError(409, "Global event zone mismatch.");
                 if (globalEvent && db.query("SELECT 1 FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(requestedGlobal, playerId))
                   throw new HttpError(409, "Already defeated.");
                 const boss = globalEvent ? { ...JSON.parse(globalEvent.boss_snapshot_json), available: true } : schedule.bosses.find((candidate) => candidate.id === payload.hunt_id);
-                if (!globalEvent && (payload.rotation_key !== schedule.rotation_key || !boss || !boss.available))
+                if (!globalEvent && (payload.rotation_key !== schedule.rotation_key || !boss || !payload.guardian_id && !boss.available))
                   throw new HttpError(409, "Boss hunt is not available for this rotation.");
                 const zoneId = globalEvent ? undefined : payload.zone_id;
                 const guardianId = payload.guardian_id;
                 if (zoneId !== undefined && typeof zoneId !== "string" || guardianId !== undefined && (typeof guardianId !== "string" || !guardianId))
                   throw new HttpError(400, "Invalid guardian selection.");
-                const guardianSeed = zoneId === undefined ? undefined : ensurePlayerWorld(ensurePlayerState(playerId), now).reroll_seeds[zoneId] ?? createHash2("sha256").update(`${playerId}:${zoneId}`).digest().readUInt32BE(0);
-                const definitions = zoneId === undefined ? null : guardiansFor(zoneId, boss.id, staticData.soloBosses.bosses, schedule.rotation_key, guardianSeed);
+                const definitions = zoneId === undefined ? null : guardianRoster(playerId, zoneId, boss.id, now);
                 if (zoneId !== undefined && !definitions || guardianId !== undefined && !definitions)
                   throw new HttpError(400, "Invalid guardian zone.");
                 if (!globalEvent && boss.tier !== "common" && !definitions)
                   throw new HttpError(409, "Guardian zone required.");
-                let encounter = boss;
+                let encounter = appearance ? { ...boss, ...appearance, display_texture_id: appearance.texture_id } : boss;
                 if (guardianId !== undefined) {
                   const guardian = definitions.find((entry) => entry.guardian_id === guardianId);
                   if (!guardian)
@@ -16683,18 +18501,17 @@ async function startServer() {
                 } else if (definitions && definitions.some((guardian) => !db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id))) {
                   throw new HttpError(409, "Defeat all guardians first.");
                 }
-                if (db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId))
-                  throw new HttpError(409, "An active boss hunt already exists.");
-                if (boss.id === "hunt_common" && guardianId === undefined) {
-                  const latest = db.query("SELECT MAX(CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) AS ended_at FROM solo_hunt_sessions WHERE player_id = ? AND hunt_id = 'hunt_common' AND guardian_id IS NULL AND status IN ('VERIFIED_WIN', 'VERIFIED_LOSS', 'FORFEIT', 'EXPIRED')").get(playerId);
-                  const remaining = latest.ended_at === null ? 0 : Math.ceil((latest.ended_at + staticData.soloBosses.rotation.common_cooldown_seconds * 1000 - now) / 1000);
-                  if (remaining > 0)
-                    return jsonResponse({ ok: false, server_time_unix_ms: now, error: "Common boss hunt cooldown active.", cooldown_remaining_seconds: remaining }, 409);
-                }
+                const commonCycle = appearance ? db.query("SELECT cycle FROM solo_common_cycles WHERE player_id = ? AND zone_id = ?").get(playerId, zoneId)?.cycle ?? 1 : null;
+                if (appearance && db.query("SELECT 1 FROM solo_common_victories WHERE player_id = ? AND zone_id = ? AND cycle = ? AND appearance_id = ?").get(playerId, zoneId, commonCycle, appearance.appearance_id))
+                  throw new HttpError(409, "Common already defeated in this cycle.");
                 const state = ensurePlayerState(playerId);
-                const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
+                const snapshot2 = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {}, loadout_verification: "UNVERIFIED" };
                 const sessionId = crypto.randomUUID();
-                db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,guardian_zone_id,guardian_parent_id,guardian_id,global_event_id) VALUES (?,?,?,?,'ACTIVE',?,?,?,?,?,?,?,?)").run(sessionId, playerId, encounter.id, schedule.rotation_key, JSON.stringify(encounter), JSON.stringify(snapshot), now, now + 2700000, zoneId ?? null, guardianId ? boss.id : null, guardianId ?? null, requestedGlobal ?? null);
+                const active2 = db.query("SELECT session_id FROM solo_hunt_sessions WHERE player_id = ? AND status = 'ACTIVE'").get(playerId);
+                replacedSessionId = active2?.session_id ?? null;
+                if (active2)
+                  db.query("UPDATE solo_hunt_sessions SET status = 'FORFEIT', finished_at = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE'").run(now, active2.session_id, playerId);
+                db.query("INSERT INTO solo_hunt_sessions (session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,guardian_zone_id,guardian_parent_id,guardian_id,global_event_id,common_cycle) VALUES (?,?,?,?,'ACTIVE',?,?,?,?,?,?,?,?,?)").run(sessionId, playerId, encounter.id, schedule.rotation_key, JSON.stringify(encounter), JSON.stringify(snapshot2), now, now + 2700000, zoneId ?? null, guardianId ? boss.id : null, guardianId ?? null, requestedGlobal ?? null, commonCycle);
                 row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId);
               } else {
                 const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(payload.session_id, playerId);
@@ -16706,8 +18523,8 @@ async function startServer() {
                   db.query("UPDATE solo_hunt_sessions SET status = 'FORFEIT', finished_at = ? WHERE session_id = ? AND player_id = ? AND status = 'ACTIVE'").run(now, existing.session_id, playerId);
                 row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get(existing.session_id);
               }
-              insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify({ session_id: row.session_id }), now);
-              return jsonResponse(soloHuntResponse(row));
+              insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify({ session_id: row.session_id, replaced_session_id: replacedSessionId }), now);
+              return jsonResponse({ ...soloHuntResponse(row), replaced_session_id: replacedSessionId });
             }).immediate();
           }
           if (req.method == "GET" && url.pathname == "/boss/state") {
@@ -16907,6 +18724,25 @@ function publicDungeonCombat(combat) {
 function expireSoloHunts(playerId, now) {
   db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
 }
+function guardianRoster(playerId, zoneId, parentId, now) {
+  const saved = db.query("SELECT definitions_json FROM solo_guardian_rosters WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").get(playerId, zoneId, parentId);
+  if (saved)
+    return JSON.parse(saved.definitions_json);
+  const seed = ensurePlayerWorld(ensurePlayerState(playerId), now).reroll_seeds[zoneId] ?? createHash2("sha256").update(`${playerId}:${zoneId}`).digest().readUInt32BE(0);
+  const definitions = guardiansFor(zoneId, parentId, staticData.soloBosses.bosses, 0, seed);
+  if (!definitions)
+    return null;
+  for (const definition of definitions) {
+    const previous = db.query("SELECT boss_snapshot_json FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND guardian_parent_id = ? AND guardian_id = ? ORDER BY CASE WHEN status = 'VERIFIED_WIN' THEN 0 ELSE 1 END, started_at DESC LIMIT 1").get(playerId, zoneId, parentId, definition.guardian_id);
+    if (previous) {
+      const snapshot2 = JSON.parse(previous.boss_snapshot_json);
+      definition.name = snapshot2.name;
+      definition.texture_id = snapshot2.texture_id;
+    }
+  }
+  db.query("INSERT INTO solo_guardian_rosters (player_id, zone_id, parent_hunt_id, definitions_json) VALUES (?, ?, ?, ?)").run(playerId, zoneId, parentId, JSON.stringify(definitions));
+  return definitions;
+}
 function publicHuntCombat(state) {
   const publicStatus = (raw) => {
     const result = {};
@@ -16918,7 +18754,7 @@ function publicHuntCombat(state) {
       result.hybrid_mark = { owner: raw.hybrid_mark.owner, remaining: raw.hybrid_mark.remaining };
     return result;
   };
-  const fighter = (entry) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status), ...entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}, ...entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {} });
+  const fighter2 = (entry) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status), ...entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}, ...entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {} });
   const moves = (state.spell_ids ?? []).map((id) => {
     const spell = (state.spells ?? []).find((entry) => entry.id === id);
     return { id, name: spell?.name, type: spell?.type, category: spell?.category, power_mult: spell?.power_mult, accuracy: spell?.accuracy, cooldown_remaining: state.cooldowns?.[id] ?? 0 };
@@ -16927,9 +18763,9 @@ function publicHuntCombat(state) {
     turn: state.turn,
     physical_anomaly: state.physical_anomaly ?? null,
     strategic_delayed: (state.strategic_delayed ?? []).map((entry) => ({ actor: entry.actor, target: entry.target, amount: entry.amount, due_turn: entry.due_turn })),
-    player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
-    boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {} },
-    minions: (state.minions ?? []).map(fighter),
+    player: { ...fighter2(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
+    boss: { ...fighter2(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {} },
+    minions: (state.minions ?? []).map(fighter2),
     moves,
     shield: { turns: state.boss_shield_turns, reduction: state.boss_shield_turns > 0 ? state.boss_shield_config?.reduction : 0 },
     fury: { pending: state.fury_pending, multiplier: state.fury_pending ? state.fury_mult : null },
@@ -16963,6 +18799,21 @@ function globalBossForZone(zone, playerId, now) {
   }
   return { event_id: event.event_id, zone_id: zone, tier: event.tier, boss: JSON.parse(event.boss_snapshot_json), spawned_at: event.spawned_at, completed_at: event.completed_at, ...globalBossStatus(event.event_id, playerId) };
 }
+function bossBonusLoot(tier, sessionId, secret) {
+  const config2 = staticData.balance.solo_hunt_bonus_loot?.[tier];
+  if (!config2 || ["core", "arcane_shard"].some((id) => {
+    const drop = config2[id];
+    return !staticData.resources.has(id) || !drop || typeof drop.chance !== "number" || !Number.isFinite(drop.chance) || drop.chance < 0 || drop.chance > 1 || !Number.isSafeInteger(drop.quantity) || drop.quantity < 0;
+  }))
+    throw new HttpError(500, "Invalid boss bonus loot configuration.");
+  const grants = {};
+  for (const id of ["core", "arcane_shard"]) {
+    const roll = createHmac5("sha256", secret).update(`solo-hunt-bonus:${id}:${sessionId}`).digest().readUInt32BE(0) / 4294967296;
+    if (roll < config2[id].chance)
+      grants[id] = config2[id].quantity;
+  }
+  return grants;
+}
 function settleGlobalBoss(row, now) {
   const event = db.query("SELECT * FROM global_boss_events WHERE event_id = ?").get(row.global_event_id);
   if (!event || event.status !== "ACTIVE")
@@ -16981,17 +18832,18 @@ function settleGlobalBoss(row, now) {
   if (winners.length !== 5)
     throw new HttpError(409, "Invalid global winner queue.");
   for (const winner of winners) {
+    const winnerGrants = { ...grants, ...bossBonusLoot(event.tier, winner.session_id, WORLD_SECRET) };
     const playerRow = getPlayerByIdStmt.get(winner.player_id);
     if (!playerRow)
       throw new HttpError(404, "Player not found.");
     const player = JSON.parse(playerRow.state_json);
-    if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some((id) => !Number.isSafeInteger(player.wallet[id] ?? 0)))
+    if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(winnerGrants).some((id) => !Number.isSafeInteger(player.wallet[id] ?? 0)))
       throw new HttpError(409, "Invalid player wallet.");
     const before = { ...player.wallet };
     assertWalletInvariant(player.wallet);
     const credited = {};
-    for (const [id, amount] of Object.entries(grants))
-      credited[id] = Math.min(amount, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+    for (const [id, amount] of Object.entries(winnerGrants))
+      credited[id] = Math.min(amount, Math.max(0, (walletCapacities(player)[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
     applyWalletGrant(player.wallet, credited);
     assertWalletInvariant(player.wallet);
     player.updated_at = now;
@@ -17005,7 +18857,7 @@ function soloBossSchedule(now) {
   const { rotation, bosses } = staticData.soloBosses;
   const interval = rotation.interval_seconds * 1000, window2 = rotation.window_seconds * 1000;
   const key = Math.floor(now / interval), start = key * interval, end = start + window2;
-  const roll = createHmac4("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
+  const roll = createHmac5("sha256", WORLD_SECRET).update(String(key)).digest().readUInt32BE(0) / 4294967296;
   let cumulative = 0, chosen = "legendary";
   for (const tier of ["mythic", "rare", "epic", "legendary"]) {
     cumulative += rotation.weights[tier];
@@ -17622,17 +19474,18 @@ function npcTradeOffers(runtime, now) {
         throw new HttpError(503, "Invalid NPC trade configuration.");
       seen.add(offer.id);
       const payValue = amountValue(offer.pay), receiveValue = amountValue(offer.receive);
-      if (Object.keys(offer.pay)[0] === Object.keys(offer.receive)[0] || !Number.isSafeInteger(payValue * 4) || !Number.isSafeInteger(receiveValue * 5) || payValue * 4 < receiveValue * 5)
+      const promotion = prefix === "d" && Object.keys(offer.pay)[0] === "essence" && (offer.id === "d1" && offer.pay.essence === 100 && offer.receive.core === 3 || offer.id === "d2" && offer.pay.essence === 200 && offer.receive.arcane_shard === 3);
+      if (Object.keys(offer.pay)[0] === Object.keys(offer.receive)[0] || !Number.isSafeInteger(payValue * 4) || !Number.isSafeInteger(receiveValue * 5) || !promotion && payValue * 4 < receiveValue * 5)
         throw new HttpError(503, "Invalid NPC trade configuration.");
     }
   const day = Math.floor(now / 86400000), week = Math.floor((day + 3) / 7);
   const counts = runtime.npc_trade;
-  const select2 = (pool, period, key, quantity, step, max) => Array.from({ length: quantity }, (_, i) => {
+  const select2 = (pool, period2, key, quantity, step, max) => Array.from({ length: quantity }, (_, i) => {
     const offer = pool[(key + step * i) % pool.length];
-    const uses = period === "daily" ? counts?.day_key === day ? counts.daily_uses : {} : counts?.week_key === week ? counts.weekly_uses : {};
-    return { id: offer.id, period, period_key: key, pay: offer.pay, receive: offer.receive, max, remaining: Math.max(0, max - (uses[offer.id] ?? 0)) };
+    const uses = period2 === "daily" ? counts?.day_key === day ? counts.daily_uses : {} : counts?.week_key === week ? counts.weekly_uses : {};
+    return { id: offer.id, period: period2, period_key: key, pay: offer.pay, receive: offer.receive, max, remaining: Math.max(0, max - (uses[offer.id] ?? 0)) };
   });
-  return { offers: [...select2(daily, "daily", day, 3, 3, 2), ...select2(weekly, "weekly", week, 2, 2, 1)], day_key: day, week_key: week, next_daily_at: (day + 1) * 86400000, next_weekly_at: ((week + 1) * 7 - 3) * 86400000 };
+  return { offers: [...select2(daily.slice(0, 1), "daily", day, 1, 1, 1), ...select2(daily.slice(1, 2), "daily", day, 1, 1, 1), ...select2(daily.slice(2), "daily", day, 1, 1, 2), ...select2(weekly, "weekly", week, 2, 2, 1)], day_key: day, week_key: week, next_daily_at: (day + 1) * 86400000, next_weekly_at: ((week + 1) * 7 - 3) * 86400000 };
 }
 function normalizeWorld(worldRaw, now) {
   const zoneProgress = {};
@@ -18005,6 +19858,16 @@ function auditWalletMutation(playerId, delta, reason, relatedId, ts) {
   const auditId = crypto.randomUUID();
   insertAuditStmt.run(auditId, playerId, JSON.stringify(delta), reason, relatedId, ts);
 }
+function walletCapacities(state) {
+  const storage = state.lab?.buildings?.storage_vault;
+  const base = Math.floor(computeCapacity(storage?.level ?? 0, storage?.route ?? "", state.lab?.hqPath ?? "Scientific") * Math.max(0, getBalanceNumber("wallet_storage_capacity_mult", 1.25)));
+  return {
+    essence: Math.max(1, Math.floor(base)),
+    core: Math.max(1, Math.floor(base * 0.1)),
+    arcane_shard: Math.max(1, Math.floor(base * 0.05)),
+    time_crystal: Math.max(1, Math.floor(base * 0.02))
+  };
+}
 function getWalletCap(resourceId) {
   const caps = staticData.balance.wallet_caps;
   if (caps && typeof caps == "object" && caps[resourceId] != null) {
@@ -18094,12 +19957,12 @@ var HQ_RULES = {
   storage_vault: { unlock: 1, max: 10, cap_per_hq: 1 },
   build_forge: { unlock: 1, max: 10, cap_per_hq: 1 },
   homunculus_vat: { unlock: 2, max: 10, cap_per_hq: 1 },
-  ultrahit_tower: { unlock: 2, max: 10, cap_per_hq: 1 },
+  ultrahit_tower: { unlock: 1, max: 10, cap_per_hq: 1 },
   experiment_chamber: { unlock: 3, max: 10, cap_per_hq: 1 },
   arcane_archives: { unlock: 3, max: 10, cap_per_hq: 1 },
-  sync_nexus: { unlock: 4, max: 10, cap_per_hq: 1 },
+  sync_nexus: { unlock: 2, max: 10, cap_per_hq: 1 },
   anomaly_containment: { unlock: 5, max: 10, cap_per_hq: 1 },
-  trade_hall: { unlock: 2, max: 10, cap_per_hq: 1 },
+  trade_hall: { unlock: 1, max: 10, cap_per_hq: 1 },
   world_gate: { unlock: 1, max: 10, cap_per_hq: 1 }
 };
 var experimentCatalog = readJsonFile(resolve2(import.meta.dir, "..", "..", "data", "static", "experiments.json"));
@@ -18290,8 +20153,8 @@ function applyStartResearch(state, payload, nowMs) {
   const runtime = ensureLabRuntime(state);
   cleanupLabRuntime(runtime, nowMs);
   autoCompleteResearch(state, nowMs);
-  const active = runtime.research?.active_id ?? "";
-  if (active) {
+  const active2 = runtime.research?.active_id ?? "";
+  if (active2) {
     return { state, error: "Research already in progress." };
   }
   for (const req of node.requires) {
@@ -18359,10 +20222,10 @@ function seededRandom01(seed) {
   return value / 4294967295;
 }
 function getBoostMultipliers(labRuntime, nowMs) {
-  const active = getActiveBoosts(labRuntime, nowMs);
-  const outputMult = Math.max(1, active.overclock ? experimentEffect("volatile_overclock", "reactor_output_mult", 1.1) : 1, isBoostActive(labRuntime, "essence_turbo", nowMs) ? experimentEffect("essence_turbo", "reactor_output_mult", 1.2) : 1);
+  const active2 = getActiveBoosts(labRuntime, nowMs);
+  const outputMult = Math.max(1, active2.overclock ? experimentEffect("volatile_overclock", "reactor_output_mult", 1.1) : 1, isBoostActive(labRuntime, "essence_turbo", nowMs) ? experimentEffect("essence_turbo", "reactor_output_mult", 1.2) : 1);
   const lossChanceMult = isBoostActive(labRuntime, "safe_reactor", nowMs) ? experimentEffect("safe_reactor", "volatile_loss_mult", 0.65) : 1;
-  const rareChanceMult = active.mutagen ? experimentEffect("mutagen_surge", "rare_chance_mult", 1.35) : 1;
+  const rareChanceMult = active2.mutagen ? experimentEffect("mutagen_surge", "rare_chance_mult", 1.35) : 1;
   return { outputMult, lossChanceMult, rareChanceMult };
 }
 function getActiveBoosts(labRuntime, nowMs) {
@@ -18427,7 +20290,7 @@ function resolveUpgradeCost(buildingId, level, hqPath) {
   if (!costEntry || typeof costEntry != "object") {
     return { ok: false, cost: {}, error: "Missing cost data." };
   }
-  const mult = getHqCostMultiplier(hqPath);
+  const mult = buildingId === "lab_th" && level === 2 ? 1 : getHqCostMultiplier(hqPath);
   const out = {};
   for (const [key, value] of Object.entries(costEntry)) {
     const amount = clampAmount(value);
@@ -18502,10 +20365,10 @@ function tickProduction(building, nowMs, level, route, storageRoute, hqPath, lab
   const end = nowMs;
   const start = end - delta;
   const boundaries = [start, end];
-  for (const period of [labRuntime.directive, labRuntime.boosts.volatile_overclock, labRuntime.boosts.essence_turbo]) {
-    if (!period)
+  for (const period2 of [labRuntime.directive, labRuntime.boosts.volatile_overclock, labRuntime.boosts.essence_turbo]) {
+    if (!period2)
       continue;
-    const interval = period;
+    const interval = period2;
     for (const point of [interval.started_at ?? interval.starts_at ?? 0, interval.expires_at ?? interval.ends_at ?? 0])
       if (point > start && point < end)
         boundaries.push(point);
@@ -19000,9 +20863,9 @@ function getPlayerPowerScore(state) {
   }
   return Math.floor(total);
 }
-function computeBossTokens(damage) {
+function computeBossTokens(previous, current) {
   const divisor = Math.max(1, getBalanceNumber("boss_token_divisor", 1000));
-  const tokens = Math.floor(damage / divisor);
+  const tokens = incrementalBossTokens(previous, current, divisor);
   return clampInt(tokens, 0, 1e6);
 }
 function computeBossRewards(boss, playerId) {
@@ -19078,7 +20941,7 @@ function computeZoneDrops(zone, heat, seedBase) {
   const minAmount = clampInt(getBalanceNumber("world_drop_min", 1), 0, 1e6);
   const maxAmount = clampInt(getBalanceNumber("world_drop_max", 3), minAmount, 1e6);
   const amountRoll = seededRandom01(`${seedBase}:amount`);
-  const baseAmount = Math.floor(minAmount + (maxAmount - minAmount) * amountRoll);
+  const baseAmount = worldDropAmount(minAmount, maxAmount, amountRoll);
   const hazardChance = clampChance(getBalanceNumber("world_hazard_base_chance", 0.02) + heat * getBalanceNumber("world_heat_hazard_bonus", 0.003));
   let finalAmount = baseAmount;
   if (seededRandom01(`${seedBase}:hazard`) < hazardChance) {
@@ -19700,7 +21563,7 @@ function attackBoss(playerId, clientActionId, body, ip) {
     bossEntry.contributors[playerId] = contributorScore;
     world.boss_tickets = Math.max(0, world.boss_tickets - 1);
     world.last_boss_ticket_at = now;
-    tokens = computeBossTokens(damage);
+    tokens = computeBossTokens(existing, contributorScore);
     if (tokens > 0) {
       world.boss_tokens = clampInt(world.boss_tokens + tokens, 0, Number.MAX_SAFE_INTEGER);
     }

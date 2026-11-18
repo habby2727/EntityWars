@@ -157,6 +157,7 @@ theme_override_constants/margin_bottom = 4
 [node name="ResourceBar" type="HBoxContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow/ResourceBarPanel/BarMargin"]
 layout_mode = 2
 theme_override_constants/separation = 10
+alignment = 1
 
 [node name="Scroll" type="ScrollContainer" parent="Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox"]
 layout_mode = 2

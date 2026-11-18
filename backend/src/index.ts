@@ -305,9 +305,26 @@ const insertPlayerStmt = db.prepare(
 );
 const getCredentialStmt = db.prepare("SELECT player_id, password_hash FROM credentials WHERE username = ?");
 const insertCredentialStmt = db.prepare("INSERT INTO credentials (username, player_id, password_hash, created_at) VALUES (?, ?, ?, ?)");
-const updatePlayerStmt = db.prepare(
+const updatePlayerSql = db.prepare(
 	"UPDATE players SET state_json = json_set(?, '$.state_revision', CASE WHEN json_valid(state_json) THEN MAX(0, CAST(COALESCE(json_extract(state_json, '$.state_revision'), 0) AS INTEGER)) + 1 ELSE 1 END), updated_at = ? WHERE player_id = ?"
 );
+// Check all persisted wallet changes, including escrow settlements.
+const updatePlayerStmt = {
+	run(serialized: string, updatedAt: number, playerId: string) {
+		const previous = getPlayerByIdStmt.get(playerId) as { state_json: string } | undefined;
+		if (previous) {
+			const before = JSON.parse(previous.state_json) as PlayerState;
+			const after = JSON.parse(serialized) as PlayerState;
+			const caps = walletCapacities(after);
+			for (const [id, cap] of Object.entries(caps)) {
+				const oldAmount = before.wallet?.[id] ?? 0;
+				const newAmount = after.wallet?.[id] ?? 0;
+				if (newAmount > cap && newAmount > oldAmount) throw new HttpError(400, `Storage capacity exceeded for ${id}.`);
+			}
+		}
+		return updatePlayerSql.run(serialized, updatedAt, playerId);
+	}
+};
 const getActionStmt = db.prepare(
 	"SELECT player_id, action_type, payload_json, result_state_json FROM action_log WHERE player_id = ? AND client_action_id = ?"
 );
@@ -676,7 +693,7 @@ function stateResponse(state: PlayerState, ok = true, error?: string, status = 2
 		{
 			ok,
 			server_time_unix_ms: Date.now(),
-			updated_player_state: authoritative,
+			updated_player_state: { ...authoritative, wallet_capacities: walletCapacities(authoritative) },
 			error: error ?? null
 		},
 		status
@@ -689,7 +706,7 @@ function stateResponseExtra(state: PlayerState, extra: Record<string, unknown> =
 	return jsonResponse({
 		ok: true,
 		server_time_unix_ms: Date.now(),
-		updated_player_state: authoritative,
+		updated_player_state: { ...authoritative, wallet_capacities: walletCapacities(authoritative) },
 		...extra
 	});
 }
@@ -2404,7 +2421,7 @@ async function startServer(): Promise<void> {
 						if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(mission.reward).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
 						assertWalletInvariant(player.wallet);
 						const before = {...player.wallet}, credited: Record<string,number> = {};
-						for (const [id,amount] of Object.entries(mission.reward)) credited[id] = Math.min(amount, Math.max(0,getWalletCap(id)-(player.wallet[id] ?? 0)));
+						for (const [id,amount] of Object.entries(mission.reward)) credited[id] = Math.min(amount, Math.max(0,(walletCapacities(player)[id] ?? getWalletCap(id))-(player.wallet[id] ?? 0)));
 						applyWalletGrant(player.wallet,credited); assertWalletInvariant(player.wallet);
 						player.updated_at = now;
 						if (updatePlayerStmt.run(JSON.stringify(player),now,playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
@@ -2531,7 +2548,7 @@ async function startServer(): Promise<void> {
 							const before = { ...player.wallet };
 							assertWalletInvariant(player.wallet);
 							const credited: Record<string, number> = {};
-							for (const [id, amount] of Object.entries(grants)) credited[id] = Math.min(amount as number, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+							for (const [id, amount] of Object.entries(grants)) credited[id] = Math.min(amount as number, Math.max(0, (walletCapacities(player)[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
 							applyWalletGrant(player.wallet, credited);
 							assertWalletInvariant(player.wallet);
 							player.updated_at = now;
@@ -3042,7 +3059,7 @@ function settleGlobalBoss(row: SoloHuntRow, now: number) {
 		const before = { ...player.wallet };
 		assertWalletInvariant(player.wallet);
 		const credited: Record<string, number> = {};
-		for (const [id, amount] of Object.entries(winnerGrants)) credited[id] = Math.min(amount as number, Math.max(0, getWalletCap(id) - (player.wallet[id] ?? 0)));
+		for (const [id, amount] of Object.entries(winnerGrants)) credited[id] = Math.min(amount as number, Math.max(0, (walletCapacities(player)[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
 		applyWalletGrant(player.wallet, credited);
 		assertWalletInvariant(player.wallet);
 		player.updated_at = now;
@@ -3674,7 +3691,8 @@ function npcTradeOffers(runtime: LabRuntime, now: number): { offers: NpcOffer[];
 		if (!offer || offer.id !== `${prefix}${i + 1}` || seen.has(offer.id)) throw new HttpError(503, "Invalid NPC trade configuration.");
 		seen.add(offer.id);
 		const payValue = amountValue(offer.pay), receiveValue = amountValue(offer.receive);
-		if (Object.keys(offer.pay)[0] === Object.keys(offer.receive)[0] || !Number.isSafeInteger(payValue * 4) || !Number.isSafeInteger(receiveValue * 5) || payValue * 4 < receiveValue * 5) throw new HttpError(503, "Invalid NPC trade configuration.");
+		const promotion = prefix === "d" && Object.keys(offer.pay)[0] === "essence" && ((offer.id === "d1" && offer.pay.essence === 100 && offer.receive.core === 3) || (offer.id === "d2" && offer.pay.essence === 200 && offer.receive.arcane_shard === 3));
+		if (Object.keys(offer.pay)[0] === Object.keys(offer.receive)[0] || !Number.isSafeInteger(payValue * 4) || !Number.isSafeInteger(receiveValue * 5) || (!promotion && payValue * 4 < receiveValue * 5)) throw new HttpError(503, "Invalid NPC trade configuration.");
 	}
 	const day = Math.floor(now / 86400000), week = Math.floor((day + 3) / 7);
 	const counts = runtime.npc_trade;
@@ -3683,7 +3701,7 @@ function npcTradeOffers(runtime: LabRuntime, now: number): { offers: NpcOffer[];
 		const uses = period === "daily" ? (counts?.day_key === day ? counts.daily_uses : {}) : (counts?.week_key === week ? counts.weekly_uses : {});
 		return { id: offer.id, period, period_key: key, pay: offer.pay, receive: offer.receive, max, remaining: Math.max(0, max - (uses[offer.id] ?? 0)) };
 	});
-	return { offers: [...select(daily, "daily", day, 3, 3, 2), ...select(weekly, "weekly", week, 2, 2, 1)], day_key: day, week_key: week, next_daily_at: (day + 1) * 86400000, next_weekly_at: ((week + 1) * 7 - 3) * 86400000 };
+	return { offers: [...select(daily.slice(0, 1), "daily", day, 1, 1, 1), ...select(daily.slice(1, 2), "daily", day, 1, 1, 1), ...select(daily.slice(2), "daily", day, 1, 1, 2), ...select(weekly, "weekly", week, 2, 2, 1)], day_key: day, week_key: week, next_daily_at: (day + 1) * 86400000, next_weekly_at: ((week + 1) * 7 - 3) * 86400000 };
 }
 
 function normalizeWorld(worldRaw: any, now: number): PlayerWorldState {
@@ -4100,6 +4118,17 @@ function auditWalletMutation(
 	insertAuditStmt.run(auditId, playerId, JSON.stringify(delta), reason, relatedId, ts);
 }
 
+function walletCapacities(state: PlayerState): ResourceWallet {
+	const storage = state.lab?.buildings?.storage_vault;
+	const base = Math.floor(computeCapacity(storage?.level ?? 0, storage?.route ?? "", state.lab?.hqPath ?? "Scientific") * Math.max(0, getBalanceNumber("wallet_storage_capacity_mult", 1.25)));
+	return {
+		essence: Math.max(1, Math.floor(base)),
+		core: Math.max(1, Math.floor(base * 0.10)),
+		arcane_shard: Math.max(1, Math.floor(base * 0.05)),
+		time_crystal: Math.max(1, Math.floor(base * 0.02))
+	};
+}
+
 function getWalletCap(resourceId: string): number {
 	const caps = staticData.balance.wallet_caps;
 	if (caps && typeof caps == "object" && caps[resourceId] != null) {
@@ -4219,7 +4248,7 @@ const HQ_RULES: Record<string, { unlock: number; max: number; cap_per_hq: number
 	storage_vault: { unlock: 1, max: 10, cap_per_hq: 1 },
 	build_forge: { unlock: 1, max: 10, cap_per_hq: 1 },
 	homunculus_vat: { unlock: 2, max: 10, cap_per_hq: 1 },
-	ultrahit_tower: { unlock: 2, max: 10, cap_per_hq: 1 },
+	ultrahit_tower: { unlock: 1, max: 10, cap_per_hq: 1 },
 	experiment_chamber: { unlock: 3, max: 10, cap_per_hq: 1 },
 	arcane_archives: { unlock: 3, max: 10, cap_per_hq: 1 },
 	sync_nexus: { unlock: 2, max: 10, cap_per_hq: 1 },
@@ -4637,7 +4666,7 @@ function resolveUpgradeCost(
 	if (!costEntry || typeof costEntry != "object") {
 		return { ok: false, cost: {}, error: "Missing cost data." };
 	}
-	const mult = getHqCostMultiplier(hqPath);
+	const mult = buildingId === "lab_th" && level === 2 ? 1 : getHqCostMultiplier(hqPath);
 	const out: Record<string, number> = {};
 	for (const [key, value] of Object.entries(costEntry)) {
 		const amount = clampAmount(value);

@@ -52,7 +52,7 @@ func resolve_upgrade_cost(
 	var base_cost = get_cost_for_level(building_id, target_level)
 	if base_cost.is_empty():
 		return {"ok": false, "error": "missing_cost"}
-	var mult = _get_hq_cost_mult(hq_path)
+	var mult = 1.0 if building_id == "lab_th" and target_level == 2 else _get_hq_cost_mult(hq_path)
 	var out: Dictionary = {}
 	for key in base_cost.keys():
 		var value = base_cost[key]

@@ -196,6 +196,8 @@ var _player_turn: bool = true
 var _battle_over: bool = false
 var _step_queue: Array = []
 var _processing_steps: bool = false
+var _step_hit_target := ""
+var _step_hit_damage := 0
 var _hp_fill_green: StyleBoxFlat = null
 var _hp_fill_yellow: StyleBoxFlat = null
 var _hp_fill_red: StyleBoxFlat = null
@@ -538,8 +540,10 @@ func _dungeon_present_events(events: Array, owner: String, generation: int, run_
 		var kind := str(event.get("kind", ""))
 		var actor := str(event.get("actor", ""))
 		var target := str(event.get("side", event.get("target", "")))
-		if target not in ["player", "npc"] and actor in ["player", "npc"] and kind in ["damage", "hom_attack"]:
+		if target not in ["player", "npc"] and actor in ["player", "npc"] and kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage"]:
 			target = "npc" if actor == "player" else "player"
+		elif target not in ["player", "npc"] and event.has("hp") and actor in ["player", "npc"]:
+			target = actor
 		var combo := _dungeon_strategic_event(event)
 		var category := "combo" if not combo.is_empty() else "switch" if kind == "switch" else "damage" if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison"] else "heal" if kind == "heal" else "debuff" if kind == "status_applied" else "system"
 		var actor_id := actor if actor in ["player", "npc"] else target
@@ -602,13 +606,17 @@ func _dungeon_present_events(events: Array, owner: String, generation: int, run_
 			if event.get("target_status") is Dictionary:
 				target_view.status = event.target_status.duplicate(true)
 			if event.has("hp"):
-				target_view.hp = int(event.hp)
 				var bar: ProgressBar = player_hp if target == "player" else enemy_hp
-				bar.value = float(target_view.hp)
-				bar.get_node("HealthValue").text = "%d / %d" % [int(target_view.hp), int(target_view.max_hp)]
-				_apply_hp_color(bar, target_view)
-				if kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "delayed_damage", "poison", "reflect", "counter_trap_triggered", "ward_convert"] and int(event.get("amount", 1)) > 0:
-					_animate_hit(player_entity if target == "player" else enemy_entity, int(event.get("amount", 0)), int(target_view.max_hp))
+				var next_hp := int(event.hp)
+				var lost := maxi(0, int(bar.value) - next_hp)
+				if lost > 0:
+					_animate_hit(target_sprite, lost, int(target_view.max_hp))
+					_show_damage_number(target_sprite, lost)
+				await get_tree().create_timer(0.26).timeout
+				if not _dungeon_playback_valid(owner, generation, run_id, action_id, revision, playback_epoch):
+					return
+				target_view.hp = next_hp
+				_set_display_hp(bar, next_hp)
 			if kind == "status_applied":
 				target_view.status[str(event.get("status", ""))] = event.get("value", 0)
 			elif kind in ["status_consumed", "status_cleansed"]:
@@ -1232,7 +1240,7 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 			var old_revision := _online_hunt_revision
 			_online_hunt_session = data.duplicate(true)
 			_online_hunt_revision = int(data.combat_revision)
-			if not _render_online_hunt(data):
+			if not _render_online_hunt(data, not _online_processed_turns.has(str(_online_turn_payload.get("client_action_id", ""))) and not data.get("events", []).is_empty()):
 				_online_hunt_session = old_session
 				_online_hunt_revision = old_revision
 				_online_turn_unresolved()
@@ -1258,6 +1266,24 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 				if event is Dictionary:
 					_online_event_turn = int(event.get("turn", -1))
 					_log_online_hunt_event(event)
+					var target := str(event.get("target", ""))
+					var bar: ProgressBar = player_hp if target == "player" else enemy_hp if target == "boss" else null
+					if bar != null and (event.has("hp") or int(event.get("actual_damage", event.get("damage", 0))) > 0):
+						var before := int(bar.value)
+						var after := int(event.hp) if event.has("hp") else maxi(0, before - int(event.get("actual_damage", event.get("damage", 0))))
+						await get_tree().create_timer(0.26).timeout
+						if not _online_playback_valid(generation, session_id, action_id, revision, playback_epoch):
+							return
+						_set_display_hp(bar, after)
+					elif bar == null and event.has("hp"):
+						await get_tree().create_timer(0.26).timeout
+						if not _online_playback_valid(generation, session_id, action_id, revision, playback_epoch):
+							return
+						for minion in _solo_minions:
+							if str(minion.get("id", "")) == target:
+								minion.hp = int(event.hp)
+								break
+						_update_solo_minion_views()
 					var delay := _online_hunt_event_delay(event)
 					if delay > 0.0:
 						await get_tree().create_timer(delay).timeout
@@ -1268,6 +1294,10 @@ func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) ->
 				return
 			_online_event_turn = -1
 			_online_presenting_events = false
+			_set_display_hp(player_hp, int(data.combat_state.player.get("hp", 0)))
+			_set_display_hp(enemy_hp, int(data.combat_state.boss.get("hp", 0)))
+			_solo_minions = data.combat_state.minions.duplicate(true)
+			_update_solo_minion_views()
 		if not _connection_gate().journal_confirm(str(_online_turn_payload.get("client_action_id", ""))): return
 		if str(data.get("status", "")) in ["VERIFIED_WIN", "VERIFIED_LOSS"]:
 			if not _connection_gate().journal_close("hunt", str(_solo_context.get("session_id", ""))): return
@@ -1435,7 +1465,17 @@ func _log_online_hunt_event(event: Dictionary) -> void:
 		var minion_index := _online_visible_minions.find(target)
 		if minion_index >= 0 and minion_index < _solo_minion_views.size():
 			target_sprite = _solo_minion_views[minion_index]
-		_animate_hit(target_sprite, damage, int(hp_bar.max_value))
+		var actual := mini(damage, int(hp_bar.value)) if target in ["player", "boss"] else damage
+		if event.has("hp") and target in ["player", "boss"]:
+			actual = maxi(0, int(hp_bar.value) - int(event.hp))
+		elif event.has("hp") and minion_index >= 0:
+			for minion in _solo_minions:
+				if str(minion.get("id", "")) == target:
+					actual = maxi(0, int(minion.get("hp", 0)) - int(event.hp))
+					break
+		if actual > 0:
+			_animate_hit(target_sprite, actual, int(hp_bar.max_value))
+			_show_damage_number(target_sprite, actual)
 	elif kind in ["heal", "status_applied"]:
 		_animate_pulse(player_entity if target == "player" else enemy_entity, Color(0.62, 0.85, 1.0), 1.04)
 	_append_combat_log("", entry)
@@ -1452,6 +1492,7 @@ func _present_online_terminal() -> void:
 	var status := str(_online_hunt_session.get("status", ""))
 	if status not in ["VERIFIED_WIN", "VERIFIED_LOSS"]:
 		return
+	_online_hunt_info.show()
 	_online_hunt_info.text = "Server result: " + ("VICTORY" if status == "VERIFIED_WIN" else "DEFEAT")
 	if status == "VERIFIED_WIN":
 		if _online_hunt_session.has("global_event_id"):
@@ -1503,7 +1544,7 @@ func _send_online_pending_turn() -> void:
 	elif _combat_wait_timer:
 		_combat_wait_timer.start(10.0)
 
-func _render_online_hunt(session: Dictionary) -> bool:
+func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool:
 	var state: Dictionary = session.combat_state
 	_show_physical_anomaly(state.get("physical_anomaly"))
 	var loadout: Dictionary = session.combat_loadout
@@ -1540,7 +1581,7 @@ func _render_online_hunt(session: Dictionary) -> bool:
 	var world_sprites := get_node_or_null("WorldCombatSprites") as CanvasItem
 	if world_sprites:
 		world_sprites.show()
-	_online_hunt_info.visible = str(session.get("status", "")) != "ACTIVE"
+	_online_hunt_info.visible = not preserve_hp and str(session.get("status", "")) != "ACTIVE"
 	spell_panel.show()
 	for pair in [[player_hp, p], [enemy_hp, b]]:
 		var icon: Node = pair[0].get_node_or_null("CombatTypeIcon")
@@ -1551,13 +1592,10 @@ func _render_online_hunt(session: Dictionary) -> bool:
 			pair[0].add_child(icon)
 		icon.call("configure", str(pair[1].get("type", "")))
 	player_hp.max_value = float(p.max_hp)
-	player_hp.value = float(p.get("hp", 0))
 	enemy_hp.max_value = float(b.max_hp)
-	enemy_hp.value = float(b.get("hp", 0))
-	player_hp.get_node("HealthValue").text = "%d / %d" % [int(p.get("hp", 0)), int(p.max_hp)]
-	enemy_hp.get_node("HealthValue").text = "%d / %d" % [int(b.get("hp", 0)), int(b.max_hp)]
-	_apply_hp_color(player_hp, p)
-	_apply_hp_color(enemy_hp, b)
+	if not preserve_hp:
+		_set_display_hp(player_hp, int(p.get("hp", 0)))
+		_set_display_hp(enemy_hp, int(b.get("hp", 0)))
 	var entity_id := str(loadout.get("entity_id", ""))
 	var entity := _find_by_id(_entities, entity_id)
 	var hom_id := str(loadout.get("homunculus_id", "")) if loadout.get("homunculus_id") != null else ""
@@ -1629,7 +1667,8 @@ func _render_online_hunt(session: Dictionary) -> bool:
 		effects.append({"icon": "shield", "label": "%d%% %dT" % [roundi(float(shield.get("reduction", 0)) * 100), int(shield.turns)], "tooltip": _boss_ability_description("Shield")})
 	if bool(fury.get("pending", false)):
 		effects.append({"icon": "fury", "label": Stats.percent(float(fury.get("multiplier", 1))), "tooltip": _boss_ability_description("Fury")})
-	_solo_minions = state.minions.duplicate(true)
+	if not preserve_hp:
+		_solo_minions = state.minions.duplicate(true)
 	var alive := 0
 	for minion in _solo_minions:
 		if int(minion.get("hp", 0)) > 0:
@@ -4067,6 +4106,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		boss_prevented = dmg - reduced
 		dmg = reduced
 	_log_step("%s hits %s for %d." % [attacker.name, defender.name, dmg], func():
+		_capture_step_hit(defender, dmg)
 		_record_highlight("damage", mini(int(defender.hp), dmg), "%s to %s" % [attacker.name, defender.name])
 		if not context.is_empty():
 			_record_spell_damage(context.get("spell", {}), mini(int(defender.hp), dmg))
@@ -4194,6 +4234,7 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 		hom_dmg = reduced
 	var track_hit := _spell_exchange_active
 	_log_step("%s's homunculus strikes %s for %d." % [attacker.name, defender.name, hom_dmg], func():
+		_capture_step_hit(defender, hom_dmg)
 		_record_highlight("damage", mini(int(defender.hp), hom_dmg), "%s (%s) to %s" % [attacker.hom_name, attacker.name, defender.name])
 		_animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false)
 		defender.hp = max(0, defender.hp - hom_dmg)
@@ -5166,6 +5207,41 @@ func _animate_lunge(node: Control, distance: float, scale_up: bool) -> void:
 	if scale_up:
 		tween.parallel().tween_property(node, "scale", original.scale, 0.16)
 
+# Presentation only: combat dictionaries remain authoritative.
+func _show_damage_number(sprite: Control, damage: int) -> void:
+	if damage <= 0 or not is_instance_valid(sprite):
+		return
+	var label := Label.new()
+	label.text = "-%d" % damage
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 30)
+	label.add_theme_color_override("font_color", Color(1.0, 0.18, 0.18))
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 4)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.size = Vector2(120, 40)
+	add_child(label)
+	var viewport_rect := get_viewport_rect()
+	var offset := 0
+	for child in get_children():
+		if child is Label and child.has_meta("floating_damage") and child.get_meta("floating_damage") == sprite.get_instance_id():
+			offset += 1
+	label.set_meta("floating_damage", sprite.get_instance_id())
+	var global_pos := sprite.get_global_rect().get_center() - Vector2(60, sprite.get_global_rect().size.y * 0.5 + 42 + (offset % 4) * 18)
+	global_pos.x = clampf(global_pos.x, viewport_rect.position.x, viewport_rect.end.x - 120)
+	global_pos.y = clampf(global_pos.y, viewport_rect.position.y + 55, viewport_rect.end.y - 40)
+	label.global_position = global_pos
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 50.0, 2.0)
+	tween.tween_property(label, "modulate:a", 0.0, 2.0)
+	tween.chain().tween_callback(label.queue_free)
+
+func _set_display_hp(bar: ProgressBar, hp: int) -> void:
+	var value := clampi(hp, 0, int(bar.max_value))
+	bar.value = value
+	bar.get_node("HealthValue").text = "%d / %d" % [value, int(bar.max_value)]
+	_apply_hp_color(bar, {"hp": value, "max_hp": bar.max_value})
+
 func _animate_hit(node: Control, damage: int, max_hp: int) -> void:
 	var tween := _begin_animation(node)
 	var original: Dictionary = _animation_original[node]
@@ -5193,6 +5269,18 @@ func _animate_item_effect(fighter: Dictionary, effect: String) -> void:
 	if _get_active_weapon(fighter).get("effects", {}).has(effect):
 		_animate_pulse(slots[i], Color.WHITE, 1.12)
 
+# Capture the HP lost before shield healing in the same queued action.
+func _capture_step_hit(target: Dictionary, damage: int) -> void:
+	if not _processing_steps:
+		return
+	if is_same(target, player):
+		_step_hit_target = "player"
+	elif is_same(target, enemy):
+		_step_hit_target = "enemy"
+	else:
+		return
+	_step_hit_damage = mini(maxi(0, int(target.get("hp", 0))), maxi(0, damage))
+
 func _flush_steps() -> void:
 	if _processing_steps:
 		return
@@ -5203,15 +5291,47 @@ func _flush_steps() -> void:
 		var msg := str(step.get("msg", ""))
 		if msg != "":
 			_append_combat_log(msg, step.get("event", {}))
+		var before_player := int(player.get("hp", 0))
+		var before_enemy := int(enemy.get("hp", 0))
+		var minion_hp_before: Array[int] = []
+		for minion in _solo_minions:
+			minion_hp_before.append(int(minion.get("hp", 0)))
+		_step_hit_target = ""
+		_step_hit_damage = 0
 		var action: Callable = step.get("action", Callable())
 		if action.is_valid():
 			action.call()
+		var player_loss := maxi(0, before_player - int(player.get("hp", 0)))
+		var enemy_loss := maxi(0, before_enemy - int(enemy.get("hp", 0)))
+		if _step_hit_target == "player":
+			player_loss = _step_hit_damage
+		elif _step_hit_target == "enemy":
+			enemy_loss = _step_hit_damage
+		if player_loss > 0:
+			_show_damage_number(player_entity, player_loss)
+		if enemy_loss > 0:
+			_show_damage_number(enemy_entity, enemy_loss)
+		var minion_loss := false
+		var visible_index := 0
+		for i in mini(minion_hp_before.size(), _solo_minions.size()):
+			var lost := maxi(0, minion_hp_before[i] - int(_solo_minions[i].get("hp", 0)))
+			if lost > 0 and visible_index < _solo_minion_views.size():
+				var sprite: Control = _solo_minion_views[visible_index]
+				_animate_hit(sprite, lost, int(_solo_minions[i].get("max_hp", 1)))
+				_show_damage_number(sprite, lost)
+				minion_loss = true
+			if minion_hp_before[i] > 0:
+				visible_index += 1
+		if player_loss > 0 or enemy_loss > 0 or minion_loss:
+			await get_tree().create_timer(0.26).timeout
 		_update_ui()
 		var category := str(step.get("event", {}).get("category", "system"))
 		var delay := 1.35 if category == "combo" else 1.25 if category in ["debuff", "shield"] else 0.8 if category == "system" else LOG_STEP_SECONDS
 		await get_tree().create_timer(delay).timeout
 	_step_queue.clear()
 	_processing_steps = false
+	_step_hit_target = ""
+	_step_hit_damage = 0
 
 func _display_turn() -> int:
 	if _dungeon_guard:

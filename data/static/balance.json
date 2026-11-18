@@ -43,8 +43,8 @@
     "tick_seconds": 1,
     "npc_trade_values": { "essence": 1, "core": 50, "arcane_shard": 120, "time_crystal": 300 },
     "npc_trade_daily": [
-      { "id": "d1", "pay": { "essence": 65 }, "receive": { "core": 1 } },
-      { "id": "d2", "pay": { "core": 1 }, "receive": { "essence": 35 } },
+      { "id": "d1", "pay": { "essence": 100 }, "receive": { "core": 3 } },
+      { "id": "d2", "pay": { "essence": 200 }, "receive": { "arcane_shard": 3 } },
       { "id": "d3", "pay": { "core": 3 }, "receive": { "arcane_shard": 1 } },
       { "id": "d4", "pay": { "arcane_shard": 1 }, "receive": { "essence": 90 } },
       { "id": "d5", "pay": { "essence": 160 }, "receive": { "arcane_shard": 1 } },
@@ -105,6 +105,7 @@
       "chaotic": 1.0,
       "industrial": 0.95
     },
+    "wallet_storage_capacity_mult": 1.25,
     "storage_base_capacity": 1000,
     "storage_capacity_per_level": 250,
     "storage_route_capacity_mult": {

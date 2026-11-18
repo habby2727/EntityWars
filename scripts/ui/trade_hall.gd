@@ -12,6 +12,7 @@ class_name TradeHall
 @export var sell_resource_path: NodePath
 @export var sell_amount_path: NodePath
 @export var sell_price_path: NodePath
+@export var sell_currency_path: NodePath
 @export var sell_create_button_path: NodePath
 @export var sell_error_label_path: NodePath
 @export var my_orders_list_path: NodePath
@@ -33,6 +34,7 @@ class_name TradeHall
 
 const RUNS_PATH := "user://trade_runs.json"
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const ResourceBars := preload("res://scripts/ui/lab_resource_bars.gd")
 
 var _backend: BackendClient = null
 var _panel: Panel = null
@@ -45,6 +47,8 @@ var _market_orders_list: VBoxContainer = null
 var _sell_resource: OptionButton = null
 var _sell_amount: LineEdit = null
 var _sell_price: LineEdit = null
+var _sell_currency: OptionButton = null
+var _sell_preview: Label = null
 var _sell_create_button: Button = null
 var _sell_error_label: Label = null
 var _my_orders_list: VBoxContainer = null
@@ -67,6 +71,7 @@ var _job_error_label: Label = null
 var _catalog := AssetCatalog.new()
 var _db := StaticDB.new()
 var _state: Dictionary = {}
+var _resource_rows: Dictionary = {}
 var _npc_list: VBoxContainer
 var _npc_status: Label
 var _npc_daily_timer: Label
@@ -111,12 +116,17 @@ func _ready() -> void:
 	_build_resource_options()
 	_build_npc_exchange()
 	_load_state()
+	_build_resource_wallet()
 	_load_runs()
 	_request_market_orders()
 	_request_my_orders()
 	_request_trade_jobs()
 	_request_npc_offers()
 	_refresh_runs()
+	_apply_busy_to_buttons()
+	if ConnectionGate.debug_lab_navigation_allowed():
+		_set_error("market", "Offline debug preview: trading unavailable.")
+		_set_error("trade", "Offline debug preview: trading unavailable.")
 
 func _process(_delta: float) -> void:
 	_update_run_countdowns()
@@ -137,6 +147,8 @@ func _resolve_nodes() -> void:
 	_sell_resource = get_node_or_null(sell_resource_path) as OptionButton
 	_sell_amount = get_node_or_null(sell_amount_path) as LineEdit
 	_sell_price = get_node_or_null(sell_price_path) as LineEdit
+	_sell_currency = get_node_or_null(sell_currency_path) as OptionButton
+	_sell_preview = get_node_or_null("Background/Margin/RootVBox/Tabs/Market/Scroll/MarketVBox/CreateSell/Preview") as Label
 	_sell_create_button = get_node_or_null(sell_create_button_path) as Button
 	_sell_error_label = get_node_or_null(sell_error_label_path) as Label
 	_my_orders_list = get_node_or_null(my_orders_list_path) as VBoxContainer
@@ -261,16 +273,43 @@ func _connect_buttons() -> void:
 
 func _load_state() -> void:
 	_state = {}
-	if _backend != null:
+	if ConnectionGate.debug_lab_navigation_allowed():
+		var debug := DebugFlags.new()
+		_state = debug.load_lab_state()
+		debug.free()
+	elif _backend != null:
 		_state = _backend.load_cached_state()
 	if typeof(_state) != TYPE_DICTIONARY:
 		_state = {}
 	_player_id = str(_state.get("player_id", ""))
 
+func _build_resource_wallet() -> void:
+	var container := get_node_or_null("Background/Margin/RootVBox/ResourceWallet/Resources") as HBoxContainer
+	if container == null:
+		return
+	_resource_rows = ResourceBars.build(container, _catalog, true)
+	_update_resource_wallet()
+
+func _update_resource_wallet() -> void:
+	ResourceBars.update(_resource_rows, _state, ConnectionGate.debug_lab_navigation_allowed(), _db.balance)
+	for id in _resource_rows:
+		var row: Control = _resource_rows[id].row
+		row.tooltip_text = _resource_name(str(id))
+
 func _build_resource_options() -> void:
 	var resources = _get_resource_entries()
 	_setup_option(_market_filter, resources, true)
 	_setup_option(_sell_resource, resources, false)
+	_setup_option(_sell_currency, resources, false)
+	if _sell_currency:
+		for i in _sell_currency.item_count:
+			if _sell_currency.get_item_metadata(i) == "essence":
+				_sell_currency.select(i)
+	if _sell_resource: _sell_resource.item_selected.connect(func(_i): _update_sell_preview())
+	if _sell_currency: _sell_currency.item_selected.connect(func(_i): _update_sell_preview())
+	if _sell_amount: _sell_amount.text_changed.connect(func(_t): _update_sell_preview())
+	if _sell_price: _sell_price.text_changed.connect(func(_t): _update_sell_preview())
+	_update_sell_preview()
 	_setup_option(_job_input_option, resources, false)
 	_setup_option(_job_output_option, resources, false)
 	_setup_option(_job_commission_option, resources, false)
@@ -383,6 +422,9 @@ func _npc_auth_changed(token: String) -> void:
 		_request_npc_offers()
 
 func _request_npc_offers() -> void:
+	if ConnectionGate.debug_lab_navigation_allowed():
+		_show_debug_npc_preview("Offline debug mode")
+		return
 	if _npc_fetch_pending:
 		return
 	if _backend == null or _backend.token == "":
@@ -405,9 +447,9 @@ func _show_debug_npc_preview(reason: String) -> bool:
 	var day := int(floor(float(now) / 86400000.0))
 	var week := int(floor(float(day + 3) / 7.0))
 	_npc_offers.clear()
-	for i in range(3):
-		var offer: Dictionary = daily[(day + 3 * i) % daily.size()].duplicate(true)
-		offer.merge({"period": "daily", "period_key": day, "max": 2, "remaining": 0}, true)
+	for i in [0, 1, 2 + day % 6]:
+		var offer: Dictionary = daily[i].duplicate(true)
+		offer.merge({"period": "daily", "period_key": day, "max": 1 if i < 2 else 2, "remaining": 0}, true)
 		_npc_offers.append(offer)
 	for i in range(2):
 		var offer: Dictionary = weekly[(week + 2 * i) % weekly.size()].duplicate(true)
@@ -480,7 +522,11 @@ func _render_npc_offers() -> void:
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			label.text = _npc_offer_text(offer)
+			for resource in offer.get("pay", {}):
+				row.add_child(_resource_icon(str(resource)))
 			row.add_child(label)
+			for resource in offer.get("receive", {}):
+				row.add_child(_resource_icon(str(resource)))
 			var button := Button.new()
 			button.text = "TRADE_BUY"
 			button.custom_minimum_size = Vector2(120, 42)
@@ -522,7 +568,24 @@ func _update_npc_buttons() -> void:
 				affordable = false
 		var lab: Dictionary = _state.get("lab", {})
 		var available := int(lab.get("hqLevel", 0)) >= 1 and int(lab.get("buildings", {}).get("trade_hall", {}).get("level", 0)) >= 1
-		button.disabled = _busy or _npc_fetch_pending or _npc_expired or _backend == null or _backend.token == "" or int(offer.get("remaining", 0)) <= 0 or not affordable or not available
+		var reason := ""
+		if _backend == null or _backend.token == "" or _busy or _npc_fetch_pending or _npc_preview:
+			reason = "Awaiting server / offline"
+		elif _npc_expired:
+			reason = "Offer expired / refreshing"
+		elif not available:
+			reason = "Build Trade Hall first"
+		elif int(offer.get("remaining", 0)) <= 0:
+			reason = "Daily purchase limit reached" if offer.get("period") == "daily" else "Weekly purchase limit reached"
+		elif not affordable:
+			for resource in offer.get("pay", {}):
+				var missing := int(offer.pay[resource]) - int(wallet.get(resource, 0))
+				if missing > 0:
+					reason = "Need %d more %s" % [missing, _resource_name(str(resource))]
+					break
+		button.disabled = reason != ""
+		button.tooltip_text = reason
+		button.text = reason if reason != "" else tr("TRADE_BUY")
 
 func _update_npc_timers() -> void:
 	if _npc_server_ms <= 0:
@@ -562,6 +625,8 @@ func _confirm_npc_buy() -> void:
 			return
 
 func _send_api_request(method: String, path: String, body: Variant, kind: String, expect_state: bool, extra: Dictionary = {}) -> void:
+	if ConnectionGate.debug_lab_navigation_allowed():
+		return
 	if _backend == null:
 		return
 	if _busy:
@@ -644,6 +709,7 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 	elif kind == "npc_buy":
 		_npc_feedback = "Exchange confirmed."
 		_npc_status.text = "Exchange confirmed."
+		_backend.refresh_state()
 		_request_npc_offers()
 
 func _set_busy(value: bool) -> void:
@@ -668,14 +734,15 @@ func _flush_api_queue() -> void:
 	)
 
 func _apply_busy_to_buttons() -> void:
+	var unavailable := _busy or ConnectionGate.debug_lab_navigation_allowed()
 	if _market_refresh != null:
-		_market_refresh.disabled = _busy
+		_market_refresh.disabled = unavailable
 	if _trade_refresh != null:
-		_trade_refresh.disabled = _busy
+		_trade_refresh.disabled = unavailable
 	if _sell_create_button != null:
-		_sell_create_button.disabled = _busy
+		_sell_create_button.disabled = unavailable
 	if _job_create_button != null:
-		_job_create_button.disabled = _busy
+		_job_create_button.disabled = unavailable
 	_update_dynamic_buttons()
 	_update_npc_buttons()
 
@@ -706,7 +773,7 @@ func _on_create_sell_pressed() -> void:
 		"type": "SELL",
 		"resource_id": resource_id,
 		"amount": amount,
-		"price_resource_id": "essence",
+		"price_resource_id": _get_option_id(_sell_currency),
 		"price_amount": price
 	}
 	_send_api_request("POST", "/market/order", body, "market_order_create", true)
@@ -771,7 +838,7 @@ func _refresh_orders() -> void:
 		var price = int(entry.get("price_amount", 0))
 		var price_res = str(entry.get("price_resource_id", "essence"))
 		var info := Label.new()
-		info.text = "%s x%s @ %s %s" % [res_id, amount, price, price_res]
+		info.text = "%s %s ? %s %s each (seller fee: %.2f%%)" % [amount, _resource_name(res_id), price, _resource_name(price_res), float(entry.get("fee_bps", 0)) / 100.0]
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var qty := LineEdit.new()
 		qty.custom_minimum_size = Vector2(int(round(60.0 * _ui_scale)), 0)
@@ -779,10 +846,16 @@ func _refresh_orders() -> void:
 		var buy_btn := Button.new()
 		buy_btn.text = "Buy"
 		MenuArt.button(buy_btn)
-		buy_btn.disabled = _busy
+		buy_btn.disabled = _busy or ConnectionGate.debug_lab_navigation_allowed()
 		buy_btn.pressed.connect(_on_buy_pressed.bind(entry, qty))
 		row.add_child(slot)
 		row.add_child(info)
+		var price_icon := TextureRect.new()
+		price_icon.custom_minimum_size = Vector2(26, 26)
+		price_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		price_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		price_icon.texture = _catalog.get_tex(price_res)
+		row.add_child(price_icon)
 		row.add_child(qty)
 		row.add_child(buy_btn)
 		_market_orders_list.add_child(row)
@@ -803,16 +876,12 @@ func _refresh_my_orders() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
 		var label := Label.new()
-		label.text = "%s x%s @ %s" % [
-			str(entry.get("resource_id", "")),
-			str(entry.get("remaining", entry.get("amount", 0))),
-			str(entry.get("price_amount", 0))
-		]
+		label.text = "%s %s ? %s %s each" % [entry.get("remaining", entry.get("amount", 0)), _resource_name(str(entry.get("resource_id", ""))), entry.get("price_amount", 0), _resource_name(str(entry.get("price_resource_id", "essence")))]
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var cancel_btn := Button.new()
 		cancel_btn.text = "Cancel"
 		MenuArt.button(cancel_btn)
-		cancel_btn.disabled = _busy
+		cancel_btn.disabled = _busy or ConnectionGate.debug_lab_navigation_allowed()
 		cancel_btn.pressed.connect(_on_cancel_order_pressed.bind(entry))
 		row.add_child(label)
 		row.add_child(cancel_btn)
@@ -834,13 +903,18 @@ func _refresh_jobs() -> void:
 		var commission = int(entry.get("commission_amount", 0))
 		var commission_res = str(entry.get("commission_resource_id", "essence"))
 		var label := Label.new()
-		label.text = "%s %s-%s | %ss | Fee %s %s" % [out_res, out_min, out_max, duration, commission, commission_res]
+		label.text = "You provide: %s %s\nPossible reward: %s?%s %s\nService fee: %s %s\nProcessing time: %ss ? %s" % [entry.get("input_amount", 0), _resource_name(str(entry.get("input_resource_id", ""))), out_min, out_max, _resource_name(out_res), commission, _resource_name(commission_res), duration, "%d/%d slots available" % [maxi(0, int(entry.get("queue_limit", 0)) - int(entry.get("pending_count", 0))), int(entry.get("queue_limit", 0))]]
+		label.tooltip_text = "The reward varies within the range. The service fee is charged for the service. Processing time determines when you can claim. Concurrent jobs are limited by the provider."
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var submit_btn := Button.new()
-		submit_btn.text = "Submit"
+		submit_btn.text = "START JOB"
 		MenuArt.button(submit_btn)
-		submit_btn.disabled = _busy or not _can_submit_job(entry)
+		submit_btn.disabled = _busy or ConnectionGate.debug_lab_navigation_allowed() or not _can_submit_job(entry)
 		submit_btn.pressed.connect(_on_submit_job_pressed.bind(entry))
+		var icons := VBoxContainer.new()
+		for resource in [str(entry.get("input_resource_id", "")), out_res, commission_res]:
+			icons.add_child(_resource_icon(resource))
+		row.add_child(icons)
 		row.add_child(label)
 		row.add_child(submit_btn)
 		_jobs_list.add_child(row)
@@ -862,7 +936,7 @@ func _refresh_runs() -> void:
 		var claim_btn := Button.new()
 		claim_btn.text = "Claim"
 		MenuArt.button(claim_btn)
-		claim_btn.disabled = _busy
+		claim_btn.disabled = _busy or ConnectionGate.debug_lab_navigation_allowed()
 		claim_btn.pressed.connect(_on_claim_run_pressed.bind(run_id))
 		row.add_child(claim_btn)
 		_runs_list.add_child(row)
@@ -881,14 +955,14 @@ func _update_run_countdowns() -> void:
 		var completes_at = int(entry.get("completes_at", 0))
 		var remaining = max(0, completes_at - now)
 		var output_res = str(entry.get("output_resource_id", ""))
-		var title = output_res if output_res != "" else run_id
+		var title = _resource_name(output_res) if output_res != "" else run_id
 		if label != null:
 			if remaining > 0:
 				label.text = "%s | Ready in %s" % [title, _format_seconds(remaining)]
 			else:
 				label.text = "%s | Ready" % title
 		if button != null:
-			button.disabled = _busy or remaining > 0
+			button.disabled = _busy or ConnectionGate.debug_lab_navigation_allowed() or remaining > 0
 
 func _on_buy_pressed(order: Dictionary, qty_input: LineEdit) -> void:
 	_clear_error("market")
@@ -1046,6 +1120,7 @@ func _can_submit_job(job: Dictionary) -> bool:
 func _on_state_updated(state: Dictionary) -> void:
 	var previous_player := _player_id
 	_state = state
+	_update_resource_wallet()
 	_player_id = str(state.get("player_id", ""))
 	if previous_player != "" and previous_player != _player_id:
 		_npc_offers.clear()
@@ -1115,3 +1190,22 @@ func _compute_panel_scale() -> float:
 	var content = Vector2(max(1.0, view.x - 200.0), max(1.0, view.y - 240.0))
 	var ui_scale = min(content.x / CONTENT_BASE_SIZE.x, content.y / CONTENT_BASE_SIZE.y)
 	return clamp(ui_scale, 0.9, 1.35)
+
+func _resource_name(id: String) -> String:
+	var entry: Dictionary = _db.resources.get(id, {})
+	return GameLocalization.catalog("resource", id, "name", str(entry.get("display_name", entry.get("name", id.replace("_", " ").capitalize()))))
+
+func _update_sell_preview() -> void:
+	if _sell_preview == null or _sell_amount == null or _sell_price == null:
+		return
+	var amount := int(_sell_amount.text) if _sell_amount.text.is_valid_int() else 0
+	var price := int(_sell_price.text) if _sell_price.text.is_valid_int() else 0
+	_sell_preview.text = "Sell %d %s for %d %s each\nTotal if fully sold: %d %s" % [amount, _resource_name(_get_option_id(_sell_resource)), price, _resource_name(_get_option_id(_sell_currency)), amount * price, _resource_name(_get_option_id(_sell_currency))]
+
+func _resource_icon(id: String) -> TextureRect:
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(26, 26)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture = _catalog.get_tex(id)
+	return icon

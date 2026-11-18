@@ -8,6 +8,7 @@ static func run() -> bool:
 	_test_cap_blocks_upgrade()
 	_test_missing_cost_blocks()
 	_test_path_multiplier_floor()
+	_test_hq_level_two_cost()
 	_test_costs_and_lab_display()
 	_test_alerts()
 	return failures == 0
@@ -33,6 +34,13 @@ static func _test_path_multiplier_floor() -> void:
 	var cost2: Dictionary = result2.get("cost", {})
 	_assert_eq(int(cost2.get("essence", -1)), 60, "cost floor with chaotic multiplier")
 
+static func _test_hq_level_two_cost() -> void:
+	var resolver := CostResolver.new({}, {"hq_cost_mult": {"scientific": 0.8, "chaotic": 1.2, "industrial": 1.0}})
+	for path in ["scientific", "chaotic", "industrial"]:
+		var cost: Dictionary = resolver.resolve_upgrade_cost("lab_th", 1, 1, path).get("cost", {})
+		_assert_eq(int(cost.get("essence", -1)), 300, "HQ level 2 essence for " + path)
+		_assert_eq(int(cost.get("core", -1)), 4, "HQ level 2 core for " + path)
+
 static func _test_costs_and_lab_display() -> void:
 	var screen := LabScreen.new()
 	var db: StaticDB = screen._db
@@ -56,6 +64,10 @@ static func _test_costs_and_lab_display() -> void:
 				if screen._get_upgrade_cost(id) != expected:
 					failures += 1
 					push_error("FAIL: displayed cost for %s level %s path %s" % [id, level, path])
+	_assert_eq(HqRules.get_unlock_level("ultrahit_tower"), 1, "Spell Tower unlocks at HQ 1")
+	_assert_eq(int(db.buildings.ultrahit_tower.unlock_hq), 1, "Spell Tower catalog unlock")
+	_assert_false(not HqRules.can_upgrade("ultrahit_tower", 0, 1), "Spell Tower can be built at HQ 1")
+	_assert_false(HqRules.can_upgrade("ultrahit_tower", 1, 1), "Spell Tower level 2 still requires HQ 2")
 	_assert_eq(HqRules.get_unlock_level("world_gate"), 1, "world gate unlocks at HQ 1")
 	_assert_eq(HqRules.get_unlock_level("sync_nexus"), 2, "Sync Nexus unlocks at HQ 2")
 	_assert_eq(int(db.buildings.sync_nexus.unlock_hq), 2, "Sync Nexus catalog unlock")

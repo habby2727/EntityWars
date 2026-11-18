@@ -19,15 +19,16 @@ const DESCRIPTIONS := {
 	"world_gate": "Travel to distant zones."
 }
 
-@onready var _name_label: Label = $Margin/Scroll/Content/Header/Name
+@onready var _name_label: Label = $Margin/Scroll/Content/Name
 @onready var _close: Button = $Margin/Scroll/Content/Header/Close
 @onready var _frame: TextureRect = $Margin/Scroll/Content/ImageFrame/Frame
 @onready var _icon: TextureRect = $Margin/Scroll/Content/ImageFrame/Frame/Icon
 @onready var _description: Label = $Margin/Scroll/Content/Description
+@onready var _detail: Label = $Margin/Scroll/Content/Detail
 @onready var _level: Label = $Margin/Scroll/Content/Level
 @onready var _requirement: Label = $Margin/Scroll/Content/Requirement
 @onready var _cost_title: Label = $Margin/Scroll/Content/CostTitle
-@onready var _costs: VBoxContainer = $Margin/Scroll/Content/Costs
+@onready var _costs: GridContainer = $Margin/Scroll/Content/Costs
 @onready var _status: Label = $Margin/Scroll/Content/Status
 @onready var _upgrade: Button = $Margin/Scroll/Content/Upgrade
 @onready var _collect: Button = $Margin/Scroll/Content/Collect
@@ -60,7 +61,8 @@ func _ready() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	for action in [_upgrade, _collect, _manage]:
 		action.reparent(layout)
-		action.custom_minimum_size.y = 36
+		action.custom_minimum_size.y = 50
+		action.add_theme_font_size_override("font_size", 20)
 	_close.pressed.connect(_close_panel)
 	visibility_changed.connect(_sync_blocker)
 	_upgrade.pressed.connect(_on_upgrade)
@@ -129,10 +131,12 @@ func _layout_panel() -> void:
 	var available: Vector2 = canvas_transform * content_rect.end - origin
 	if available.x <= 0 or available.y <= 0:
 		return
-	var panel_width = min(460.0, max(0.0, available.x - 24.0))
-	var panel_height = min(650.0, max(0.0, available.y - 24.0))
-	position = origin + Vector2(available.x - panel_width - 12.0, (available.y - panel_height) * 0.5)
+	var panel_scale := 0.75
+	var panel_width = min(780.0, max(0.0, (available.x - 24.0) / panel_scale))
+	var panel_height = min(800.0, max(0.0, (available.y - 60.0) / panel_scale))
+	scale = Vector2.ONE * panel_scale
 	size = Vector2(panel_width, panel_height)
+	position = origin + Vector2(available.x - panel_width * panel_scale - 12.0, 48.0)
 
 func _apply_art() -> void:
 	add_theme_stylebox_override("panel", _stretch_art(load("res://assets/ui/new-elements/marco-horizontal-popup-grande.png")))
@@ -173,6 +177,7 @@ func _refresh() -> void:
 		wallet = {}
 	_name_label.text = GameLocalization.catalog("building", _building_id, "name", str(data.get("display_name", data.get("name", _building_id))))
 	_description.text = GameLocalization.catalog("building", _building_id, "desc", str(DESCRIPTIONS.get(_building_id, "")))
+	_detail.text = ""
 	if _building_id in ["sync_nexus", "anomaly_containment"]:
 		_description.text += "\n" + tr("LAB_FUNCTIONS_SOON")
 	if _building_id == "essence_reactor" and level < max_level:
@@ -187,14 +192,14 @@ func _refresh() -> void:
 		var storage_route := str(storage.get("route", ""))
 		var current_rate := 0.0 if level <= 0 else engine._compute_output_rate(level, route, storage_route, hq_path, balance) * 3600.0
 		var next_rate: float = engine._compute_output_rate(level + 1, route, storage_route, hq_path, balance) * 3600.0
-		_description.text += "\n" + tr("LAB_ESTIMATED_RATE") % [current_rate, next_rate]
+		_detail.text = tr("LAB_ESTIMATED_RATE") % [current_rate, next_rate]
 	elif _building_id == "storage_vault" and level < max_level:
 		var storage: Dictionary = buildings.get("storage_vault", {})
 		var route := str(storage.get("route", ""))
 		var hq_path := str(lab.get("hqPath", "Scientific"))
 		var current_capacity := Capacity.compute_total_capacity(level, route, hq_path, _db.balance)
 		var next_capacity := Capacity.compute_total_capacity(level + 1, route, hq_path, _db.balance)
-		_description.text += "\n" + tr("LAB_CAPACITY") % [current_capacity, next_capacity]
+		_detail.text = tr("LAB_CAPACITY") % [current_capacity, next_capacity]
 	_icon.texture = _catalog.get_tex(_building_id) if _catalog.has(_building_id) else null
 	_level.text = tr("LAB_LEVEL_RANGE") % [level, max_level, ("  →  %s" % (level + 1)) if level < max_level else ""]
 	_requirement.text = ""
@@ -217,12 +222,15 @@ func _refresh() -> void:
 		if available < amount:
 			affordable = false
 		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var icon := TextureRect.new()
 		icon.custom_minimum_size = Vector2(24, 24)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.texture = _catalog.get_tex(resource_id) if _catalog.has(resource_id) else null
 		var label := Label.new()
+		label.add_theme_font_size_override("font_size", 20)
 		var resource = _db.get_resource(resource_id)
 		label.text = "%s: %s / %s" % [GameLocalization.catalog("resource", str(resource_id), "name", str(resource.get("display_name", resource.get("name", resource_id)))), available, amount]
 		label.modulate = Color(1.0, 0.48, 0.4) if available < amount else Color.WHITE

@@ -21,8 +21,8 @@
           "core": 10
         },
         "2": {
-          "essence": 73,
-          "core": 15
+          "essence": 300,
+          "core": 4
         },
         "3": {
           "essence": 106,
@@ -248,7 +248,7 @@
       "id": "ultrahit_tower",
       "name": "Spell Tower",
       "display_name": "Spell Tower",
-      "unlock_hq": 2,
+      "unlock_hq": 1,
       "routes": [],
       "costs": {
         "1": {

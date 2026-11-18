@@ -10,6 +10,8 @@ func _initialize() -> void:
 	assert(not reconcile.apply_server_state({"player_id": "a", "wallet": {"essence": 0}}))
 	assert(reconcile.apply_server_state({"player_id": "a", "state_revision": 3, "wallet": {"essence": 0}}))
 	assert(reconcile.get_state().wallet.essence == 30)
+	assert(reconcile.apply_server_state({"player_id": "a", "state_revision": 3, "wallet": {"essence": 0}, "wallet_capacities": {"essence": 1050}}))
+	assert(reconcile.get_state().wallet.essence == 30 and reconcile.get_state().wallet_capacities.essence == 1050)
 	assert(reconcile.apply_server_state({"player_id": "a", "state_revision": 4, "wallet": {"essence": 40}}))
 	assert(reconcile.get_state().wallet.essence == 40)
 	print("RECONCILE_REVISION_PASS")

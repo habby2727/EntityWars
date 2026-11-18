@@ -78,6 +78,10 @@ func apply_server_state(server_state: Dictionary, applied_action_id: String = ""
 		if not server_state.has("state_revision") or int(server_state.state_revision) < int(_state.state_revision):
 			return false
 		if int(server_state.state_revision) == int(_state.state_revision):
+			# Derived capacities can be added by a newer server without a wallet mutation.
+			if server_state.get("wallet_capacities") is Dictionary:
+				_state["wallet_capacities"] = server_state.wallet_capacities.duplicate(true)
+				save_cached_state(_state)
 			return true
 	save_cached_state(server_state)
 	return true

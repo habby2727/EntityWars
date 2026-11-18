@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 var host
 var backend: BackendClient
@@ -25,6 +25,10 @@ var timer_panel: PanelContainer
 var timer_label: Label
 var event_queue: Array = []
 var event_delay := 0.0
+var event_presenting := false
+var hp_initialized := false
+var hp_reconcile_pending := false
+var playback_generation := 0
 var highlights_shown := false
 var result_popup_shown := false
 var debug_visual := false
@@ -37,8 +41,8 @@ func _ready() -> void:
 	header.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	header.offset_left = -250
 	header.offset_right = 250
-	header.offset_top = 330
-	header.offset_bottom = 366
+	header.offset_top = 376
+	header.offset_bottom = 400
 	header.add_theme_color_override("font_color", Color.WHITE)
 	header.add_theme_color_override("font_outline_color", Color.BLACK)
 	header.add_theme_constant_override("outline_size", 3)
@@ -52,6 +56,8 @@ func _ready() -> void:
 	timer_panel.offset_right = 105
 	timer_panel.offset_top = 254
 	timer_panel.offset_bottom = 326
+	host.ultra_button.offset_top = 330
+	host.ultra_button.offset_bottom = 374
 	timer_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	timer_panel.add_theme_stylebox_override("panel", preload("res://scripts/ui/menu_art.gd")._button_frame("boton-loadout-opciones.png"))
 	timer_panel.hide()
@@ -183,6 +189,12 @@ func _on_identity(data: Dictionary) -> void:
 		next_poll = 0.0
 
 func _on_auth_changed(_token: String) -> void:
+	playback_generation += 1
+	event_queue.clear()
+	event_presenting = false
+	event_delay = 0.0
+	hp_reconcile_pending = false
+	hp_initialized = false
 	request_id = ""
 	request_kind = ""
 	header.text = "Reconnect to recover this match"
@@ -208,10 +220,14 @@ func _process(delta: float) -> void:
 		return
 	next_poll -= delta
 	event_delay -= delta
-	if event_delay <= 0.0 and not event_queue.is_empty():
+	if event_delay <= 0.0 and not event_presenting and not event_queue.is_empty():
 		_present_event(event_queue.pop_front())
 		event_delay = 0.35
-	if str(state.get("status", "")) == "FINISHED" and event_queue.is_empty() and not highlights_shown:
+	if hp_reconcile_pending and event_queue.is_empty() and not event_presenting and event_delay <= 0.0:
+		hp_reconcile_pending = false
+		_render()
+	if str(state.get("status", "")) == "FINISHED" and event_queue.is_empty() and not event_presenting and event_delay <= 0.0 and not highlights_shown:
+		_render()
 		highlights_shown = true
 		host._show_highlights()
 		_show_result_popup()
@@ -302,6 +318,17 @@ func _strategic_effects(fighter: Dictionary) -> Array:
 func _render() -> void:
 	if not state.get("player") is Dictionary or not state.get("enemy") is Dictionary:
 		return
+	for event in state.get("events", []):
+		if not event is Dictionary or int(event.get("id", 0)) <= event_cursor:
+			continue
+		event_cursor = int(event.id)
+		var queued: Dictionary = event.duplicate(true)
+		queued["_initial_snapshot"] = not hp_initialized
+		event_queue.append(queued)
+		hp_reconcile_pending = true
+	var preserve_hp := hp_initialized and (event_presenting or not event_queue.is_empty() or event_delay > 0.0)
+	var old_player_hp := int(host.player_hp.value)
+	var old_enemy_hp := int(host.enemy_hp.value)
 	host.player = _fighter(state.player)
 	host.enemy = _fighter(state.enemy)
 	host._battle_index = int(state.get("battle_index", 1))
@@ -313,7 +340,17 @@ func _render() -> void:
 	host._battle_over = str(state.get("status", "")) != "ACTIVE"
 	host.player_indicators.set_extra_effects(_strategic_effects(host.player))
 	host.enemy_indicators.set_extra_effects(_strategic_effects(host.enemy))
-	host._update_ui()
+	if preserve_hp:
+		var player_final: int = int(host.player.hp)
+		var enemy_final: int = int(host.enemy.hp)
+		host.player.hp = old_player_hp
+		host.enemy.hp = old_enemy_hp
+		host._update_ui()
+		host.player.hp = player_final
+		host.enemy.hp = enemy_final
+	else:
+		host._update_ui()
+		hp_initialized = true
 	var anomaly: Variant = state.get("physical_anomaly")
 	if anomaly is Dictionary and not anomaly.is_empty():
 		host._physical_anomaly_label.set_meta("active_anomaly", anomaly.duplicate(true))
@@ -323,16 +360,11 @@ func _render() -> void:
 		host._physical_anomaly_label.hide()
 	host.player_name.text = str(state.player.get("display_name", "Player"))
 	host.enemy_name.text = str(state.enemy.get("display_name", "Opponent"))
-	for event in state.get("events", []):
-		if not event is Dictionary or int(event.get("id", 0)) <= event_cursor:
-			continue
-		event_cursor = int(event.id)
-		event_queue.append(event.duplicate(true))
 	for message in state.get("chat", []):
 		if message is Dictionary and int(message.get("id", 0)) > chat_cursor:
 			chat_cursor = int(message.id)
 			_append_chat_message(message)
-	if host._battle_over:
+	if host._battle_over and not preserve_hp:
 		timer_panel.hide()
 		var result: Dictionary = state.get("result", {})
 		header.text = "%s  |  MP %+d" % [str(result.get("result", "draw")).to_upper(), int(result.get("mp_delta", 0))]
@@ -359,6 +391,8 @@ func _present_event(source: Dictionary) -> void:
 	var event := source.duplicate(true)
 	var actor := str(event.get("actor", ""))
 	var target := str(event.get("target", ""))
+	if target not in ["player", "enemy"] and event.has("hp") and actor in ["player", "enemy"]:
+		target = actor
 	if actor in ["player", "enemy"]:
 		var fighter: Dictionary = host.player if actor == "player" else host.enemy
 		if str(event.get("kind", "")) in ["hom_attack", "hom_miss"]:
@@ -375,12 +409,34 @@ func _present_event(source: Dictionary) -> void:
 		host._animate_lunge(host.player_entity if actor == "player" else host.enemy_entity, 12.0 if actor == "player" else -12.0, false)
 	elif str(event.get("kind", "")) in ["hom_attack", "hom_miss"] and actor in ["player", "enemy"]:
 		host._animate_lunge(host.player_hom if actor == "player" else host.enemy_hom, 12.0 if actor == "player" else -12.0, false)
-	if str(event.get("kind", "")) in ["damage", "hom_attack", "delayed_damage"] and target in ["player", "enemy"]:
-		var sprite: Control = host.player_entity if target == "player" else host.enemy_entity
-		var amount := int(event.get("damage", event.get("amount", 0)))
-		host._animate_hit(sprite, amount, int((host.player if target == "player" else host.enemy).get("max_hp", 1)))
-		host._record_highlight("damage", amount, "%s → %s" % [str(event.get("actor", "")), str(event.get("target", ""))])
 	host._log_presenter.append(host.log_box, int(event.get("turn", 0)), str(event.get("kind", "event")).replace("_", " "), event)
+	if target not in ["player", "enemy"] or bool(source.get("_initial_snapshot", false)):
+		return
+	var bar: ProgressBar = host.player_hp if target == "player" else host.enemy_hp
+	var sprite: Control = host.player_entity if target == "player" else host.enemy_entity
+	var kind := str(event.get("kind", ""))
+	var before := int(bar.value)
+	var after := before
+	if source.has("hp"):
+		after = clampi(int(source.hp), 0, int(bar.max_value))
+	elif kind in ["damage", "hom_attack", "delayed_damage", "reflect", "reflection", "poison", "dot", "dot_true", "true_on_hit", "recoil", "counter_trap_triggered"]:
+		after = maxi(0, before - int(source.get("actual_damage", source.get("damage", source.get("amount", 0)))))
+	if after == before:
+		return
+	var lost := maxi(0, before - after)
+	if lost > 0:
+		host._animate_hit(sprite, lost, int(bar.max_value))
+		host._show_damage_number(sprite, lost)
+		host._record_highlight("damage", lost, "%s ? %s" % [str(event.get("actor", "")), str(event.get("target", ""))])
+	event_presenting = true
+	var generation := playback_generation
+	await get_tree().create_timer(0.26).timeout
+	if not is_inside_tree() or generation != playback_generation:
+		return
+	host._set_display_hp(bar, after)
+	event_presenting = false
+	if event_queue.is_empty() and event_delay <= 0.0:
+		_render()
 
 func refresh_controls() -> void:
 	if host == null:

@@ -176,7 +176,7 @@ static func go_to_top_players() -> void:
 	_go_to(SCENE_TOP_PLAYERS, "TopPlayers")
 
 static func _go_to(scene_path: String, label: String) -> void:
-	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL]
+	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_TRADE_HALL, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL]
 	if _connection_gate().debug_lab_navigation_allowed():
 		local_debug_scenes.append(SCENE_LOADOUT)
 		if bool(_ranked_context.get("debug_visual", false)):

@@ -120,15 +120,16 @@ z_as_relative = true
 
 [node name="ResourceBarPanel" type="PanelContainer" parent="Aspect/Canvas/TopOverlay"]
 layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
+anchors_preset = 1
+anchor_left = 0.5
+anchor_right = 0.5
 anchor_bottom = 0.0
-offset_left = 96.0
-offset_top = 12.0
-offset_right = -144.0
-offset_bottom = 38.0
+offset_left = -400.0
+offset_top = 5.0
+offset_right = 400.0
+offset_bottom = 45.0
 size_flags_horizontal = 3
-clip_contents = true
+clip_contents = false
 z_index = 40
 z_as_relative = true
 
@@ -142,6 +143,7 @@ theme_override_constants/margin_bottom = 4
 [node name="ResourceBar" type="HBoxContainer" parent="Aspect/Canvas/TopOverlay/ResourceBarPanel/BarMargin"]
 layout_mode = 2
 theme_override_constants/separation = 10
+alignment = 1
 
 [node name="PlaceholderPopup" type="PopupPanel" parent="."]
 visible = false

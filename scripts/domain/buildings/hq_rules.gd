@@ -7,7 +7,7 @@ const DEFAULT_RULES := {
 	"storage_vault": {"unlock": 1, "max": 10, "cap_per_hq": 1},
 	"build_forge": {"unlock": 1, "max": 10, "cap_per_hq": 1},
 	"homunculus_vat": {"unlock": 2, "max": 10, "cap_per_hq": 1},
-	"ultrahit_tower": {"unlock": 2, "max": 10, "cap_per_hq": 1},
+	"ultrahit_tower": {"unlock": 1, "max": 10, "cap_per_hq": 1},
 	"experiment_chamber": {"unlock": 3, "max": 10, "cap_per_hq": 1},
 	"arcane_archives": {"unlock": 3, "max": 10, "cap_per_hq": 1},
 	"sync_nexus": {"unlock": 2, "max": 10, "cap_per_hq": 1},

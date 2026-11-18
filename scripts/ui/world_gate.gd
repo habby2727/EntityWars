@@ -1308,6 +1308,10 @@ func _render_missions() -> void:
 	_clear_container(_mission_list)
 	_update_mission_countdown()
 	var group: Dictionary = _missions_data.get(_mission_period, {})
+	var bar_background := StyleBoxFlat.new()
+	bar_background.bg_color = Color("5b6367")
+	var bar_fill := StyleBoxFlat.new()
+	bar_fill.bg_color = Color("45c9e8")
 	for mission in group.get("missions", []):
 		if not mission is Dictionary:
 			continue
@@ -1339,6 +1343,8 @@ func _render_missions() -> void:
 		bar.max_value = int(mission.get("target", 1))
 		bar.value = int(mission.get("progress", 0))
 		bar.show_percentage = false
+		bar.add_theme_stylebox_override("background", bar_background)
+		bar.add_theme_stylebox_override("fill", bar_fill)
 		bar.custom_minimum_size.y = 8
 		col.add_child(bar)
 		var reward_row := HBoxContainer.new()
