@@ -24,7 +24,7 @@ import { AccountStatusUnavailableError, isUserDisabled, pingPostgres, postgresEx
 import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
-import { enqueueJob, getJobQueueSize } from "./jobs/queue";
+import { getJobQueueSize } from "./jobs/queue";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
@@ -1517,11 +1517,6 @@ async function startServer(): Promise<void> {
 						return { state: updated.state, duplicate: false };
 					}).immediate();
 					if (result.duplicate) return stateResponseExtra(result.state, { duplicate: true });
-					void enqueueJob("audit_snapshot", {
-						player_id: playerId,
-						action_type: actionType,
-						at: Date.now()
-					});
 					broadcast({ type: "player_action", player_id: playerId, action_type: actionType });
 					return stateResponse(result.state);
 				}

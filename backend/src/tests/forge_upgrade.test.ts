@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
@@ -17,10 +17,11 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
   const db = new Database(dbPath);
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
-  const env = { ...process.env, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", EXPERIMENT_SECRET: "isolated-experiment-fixture", WORLD_SECRET: "isolated-world-fixture" };
+  const jobCallsPath = join(directory, "job-calls.jsonl");
+  const env = { ...process.env, TEST_JOB_CALLS_PATH: jobCallsPath, DB_PATH: dbPath, NODE_ENV: "development", BUN_ENV: "development", HOST: "127.0.0.1", PORT: String(port), DATABASE_URL: "postgres://x:x@127.0.0.1:1/test", REDIS_URL: "redis://127.0.0.1:1", PG_CONNECT_TIMEOUT_SECONDS: "1", DEBUG_BYPASS: "0", EXPERIMENT_SECRET: "isolated-experiment-fixture", WORLD_SECRET: "isolated-world-fixture" };
   let server: ReturnType<typeof Bun.spawn> | undefined;
   const start = async () => {
-    server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
+    server = Bun.spawn([process.execPath, "--preload", "./src/tests/record_job_calls.ts", "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
     for (let i = 0; i < 100; i++) {
       if (server.exitCode !== null) throw new Error("Test backend exited before startup");
       try { if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return; } catch {}
@@ -77,6 +78,10 @@ test("FORGE_UPGRADE persists, charges once and rejects invalid actions", async (
     expect(duplicate.data.updated_player_state.state_revision).toBe(first.data.updated_player_state.state_revision);
     expect(JSON.parse(getRow().state_json).wallet.essence).toBe(80);
     expect(JSON.parse(getRow().state_json).item_progress.bismuth_talisman.level).toBe(1);
+    expect((db.query("SELECT COUNT(*) AS n FROM action_log WHERE player_id = ? AND client_action_id = ?").get(playerId, "forge-upgrade-1") as { n: number }).n).toBe(1);
+    expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE player_id = ? AND related_id = ? AND reason = 'FORGE_UPGRADE'").get(playerId, "forge-upgrade-1") as { n: number }).n).toBe(1);
+    const jobCalls = existsSync(jobCallsPath) ? readFileSync(jobCallsPath, "utf8") : "";
+    expect(jobCalls.split("\n").filter(Boolean)).not.toContain("audit_snapshot");
     const conflicting = await request("/player/action", { client_action_id: "forge-upgrade-1", action_type: "FORGE_UPGRADE", payload: { item_id: "wind_amulet" } }, token);
     expect(conflicting.status).toBe(409);
     const differentType = await request("/player/action", { client_action_id: "forge-upgrade-1", action_type: "CLAIM_PRODUCTION", payload: { item_id: "bismuth_talisman" } }, token);
