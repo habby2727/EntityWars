@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { commonAppearance } from "../solo_guardians";
+import { maintainSoloHunts } from "../solo_hunt_retention";
 
 test("all zone common appearances are strictly whitelisted", () => {
   const zones: Record<string, string[]> = {
@@ -211,6 +212,14 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((await request("/world/boss-hunts/loadout", { ...loadout, client_action_id: "after-forfeit" }, a.data.token)).status).toBe(409);
     expect((await forfeit()).data.duplicate).toBe(true);
     expect((await request("/world/boss-hunts/start", visualStart, a.data.token)).data.status).toBe("FORFEIT");
+    db.query("UPDATE solo_hunt_sessions SET finished_at = ? WHERE session_id = ?").run(testNow() - 7200000, session.session_id);
+    const beforeCompact = (await request(`/world/boss-hunts/session?session_id=${session.session_id}`, undefined, a.data.token)).data.session;
+    expect(maintainSoloHunts(db, testNow()).compacted).toBeGreaterThan(0);
+    expect((await request(`/world/boss-hunts/session?session_id=${session.session_id}`, undefined, a.data.token)).data.session).toEqual(beforeCompact);
+    expect((await forfeit()).data.combat_state).toEqual(beforeCompact.combat_state);
+    expect((await request("/world/boss-hunts/start", visualStart, a.data.token)).data.combat_state).toEqual(beforeCompact.combat_state);
+    expect((await request("/world/boss-hunts/loadout", loadout, a.data.token)).data.combat_state).toEqual(beforeCompact.combat_state);
+    expect((await request("/world/boss-hunts/turn", turn, a.data.token)).data).toEqual(firstTurn.data);
     expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.session).toBeNull();
     const cooldown = await start("cooldown-after-forfeit");
     expect(cooldown.status).toBe(200);
@@ -243,6 +252,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     b.data.token = (await request("/auth/dev_login", { name: "hunt_test_b" })).data.token;
     expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.common_cooldown_until).toBe(0);
     expect((await request("/world/boss-hunts/start", visualStart, a.data.token)).data.session_id).toBe(session.session_id);
+    expect((await request(`/world/boss-hunts/session?session_id=${session.session_id}`, undefined, a.data.token)).data.session).toEqual(beforeCompact);
     db.query("UPDATE solo_hunt_sessions SET finished_at = ? WHERE session_id = ?").run(testNow() - 61000, session.session_id);
     const competing = await Promise.all([start("next-a"), start("next-b")]);
     expect(competing.map(result => result.status)).toEqual([200, 200]);

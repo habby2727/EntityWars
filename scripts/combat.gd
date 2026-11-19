@@ -13,6 +13,16 @@ const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
 const GAMEPLAY_ENTITY_DIR := "res://assets/entities/gameplay/"
 const GAMEPLAY_HOM_DIR := "res://assets/entities/gameplay/homunculus/"
+const COMBAT_HOM_TEXTURES := {
+	"chimera": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Chimera.png"),
+	"cinder": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Cinder.png"),
+	"drakon": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Drakon.png"),
+	"mothy": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Mothy.png"),
+	"nighty": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Nighty.png"),
+	"pyro": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Pyro.png"),
+	"silphide": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Silphide.png"),
+	"sodi": preload("res://assets/entities/gameplay/homunculus/ingame/1024/Sodi.png"),
+}
 const COMBAT_ENTITY_TEXTURES := {
 	"aether": preload("res://assets/entities/gameplay/ingame-entities/aether/aether_2_5d_1024.png"),
 	"gold": preload("res://assets/entities/gameplay/ingame-entities/gold/gold_2_5d_1024.png"),
@@ -5085,6 +5095,8 @@ func _load_preview_tex(pid: String, kind: String = "entity", display_name: Strin
 		return null
 	if kind == "homunculus":
 		var stem := _resolve_homunculus_stem(pid, display_name)
+		if COMBAT_HOM_TEXTURES.has(stem):
+			return COMBAT_HOM_TEXTURES[stem]
 		var p0 = "%s%s.png" % [GAMEPLAY_HOM_DIR, stem]
 		var p1 = "%s%s.png" % [HOM_PREVIEW_256_DIR, stem]
 		var p2 = "%s%s_01.png" % [HOM_PREVIEW_256_DIR, stem]

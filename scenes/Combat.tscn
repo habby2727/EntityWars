@@ -332,6 +332,7 @@ offset_bottom = 18.0
 grow_horizontal = 2
 grow_vertical = 2
 expand_mode = 1
+flip_h = true
 stretch_mode = 5
 
 [node name="EnemyNames" type="HBoxContainer" parent="EnemyPanel"]

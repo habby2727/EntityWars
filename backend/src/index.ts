@@ -25,6 +25,7 @@ import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis"
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
 import { getJobQueueSize } from "./jobs/queue";
+import { maintainSoloHunts, readHuntCombat } from "./solo_hunt_retention";
 import { createBossIpLimit } from "./boss_ip_limit";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
@@ -1205,6 +1206,10 @@ async function maybeRunExternalExamples(): Promise<void> {
 async function startServer(): Promise<void> {
 	void maybeRunExternalExamples();
 	startDiscordBridge(db, globalChat);
+	const huntMaintenance = setInterval(() => {
+		try { maintainSoloHunts(db, Date.now()); } catch (error) { logError("solo hunt maintenance failed", { error: String(error) }); }
+	}, 60000);
+	huntMaintenance.unref();
 	const server = Bun.serve({
 		hostname: config.host,
 		port: config.port,
@@ -2996,7 +3001,7 @@ function publicHuntCombat(state: any) {
 }
 
 function soloHuntResponse(row: SoloHuntRow) {
-	return { ...(row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}), session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(JSON.parse(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
+	return { ...(row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}), session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(readHuntCombat(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
 }
 
 function globalBossStatus(eventId: string, playerId: string) {
