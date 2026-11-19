@@ -79,7 +79,7 @@ func _build_grids() -> void:
 	if homs.is_empty():
 		homs = [
 			{"id":"cinder_imp","name":"Cinder Imp"},
-			{"id":"corroder","name":"Corroder"},
+			{"id":"corroder","name":"Korroder"},
 			{"id":"bastion","name":"Bastion"},
 		]
 	for h in homs:

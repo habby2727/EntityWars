@@ -2,7 +2,7 @@
   "entities": [
     {
       "id": "sulfur_01",
-      "name": "(TEMP) Igniter",
+      "name": "Ignos",
       "type": "sulfur",
       "role": "brawler",
       "base_stats": {
@@ -50,7 +50,7 @@
     },
     {
       "id": "vitriol_01",
-      "name": "(TEMP) Corroder",
+      "name": "Korroder",
       "type": "vitriol",
       "role": "dot",
       "base_stats": {
@@ -62,7 +62,7 @@
     },
     {
       "id": "gold_01",
-      "name": "(TEMP) Arbiter",
+      "name": "Arbix",
       "type": "gold",
       "role": "counter",
       "base_stats": {

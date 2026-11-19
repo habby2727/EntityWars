@@ -286,6 +286,9 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 func _fighter(data: Dictionary) -> Dictionary:
 	var fighter := data.duplicate(true)
 	fighter["id"] = str(data.get("entity_id", ""))
+	var entity: Dictionary = host._find_by_id(host._entities, fighter["id"])
+	if not entity.is_empty():
+		fighter["name"] = str(entity.get("name", data.get("name", "")))
 	var statuses := {"poison": 0, "stun": 0, "shield_pct": 0.0, "atk_boost": 0.0, "vuln_pct": 0.0, "atk_down": 0.0, "hom_stun": 0, "reflect_pct": 0.0, "tempo_bonus": 0.0}
 	statuses.merge(data.get("status", {}), true)
 	fighter["status"] = statuses

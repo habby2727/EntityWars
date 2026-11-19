@@ -110,8 +110,11 @@ var _experiment_rows: Dictionary = {}
 var _research_rows: Dictionary = {}
 var _resource_rows: Dictionary = {}
 var _debug := DebugFlags.new()
+var _background_video: VideoStreamPlayer
 
 func _exit_tree() -> void:
+	if is_instance_valid(_background_video):
+		_background_video.stop()
 	if is_instance_valid(_backend):
 		if _backend.action_sent.is_connected(_on_action_sent): _backend.action_sent.disconnect(_on_action_sent)
 		if _backend.action_queued.is_connected(_on_action_queued): _backend.action_queued.disconnect(_on_action_queued)
@@ -408,6 +411,15 @@ func _apply_panel_textures() -> void:
 		background.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
 		background.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
 		_background_panel.add_theme_stylebox_override("panel", background)
+		_background_video = VideoStreamPlayer.new()
+		_background_video.stream = preload("res://assets/ui/animated_bg/other_menus_background_1920x1080.ogv")
+		_background_video.expand = true
+		_background_video.volume = 0.0
+		_background_video.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_background_panel.add_child(_background_video)
+		_background_panel.move_child(_background_video, 0)
+		_background_video.finished.connect(_background_video.play)
+		_background_video.play()
 		return
 	if _left_panel != null:
 		_left_panel.add_theme_stylebox_override("panel", _make_panel_style(panel_tex))

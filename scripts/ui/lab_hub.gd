@@ -9,6 +9,7 @@ class_name LabHub
 @export var resource_bar_panel_path: NodePath
 @export var resource_bar_path: NodePath
 @export var structures_button_path: NodePath
+@export var animated_background := true
 
 const LabActionAlert := preload("res://scripts/ui/lab_action_alert.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
@@ -38,7 +39,7 @@ const INVENTORY_TABS := {
 
 const LAYOUT_POS := {
 	"lab_th": Vector2(800, 450),
-	"arcane_archives": Vector2(800, 140),
+	"arcane_archives": Vector2(800, 300),
 	"essence_reactor": Vector2(480, 280),
 	"storage_vault": Vector2(1120, 280),
 	"build_forge": Vector2(320, 450),
@@ -62,6 +63,7 @@ var _db := StaticDB.new()
 var _debug := DebugFlags.new()
 
 func _exit_tree() -> void:
+	$Aspect/Canvas/BackgroundVideo.stop()
 	_catalog.free()
 	_db.free()
 	_debug.free()
@@ -136,6 +138,11 @@ func _setup_background() -> void:
 	_background.texture = tex
 	_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	var video: VideoStreamPlayer = $Aspect/Canvas/BackgroundVideo
+	video.visible = animated_background
+	if animated_background and video.stream != null:
+		video.finished.connect(video.play)
+		video.play()
 
 func _connect_backend() -> void:
 	if _backend == null or _debug.unlock_all_buildings:

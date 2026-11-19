@@ -1738,13 +1738,13 @@ func _type_for_entity(ent: Dictionary) -> String:
 	var id := str(ent.get("id", "")).to_lower()
 	if ent_name.find("anomaly") != -1 or id.find("anomaly") != -1:
 		return "Aether"
-	if ent_name.find("igniter") != -1 or id.find("igniter") != -1:
+	if ent_name.find("igniter") != -1 or id.find("igniter") != -1 or id == "sulfur_01":
 		return "Sulfur"
 	if ent_name.find("quicksprite") != -1 or id.find("quicksprite") != -1:
 		return "Mercury"
-	if ent_name.find("corroder") != -1 or id.find("corroder") != -1:
+	if ent_name.find("corroder") != -1 or id.find("corroder") != -1 or id == "vitriol_01":
 		return "Vitriol"
-	if ent_name.find("arbiter") != -1 or id.find("arbiter") != -1:
+	if ent_name.find("arbiter") != -1 or id.find("arbiter") != -1 or id == "gold_01":
 		return "Gold"
 	if ent_name.find("bastion") != -1 or id == "sodium_01":
 		return "Sodium"
@@ -1755,13 +1755,13 @@ func _lore_for_entity(ent: Dictionary) -> String:
 	var id := str(ent.get("id", "")).to_lower()
 	if ent_name.find("anomaly") != -1 or id.find("anomaly") != -1:
 		return "A rift-born mind that hums with aether and rewrites the rules."
-	if ent_name.find("igniter") != -1 or id.find("igniter") != -1:
+	if ent_name.find("igniter") != -1 or id.find("igniter") != -1 or id == "sulfur_01":
 		return "Sulfur’s first spark, a burning oath that turns steel to ash."
 	if ent_name.find("quicksprite") != -1 or id.find("quicksprite") != -1:
 		return "Mercury given legs, a restless slip of lightning and mirth."
-	if ent_name.find("corroder") != -1 or id.find("corroder") != -1:
+	if ent_name.find("corroder") != -1 or id.find("corroder") != -1 or id == "vitriol_01":
 		return "Vitriol’s whisper made flesh, patient rust for proud blades."
-	if ent_name.find("arbiter") != -1 or id.find("arbiter") != -1:
+	if ent_name.find("arbiter") != -1 or id.find("arbiter") != -1 or id == "gold_01":
 		return "Gold’s decree incarnate, weighing souls with a silent scale."
 	if ent_name.find("bastion") != -1 or id == "sodium_01":
 		return "Salt-stone sentinel, unyielding to rot and rumor."

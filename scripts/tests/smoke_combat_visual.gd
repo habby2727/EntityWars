@@ -20,6 +20,26 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	await process_frame
+	for element in ["aether", "gold", "mercury", "sodium", "sulfur", "vitriol"]:
+		var texture: Texture2D = scene._load_preview_tex(element + "_01", "entity", element)
+		var expected := "res://assets/entities/gameplay/ingame-entities/%s/%s_2_5d_1024.png" % [element, element]
+		if texture == null or texture.resource_path != expected:
+			push_error("Incorrect combat texture for " + element)
+			quit(1)
+			return
+	if scene.enemy_entity.flip_h == scene._solo_boss_mode or scene.player_entity.flip_h:
+		push_error("Combat entity orientation is incorrect")
+		quit(1)
+		return
+	var original_position: Vector2 = scene.player_entity.position
+	scene._animate_lunge(scene.player_entity, 20.0, true)
+	var lunge: Tween = scene._animation_tweens[scene.player_entity]
+	lunge.custom_step(0.06)
+	if scene.player_entity.position == original_position:
+		push_error("Combat entity lunge did not animate")
+		quit(1)
+		return
+	scene._restore_animation(scene.player_entity)
 	if not scene._combat_started or not scene.spell_buttons[0].visible or scene.spell_buttons[0].disabled:
 		push_error("Combat controls unavailable")
 		quit(1)

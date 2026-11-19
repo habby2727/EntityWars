@@ -9,10 +9,13 @@ const SETTINGS_BUTTON_PATH := NodePath("LowerButtons/SettingsButton")
 @onready var inventory_btn: Button = _get_button(INVENTORY_BUTTON_PATH)
 @onready var laboratory_btn: Button = _get_button(LABORATORY_BUTTON_PATH)
 @onready var settings_btn: Button = _get_button(SETTINGS_BUTTON_PATH)
+@onready var background_video: VideoStreamPlayer = $BackgroundVideo
 
 func _ready() -> void:
 	preload("res://scripts/ui/settings_screen.gd").apply_saved_display_mode()
 	UIThemeFactory.apply_theme_to(self)
+	background_video.finished.connect(background_video.play)
+	background_video.play()
 	if combat_btn:
 		combat_btn.pressed.connect(_on_combat_pressed)
 	else:
@@ -27,6 +30,9 @@ func _ready() -> void:
 		push_error("MainMenu: Laboratory button not found at %s" % LABORATORY_BUTTON_PATH)
 	if settings_btn:
 		settings_btn.pressed.connect(SceneRouter.go_to_settings)
+
+func _exit_tree() -> void:
+	background_video.stop()
 
 func _on_combat_pressed() -> void:
 	SceneRouter.go_to_loadout()

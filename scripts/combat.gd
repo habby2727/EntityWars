@@ -13,6 +13,14 @@ const HOM_PREVIEW_256_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
 const GAMEPLAY_ENTITY_DIR := "res://assets/entities/gameplay/"
 const GAMEPLAY_HOM_DIR := "res://assets/entities/gameplay/homunculus/"
+const COMBAT_ENTITY_TEXTURES := {
+	"aether": preload("res://assets/entities/gameplay/ingame-entities/aether/aether_2_5d_1024.png"),
+	"gold": preload("res://assets/entities/gameplay/ingame-entities/gold/gold_2_5d_1024.png"),
+	"mercury": preload("res://assets/entities/gameplay/ingame-entities/mercury/mercury_2_5d_1024.png"),
+	"sodium": preload("res://assets/entities/gameplay/ingame-entities/sodium/sodium_2_5d_1024.png"),
+	"sulfur": preload("res://assets/entities/gameplay/ingame-entities/sulfur/sulfur_2_5d_1024.png"),
+	"vitriol": preload("res://assets/entities/gameplay/ingame-entities/vitriol/vitriol_2_5d_1024.png"),
+}
 const ENTITY_GAMEPLAY_MAP := {
 	"sulfur": "ignite",
 	"mercury": "mercury",
@@ -753,6 +761,7 @@ func _dungeon_render() -> void:
 	enemy_entity_name.text = str(ne.get("name", n.get("id", "")))
 	player_entity.texture = _load_preview_tex(str(p.id), "entity", str(p.get("type", "")))
 	enemy_entity.texture = _load_preview_tex(str(n.id), "entity", str(n.get("type", "")))
+	enemy_entity.flip_h = COMBAT_ENTITY_TEXTURES.values().has(enemy_entity.texture)
 	player_hom.visible = not ph.is_empty()
 	enemy_hom.visible = not nh.is_empty()
 	if not ph.is_empty(): player_hom.texture = _load_preview_tex(str(p.hom_id), "homunculus", str(ph.get("name", "")))
@@ -1674,6 +1683,7 @@ func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool
 		enemy_entity.texture = load(texture_id) as Texture2D
 	else:
 		enemy_entity.texture = assets.get_tex(texture_id)
+	enemy_entity.flip_h = false
 	assets.free()
 	var weapons: Variant = loadout.get("weapon_ids", [])
 	for i in 2:
@@ -2709,9 +2719,11 @@ func _update_ui() -> void:
 	player_entity.texture = _load_preview_tex(player.get("id", ""), "entity", player.get("type", ""))
 	player_hom.texture = _load_preview_tex(player.get("hom_id", ""), "homunculus", player.get("hom_name", ""))
 	enemy_entity.texture = _load_preview_tex(enemy.get("id", ""), "entity", enemy.get("type", ""))
+	enemy_entity.flip_h = COMBAT_ENTITY_TEXTURES.values().has(enemy_entity.texture)
 	enemy_hom.texture = _load_preview_tex(enemy.get("hom_id", ""), "homunculus", enemy.get("hom_name", ""))
 	if _solo_boss_mode:
 		enemy_entity.texture = _solo_texture
+		enemy_entity.flip_h = false
 		enemy_name.text = "BOSS - %s" % str(_solo_def.get("tier", "")).to_upper()
 		turn_label.text = "Boss Hunt\nTurn %d" % _display_turn()
 		enemy_indicators.visible = not _battle_over
@@ -5084,6 +5096,8 @@ func _load_preview_tex(pid: String, kind: String = "entity", display_name: Strin
 			return load(p1)
 		return null
 	var type_norm: String = _normalize_id(display_name)
+	if COMBAT_ENTITY_TEXTURES.has(type_norm):
+		return COMBAT_ENTITY_TEXTURES[type_norm]
 	var stem_ent: String = str(ENTITY_GAMEPLAY_MAP.get(type_norm, ""))
 	var p0e = "%s%s.png" % [GAMEPLAY_ENTITY_DIR, stem_ent]
 	var p3 = "%s%s.png" % [PREVIEW_256_DIR, pid]
