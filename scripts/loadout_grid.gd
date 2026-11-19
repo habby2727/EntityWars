@@ -1356,9 +1356,8 @@ func _build_cards() -> void:
 		var hcard := _make_card("homunculus", hid, hname, htex)
 		if grid_homunculi: grid_homunculi.add_child(hcard)
 
-	# Add bottom padding so last labels aren't clipped.
+	# Add bottom padding so entity labels aren't clipped.
 	_add_grid_padding(grid_entities)
-	_add_grid_padding(grid_homunculi)
 
 	if _entities.size() > 0:
 		_current_entity_id = str(_entities[0].get("id",""))
@@ -1370,7 +1369,7 @@ func _build_cards() -> void:
 func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) -> Control:
 	# Simple self-contained card to avoid theme/scene inconsistencies.
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(170, 200)
+	b.custom_minimum_size = Vector2(150, 150) if p_kind == "homunculus" else Vector2(170, 200)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	b.text = ""
@@ -1385,8 +1384,8 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	v.set_anchors_preset(Control.PRESET_FULL_RECT)
 	v.offset_left = 18
 	v.offset_right = -18
-	v.offset_top = 24
-	v.offset_bottom = -20
+	v.offset_top = 12 if p_kind == "homunculus" else 24
+	v.offset_bottom = -10 if p_kind == "homunculus" else -20
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1395,7 +1394,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.add_child(v)
 
 	var tex_rect := TextureRect.new()
-	tex_rect.custom_minimum_size = Vector2(118, 118)
+	tex_rect.custom_minimum_size = Vector2(85, 85) if p_kind == "homunculus" else Vector2(118, 118)
 	tex_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tex_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE

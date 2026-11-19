@@ -337,6 +337,9 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     expect((await request("/world/boss-hunts/forfeit", { session_id: next.data.session_id, client_action_id: "expired-forfeit" }, a.data.token)).status).toBe(409);
     expect((await request("/world/boss-hunts/loadout", { ...loadout, session_id: next.data.session_id, client_action_id: "expired-loadout" }, a.data.token)).status).toBe(409);
     expect((await request("/world/boss-hunts/turn", { session_id: next.data.session_id, client_action_id: "expired-turn", expected_revision: 1, decision: { turn: 1, spell_id: "steady_script", target: "boss" } }, a.data.token)).status).toBe(409);
+    db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(testNow() - 7200000, next.data.session_id);
+    expect(maintainSoloHunts(db, testNow()).compacted).toBeGreaterThan(0);
+    expect((await request("/world/boss-hunts/inspiration", choice, a.data.token)).data).toEqual(chosen.data);
     db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(testNow() - 61000, next.data.session_id);
     for (const outcome of ["WIN", "LOSS"]) {
       const walletBeforeBattle = wallet(a.data.player_id);

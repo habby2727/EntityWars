@@ -269,13 +269,13 @@ func _setup_zone_view() -> void:
 	roster.custom_minimum_size = Vector2(260, 0)
 	add_child(roster)
 	var commons_button := Button.new()
-	commons_button.text = "Commons"
+	commons_button.text = "Common Hunt"
 	commons_button.custom_minimum_size = Vector2(260, 58)
 	MenuArt.button(commons_button)
 	commons_button.pressed.connect(func(): _set_boss_view(false))
 	roster.add_child(commons_button)
 	var hunts_button := Button.new()
-	hunts_button.text = "Boss Hunts"
+	hunts_button.text = "Ancient Hunt"
 	hunts_button.custom_minimum_size = Vector2(260, 58)
 	MenuArt.button(hunts_button)
 	hunts_button.pressed.connect(func(): _set_boss_view(true))

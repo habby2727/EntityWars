@@ -26,8 +26,9 @@ test("maintenance expires and compacts bounded normal hunts without changing pub
 		expect(JSON.stringify(db.query(`EXPLAIN QUERY PLAN ${query}`).all(now))).toContain("solo_hunt_active_expiry");
 		const terminal = "SELECT session_id FROM solo_hunt_sessions WHERE global_event_id IS NULL AND status IN ('VERIFIED_LOSS', 'FORFEIT', 'EXPIRED') AND compacted_at IS NULL AND (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) <= ? ORDER BY (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) LIMIT 100";
 		expect(JSON.stringify(db.query(`EXPLAIN QUERY PLAN ${terminal}`).all(now))).toContain("solo_hunt_terminal_retention");
-		expect(maintainSoloHunts(db, now)).toEqual({ expired: 100, compacted: 0 });
-		expect(maintainSoloHunts(db, now)).toEqual({ expired: 1, compacted: 1 });
+		expect(maintainSoloHunts(db, now)).toEqual({ expired: 50, compacted: 1 });
+		expect(maintainSoloHunts(db, now)).toEqual({ expired: 50, compacted: 0 });
+		expect(maintainSoloHunts(db, now)).toEqual({ expired: 1, compacted: 0 });
 		const row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ?").get("old") as any;
 		expect(row.player_snapshot_json).toBe("{}");
 		expect(readHuntCombat(row.combat_state_json)).toEqual(JSON.parse(combat));
@@ -41,6 +42,43 @@ test("maintenance expires and compacts bounded normal hunts without changing pub
 		expect((db.query("SELECT compacted_at FROM solo_hunt_sessions WHERE session_id = 'active-0'").get() as any).compacted_at).toBe(now);
 	} finally { db.close(); }
 });
+
+test("independent SQLite connections make progress on expiry and compaction without duplicating work", () => {
+	const dir = mkdtempSync(join(tmpdir(), "ew-hunt-two-db-")), path = join(dir, "test.sqlite");
+	const first = new Database(path), second = new Database(path);
+	try {
+		const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
+		for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) first.exec(readFileSync(resolve(migrations, file), "utf8"));
+		const insert = first.query("INSERT INTO solo_hunt_sessions(session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,finished_at) VALUES(?,?, 'hunt_common', 1, ?, '{}', '{}', 1, 2, ?)");
+		for (let i = 0; i < 110; i++) { insert.run(`a${i}`, `a${i}`, "ACTIVE", null); insert.run(`f${i}`, `f${i}`, "FORFEIT", 2); }
+		const now = 10_000_000;
+		expect(maintainSoloHunts(first, now)).toEqual({ expired: 50, compacted: 50 });
+		expect(maintainSoloHunts(second, now)).toEqual({ expired: 50, compacted: 50 });
+		const third = maintainSoloHunts(first, now);
+		expect(third.expired).toBe(10);
+		expect(third.compacted).toBe(50);
+	} finally { first.close(); second.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("two processes serialize bounded maintenance on the same WAL database", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "ew-hunt-processes-")), path = join(dir, "test.sqlite");
+	const db = new Database(path);
+	try {
+		db.exec("PRAGMA journal_mode=WAL");
+		const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
+		for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(resolve(migrations, file), "utf8"));
+		const insert = db.query("INSERT INTO solo_hunt_sessions(session_id,player_id,hunt_id,rotation_key,status,boss_snapshot_json,player_snapshot_json,started_at,expires_at,finished_at) VALUES(?,?, 'hunt_common', 1, ?, '{}', '{}', 1, 2, ?)");
+		for (let i = 0; i < 120; i++) { insert.run(`a${i}`, `a${i}`, "ACTIVE", null); insert.run(`f${i}`, `f${i}`, "FORFEIT", 2); }
+		const script = `import { Database } from 'bun:sqlite'; import { maintainSoloHunts } from './src/solo_hunt_retention'; const db = new Database(process.env.HUNT_TEST_DB); db.exec('PRAGMA busy_timeout=10000'); console.log(JSON.stringify(maintainSoloHunts(db, 10000000))); db.close();`;
+		const cwd = resolve(import.meta.dir, "../..");
+		const children = [0, 1].map(() => Bun.spawn([process.execPath, "-e", script], { cwd, env: { ...process.env, HUNT_TEST_DB: path }, stdout: "pipe", stderr: "pipe" }));
+		const results = await Promise.all(children.map(async child => ({ code: await child.exited, output: await new Response(child.stdout).text(), error: await new Response(child.stderr).text() })));
+		expect(results.map(result => ({ code: result.code, error: result.error }))).toEqual([{ code: 0, error: "" }, { code: 0, error: "" }]);
+		for (const result of results) { const counts = JSON.parse(result.output); expect(counts.expired + counts.compacted).toBeLessThanOrEqual(100); }
+		expect((db.query("SELECT COUNT(*) AS n FROM solo_hunt_sessions WHERE status = 'ACTIVE'").get() as any).n).toBe(20);
+		expect((db.query("SELECT COUNT(*) AS n FROM solo_hunt_sessions WHERE compacted_at IS NOT NULL").get() as any).n).toBeGreaterThanOrEqual(50);
+	} finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+}, 30000);
 
 test("server expires an abandoned 45 minute hunt without owner traffic", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "ew-hunt-maintenance-"));

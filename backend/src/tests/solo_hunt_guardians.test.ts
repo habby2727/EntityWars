@@ -117,7 +117,12 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     expect(wallet(a.data.player_id).essence).toBe(beforeA);
     expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(common.data.session_id, "SOLO_HUNT_REWARD") as any).n).toBe(1);
     const balance = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance;
-    const cap = balance.wallet_caps?.essence ?? balance.wallet_max_per_resource;
+    const capacity = (state: any) => {
+      const storage = state.lab?.buildings?.storage_vault;
+      const route = String(storage?.route ?? "").toLowerCase(), hq = String(state.lab?.hqPath ?? "Scientific").toLowerCase();
+      const raw = Math.floor(((balance.storage_base_capacity ?? 1000) + (balance.storage_capacity_per_level ?? 250) * Math.max(0, storage?.level ?? 0)) * (balance.storage_route_capacity_mult?.[route] ?? 1) * (balance.hq_capacity_mult?.[hq] ?? 1));
+      return Math.max(1, Math.floor(raw * (balance.wallet_storage_capacity_mult ?? 1.25)));
+    };
     const loot = balance.solo_hunt_bonus_loot;
     const tierNames = ["common", "mythic", "rare", "epic", "legendary"];
     expect(tierNames.map(tier => [loot[tier].core.chance, loot[tier].core.quantity, loot[tier].arcane_shard.chance, loot[tier].arcane_shard.quantity])).toEqual([[0.5, 1, 0.1, 1], [0.5, 1, 0.2, 2], [0.5, 1, 0.3, 2], [0.5, 1, 0.4, 3], [0.5, 1, 0.5, 4]]);
@@ -130,6 +135,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       const remaining = attempt === 0 ? 0 : 1;
       const account = await request("/auth/dev_login", { name: `guardian_cap_${attempt}` });
       const state = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(account.data.player_id) as any).state_json);
+      const cap = capacity(state);
       state.wallet.essence = cap - remaining;
       db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(state), account.data.player_id);
       const current = (await request("/world/boss-hunts")).data;
@@ -198,6 +204,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     for (const remaining of [0, 1]) {
       const account = await request("/auth/dev_login", { name: `guardian_win_cap_${remaining}` });
       const player = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(account.data.player_id) as any).state_json);
+      const cap = capacity(player);
       player.wallet.essence = cap - remaining;
       db.query("UPDATE players SET state_json = ? WHERE player_id = ?").run(JSON.stringify(player), account.data.player_id);
       const opened = await request("/world/boss-hunts/start", { client_action_id: `guardian-cap-start-${remaining}`, hunt_id: special.id, rotation_key: schedule.rotation_key, zone_id: zone, guardian_id: guardians[0].guardian_id }, account.data.token);

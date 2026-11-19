@@ -269,6 +269,10 @@ func _ready() -> void:
 	_setup_physical_anomaly_ui()
 	_setup_hp_styles()
 	_setup_hom_ui()
+	var enemy_hom_frame := enemy_hom.get_parent() as Control
+	enemy_hom_frame.resized.connect(_align_enemy_hom_to_circle, CONNECT_DEFERRED)
+	get_viewport().size_changed.connect(_align_enemy_hom_to_circle, CONNECT_DEFERRED)
+	call_deferred("_align_enemy_hom_to_circle")
 	_setup_combat_labels()
 	_setup_aligned_health_panels()
 	_setup_inspiration_ui()
@@ -318,6 +322,20 @@ func _fit_combat_view() -> void:
 	position = Vector2.ZERO
 	size = available / factor
 	scale = Vector2.ONE * factor
+
+func _align_enemy_hom_to_circle() -> void:
+	# Dungeon and world encounters position their sprites in dedicated layers.
+	if enemy_hom.get_parent().name != "EnemyHomFrame":
+		return
+	var inverse := get_global_transform().affine_inverse()
+	var rect := enemy_hom.get_global_rect()
+	var top_left: Vector2 = inverse * rect.position
+	var bottom_right: Vector2 = inverse * rect.end
+	var dimensions := bottom_right - top_left
+	var image_bottom := top_left.y + (dimensions.y + minf(dimensions.x, dimensions.y)) / 2.0
+	var target := Vector2(size.x * 1730.0 / 1920.0, size.y * 505.0 / 1080.0)
+	var delta := target - Vector2(top_left.x + dimensions.x / 2.0, image_bottom)
+	enemy_hom.position += delta
 
 func _setup_combat_log() -> void:
 	var style := StyleBoxFlat.new()
@@ -1939,7 +1957,7 @@ func _apply_dungeon_combat_visuals() -> void:
 	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(layer)
 	move_child(layer, background.get_index() + 1)
-	for entry in [[player_hom, Vector2(190, 555), Vector2(165, 190)], [player_entity, Vector2(480, 555), Vector2(250, 275)], [enemy_entity, Vector2(1438, 555), Vector2(250, 275)], [enemy_hom, Vector2(1730, 555), Vector2(165, 190)]]:
+	for entry in [[player_hom, Vector2(190, 505), Vector2(165, 165)], [player_entity, Vector2(480, 555), Vector2(250, 275)], [enemy_entity, Vector2(1438, 555), Vector2(250, 275)], [enemy_hom, Vector2(1730, 505), Vector2(165, 165)]]:
 		var sprite: TextureRect = entry[0]
 		var center: Vector2 = entry[1]
 		var dimensions: Vector2 = entry[2]
@@ -1970,11 +1988,11 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(layer)
 	move_child(layer, background.get_index() + 1)
-	for entry in [[player_hom, layout[1], Vector2(190, 210)], [player_entity, layout[2], Vector2(360, 390)], [enemy_entity, layout[3], Vector2(410, 390)]]:
+	for entry in [[player_hom, layout[1], Vector2(190, 190)], [player_entity, layout[2], Vector2(360, 390)], [enemy_entity, layout[3], Vector2(410, 390)]]:
 		var sprite: TextureRect = entry[0]
 		var center: Vector2 = entry[1]
 		var dimensions: Vector2 = entry[2]
-		if sprite == player_hom or sprite == player_entity:
+		if sprite == player_entity:
 			center.y += 25
 		sprite.reparent(layer)
 		sprite.set_anchors_preset(Control.PRESET_TOP_LEFT)
