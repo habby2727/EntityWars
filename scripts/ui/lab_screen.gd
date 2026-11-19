@@ -210,6 +210,10 @@ func _setup_compact_navigation() -> void:
 		var back := overlay.get_node_or_null("BackButton") as Button
 		if back != null:
 			MenuArt.button(back)
+	var navigation_back := _left_panel.get_node_or_null("Margin/LeftVBox/TopRow/BackButton") as Button
+	if navigation_back != null:
+		navigation_back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		MenuArt.button(navigation_back)
 	var background := StyleBoxFlat.new()
 	background.bg_color = Color(0.02, 0.07, 0.08, 0.9)
 	background.border_color = Color(0.47, 0.4, 0.25, 0.8)
