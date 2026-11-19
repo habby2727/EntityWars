@@ -47,7 +47,7 @@ export async function issueSession(userId: string, ttlMs: number): Promise<strin
 		console.warn("[auth] redis session write failed", err);
 	}
 	if (production && !persisted) throw new Error("Session storage unavailable");
-	await resetIdle(token);
+	await resetIdle(token, record.expiresAt);
 	inMemorySessions.set(token, record, record.expiresAt);
 	return token;
 }

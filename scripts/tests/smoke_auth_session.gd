@@ -19,6 +19,12 @@ func _run() -> void:
 	current_scene = auth
 	await process_frame
 	if phase == "register":
+		var preflight_deadline := Time.get_ticks_msec() + 10000
+		while not auth.preflight_ok and Time.get_ticks_msec() < preflight_deadline:
+			await process_frame
+		if not auth.preflight_ok:
+			_fail("version preflight failed")
+			return
 		if auth.verifying:
 			_fail("unexpected cached session")
 			return
@@ -41,7 +47,7 @@ func _run() -> void:
 			print("PASS invalid token returns to login")
 			quit(0)
 			return
-		if phase == "offline" and auth.verifying and auth.retry.visible and gate.blocked():
+		if phase == "offline" and not auth._auth_center.visible and not auth.preflight_ok and not auth.client.token.is_empty():
 			print("PASS offline session remains locked")
 			quit(0)
 			return

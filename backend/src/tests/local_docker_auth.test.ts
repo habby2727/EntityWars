@@ -49,7 +49,7 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 		expect((await fetch(base + "/ws", { headers })).status).toBe(403);
 		server.kill();
 		await server.exited;
-		server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env: { ...env, MIN_CLIENT_BUILD: "5505" }, stdout: "ignore", stderr: "pipe" });
+		server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env: { ...env, MIN_CLIENT_BUILD: "5506" }, stdout: "ignore", stderr: "pipe" });
 		let restarted = false;
 		for (let i = 0; i < 100; i++) {
 			if (server.exitCode !== null) throw new Error(`Server exited: ${await new Response(server.stderr).text()}`);
@@ -57,10 +57,11 @@ test("production rejects both dev login routes even with Docker-local enabled", 
 			await Bun.sleep(100);
 		}
 		expect(restarted).toBe(true);
-		expect((await (await fetch(base + "/static/version")).json()).min_client_build).toBe(5505);
-		const outdated = await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5504" } });
+		expect((await (await fetch(base + "/static/version")).json()).min_client_build).toBe(5506);
+		const outdated = await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5505" } });
 		expect(outdated.status).toBe(426);
-		expect((await outdated.json()).min_client_build).toBe(5505);
+		expect((await outdated.json()).min_client_build).toBe(5506);
+		expect((await fetch(base + "/player/state", { headers: { "X-EntityWars-Client-Build": "5506" } })).status).not.toBe(426);
 	} finally {
 		server.kill();
 		await server.exited;

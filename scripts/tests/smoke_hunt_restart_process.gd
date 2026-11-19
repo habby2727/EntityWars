@@ -70,9 +70,19 @@ func _run() -> void:
 		return
 	client = current_scene.client
 	var deadline := Time.get_ticks_msec() + 40000
+	var idle_reconnected := false
 	while Time.get_ticks_msec() < deadline:
 		await process_frame
 		var gate := root.get_node("ConnectionGate")
+		if OS.get_environment("IDLE_JOURNAL_TEST") == "1" and gate.state == gate.State.IDLE and not idle_reconnected:
+			var journal := SessionRecoveryJournal.new()
+			journal.set_identity(OS.get_environment("HUNT_RESTART_PLAYER"))
+			var entry := journal.load_entry()
+			if entry.has("error") or str(entry.get("payload", {}).get("client_action_id", "")) != "restart-turn":
+				_fail("idle damaged pending journal")
+				return
+			idle_reconnected = true
+			gate._retry.pressed.emit()
 		if current_scene != null and current_scene.scene_file_path in ["res://scenes/MainMenu.tscn", "res://assets/ui/loading_screens/entity_wars_loading/scenes/loading_startup.tscn"]:
 			_fail("entered menu or loading before recovery")
 			return
@@ -110,6 +120,9 @@ func _run() -> void:
 			var closed_status: String = str(current_scene._dungeon_session.get("status", "")) if OS.get_environment("RESTART_MODE") == "dungeon" else str(current_scene._online_hunt_session.get("status", ""))
 			var confirmed: bool = (entry.is_empty() and closed_status == ("VERIFIED_WIN" if win else "VERIFIED_LOSS" if defeat else "LOSS" if terminal else "FORFEIT" if forfeit else "EXPIRED")) if win or defeat or terminal or forfeit or expired else (not entry.is_empty() and not entry.has("error") and entry.pending_kind == "")
 			if confirmed and (forfeit or expired or revision == int(OS.get_environment("RESTART_REVISION"))):
+				if OS.get_environment("IDLE_JOURNAL_TEST") == "1" and not idle_reconnected:
+					_fail("idle reconnect was not exercised")
+					return
 				if win and (str(current_scene._solo_context.get("session_id", "")) != OS.get_environment("HUNT_RESTART_SESSION") or current_scene._combat_identity != OS.get_environment("HUNT_RESTART_PLAYER")):
 					_fail("victory recovered a different player or session")
 					return

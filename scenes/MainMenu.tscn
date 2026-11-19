@@ -23,6 +23,20 @@ content_margin_bottom = 28.0
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_focus"]
 
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_exit"]
+texture = ExtResource("3_default_btn")
+content_margin_left = 30.0
+content_margin_top = 8.0
+content_margin_right = 30.0
+content_margin_bottom = 8.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_exit_hover"]
+texture = ExtResource("5_hover_btn")
+content_margin_left = 30.0
+content_margin_top = 8.0
+content_margin_right = 30.0
+content_margin_bottom = 8.0
+
 [node name="MainMenu" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -55,6 +69,20 @@ mouse_filter = 2
 stream = ExtResource("6_video")
 expand = true
 volume = 0.0
+
+[node name="ExitButton" type="Button" parent="."]
+custom_minimum_size = Vector2(210, 59)
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 234.0
+offset_bottom = 83.0
+text = "Exit"
+theme_override_font_sizes/font_size = 22
+theme_override_fonts/font = ExtResource("4_arcana")
+theme_override_styles/normal = SubResource("StyleBoxTexture_exit")
+theme_override_styles/hover = SubResource("StyleBoxTexture_exit_hover")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_exit_hover")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_focus")
 
 [node name="LowerButtons" type="VBoxContainer" parent="."]
 layout_mode = 1

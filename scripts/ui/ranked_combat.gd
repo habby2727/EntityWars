@@ -4,6 +4,7 @@ var host
 var backend: BackendClient
 var match_id := ""
 var request_id := ""
+var chat_attempted := false
 var request_kind := ""
 var state := {}
 var event_cursor := 0
@@ -208,6 +209,8 @@ func _send(method: String, path: String, body: Variant, kind: String, replay: bo
 	request_id = backend.request_api(method, path, body, false, false, replay)
 	if request_id.is_empty():
 		return false
+	if kind == "chat":
+		chat_attempted = true
 	request_kind = kind
 	return true
 
@@ -236,7 +239,7 @@ func _process(delta: float) -> void:
 		timer_panel.show()
 		timer_label.text = "%02d:%02d" % [seconds / 60, seconds % 60]
 	if request_id.is_empty() and not chat_pending.is_empty() and pending.is_empty():
-		_send("POST", "/pvp/match/chat", chat_pending, "chat", true)
+		_send("POST", "/pvp/match/chat", chat_pending, "chat", chat_attempted)
 	if request_id.is_empty() and next_poll <= 0.0:
 		next_poll = 3.0
 		_poll()
@@ -263,6 +266,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		if chat_input.text == str(chat_pending.get("text", "")):
 			chat_input.clear()
 		chat_pending.clear()
+		chat_attempted = false
 		next_poll = 0.0
 		refresh_controls()
 		return
@@ -528,9 +532,10 @@ func _send_chat() -> void:
 		return
 	if chat_pending.is_empty() or str(chat_pending.get("text", "")) != chat_input.text:
 		chat_pending = {"match_id": match_id, "client_message_id": backend._make_uuid(), "text": chat_input.text}
+		chat_attempted = false
 	_select_log_tab(true)
 	if request_id.is_empty() and pending.is_empty():
-		_send("POST", "/pvp/match/chat", chat_pending, "chat")
+		_send("POST", "/pvp/match/chat", chat_pending, "chat", chat_attempted)
 	chat_send.disabled = true
 
 func back() -> void:

@@ -774,7 +774,7 @@ async function requireAuth(req: Request, ctx?: RequestContext, ignoreIdle = fals
 	if (await isUserDisabled(entry.userId)) {
 		throw new HttpError(403, "User disabled.");
 	}
-	if (!ignoreIdle && !(await checkIdle(token))) throw new HttpError(409, "SESSION_IDLE");
+	if (!ignoreIdle && !(await checkIdle(token, entry.expiresAt))) throw new HttpError(409, "SESSION_IDLE");
 	if (ctx) {
 		ctx.userId = entry.userId;
 	}
@@ -797,7 +797,7 @@ async function tryAuth(req: Request, ctx?: RequestContext): Promise<string | nul
 		if (idleEnabled()) throw new HttpError(403, "User disabled.");
 		return null;
 	}
-	if (!(await checkIdle(token))) throw new HttpError(409, "SESSION_IDLE");
+	if (!(await checkIdle(token, entry.expiresAt))) throw new HttpError(409, "SESSION_IDLE");
 	if (ctx) {
 		ctx.userId = entry.userId;
 	}
@@ -1363,7 +1363,7 @@ async function startServer(): Promise<void> {
 						const existing = await getRefreshToken(refreshToken);
 						if (!existing) throw new HttpError(401, "Invalid refresh token.");
 						if (await isUserDisabled(existing.userId)) throw new HttpError(403, "User disabled.");
-						if (!(await checkRefreshIdle(refreshToken))) throw new HttpError(409, "SESSION_IDLE");
+						if (!(await checkRefreshIdle(refreshToken, existing.expiresAt))) throw new HttpError(409, "SESSION_IDLE");
 					}
 					const rotated = await rotateRefreshToken(refreshToken, REFRESH_TTL_MS, fingerprint);
 					if (!rotated) {
@@ -2846,7 +2846,10 @@ async function startServer(): Promise<void> {
 				})();
 				if (idleEnabled() && res && ctx.userId && req.method === "POST" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
 					const data = await res.clone().json().catch(() => null) as { ok?: boolean; duplicate?: boolean } | null;
-					if (data && data.ok !== false && data.duplicate !== true) await touchIdle(extractToken(req)!);
+					if (data && data.ok !== false && data.duplicate !== true) {
+						try { await touchIdle(extractToken(req)!); }
+						catch (error) { logError("idle activity update failed after action", { req_id: ctx.requestId, error: String(error) }); }
+					}
 				}
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);

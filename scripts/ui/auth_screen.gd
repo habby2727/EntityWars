@@ -24,19 +24,27 @@ var endpoint_safe := false
 var submitted_name := ""
 var preflight_ok := false
 var preflighting := false
+var _auth_center: CenterContainer
+var _saved_session := false
+var _preflight_retry_in := -1.0
 
 func auth_gate_screen() -> void:
 	pass
 
 func _ready() -> void:
-	_build_ui()
 	client = BackendClient.new()
 	client.auto_dev_login = false
+	client._load_auth()
+	_saved_session = not client.token.is_empty()
+	_build_ui()
+	_auth_center.visible = not _saved_session
 	client.base_url = preload("res://scripts/net/backend_endpoint.gd").resolve(client.base_url)
 	var url := client.base_url.to_lower()
 	var authority := url.trim_prefix("http://").get_slice("/", 0).get_slice(":", 0)
 	endpoint_safe = url.begins_with("https://") or (url.begins_with("http://") and authority in ["localhost", "127.0.0.1"])
 	if not endpoint_safe:
+		_auth_center.show()
+		if _saved_session: tabs.hide()
 		message.text = tr("AUTH_SECURE_CONNECTION")
 		return
 	for field in username:
@@ -46,10 +54,7 @@ func _ready() -> void:
 	http.timeout = 8.0
 	add_child(http)
 	http.request_completed.connect(_on_auth_response)
-	if OS.has_feature("editor"):
-		_finish_preflight()
-	else:
-		_start_preflight()
+	_start_preflight()
 
 func _finish_preflight() -> void:
 	preflight_ok = true
@@ -60,7 +65,7 @@ func _finish_preflight() -> void:
 	if not client.token.is_empty():
 		verifying = true
 		tabs.hide()
-		message.text = tr("AUTH_VERIFYING")
+		_auth_center.hide()
 
 func _start_preflight() -> void:
 	preflight_ok = false
@@ -70,15 +75,21 @@ func _start_preflight() -> void:
 	message.text = "Checking client version..."
 	if http.request(client.base_url + "/static/version", PackedStringArray([preload("res://scripts/net/client_build.gd").header()])) != OK:
 		preflighting = false
-		message.text = tr("AUTH_CONNECTION_ERROR")
-		retry.show()
+		_preflight_failed()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _preflight_retry_in >= 0.0:
+		_preflight_retry_in -= delta
+		if _preflight_retry_in < 0.0 and not preflighting:
+			_start_preflight()
 	if ConnectionGate.state == ConnectionGate.State.UPDATE_REQUIRED:
 		verifying = false
 		preflight_ok = false
+		_preflight_retry_in = -1.0
+		_auth_center.show()
+		tabs.hide()
 		for button in submit_buttons: button.disabled = true
-		if is_instance_valid(debug_button): debug_button.disabled = true
+		if is_instance_valid(debug_button): debug_button.hide()
 		message.text = "Update required. Please update Entity Wars to continue."
 		retry.hide()
 		return
@@ -87,17 +98,20 @@ func _process(_delta: float) -> void:
 	if ConnectionGate.state == ConnectionGate.State.AUTH_REQUIRED:
 		verifying = false
 		client.set_token("")
+		_saved_session = false
+		_auth_center.show()
 		tabs.show()
+		if is_instance_valid(debug_button): debug_button.show()
 		retry.hide()
 		message.text = tr("AUTH_SESSION_EXPIRED")
 	elif ConnectionGate.state == ConnectionGate.State.CONNECTED and not ConnectionGate.player_id.is_empty() and client._verified_player_id == ConnectionGate.player_id:
 		verifying = false
 		get_tree().change_scene_to_file(LOADING)
 	elif ConnectionGate.state == ConnectionGate.State.ERROR and "Access forbidden" in ConnectionGate._detail.text:
+		_auth_center.show()
+		tabs.hide()
+		if is_instance_valid(debug_button): debug_button.hide()
 		message.text = ConnectionGate._detail.text
-		retry.hide()
-	elif ConnectionGate.state == ConnectionGate.State.RECONNECTING or ConnectionGate.state == ConnectionGate.State.ERROR:
-		message.text = tr("AUTH_CONNECTION_ERROR")
 		retry.show()
 
 func _build_ui() -> void:
@@ -108,6 +122,7 @@ func _build_ui() -> void:
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
 	var center := CenterContainer.new()
+	_auth_center = center
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var panel := PanelContainer.new()
@@ -223,12 +238,14 @@ func _submit(index: int) -> void:
 func _on_auth_response(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if preflighting:
 		preflighting = false
+		if code == 426:
+			ConnectionGate.require_update()
+			return
 		var version: Variant = JSON.parse_string(body.get_string_from_utf8())
 		if result != HTTPRequest.RESULT_SUCCESS or code != 200 or not version is Dictionary or not version.has("min_client_build") or typeof(version.min_client_build) not in [TYPE_INT, TYPE_FLOAT] or float(version.min_client_build) != floor(float(version.min_client_build)) or float(version.min_client_build) < 1 or float(version.min_client_build) > 9007199254740991.0:
-			message.text = tr("AUTH_CONNECTION_ERROR")
-			retry.show()
+			_preflight_failed()
 		elif float(version.min_client_build) > preload("res://scripts/net/client_build.gd").BUILD:
-			message.text = "Update required. Please update Entity Wars to continue."
+			ConnectionGate.require_update()
 		else:
 			_finish_preflight()
 		return
@@ -275,6 +292,13 @@ func _on_auth_response(result: int, code: int, _headers: PackedStringArray, body
 	message.text = tr("AUTH_VERIFYING")
 	client.set_token(str(data.token))
 	ConnectionGate.resume_after_sign_in(identity, str(data.token))
+
+func _preflight_failed() -> void:
+	if _saved_session:
+		_preflight_retry_in = 2.0
+	else:
+		message.text = tr("AUTH_CONNECTION_ERROR")
+		retry.show()
 
 func _auth_finished() -> void:
 	busy = false

@@ -44,7 +44,7 @@ export async function issueAccessToken(userId: string, ttlMs: number): Promise<s
 		console.warn("[auth] access token write failed", err);
 	}
 	if (production && !persisted) throw new Error("Token storage unavailable");
-	await resetIdle(token);
+	await resetIdle(token, record.expiresAt);
 	accessMemory.set(token, record, record.expiresAt);
 	return token;
 }

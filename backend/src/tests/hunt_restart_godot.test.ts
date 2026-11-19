@@ -4,6 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSy
 import { createHash, createHmac } from "node:crypto";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import Redis from "ioredis";
 
 const godot = process.env.GODOT_BIN || join(process.env.USERPROFILE || "", "Desktop", "Godot_v4.6.exe");
 const project = resolve(import.meta.dir, "../../..");
@@ -164,6 +165,11 @@ for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victor
     first.kill();
     await first.exited;
     first = undefined;
+	if (process.env.IDLE_JOURNAL_TEST === "1") {
+	  const redis = new Redis(process.env.NETR13_TEST_REDIS_URL!);
+	  await redis.del(`idle:${createHash("sha256").update(token).digest("hex")}`);
+	  await redis.quit();
+	}
     if (isExpired) {
       if (mode === "hunt") db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED' WHERE session_id = ?").run(sessionId);
       else db.query("UPDATE dungeon_runs SET status = 'EXPIRED' WHERE run_id = ?").run(sessionId);
