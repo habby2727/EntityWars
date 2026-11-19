@@ -9881,7 +9881,19 @@ function createGlobalChat(db, clock = Date.now, bridgeEnabled = false) {
 }
 
 // src/discord_bridge.ts
-import { Client, GatewayIntentBits, MessageType } from "discord.js";
+import { ActivityType, Client, GatewayIntentBits, MessageType } from "discord.js";
+function createPresenceUpdater(chat, client) {
+  let lastCount;
+  return (force = false) => {
+    if (!client.user)
+      return;
+    const count = chat.onlineCount();
+    if (!force && count === lastCount)
+      return;
+    client.user.setPresence({ activities: [{ name: `Entity Wars | ${count} online`, type: ActivityType.Playing }] });
+    lastCount = count;
+  };
+}
 function outgoingDiscordMessage(row) {
   return { content: `[Game] ${row.username}: ${row.text}`, allowedMentions: { parse: [] }, nonce: String(row.message_id), enforceNonce: true };
 }
@@ -9898,9 +9910,12 @@ function startDiscordBridge(db, chat, env = process.env) {
   const channelId = env.DISCORD_CHANNEL_ID || "1572758122810974360";
   const app = env.DISCORD_APPLICATION_ID || "1572757742270288033";
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+  const updatePresence = createPresenceUpdater(chat, client);
   let stopped = false, busy = false, retry = 1000;
   let loginTimer;
   client.on("error", () => console.warn("Discord bridge connection error"));
+  client.on("clientReady", () => updatePresence(true));
+  client.on("shardResume", () => updatePresence(true));
   client.on("messageCreate", (message) => {
     try {
       acceptDiscordMessage(chat, message, guild, channelId, app);
@@ -9946,9 +9961,11 @@ function startDiscordBridge(db, chat, env = process.env) {
   }
   connect();
   const timer = setInterval(() => void dispatch(), 2000);
+  const presenceTimer = setInterval(updatePresence, 30000);
   return { enabled: true, close() {
     stopped = true;
     clearInterval(timer);
+    clearInterval(presenceTimer);
     if (loginTimer)
       clearTimeout(loginTimer);
     client.destroy();

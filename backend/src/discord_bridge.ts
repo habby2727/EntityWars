@@ -1,8 +1,18 @@
-import { Client, GatewayIntentBits, MessageType } from 'discord.js';
+import { ActivityType, Client, GatewayIntentBits, MessageType } from 'discord.js';
 import type { Database } from 'bun:sqlite';
 import type { createGlobalChat } from './global_chat';
 
 type Chat = ReturnType<typeof createGlobalChat>;
+export function createPresenceUpdater(chat: Pick<Chat, 'onlineCount'>, client: Pick<Client, 'user'>) {
+	let lastCount: number | undefined;
+	return (force = false) => {
+		if (!client.user) return;
+		const count = chat.onlineCount();
+		if (!force && count === lastCount) return;
+		client.user.setPresence({ activities: [{ name: `Entity Wars | ${count} online`, type: ActivityType.Playing }] });
+		lastCount = count;
+	};
+}
 export function outgoingDiscordMessage(row: { message_id: number; username: string; text: string }) {
 	return { content: `[Game] ${row.username}: ${row.text}`, allowedMentions: { parse: [] as never[] }, nonce: String(row.message_id), enforceNonce: true };
 }
@@ -18,9 +28,12 @@ export function startDiscordBridge(db: Database, chat: Chat, env: Record<string,
 	const channelId = env.DISCORD_CHANNEL_ID || '1572758122810974360';
 	const app = env.DISCORD_APPLICATION_ID || '1572757742270288033';
 	const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+	const updatePresence = createPresenceUpdater(chat, client);
 	let stopped = false, busy = false, retry = 1000;
 	let loginTimer: ReturnType<typeof setTimeout> | undefined;
 	client.on('error', () => console.warn('Discord bridge connection error'));
+	client.on('clientReady', () => updatePresence(true));
+	client.on('shardResume', () => updatePresence(true));
 	client.on('messageCreate', message => { try { acceptDiscordMessage(chat, message, guild, channelId, app); } catch { console.warn('Discord bridge could not store message'); } });
 	async function connect() {
 		if (stopped) return;
@@ -45,5 +58,6 @@ export function startDiscordBridge(db: Database, chat: Chat, env: Record<string,
 	}
 	void connect();
 	const timer = setInterval(() => void dispatch(), 2000);
-	return { enabled: true, close() { stopped = true; clearInterval(timer); if (loginTimer) clearTimeout(loginTimer); client.destroy(); } };
+	const presenceTimer = setInterval(updatePresence, 30000);
+	return { enabled: true, close() { stopped = true; clearInterval(timer); clearInterval(presenceTimer); if (loginTimer) clearTimeout(loginTimer); client.destroy(); } };
 }

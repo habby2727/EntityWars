@@ -5,7 +5,24 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { createGlobalChat } from "../global_chat";
-import { acceptDiscordMessage, outgoingDiscordMessage, startDiscordBridge } from "../discord_bridge";
+import { ActivityType } from "discord.js";
+import { acceptDiscordMessage, createPresenceUpdater, outgoingDiscordMessage, startDiscordBridge } from "../discord_bridge";
+
+test("Discord presence formats counts, skips unchanged values and refreshes on reconnect", () => {
+	let count = 0;
+	const updates: unknown[] = [];
+	const client = { user: { setPresence: (presence: unknown) => updates.push(presence) } };
+	const update = createPresenceUpdater({ onlineCount: () => count }, client as any);
+	update();
+	update();
+	count = 2;
+	update();
+	update();
+	count = 0;
+	update();
+	update(true);
+	expect(updates).toEqual([0, 2, 0, 0].map(n => ({ activities: [{ name: `Entity Wars | ${n} online`, type: ActivityType.Playing }] })));
+});
 
 test("bridge filters Discord events and persists a deduplicated outbox", () => {
 	const db = new Database(':memory:');
