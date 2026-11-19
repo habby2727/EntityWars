@@ -26,7 +26,6 @@ import { extractToken, getSession as getLegacySession, issueSession, revokeSessi
 import { rateLimit } from "./middleware/rateLimit";
 import { getJobQueueSize } from "./jobs/queue";
 import { createBossIpLimit } from "./boss_ip_limit";
-import { pruneWorldSessions } from "./world_session_retention";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
@@ -5879,7 +5878,6 @@ function enterWorldSession(
 				modifiers: zoneRotation.modifier_ids.slice()
 			};
 		}
-		pruneWorldSessions(world.sessions, now);
 		world.daily_entries += 1;
 		world.last_gate_entry_at = now;
 		assertWalletInvariant(state.wallet);

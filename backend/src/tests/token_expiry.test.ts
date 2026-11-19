@@ -12,12 +12,12 @@ test.skipIf(Bun.env.REDIS_URL !== "redis://127.0.0.1:1" || Bun.env.NODE_ENV !== 
 	expect(await getRefreshToken(refresh)).toBeNull();
 	const a = await issueAccessToken("test", 10000);
 	const r = await issueRefreshToken("test", 10000);
-	await revokeAccessToken(a);
-	await revokeRefreshToken(r);
+	await expect(revokeAccessToken(a)).rejects.toThrow();
+	await expect(revokeRefreshToken(r)).rejects.toThrow();
 	expect(await getAccessToken(a)).toBeNull();
 	expect(await getRefreshToken(r)).toBeNull();
 	const session = await issueSession("test", 10000);
-	await revokeSession(session);
+	await expect(revokeSession(session)).rejects.toThrow();
 	expect(await getSession(session)).toBeNull();
 	const rotating = await issueRefreshToken("test", 10000);
 	const rotated = await rotateRefreshToken(rotating, 10000);

@@ -121,6 +121,8 @@ test("chat HTTP routes require authentication and share messages", async () => {
 		expect((await post("/chat/send", {})).status).toBe(401);
 		const alice = await (await post("/auth/register", { username: "Alice", password: "secret1" })).json() as { token: string };
 		const bob = await (await post("/auth/register", { username: "Bob", password: "secret1" })).json() as { token: string };
+		expect((await post("/auth/logout", {}, "unknown-token")).status).toBe(503);
+		expect((await post("/v1/auth/logout", { refresh_token: "unknown-refresh" }, "unknown-access")).status).toBe(503);
 		expect((await post("/chat/send", { text: "hello", client_message_id: "1", username: "Bob" }, alice.token)).status).toBe(200);
 		expect((await post("/chat/send", { text: "hi", client_message_id: "1" }, bob.token)).status).toBe(200);
 		const state = await (await fetch(base + "/chat/state", { headers: { Authorization: `Bearer ${bob.token}` } })).json() as any;

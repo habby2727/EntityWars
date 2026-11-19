@@ -14,10 +14,6 @@ const refreshMemory = new ExpiringMap<TokenRecord>();
 const revokedAccess = new ExpiringMap<boolean>();
 const revokedRefresh = new ExpiringMap<boolean>();
 const localOnlyRefresh = new ExpiringMap<boolean>();
-// An unconfirmed revocation of an unknown token has no safe expiry; fail closed
-// for this token class until restart instead of keeping an unbounded tombstone.
-let accessRevocationUncertain = false;
-let refreshRevocationUncertain = false;
 const production = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some((v) => ["production", "prod"].includes((v ?? "").toLowerCase()));
 
 function accessKey(token: string): string {
@@ -87,10 +83,6 @@ export async function issueTokenPair(
 }
 
 export async function getAccessToken(token: string): Promise<TokenRecord | null> {
-	if (accessRevocationUncertain) {
-		if (production) throw new AuthStorageUnavailableError();
-		return null;
-	}
 	if (revokedAccess.get(token)) return null;
 	const now = Date.now();
 	const cached = accessMemory.get(token);
@@ -128,7 +120,7 @@ export async function getAccessToken(token: string): Promise<TokenRecord | null>
 }
 
 export async function getRefreshToken(token: string): Promise<TokenRecord | null> {
-	if (refreshRevocationUncertain || revokedRefresh.get(token)) return null;
+	if (revokedRefresh.get(token)) return null;
 	const now = Date.now();
 	const cached = refreshMemory.get(token);
 	if (cached && !isExpired(cached, now) && !production) {
@@ -164,7 +156,7 @@ export async function getRefreshToken(token: string): Promise<TokenRecord | null
 
 export async function revokeAccessToken(token: string): Promise<void> {
 	const expiresAt = accessMemory.get(token)?.expiresAt;
-	revokedAccess.set(token, true, expiresAt ?? Infinity);
+	if (expiresAt !== undefined) revokedAccess.set(token, true, expiresAt);
 	accessMemory.delete(token);
 	let persisted = false;
 	try {
@@ -176,16 +168,12 @@ export async function revokeAccessToken(token: string): Promise<void> {
 	} catch (err) {
 		console.warn("[auth] access token delete failed", err);
 	}
-	if (expiresAt === undefined) {
-		if (!persisted) accessRevocationUncertain = true;
-		revokedAccess.delete(token);
-	}
-	if (production && !persisted) throw new Error("Token revocation unavailable");
+	if (!persisted) throw new AuthStorageUnavailableError();
 }
 
 export async function revokeRefreshToken(token: string): Promise<void> {
 	const expiresAt = refreshMemory.get(token)?.expiresAt;
-	revokedRefresh.set(token, true, expiresAt ?? Infinity);
+	if (expiresAt !== undefined) revokedRefresh.set(token, true, expiresAt);
 	localOnlyRefresh.delete(token);
 	refreshMemory.delete(token);
 	let persisted = false;
@@ -198,11 +186,7 @@ export async function revokeRefreshToken(token: string): Promise<void> {
 	} catch (err) {
 		console.warn("[auth] refresh token delete failed", err);
 	}
-	if (expiresAt === undefined) {
-		if (!persisted) refreshRevocationUncertain = true;
-		revokedRefresh.delete(token);
-	}
-	if (production && !persisted) throw new Error("Token revocation unavailable");
+	if (!persisted) throw new AuthStorageUnavailableError();
 }
 
 export async function rotateRefreshToken(
@@ -210,7 +194,7 @@ export async function rotateRefreshToken(
 	refreshTtlMs: number,
 	fingerprint?: string
 ): Promise<{ record: TokenRecord; refreshToken: string } | null> {
-	if (refreshRevocationUncertain || revokedRefresh.get(oldToken)) return null;
+	if (revokedRefresh.get(oldToken)) return null;
 	if (!production && localOnlyRefresh.get(oldToken)) {
 		const record = refreshMemory.get(oldToken);
 		if (!record || revokedRefresh.get(oldToken) || isExpired(record, Date.now())) return null;
