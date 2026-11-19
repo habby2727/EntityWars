@@ -123,8 +123,18 @@ func _build_ui() -> void:
 	add_child(background)
 	var center := CenterContainer.new()
 	_auth_center = center
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	if OS.has_feature("android"):
+		var scroll := ScrollContainer.new()
+		scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		scroll.follow_focus = true
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		add_child(scroll)
+		center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.add_child(center)
+	else:
+		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(560, 0)
 	var style := StyleBoxFlat.new()

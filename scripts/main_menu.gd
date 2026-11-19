@@ -16,6 +16,9 @@ var _exit_overlay: CanvasLayer
 var _quitting := false
 
 func _ready() -> void:
+	if OS.has_feature("android"):
+		$LowerButtons.offset_top = -257.0
+		$LowerButtons.offset_bottom = 257.0
 	preload("res://scripts/ui/settings_screen.gd").apply_saved_display_mode()
 	UIThemeFactory.apply_theme_to(self)
 	background_video.finished.connect(background_video.play)

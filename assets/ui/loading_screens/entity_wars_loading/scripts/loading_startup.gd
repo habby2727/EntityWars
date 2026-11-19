@@ -11,7 +11,7 @@ func _ready() -> void:
 	var frame := AspectRatioContainer.new()
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frame.ratio = 16.0 / 9.0
-	frame.stretch_mode = AspectRatioContainer.STRETCH_COVER
+	frame.stretch_mode = AspectRatioContainer.STRETCH_FIT if OS.has_feature("android") else AspectRatioContainer.STRETCH_COVER
 	add_child(frame)
 	var screen := (load(SCREENS[randi() % SCREENS.size()]) as PackedScene).instantiate()
 	frame.add_child(screen)

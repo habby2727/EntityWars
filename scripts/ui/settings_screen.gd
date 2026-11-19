@@ -7,6 +7,8 @@ const SETTINGS_PATH := "user://settings.cfg"
 var _display_status_key := ""
 
 static func apply_fullscreen(enabled: bool) -> void:
+	if OS.has_feature("android"):
+		return
 	if enabled:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 	else:
@@ -29,13 +31,19 @@ func _ready() -> void:
 	language.item_selected.connect(_on_language_selected)
 	fullscreen.add_item(tr("SETTINGS_YES"))
 	fullscreen.add_item(tr("SETTINGS_NO"))
-	var mode := DisplayServer.window_get_mode()
-	fullscreen.select(0 if mode in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN] else 1)
+	if OS.has_feature("android"):
+		fullscreen.disabled = true
+		$Center/Panel/Margin/Content/ApplyDisplay.disabled = true
+	else:
+		var mode := DisplayServer.window_get_mode()
+		fullscreen.select(0 if mode in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN] else 1)
 	fullscreen.item_selected.connect(func(_index: int): _set_display_status("SETTINGS_DISPLAY_PENDING"))
 	$Center/Panel/Margin/Content/ApplyDisplay.pressed.connect(_apply_display_selection)
 	$Center/Panel/Margin/Content/Back.pressed.connect(SceneRouter.go_to_main_menu)
 
 func _apply_display_selection() -> void:
+	if OS.has_feature("android"):
+		return
 	var enabled := fullscreen.selected == 0
 	apply_fullscreen(enabled)
 	var config := ConfigFile.new()
