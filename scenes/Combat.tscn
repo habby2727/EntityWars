@@ -149,7 +149,6 @@ custom_minimum_size = Vector2(576, 0)
 layout_mode = 2
 custom_minimum_size = Vector2(192, 22)
 horizontal_alignment = 1
-text = "COMBAT_FAMILIAR"
 
 [node name="PlayerHomNameSpacer" type="Control" parent="PlayerPanel/PlayerHomNameRow"]
 layout_mode = 2
@@ -356,7 +355,6 @@ layout_mode = 2
 custom_minimum_size = Vector2(192, 22)
 size_flags_horizontal = 3
 horizontal_alignment = 1
-text = "COMBAT_FAMILIAR"
 
 [node name="EnemyHPRow" type="HBoxContainer" parent="EnemyPanel"]
 layout_mode = 2

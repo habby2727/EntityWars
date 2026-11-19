@@ -176,7 +176,7 @@ SPELL_CAUSTIC_MARK_DESC,Poisons the enemy for two turns.,Envenena al enemigo dur
 SPELL_BITTER_HAZE_NAME,Bitter Haze,Bruma amarga
 SPELL_BITTER_HAZE_DESC,Reduces enemy attack by 16%.,Reduce un 16% el ataque enemigo.
 SPELL_ROT_HARVEST_NAME,Rot Harvest,Cosecha de podredumbre
-SPELL_ROT_HARVEST_DESC,Gains 35% power if the enemy is already poisoned.,Gana un 35% de potencia si el enemigo ya está envenenado.
+SPELL_ROT_HARVEST_DESC,Gains 15% power if the enemy is already poisoned.,Gana un 15% de potencia si el enemigo ya está envenenado.
 SPELL_AURUM_EDGE_NAME,Aurum Edge,Filo áureo
 SPELL_AURUM_EDGE_DESC,A reliable golden strike.,Un golpe dorado fiable.
 SPELL_GILDED_REPRISAL_NAME,Gilded Reprisal,Represalia dorada

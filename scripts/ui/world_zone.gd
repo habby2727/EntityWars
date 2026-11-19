@@ -63,7 +63,6 @@ var _boss_portrait: TextureRect
 var _boss_status: Label
 var _boss_hp: ProgressBar
 var _boss_open: Button
-var _loot_label: Label
 var _enter_confirm: ConfirmationDialog
 var _auth_refresh_needed := false
 var _gate_clock = preload("res://scripts/domain/world_gate_cooldown.gd").new()
@@ -221,13 +220,6 @@ func _setup_zone_view() -> void:
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		if _header_label != null:
 			_header_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-		_loot_label = Label.new()
-		_loot_label.add_theme_color_override("font_color", Color.WHITE)
-		_loot_label.add_theme_color_override("font_outline_color", Color.BLACK)
-		_loot_label.add_theme_constant_override("outline_size", 5)
-		_loot_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		root.add_child(_loot_label)
-		root.move_child(_loot_label, 4)
 	if _back_button != null:
 		_back_button.set("target", "world_gate")
 		_back_button.reparent(self)
@@ -1872,12 +1864,6 @@ func _update_labels() -> void:
 	var sessions: Variant = _player_world.get("sessions", {})
 	var session: Dictionary = sessions.get(_session_id, {}) if sessions is Dictionary else {}
 	var loot: Variant = session.get("pending_loot", {})
-	if _loot_label != null:
-		var parts: Array[String] = []
-		if loot is Dictionary:
-			for key in loot:
-				parts.append("%s: %s" % [str(key).replace("_", " ").capitalize(), loot[key]])
-		_loot_label.text = "Unclaimed loot: %s" % [", ".join(parts) if not parts.is_empty() else "None"]
 	if _enter_button != null:
 		_enter_button.disabled = _session_id != "" or _gate_remaining() != 0
 		_enter_button.tooltip_text = "World Gate cooldown: %s" % _gate_remaining_text() if _session_id == "" and _gate_remaining() != 0 else ""
