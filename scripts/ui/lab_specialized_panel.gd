@@ -750,7 +750,7 @@ func _catalog(homunculi: bool) -> void:
 	var row := HBoxContainer.new()
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 14)
-	if homunculi:
+	if homunculi or OS.has_feature("android"):
 		add_child(row)
 	else:
 		var center := HBoxContainer.new()
@@ -858,11 +858,23 @@ func _catalog(homunculi: bool) -> void:
 		text_column.add_child(_vat_synergies)
 	else:
 		scroll.add_child(info)
-	var actions := HBoxContainer.new()
+	var actions: BoxContainer = HBoxContainer.new()
+	if OS.has_feature("android"):
+		actions = VBoxContainer.new()
 	if not homunculi:
 		actions.alignment = BoxContainer.ALIGNMENT_CENTER
 		actions.add_theme_constant_override("separation", 10)
-	details.add_child(actions)
+	if OS.has_feature("android"):
+		var actions_scroll := ScrollContainer.new()
+		actions_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		actions_scroll.custom_minimum_size.x = 200
+		actions_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		row.add_child(actions_scroll)
+		row.move_child(actions_scroll, 1)
+		actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		actions_scroll.add_child(actions)
+	else:
+		details.add_child(actions)
 	for label in (["Upgrade Homunculus"] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
 		action.text = {"Upgrade Homunculus": "LAB_ACTION_UPGRADE_HOMUNCULUS", "Upgrade": "LAB_UPGRADE", "Reroll": "LAB_ACTION_REROLL"}[label]
@@ -907,7 +919,7 @@ func _catalog(homunculi: bool) -> void:
 		_vat_confirm.confirmed.connect(_send_vat_action)
 		add_child(_vat_confirm)
 	if not homunculi:
-		var trait_actions := HBoxContainer.new()
+		var trait_actions = HFlowContainer.new() if OS.has_feature("android") else HBoxContainer.new()
 		trait_actions.alignment = BoxContainer.ALIGNMENT_CENTER
 		trait_actions.add_theme_constant_override("separation", 8)
 		details.add_child(trait_actions)
@@ -926,7 +938,7 @@ func _catalog(homunculi: bool) -> void:
 			trait_actions.add_child(trait_button)
 			_forge_trait_buttons.append(trait_button)
 			trait_button.pressed.connect(_request_trait_action.bind(i))
-		var fusion_row := HBoxContainer.new()
+		var fusion_row = HFlowContainer.new() if OS.has_feature("android") else HBoxContainer.new()
 		fusion_row.alignment = BoxContainer.ALIGNMENT_CENTER
 		fusion_row.add_theme_constant_override("separation", 8)
 		details.add_child(fusion_row)

@@ -33,9 +33,28 @@ func _apply_existing(node: Node) -> void:
 		_apply_existing(child)
 
 func _on_node_added(node: Node) -> void:
+	if OS.has_feature("android") and node is Control:
+		_configure_touch_scroll.call_deferred(node.get_instance_id())
 	if node is VScrollBar:
 		var bar := node as VScrollBar
 		bar.add_theme_stylebox_override("scroll", _track)
 		bar.add_theme_stylebox_override("scroll_focus", _track)
 		for key in ["grabber", "grabber_highlight", "grabber_pressed"]:
 			bar.add_theme_stylebox_override(key, _thumb)
+
+func _configure_touch_scroll(id: int) -> void:
+	var control := instance_from_id(id) as Control
+	if not is_instance_valid(control) or not control.is_inside_tree() or control is ScrollContainer or control is ScrollBar:
+		return
+	var parent := control.get_parent()
+	var in_scroll := false
+	var in_world := false
+	while parent != null:
+		if parent is ScrollContainer:
+			in_scroll = true
+		var path := parent.scene_file_path
+		if path.begins_with("res://scenes/ui/WorldZone") or path == "res://scenes/ui/WorldGate.tscn":
+			in_world = true
+		parent = parent.get_parent()
+	if in_scroll and in_world and control.mouse_filter == Control.MOUSE_FILTER_STOP:
+		control.mouse_filter = Control.MOUSE_FILTER_PASS

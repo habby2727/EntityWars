@@ -226,7 +226,18 @@ func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
 		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	if _resource_bar != null:
-		_resource_rows = ResourceBars.build(_resource_bar, _catalog, true, -10)
+		_resource_rows = ResourceBars.build(_resource_bar, _catalog, not OS.has_feature("android"), 5 if OS.has_feature("android") else -10)
+		if OS.has_feature("android") and _resource_bar_panel != null:
+			var band := HBoxContainer.new()
+			band.add_theme_constant_override("separation", 12)
+			_resource_bar.get_parent().add_child(band)
+			for id in _resource_rows:
+				_resource_rows[id].row.reparent(band)
+			_resource_bar_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_resource_bar_panel.offset_left = 24
+			_resource_bar_panel.offset_top = -100
+			_resource_bar_panel.offset_right = 1250
+			_resource_bar_panel.offset_bottom = -24
 
 func _update_resource_bar() -> void:
 	ResourceBars.update(_resource_rows, _state, _debug.unlock_all_buildings, _db.balance)

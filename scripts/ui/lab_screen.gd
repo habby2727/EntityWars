@@ -193,12 +193,12 @@ func _on_debug_forge_updated(state: Dictionary) -> void:
 func _setup_compact_navigation() -> void:
 	if _left_panel == null or _right_panel == null or _grid == null:
 		return
-	_left_panel.custom_minimum_size.x = 48 + 168 * _ui_scale
+	_left_panel.custom_minimum_size.x = (48 + (260 if OS.has_feature("android") else 168) * _ui_scale)
 	_left_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_grid.columns = 2
 	var scroll := _grid.get_parent() as ScrollContainer
 	if scroll != null:
-		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if OS.has_feature("android") else ScrollContainer.SCROLL_MODE_DISABLED
 	var overlay := _background_panel.get_node_or_null("ContentMargin/TopOverlay") as Control
 	if overlay == null and _background_panel != null:
 		overlay = Control.new()
@@ -480,7 +480,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 	if card == null:
 		return
 	MenuArt.button(card)
-	card.custom_minimum_size = Vector2(80, 80) * _ui_scale
+	card.custom_minimum_size = Vector2(120, 120) * _ui_scale if OS.has_feature("android") else Vector2(80, 80) * _ui_scale
 	card.toggle_mode = true
 	var content := card.get_node_or_null("HBox") as HBoxContainer
 	if content:
@@ -494,7 +494,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 			labels.hide()
 	var icon_frame := card.get_node_or_null("HBox/IconFrame") as TextureRect
 	if icon_frame != null:
-		icon_frame.custom_minimum_size = Vector2(68, 68) * _ui_scale
+		icon_frame.custom_minimum_size = Vector2(100, 100) * _ui_scale if OS.has_feature("android") else Vector2(68, 68) * _ui_scale
 		icon_frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var name_label := card.get_node_or_null("HBox/Text/Name") as Label
 	if name_label != null:
@@ -513,7 +513,24 @@ func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
 		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	if _resource_bar != null:
-		_resource_rows = ResourceBars.build(_resource_bar, _catalog, true, -10)
+		_resource_rows = ResourceBars.build(_resource_bar, _catalog, not OS.has_feature("android"), 5 if OS.has_feature("android") else -10)
+		if OS.has_feature("android") and _resource_bar_panel != null:
+			var band := HBoxContainer.new()
+			band.add_theme_constant_override("separation", 12)
+			_resource_bar.get_parent().add_child(band)
+			for id in _resource_rows:
+				_resource_rows[id].row.reparent(band)
+			var overlay := _background_panel.get_node("ContentMargin/TopOverlay") as Control
+			_resource_bar_panel.reparent(overlay)
+			_resource_bar_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_resource_bar_panel.offset_left = 16
+			_resource_bar_panel.offset_top = -90
+			_resource_bar_panel.offset_right = 1220
+			_resource_bar_panel.offset_bottom = -16
+			var left_column := _left_panel.get_node("Margin/LeftVBox") as VBoxContainer
+			var spacer := Control.new()
+			spacer.custom_minimum_size.y = 90
+			left_column.add_child(spacer)
 
 func _build_experiments() -> void:
 	if _experiment_list == null:
@@ -669,7 +686,7 @@ func _build_spell_section() -> void:
 		_spell_entity_selector.set_item_metadata(_spell_entity_selector.item_count - 1, entity_id)
 	_spell_entity_selector.item_selected.connect(_on_spell_entity_selected)
 	_spell_section.add_child(_spell_entity_selector)
-	var filters := HBoxContainer.new()
+	var filters: BoxContainer = VBoxContainer.new() if OS.has_feature("android") else HBoxContainer.new()
 	var group := ButtonGroup.new()
 	for kind in ["All", "Initial", "Hybrid", "Universal"]:
 		var filter := Button.new()
@@ -696,6 +713,18 @@ func _build_spell_section() -> void:
 	_spell_list.add_theme_constant_override("separation", 8)
 	scroll.add_child(_spell_list)
 	_spell_section.add_child(scroll)
+	if OS.has_feature("android"):
+		var layout := HBoxContainer.new()
+		layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		var controls := VBoxContainer.new()
+		controls.custom_minimum_size.x = 220
+		_spell_section.add_child(layout)
+		layout.add_child(controls)
+		_spell_entity_selector.reparent(controls)
+		filters.reparent(controls)
+		scroll.reparent(layout)
+		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.custom_minimum_size.y = 360
 	detail.add_child(_spell_section)
 	_build_spell_info()
 	_build_spell_rows()

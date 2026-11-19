@@ -25,8 +25,6 @@ func _on_node_added(node: Node) -> void:
 func _apply_font_if_alive(id: int) -> void:
 	var node := instance_from_id(id) as Node
 	if is_instance_valid(node):
-		if OS.has_feature("android") and node is BaseButton:
-			apply_touch_size(node)
 		_apply_font(node)
 
 func touch_size(control: Node) -> float:

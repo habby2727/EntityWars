@@ -18,6 +18,17 @@ var _send_button: Button
 var _status: Label
 var _toggle_row: HBoxContainer
 var _disclosure: Label
+var _keyboard_height := -1
+
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
+func _process(_delta: float) -> void:
+	if OS.has_feature("android"):
+		var height := DisplayServer.virtual_keyboard_get_height()
+		if height != _keyboard_height:
+			_keyboard_height = height
+			_resize_to_viewport()
 
 func _ready() -> void:
 	layer = 40
@@ -149,7 +160,7 @@ func _ready() -> void:
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_input.text_submitted.connect(func(_text: String): _submit())
 	row.add_child(_input)
-	if OS.has_feature("android"):
+	if _android_ui():
 		_input.custom_minimum_size.y = maxf(_input.custom_minimum_size.y, GameTypography.touch_size(_input))
 	_send_button = Button.new()
 	_send_button.add_theme_font_size_override("font_size", 22)
@@ -164,12 +175,17 @@ func _ready() -> void:
 
 func _resize_to_viewport() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
-	if OS.has_feature("android"):
+	if _android_ui():
 		var target := GameTypography.touch_size(_button)
+		var keyboard := 0.0
+		if OS.has_feature("android") and _keyboard_height > 0:
+			keyboard = float(_keyboard_height) / maxf(0.01, get_viewport().get_screen_transform().get_scale().y)
+		keyboard = clampf(keyboard, 0.0, viewport_size.y * 0.65)
+		_panel.offset_bottom = -15.0 - keyboard
 		_toggle_row.offset_top = -target - 15.0
 		_toggle_row.offset_left = -minf(maxf(360.0, target * 3.0), viewport_size.x - 30.0) - 15.0
-		_panel.offset_left = -minf(maxf(700.0, target * 5.0), viewport_size.x - 30.0) - 15.0
-		_panel.offset_top = -minf(maxf(560.0, target * 5.0), viewport_size.y - 30.0) - 15.0
+		_panel.offset_left = -minf(maxf(viewport_size.x * 0.48, target * 5.0), viewport_size.x - 30.0) - 15.0
+		_panel.offset_top = _panel.offset_bottom - minf(maxf(viewport_size.y * 0.72, target * 5.0), viewport_size.y - keyboard - 30.0)
 		_online_panel.offset_bottom = -target - 30.0
 		_online_panel.offset_left = -minf(maxf(400.0, target * 3.0), viewport_size.x - 30.0) - 15.0
 		_online_panel.offset_top = -minf(560.0, maxf(0.0, viewport_size.y - target - 45.0)) - target - 30.0

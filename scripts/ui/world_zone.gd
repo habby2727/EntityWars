@@ -277,6 +277,23 @@ func _setup_zone_view() -> void:
 	_restart_zone.visible = false
 	_restart_zone.pressed.connect(_restart_common_zone)
 	roster.add_child(_restart_zone)
+	if OS.has_feature("android"):
+		roster.position = Vector2(24, 24)
+		var top_actions := HBoxContainer.new()
+		top_actions.name = "AndroidTopActions"
+		top_actions.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		top_actions.offset_left = -170
+		top_actions.offset_right = 170
+		top_actions.offset_top = 24
+		top_actions.offset_bottom = 82
+		top_actions.add_theme_constant_override("separation", 12)
+		add_child(top_actions)
+		for button in [_reroll_button, _claim_button]:
+			if button != null:
+				button.reparent(top_actions)
+				button.custom_minimum_size = Vector2(164, 58)
+		get_viewport().size_changed.connect(_layout_android_zone_header, CONNECT_DEFERRED)
+		_layout_android_zone_header.call_deferred()
 	_refresh_common_picker()
 	var panel := PanelContainer.new()
 	panel.name = "WorldBossPanel"
@@ -493,6 +510,8 @@ func _render_actor_roster() -> void:
 				texture = load(texture_id) as Texture2D
 		else:
 			texture = load("res://assets/lab/bosses/%s_zone_common/%s.png" % [_get_zone_id().trim_prefix("zone_"), id]) as Texture2D
+		if OS.has_feature("android") and texture != null:
+			texture = _trim_actor_texture(texture)
 		var actor := TextureButton.new()
 		actor.name = "Roster_" + id
 		actor.set_meta("appearance_id", id)
@@ -509,6 +528,11 @@ func _render_actor_roster() -> void:
 		actor.offset_right = 75
 		actor.offset_top = -65
 		actor.offset_bottom = 65
+		if OS.has_feature("android") and _boss_view:
+			actor.offset_left = -105
+			actor.offset_right = 105
+			actor.offset_top = -90
+			actor.offset_bottom = 90
 		_actor_roster.add_child(actor)
 		var label := Label.new()
 		label.text = display + (" ? Defeated" if not _boss_view and _common_defeated(id) else "")
@@ -531,6 +555,39 @@ func _render_actor_roster() -> void:
 			actor.pressed.connect(func():
 				_debug_visual = {"id": id, "tier": "common", "texture": "res://assets/lab/bosses/%s_zone_common/%s.png" % [_get_zone_id().trim_prefix("zone_"), id], "name": display}
 				_show_common_details())
+
+func _layout_android_zone_header() -> void:
+	var safe := Rect2(Vector2.ZERO, size)
+	var physical := DisplayServer.get_display_safe_area()
+	if physical.size.x > 0 and physical.size.y > 0:
+		var inverse := get_global_transform_with_canvas().affine_inverse() * get_viewport().get_screen_transform().affine_inverse()
+		var start := inverse * Vector2(physical.position)
+		var end := inverse * Vector2(physical.end)
+		var visible_safe := Rect2(start, end - start).intersection(safe)
+		if visible_safe.size.x >= 800.0 and visible_safe.size.y >= 100.0:
+			safe = visible_safe
+	var roster := get_node_or_null("EncounterNavigation") as Control
+	var actions := get_node_or_null("AndroidTopActions") as Control
+	if roster != null:
+		roster.position = safe.position + Vector2(24, 24)
+	if _back_button != null:
+		_back_button.position = Vector2(safe.end.x - 170, safe.position.y + 24)
+		_back_button.size = Vector2(140, 58)
+	if actions != null:
+		actions.position = Vector2(safe.get_center().x - 170, safe.position.y + 24)
+		actions.size = Vector2(340, 58)
+
+func _trim_actor_texture(texture: Texture2D) -> Texture2D:
+	var image := texture.get_image()
+	if image == null:
+		return texture
+	var used := image.get_used_rect()
+	if used.size.x <= 0 or used.size.y <= 0:
+		return texture
+	var atlas := AtlasTexture.new()
+	atlas.atlas = texture
+	atlas.region = Rect2(used)
+	return atlas
 
 # Isolated presentation only: no selection from this fixture authorizes a fight.
 func show_guardian_preview(main: Dictionary, guardians: Array) -> void:
@@ -567,6 +624,8 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 		texture = _catalog.get_tex(texture_id)
 	if texture == null:
 		return
+	if OS.has_feature("android"):
+		texture = _trim_actor_texture(texture)
 	var actor := Control.new()
 	actor.name = "Actor_" + str(entry.get("id", "unknown"))
 	actor.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -576,6 +635,9 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 	actor.anchor_bottom = ground
 	var width := 200.0 if main else 140.0
 	var height := 190.0 if main else 135.0
+	if OS.has_feature("android"):
+		width = 270.0 if main else 180.0
+		height = 250.0 if main else 170.0
 	actor.offset_left = -width / 2
 	actor.offset_right = width / 2
 	actor.offset_top = -height

@@ -9,6 +9,9 @@ const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 @export var panel_path: NodePath
 @export var back_button_path: NodePath
 @export var loadout_button_path: NodePath
@@ -74,6 +77,8 @@ func _ready() -> void:
 	_on_inventory_tab_changed(_tabs.current_tab)
 
 func _setup_inventory_layout() -> void:
+	if _android_ui():
+		_tabs.add_theme_font_size_override("font_size", 24)
 	for button in [_back_button, _loadout_button]:
 		if button:
 			button.custom_minimum_size = Vector2(140, 44)
@@ -137,6 +142,9 @@ func _setup_inventory_layout() -> void:
 	var header := HBoxContainer.new()
 	header.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	header.alignment = BoxContainer.ALIGNMENT_CENTER
+	if _android_ui():
+		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		header.alignment = BoxContainer.ALIGNMENT_BEGIN
 	header.add_theme_constant_override("separation", 18)
 	content.add_child(header)
 	var icon_frame := UIThemeFactory.make_icon_slot() as TextureRect
@@ -151,6 +159,10 @@ func _setup_inventory_layout() -> void:
 	_detail_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail_title.add_theme_font_size_override("font_size", 24)
+	if _android_ui():
+		_detail_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_detail_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_detail_title.add_theme_font_size_override("font_size", 30)
 	header.add_child(_detail_title)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -163,6 +175,10 @@ func _setup_inventory_layout() -> void:
 	_detail_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_detail_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail_text.add_theme_font_size_override("font_size", 17)
+	if _android_ui():
+		_detail_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_detail_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		_detail_text.add_theme_font_size_override("font_size", 24)
 	scroll.add_child(_detail_text)
 
 func _setup_spell_progress() -> void:
@@ -543,6 +559,8 @@ func _find_tab_index(tab_label: String) -> int:
 func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	var select := Button.new()
 	select.custom_minimum_size = Vector2(0, 72)
+	if _android_ui():
+		select.custom_minimum_size.y = 100
 	select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	select.toggle_mode = true
 	select.button_group = _entry_group
@@ -569,6 +587,8 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	var icon_slot := UIThemeFactory.make_icon_slot() as TextureRect
 	icon_slot.texture = load(MenuArt.DIR + "marco-slot-small.png")
 	icon_slot.custom_minimum_size = Vector2(58, 58)
+	if _android_ui():
+		icon_slot.custom_minimum_size = Vector2(80, 80)
 	icon_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var icon := icon_slot.get_node("Icon") as TextureRect
 	icon.texture = _extract_preview_texture(entry)
@@ -586,6 +606,8 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	title.name = "EntryTitle"
 	title.set_meta("localization_body_font", true)
 	title.text = _extract_name(entry)
+	if _android_ui():
+		title.add_theme_font_size_override("font_size", 22)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

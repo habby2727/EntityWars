@@ -287,6 +287,9 @@ func _ready() -> void:
 	for i in spell_buttons.size():
 		spell_buttons[i].pressed.connect(_on_spell_chosen.bind(i))
 	_style_spell_buttons()
+	if OS.has_feature("android"):
+		get_viewport().size_changed.connect(_layout_android_combat, CONNECT_DEFERRED)
+		call_deferred("_layout_android_combat")
 	next_turn_btn.hide()
 	spell_panel.hide()
 	if back_button:
@@ -1229,7 +1232,7 @@ func _hide_online_hunt_view() -> void:
 	if _online_hunt_info:
 		_online_hunt_info.hide()
 	if is_instance_valid(_solo_panel):
-		_solo_panel.get_parent().hide()
+		(_solo_panel.get_parent().get_parent() if OS.has_feature("android") else _solo_panel.get_parent()).hide()
 
 func _on_online_hunt_identity(state: Dictionary) -> void:
 	if _online_identity_invalid:
@@ -1657,7 +1660,7 @@ func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool
 		_online_hunt_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_online_hunt_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		add_child(_online_hunt_info)
-	_solo_panel.get_parent().show()
+	(_solo_panel.get_parent().get_parent() if OS.has_feature("android") else _solo_panel.get_parent()).show()
 	get_node("PlayerPanel").show()
 	get_node("EnemyPanel").show()
 	_enemy_hom_status.hide()
@@ -2000,9 +2003,28 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 		sprite.size = dimensions
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if OS.has_feature("android"):
+			sprite.set_meta("world_foot", center)
+			sprite.set_meta("world_size", dimensions)
+	if OS.has_feature("android"):
+		background.resized.connect(_layout_android_world_sprites.bind(layer, background), CONNECT_DEFERRED)
+		_layout_android_world_sprites.call_deferred(layer, background)
 	enemy_hom.visible = false
 	_player_hom_status.position = Vector2(float(layout[1].x) - 120.0, 710)
 	$PlayerPanel/PlayerBottomSpacer.custom_minimum_size.y = 132
+	_align_health_panels()
+
+func _layout_android_world_sprites(layer: Control, background: TextureRect) -> void:
+	if not is_instance_valid(layer) or not is_instance_valid(background):
+		return
+	var ratio := background.size / Vector2(1920.0, 1080.0)
+	for sprite in layer.get_children():
+		if not sprite is TextureRect or not sprite.has_meta("world_foot"):
+			continue
+		var foot: Vector2 = sprite.get_meta("world_foot") * ratio
+		var dimensions: Vector2 = sprite.get_meta("world_size") * minf(ratio.x, ratio.y)
+		sprite.size = dimensions
+		sprite.position = background.position + foot - Vector2(dimensions.x / 2.0, dimensions.y)
 	_align_health_panels()
 
 func _on_back_pressed() -> void:
@@ -2262,6 +2284,12 @@ func _create_solo_panel() -> void:
 		panel.offset_right = 220
 		panel.offset_top = 360
 		panel.offset_bottom = 470
+	if OS.has_feature("android"):
+		panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		panel.offset_left = -440
+		panel.offset_right = -16
+		panel.offset_top = 100
+		panel.offset_bottom = 460
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.045, 0.055, 0.94)
 	style.border_color = Color("a9955d")
@@ -2272,7 +2300,14 @@ func _create_solo_panel() -> void:
 	add_child(panel)
 	_solo_panel = VBoxContainer.new()
 	_solo_panel.add_theme_constant_override("separation", 3 if has_node("WorldCombatSprites") else 8)
-	panel.add_child(_solo_panel)
+	if OS.has_feature("android"):
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		panel.add_child(scroll)
+		_solo_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(_solo_panel)
+	else:
+		panel.add_child(_solo_panel)
 	_solo_power_label = Label.new()
 	_solo_power_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_solo_power_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2284,6 +2319,9 @@ func _create_solo_panel() -> void:
 	_solo_panel.add_child(_solo_status)
 	_solo_intent_button = Button.new()
 	_solo_intent_button.add_theme_font_size_override("font_size", 13)
+	if OS.has_feature("android"):
+		_solo_intent_button.custom_minimum_size.y = 60
+		_solo_intent_button.add_theme_font_size_override("font_size", 20)
 	_solo_intent_button.pressed.connect(func():
 		if _solo_intent == "Special":
 			_on_log_spell_clicked(str(_solo_signature.get("id", "")))
@@ -2297,7 +2335,7 @@ func _create_solo_panel() -> void:
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.text = "Below 50% HP, a Power Turn may appear: deal x2 damage. If the boss survives, its next strike gains tier-scaled Fury. Defeat minions to expose the boss. " + ("Session active / Settlement locked. Local loadout unverified." if not str(_solo_context.get("session_id", "")).is_empty() else "Unverified preview.")
-	if has_node("WorldCombatSprites"):
+	if has_node("WorldCombatSprites") and not OS.has_feature("android"):
 		panel.tooltip_text = help.text
 		help.visible = false
 	_solo_panel.add_child(help)
@@ -2973,7 +3011,51 @@ func _set_hom_action_outline_active(active: bool) -> void:
 	for i in range(1, _hom_action_outlines.size()):
 		_hom_outline_tween.parallel().tween_property(_hom_action_outlines[i], "modulate:a", 1.0, 0.55)
 
+func _layout_android_combat() -> void:
+	var panel_min := spell_panel.get_combined_minimum_size()
+	var width := minf(size.x - 32.0, maxf(700.0, panel_min.x))
+	spell_panel.offset_left = -width / 2.0
+	spell_panel.offset_right = width / 2.0
+	spell_panel.offset_top = 64.0
+	spell_panel.offset_bottom = 64.0 + maxf(144.0, panel_min.y)
+	var action_y := spell_panel.offset_bottom + 12.0
+	var action_width := (width - 12.0) / 2.0
+	for entry in [[switch_weapon_btn, -width / 2.0], [ultra_button, 6.0]]:
+		var button: Control = entry[0]
+		button.offset_left = entry[1]
+		button.offset_right = entry[1] + action_width
+		button.offset_top = action_y
+		button.offset_bottom = action_y + maxf(60.0, button.get_combined_minimum_size().y)
+	if back_button:
+		var safe := Rect2(Vector2.ZERO, size)
+		var physical_safe := DisplayServer.get_display_safe_area()
+		if physical_safe.size.x > 0 and physical_safe.size.y > 0:
+			var to_local := get_global_transform_with_canvas().affine_inverse() * get_viewport().get_screen_transform().affine_inverse()
+			var start := to_local * Vector2(physical_safe.position)
+			var end := to_local * Vector2(physical_safe.end)
+			safe = Rect2(start, end - start).intersection(Rect2(Vector2.ZERO, size))
+		if safe.size.x < 160.0 or safe.size.y < 72.0:
+			safe = Rect2(Vector2.ZERO, size)
+		back_button.position = Vector2(safe.end.x - 160.0, safe.position.y + 12.0)
+		back_button.size = Vector2(148.0, 60.0)
+	$LogBG.offset_left = -370.0
+	$LogBG.offset_right = 370.0
+	$Log.offset_left = -356.0
+	$Log.offset_right = 356.0
+	$Log.add_theme_font_size_override("normal_font_size", 24)
+	if hom_decision.visible:
+		_position_hom_decision()
+
 func _position_hom_decision() -> void:
+	if OS.has_feature("android"):
+		for button in hom_decision.get_children():
+			if button is Button:
+				button.custom_minimum_size.y = maxf(button.custom_minimum_size.y, 60.0)
+		var android_minimum := hom_decision.get_combined_minimum_size()
+		hom_decision.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		hom_decision.size = Vector2(maxf(260.0, android_minimum.x), android_minimum.y)
+		hom_decision.position = Vector2(16.0, clampf(size.y - hom_decision.size.y - 100.0, 340.0, size.y - hom_decision.size.y - 16.0))
+		return
 	var minimum := hom_decision.get_combined_minimum_size()
 	hom_decision.size = Vector2(maxf(_player_hom_status.size.x, minimum.x), minimum.y)
 	var x := _player_hom_status.position.x + (_player_hom_status.size.x - hom_decision.size.x) / 2.0
