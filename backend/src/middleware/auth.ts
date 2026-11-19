@@ -1,5 +1,6 @@
 import { ExpiringMap } from "../expiring_map";
 import { AuthStorageUnavailableError } from "../auth/storage_error";
+import { resetIdle } from "../auth/idle";
 ﻿import { ensureRedisReady, getRedis } from "../db/redis";
 
 export type SessionRecord = {
@@ -46,6 +47,7 @@ export async function issueSession(userId: string, ttlMs: number): Promise<strin
 		console.warn("[auth] redis session write failed", err);
 	}
 	if (production && !persisted) throw new Error("Session storage unavailable");
+	await resetIdle(token);
 	inMemorySessions.set(token, record, record.expiresAt);
 	return token;
 }

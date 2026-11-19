@@ -13,6 +13,7 @@ import devConfig from "./config/dev.local";
 import prodConfig from "./config/prod";
 import {
     getAccessToken,
+    getRefreshToken,
     issueAccessToken,
     issueTokenPair,
     revokeAccessToken,
@@ -20,6 +21,7 @@ import {
     rotateRefreshToken
 } from "./auth/tokens";
 import { AuthStorageUnavailableError } from "./auth/storage_error";
+import { checkIdle, checkRefreshIdle, idleEnabled, resetIdle, rotateRefreshIdle, touchIdle } from "./auth/idle";
 import { AccountStatusUnavailableError, isUserDisabled, pingPostgres, postgresExample, upsertUser } from "./db/postgres";
 import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
@@ -551,7 +553,7 @@ function buildCorsHeaders(req: Request): Record<string, string> {
 	return {
 		"Access-Control-Allow-Origin": origin,
 		"Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-		"Access-Control-Allow-Headers": "Content-Type,Authorization,X-Dev-Token,X-Request-Id",
+		"Access-Control-Allow-Headers": "Content-Type,Authorization,X-Dev-Token,X-Request-Id,X-EntityWars-Client-Build,X-EntityWars-Replay",
 		"Access-Control-Max-Age": "600",
 		Vary: "Origin"
 	};
@@ -758,7 +760,7 @@ async function issueToken(playerId: string): Promise<string> {
 	return issueSession(playerId, getSessionTtlMs());
 }
 
-async function requireAuth(req: Request, ctx?: RequestContext): Promise<string> {
+async function requireAuth(req: Request, ctx?: RequestContext, ignoreIdle = false): Promise<string> {
 	const token = extractToken(req);
 	if (!token) {
 		throw new HttpError(401, "Missing auth token.");
@@ -772,6 +774,7 @@ async function requireAuth(req: Request, ctx?: RequestContext): Promise<string> 
 	if (await isUserDisabled(entry.userId)) {
 		throw new HttpError(403, "User disabled.");
 	}
+	if (!ignoreIdle && !(await checkIdle(token))) throw new HttpError(409, "SESSION_IDLE");
 	if (ctx) {
 		ctx.userId = entry.userId;
 	}
@@ -787,11 +790,14 @@ async function tryAuth(req: Request, ctx?: RequestContext): Promise<string | nul
 	const legacy = access ? null : await getLegacySession(token);
 	const entry = access ?? legacy;
 	if (!entry) {
+		if (idleEnabled()) throw new HttpError(401, "Invalid token.");
 		return null;
 	}
 	if (await isUserDisabled(entry.userId)) {
+		if (idleEnabled()) throw new HttpError(403, "User disabled.");
 		return null;
 	}
+	if (!(await checkIdle(token))) throw new HttpError(409, "SESSION_IDLE");
 	if (ctx) {
 		ctx.userId = entry.userId;
 	}
@@ -1352,6 +1358,13 @@ async function startServer(): Promise<void> {
 						throw new HttpError(400, "Missing refresh_token.");
 					}
 					const fingerprint = typeof body?.fingerprint == "string" ? body.fingerprint : undefined;
+					if (idleEnabled()) {
+						if (!(await ensureRedisReady())) throw new AuthStorageUnavailableError();
+						const existing = await getRefreshToken(refreshToken);
+						if (!existing) throw new HttpError(401, "Invalid refresh token.");
+						if (await isUserDisabled(existing.userId)) throw new HttpError(403, "User disabled.");
+						if (!(await checkRefreshIdle(refreshToken))) throw new HttpError(409, "SESSION_IDLE");
+					}
 					const rotated = await rotateRefreshToken(refreshToken, REFRESH_TTL_MS, fingerprint);
 					if (!rotated) {
 						throw new HttpError(401, "Invalid refresh token.");
@@ -1360,10 +1373,12 @@ async function startServer(): Promise<void> {
 						throw new HttpError(403, "User disabled.");
 					}
 					const accessToken = await issueAccessToken(rotated.record.userId, ACCESS_TTL_MS);
+					if (!(await rotateRefreshIdle(refreshToken, rotated.refreshToken, accessToken, REFRESH_TTL_MS))) throw new HttpError(409, "SESSION_IDLE");
 					return tokenPairResponse(accessToken, rotated.refreshToken);
 				}
 
 				if (req.method == "POST" && url.pathname == "/v1/auth/logout") {
+					if (idleEnabled() && extractToken(req)) await requireAuth(req, ctx);
 					const body = await readJson(req, config.maxBodyBytes);
 					const refreshToken =
 						typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
@@ -1377,11 +1392,20 @@ async function startServer(): Promise<void> {
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 
+				if (req.method == "POST" && url.pathname == "/auth/reconnect") {
+					await applyRateLimit(ctx, { keyPrefix: "rl:reconnect", windowSeconds: 60, max: 10, keyBy: "ip" });
+					if (!/^Bearer\s+\S+$/i.test(req.headers.get("authorization") ?? "")) throw new HttpError(401, "Missing auth token.");
+					await requireAuth(req, ctx, true);
+					await resetIdle(extractToken(req)!);
+					return jsonResponse({ ok: true });
+				}
+
 				if (req.method == "POST" && url.pathname == "/auth/logout") {
 					const token = extractToken(req);
 					if (!token) {
 						throw new HttpError(401, "Missing auth token.");
 					}
+					if (idleEnabled()) await requireAuth(req, ctx);
 					await revokeSession(token);
 					await revokeAccessToken(token);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
@@ -2820,6 +2844,10 @@ async function startServer(): Promise<void> {
 
 				return jsonResponse({ error: "Not found" }, 404);
 				})();
+				if (idleEnabled() && res && ctx.userId && req.method === "POST" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
+					const data = await res.clone().json().catch(() => null) as { ok?: boolean; duplicate?: boolean } | null;
+					if (data && data.ok !== false && data.duplicate !== true) await touchIdle(extractToken(req)!);
+				}
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);
 				logInfo("request", {

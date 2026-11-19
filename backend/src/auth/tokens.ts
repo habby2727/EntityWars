@@ -1,5 +1,6 @@
 import { ExpiringMap } from "../expiring_map";
 import { AuthStorageUnavailableError } from "./storage_error";
+import { bindRefreshIdle, resetIdle } from "./idle";
 ﻿import { ensureRedisReady, getRedis } from "../db/redis";
 
 export type TokenRecord = {
@@ -43,6 +44,7 @@ export async function issueAccessToken(userId: string, ttlMs: number): Promise<s
 		console.warn("[auth] access token write failed", err);
 	}
 	if (production && !persisted) throw new Error("Token storage unavailable");
+	await resetIdle(token);
 	accessMemory.set(token, record, record.expiresAt);
 	return token;
 }
@@ -79,6 +81,7 @@ export async function issueTokenPair(
 ): Promise<{ accessToken: string; refreshToken: string }> {
 	const accessToken = await issueAccessToken(userId, accessTtlMs);
 	const refreshToken = await issueRefreshToken(userId, refreshTtlMs, fingerprint);
+	await bindRefreshIdle(refreshToken, accessToken, refreshTtlMs);
 	return { accessToken, refreshToken };
 }
 

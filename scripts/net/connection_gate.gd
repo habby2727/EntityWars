@@ -2,7 +2,7 @@
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const RecoveryJournal := preload("res://scripts/net/session_recovery_journal.gd")
-enum State { CONNECTED, RECONNECTING, ERROR, AUTH_REQUIRED, UPDATE_REQUIRED }
+enum State { CONNECTED, RECONNECTING, ERROR, AUTH_REQUIRED, UPDATE_REQUIRED, IDLE }
 var state: State = State.CONNECTED
 var player_id := ""
 var token := ""
@@ -68,6 +68,27 @@ func require_update() -> void:
 
 func require_authentication() -> void:
 	_fail(State.AUTH_REQUIRED, "Authentication required")
+
+func require_idle() -> void:
+	if state in [State.UPDATE_REQUIRED, State.AUTH_REQUIRED]:
+		return
+	_generation += 1
+	_http.cancel_request()
+	_checking = false
+	_fail(State.IDLE, "Are you still playing? Please Reconnect")
+
+func reconnect_idle() -> void:
+	if state != State.IDLE or _checking or token.is_empty():
+		return
+	_checking = true
+	_retry.disabled = true
+	_http.set_meta("generation", _generation)
+	_http.set_meta("idle_reconnect", true)
+	var err := _http.request(base_url + "/auth/reconnect", PackedStringArray(["Authorization: Bearer " + token, preload("res://scripts/net/client_build.gd").header()]), HTTPClient.METHOD_POST)
+	if err != OK:
+		_checking = false
+		_retry.disabled = false
+		_detail.text = "Connection unavailable. Please try again."
 
 func sign_in_again() -> void:
 	if state != State.AUTH_REQUIRED or is_instance_valid(_suspended_scene):
@@ -191,6 +212,8 @@ func report_failure(client: Node, reason: String, status: int = 0) -> void:
 func _fail(next: State, message: String) -> void:
 	if state == State.UPDATE_REQUIRED and next != State.UPDATE_REQUIRED:
 		return
+	if state == State.IDLE and next not in [State.IDLE, State.AUTH_REQUIRED, State.UPDATE_REQUIRED]:
+		return
 	if (state == State.AUTH_REQUIRED or _identity_mismatch) and next == State.RECONNECTING:
 		return
 	var was_connected := state == State.CONNECTED
@@ -198,16 +221,18 @@ func _fail(next: State, message: String) -> void:
 	_player_verified = false
 	_loadout_session_requested = false
 	_loadout_session_verified = false
-	_title.text = "Update required" if next == State.UPDATE_REQUIRED else ("Disconnected (Reconnecting...)" if next == State.RECONNECTING else "Error")
-	_retry.visible = next in [State.RECONNECTING, State.ERROR]
+	_title.text = "" if next == State.IDLE else ("Update required" if next == State.UPDATE_REQUIRED else ("Disconnected (Reconnecting...)" if next == State.RECONNECTING else "Error"))
+	_retry.visible = next in [State.RECONNECTING, State.ERROR, State.IDLE]
+	_retry.text = "Reconnect" if next == State.IDLE else "Retry Connection"
+	_retry.disabled = false
 	_sign_in.visible = next == State.AUTH_REQUIRED
 	if next != State.RECONNECTING:
 		_timer.stop()
 	if is_instance_valid(_debug_lab_button):
-		_debug_lab_button.visible = next != State.UPDATE_REQUIRED
+		_debug_lab_button.visible = next not in [State.UPDATE_REQUIRED, State.IDLE]
 	_detail.text = message
 	var auth_scene := get_tree().current_scene
-	if not debug_lab_navigation_allowed() and not (is_instance_valid(auth_scene) and auth_scene.has_method("auth_gate_screen")):
+	if not debug_lab_navigation_allowed() and (next == State.IDLE or not (is_instance_valid(auth_scene) and auth_scene.has_method("auth_gate_screen"))):
 		_layer.show()
 	if was_connected:
 		var scene := get_tree().current_scene
@@ -227,7 +252,7 @@ func _schedule_retry() -> void:
 	_timer.start(delay)
 
 func _check() -> void:
-	if debug_offline_enabled or state in [State.UPDATE_REQUIRED, State.AUTH_REQUIRED] or _checking or _identity_mismatch or token.is_empty():
+	if debug_offline_enabled or state in [State.UPDATE_REQUIRED, State.AUTH_REQUIRED, State.IDLE] or _checking or _identity_mismatch or token.is_empty():
 		return
 	_timer.stop()
 	_checking = true
@@ -239,6 +264,9 @@ func _check() -> void:
 
 func _on_check_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	_checking = false
+	var idle_reconnect := bool(_http.get_meta("idle_reconnect", false))
+	_http.remove_meta("idle_reconnect")
+	_retry.disabled = false
 	if int(_http.get_meta("generation", -1)) != _generation:
 		_check()
 		return
@@ -249,10 +277,28 @@ func _on_check_completed(result: int, code: int, _headers: PackedStringArray, bo
 		return
 	if code == 401:
 		_fail(State.AUTH_REQUIRED, "Authentication required")
+		if idle_reconnect:
+			if is_instance_valid(get_tree().current_scene) and get_tree().current_scene.has_method("auth_gate_screen"):
+				_layer.hide()
+			else:
+				sign_in_again()
+		return
+	if idle_reconnect:
+		if result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300:
+			state = State.RECONNECTING
+			_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
+			_check()
+		else:
+			_detail.text = "Access forbidden. Please try again." if code == 403 else "Connection unavailable. Please try again."
 		return
 	if code == 403:
 		_fail(State.ERROR, "Access forbidden. Your account is not permitted.")
 		return
+	if result == HTTPRequest.RESULT_SUCCESS and code == 409:
+		var error_data: Variant = JSON.parse_string(body.get_string_from_utf8())
+		if error_data is Dictionary and str(error_data.get("error", "")) == "SESSION_IDLE":
+			require_idle()
+			return
 	if result != HTTPRequest.RESULT_SUCCESS or code < 200 or code >= 300:
 		_fail(State.RECONNECTING, "Recovering connection and verifying your session...")
 		return
@@ -461,7 +507,7 @@ func _recover_loadout(scene: Node) -> void:
 		_unlock()
 
 func _unlock() -> void:
-	if debug_offline_enabled or state == State.UPDATE_REQUIRED:
+	if debug_offline_enabled or state in [State.UPDATE_REQUIRED, State.AUTH_REQUIRED, State.IDLE]:
 		return
 	state = State.CONNECTED
 	_attempt = 0
@@ -477,7 +523,7 @@ func _unlock() -> void:
 
 func _input(event: InputEvent) -> void:
 	var scene := get_tree().current_scene
-	if is_instance_valid(scene) and scene.has_method("auth_gate_screen"):
+	if state != State.IDLE and is_instance_valid(scene) and scene.has_method("auth_gate_screen"):
 		return
 	if blocked() and not debug_lab_navigation_allowed() and (event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion):
 		get_viewport().set_input_as_handled()
@@ -522,7 +568,9 @@ func _create_overlay() -> void:
 	_retry.custom_minimum_size = Vector2(220, 48)
 	_retry.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	MenuArt.button(_retry)
-	_retry.pressed.connect(_check)
+	_retry.pressed.connect(func():
+		if state == State.IDLE: reconnect_idle()
+		else: _check())
 	box.add_child(_retry)
 	_sign_in = Button.new()
 	_sign_in.text = "Sign in again"

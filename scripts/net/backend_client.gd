@@ -213,8 +213,8 @@ func refresh_state() -> void:
 	if err != OK:
 		push_error("BackendClient: refresh_state failed to send (%s)" % err)
 
-func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false) -> String:
-	if _connection_gate().debug_offline_enabled or _connection_gate().state == _connection_gate().State.UPDATE_REQUIRED or (_connection_gate().blocked() and not recovery):
+func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false, replay: bool = false) -> String:
+	if _connection_gate().debug_offline_enabled or _connection_gate().state in [_connection_gate().State.UPDATE_REQUIRED, _connection_gate().State.IDLE] or (_connection_gate().blocked() and not recovery):
 		return ""
 	_ensure_api_http()
 	if _api_in_flight.size() > 0:
@@ -224,7 +224,7 @@ func request_api(method: String, path: String, body: Variant, expect_state: bool
 		if not body is Dictionary or not _connection_gate().journal_pending(self, recovery_paths[path][0], recovery_paths[path][1], body):
 			return ""
 	var request_id := _make_uuid()
-	var meta := {"kind": "api", "request_id": request_id, "expect_state": expect_state}
+	var meta := {"kind": "api", "request_id": request_id, "expect_state": expect_state, "replay": recovery or replay}
 	var err = _send_api_request(method, path, body, meta)
 	if err != OK:
 		return ""
@@ -356,6 +356,8 @@ func _send_request(method: String, path: String, body: Variant, meta: Dictionary
 	var headers: PackedStringArray = ["Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()]
 	if token != "":
 		headers.append("Authorization: Bearer %s" % token)
+	if bool(meta.get("queued", false)):
+		headers.append("X-EntityWars-Replay: 1")
 	if _debug_bypass:
 		headers.append("X-Debug-Bypass: 1")
 	var body_text := ""
@@ -375,6 +377,8 @@ func _send_api_request(method: String, path: String, body: Variant, meta: Dictio
 	var headers: PackedStringArray = ["Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()]
 	if token != "":
 		headers.append("Authorization: Bearer %s" % token)
+	if bool(meta.get("replay", false)):
+		headers.append("X-EntityWars-Replay: 1")
 	if _debug_bypass:
 		headers.append("X-Debug-Bypass: 1")
 	var body_text := ""
@@ -419,8 +423,12 @@ func _on_request_completed(result: int, response_code: int, _headers: PackedStri
 		_handle_request_failure(kind, action, action_key, "network_error", was_queued)
 		return
 	if response_code < 200 or response_code >= 300:
-		_connection_gate().report_failure(self, "http", response_code)
 		var err_data = _parse_json(body)
+		if response_code == 409 and err_data is Dictionary and str(err_data.get("error", "")) == "SESSION_IDLE":
+			_connection_gate().require_idle()
+			if kind == "action": emit_signal("action_uncertain", action_id, "session_idle")
+			return
+		_connection_gate().report_failure(self, "http", response_code)
 		if kind == "action" and response_code == 401:
 			emit_signal("action_uncertain", action_id, "authentication_required")
 			return
@@ -496,6 +504,10 @@ func _on_api_request_completed(result: int, response_code: int, _headers: Packed
 		return
 	if response_code < 200 or response_code >= 300:
 		var err_data = _parse_json(body)
+		if response_code == 409 and err_data is Dictionary and str(err_data.get("error", "")) == "SESSION_IDLE":
+			_connection_gate().require_idle()
+			emit_signal("api_completed", request_id, false, {"error": "SESSION_IDLE"})
+			return
 		# Ranked can be intentionally unavailable while the rest of the game is online.
 		if not (typeof(err_data) == TYPE_DICTIONARY and str(err_data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED", "PVP_UNAVAILABLE"]):
 			_connection_gate().report_failure(self, "http", response_code)

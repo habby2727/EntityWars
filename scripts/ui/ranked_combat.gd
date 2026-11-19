@@ -202,10 +202,10 @@ func _on_auth_changed(_token: String) -> void:
 	timer_panel.hide()
 	refresh_controls()
 
-func _send(method: String, path: String, body: Variant, kind: String) -> bool:
+func _send(method: String, path: String, body: Variant, kind: String, replay: bool = false) -> bool:
 	if not request_id.is_empty() or backend.token.is_empty() or backend._verified_player_id.is_empty():
 		return false
-	request_id = backend.request_api(method, path, body)
+	request_id = backend.request_api(method, path, body, false, false, replay)
 	if request_id.is_empty():
 		return false
 	request_kind = kind
@@ -236,7 +236,7 @@ func _process(delta: float) -> void:
 		timer_panel.show()
 		timer_label.text = "%02d:%02d" % [seconds / 60, seconds % 60]
 	if request_id.is_empty() and not chat_pending.is_empty() and pending.is_empty():
-		_send("POST", "/pvp/match/chat", chat_pending, "chat")
+		_send("POST", "/pvp/match/chat", chat_pending, "chat", true)
 	if request_id.is_empty() and next_poll <= 0.0:
 		next_poll = 3.0
 		_poll()
@@ -280,7 +280,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 			pending.clear()
 			pending_path = ""
 		elif not pending_path.is_empty():
-			_send("POST", pending_path, pending, "forfeit" if pending_path.ends_with("forfeit") else "decision")
+			_send("POST", pending_path, pending, "forfeit" if pending_path.ends_with("forfeit") else "decision", true)
 	_render()
 
 func _fighter(data: Dictionary) -> Dictionary:

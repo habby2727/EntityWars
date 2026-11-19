@@ -13,7 +13,7 @@ test.skipIf(!dbUrl || !redisBin)("production rejects disabled accounts and repor
  const reserve = () => { const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() }); const port = s.port; s.stop(); return port; };
  const redisPort = reserve(), port = reserve();
  const redis = Bun.spawn([redisBin!, "--port", String(redisPort), "--bind", "127.0.0.1", "--save", "", "--appendonly", "no"], { cwd: dir, stdout: "ignore", stderr: "ignore" });
- const env = { ...process.env, NODE_ENV: "production", BUN_ENV: "production", MIN_CLIENT_BUILD: "5504", HOST: "127.0.0.1", PORT: String(port), DB_PATH: join(dir, "test.sqlite"), DATABASE_URL: `${dbUrl}${dbUrl!.includes("?") ? "&" : "?"}options=${encodeURIComponent(`-c search_path=${schema}`)}`, REDIS_URL: `redis://127.0.0.1:${redisPort}`, TOKEN_SIGNING_SECRET: "isolated-test-secret-not-for-production", EXPERIMENT_SECRET: "isolated-experiment-secret-0123456789", TRADE_SECRET: "isolated-trade-secret-012345678901234", WORLD_SECRET: "isolated-world-secret-012345678901234" };
+ const env = { ...process.env, SESSION_IDLE_ENABLED: "1", NODE_ENV: "production", BUN_ENV: "production", MIN_CLIENT_BUILD: "5504", HOST: "127.0.0.1", PORT: String(port), DB_PATH: join(dir, "test.sqlite"), DATABASE_URL: `${dbUrl}${dbUrl!.includes("?") ? "&" : "?"}options=${encodeURIComponent(`-c search_path=${schema}`)}`, REDIS_URL: `redis://127.0.0.1:${redisPort}`, TOKEN_SIGNING_SECRET: "isolated-test-secret-not-for-production", EXPERIMENT_SECRET: "isolated-experiment-secret-0123456789", TRADE_SECRET: "isolated-trade-secret-012345678901234", WORLD_SECRET: "isolated-world-secret-012345678901234" };
  const server = Bun.spawn([process.execPath, "src/index.ts"], { cwd: resolve(import.meta.dir, "../.."), env, stdout: "ignore", stderr: "ignore" });
  const base = `http://127.0.0.1:${port}`, headers = { "content-type": "application/json", "X-EntityWars-Client-Build": "5504" };
  try {
@@ -24,7 +24,9 @@ test.skipIf(!dbUrl || !redisBin)("production rejects disabled accounts and repor
   expect((await state(account.token)).status).toBe(200); expect((await state("invalid-token")).status).toBe(401);
   await sql.unsafe(`INSERT INTO ${schema}.users (id, disabled) VALUES ($1, true)`, [account.player_id]);
   expect((await state(account.token)).status).toBe(403); expect((await login("/auth/login")).status).toBe(403);
+  expect((await fetch(base + "/auth/reconnect", { method: "POST", headers: { ...headers, authorization: `Bearer ${account.token}` } })).status).toBe(403);
   await sql.unsafe(`UPDATE ${schema}.users SET disabled = false WHERE id = $1`, [account.player_id]); redis.kill(); await redis.exited;
   expect((await state(account.token)).status).toBe(503); expect((await state("invalid-token")).status).toBe(503);
+  expect((await fetch(base + "/auth/reconnect", { method: "POST", headers: { ...headers, authorization: `Bearer ${account.token}` } })).status).toBe(503);
  } finally { redis.kill(); server.kill(); await server.exited; await sql.unsafe(`DROP SCHEMA ${schema} CASCADE`); await sql.end(); rmSync(dir, { recursive: true, force: true }); }
 }, 30000);

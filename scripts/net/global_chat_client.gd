@@ -96,6 +96,11 @@ func _poll_completed(result: int, code: int, _headers: PackedStringArray, body: 
 	if code == 426:
 		ConnectionGate.require_update()
 		return
+	if result == HTTPRequest.RESULT_SUCCESS and code == 409:
+		var idle: Variant = JSON.parse_string(body.get_string_from_utf8())
+		if idle is Dictionary and str(idle.get("error", "")) == "SESSION_IDLE":
+			ConnectionGate.require_idle()
+			return
 	if not available():
 		return
 	var data: Variant = JSON.parse_string(body.get_string_from_utf8())
@@ -159,7 +164,7 @@ func send_message(text: String) -> bool:
 		return false
 	return true
 
-func _send_completed(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
+func _send_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	_send_busy = false
 	if code == 401:
 		ConnectionGate.require_authentication()
@@ -167,6 +172,11 @@ func _send_completed(result: int, code: int, _headers: PackedStringArray, _body:
 	if code == 426:
 		ConnectionGate.require_update()
 		return
+	if result == HTTPRequest.RESULT_SUCCESS and code == 409:
+		var idle: Variant = JSON.parse_string(body.get_string_from_utf8())
+		if idle is Dictionary and str(idle.get("error", "")) == "SESSION_IDLE":
+			ConnectionGate.require_idle()
+			return
 	if not available():
 		return
 	if result == HTTPRequest.RESULT_SUCCESS and code == 200:
