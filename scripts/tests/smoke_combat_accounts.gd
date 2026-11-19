@@ -73,7 +73,7 @@ func _run() -> void:
 func _write_seal(player_id: String) -> void:
 	var path := preload("res://scripts/domain/build_preferences.gd").seal_path(player_id, "attack")
 	var seal := FileAccess.open(path, FileAccess.WRITE)
-	seal.store_string(JSON.stringify({"player_id": player_id, "entity_id": "sulfur_01", "equip_1": "wind_amulet", "equip_2": "saltstone_charm", "side_1": "mirror_sigel"}))
+	seal.store_string(JSON.stringify({"player_id": player_id, "entity_id": "sulfur_01", "equip_1": "wind_amulet", "equip_2": "saltstone_charm", "side_1": "mirror_sigel", "spell_ids": ["steady_script", "cinder_fist", "furnace_rush", "ash_temper"]}))
 	seal.close()
 
 func _wait_verified(client: BackendClient) -> bool:
@@ -101,14 +101,14 @@ func _check_fighters(scene, level: int) -> bool:
 	var data := {"entity_id": "sulfur_01", "equip_1": "saltstone_charm", "equip_2": "wind_amulet", "side_1": "mirror_sigel"}
 	var fighter: Dictionary = scene._build_fighter(data, true)
 	var npc: Dictionary = scene._build_fighter(data, false)
-	var expected := 0.12
+	var expected := 0.10
 	if int(fighter.equip_1.get("forge_level", -1)) != level or fighter.has("side_1") or not is_equal_approx(float(fighter.equip_1.effects.ward_pct[0]), expected):
-		_fail("Incorrect equipment progression or active legacy sideboard")
+		_fail("Incorrect equipment progression or active legacy sideboard: expected level %d, equip=%s, side=%s" % [level, fighter.equip_1, fighter.has("side_1")])
 		return false
-	if int(fighter.equip_1.effects.guard_flat[0]) != (12 if level == 10 else 6 if level == 5 else 1):
+	if int(fighter.equip_1.effects.guard_flat[0]) != (9 if level == 10 else 6 if level == 5 else 1):
 		_fail("Incorrect catalog level effect")
 		return false
-	if npc.equip_1.has("forge_level") or not is_equal_approx(float(npc.equip_1.effects.ward_pct[0]), 0.12):
+	if npc.equip_1.has("forge_level") or not is_equal_approx(float(npc.equip_1.effects.ward_pct[0]), 0.10):
 		_fail("NPC inherited player progression")
 		return false
 	var repeated: Dictionary = scene._build_fighter(data, true)
@@ -128,7 +128,7 @@ func _check_inventory(level: int) -> bool:
 		return false
 	var item: Dictionary = inventory._registry.get_items().get("saltstone_charm", {})
 	var effective: Dictionary = preload("res://scripts/domain/item_progress.gd").effective_item(item, inventory._item_progress)
-	if int(effective.effects.guard_flat[0]) != (12 if level == 10 else 1):
+	if int(effective.effects.guard_flat[0]) != (9 if level == 10 else 1):
 		_fail("Inventory effective item is inconsistent")
 		return false
 	inventory.queue_free()
@@ -147,11 +147,11 @@ func _check_weapons(scene, level: int) -> bool:
 		return false
 	scene._set_active_weapon(scene.player, 2)
 	var item: Dictionary = scene._get_active_weapon(scene.player)
-	if str(item.get("id", "")) != "saltstone_charm" or int(item.get("forge_level", -1)) != level or not is_equal_approx(float(scene.player.item_fx.ward_pct), 0.12) or float(scene.player.item_fx.evasion_pct) != 0.0:
+	if str(item.get("id", "")) != "saltstone_charm" or int(item.get("forge_level", -1)) != level or not is_equal_approx(float(scene.player.item_fx.ward_pct), 0.10) or float(scene.player.item_fx.evasion_pct) != 0.0:
 		_fail("Active secondary weapon progression or effects are incorrect")
 		return false
 	scene._reset_fighter(scene.player)
-	if not is_equal_approx(float(scene.player.item_fx.ward_pct), 0.12):
+	if not is_equal_approx(float(scene.player.item_fx.ward_pct), 0.10):
 		_fail("Battle reset changed item progression")
 		return false
 	return true

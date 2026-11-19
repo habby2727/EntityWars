@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import Redis from "ioredis";
 
-test("idle sessions, reconnect, replay and legacy deployment with real Redis", async () => {
+test.skipIf(!Bun.env.REDIS_TEST_BIN && !Bun.env.CI)("idle sessions, reconnect, replay and legacy deployment with real Redis", async () => {
 	const redisBin = Bun.env.REDIS_TEST_BIN;
 	if (!redisBin) throw new Error("Set REDIS_TEST_BIN to an isolated redis-server executable");
 	const dir = mkdtempSync(join(tmpdir(), "ew-idle-"));
