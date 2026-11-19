@@ -89,6 +89,10 @@ func _configure_popup(popup: PopupMenu) -> void:
 	popup.add_theme_color_override("font_hover_color", Color.WHITE)
 	popup.add_theme_color_override("font_disabled_color", Color(0.6, 0.63, 0.6))
 	popup.add_theme_constant_override("v_separation", 8)
+	if OS.has_feature("android"):
+		var target: float = GameTypography.touch_size(popup)
+		popup.add_theme_font_size_override("font_size", maxi(popup.get_theme_font_size("font_size"), roundi(target * 0.32)))
+		popup.add_theme_constant_override("v_separation", maxi(8, roundi(target * 0.4)))
 	if not popup.about_to_popup.is_connected(_on_about_to_popup.bind(popup)):
 		popup.about_to_popup.connect(_on_about_to_popup.bind(popup))
 

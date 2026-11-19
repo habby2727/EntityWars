@@ -25,7 +25,22 @@ func _on_node_added(node: Node) -> void:
 func _apply_font_if_alive(id: int) -> void:
 	var node := instance_from_id(id) as Node
 	if is_instance_valid(node):
+		if OS.has_feature("android") and node is BaseButton:
+			apply_touch_size(node)
 		_apply_font(node)
+
+func touch_size(control: Node) -> float:
+	var scale_factor := control.get_viewport().get_screen_transform().get_scale()
+	var pixels := 48.0 * maxf(1.0, float(DisplayServer.screen_get_dpi()) / 160.0)
+	return pixels / maxf(0.01, minf(absf(scale_factor.x), absf(scale_factor.y)))
+
+func apply_touch_size(control: Control) -> void:
+	if not OS.has_feature("android") or not control.is_inside_tree():
+		return
+	var target := touch_size(control)
+	control.custom_minimum_size = control.custom_minimum_size.max(Vector2(target, target))
+	if control is BaseButton or control is LineEdit:
+		control.add_theme_font_size_override("font_size", maxi(control.get_theme_font_size("font_size"), roundi(target * 0.32)))
 
 func _excluded(node: Node) -> bool:
 	var current := node

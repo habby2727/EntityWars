@@ -149,6 +149,8 @@ func _ready() -> void:
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_input.text_submitted.connect(func(_text: String): _submit())
 	row.add_child(_input)
+	if OS.has_feature("android"):
+		_input.custom_minimum_size.y = maxf(_input.custom_minimum_size.y, GameTypography.touch_size(_input))
 	_send_button = Button.new()
 	_send_button.add_theme_font_size_override("font_size", 22)
 	_send_button.pressed.connect(_submit)
@@ -162,6 +164,16 @@ func _ready() -> void:
 
 func _resize_to_viewport() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
+	if OS.has_feature("android"):
+		var target := GameTypography.touch_size(_button)
+		_toggle_row.offset_top = -target - 15.0
+		_toggle_row.offset_left = -minf(maxf(360.0, target * 3.0), viewport_size.x - 30.0) - 15.0
+		_panel.offset_left = -minf(maxf(700.0, target * 5.0), viewport_size.x - 30.0) - 15.0
+		_panel.offset_top = -minf(maxf(560.0, target * 5.0), viewport_size.y - 30.0) - 15.0
+		_online_panel.offset_bottom = -target - 30.0
+		_online_panel.offset_left = -minf(maxf(400.0, target * 3.0), viewport_size.x - 30.0) - 15.0
+		_online_panel.offset_top = -minf(560.0, maxf(0.0, viewport_size.y - target - 45.0)) - target - 30.0
+		return
 	_panel.offset_left = -minf(525.0, maxf(0.0, viewport_size.x - 30.0)) - 15.0
 	_panel.offset_top = -minf(360.0, maxf(0.0, viewport_size.y - 30.0)) - 15.0
 	_toggle_row.offset_left = -minf(262.5, maxf(0.0, viewport_size.x - 30.0)) - 15.0
