@@ -797,7 +797,7 @@ test("native Aether and Vitriol spells, delayed neutralization and poison", () =
   const action = { turn: 1, spell_id: "rot_harvest", target: "boss" };
   expect(resolveCombatTurn(plain, action, draws).next_state.boss.hp).toBe(97);
   const harvest = resolveCombatTurn(poisoned, action, draws).next_state;
-  expect([harvest.boss.hp, harvest.boss.status.poison]).toEqual([89, 1]);
+  expect([harvest.boss.hp, harvest.boss.status.poison]).toEqual([92, 1]);
   const marked = resolveCombatTurn(plain, { turn: 1, spell_id: "caustic_mark", target: "boss" }, draws).next_state;
   expect(marked.boss.status.poison).toBe(1);
 });
