@@ -8,7 +8,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 const godot = process.env.GODOT_BIN || join(process.env.USERPROFILE || "", "Desktop", "Godot_v4.6.exe");
 const project = resolve(import.meta.dir, "../../..");
 
-for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victory", true], ["hunt", "turn", false], ["hunt", "turn", true], ["hunt", "loadout", false], ["hunt", "loadout", true], ["hunt", "forfeit", false], ["hunt", "forfeit", true], ["hunt", "expired", false], ["hunt", "expired_loadout", false], ["hunt", "wrong_owner", false], ["hunt", "malformed", false], ["dungeon", "turn", false], ["dungeon", "turn", true], ["dungeon", "loadout", false], ["dungeon", "loadout", true], ["dungeon", "inspiration", false], ["dungeon", "inspiration", true], ["dungeon", "terminal", false], ["dungeon", "terminal", true], ["dungeon", "expired", false], ["dungeon", "expired_loadout", false]] as const) test(`Godot restart recovers ${committed ? "committed" : "uncommitted"} ${mode} ${kind}`, async () => {
+for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victory", true], ["hunt", "defeat", true], ["hunt", "turn", false], ["hunt", "turn", true], ["hunt", "loadout", false], ["hunt", "loadout", true], ["hunt", "forfeit", false], ["hunt", "forfeit", true], ["hunt", "expired", false], ["hunt", "expired_loadout", false], ["hunt", "wrong_owner", false], ["hunt", "malformed", false], ["dungeon", "turn", false], ["dungeon", "turn", true], ["dungeon", "loadout", false], ["dungeon", "loadout", true], ["dungeon", "inspiration", false], ["dungeon", "inspiration", true], ["dungeon", "terminal", false], ["dungeon", "terminal", true], ["dungeon", "expired", false], ["dungeon", "expired_loadout", false]] as const) test(`Godot restart recovers ${committed ? "committed" : "uncommitted"} ${mode} ${kind}`, async () => {
   expect(existsSync(godot)).toBe(true);
   const directory = mkdtempSync(join(tmpdir(), "ew-restart-"));
   const dbPath = join(directory, "test.sqlite");
@@ -44,7 +44,8 @@ for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victor
       }
       const lostLogin = await request("/auth/dev_login", { name: "lost_response_smoke" });
       expect(lostLogin.status).toBe(200);
-      expect((await request("/auth/dev_login", { name: "combat_account_b" })).status).toBe(200);
+      const otherLogin = await request("/auth/dev_login", { name: "combat_account_b" });
+      expect(otherLogin.status).toBe(200);
       const lostId: string = lostLogin.data.player_id;
       const lostState = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(lostId) as any).state_json);
       lostState.wallet.essence = 100; lostState.lab.buildings.build_forge = { level: 1, route: "" }; lostState.item_progress = {};
@@ -52,7 +53,7 @@ for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victor
       const reserved = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("reserved") });
       const lostPort = reserved.port; reserved.stop();
       const lostRoot = join(directory, "lost-user"), marker = join(directory, "lost-marker.json"), lostUrl = `http://127.0.0.1:${lostPort}`;
-      const lostEnv = { ...env, FORGE_SMOKE_URL: base, LOST_RESPONSE_PORT: String(lostPort), LOST_RESPONSE_MARKER: marker, LOST_RESPONSE_URL: lostUrl, FORGE_SMOKE_USER_ROOT: lostRoot, APPDATA: lostRoot, LOCALAPPDATA: lostRoot };
+      const lostEnv = { ...env, LOST_ACCOUNT_A_TOKEN: lostLogin.data.token, LOST_ACCOUNT_B_TOKEN: otherLogin.data.token, FORGE_SMOKE_URL: base, LOST_RESPONSE_PORT: String(lostPort), LOST_RESPONSE_MARKER: marker, LOST_RESPONSE_URL: lostUrl, FORGE_SMOKE_USER_ROOT: lostRoot, APPDATA: lostRoot, LOCALAPPDATA: lostRoot };
       const lostProxy = Bun.spawn([process.execPath, "src/tests/lost_response_proxy.ts"], { cwd: resolve(import.meta.dir, "../.."), env: lostEnv, stdout: "ignore", stderr: "pipe" });
       try {
         let proxyReady = false;
@@ -109,6 +110,11 @@ for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victor
       state.player.hp = 1; state.player.status.poison = 1; state.npc.hp = state.npc.max_hp = 1000;
       db.query("UPDATE dungeon_runs SET combat_state_json = ? WHERE run_id = ?").run(JSON.stringify(state), sessionId);
     }
+    if (kind === "defeat") {
+      const state = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId) as any).combat_state_json);
+      state.player.hp = 1; state.player.status.poison = 1; state.boss.hp = state.boss.max_hp = 1000;
+      db.query("UPDATE solo_hunt_sessions SET combat_state_json = ? WHERE session_id = ?").run(JSON.stringify(state), sessionId);
+    }
     if (kind === "victory") {
       const state = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId) as any).combat_state_json);
       state.boss.hp = 1;
@@ -120,7 +126,7 @@ for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victor
       db.exec("CREATE TRIGGER test_hunt_victory_guard BEFORE UPDATE OF status ON solo_hunt_sessions WHEN OLD.status = 'VERIFIED_WIN' BEGIN SELECT RAISE(ABORT, 'victory status cannot be updated twice'); END;");
     }
     const invalid = kind === "wrong_owner" || kind === "malformed";
-    const endpoint = isLoadout ? "loadout" : invalid || isExpired || kind === "terminal" || kind === "victory" ? "turn" : kind;
+    const endpoint = isLoadout ? "loadout" : invalid || isExpired || kind === "terminal" || kind === "victory" || kind === "defeat" ? "turn" : kind;
     const path = mode === "hunt" ? `/world/boss-hunts/${endpoint}` : `/dungeon/${endpoint}`;
     const payload = isLoadout ? { ...loadout, client_action_id: "restart-turn" } : kind === "forfeit" ? { session_id: sessionId, client_action_id: "restart-turn" } : mode === "hunt" ? { session_id: sessionId, client_action_id: "restart-turn", expected_revision: 1, decision: { turn: 1, spell_id: "steady_script", target: "boss" } } : { run_id: sessionId, client_action_id: "restart-turn", expected_revision: 1, decision: kind === "inspiration" ? { kind: "decline" } : { turn: 1, spell_id: "cinder_fist", hom_action: "hold" } };
     const revision = kind === "forfeit" ? 0 : kind === "loadout" ? 1 : 2;
@@ -138,7 +144,7 @@ for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victor
       return fetch(base + url.pathname + url.search, { method: req.method, headers: req.headers, body: req.method === "GET" ? undefined : await req.arrayBuffer() });
     } });
     const user = join(directory, "user");
-    const common = { ...process.env, APPDATA: user, LOCALAPPDATA: user, HUNT_RESTART_ROOT: user, HUNT_RESTART_SESSION: sessionId, HUNT_RESTART_PLAYER: playerId, HUNT_RESTART_ROTATION: String(schedule.rotation_key), HUNT_RESTART_TOKEN: token, RESTART_MODE: mode, RESTART_PATH: path, RESTART_PAYLOAD: JSON.stringify(payload), RESTART_REVISION: String(revision), RESTART_TERMINAL: kind === "terminal" ? "1" : "0", RESTART_WIN: kind === "victory" ? "1" : "0", RESTART_FORFEIT: kind === "forfeit" ? "1" : "0", RESTART_EXPIRED: isExpired ? "1" : "0", RESTART_EXPECT_LOCK: invalid ? "1" : "0" };
+    const common = { ...process.env, APPDATA: user, LOCALAPPDATA: user, HUNT_RESTART_ROOT: user, HUNT_RESTART_SESSION: sessionId, HUNT_RESTART_PLAYER: playerId, HUNT_RESTART_ROTATION: String(schedule.rotation_key), HUNT_RESTART_TOKEN: token, RESTART_MODE: mode, RESTART_PATH: path, RESTART_PAYLOAD: JSON.stringify(payload), RESTART_REVISION: String(revision), RESTART_TERMINAL: kind === "terminal" ? "1" : "0", RESTART_WIN: kind === "victory" ? "1" : "0", RESTART_DEFEAT: kind === "defeat" ? "1" : "0", RESTART_FORFEIT: kind === "forfeit" ? "1" : "0", RESTART_EXPIRED: isExpired ? "1" : "0", RESTART_EXPECT_LOCK: invalid ? "1" : "0" };
     const args = [godot, "--headless", "--path", project, "--script", "res://scripts/tests/smoke_hunt_restart_process.gd"];
     first = Bun.spawn(args, { env: { ...common, ENTITYWARS_BACKEND_URL: `http://127.0.0.1:${proxy.port}`, HUNT_RESTART_PHASE: "first" }, stdout: "pipe", stderr: "pipe" });
     await Promise.race([seen, Bun.sleep(30000).then(() => { throw new Error("first process did not submit"); }), first.exited.then(async () => { throw new Error("first process exited before submission: " + await new Response(first!.stderr).text()); })]);
@@ -179,7 +185,8 @@ for (const [mode, kind, committed] of [["hunt", "back", false], ["hunt", "victor
     expect((row as any).combat_revision).toBe(kind === "forfeit" ? 1 : revision);
     if (kind === "terminal") expect((db.query("SELECT status FROM dungeon_runs WHERE run_id = ?").get(sessionId) as any).status).toBe("LOSS");
     expect((db.query("SELECT COUNT(*) AS n FROM action_log WHERE player_id = ? AND client_action_id = 'restart-turn'").get(playerId) as any).n).toBe(1);
-    if (kind === "turn") {
+    if (kind === "defeat") expect((db.query("SELECT status FROM solo_hunt_sessions WHERE session_id = ?").get(sessionId) as any).status).toBe("VERIFIED_LOSS");
+    if (kind === "turn" || kind === "defeat") {
       expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id = ?").get(playerId) as any).state_json).wallet).toEqual(walletBefore);
       expect((db.query("SELECT COUNT(*) AS n FROM combat_reward_receipts WHERE player_id = ?").get(playerId) as any).n).toBe(receiptsBefore);
     }

@@ -2,11 +2,12 @@ import type { Database } from "bun:sqlite";
 import { pvpRank, pvpSeason } from "./pvp/ranking";
 
 // Message text is plain text. Consumers must render it as text, never HTML or BBCode.
-export function createGlobalChat(db: Database, clock: () => number = Date.now) {
+export function createGlobalChat(db: Database, clock: () => number = Date.now, bridgeEnabled = false) {
 	const presence = new Map<string, number>();
 	const lastSend = new Map<string, number>();
-	const messages = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
-		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
+	const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
+		CASE WHEN m.discord_message_id IS NOT NULL THEN 'discord' ELSE 'game' END AS source
+		FROM global_chat_messages m LEFT JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
 	const existing = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
 		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
 	const insert = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?)");
@@ -19,7 +20,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now) {
 		return row ? { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) } : null;
 	}
 	function withLeague(row: any, season: string) {
-		return { ...row, league: publicProfile(row.player_id, season)?.league ?? null };
+		return { ...row, league: row.source === 'discord' ? null : publicProfile(row.player_id, season)?.league ?? null };
 	}
 	function onlineCount() {
 		const now = clock();
@@ -29,6 +30,20 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now) {
 	return {
 		onlineCount,
 		close() { messages.finalize(); existing.finalize(); insert.finalize(); prune.finalize(); profile.finalize(); },
+		acceptDiscord(id: string, name: string, content: string) {
+			if (!/^\d{1,32}$/.test(id) || typeof name !== 'string' || typeof content !== 'string') return false;
+			const clean = (s: string, limit: number) => [...s.replace(/[\u0000-\u001f\u007f-\u009f]/gu, ' ').replace(/\s+/gu, ' ').trim()].slice(0, limit).join('');
+			const text = clean(content, 200), username = clean(name, 50);
+			if (!text || !username) return false;
+			return db.transaction(() => {
+				const now = clock();
+				if (!db.query('INSERT OR IGNORE INTO discord_chat_seen VALUES (?, ?)').run(id, now).changes) return false;
+				db.query('INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, discord_message_id) VALUES (?, ?, ?, ?, ?, ?)').run('', id, text, now, '[Discord] ' + username, id);
+				prune.run();
+				db.query('DELETE FROM discord_chat_seen WHERE message_id NOT IN (SELECT message_id FROM discord_chat_seen ORDER BY created_at DESC LIMIT 10000)').run();
+				return true;
+			}).immediate();
+		},
 		state(playerId: string) {
 			const now = clock();
 			presence.set(playerId, now);
@@ -54,6 +69,11 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now) {
 				insert.run(playerId, clientId, text, now);
 				prune.run();
 				const message = existing.get(playerId, clientId);
+				if (bridgeEnabled && message) {
+					const row = message as { id: number; username: string; text: string };
+					db.query('INSERT INTO discord_chat_outbox (message_id, username, text, created_at) VALUES (?, ?, ?, ?)').run(row.id, row.username, row.text, now);
+					db.query('DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)').run();
+				}
 				lastSend.set(playerId, now);
 				return { status: 200, data: { message, duplicate: false } };
 			}).immediate();

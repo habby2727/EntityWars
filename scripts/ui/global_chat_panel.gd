@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const MenuArt = preload("res://scripts/ui/menu_art.gd")
+const DISCORD_INVITE := "https://discord.gg/W2mrgZ69r9"
 
 var _button: Button
 var _badge: Label
@@ -16,6 +17,7 @@ var _input: LineEdit
 var _send_button: Button
 var _status: Label
 var _toggle_row: HBoxContainer
+var _disclosure: Label
 
 func _ready() -> void:
 	layer = 40
@@ -102,6 +104,10 @@ func _ready() -> void:
 	_panel.add_child(column)
 	var header := HBoxContainer.new()
 	column.add_child(header)
+	_disclosure = Label.new()
+	_disclosure.add_theme_font_size_override("font_size", 14)
+	_disclosure.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(_disclosure)
 	var title := Label.new()
 	title.text = "Chat"
 	title.add_theme_font_size_override("font_size", 28)
@@ -125,6 +131,7 @@ func _ready() -> void:
 	column.add_child(_scroll)
 	_log = RichTextLabel.new()
 	_log.bbcode_enabled = false
+	_log.meta_clicked.connect(_discord_link_clicked)
 	_log.add_theme_font_size_override("normal_font_size", 22)
 	_log.fit_content = true
 	_log.scroll_active = false
@@ -229,6 +236,10 @@ func _restore_online_scroll(value: int) -> void:
 func _submit() -> void:
 	GlobalChatClient.send_message(_input.text)
 
+func _discord_link_clicked(meta: Variant) -> void:
+	if str(meta) == "discord_invite":
+		OS.shell_open(DISCORD_INVITE)
+
 func _send_finished(success: bool) -> void:
 	if success:
 		_input.clear()
@@ -245,6 +256,7 @@ func _refresh() -> void:
 	_online.visible = not _panel.visible
 	_badge.visible = GlobalChatClient.unread and not _panel.visible
 	_send_button.text = tr("CHAT_SEND")
+	_disclosure.text = tr("CHAT_DISCORD_DISCLOSURE")
 	_input.placeholder_text = tr("CHAT_PLACEHOLDER")
 	var key: String = GlobalChatClient.error_key
 	_status.text = tr("CHAT_UNAVAILABLE") if not GlobalChatClient.available() else (tr(key) if not key.is_empty() else "")
@@ -260,8 +272,16 @@ func _refresh() -> void:
 		if icon != null:
 			_log.add_image(icon, 24, 24)
 			_log.add_text(" ")
-		_log.push_color(Color.RED)
-		_log.add_text(str(entry.get("username", "")) + ": ")
+		var username := str(entry.get("username", ""))
+		if entry.get("source", "") == "discord" and username.begins_with("[Discord] "):
+			_log.push_color(Color("7289da"))
+			_log.push_meta("discord_invite")
+			_log.add_text("[Discord]")
+			_log.pop()
+			_log.add_text(username.substr(9) + ": ")
+		else:
+			_log.push_color(Color.RED)
+			_log.add_text(username + ": ")
 		_log.pop()
 		_log.push_color(Color.WHITE)
 		_log.add_text(str(entry.get("text", "")) + "\n")

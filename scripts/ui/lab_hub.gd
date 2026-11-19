@@ -89,7 +89,6 @@ func _enter_tree() -> void:
 			client.auto_flush = false
 
 func _ready() -> void:
-	add_child(preload("res://scripts/ui/global_chat_panel.gd").new())
 	UIThemeFactory.apply_theme_to(self)
 	_debug.reload()
 	_resolve_nodes()

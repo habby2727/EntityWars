@@ -9790,11 +9790,12 @@ function createPvpRanking(db, clock = Date.now) {
 }
 
 // src/global_chat.ts
-function createGlobalChat(db, clock = Date.now) {
+function createGlobalChat(db, clock = Date.now, bridgeEnabled = false) {
   const presence = new Map;
   const lastSend = new Map;
-  const messages = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
-		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
+  const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
+		CASE WHEN m.discord_message_id IS NOT NULL THEN 'discord' ELSE 'game' END AS source
+		FROM global_chat_messages m LEFT JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
   const existing = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
 		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
   const insert = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?)");
@@ -9807,7 +9808,7 @@ function createGlobalChat(db, clock = Date.now) {
     return row ? { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) } : null;
   }
   function withLeague(row, season) {
-    return { ...row, league: publicProfile(row.player_id, season)?.league ?? null };
+    return { ...row, league: row.source === "discord" ? null : publicProfile(row.player_id, season)?.league ?? null };
   }
   function onlineCount() {
     const now = clock();
@@ -9824,6 +9825,23 @@ function createGlobalChat(db, clock = Date.now) {
       insert.finalize();
       prune.finalize();
       profile.finalize();
+    },
+    acceptDiscord(id, name, content) {
+      if (!/^\d{1,32}$/.test(id) || typeof name !== "string" || typeof content !== "string")
+        return false;
+      const clean = (s, limit) => [...s.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").replace(/\s+/gu, " ").trim()].slice(0, limit).join("");
+      const text = clean(content, 200), username = clean(name, 50);
+      if (!text || !username)
+        return false;
+      return db.transaction(() => {
+        const now = clock();
+        if (!db.query("INSERT OR IGNORE INTO discord_chat_seen VALUES (?, ?)").run(id, now).changes)
+          return false;
+        db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, discord_message_id) VALUES (?, ?, ?, ?, ?, ?)").run("", id, text, now, "[Discord] " + username, id);
+        prune.run();
+        db.query("DELETE FROM discord_chat_seen WHERE message_id NOT IN (SELECT message_id FROM discord_chat_seen ORDER BY created_at DESC LIMIT 10000)").run();
+        return true;
+      }).immediate();
     },
     state(playerId) {
       const now = clock();
@@ -9850,11 +9868,91 @@ function createGlobalChat(db, clock = Date.now) {
         insert.run(playerId, clientId, text, now);
         prune.run();
         const message = existing.get(playerId, clientId);
+        if (bridgeEnabled && message) {
+          const row = message;
+          db.query("INSERT INTO discord_chat_outbox (message_id, username, text, created_at) VALUES (?, ?, ?, ?)").run(row.id, row.username, row.text, now);
+          db.query("DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)").run();
+        }
         lastSend.set(playerId, now);
         return { status: 200, data: { message, duplicate: false } };
       }).immediate();
     }
   };
+}
+
+// src/discord_bridge.ts
+import { Client, GatewayIntentBits, MessageType } from "discord.js";
+function outgoingDiscordMessage(row) {
+  return { content: `[Game] ${row.username}: ${row.text}`, allowedMentions: { parse: [] }, nonce: String(row.message_id), enforceNonce: true };
+}
+function acceptDiscordMessage(chat, message, guildId, channelId, applicationId) {
+  if (message.guildId !== guildId || message.channelId !== channelId || message.author?.bot || message.author?.id === applicationId || message.webhookId || message.system || ![MessageType.Default, MessageType.Reply].includes(message.type))
+    return false;
+  return chat.acceptDiscord(message.id, message.member?.displayName || message.author?.globalName || message.author?.username || "", message.content);
+}
+function startDiscordBridge(db, chat, env = process.env) {
+  const token = env.DISCORD_BOT_TOKEN;
+  if (!token)
+    return { enabled: false, close() {} };
+  const guild = env.DISCORD_GUILD_ID || "1376365043775438871";
+  const channelId = env.DISCORD_CHANNEL_ID || "1572758122810974360";
+  const app = env.DISCORD_APPLICATION_ID || "1572757742270288033";
+  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+  let stopped = false, busy = false, retry = 1000;
+  let loginTimer;
+  client.on("error", () => console.warn("Discord bridge connection error"));
+  client.on("messageCreate", (message) => {
+    try {
+      acceptDiscordMessage(chat, message, guild, channelId, app);
+    } catch {
+      console.warn("Discord bridge could not store message");
+    }
+  });
+  async function connect() {
+    if (stopped)
+      return;
+    try {
+      await client.login(token);
+      retry = 1000;
+    } catch {
+      console.warn("Discord bridge login failed; retrying");
+      loginTimer = setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 60000);
+    }
+  }
+  async function dispatch() {
+    if (stopped || busy || !client.isReady())
+      return;
+    busy = true;
+    let row;
+    try {
+      row = db.query("SELECT * FROM discord_chat_outbox WHERE next_attempt <= ? ORDER BY message_id LIMIT 1").get(Date.now());
+      if (!row)
+        return;
+      const channel = await client.channels.fetch(channelId);
+      if (!channel || !("send" in channel) || !("guildId" in channel) || channel.guildId !== guild)
+        throw new Error("channel unavailable");
+      await channel.send(outgoingDiscordMessage(row));
+      db.query("DELETE FROM discord_chat_outbox WHERE message_id = ?").run(row.message_id);
+    } catch {
+      try {
+        if (row)
+          db.query("UPDATE discord_chat_outbox SET attempts = attempts + 1, next_attempt = ? WHERE message_id = ?").run(Date.now() + Math.min(300000, 2000 * 2 ** Math.min(row.attempts, 7)), row.message_id);
+      } catch {}
+      console.warn("Discord bridge dispatch failed; retrying");
+    } finally {
+      busy = false;
+    }
+  }
+  connect();
+  const timer = setInterval(() => void dispatch(), 2000);
+  return { enabled: true, close() {
+    stopped = true;
+    clearInterval(timer);
+    if (loginTimer)
+      clearTimeout(loginTimer);
+    client.destroy();
+  } };
 }
 
 // src/pvp/availability.ts
@@ -10179,7 +10277,7 @@ function pvpHomReady(fighter2) {
 }
 function pvpInitiative(fighter2) {
   const next = structuredClone(fighter2);
-  const value = 10 + (next.active_weapon?.effects?.tempo_flat?.[0] ?? 0) + (next.hom_spent ? 0 : next.hom_synergy.tempo_flat ?? 0) + (next.status.tempo_bonus ?? 0);
+  const value = (next.entity?.base_stats?.tempo ?? 10) + (next.active_weapon?.effects?.tempo_flat?.[0] ?? 0) + (next.hom_spent ? 0 : next.hom_synergy.tempo_flat ?? 0) + (next.status.tempo_bonus ?? 0);
   next.status.tempo_bonus = 0;
   return { initiative: value, fighter: next };
 }
@@ -10219,6 +10317,7 @@ function resolvePvpExchange(state, leftDecision, rightDecision, rng) {
       return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   }
   const next = structuredClone(state), events = [], turn = state.turn + 1;
+  const vitriolCorrosionUsed = { left: 0, right: 0 };
   let counter = 0;
   const draw = () => {
     const v = rng(turn, counter++);
@@ -10340,15 +10439,7 @@ function resolvePvpExchange(state, leftDecision, rightDecision, rng) {
             emit(opponent, "miss", " evades.", { kind: "evade", target_side: side, spell_id: spell.id });
             return;
           }
-          let accuracy = spell.accuracy;
-          if (a.atk > b.def * 1.6)
-            accuracy -= 0.08;
-          if (a.max_hp > b.max_hp && a.max_hp > 0)
-            accuracy -= Math.max(0, Math.min(0.15, (a.max_hp - b.max_hp) / a.max_hp * 0.2));
-          if (focus > 0)
-            accuracy = Math.min(0.99, accuracy + focus);
-          if (misalign > 0)
-            accuracy = Math.max(0.55, accuracy - misalign);
+          const accuracy = spell.accuracy + focus - misalign;
           if (draw() >= Math.max(0, Math.min(1, accuracy))) {
             emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id });
             return;
@@ -10386,7 +10477,11 @@ function resolvePvpExchange(state, leftDecision, rightDecision, rng) {
             delete b.status.poison_on_reflect;
           }
           for (const key of ["true_on_hit", "dot_true"]) {
-            const value = Math.trunc(a.item_fx[key] ?? 0);
+            let value = Math.trunc(a.item_fx[key] ?? 0);
+            if (key === "dot_true" && a.active_weapon?.id === "vitriol_vial") {
+              value = Math.max(0, Math.min(value, 4 - vitriolCorrosionUsed[side]));
+              vitriolCorrosionUsed[side] += value;
+            }
             if (value > 0) {
               spellContext.actual_damage += Math.min(b.hp, value);
               dmg(side, opponent, value, key, spell);
@@ -10618,9 +10713,10 @@ function resolvePvpExchange(state, leftDecision, rightDecision, rng) {
         const f = next.fighters[side];
         if (f.status.poison > 0) {
           f.status.poison--;
-          f.hp = Math.max(0, f.hp - 2);
+          const damage = Math.min(3, f.hp);
+          f.hp -= damage;
           f.spell_hit_this_exchange = true;
-          emit(side, "debuff", " suffers poison.", { kind: "poison", damage: 2, hp: f.hp });
+          emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp });
         }
       }
     for (const side of sides) {
@@ -10801,7 +10897,7 @@ function normalSpellMultiplier(input) {
       multiplier += advantage;
   } else {
     const value = relation(input.attacker_type);
-    multiplier = value > 1 ? 1.12 + advantage : value < 1 ? Math.min(0.92 + (input.disadvantage_reduction ?? 0), 1) : 1;
+    multiplier = value > 1 ? 1.18 + advantage : value < 1 ? Math.min(0.84 + (input.disadvantage_reduction ?? 0), 1) : 1;
   }
   const neutralize = Math.max(input.attacker_neutralize ?? 0, input.defender_neutralize ?? 0, input.attacker_hom_neutralize ?? 0, input.defender_hom_neutralize ?? 0);
   return 1 + (multiplier - 1) * (1 - neutralize);
@@ -11294,6 +11390,13 @@ var prod_default = {
   dbPath: "data/prod.sqlite"
 };
 
+// src/auth/storage_error.ts
+class AuthStorageUnavailableError extends Error {
+  constructor() {
+    super("Authentication storage temporarily unavailable.");
+  }
+}
+
 // src/db/redis.ts
 var import_ioredis = __toESM(require_built3(), 1);
 var DEFAULT_REDIS_URL = "redis://127.0.0.1:6379/0";
@@ -11432,6 +11535,8 @@ async function getAccessToken(token) {
   try {
     const redis2 = getRedis();
     if (!await ensureRedisReady()) {
+      if (production)
+        throw new AuthStorageUnavailableError;
       return null;
     }
     const raw = await redis2.get(accessKey(token));
@@ -11449,6 +11554,8 @@ async function getAccessToken(token) {
     accessMemory.set(token, parsed);
     return parsed;
   } catch (err) {
+    if (production)
+      throw new AuthStorageUnavailableError;
     console.warn("[auth] access token read failed", err);
     return null;
   }
@@ -13653,6 +13760,8 @@ async function getSession(token) {
   try {
     const redis2 = getRedis();
     if (!await ensureRedisReady()) {
+      if (production2)
+        throw new AuthStorageUnavailableError;
       return !production2 && cached && cached.expiresAt > Date.now() ? cached : null;
     }
     const raw = await redis2.get(makeSessionKey(token));
@@ -13670,6 +13779,8 @@ async function getSession(token) {
     inMemorySessions.set(token, parsed);
     return parsed;
   } catch (err) {
+    if (production2)
+      throw new AuthStorageUnavailableError;
     console.warn("[auth] redis session read failed", err);
     return !production2 && cached && cached.expiresAt > Date.now() ? cached : null;
   }
@@ -14206,7 +14317,7 @@ function createCombatState(setup, serverRng) {
   if (!setup || !validated.has(setup))
     return { error: "UNTRUSTED_SETUP" };
   setup = validated.get(setup);
-  const fighter2 = (e, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
+  const fighter2 = (e, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, tempo: e.base_stats.tempo ?? 10, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
   const player = fighter2(setup.entity);
   const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
   const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
@@ -14289,6 +14400,7 @@ function resolveCombatTurn(state, decision, rng) {
   if (state.boss_intent === "Special" && (!state.boss_signature || state.boss_signature.id !== state.selected_signature || !castableSpell(state.boss_signature, state.boss_signature.type) || (state.boss_cooldowns?.[state.selected_signature] ?? 0) > 0 || state.boss_signature.category !== "attack" || state.boss_signature.effects.some((effect) => !["atk_down", "vuln", "poison", "hom_stun", "bonus_if_poisoned", "bonus_if_hit_last_exchange"].includes(effect.kind))))
     return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events = [];
+  let vitriolCorrosionUsed = 0;
   const target = switching ? null : decision.target === "boss" ? next.boss : next.minions.find((m) => m.id === decision.target);
   const minionsAtStart = next.minions.filter((m) => m.hp > 0).map((m) => m.id);
   const shieldAtStart = next.boss_shield_turns > 0;
@@ -14358,13 +14470,19 @@ function resolveCombatTurn(state, decision, rng) {
       events.push({ actor: "player", target: actor === "minion" ? a.id : actor, kind: "evade" });
       return false;
     }
-    let acc = accuracy - (a.atk > d.def * 1.6 ? 0.08 : 0);
-    if (a.max_hp > d.max_hp)
-      acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
-    if (accuracyFocus > 0)
-      acc = Math.min(0.99, acc + accuracyFocus);
-    if (accuracyMisalign > 0)
-      acc = Math.max(0.55, acc - accuracyMisalign);
+    let acc = accuracy;
+    if (actor === "player" || signatureType !== undefined) {
+      acc += accuracyFocus - accuracyMisalign;
+    } else {
+      if (a.atk > d.def * 1.6)
+        acc -= 0.08;
+      if (a.max_hp > d.max_hp)
+        acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
+      if (accuracyFocus > 0)
+        acc = Math.min(0.99, acc + accuracyFocus);
+      if (accuracyMisalign > 0)
+        acc = Math.max(0.55, acc - accuracyMisalign);
+    }
     const actorId = actor === "minion" ? a.id : actor;
     const targetId = d === next.player ? "player" : d === next.boss ? "boss" : d.id;
     if (draw() >= Math.max(0, Math.min(1, acc))) {
@@ -14372,7 +14490,7 @@ function resolveCombatTurn(state, decision, rng) {
       return false;
     }
     const relation = next.types?.effectiveness?.[signatureType ?? a.type]?.[d.type] ?? 1;
-    let baseMult = relation > 1 ? 1.12 : relation < 1 ? 0.92 : 1;
+    let baseMult = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
     if (actor === "player" && spell.type === a.type && relation < 1)
       baseMult = Math.min(1, baseMult + (next.item_effects?.disadvantage_reduction ?? 0));
     if (actor === "player" && spell.type === "universal")
@@ -14462,11 +14580,17 @@ function resolveCombatTurn(state, decision, rng) {
       events.push({ actor, target: targetId, kind: "true_damage", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
     }
     if (actor === "player" && (next.item_effects?.dot_true ?? 0) > 0) {
-      const bonus = Math.trunc(next.item_effects.dot_true);
-      const dealtBonus = Math.min(d.hp, bonus);
-      actualDamage += dealtBonus;
-      d.hp = Math.max(0, d.hp - bonus);
-      events.push({ actor, target: targetId, kind: "corrosion", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
+      let bonus = Math.trunc(next.item_effects.dot_true);
+      if (next.item_id === "vitriol_vial") {
+        bonus = Math.max(0, Math.min(bonus, 4 - vitriolCorrosionUsed));
+        vitriolCorrosionUsed += bonus;
+      }
+      if (bonus > 0) {
+        const dealtBonus = Math.min(d.hp, bonus);
+        actualDamage += dealtBonus;
+        d.hp = Math.max(0, d.hp - bonus);
+        events.push({ actor, target: targetId, kind: "corrosion", damage: bonus, actual_damage: dealtBonus, hp: d.hp });
+      }
       if ((next.item_effects.vuln_on_hit ?? 0) > 0)
         d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, next.item_effects.vuln_on_hit);
     }
@@ -14495,7 +14619,7 @@ function resolveCombatTurn(state, decision, rng) {
     return true;
   };
   try {
-    const playerFirst = (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.status.tempo_bonus ?? 0);
+    const playerFirst = (next.player.tempo ?? 10) + (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.tempo ?? 10) + (next.boss.status.tempo_bonus ?? 0);
     for (const [id, fighter2] of [["player", next.player], ["boss", next.boss]]) {
       if (fighter2.status.tempo_bonus)
         events.push({ actor: id, kind: "status_consumed", target: id, status: "tempo_bonus", previous: fighter2.status.tempo_bonus });
@@ -14866,7 +14990,7 @@ function resolveCombatTurn(state, decision, rng) {
     for (const fighter2 of [next.player, next.boss, ...next.minions])
       if (fighter2.hp > 0 && fighter2.status.poison > 0) {
         fighter2.status.poison--;
-        const damage = Math.min(2, fighter2.hp);
+        const damage = Math.min(3, fighter2.hp);
         fighter2.hp -= damage;
         fighter2.spell_hit_this_exchange = true;
         events.push({ kind: "status_tick", status: "poison", target: fighter2 === next.player ? "player" : fighter2 === next.boss ? "boss" : fighter2.id, damage, hp: fighter2.hp, remaining: fighter2.status.poison });
@@ -15328,9 +15452,10 @@ function createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot = 0
   if (enemy.base_stats && [enemy.base_stats.hp, enemy.base_stats.attack, enemy.base_stats.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
     return { error: "UNTRUSTED_SETUP" };
   const stats = setup.entity.base_stats, bonus = setup.bonuses ?? {};
+  const npcTempo = catalogs.entities?.find((entity) => entity.id === enemy.entity_id)?.base_stats?.tempo ?? 10;
   const npcHp = enemy.hp + (hom.buff_hp ?? 0) + enemy.homunculus_level;
-  const player = { id: setup.entity.id, type: setup.entity.type, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + Math.trunc(effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + Math.trunc(effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
-  const npc = { id: enemy.entity_id, type: enemy.type, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
+  const player = { id: setup.entity.id, type: setup.entity.type, tempo: stats.tempo ?? 10, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + Math.trunc(effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + Math.trunc(effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
+  const npc = { id: enemy.entity_id, type: enemy.type, tempo: npcTempo, hp: npcHp, max_hp: npcHp, atk: enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom.id, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
   if (!enemy.elite && enemy.special_encounter?.kind === "corrupted_fog")
     Object.assign(player.status, { vuln: 0.1 });
   if (!enemy.elite && enemy.special_encounter?.kind === "crystal_bastion")
@@ -15349,7 +15474,7 @@ function createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot = 0
     return { error: "UNSUPPORTED_MECHANIC" };
   for (const fighter2 of [player, npc])
     Object.assign(fighter2, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter2.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
-  return { player, npc, ...!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}, ...enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}, ...enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}, inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+  return { player, npc, ...!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}, ...enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}, ...enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}, inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, hom_synergy: structuredClone(setup.hom_id ? setup.hom_synergy ?? {} : {}), hom_advantage: setup.hom_id ? setup.hom_advantage ?? 0 : 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 function createDungeonBlessing(seed, runId, floor, hasHom) {
   if (floor < 3 || floor % 3 !== 0)
@@ -15396,6 +15521,7 @@ function resolveDungeonTurn(state, decision, rng) {
   if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
     return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events = [];
+  let vitriolCorrosionUsed = 0;
   for (const fighter2 of [next.player, next.npc]) {
     fighter2.spell_hit_last_exchange = fighter2.spell_hit_this_exchange ?? false;
     fighter2.spell_hit_this_exchange = false;
@@ -15468,10 +15594,7 @@ function resolveDungeonTurn(state, decision, rng) {
       delete target.status.hybrid_mark;
     let accuracy = chosen.accuracy;
     if (chosen.category === "attack") {
-      if (actor.status.focus_next > 0)
-        accuracy = Math.min(0.99, accuracy + actor.status.focus_next);
-      if (actor.status.misalign_next > 0)
-        accuracy = Math.max(0.55, accuracy - actor.status.misalign_next);
+      accuracy = Math.max(0, Math.min(1, accuracy + (actor.status.focus_next ?? 0) - (actor.status.misalign_next ?? 0)));
       delete actor.status.focus_next;
       delete actor.status.misalign_next;
     }
@@ -15483,7 +15606,7 @@ function resolveDungeonTurn(state, decision, rng) {
     const previousWard = actor === next.player && next.weapon_defenses.shield !== undefined ? next.other_defenses.shield ?? 0 : actor.status.shield ?? 0;
     if (chosen.category === "attack") {
       const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
-      let mult = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+      let mult = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
       if (chosen.type === "hybrid") {
         const factor = (type) => {
           const value = next.types.effectiveness[type]?.[target.type] ?? 1;
@@ -15494,7 +15617,10 @@ function resolveDungeonTurn(state, decision, rng) {
         mult = 1;
       if (who === "player" && chosen.type === actor.type && relation < 1)
         mult = Math.min(1, mult + (next.item_effects?.disadvantage_reduction ?? 0));
-      mult = 1 + (mult - 1) * (1 - Math.max(actor.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0));
+      if (who === "player" && chosen.type !== "universal" && mult > 1)
+        mult += next.hom_advantage ?? 0;
+      if (chosen.type !== "universal")
+        mult = 1 + (mult - 1) * (1 - Math.max(actor.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0));
       const poisonBonus = chosen.effects.find((e) => e.kind === "bonus_if_poisoned");
       let power = chosen.power_mult * (poisonBonus && poisonedBefore ? 1 + poisonBonus.value : 1);
       for (const effect of chosen.effects) {
@@ -15517,6 +15643,11 @@ function resolveDungeonTurn(state, decision, rng) {
       const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
       let unblessedDamage = Math.max(1, Math.round(base * power));
       let damage = Math.max(1, Math.round(base * power * (who === "player" && next.blessing?.selected === "elemental_surge" && ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold", "hybrid"].includes(chosen.type) ? 1 + Math.min(10, 4 + next.blessing.tier) / 100 : 1)));
+      if (who === "npc") {
+        const incoming = Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1));
+        damage = Math.max(1, Math.round(damage * incoming));
+        unblessedDamage = Math.max(1, Math.round(unblessedDamage * incoming));
+      }
       if (who === "npc" && next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
         damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
         next.blessing.shield_used = true;
@@ -15553,7 +15684,11 @@ function resolveDungeonTurn(state, decision, rng) {
       }
       if (who === "player") {
         for (const key of ["true_on_hit", "dot_true"]) {
-          const amount = Math.min(target.hp, Math.max(0, Math.trunc(next.item_effects?.[key] ?? 0)));
+          let amount = Math.min(target.hp, Math.max(0, Math.trunc(next.item_effects?.[key] ?? 0)));
+          if (key === "dot_true" && next.item_id === "vitriol_vial") {
+            amount = Math.min(amount, 4 - vitriolCorrosionUsed);
+            vitriolCorrosionUsed += amount;
+          }
           if (amount > 0) {
             target.hp -= amount;
             events.push({ kind: key, actor: who, target: "npc", amount, hp: target.hp });
@@ -15561,6 +15696,11 @@ function resolveDungeonTurn(state, decision, rng) {
         }
         if ((next.item_effects?.dot_true ?? 0) > 0 && (next.item_effects?.vuln_on_hit ?? 0) > 0)
           target.status.vuln = Math.max(target.status.vuln ?? 0, Math.min(1, next.item_effects.vuln_on_hit));
+        const homDot = Math.min(target.hp, Math.max(0, Math.trunc(next.hom_synergy?.dot_true ?? 0)));
+        if (homDot > 0) {
+          target.hp -= homDot;
+          events.push({ kind: "hom_dot", actor: who, target: "npc", amount: homDot, hp: target.hp });
+        }
       }
       if (poisonBonus && target.status.poison > 0 && directDamage > baseline)
         events.push({ kind: "combo_trigger", actor: who, target: who === "player" ? "npc" : "player", source_spell_id: chosen.id, prerequisite: "poison", actual_bonus_damage: directDamage - baseline, resulting_status: { poison: target.status.poison } });
@@ -15761,7 +15901,7 @@ function resolveDungeonTurn(state, decision, rng) {
       } else if ((next.item_effects?.evasion_pct ?? 0) > 0 && draw() < Math.min(1, next.item_effects.evasion_pct)) {
         events.push({ kind: "evade", actor: "player", target: "npc" });
       } else if (draw() < 0.95) {
-        let damage = Math.max(1, Math.round(next.npc.atk * (next.npc.hom_energy >= 6 ? 0.6 : 0.4)));
+        let damage = Math.max(1, Math.round(next.npc.atk * (next.npc.hom_energy >= 6 ? 0.6 : 0.4) * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1))));
         if (next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
           damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
           next.blessing.shield_used = true;
@@ -15777,7 +15917,7 @@ function resolveDungeonTurn(state, decision, rng) {
       next.npc.hom_energy = 0;
     }
   };
-  const playerFirst = (next.item_effects?.tempo_flat ?? 0) + (next.hom_tempo ?? 0) + (next.player.status.tempo_bonus ?? 0) >= (next.npc.status.tempo_bonus ?? 0);
+  const playerFirst = (next.player.tempo ?? 10) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_tempo ?? 0) + (next.player.status.tempo_bonus ?? 0) >= (next.npc.tempo ?? 10) + (next.npc.status.tempo_bonus ?? 0);
   delete next.player.status.tempo_bonus;
   delete next.npc.status.tempo_bonus;
   if (playerFirst) {
@@ -15790,10 +15930,10 @@ function resolveDungeonTurn(state, decision, rng) {
   }
   for (const fighter2 of [next.player, next.npc]) {
     if (fighter2.hp > 0 && fighter2.status.poison > 0) {
-      let tick = 2;
+      let tick = 3;
       if (fighter2 === next.player && next.blessing?.selected === "toxin_ward") {
-        const b2 = next.blessing, mitigation = 2 * Math.min(50, 20 + 5 * (b2.tier - 1)) + b2.poison_remainder;
-        const prevented = Math.min(1, Math.floor(mitigation / 100));
+        const b2 = next.blessing, mitigation = 3 * Math.min(50, 20 + 5 * (b2.tier - 1)) + b2.poison_remainder;
+        const prevented = Math.min(2, Math.floor(mitigation / 100));
         b2.poison_remainder = mitigation % 100;
         tick -= prevented;
       }
@@ -15813,6 +15953,11 @@ function resolveDungeonTurn(state, decision, rng) {
   next.turn++;
   next.rng_counter = counter;
   if (next.player.hp > 0 && next.npc.hp > 0 && next.turn % 2 === 1) {
+    const homReflect = Math.max(0, Math.min(1, next.hom_synergy?.reflect_pct ?? 0));
+    if (homReflect > 0) {
+      applyDefense(next.player, "reflect", homReflect);
+      events.push({ kind: "status_applied", actor: "player", target: "player", status: "reflect", value: next.player.status.reflect, source: "homunculus" });
+    }
     for (const [effect, field] of [["ward_pct", "shield"], ["reflect_pct", "reflect"]]) {
       const value = Math.max(0, Math.min(1, next.item_effects?.[effect] ?? 0));
       if (value > 0) {
@@ -16046,7 +16191,7 @@ for (let attempt = 0;; attempt++) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
   }
 }
-var globalChat = createGlobalChat(db);
+var globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN);
 var rankedServices = null;
 function getRankedServices() {
   if (rankedServices)
@@ -16951,6 +17096,7 @@ async function maybeRunExternalExamples() {
 }
 async function startServer() {
   maybeRunExternalExamples();
+  startDiscordBridge(db, globalChat);
   const server = Bun.serve({
     hostname: config.host,
     port: config.port,
@@ -18139,9 +18285,10 @@ async function startServer() {
               if (!player?.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(mission.reward).some((id) => !Number.isSafeInteger(player.wallet[id] ?? 0)))
                 throw new HttpError(409, "Invalid player wallet.");
               assertWalletInvariant(player.wallet);
-              const before = { ...player.wallet }, credited = {};
-              for (const [id, amount] of Object.entries(mission.reward))
-                credited[id] = Math.min(amount, Math.max(0, (walletCapacities(player)[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
+              const capacities = walletCapacities(player);
+              if (Object.entries(mission.reward).some(([id, amount]) => amount > (capacities[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)))
+                throw new HttpError(409, "Storage full. Free space for the full mission reward.");
+              const before = { ...player.wallet }, credited = { ...mission.reward };
               applyWalletGrant(player.wallet, credited);
               assertWalletInvariant(player.wallet);
               player.updated_at = now;
@@ -18627,8 +18774,8 @@ async function startServer() {
       } catch (err) {
         recordError();
         const sqliteBusy = typeof err === "object" && err !== null && typeof err.code === "string" && String(err.code).startsWith("SQLITE_BUSY");
-        const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError ? err.message : "Internal server error";
-        const status = sqliteBusy || err instanceof AccountStatusUnavailableError ? 503 : err instanceof HttpError || err instanceof CombatRewardError ? err.status : 500;
+        const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
+        const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof CombatRewardError ? err.status : 500;
         const res = errorResponse(message, status);
         const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
         recordRequest(finalRes.status, Date.now() - ctx.startAt);

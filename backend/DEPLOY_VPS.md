@@ -32,6 +32,8 @@ chmod 600 .env.prod
 
 Edita `.env.prod` en privado: `SITE_ADDRESS` debe ser el nombre DNS público real, sin protocolo, puerto ni ruta. Genera seis valores independientes con `openssl rand -hex 32` (una ejecución por variable) y colócalos en las variables vacías. No compartas ni pegues los secretos en incidencias, terminales compartidas o Git. Guarda una copia cifrada de `.env.prod` fuera del VPS, separada de las copias de datos. Mantén los mismos secretos entre actualizaciones y restauraciones; cambiar la contraseña de PostgreSQL en el archivo no cambia automáticamente la contraseña de una base ya inicializada. El archivo de ejemplo vacío falla deliberadamente.
 
+Para activar el puente de chat, añade `DISCORD_BOT_TOKEN=<token privado>` a `.env.prod`. Sin token, el puente queda desactivado. Los valores predeterminados son `DISCORD_APPLICATION_ID=1572757742270288033`, `DISCORD_GUILD_ID=1376365043775438871` y `DISCORD_CHANNEL_ID=1572758122810974360`; pueden configurarse en el mismo archivo. Habilita el intent privilegiado Message Content en el portal de Discord y concede al bot acceso de lectura y envío en el canal.
+
 ## 3. DNS, HTTPS y arranque
 
 Apunta un registro A del nombre elegido a la IPv4 pública del VPS; añade AAAA solo si IPv6 está configurado, accesible y protegido. Espera a la propagación, verifica los puertos 80 y 443 y que ningún otro proceso los use. Caddy obtiene y renueva certificados automáticamente para el nombre configurado. No uses una IP o nombre inventado para la emisión pública.

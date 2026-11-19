@@ -5,6 +5,32 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { createGlobalChat } from "../global_chat";
+import { acceptDiscordMessage, outgoingDiscordMessage, startDiscordBridge } from "../discord_bridge";
+
+test("bridge filters Discord events and persists a deduplicated outbox", () => {
+	const db = new Database(':memory:');
+	db.exec('CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)');
+	for (const name of ['0009_global_chat.sql', '0012_pvp_seasons.sql', '0015_discord_chat.sql']) db.exec(readFileSync(resolve(import.meta.dir, '../../migrations/sqlite', name), 'utf8'));
+	db.exec("INSERT INTO players VALUES ('a', 'Alice')");
+	let chat = createGlobalChat(db, () => 100000, true);
+	expect(startDiscordBridge(db, chat, {}).enabled).toBe(false);
+	expect(chat.send('a', {text: '@everyone hello', client_message_id: 'one'}).status).toBe(200);
+	expect(chat.send('a', {text: '@everyone hello', client_message_id: 'one'}).data.duplicate).toBe(true);
+	expect(db.query('SELECT * FROM discord_chat_outbox').all()).toHaveLength(1);
+	expect(outgoingDiscordMessage(db.query('SELECT * FROM discord_chat_outbox').get() as any)).toMatchObject({content: '[Game] Alice: @everyone hello', allowedMentions: {parse: []}, nonce: '1', enforceNonce: true});
+	const msg = { id: '123', guildId: 'guild', channelId: 'channel', type: 0, author: { id: 'user', username: 'Alex' }, content: 'hi\nthere' };
+	for (const bad of [{...msg, guildId: 'other'}, {...msg, channelId: 'other'}, {...msg, webhookId: 'x'}, {...msg, author: {id: 'bot', bot: true}}, {...msg, author: {id: 'self'}}, {...msg, content: '   '}]) expect(acceptDiscordMessage(chat, bad, 'guild', 'channel', 'self')).toBe(false);
+	expect(acceptDiscordMessage(chat, msg, 'guild', 'channel', 'self')).toBe(true);
+	expect(acceptDiscordMessage(chat, msg, 'guild', 'channel', 'self')).toBe(false);
+	expect(chat.state('a')).toMatchObject({online_count: 1, messages: [{username: 'Alice'}, {username: '[Discord] Alex', source: 'discord', league: null, text: 'hi there'}]});
+	chat.close();
+	chat = createGlobalChat(db, () => 100000, true);
+	expect(db.query('SELECT * FROM discord_chat_outbox').all()).toHaveLength(1);
+	expect(chat.acceptDiscord('123', 'Alex', 'hi')).toBe(false);
+	expect(chat.acceptDiscord('456', 'Alex', 'x'.repeat(220))).toBe(true);
+	expect((chat.state('a').messages.at(-1) as any).text.length).toBe(200);
+	chat.close(); db.close();
+});
 
 test("global chat retains history, deduplicates, throttles and expires presence", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "ew-chat-"));
@@ -13,6 +39,7 @@ test("global chat retains history, deduplicates, throttles and expires presence"
 	try {
 		db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
 		db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite/0009_global_chat.sql"), "utf8"));
+		db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite/0015_discord_chat.sql"), "utf8"));
 		db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite/0012_pvp_seasons.sql"), "utf8"));
 		db.exec("INSERT INTO players VALUES ('a', 'Alice'), ('b', 'Bob')");
 		db.exec("INSERT INTO pvp_season_ratings VALUES ('1970-01', 'a', 3250, 0)");

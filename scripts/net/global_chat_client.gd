@@ -20,8 +20,12 @@ var _poll_busy := false
 var _send_busy := false
 var _pending_text := ""
 var _pending_id := ""
+var _panel: CanvasLayer
+var _scene_id := 0
 
 func _ready() -> void:
+	_panel = preload("res://scripts/ui/global_chat_panel.gd").new()
+	add_child(_panel)
 	_poll = HTTPRequest.new()
 	_send = HTTPRequest.new()
 	_poll.max_redirects = 0
@@ -37,6 +41,14 @@ func available() -> bool:
 	return not ConnectionGate.blocked() and not ConnectionGate.player_id.is_empty() and not ConnectionGate.token.is_empty() and not ConnectionGate.base_url.is_empty()
 
 func _process(_delta: float) -> void:
+	var scene := get_tree().current_scene
+	var scene_id := scene.get_instance_id() if is_instance_valid(scene) else 0
+	if scene_id != _scene_id:
+		_scene_id = scene_id
+		if is_instance_valid(scene) and scene.scene_file_path in [SceneRouter.SCENE_COMBAT, SceneRouter.SCENE_LOADOUT]:
+			_panel._close()
+			_panel._online_panel.hide()
+	_panel.visible = available() and is_instance_valid(scene) and not scene.has_method("auth_gate_screen") and not scene.scene_file_path.to_lower().contains("loading")
 	var identity: String = ConnectionGate.player_id
 	if not identity.is_empty() and identity != _identity:
 		_identity = identity
@@ -68,7 +80,7 @@ func _process(_delta: float) -> void:
 func poll_now() -> void:
 	if not available() or _poll_busy:
 		return
-	_next_poll = Time.get_ticks_msec() + 15000
+	_next_poll = Time.get_ticks_msec() + (5000 if panel_open else 15000)
 	_poll_busy = true
 	var err := _poll.request(ConnectionGate.base_url + "/chat/state", PackedStringArray(["Authorization: Bearer " + ConnectionGate.token, preload("res://scripts/net/client_build.gd").header()]))
 	if err != OK:
@@ -78,6 +90,9 @@ func poll_now() -> void:
 
 func _poll_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	_poll_busy = false
+	if code == 401:
+		ConnectionGate.require_authentication()
+		return
 	if code == 426:
 		ConnectionGate.require_update()
 		return
@@ -115,6 +130,7 @@ func set_panel_open(value: bool) -> void:
 	panel_open = value
 	if value:
 		unread = false
+		_next_poll = 0
 	updated.emit()
 
 func send_message(text: String) -> bool:
@@ -145,6 +161,9 @@ func send_message(text: String) -> bool:
 
 func _send_completed(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
 	_send_busy = false
+	if code == 401:
+		ConnectionGate.require_authentication()
+		return
 	if code == 426:
 		ConnectionGate.require_update()
 		return

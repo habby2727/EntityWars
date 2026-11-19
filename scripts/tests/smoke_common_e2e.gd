@@ -105,5 +105,50 @@ func _run() -> void:
 	if current_scene == zone or str(SceneRouter._solo_hunt_context.get("session_id", "")) in ["", session_id] or root.get_node("ConnectionGate").blocked():
 		_fail("Next zone hunt did not start")
 		return
+	var b_id := str(SceneRouter._solo_hunt_context.get("session_id", ""))
+	var b_context := SceneRouter._solo_hunt_context.duplicate(true)
+	var b_loadout = current_scene
+	deadline = Time.get_ticks_msec() + 20000
+	while (not b_loadout._hunt_recovered or b_loadout._hunt_backend._verified_player_id.is_empty()) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if not b_loadout._hunt_recovered:
+		_fail("Second hunt loadout did not recover")
+		return
+	var stale := {"version": 1, "mode": "hunt", "player_id": OS.get_environment("EW_COMMON_PLAYER"), "session_id": session_id, "context": {"hunt_id": "hunt_common", "visual_zone_id": "zone_chaos"}, "pending_kind": "", "payload": {}}
+	if not journal.save_entry(stale):
+		_fail("Could not create stale A journal")
+		return
+	var gate := root.get_node("ConnectionGate")
+	if gate.journal_pending(b_loadout._hunt_backend, "hunt", "loadout", {"session_id": b_id, "client_action_id": "b-loadout-probe"}):
+		_fail("B was allowed to overwrite the stale A journal")
+		return
+	deadline = Time.get_ticks_msec() + 30000
+	while (gate.blocked() or current_scene == b_loadout or not current_scene.has_method("_on_online_hunt_response")) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if gate.blocked() or current_scene == b_loadout or not current_scene.has_method("_on_online_hunt_response") or not journal.load_entry().is_empty() or str(current_scene._online_hunt_session.get("status", "")) != "FORFEIT":
+		_fail("Closed A was not verified and reconciled before B")
+		return
+	SceneRouter._solo_hunt_context = b_context
+	SceneRouter._hunt_loadout_active = true
+	change_scene_to_file(SceneRouter.SCENE_LOADOUT)
+	await scene_changed
+	var resumed = current_scene
+	deadline = Time.get_ticks_msec() + 20000
+	while (not resumed._hunt_recovered or gate.blocked()) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if gate.blocked() or not resumed._hunt_recovered or str(SceneRouter._solo_hunt_context.get("session_id", "")) != b_id or str(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("status", "")) != "ACTIVE":
+		_fail("Active B did not resume after closed A recovery")
+		return
+	resumed._on_play_pressed()
+	deadline = Time.get_ticks_msec() + 20000
+	while (current_scene == null or current_scene == resumed) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	if current_scene == null or current_scene == resumed or not current_scene.has_method("_on_online_hunt_response") or str(current_scene._solo_context.get("session_id", "")) != b_id:
+		_fail("B loadout could not be submitted after A recovery: scene=%s context=%s expected=%s details=%s" % [current_scene.scene_file_path if is_instance_valid(current_scene) else "null", str(SceneRouter._solo_hunt_context), b_id, resumed.lbl_build_error.text if is_instance_valid(resumed) else "scene changed"])
+		return
+	current_scene.queue_free()
+	await process_frame
+	await process_frame
+	print("PASS cross-session stale A verified before active B")
 	print("PASS common appearance -> one-click Ready -> confirmed forfeit -> next zone")
 	quit(0)

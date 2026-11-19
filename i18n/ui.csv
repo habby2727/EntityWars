@@ -7,6 +7,7 @@ CHAT_TOO_LONG,Message too long,Mensaje demasiado largo
 CHAT_INVALID,Invalid message,Mensaje no válido
 CHAT_RATE_LIMIT,Please wait before sending,Espera antes de enviar
 CHAT_CLOSE,Close chat,Cerrar chat
+CHAT_DISCORD_DISCLOSURE,Global chat is shared with Discord.,El chat global se comparte con Discord.
 AUTH_LOGIN,Login,Iniciar sesión
 AUTH_REGISTER,Register,Registrarse
 AUTH_USERNAME,Username,Usuario

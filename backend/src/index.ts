@@ -1,6 +1,7 @@
 import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
+import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
 import { createPvpChat, createPvpMatches, createPvpQueue, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
 import { createPvpRanking } from "./pvp/ranking";
@@ -277,7 +278,7 @@ for (let attempt = 0; ; attempt++) {
 		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
 	}
 }
-const globalChat = createGlobalChat(db);
+const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN);
 let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking> } | null = null;
 function getRankedServices() {
 	if (rankedServices) return rankedServices;
@@ -1202,6 +1203,7 @@ async function maybeRunExternalExamples(): Promise<void> {
 
 async function startServer(): Promise<void> {
 	void maybeRunExternalExamples();
+	startDiscordBridge(db, globalChat);
 	const server = Bun.serve({
 		hostname: config.host,
 		port: config.port,

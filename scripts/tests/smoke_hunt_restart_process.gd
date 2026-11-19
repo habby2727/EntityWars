@@ -104,13 +104,20 @@ func _run() -> void:
 			var revision := int(current_scene._dungeon_session.get("combat_revision", 0)) if OS.get_environment("RESTART_MODE") == "dungeon" else int(current_scene._online_hunt_revision)
 			var terminal := OS.get_environment("RESTART_TERMINAL") == "1"
 			var win := OS.get_environment("RESTART_WIN") == "1"
+			var defeat := OS.get_environment("RESTART_DEFEAT") == "1"
 			var forfeit := OS.get_environment("RESTART_FORFEIT") == "1"
 			var expired := OS.get_environment("RESTART_EXPIRED") == "1"
 			var closed_status: String = str(current_scene._dungeon_session.get("status", "")) if OS.get_environment("RESTART_MODE") == "dungeon" else str(current_scene._online_hunt_session.get("status", ""))
-			var confirmed: bool = (entry.is_empty() and closed_status == ("VERIFIED_WIN" if win else "LOSS" if terminal else "FORFEIT" if forfeit else "EXPIRED")) if win or terminal or forfeit or expired else (not entry.is_empty() and not entry.has("error") and entry.pending_kind == "")
+			var confirmed: bool = (entry.is_empty() and closed_status == ("VERIFIED_WIN" if win else "VERIFIED_LOSS" if defeat else "LOSS" if terminal else "FORFEIT" if forfeit else "EXPIRED")) if win or defeat or terminal or forfeit or expired else (not entry.is_empty() and not entry.has("error") and entry.pending_kind == "")
 			if confirmed and (forfeit or expired or revision == int(OS.get_environment("RESTART_REVISION"))):
 				if win and (str(current_scene._solo_context.get("session_id", "")) != OS.get_environment("HUNT_RESTART_SESSION") or current_scene._combat_identity != OS.get_environment("HUNT_RESTART_PLAYER")):
 					_fail("victory recovered a different player or session")
+					return
+				if win and (not current_scene._online_hunt_info.visible or "VICTORY" not in current_scene._online_hunt_info.text or "essence" not in current_scene._online_hunt_info.text.to_lower()):
+					_fail("recovered victory or reward was not displayed: " + current_scene._online_hunt_info.text)
+					return
+				if defeat and (not current_scene._online_hunt_info.visible or "DEFEAT" not in current_scene._online_hunt_info.text):
+					_fail("recovered defeat was not displayed: " + current_scene._online_hunt_info.text)
 					return
 				print("PASS recovered original hunt turn")
 				quit(0)

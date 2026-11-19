@@ -28,11 +28,9 @@ func _run() -> void:
 			backend.auto_flush = false
 		root.add_child(scene)
 		await process_frame
-		var panel: Node = null
-		for child in scene.get_children():
-			if child.get_script() != null and child.get_script().resource_path == "res://scripts/ui/global_chat_panel.gd":
-				panel = child
+		var panel: Node = chat._panel
 		_check(panel != null, "Chat widget missing from " + path)
+		_check(panel.get_parent() == chat, "Chat widget is not persistent")
 		await process_frame
 		_check(panel._button.get_theme_font("font").has_char(0x1f4ac), "Emoji font lacks chat glyph")
 		_check(panel._scroll.get_v_scroll_bar() is VScrollBar, "Native scrollbar missing")
@@ -53,8 +51,7 @@ func _run() -> void:
 		many.append({"id": i + 10, "player_id": "other", "username": "Alice", "text": ("long message " + str(i) + " ").repeat(16)})
 	chat._apply_snapshot({"messages": many, "online_count": 1})
 	_check(chat.messages.size() == 20, "History limit failed")
-	var scroll_panel = load("res://scripts/ui/global_chat_panel.gd").new()
-	root.add_child(scroll_panel)
+	var scroll_panel = chat._panel
 	scroll_panel._open()
 	await process_frame
 	await process_frame
@@ -67,7 +64,7 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	_check(scroll_panel._scroll.scroll_vertical == saved, "Scroll position was not preserved")
-	scroll_panel.queue_free()
+	scroll_panel._close()
 	await process_frame
 	_check(not chat.send_message("offline"), "Offline send was allowed")
 	TranslationServer.set_locale("es")

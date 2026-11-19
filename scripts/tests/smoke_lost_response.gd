@@ -5,6 +5,7 @@ var client: BackendClient
 var restart := false
 var sent := 0
 var finished := false
+var preparing := false
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -32,12 +33,23 @@ func _run() -> void:
 	timeout.timeout.connect(func(): _fail("Timeout"))
 	client.add_child(timeout)
 	root.add_child(client)
+	client._http.request_completed.connect(func(result, code, _headers, _body):
+		print("A/B/A HTTP result=", result, " status=", code, " generation=", client._session_generation, " token_present=", not client.token.is_empty()))
 	timeout.start(80.0)
 	if not restart:
-		client.login_dev("lost_response_smoke")
+		client.set_token(OS.get_environment("LOST_ACCOUNT_A_TOKEN"))
 
 func _state_updated(state: Dictionary) -> void:
-	if state.is_empty() or restart or sent > 0:
+	if state.is_empty() or restart or sent > 0 or preparing:
+		return
+	preparing = true
+	var generation := client._session_generation
+	var gate := root.get_node("ConnectionGate")
+	var deadline := Time.get_ticks_msec() + 25000
+	while gate.blocked() and generation == client._session_generation and Time.get_ticks_msec() < deadline:
+		await process_frame
+	if gate.blocked() or generation != client._session_generation:
+		_fail("Initial connection was not verified before action submission")
 		return
 	if int(state.get("wallet", {}).get("essence", -1)) != 100:
 		_fail("Initial balance mismatch")
@@ -71,15 +83,28 @@ func _uncertain(id: String, _reason: String) -> void:
 		_fail("A pending file was not persisted")
 		return
 	_snapshot("A before switch", owner)
-	client.login_dev("combat_account_b")
+	# Exercise the old generation's delayed recovery callback after switching.
+	client.auto_flush = true
+	client._schedule_recovery(ACTION_ID)
+	client.auto_flush = false
+	# Do not start a new HTTPRequest from inside request_completed delivery.
+	await process_frame
+	if not root.get_node("ConnectionGate").begin_explicit_login():
+		_fail("Could not begin B login")
+		return
+	client.set_token(OS.get_environment("LOST_ACCOUNT_B_TOKEN"))
 	var verified_b := await _wait_identity()
+	await create_timer(1.2).timeout
 	_snapshot("B", owner)
 	if not verified_b or client._verified_player_id == owner or client._session_generation <= owner_generation or client.get_pending_count() != 0 or not _owner_pending_is_intact(owner):
 		_fail("Uncertain action leaked into account B")
 		return
 	var b_token: String = client.token
-	client.login_dev("lost_response_smoke")
 	var b_generation := client._session_generation
+	if not root.get_node("ConnectionGate").begin_explicit_login():
+		_fail("Could not begin A login")
+		return
+	client.set_token(OS.get_environment("LOST_ACCOUNT_A_TOKEN"))
 	var verified_a := await _wait_identity()
 	_snapshot("A after return", owner)
 	if not verified_a or client._verified_player_id != owner or client._session_generation <= b_generation or client.get_pending_count() != 1 or not _owner_pending_is_intact(owner) or str(client.get_pending_actions()[0].get("client_action_id", "")) != ACTION_ID:
