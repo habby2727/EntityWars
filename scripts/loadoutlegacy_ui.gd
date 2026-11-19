@@ -33,7 +33,7 @@ const PREVIEW_ALIASES := {
 	"bastion":"sodium",
 	"igniter":"mercury",
 	"corroder":"vitriol",
-	"ignos":"mercury", "arbix":"gold", "korroder":"vitriol",
+	"ignos":"sulfur", "arbix":"gold", "korroder":"vitriol",
 	# canonical
 	"sulfur":"sulfur","mercury":"mercury","sodium":"sodium","aether":"aether","vitriol":"vitriol","gold":"gold",
 }
