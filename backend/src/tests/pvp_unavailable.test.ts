@@ -8,7 +8,8 @@ import { createGlobalChat } from "../global_chat";
 
 test("presence counts distinct accounts in the existing 45-second window", () => {
   const db = new Database(":memory:");
-  db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT); CREATE TABLE global_chat_messages (id INTEGER PRIMARY KEY, player_id TEXT, text TEXT, created_at INTEGER, client_message_id TEXT)");
+  const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
+  for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(migrations, file), "utf8"));
   let now = 0; const chat = createGlobalChat(db, () => now);
   expect(chat.onlineCount()).toBe(0); chat.state("a"); chat.state("a"); expect(chat.onlineCount()).toBe(1);
   now = 1000; chat.state("b"); expect(chat.onlineCount()).toBe(2);

@@ -7,9 +7,15 @@ const redis = {
 	get: async (key: string) => records.get(key) ?? null,
 	del: async (key: string) => Number(records.delete(key))
 };
-mock.module("../db/redis", () => ({ getRedis: () => redis, ensureRedisReady: async () => ready }));
-
 test("failed unknown revocations do not block independent credentials after Redis recovers", async () => {
+	if (Bun.env.AUTH_REVOCATION_CHILD !== "1") {
+		const child = Bun.spawn([process.execPath, "test", import.meta.path], { env: { ...process.env, NODE_ENV: "production", BUN_ENV: "production", SESSION_IDLE_ENABLED: "0", AUTH_REVOCATION_CHILD: "1" }, stdout: "pipe", stderr: "pipe" });
+		const code = await child.exited;
+		const output = await new Response(child.stdout).text() + await new Response(child.stderr).text();
+		expect({ code, output }).toEqual({ code: 0, output: expect.stringContaining("1 pass") });
+		return;
+	}
+	mock.module("../db/redis", () => ({ getRedis: () => redis, ensureRedisReady: async () => ready }));
 	const tokens = await import("../auth/tokens");
 	const sessions = await import("../middleware/auth");
 	const access = await tokens.issueAccessToken("user", 60000);

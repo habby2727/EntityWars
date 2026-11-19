@@ -205,7 +205,7 @@ func send_action(action_dict: Dictionary) -> String:
 	return action_id
 
 func refresh_state() -> void:
-	if token == "" or _connection_gate().debug_offline_enabled or _connection_gate().state == _connection_gate().State.UPDATE_REQUIRED:
+	if not is_inside_tree() or token == "" or _connection_gate().debug_offline_enabled or _connection_gate().state == _connection_gate().State.UPDATE_REQUIRED:
 		return
 	if _http != null and _http.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
 		return
