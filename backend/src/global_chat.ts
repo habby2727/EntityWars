@@ -1,10 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { pvpRank, pvpSeason } from "./pvp/ranking";
+import { ExpiringMap } from "./expiring_map";
 
 // Message text is plain text. Consumers must render it as text, never HTML or BBCode.
 export function createGlobalChat(db: Database, clock: () => number = Date.now, bridgeEnabled = false) {
 	const presence = new Map<string, number>();
-	const lastSend = new Map<string, number>();
+	const lastSend = new ExpiringMap<number>();
 	const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
 		CASE WHEN m.discord_message_id IS NOT NULL THEN 'discord' ELSE 'game' END AS source
 		FROM global_chat_messages m LEFT JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
@@ -14,14 +15,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 	const prune = db.query("DELETE FROM global_chat_messages WHERE id NOT IN (SELECT id FROM global_chat_messages ORDER BY id DESC LIMIT 20)");
 	const profile = db.query(`SELECT p.player_id, p.display_name AS username, r.rating
 		FROM players p LEFT JOIN pvp_season_ratings r ON r.player_id = p.player_id AND r.season = ?
-		WHERE p.player_id = ?`);
-	function publicProfile(playerId: string, season: string) {
-		const row = profile.get(season, playerId) as { player_id: string; username: string; rating: number | null } | null;
-		return row ? { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) } : null;
-	}
-	function withLeague(row: any, season: string) {
-		return { ...row, league: row.source === 'discord' ? null : publicProfile(row.player_id, season)?.league ?? null };
-	}
+		WHERE p.player_id IN (SELECT value FROM json_each(?))`);
 	function onlineCount() {
 		const now = clock();
 		for (const [id, seen] of presence) if (now - seen >= 45_000) presence.delete(id);
@@ -49,9 +43,12 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 			presence.set(playerId, now);
 			onlineCount();
 			const season = pvpSeason(now);
-			const online_players = Array.from(presence.keys(), id => publicProfile(id, season)).filter(row => row !== null)
+			const rows = messages.all().reverse() as any[];
+			const ids = [...new Set([...presence.keys(), ...rows.filter(row => row.source !== 'discord').map(row => row.player_id)])];
+			const profiles = new Map((profile.all(season, JSON.stringify(ids)) as { player_id: string; username: string; rating: number | null }[]).map(row => [row.player_id, { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) }]));
+			const online_players = Array.from(presence.keys(), id => profiles.get(id)).filter(row => row !== undefined)
 				.sort((a, b) => a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
-			return { messages: messages.all().reverse().map(row => withLeague(row, season)), online_count: online_players.length, online_players };
+			return { messages: rows.map(row => ({ ...row, league: row.source === 'discord' ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
 		},
 		send(playerId: string, body: any) {
 			const text = body?.text;
@@ -64,7 +61,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 				const previous = existing.get(playerId, clientId);
 				if (previous) return { status: 200, data: { message: previous, duplicate: true } };
 				const now = clock();
-				const last = lastSend.get(playerId);
+				const last = lastSend.get(playerId, now);
 				if (last !== undefined && now - last < 2000) return { status: 429, data: { error: "Send rate limit exceeded." } };
 				insert.run(playerId, clientId, text, now);
 				prune.run();
@@ -74,7 +71,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 					db.query('INSERT INTO discord_chat_outbox (message_id, username, text, created_at) VALUES (?, ?, ?, ?)').run(row.id, row.username, row.text, now);
 					db.query('DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)').run();
 				}
-				lastSend.set(playerId, now);
+				lastSend.set(playerId, now, now + 2000, now);
 				return { status: 200, data: { message, duplicate: false } };
 			}).immediate();
 		}

@@ -1,3 +1,4 @@
+import { ExpiringMap } from "../expiring_map";
 import { AuthStorageUnavailableError } from "../auth/storage_error";
 ﻿import { ensureRedisReady, getRedis } from "../db/redis";
 
@@ -7,8 +8,10 @@ export type SessionRecord = {
 	expiresAt: number;
 };
 
-const inMemorySessions = new Map<string, SessionRecord>();
-const revokedSessions = new Set<string>();
+const inMemorySessions = new ExpiringMap<SessionRecord>();
+const revokedSessions = new ExpiringMap<boolean>();
+// A failed revocation with an unknown expiry cannot safely be forgotten.
+let revocationUncertain = false;
 const production = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some(v => ["production", "prod"].includes((v ?? "").toLowerCase()));
 
 function makeSessionKey(token: string): string {
@@ -45,13 +48,14 @@ export async function issueSession(userId: string, ttlMs: number): Promise<strin
 		console.warn("[auth] redis session write failed", err);
 	}
 	if (production && !persisted) throw new Error("Session storage unavailable");
-	inMemorySessions.set(token, record);
+	inMemorySessions.set(token, record, record.expiresAt);
 	return token;
 }
 
 export async function revokeSession(token: string): Promise<void> {
+	const expiresAt = inMemorySessions.get(token)?.expiresAt;
+	revokedSessions.set(token, true, expiresAt ?? Infinity);
 	inMemorySessions.delete(token);
-	revokedSessions.add(token);
 	let persisted = false;
 	try {
 		const redis = getRedis();
@@ -62,11 +66,19 @@ export async function revokeSession(token: string): Promise<void> {
 	} catch (err) {
 		console.warn("[auth] redis session delete failed", err);
 	}
+	if (expiresAt === undefined) {
+		if (!persisted) revocationUncertain = true;
+		revokedSessions.delete(token);
+	}
 	if (production && !persisted) throw new Error("Session revocation unavailable");
 }
 
 export async function getSession(token: string): Promise<SessionRecord | null> {
-	if (revokedSessions.has(token)) return null;
+	if (revocationUncertain) {
+		if (production) throw new AuthStorageUnavailableError();
+		return null;
+	}
+	if (revokedSessions.get(token)) return null;
 	const now = Date.now();
 	const cached = inMemorySessions.get(token);
 	if (cached) {
@@ -93,7 +105,7 @@ export async function getSession(token: string): Promise<SessionRecord | null> {
 			await redis.del(makeSessionKey(token));
 			return null;
 		}
-		inMemorySessions.set(token, parsed);
+		inMemorySessions.set(token, parsed, parsed.expiresAt);
 		return parsed;
 	} catch (err) {
 		if (production) throw new AuthStorageUnavailableError();

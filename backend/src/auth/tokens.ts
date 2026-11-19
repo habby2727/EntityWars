@@ -1,3 +1,4 @@
+import { ExpiringMap } from "../expiring_map";
 import { AuthStorageUnavailableError } from "./storage_error";
 ﻿import { ensureRedisReady, getRedis } from "../db/redis";
 
@@ -8,11 +9,15 @@ export type TokenRecord = {
 	fingerprint?: string;
 };
 
-const accessMemory = new Map<string, TokenRecord>();
-const refreshMemory = new Map<string, TokenRecord>();
-const revokedAccess = new Set<string>();
-const revokedRefresh = new Set<string>();
-const localOnlyRefresh = new Set<string>();
+const accessMemory = new ExpiringMap<TokenRecord>();
+const refreshMemory = new ExpiringMap<TokenRecord>();
+const revokedAccess = new ExpiringMap<boolean>();
+const revokedRefresh = new ExpiringMap<boolean>();
+const localOnlyRefresh = new ExpiringMap<boolean>();
+// An unconfirmed revocation of an unknown token has no safe expiry; fail closed
+// for this token class until restart instead of keeping an unbounded tombstone.
+let accessRevocationUncertain = false;
+let refreshRevocationUncertain = false;
 const production = [Bun.env.NODE_ENV, Bun.env.BUN_ENV].some((v) => ["production", "prod"].includes((v ?? "").toLowerCase()));
 
 function accessKey(token: string): string {
@@ -42,7 +47,7 @@ export async function issueAccessToken(userId: string, ttlMs: number): Promise<s
 		console.warn("[auth] access token write failed", err);
 	}
 	if (production && !persisted) throw new Error("Token storage unavailable");
-	accessMemory.set(token, record);
+	accessMemory.set(token, record, record.expiresAt);
 	return token;
 }
 
@@ -65,8 +70,8 @@ export async function issueRefreshToken(
 		console.warn("[auth] refresh token write failed", err);
 	}
 	if (production && !persisted) throw new Error("Token storage unavailable");
-	if (!persisted) localOnlyRefresh.add(token);
-	refreshMemory.set(token, record);
+	if (!persisted) localOnlyRefresh.set(token, true, record.expiresAt);
+	refreshMemory.set(token, record, record.expiresAt);
 	return token;
 }
 
@@ -82,7 +87,11 @@ export async function issueTokenPair(
 }
 
 export async function getAccessToken(token: string): Promise<TokenRecord | null> {
-	if (revokedAccess.has(token)) return null;
+	if (accessRevocationUncertain) {
+		if (production) throw new AuthStorageUnavailableError();
+		return null;
+	}
+	if (revokedAccess.get(token)) return null;
 	const now = Date.now();
 	const cached = accessMemory.get(token);
 	if (cached && !isExpired(cached, now) && !production) {
@@ -109,7 +118,7 @@ export async function getAccessToken(token: string): Promise<TokenRecord | null>
 			await redis.del(accessKey(token));
 			return null;
 		}
-		accessMemory.set(token, parsed);
+		accessMemory.set(token, parsed, parsed.expiresAt);
 		return parsed;
 	} catch (err) {
 		if (production) throw new AuthStorageUnavailableError();
@@ -119,7 +128,7 @@ export async function getAccessToken(token: string): Promise<TokenRecord | null>
 }
 
 export async function getRefreshToken(token: string): Promise<TokenRecord | null> {
-	if (revokedRefresh.has(token)) return null;
+	if (refreshRevocationUncertain || revokedRefresh.get(token)) return null;
 	const now = Date.now();
 	const cached = refreshMemory.get(token);
 	if (cached && !isExpired(cached, now) && !production) {
@@ -145,7 +154,7 @@ export async function getRefreshToken(token: string): Promise<TokenRecord | null
 			await redis.del(refreshKey(token));
 			return null;
 		}
-		refreshMemory.set(token, parsed);
+		refreshMemory.set(token, parsed, parsed.expiresAt);
 		return parsed;
 	} catch (err) {
 		console.warn("[auth] refresh token read failed", err);
@@ -154,7 +163,8 @@ export async function getRefreshToken(token: string): Promise<TokenRecord | null
 }
 
 export async function revokeAccessToken(token: string): Promise<void> {
-	revokedAccess.add(token);
+	const expiresAt = accessMemory.get(token)?.expiresAt;
+	revokedAccess.set(token, true, expiresAt ?? Infinity);
 	accessMemory.delete(token);
 	let persisted = false;
 	try {
@@ -166,11 +176,16 @@ export async function revokeAccessToken(token: string): Promise<void> {
 	} catch (err) {
 		console.warn("[auth] access token delete failed", err);
 	}
+	if (expiresAt === undefined) {
+		if (!persisted) accessRevocationUncertain = true;
+		revokedAccess.delete(token);
+	}
 	if (production && !persisted) throw new Error("Token revocation unavailable");
 }
 
 export async function revokeRefreshToken(token: string): Promise<void> {
-	revokedRefresh.add(token);
+	const expiresAt = refreshMemory.get(token)?.expiresAt;
+	revokedRefresh.set(token, true, expiresAt ?? Infinity);
 	localOnlyRefresh.delete(token);
 	refreshMemory.delete(token);
 	let persisted = false;
@@ -183,6 +198,10 @@ export async function revokeRefreshToken(token: string): Promise<void> {
 	} catch (err) {
 		console.warn("[auth] refresh token delete failed", err);
 	}
+	if (expiresAt === undefined) {
+		if (!persisted) refreshRevocationUncertain = true;
+		revokedRefresh.delete(token);
+	}
 	if (production && !persisted) throw new Error("Token revocation unavailable");
 }
 
@@ -191,11 +210,12 @@ export async function rotateRefreshToken(
 	refreshTtlMs: number,
 	fingerprint?: string
 ): Promise<{ record: TokenRecord; refreshToken: string } | null> {
-	if (!production && localOnlyRefresh.has(oldToken)) {
+	if (refreshRevocationUncertain || revokedRefresh.get(oldToken)) return null;
+	if (!production && localOnlyRefresh.get(oldToken)) {
 		const record = refreshMemory.get(oldToken);
-		if (!record || revokedRefresh.has(oldToken) || isExpired(record, Date.now())) return null;
+		if (!record || revokedRefresh.get(oldToken) || isExpired(record, Date.now())) return null;
 		localOnlyRefresh.delete(oldToken);
-		revokedRefresh.add(oldToken);
+		revokedRefresh.set(oldToken, true, record.expiresAt);
 		refreshMemory.delete(oldToken);
 		const refreshToken = await issueRefreshToken(record.userId, refreshTtlMs, fingerprint ?? record.fingerprint);
 		return { record, refreshToken };
@@ -217,9 +237,9 @@ export async function rotateRefreshToken(
 		const raw = await getRedis().eval(script, 2, refreshKey(oldToken), refreshKey(refreshToken), now, refreshTtlMs, fingerprint ?? "");
 		if (typeof raw !== "string") return null;
 		const record = JSON.parse(raw) as TokenRecord;
-		revokedRefresh.add(oldToken);
+		revokedRefresh.set(oldToken, true, record.expiresAt);
 		refreshMemory.delete(oldToken);
-		refreshMemory.set(refreshToken, { userId: record.userId, createdAt: now, expiresAt: now + refreshTtlMs, fingerprint: fingerprint ?? record.fingerprint });
+		refreshMemory.set(refreshToken, { userId: record.userId, createdAt: now, expiresAt: now + refreshTtlMs, fingerprint: fingerprint ?? record.fingerprint }, now + refreshTtlMs);
 		return { record, refreshToken };
 	} catch (err) {
 		console.warn("[auth] refresh rotation failed", err);

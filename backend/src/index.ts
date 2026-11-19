@@ -25,6 +25,8 @@ import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis"
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
 import { getJobQueueSize } from "./jobs/queue";
+import { createBossIpLimit } from "./boss_ip_limit";
+import { pruneWorldSessions } from "./world_session_retention";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { recordError, recordRequest, snapshotMetrics } from "./observability/metrics";
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
@@ -391,7 +393,7 @@ const getWorldStmt = db.prepare("SELECT state_json, updated_at FROM world LIMIT 
 const insertWorldStmt = db.prepare("INSERT INTO world (state_json, updated_at) VALUES (?, ?)");
 const updateWorldStmt = db.prepare("UPDATE world SET state_json = ?, updated_at = ?");
 
-const bossIpWindow = new Map<string, { windowEnd: number; count: number }>();
+const bossIpWindow = createBossIpLimit();
 const sockets = new Set<WebSocket>();
 const DEBUG_BYPASS = !IS_PRODUCTION && Bun.env.DEBUG_BYPASS == "1";
 
@@ -3986,21 +3988,8 @@ function getBossIpLimitPerWindow(): number {
 	return clampInt(getBalanceNumber("boss_ip_limit_per_window", 200), 0, 100000);
 }
 
-function allowBossIp(ip: string, windowEnd: number): boolean {
-	const limit = getBossIpLimitPerWindow();
-	if (!ip || limit <= 0) {
-		return true;
-	}
-	const entry = bossIpWindow.get(ip);
-	if (!entry || entry.windowEnd != windowEnd) {
-		bossIpWindow.set(ip, { windowEnd, count: 1 });
-		return true;
-	}
-	if (entry.count >= limit) {
-		return false;
-	}
-	entry.count += 1;
-	return true;
+function allowBossIp(ip: string, windowEnd: number, now: number): boolean {
+	return bossIpWindow(ip, windowEnd, getBossIpLimitPerWindow(), now);
 }
 
 function cloneLabRuntime(runtime?: LabRuntime | null): LabRuntime {
@@ -5890,6 +5879,7 @@ function enterWorldSession(
 				modifiers: zoneRotation.modifier_ids.slice()
 			};
 		}
+		pruneWorldSessions(world.sessions, now);
 		world.daily_entries += 1;
 		world.last_gate_entry_at = now;
 		assertWalletInvariant(state.wallet);
@@ -6099,7 +6089,7 @@ function attackBoss(
 		logSuspiciousAction(playerId, { essence: -attackFee }, "BOSS_ATTACK", bossId);
 		return { error: "Suspicious boss fee." };
 	}
-	if (!allowBossIp(ip, bossState.window_ends_at)) {
+	if (!allowBossIp(ip, bossState.window_ends_at, now)) {
 		return { error: "Boss attack rate limit reached." };
 	}
 	const stored = getIdempotentState(playerId, clientActionId, "BOSS_ATTACK", body);

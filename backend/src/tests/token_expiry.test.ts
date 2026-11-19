@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { issueAccessToken, issueRefreshToken, getAccessToken, getRefreshToken, revokeAccessToken, revokeRefreshToken } from "../auth/tokens";
+import { issueAccessToken, issueRefreshToken, getAccessToken, getRefreshToken, revokeAccessToken, revokeRefreshToken, rotateRefreshToken } from "../auth/tokens";
+import { issueSession, getSession, revokeSession } from "../middleware/auth";
 
 test.skipIf(Bun.env.REDIS_URL !== "redis://127.0.0.1:1" || Bun.env.NODE_ENV !== "development")("expired and revoked tokens are rejected when Redis is unavailable", async () => {
 	const access = await issueAccessToken("test", 300);
@@ -15,4 +16,13 @@ test.skipIf(Bun.env.REDIS_URL !== "redis://127.0.0.1:1" || Bun.env.NODE_ENV !== 
 	await revokeRefreshToken(r);
 	expect(await getAccessToken(a)).toBeNull();
 	expect(await getRefreshToken(r)).toBeNull();
+	const session = await issueSession("test", 10000);
+	await revokeSession(session);
+	expect(await getSession(session)).toBeNull();
+	const rotating = await issueRefreshToken("test", 10000);
+	const rotated = await rotateRefreshToken(rotating, 10000);
+	expect(rotated).not.toBeNull();
+	expect(await rotateRefreshToken(rotating, 10000)).toBeNull();
+	expect(await getRefreshToken(rotating)).toBeNull();
+	expect((await getRefreshToken(rotated!.refreshToken))?.userId).toBe("test");
 }, 30000);

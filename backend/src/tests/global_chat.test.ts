@@ -70,6 +70,10 @@ test("global chat retains history, deduplicates, throttles and expires presence"
 		expect(chat.send("a", { text: "hello", client_message_id: "0" }).data.duplicate).toBe(true);
 		expect(chat.send("a", { text: "spam", client_message_id: "spam" }).status).toBe(429);
 		expect(chat.send("b", { text: "reply", client_message_id: "reply" }).status).toBe(200);
+		now += 1999;
+		expect(chat.send("a", { text: "early", client_message_id: "early" }).status).toBe(429);
+		now += 1;
+		expect(chat.send("a", { text: "on time", client_message_id: "on-time" }).status).toBe(200);
 		for (const text of ["", "   ", "a\nb", "x".repeat(201)]) expect(chat.send("b", { text, client_message_id: "invalid" }).status).toBe(400);
 		for (let i = 2; i < 21; i++) {
 			now += 2000;
@@ -77,7 +81,7 @@ test("global chat retains history, deduplicates, throttles and expires presence"
 		}
 		expect(chat.state("a").messages).toHaveLength(20);
 		expect(chat.state("a").messages.at(-1)).toMatchObject({ username: "Alice", league: "Amethyst" });
-		expect(chat.state("a").messages[0]).toMatchObject({ username: "Bob", text: "reply" });
+		expect(chat.state("a").messages[0]).toMatchObject({ username: "Alice", text: "on time" });
 		chat.close();
 		db.close();
 		db = new Database(path);
