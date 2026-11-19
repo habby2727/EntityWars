@@ -1,6 +1,8 @@
 extends Node
 
 func _process(_delta: float) -> void:
+	if OS.has_feature("android"):
+		return
 	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_MAXIMIZED:
 		return
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
