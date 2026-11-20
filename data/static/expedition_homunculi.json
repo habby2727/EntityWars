@@ -7,7 +7,40 @@
       "rarity": 7,
       "passive_orientation": "Ataque",
       "preview_texture": "res://assets/entities/gameplay/homunculus/astralotl_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/astralotl.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/astralotl.png",
+      "passive": {
+        "name": {
+          "en": "Astral edge",
+          "es": "Filo astral"
+        },
+        "description": {
+          "en": "On an advantageous attack, gain 1/1/2/3 Power for that attack.",
+          "es": "Al atacar con ventaja, obtiene 1/1/2/3 de potencia para ese ataque."
+        },
+        "event": "before_attack",
+        "condition": "advantage",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "power_flat",
+            "target": "self",
+            "duration": "current_attack",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "cedix",
@@ -16,7 +49,40 @@
       "rarity": 2,
       "passive_orientation": "Ataque condicionado",
       "preview_texture": "res://assets/entities/gameplay/homunculus/cedix_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/cedix.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/cedix.png",
+      "passive": {
+        "name": {
+          "en": "Last ember",
+          "es": "Última brasa"
+        },
+        "description": {
+          "en": "Below half HP, gain 1/1/2/3 Power for the attack.",
+          "es": "Con menos de la mitad de PV, obtiene 1/1/2/3 de potencia para el ataque."
+        },
+        "event": "before_attack",
+        "condition": "below_half_hp",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "power_flat",
+            "target": "self",
+            "duration": "current_attack",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "crishvin",
@@ -25,34 +91,210 @@
       "rarity": 3,
       "passive_orientation": "Defensa + veneno",
       "preview_texture": "res://assets/entities/gameplay/homunculus/crishvin_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/crishvin.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/crishvin.png",
+      "passive": {
+        "name": {
+          "en": "Toxic carapace",
+          "es": "Caparazón tóxico"
+        },
+        "description": {
+          "en": "After taking damage, apply 1/1/2/2 poison and gain 1/1/2/3 Guard next exchange.",
+          "es": "Al recibir daño, aplica 1/1/2/2 de veneno y gana 1/1/2/3 de defensa en el siguiente intercambio."
+        },
+        "event": "damage_received",
+        "condition": "always",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "guard_flat",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "poison",
+            "target": "target",
+            "duration": "instant",
+            "values": [
+              1,
+              1,
+              2,
+              2
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "flincho",
       "name": "Flincho",
       "type": "sodium",
       "rarity": 5,
-      "passive_orientation": "Precisi?n + tempo",
+      "passive_orientation": "Precisión + tempo",
       "preview_texture": "res://assets/entities/gameplay/homunculus/flincho_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/flincho.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/flincho.png",
+      "passive": {
+        "name": {
+          "en": "Second rhythm",
+          "es": "Segundo ritmo"
+        },
+        "description": {
+          "en": "After a missed spell, gain 2/3/4/5% accuracy and 1/1/1/2 tempo next exchange.",
+          "es": "Al fallar un hechizo, gana 2/3/4/5% de precisión y 1/1/1/2 de tempo en el siguiente intercambio."
+        },
+        "event": "spell_miss",
+        "condition": "always",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "accuracy_pct",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              0.02,
+              0.03,
+              0.04,
+              0.05
+            ]
+          },
+          {
+            "kind": "tempo_flat",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              1,
+              1,
+              1,
+              2
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "honin",
       "name": "Honin",
       "type": "sulfur",
       "rarity": 1,
-      "passive_orientation": "Defensa + precisi?n",
+      "passive_orientation": "Defensa + precisión",
       "preview_texture": "res://assets/entities/gameplay/homunculus/honin_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/honin.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/honin.png",
+      "passive": {
+        "name": {
+          "en": "Steady stance",
+          "es": "Postura firme"
+        },
+        "description": {
+          "en": "At a type disadvantage, gain 1/1/2/3 Guard and 2/3/4/5% accuracy this exchange.",
+          "es": "Con desventaja elemental, gana 1/1/2/3 de defensa y 2/3/4/5% de precisión durante el intercambio."
+        },
+        "event": "before_exchange",
+        "condition": "disadvantage",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "guard_flat",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "accuracy_pct",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              0.02,
+              0.03,
+              0.04,
+              0.05
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "hyrox",
       "name": "Hyrox",
       "type": "gold",
       "rarity": 6,
-      "passive_orientation": "Tempo + evasi?n",
+      "passive_orientation": "Tempo + evasión",
       "preview_texture": "res://assets/entities/gameplay/homunculus/hyrox_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/hyrox.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/hyrox.png",
+      "passive": {
+        "name": {
+          "en": "Evasive rhythm",
+          "es": "Ritmo evasivo"
+        },
+        "description": {
+          "en": "After dodging, gain 2/3/4/5% evasion and 1/1/1/2 tempo next exchange.",
+          "es": "Tras esquivar, gana 2/3/4/5% de evasión y 1/1/1/2 de tempo en el siguiente intercambio."
+        },
+        "event": "dodge",
+        "condition": "always",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "evasion_pct",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              0.02,
+              0.03,
+              0.04,
+              0.05
+            ]
+          },
+          {
+            "kind": "tempo_flat",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              1,
+              1,
+              1,
+              2
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "luny",
@@ -61,25 +303,157 @@
       "rarity": 9,
       "passive_orientation": "Ataque + tempo",
       "preview_texture": "res://assets/entities/gameplay/homunculus/luny_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/luny.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/luny.png",
+      "passive": {
+        "name": {
+          "en": "Lunar cadence",
+          "es": "Cadencia lunar"
+        },
+        "description": {
+          "en": "After two consecutive spell hits, gain 1/1/2/3 Power for the attack and 1/1/1/2 tempo this exchange.",
+          "es": "Tras dos hechizos acertados seguidos, gana 1/1/2/3 de potencia para el ataque y 1/1/1/2 de tempo en el intercambio."
+        },
+        "event": "before_attack",
+        "condition": "two_consecutive_spell_hits",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "power_flat",
+            "target": "self",
+            "duration": "current_attack",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "tempo_flat",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              1,
+              1,
+              1,
+              2
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "mantillo",
       "name": "Mantillo",
       "type": "mercury",
       "rarity": 8,
-      "passive_orientation": "Da?o + evasi?n",
+      "passive_orientation": "Daño + evasión",
       "preview_texture": "res://assets/entities/gameplay/homunculus/mantillo_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/mantillo.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/mantillo.png",
+      "passive": {
+        "name": {
+          "en": "Carrion veil",
+          "es": "Velo de carroña"
+        },
+        "description": {
+          "en": "Against a debuffed target, gain 1/1/2/3 Power for the attack and 2/3/4/5% evasion this exchange.",
+          "es": "Contra un objetivo debilitado, gana 1/1/2/3 de potencia para el ataque y 2/3/4/5% de evasión en el intercambio."
+        },
+        "event": "before_attack",
+        "condition": "target_debuffed",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "power_flat",
+            "target": "self",
+            "duration": "current_attack",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "evasion_pct",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              0.02,
+              0.03,
+              0.04,
+              0.05
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "nebulynx",
       "name": "Nebulynx",
       "type": "aether",
       "rarity": 9,
-      "passive_orientation": "Da?o + tempo",
+      "passive_orientation": "Daño + tempo",
       "preview_texture": "res://assets/entities/gameplay/homunculus/nebulynx_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/nebulynx.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/nebulynx.png",
+      "passive": {
+        "name": {
+          "en": "Inspired surge",
+          "es": "Impulso inspirado"
+        },
+        "description": {
+          "en": "After activating Inspiration, gain 1/1/2/3 Power and 1/1/1/2 tempo next exchange.",
+          "es": "Tras activar Inspiración, gana 1/1/2/3 de potencia y 1/1/1/2 de tempo en el siguiente intercambio."
+        },
+        "event": "inspiration_activated",
+        "condition": "always",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "power_flat",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "tempo_flat",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              1,
+              1,
+              1,
+              2
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "neon",
@@ -88,7 +462,51 @@
       "rarity": 10,
       "passive_orientation": "Tempo + defensa",
       "preview_texture": "res://assets/entities/gameplay/homunculus/neon_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/neon.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/neon.png",
+      "passive": {
+        "name": {
+          "en": "Changing current",
+          "es": "Corriente cambiante"
+        },
+        "description": {
+          "en": "After switching weapons, gain 1/1/2/3 Guard and 1/1/1/2 tempo next exchange.",
+          "es": "Tras cambiar de arma, gana 1/1/2/3 de defensa y 1/1/1/2 de tempo en el siguiente intercambio."
+        },
+        "event": "weapon_switched",
+        "condition": "always",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "guard_flat",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "tempo_flat",
+            "target": "self",
+            "duration": "next_exchange",
+            "values": [
+              1,
+              1,
+              1,
+              2
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "ninux",
@@ -97,16 +515,104 @@
       "rarity": 8,
       "passive_orientation": "Ataque + defensa",
       "preview_texture": "res://assets/entities/gameplay/homunculus/ninux_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/ninux.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/ninux.png",
+      "passive": {
+        "name": {
+          "en": "Sheltered force",
+          "es": "Fuerza protegida"
+        },
+        "description": {
+          "en": "While shielded or warded, gain 1/1/2/3 Power and Guard this exchange.",
+          "es": "Con escudo o barrera, gana 1/1/2/3 de potencia y defensa durante el intercambio."
+        },
+        "event": "before_exchange",
+        "condition": "shielded",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "power_flat",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "guard_flat",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "solcarp",
       "name": "Solcarp",
       "type": "gold",
       "rarity": 5,
-      "passive_orientation": "Ataque + precisi?n",
+      "passive_orientation": "Ataque + precisión",
       "preview_texture": "res://assets/entities/gameplay/homunculus/solcarp_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/solcarp.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/solcarp.png",
+      "passive": {
+        "name": {
+          "en": "Solar opening",
+          "es": "Apertura solar"
+        },
+        "description": {
+          "en": "On the first attack, gain 1/1/2/3 Power and 2/3/4/5% accuracy.",
+          "es": "En el primer ataque, gana 1/1/2/3 de potencia y 2/3/4/5% de precisión."
+        },
+        "event": "before_attack",
+        "condition": "opening_attack",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "power_flat",
+            "target": "self",
+            "duration": "current_attack",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "accuracy_pct",
+            "target": "self",
+            "duration": "current_attack",
+            "values": [
+              0.02,
+              0.03,
+              0.04,
+              0.05
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "venam",
@@ -115,7 +621,40 @@
       "rarity": 4,
       "passive_orientation": "Veneno + robo de vida",
       "preview_texture": "res://assets/entities/gameplay/homunculus/venam_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/venam.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/venam.png",
+      "passive": {
+        "name": {
+          "en": "Venom drain",
+          "es": "Drenaje venenoso"
+        },
+        "description": {
+          "en": "When poison damages the opponent, heal up to 1/1/2/3 HP once per exchange, limited by damage dealt and missing HP.",
+          "es": "Cuando el veneno daña al rival, cura hasta 1/1/2/3 PV una vez por intercambio, limitado por el daño y los PV perdidos."
+        },
+        "event": "opponent_poison_damage",
+        "condition": "positive_damage",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "heal",
+            "target": "self",
+            "duration": "instant",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
     },
     {
       "id": "voltibis",
@@ -124,7 +663,51 @@
       "rarity": 6,
       "passive_orientation": "Tempo + defensa",
       "preview_texture": "res://assets/entities/gameplay/homunculus/voltibis_pv.png",
-      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/voltibis.png"
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/voltibis.png",
+      "passive": {
+        "name": {
+          "en": "Third beat",
+          "es": "Tercer pulso"
+        },
+        "description": {
+          "en": "Every third exchange, gain 1/1/2/3 Guard and 1/1/1/2 tempo for that exchange.",
+          "es": "Cada tercer intercambio, gana 1/1/2/3 de defensa y 1/1/1/2 de tempo durante ese intercambio."
+        },
+        "event": "before_exchange",
+        "condition": "third_exchange",
+        "limit": "once_per_exchange",
+        "stacking": "replace",
+        "levels": [
+          0,
+          3,
+          6,
+          10
+        ],
+        "effects": [
+          {
+            "kind": "guard_flat",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "tempo_flat",
+            "target": "self",
+            "duration": "current_exchange",
+            "values": [
+              1,
+              1,
+              1,
+              2
+            ]
+          }
+        ]
+      }
     }
   ]
 }

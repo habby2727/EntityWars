@@ -272,6 +272,6 @@ EXPERIMENT_EXTRA_STORAGE_DESC,Increase storage capacity during collection by 15%
 EXPERIMENT_BETTER_ODDS_NAME,Better Chances,Mejores probabilidades
 EXPERIMENT_BETTER_ODDS_DESC,Add 10 percentage points to other experiment success chances for 10 minutes.,Añade 10 puntos porcentuales a la probabilidad de éxito de otros experimentos durante 10 minutos.
 EXPERIMENT_TIMING,Duration: %s | Cooldown: %s,Duración: %s | Espera: %s
-EXPEDITION_START,Start Expedition,Iniciar expedici?n
+EXPEDITION_START,Start Expedition,Iniciar expedición
 EXPEDITION_TITLE,Expeditions,Expediciones
-EXPEDITION_DEVELOPMENT,This mode is under development.,Este modo est? en desarrollo.
+EXPEDITION_DEVELOPMENT,This mode is under development.,Este modo está en desarrollo.
