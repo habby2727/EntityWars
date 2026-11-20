@@ -61,8 +61,19 @@ func _ready() -> void:
 	margin.add_child(layout)
 	scroll.reparent(layout)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var action_container: Container = layout
+	if OS.has_feature("android"):
+		var actions := HBoxContainer.new()
+		actions.add_theme_constant_override("separation", 8)
+		layout.add_child(actions)
+		action_container = actions
+		for label in [_description, _detail, _level, _requirement, _cost_title, _status]:
+			label.add_theme_font_size_override("font_size", 26)
+		_name_label.add_theme_font_size_override("font_size", 34)
 	for action in [_upgrade, _collect, _manage]:
-		action.reparent(layout)
+		action.reparent(action_container)
+		if OS.has_feature("android"):
+			action.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		action.custom_minimum_size.y = 50
 		action.add_theme_font_size_override("font_size", 20)
 	_close.pressed.connect(_close_panel)
@@ -117,6 +128,14 @@ func show_building(building_id: String) -> void:
 	show()
 
 func _layout_panel() -> void:
+	if OS.has_feature("android"):
+		var available_size: Vector2 = get_parent().size
+		if available_size.x <= 0 or available_size.y <= 0:
+			return
+		scale = Vector2.ONE
+		size = Vector2(available_size.x * 0.55, available_size.y * 0.90)
+		position = Vector2(available_size.x - size.x - 16.0, (available_size.y - size.y) / 2.0)
+		return
 	var canvas_transform = get_parent().get_global_transform().affine_inverse() * _lab_canvas.get_global_transform()
 	var content_rect := Rect2(Vector2.ZERO, _lab_canvas.size)
 	var background := _lab_canvas.get_node_or_null("Background") as TextureRect

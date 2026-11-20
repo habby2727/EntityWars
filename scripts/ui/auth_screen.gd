@@ -163,11 +163,14 @@ func _build_ui() -> void:
 		form.add_theme_constant_override("separation", 12)
 		tabs.add_child(form)
 		var user := _field(form, "AUTH_USERNAME", false)
+		user.text_changed.connect(_sanitize_username.bind(user))
 		username.append(user)
 		var pass_field := _field(form, "AUTH_PASSWORD", true)
+		pass_field.text_changed.connect(_sanitize_username.bind(pass_field))
 		password.append(pass_field)
 		if index == 1:
 			confirm = _field(form, "AUTH_CONFIRM", true)
+			confirm.text_changed.connect(_sanitize_username.bind(confirm))
 		var button := Button.new()
 		button.text = tr("AUTH_LOGIN") if index == 0 else tr("AUTH_REGISTER")
 		button.custom_minimum_size.y = 55
@@ -209,7 +212,27 @@ func _field(parent: Control, placeholder: String, secret: bool) -> LineEdit:
 	parent.add_child(field)
 	return field
 
+func _without_whitespace(value: String) -> String:
+	var result := ""
+	for character in value:
+		var code := character.unicode_at(0)
+		if code in [0x20, 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000] or (code >= 9 and code <= 13) or (code >= 0x2000 and code <= 0x200a):
+			continue
+		result += character
+	return result
+
+func _sanitize_username(value: String, field: LineEdit) -> void:
+	var cleaned := _without_whitespace(value)
+	if cleaned != value:
+		var caret := _without_whitespace(value.substr(0, field.caret_column)).length()
+		field.text = cleaned
+		field.caret_column = caret
+
 func _submit(index: int) -> void:
+	_sanitize_username(username[index].text, username[index])
+	_sanitize_username(password[index].text, password[index])
+	if index == 1:
+		_sanitize_username(confirm.text, confirm)
 	if busy or verifying or not endpoint_safe or not preflight_ok:
 		return
 	var name := username[index].text

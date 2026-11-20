@@ -794,6 +794,9 @@ func _catalog(homunculi: bool) -> void:
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var details := VBoxContainer.new()
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if OS.has_feature("android") and not homunculi:
+		details.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		details.alignment = BoxContainer.ALIGNMENT_BEGIN
 	if not homunculi:
 		details.add_theme_constant_override("separation", 8)
 	row.add_child(details)
@@ -812,6 +815,8 @@ func _catalog(homunculi: bool) -> void:
 	details.add_child(stats_area)
 	var preview_center := CenterContainer.new()
 	preview_center.name = "PreviewSlot"
+	if OS.has_feature("android") and not homunculi:
+		preview_center.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	preview_center.custom_minimum_size = Vector2(150, 150) if homunculi else Vector2(190, 190)
 	if homunculi:
 		catalog_column.add_child(preview_center)
@@ -837,6 +842,8 @@ func _catalog(homunculi: bool) -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.custom_minimum_size.y = 60 if homunculi else 135
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	if OS.has_feature("android") and not homunculi:
+		scroll.clip_contents = true
 	stats_area.add_child(scroll)
 	var info := Label.new()
 	info.add_theme_font_size_override("font_size", 19)
@@ -846,6 +853,9 @@ func _catalog(homunculi: bool) -> void:
 		_vat_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if OS.has_feature("android") and not homunculi:
+		info.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		info.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	if homunculi:
 		var text_column := VBoxContainer.new()
 		text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL

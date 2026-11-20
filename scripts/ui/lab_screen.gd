@@ -520,13 +520,14 @@ func _build_resource_bar() -> void:
 			_resource_bar.get_parent().add_child(band)
 			for id in _resource_rows:
 				_resource_rows[id].row.reparent(band)
-			var overlay := _background_panel.get_node("ContentMargin/TopOverlay") as Control
-			_resource_bar_panel.reparent(overlay)
-			_resource_bar_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_resource_bar.queue_free()
+			_resource_bar_panel.reparent(self, false)
+			_resource_bar_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+			_resource_bar_panel.z_index = 50
 			_resource_bar_panel.offset_left = 16
-			_resource_bar_panel.offset_top = -90
-			_resource_bar_panel.offset_right = 1220
-			_resource_bar_panel.offset_bottom = -16
+			_resource_bar_panel.offset_top = -89
+			_resource_bar_panel.offset_right = -350
+			_resource_bar_panel.offset_bottom = -15
 			var left_column := _left_panel.get_node("Margin/LeftVBox") as VBoxContainer
 			var spacer := Control.new()
 			spacer.custom_minimum_size.y = 90
@@ -686,12 +687,22 @@ func _build_spell_section() -> void:
 		_spell_entity_selector.set_item_metadata(_spell_entity_selector.item_count - 1, entity_id)
 	_spell_entity_selector.item_selected.connect(_on_spell_entity_selected)
 	_spell_section.add_child(_spell_entity_selector)
-	var filters: BoxContainer = VBoxContainer.new() if OS.has_feature("android") else HBoxContainer.new()
+	var filters: Container
+	if OS.has_feature("android"):
+		var filter_grid := GridContainer.new()
+		filter_grid.columns = 2
+		filter_grid.add_theme_constant_override("h_separation", 4)
+		filter_grid.add_theme_constant_override("v_separation", 4)
+		filters = filter_grid
+	else:
+		filters = HBoxContainer.new()
 	var group := ButtonGroup.new()
 	for kind in ["All", "Initial", "Hybrid", "Universal"]:
 		var filter := Button.new()
 		filter.text = "SPELL_FILTER_" + kind.to_upper()
 		filter.custom_minimum_size = Vector2(90, 32)
+		if OS.has_feature("android"):
+			filter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		filter.toggle_mode = true
 		filter.button_group = group
 		for state in ["normal", "hover", "pressed", "hover_pressed"]:
@@ -717,14 +728,15 @@ func _build_spell_section() -> void:
 		var layout := HBoxContainer.new()
 		layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		var controls := VBoxContainer.new()
-		controls.custom_minimum_size.x = 220
+		controls.custom_minimum_size.x = 110
 		_spell_section.add_child(layout)
 		layout.add_child(controls)
 		_spell_entity_selector.reparent(controls)
 		filters.reparent(controls)
 		scroll.reparent(layout)
 		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		scroll.custom_minimum_size.y = 360
+		scroll.custom_minimum_size.y = 180
+		scroll.clip_contents = true
 	detail.add_child(_spell_section)
 	_build_spell_info()
 	_build_spell_rows()
@@ -752,6 +764,10 @@ func _build_spell_info() -> void:
 	_spell_info.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(650, 400)
+	if OS.has_feature("android"):
+		var resize_panel := func(): panel.custom_minimum_size = get_viewport_rect().size * Vector2(0.9, 0.88)
+		center.resized.connect(resize_panel)
+		resize_panel.call()
 	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
 	center.add_child(panel)
 	var content := VBoxContainer.new()
@@ -764,6 +780,9 @@ func _build_spell_info() -> void:
 	_spell_info_title.set_meta("localization_body_font", true)
 	_spell_info_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_title.add_theme_font_size_override("font_size", 22)
+	if OS.has_feature("android"):
+		_spell_info_title.add_theme_font_size_override("font_size", 30)
+		_spell_info_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	header.add_child(_spell_info_title)
 	var close := Button.new()
 	close.text = "X"
@@ -779,6 +798,11 @@ func _build_spell_info() -> void:
 	_spell_info_text = Label.new()
 	_spell_info_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if OS.has_feature("android"):
+		_spell_info_text.add_theme_font_size_override("font_size", 50)
+		_spell_info_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_spell_info_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_spell_info_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_spell_info_text)
 
 func _show_spell_info(spell: Dictionary) -> void:
@@ -823,6 +847,9 @@ func _build_spell_rows() -> void:
 		name_label.set_meta("localization_body_font", true)
 		name_label.text = "%s  |  %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), types]
 		name_label.add_theme_font_size_override("font_size", 18)
+		if OS.has_feature("android"):
+			name_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+			name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(name_label)
 		var actions := HBoxContainer.new()
 		var status := Label.new()
@@ -1071,7 +1098,8 @@ func _update_detail() -> void:
 			metrics["vault_details"] = ResourceBars.vault_details(_state, _db.balance, level, HqRules.get_max_level("storage_vault"), route, hq_path)
 		# Give the Vat catalog the top of the detail panel; keep other buildings' layout unchanged.
 		var detail: Node = _specialized_panel.get_parent()
-		detail.move_child(_specialized_panel, 0 if _selected_id == "homunculus_vat" else detail.get_child_count() - 1)
+		var first := _selected_id == "homunculus_vat" or (OS.has_feature("android") and _selected_id == "build_forge")
+		detail.move_child(_specialized_panel, 0 if first else detail.get_child_count() - 1)
 		_specialized_panel.show_building(_selected_id, _state, names, metrics, _spell_state_synced)
 		_update_lab_status()
 

@@ -544,6 +544,8 @@ func _render_actor_roster() -> void:
 		label.offset_top = -38
 		label.offset_bottom = -2
 		label.add_theme_constant_override("outline_size", 4)
+		if OS.has_feature("android") and _boss_view:
+			label.add_theme_font_size_override("font_size", label.get_theme_font_size("font_size") * 3)
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		actor.add_child(label)
 		if _boss_view:
@@ -662,6 +664,8 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 	title.fit_content = true
 	title.scroll_active = false
 	title.add_theme_font_size_override("normal_font_size", 18)
+	if OS.has_feature("android"):
+		title.add_theme_font_size_override("normal_font_size", 54)
 	title.add_theme_constant_override("outline_size", 5)
 	title.add_theme_color_override("font_outline_color", Color.BLACK)
 	var tier := str(entry.get("tier", "common")).to_lower()
@@ -1076,13 +1080,17 @@ func _render_global_boss() -> void:
 	sprite.pressed.connect(_open_global_boss)
 	_global_actor.add_child(sprite)
 	var label := Label.new()
-	label.text = "GLOBAL EVENT: %s [%s]  %d/5" % [str(boss.get("name", "Boss")), str(boss.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0))]
+	label.text = ("GLOBAL EVENT:\n%s [%s]  %d/5" if OS.has_feature("android") else "GLOBAL EVENT: %s [%s]  %d/5") % [str(boss.get("name", "Boss")), str(boss.get("tier", "")).capitalize(), int(_global_event.get("winner_count", 0))]
 	label.position = Vector2(-35, -28)
 	label.size = Vector2(220, 26)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_constant_override("outline_size", 5)
+	if OS.has_feature("android"):
+		label.add_theme_font_size_override("font_size", label.get_theme_font_size("font_size") * 3)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_global_actor.add_child(label)
+	if OS.has_feature("android"):
+		return
 	var icon := Button.new()
 	icon.text = "🌐"
 	icon.position = Vector2(60, -60)

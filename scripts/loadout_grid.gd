@@ -215,7 +215,17 @@ func _resolve_nodes() -> void:
 	print_debug("[loadout_grid] Resolved nodes: grid_entities=%s, btn_attack=%s, btn_defense=%s" % [str(grid_entities), str(btn_seal_attack), str(btn_seal_defense)])
 
 func _ready() -> void:
+	if OS.has_feature("android"):
+		var android_back := $BackButton as Button
+		android_back.offset_left = -214
+		android_back.offset_right = -30
+		android_back.offset_top = 32
+		android_back.offset_bottom = 102
+		android_back.custom_minimum_size = Vector2(184, 70)
 	_resolve_nodes()
+	if OS.has_feature("android") and grid_entities != null:
+		var entity_scroll := grid_entities.get_parent() as ScrollContainer
+		entity_scroll.add_theme_constant_override("scrollbar_margin_right", 0)
 	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
 	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("replaced_session_id", "")).is_empty():
@@ -595,7 +605,18 @@ func _setup_build_dialog() -> void:
 	center_popup.add_child(dialog)
 	if lbl_build_error:
 		lbl_build_error.reparent(card)
-	block.reparent(dialog)
+	var dialog_content: Control = dialog
+	var android_dialog: VBoxContainer
+	if OS.has_feature("android"):
+		android_dialog = VBoxContainer.new()
+		dialog.add_child(android_dialog)
+		var build_scroll := ScrollContainer.new()
+		build_scroll.custom_minimum_size = Vector2(600, 300)
+		build_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		build_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		android_dialog.add_child(build_scroll)
+		dialog_content = build_scroll
+	block.reparent(dialog_content)
 	block.custom_minimum_size = Vector2.ZERO
 	block.alignment = BoxContainer.ALIGNMENT_CENTER
 	var grid := block.get_node("BuildGrid") as GridContainer
@@ -619,7 +640,10 @@ func _setup_build_dialog() -> void:
 	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	MenuArt.button(close)
 	close.pressed.connect(overlay.hide)
-	block.add_child(close)
+	if OS.has_feature("android"):
+		android_dialog.add_child(close)
+	else:
+		block.add_child(close)
 	var button := Button.new()
 	button.text = "Build"
 	button.custom_minimum_size = Vector2(160, 48)

@@ -56,6 +56,9 @@ var _spell_entity_option: OptionButton
 var _spell_filter_buttons: Array[Button] = []
 var _item_progress: Dictionary = {}
 var _item_progress_known := false
+var _loaded_tabs := {}
+var _list_generation := {}
+var _android_tab_buttons: Array[Button] = []
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
 
@@ -71,7 +74,8 @@ func _ready() -> void:
 	_entry_group.allow_unpress = false
 	_load_registry()
 	_setup_spell_progress()
-	_populate_lists()
+	if not _android_ui():
+		_populate_lists()
 	_apply_initial_tab()
 	_tabs.tab_changed.connect(_on_inventory_tab_changed)
 	_on_inventory_tab_changed(_tabs.current_tab)
@@ -79,6 +83,23 @@ func _ready() -> void:
 func _setup_inventory_layout() -> void:
 	if _android_ui():
 		_tabs.add_theme_font_size_override("font_size", 24)
+		_tabs.tabs_visible = false
+		var spacer := $Background/Margin/RootVBox/Header/Spacer as Control
+		spacer.custom_minimum_size.x = 800
+		var tab_row := HBoxContainer.new()
+		tab_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		tab_row.add_theme_constant_override("separation", 6)
+		spacer.add_child(tab_row)
+		for index in _tabs.get_tab_count():
+			var tab_button := Button.new()
+			tab_button.text = _tabs.get_tab_title(index)
+			tab_button.custom_minimum_size = Vector2(150, 60)
+			tab_button.toggle_mode = true
+			MenuArt.button(tab_button)
+			tab_button.pressed.connect(func(): _tabs.current_tab = index)
+			tab_row.add_child(tab_button)
+			_android_tab_buttons.append(tab_button)
 	for button in [_back_button, _loadout_button]:
 		if button:
 			button.custom_minimum_size = Vector2(140, 44)
@@ -161,7 +182,7 @@ func _setup_inventory_layout() -> void:
 	_detail_title.add_theme_font_size_override("font_size", 24)
 	if _android_ui():
 		_detail_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_detail_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_detail_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_detail_title.add_theme_font_size_override("font_size", 30)
 	header.add_child(_detail_title)
 	var scroll := ScrollContainer.new()
@@ -176,7 +197,7 @@ func _setup_inventory_layout() -> void:
 	_detail_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail_text.add_theme_font_size_override("font_size", 17)
 	if _android_ui():
-		_detail_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_detail_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_detail_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 		_detail_text.add_theme_font_size_override("font_size", 24)
 	scroll.add_child(_detail_text)
@@ -241,6 +262,8 @@ func _on_spell_entity_changed(index: int) -> void:
 func _refresh_spell_catalog() -> void:
 	if _registry == null or _ultrahit_list == null:
 		return
+	if _android_ui() and not _loaded_tabs.has(3):
+		return
 	var selected_id := ""
 	var old_button := _entry_group.get_pressed_button()
 	if old_button != null and old_button.has_meta("entry"):
@@ -260,10 +283,20 @@ func _refresh_spell_catalog() -> void:
 		_on_inventory_tab_changed(3)
 
 func _on_inventory_tab_changed(index: int) -> void:
+	for i in _android_tab_buttons.size():
+		_android_tab_buttons[i].set_pressed_no_signal(i == index)
 	if index < 0 or index >= _tab_layouts.size():
 		return
 	if _detail_panel.get_parent() != _tab_layouts[index]:
 		_detail_panel.reparent(_tab_layouts[index])
+	if _android_ui() and not _loaded_tabs.has(index):
+		_loaded_tabs[index] = true
+		match index:
+			0: _populate_entities()
+			1: _populate_builds()
+			2: _populate_homunculi()
+			3: _populate_spells()
+			4: _populate_techs()
 	var lists := [_entities_list, _builds_list, _homunculi_list, _ultrahit_list, _techs_list]
 	for child in lists[index].get_children():
 		if child is Button:
@@ -331,6 +364,8 @@ func _apply_tab_titles() -> void:
 		var keys := {"Entities": "INVENTORY_TAB_ENTITIES", "Builds": "INVENTORY_TAB_BUILDS", "Homunculi": "INVENTORY_TAB_HOMUNCULI", "Ultrahit": "INVENTORY_TAB_SPELLS", "Techs": "INVENTORY_TAB_TECHS"}
 		if keys.has(tab_name):
 			_tabs.set_tab_title(i, tr(keys[tab_name]))
+			if i < _android_tab_buttons.size():
+				_android_tab_buttons[i].text = _tabs.get_tab_title(i)
 
 func _resolve_nodes() -> void:
 	_panel = get_node_or_null(panel_path) as Panel
@@ -408,8 +443,7 @@ func _populate_entities() -> void:
 	if list.is_empty():
 		_add_placeholder(_entities_list)
 		return
-	for entry in list:
-		_entities_list.add_child(_make_entry_row(entry))
+	_append_inventory_rows(_entities_list, list, 0)
 
 func _populate_builds() -> void:
 	if _builds_list == null:
@@ -427,8 +461,7 @@ func _populate_builds() -> void:
 	if list.is_empty():
 		_add_placeholder(_builds_list)
 		return
-	for entry in list:
-		_builds_list.add_child(_make_entry_row(entry, true))
+	_append_inventory_rows(_builds_list, list, 1, true)
 
 func _populate_homunculi() -> void:
 	if _homunculi_list == null:
@@ -446,19 +479,18 @@ func _populate_homunculi() -> void:
 	if list.is_empty():
 		_add_placeholder(_homunculi_list)
 		return
-	for entry in list:
-		_homunculi_list.add_child(_make_entry_row(entry))
+	_append_inventory_rows(_homunculi_list, list, 2)
 
 func _populate_spells() -> void:
 	if _ultrahit_list == null:
 		return
+	_list_generation[3] = int(_list_generation.get(3, 0)) + 1
 	_clear_container(_ultrahit_list)
 	var entries = _build_spell_entries()
 	if entries.is_empty():
 		_add_placeholder(_ultrahit_list)
 		return
-	for entry in entries:
-		_ultrahit_list.add_child(_make_entry_row(entry))
+	_append_inventory_rows(_ultrahit_list, entries, 3)
 
 func _populate_techs() -> void:
 	if _techs_list == null:
@@ -491,8 +523,17 @@ func _populate_techs() -> void:
 	if entries.is_empty():
 		_add_placeholder(_techs_list)
 		return
-	for entry in entries:
-		_techs_list.add_child(_make_entry_row(entry))
+	_append_inventory_rows(_techs_list, entries, 4)
+
+func _append_inventory_rows(list: VBoxContainer, entries: Array, tab: int, include_costs: bool = false) -> void:
+	var generation: int = int(_list_generation.get(tab, 0)) + 1
+	_list_generation[tab] = generation
+	for index in entries.size():
+		if not is_instance_valid(list) or int(_list_generation.get(tab, 0)) != generation:
+			return
+		list.add_child(_make_entry_row(entries[index], include_costs))
+		if _android_ui() and index > 0 and index % 3 == 0:
+			await get_tree().process_frame
 
 func _build_spell_entries() -> Array:
 	var out: Array = []
@@ -617,6 +658,8 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 		var item_level := Label.new()
 		item_level.name = "ItemLevel"
 		item_level.add_theme_font_size_override("font_size", 12)
+		if _android_ui():
+			item_level.add_theme_font_size_override("font_size", 19)
 		item_level.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		item_level.text = tr("INVENTORY_ROW_LEVEL") % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else tr("INVENTORY_ROW_UNAVAILABLE")
 		text_column.add_child(item_level)
@@ -626,6 +669,9 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 		subtitle.name = "SpellStatus"
 		subtitle.text = "%s  |  %s" % [SpellView.affinity(entry), SpellView.state_label(status)]
 		subtitle.add_theme_font_size_override("font_size", 12)
+		if _android_ui():
+			subtitle.add_theme_font_size_override("font_size", 19)
+			subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		subtitle.modulate = Color(0.73, 0.79, 0.76)
 		subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		text_column.add_child(subtitle)

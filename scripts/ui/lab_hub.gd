@@ -75,6 +75,7 @@ var _placeholder_popup: PopupPanel = null
 var _resource_bar_panel: PanelContainer = null
 var _resource_bar: VBoxContainer = null
 var _structures_button: Button = null
+var _android_pan := Vector2.ZERO
 
 var _buttons: Dictionary = {}
 var _state: Dictionary = {}
@@ -98,6 +99,12 @@ func _ready() -> void:
 	_connect_backend()
 	for button in [$Aspect/Canvas/TopOverlay/BackButton, _structures_button]:
 		MenuArt.button(button)
+	if OS.has_feature("android"):
+		_structures_button.offset_top = $Aspect/Canvas/TopOverlay/BackButton.offset_top + 20.0
+		_structures_button.offset_bottom = $Aspect/Canvas/TopOverlay/BackButton.offset_bottom + 20.0
+		_icon_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_background.mouse_filter = Control.MOUSE_FILTER_STOP
+		_background.gui_input.connect(_pan_lab_background)
 	_build_icons()
 	_build_resource_bar()
 	_load_state()
@@ -138,6 +145,10 @@ func _setup_background() -> void:
 	_background.texture = tex
 	_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	if OS.has_feature("android"):
+		_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		get_viewport().size_changed.connect(_resize_android_canvas)
+		_resize_android_canvas()
 	var video: VideoStreamPlayer = $Aspect/Canvas/BackgroundVideo
 	video.visible = animated_background
 	if animated_background and video.stream != null:
@@ -233,10 +244,11 @@ func _build_resource_bar() -> void:
 			_resource_bar.get_parent().add_child(band)
 			for id in _resource_rows:
 				_resource_rows[id].row.reparent(band)
-			_resource_bar_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_resource_bar.queue_free()
+			_resource_bar_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 			_resource_bar_panel.offset_left = 24
 			_resource_bar_panel.offset_top = -100
-			_resource_bar_panel.offset_right = 1250
+			_resource_bar_panel.offset_right = -350
 			_resource_bar_panel.offset_bottom = -24
 
 func _update_resource_bar() -> void:
@@ -260,6 +272,19 @@ func _layout_icons() -> void:
 	if canvas_size.x <= 0 or canvas_size.y <= 0:
 		return
 	var icon_scale = canvas_size.x / DESIGN_SIZE.x
+	var origin := Vector2.ZERO
+	if OS.has_feature("android"):
+		icon_scale = maxf(canvas_size.x / DESIGN_SIZE.x, canvas_size.y / DESIGN_SIZE.y)
+		var overflow: Vector2 = (DESIGN_SIZE * icon_scale - canvas_size) / 2.0
+		_android_pan = _android_pan.clamp(-overflow, overflow)
+		origin = (canvas_size - DESIGN_SIZE * icon_scale) / 2.0 + _android_pan
+		_background.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		_background.position = origin
+		_background.size = DESIGN_SIZE * icon_scale
+		var video: VideoStreamPlayer = $Aspect/Canvas/BackgroundVideo
+		video.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		video.position = origin
+		video.size = DESIGN_SIZE * icon_scale
 	for building_id in BUILDING_IDS:
 		var button: Control = _buttons.get(building_id, null)
 		if button == null:
@@ -270,7 +295,17 @@ func _layout_icons() -> void:
 		if LAYOUT_POS.has(building_id):
 			pos = LAYOUT_POS[building_id] * icon_scale
 		button.size = icon_size
-		button.position = pos - icon_size * 0.5
+		button.position = origin + pos - icon_size * 0.5
+
+func _pan_lab_background(event: InputEvent) -> void:
+	if event is InputEventScreenDrag:
+		_android_pan += event.relative
+		_layout_icons()
+
+func _resize_android_canvas() -> void:
+	var viewport_size := get_viewport_rect().size
+	if viewport_size.y > 0.0:
+		$Aspect.ratio = viewport_size.x / viewport_size.y
 
 func _on_canvas_resized() -> void:
 	_layout_icons()

@@ -274,6 +274,8 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_align_enemy_hom_to_circle, CONNECT_DEFERRED)
 	call_deferred("_align_enemy_hom_to_circle")
 	_setup_combat_labels()
+	if OS.has_feature("android"):
+		call_deferred("_raise_enemy_title")
 	_setup_aligned_health_panels()
 	_setup_inspiration_ui()
 	_configure_tooltip_text()
@@ -289,6 +291,7 @@ func _ready() -> void:
 	_style_spell_buttons()
 	if OS.has_feature("android"):
 		get_viewport().size_changed.connect(_layout_android_combat, CONNECT_DEFERRED)
+		child_entered_tree.connect(_keep_android_back_on_top)
 		call_deferred("_layout_android_combat")
 	next_turn_btn.hide()
 	spell_panel.hide()
@@ -339,6 +342,19 @@ func _align_enemy_hom_to_circle() -> void:
 	var target := Vector2(size.x * 1730.0 / 1920.0, size.y * 505.0 / 1080.0)
 	var delta := target - Vector2(top_left.x + dimensions.x / 2.0, image_bottom)
 	enemy_hom.position += delta
+	if OS.has_feature("android") and is_instance_valid(_enemy_hom_status):
+		var status_width := maxf(_enemy_hom_status.size.x, _enemy_hom_status.get_combined_minimum_size().x)
+		_enemy_hom_status.position = Vector2(clampf(target.x - status_width / 2.0, 0.0, maxf(0.0, size.x - status_width)), target.y + 24.0)
+
+func _raise_enemy_title() -> void:
+	if not is_instance_valid(enemy_name) or enemy_name.get_parent() != $EnemyPanel:
+		return
+	var previous_position := enemy_name.position
+	var holder := Node2D.new()
+	holder.name = "EnemyTitleAnchor"
+	$EnemyPanel.add_child(holder)
+	enemy_name.reparent(holder, false)
+	enemy_name.position = previous_position - Vector2(0, 60)
 
 func _setup_combat_log() -> void:
 	var style := StyleBoxFlat.new()
@@ -970,7 +986,7 @@ func _dungeon_refresh_controls() -> void:
 	if available:
 		var item_id := str(weapons[other - 1].id)
 		var item := _find_by_id(_items, item_id)
-		switch_weapon_btn.text = "Switch to: " + str(item.get("name", item_id))
+		switch_weapon_btn.text = ("Switch to:\n" if OS.has_feature("android") else "Switch to: ") + str(item.get("name", item_id))
 	ultra_button.disabled = true
 
 func _show_dungeon_status(description: String) -> void:
@@ -1659,8 +1675,12 @@ func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool
 		_online_hunt_info.size = Vector2(500, 95)
 		_online_hunt_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_online_hunt_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		add_child(_online_hunt_info)
-	(_solo_panel.get_parent().get_parent() if OS.has_feature("android") else _solo_panel.get_parent()).show()
+		if OS.has_feature("android"):
+			_solo_panel.add_child(_online_hunt_info)
+		else:
+			add_child(_online_hunt_info)
+	if not OS.has_feature("android"):
+		_solo_panel.get_parent().show()
 	get_node("PlayerPanel").show()
 	get_node("EnemyPanel").show()
 	_enemy_hom_status.hide()
@@ -1800,7 +1820,7 @@ func _refresh_online_spell_buttons() -> void:
 	if not decision.is_empty():
 		var weapons: Array = _online_hunt_session.combat_loadout.weapon_ids
 		var item := _find_by_id(_items, str(weapons[int(decision.switch_slot) - 1]))
-		switch_weapon_btn.text = "Switch to: " + str(item.get("name", weapons[int(decision.switch_slot) - 1]))
+		switch_weapon_btn.text = ("Switch to:\n" if OS.has_feature("android") else "Switch to: ") + str(item.get("name", weapons[int(decision.switch_slot) - 1]))
 
 func _online_turn_unresolved() -> void:
 	for button in spell_buttons:
@@ -2274,6 +2294,7 @@ func _setup_solo_boss() -> bool:
 func _create_solo_panel() -> void:
 	_create_solo_minion_views()
 	var panel := PanelContainer.new()
+	panel.name = "BossInformation"
 	panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	panel.offset_left = -270
 	panel.offset_right = 270
@@ -2298,6 +2319,19 @@ func _create_solo_panel() -> void:
 	style.set_content_margin_all(7 if has_node("WorldCombatSprites") else 14)
 	panel.add_theme_stylebox_override("panel", style)
 	add_child(panel)
+	if OS.has_feature("android"):
+		panel.hide()
+		var info_button := Button.new()
+		info_button.name = "BossInformationButton"
+		info_button.text = "i"
+		info_button.tooltip_text = "Boss information"
+		info_button.custom_minimum_size = Vector2(64, 64)
+		preload("res://scripts/ui/menu_art.gd").button(info_button)
+		info_button.position = Vector2(68, 50)
+		info_button.z_index = 190
+		$EnemyHealthGroup.add_child(info_button)
+		info_button.pressed.connect(func(): panel.visible = not panel.visible)
+		panel.z_index = 195
 	_solo_panel = VBoxContainer.new()
 	_solo_panel.add_theme_constant_override("separation", 3 if has_node("WorldCombatSprites") else 8)
 	if OS.has_feature("android"):
@@ -2308,6 +2342,15 @@ func _create_solo_panel() -> void:
 		scroll.add_child(_solo_panel)
 	else:
 		panel.add_child(_solo_panel)
+	if OS.has_feature("android"):
+		var close := Button.new()
+		close.text = "X"
+		close.tooltip_text = "UI_CLOSE"
+		close.custom_minimum_size = Vector2(64, 64)
+		close.size_flags_horizontal = Control.SIZE_SHRINK_END
+		preload("res://scripts/ui/menu_art.gd").button(close)
+		close.pressed.connect(panel.hide)
+		_solo_panel.add_child(close)
 	_solo_power_label = Label.new()
 	_solo_power_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_solo_power_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -3013,19 +3056,20 @@ func _set_hom_action_outline_active(active: bool) -> void:
 
 func _layout_android_combat() -> void:
 	var panel_min := spell_panel.get_combined_minimum_size()
-	var width := minf(size.x - 32.0, maxf(700.0, panel_min.x))
+	var width := minf(size.x - 360.0, maxf(size.x * 0.36, panel_min.x))
 	spell_panel.offset_left = -width / 2.0
 	spell_panel.offset_right = width / 2.0
 	spell_panel.offset_top = 64.0
-	spell_panel.offset_bottom = 64.0 + maxf(144.0, panel_min.y)
+	spell_panel.offset_bottom = 64.0 + maxf(165.0, panel_min.y)
 	var action_y := spell_panel.offset_bottom + 12.0
-	var action_width := (width - 12.0) / 2.0
-	for entry in [[switch_weapon_btn, -width / 2.0], [ultra_button, 6.0]]:
+	var action_width := width / 8.0
+	for entry in [[switch_weapon_btn, 0], [ultra_button, 1]]:
 		var button: Control = entry[0]
-		button.offset_left = entry[1]
-		button.offset_right = entry[1] + action_width
-		button.offset_top = action_y
-		button.offset_bottom = action_y + maxf(60.0, button.get_combined_minimum_size().y)
+		var actual_width := maxf(action_width, button.get_combined_minimum_size().x)
+		button.offset_left = -actual_width / 2.0
+		button.offset_right = actual_width / 2.0
+		button.offset_top = action_y + int(entry[1]) * (maxf(60.0, switch_weapon_btn.get_combined_minimum_size().y) + 8.0)
+		button.offset_bottom = button.offset_top + maxf(60.0, button.get_combined_minimum_size().y)
 	if back_button:
 		var safe := Rect2(Vector2.ZERO, size)
 		var physical_safe := DisplayServer.get_display_safe_area()
@@ -3036,15 +3080,32 @@ func _layout_android_combat() -> void:
 			safe = Rect2(start, end - start).intersection(Rect2(Vector2.ZERO, size))
 		if safe.size.x < 160.0 or safe.size.y < 72.0:
 			safe = Rect2(Vector2.ZERO, size)
-		back_button.position = Vector2(safe.end.x - 160.0, safe.position.y + 12.0)
-		back_button.size = Vector2(148.0, 60.0)
+		back_button.custom_minimum_size = Vector2(240, 105)
+		back_button.position = Vector2(safe.end.x - 290.0, safe.position.y + 44.0)
+		back_button.size = Vector2(240, 105)
+		back_button.z_index = 250
+		_raise_android_back.call_deferred()
 	$LogBG.offset_left = -370.0
 	$LogBG.offset_right = 370.0
+	$LogBG.offset_top = -380.0
 	$Log.offset_left = -356.0
 	$Log.offset_right = 356.0
+	$Log.offset_top = -366.0
 	$Log.add_theme_font_size_override("normal_font_size", 24)
+	turn_label.offset_left = -220
+	turn_label.offset_right = 220
+	turn_label.offset_top = -435
+	turn_label.offset_bottom = -390
 	if hom_decision.visible:
 		_position_hom_decision()
+
+func _keep_android_back_on_top(node: Node) -> void:
+	if node is Control and node != back_button:
+		_raise_android_back.call_deferred()
+
+func _raise_android_back() -> void:
+	if is_instance_valid(back_button) and back_button.get_parent() == self:
+		move_child(back_button, get_child_count() - 1)
 
 func _position_hom_decision() -> void:
 	if OS.has_feature("android"):
@@ -3780,7 +3841,7 @@ func _refresh_spell_buttons() -> void:
 	var weapon: Dictionary = player.get("equip_%d" % alternative, {})
 	switch_weapon_btn.visible = _combat_started and not _battle_over and not weapon.is_empty()
 	switch_weapon_btn.disabled = _resolving_exchange or _processing_steps or _battle_over or _inspiration_panel.visible or not _pending_hom_action.is_empty()
-	switch_weapon_btn.text = "Switch to: %s" % _item_label(weapon)
+	switch_weapon_btn.text = ("Switch to:\n%s" if OS.has_feature("android") else "Switch to: %s") % _item_label(weapon)
 	var deciding := _battle_index == 3 and _player_wins == 1 and _enemy_wins == 1 and not _sudden_death
 	ultra_button.visible = _combat_started and deciding and not _battle_over
 	ultra_button.disabled = not _ultra_available(player) or _resolving_exchange or _processing_steps or _inspiration_panel.visible or not _pending_hom_action.is_empty()
