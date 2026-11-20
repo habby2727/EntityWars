@@ -220,7 +220,8 @@ metadata/_tab_index = 1
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
-theme_override_constants/scrollbar_margin_right = -56
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
 
 [node name="HomunculiGrid" type="GridContainer" parent="RootMargin/MainHSplit/LeftPanel/Tabs/Homunculi/HomunculiScroll" unique_id=1856871120]
 layout_mode = 2

@@ -254,3 +254,5 @@ VAT_XP_MAX,XP: %d | Maximum level,XP: %d | Nivel máximo
 VAT_SERVER_REQUIRED,Sign in and wait for server state.,Inicia sesión y espera los datos del servidor.
 VAT_WAITING,Waiting for confirmation.,Esperando confirmación.
 VAT_NOT_OWNED,Homunculus not owned.,Homúnculo no capturado.
+
+LOADOUT_HOM_PENDING,Expedition homunculi are not yet available in combat. Choose an original homunculus.,Los hom?nculos de expedici?n a?n no est?n disponibles en combate. Elige un hom?nculo original.

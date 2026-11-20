@@ -7,6 +7,7 @@ const REG_PATH := "res://scripts/data_registry.gd"
 const SpellLoadout := preload("res://scripts/domain/spell_loadout.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const HomProgress := preload("res://scripts/domain/homunculus_progress.gd")
 const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 const BuildPreferences := preload("res://scripts/domain/build_preferences.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
@@ -77,6 +78,9 @@ var _reg: Object = null
 
 var _entities: Array = []
 var _homunculi: Array = []
+var _hom_progress: Dictionary = {}
+var _hom_identity := ""
+var _hom_backend: BackendClient
 var _items: Array = []
 var _atk_techs: Array = []
 var _def_techs: Array = []
@@ -375,6 +379,7 @@ func _finish_hunt_exit(session_id: String) -> void:
 	SceneRouter.cancel_hunt_loadout()
 
 func _on_hunt_auth_changed(_token: String) -> void:
+	_clear_hom_ownership()
 	if not _hunt_identity.is_empty():
 		_hunt_ready_requested = false
 	_preferences_ready = false
@@ -388,6 +393,7 @@ func _on_hunt_auth_changed(_token: String) -> void:
 	_set_build_error("Account changed. Return to World Zone to reopen the Boss Hunt.")
 
 func _on_hunt_identity_updated(state: Dictionary) -> void:
+	_update_hom_ownership(state, _hunt_backend, str(SceneRouter._solo_hunt_context.get("loadout_identity", "")))
 	if _hunt_backend == null or state.is_empty():
 		_hunt_recovered = false
 		return
@@ -401,6 +407,7 @@ func _on_hunt_identity_updated(state: Dictionary) -> void:
 	if _hunt_identity.is_empty():
 		_hunt_identity = identity
 		SceneRouter._solo_hunt_context["loadout_identity"] = identity
+	_refresh_hom_cards()
 	if not _hunt_recovered and _hunt_recovery_request.is_empty() and _hunt_submit_request.is_empty():
 		_recover_hunt_session()
 
@@ -498,6 +505,9 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 	if ok and session is Dictionary and not _hunt_identity.is_empty() and _hunt_backend._verified_player_id == _hunt_identity and str(session.get("session_id", "")) == str(SceneRouter._solo_hunt_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"]:
 		var gate := get_node("/root/ConnectionGate")
 		if not _hunt_payload.is_empty():
+			if not _payload_hom_safe(_hunt_payload):
+				_set_build_error(tr("LOADOUT_HOM_PENDING"))
+				return
 			_hunt_closed_recovery = str(session.status)
 			_hunt_submit_request = _hunt_backend.request_api("POST", "/world/boss-hunts/loadout", _hunt_payload.duplicate(true), false, gate.blocked() and gate._player_verified)
 			return
@@ -691,8 +701,8 @@ func _load_registry_safe() -> void:
 		_entities = []
 
 	# Homunculi
-	if _reg != null and _reg.has_method("get_homunculi"):
-		_homunculi = _as_array(_reg.call("get_homunculi"))
+	if _reg != null and _reg.has_method("get_homunculus_collection"):
+		_homunculi = _as_array(_reg.call("get_homunculus_collection"))
 	elif _reg != null and _reg.get_script() != null:
 		var vv = _reg.get("homunculi")
 		_homunculi = _as_array(vv)
@@ -728,6 +738,13 @@ func _setup_spell_state() -> void:
 	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
 		_spell_state = _spell_debug.load_lab_state()
 		_spell_synced = true
+		if not _hunt_mode:
+			_hom_backend = BackendClient.new()
+			_hom_backend.auto_dev_login = false
+			_hom_backend.base_url = spell_backend_url
+			_hom_backend.auth_changed.connect(func(_token): _clear_hom_ownership())
+			_hom_backend.state_updated.connect(func(state): _update_hom_ownership(state, _hom_backend))
+			add_child(_hom_backend)
 		return
 	_spell_backend = BackendClient.new()
 	if _dungeon_mode:
@@ -743,6 +760,7 @@ func _setup_spell_state() -> void:
 		_spell_backend.request_api("GET", "/player/state", null, true)
 
 func _on_spell_auth_changed(token: String) -> void:
+	_clear_hom_ownership()
 	if not _hunt_mode and not _dungeon_mode:
 		_preferences_owner = ""
 		_preferences_ready = false
@@ -756,6 +774,8 @@ func _on_spell_auth_changed(token: String) -> void:
 		_spell_backend.request_api("GET", "/player/state", null, true)
 
 func _on_spell_state_updated(state: Dictionary) -> void:
+	if not _hunt_mode and not _dungeon_mode:
+		_update_hom_ownership(state, _spell_backend)
 	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
 		return
 	_spell_state = state.duplicate(true)
@@ -982,6 +1002,7 @@ func _notification(what: int) -> void:
 	if lbl_mode != null:
 		lbl_mode.text = _localized_mode()
 	_refresh_spell_button()
+	_refresh_hom_cards()
 	if is_instance_valid(_spell_empty_notice):
 		_spell_empty_notice.text = tr("LOADOUT_SPELLS_EMPTY")
 	if btn_play != null and (_hunt_mode or _dungeon_mode):
@@ -1352,17 +1373,18 @@ func _build_cards() -> void:
 	for d2 in _homunculi:
 		var hid := str(d2.get("id",""))
 		var hname := _clean_name(str(d2.get("name", hid)))
-		var htex := _load_preview_tex(hid, "homunculus", hname)
+		var htex := _hom_texture(d2)
 		var hcard := _make_card("homunculus", hid, hname, htex)
+		hcard.set_meta("hom_id", hid)
 		if grid_homunculi: grid_homunculi.add_child(hcard)
+		_update_hom_card(hcard, d2)
 
 	# Add bottom padding so entity labels aren't clipped.
 	_add_grid_padding(grid_entities)
 
 	if _entities.size() > 0:
 		_current_entity_id = str(_entities[0].get("id",""))
-	if _homunculi.size() > 0:
-		_current_homunculus_id = str(_homunculi[0].get("id",""))
+	_current_homunculus_id = _legacy_hom_fallback()
 
 	_update_selected_visuals()
 
@@ -1381,6 +1403,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.pressed.connect(func(): _on_card_picked(p_kind, p_id))
 
 	var v := VBoxContainer.new()
+	v.name = "CardContent"
 	v.set_anchors_preset(Control.PRESET_FULL_RECT)
 	v.offset_left = 18
 	v.offset_right = -18
@@ -1394,6 +1417,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.add_child(v)
 
 	var tex_rect := TextureRect.new()
+	tex_rect.name = "Portrait"
 	tex_rect.custom_minimum_size = Vector2(85, 85) if p_kind == "homunculus" else Vector2(118, 118)
 	tex_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tex_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1407,6 +1431,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	v.add_child(tex_rect)
 
 	var lbl := Label.new()
+	lbl.name = "CardName"
 	lbl.text = p_name
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1440,6 +1465,9 @@ func _on_card_picked(p_kind: String, p_id: String) -> void:
 	if p_kind == "entity":
 		_current_entity_id = p_id
 	elif p_kind == "homunculus":
+		if not _is_combat_hom(p_id):
+			_set_build_error(tr("HOM_CAPTURE_REQUIRED") if _hom_status(p_id) == "locked" else tr("HOM_STATUS_UNKNOWN") if _hom_status(p_id) == "unknown" else tr("LOADOUT_HOM_PENDING"))
+			return
 		_current_homunculus_id = p_id
 	_update_selected_visuals()
 	_refresh_details()
@@ -1450,10 +1478,7 @@ func _update_selected_visuals() -> void:
 		for c in grid_entities.get_children():
 			if c and c.has_method("set_selected"):
 				c.call("set_selected", c.get("id") == _current_entity_id)
-	if grid_homunculi:
-		for c2 in grid_homunculi.get_children():
-			if c2 and c2.has_method("set_selected"):
-				c2.call("set_selected", c2.get("id") == _current_homunculus_id)
+	_refresh_hom_cards()
 
 func _localized_mode() -> String:
 	if _dungeon_mode:
@@ -1504,7 +1529,7 @@ func _refresh_details() -> void:
 			hom = _homunculi[0]
 		var hid := str(hom.get("id","")) if typeof(hom) == TYPE_DICTIONARY else ""
 		var hname := str(hom.get("name", hid)) if typeof(hom) == TYPE_DICTIONARY else ""
-		hom_preview.texture = _load_preview_tex(hid, "homunculus", hname)
+		hom_preview.texture = _hom_texture(hom)
 
 func _find_by_id(arr: Array, pid: String) -> Dictionary:
 	for d in arr:
@@ -1876,6 +1901,9 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	if not _is_combat_hom(_current_homunculus_id):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return
 	if ranked_queue != null and ranked_queue.selected:
 		ranked_queue._join()
 		return
@@ -1908,6 +1936,7 @@ func _on_play_pressed() -> void:
 		_on_ready()
 
 func _on_dungeon_identity(state: Dictionary) -> void:
+	_update_hom_ownership(state, _dungeon_backend, str(SceneRouter._dungeon_context.get("player_id", "")))
 	if _dungeon_backend == null or state.is_empty() or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")):
 		_dungeon_recovered = false
 		_dungeon_spell_progress = null
@@ -1989,6 +2018,9 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 			_restore_build_preferences(_dungeon_backend._verified_player_id)
 
 func _submit_dungeon_loadout() -> void:
+	if not _is_combat_hom(_current_homunculus_id) or (not _dungeon_payload.is_empty() and not _payload_hom_safe(_dungeon_payload)):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return
 	if not _dungeon_request.is_empty():
 		return
 	if not _dungeon_recovered:
@@ -2022,6 +2054,9 @@ func _submit_dungeon_loadout() -> void:
 		_set_build_error("Confirming Dungeon loadout...")
 
 func _submit_hunt_loadout() -> void:
+	if not _is_combat_hom(_current_homunculus_id) or (not _hunt_payload.is_empty() and not _payload_hom_safe(_hunt_payload)):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return
 	if _hunt_exit_requested or not _hunt_exit_request.is_empty() or not _hunt_submit_request.is_empty() or not _hunt_recovery_request.is_empty():
 		return
 	if not _hunt_recovered or _hunt_backend == null or _hunt_identity.is_empty() or _hunt_backend._verified_player_id != _hunt_identity or _hunt_backend.token.is_empty():
@@ -2120,8 +2155,7 @@ func _restore_build_preferences(player_id: String) -> void:
 	var hom_id := str(build.get("homunculus_id", ""))
 	if not _find_by_id(_entities, entity_id).is_empty():
 		_current_entity_id = entity_id
-	if not _find_by_id(_homunculi, hom_id).is_empty():
-		_current_homunculus_id = hom_id
+	_current_homunculus_id = hom_id if _is_combat_hom(hom_id) else _legacy_hom_fallback()
 	for entry in [[dd_item1, _items, "equip_1"], [dd_item2, _items, "equip_2"], [dd_side1, _items, "side_1"], [dd_side2, _items, "side_2"], [dd_atktech, _atk_techs, "attack_tech"], [dd_deftech, _def_techs, "defense_tech"]]:
 		if build.has(entry[2]):
 			_set_button_selection(entry[0], entry[1], build[entry[2]])
@@ -2132,8 +2166,7 @@ func _restore_build_preferences(player_id: String) -> void:
 func _reset_build_defaults() -> void:
 	if not _entities.is_empty():
 		_current_entity_id = str(_entities[0].get("id", ""))
-	if not _homunculi.is_empty():
-		_current_homunculus_id = str(_homunculi[0].get("id", ""))
+	_current_homunculus_id = _legacy_hom_fallback()
 	for entry in [[dd_item1, _items], [dd_item2, _items], [dd_side1, _items], [dd_side2, _items], [dd_atktech, _atk_techs], [dd_deftech, _def_techs]]:
 		_set_button_selection(entry[0], entry[1], "")
 	_ensure_distinct_weapons()
@@ -2148,6 +2181,9 @@ func _save_build_preferences() -> void:
 		_set_build_error("Could not save build preferences.")
 
 func _save_seal(which: String) -> bool:
+	if not _is_combat_hom(_current_homunculus_id):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return false
 	var payload := {
 		"mode": which,
 		"entity_id": _current_entity_id,
@@ -2198,7 +2234,8 @@ func _load_seal(which: String) -> void:
 	if data.has("entity_id"):
 		_current_entity_id = str(data.get("entity_id", _current_entity_id))
 	if data.has("homunculus_id"):
-		_current_homunculus_id = str(data.get("homunculus_id", _current_homunculus_id))
+		var saved_hom := str(data.get("homunculus_id", ""))
+		_current_homunculus_id = saved_hom if _is_combat_hom(saved_hom) else _legacy_hom_fallback()
 	_refresh_details()
 
 	_set_button_selection(dd_item1, _items, data.get("equip_1", ""))
@@ -2400,3 +2437,82 @@ func _idx_to_id(_arr: Array, dd: Node) -> String:
 
 func _on_ready() -> void:
 	print("READY (attack) - next: combat scene should consume user://seal_attack.json")
+
+func _is_combat_hom(id: String) -> bool:
+	return _reg != null and _reg.get_homunculi().has(id)
+
+func _payload_hom_safe(payload: Dictionary) -> bool:
+	var id := str(payload.get("homunculus_id", "")) if payload.get("homunculus_id") != null else ""
+	return id.is_empty() or _is_combat_hom(id)
+
+func _legacy_hom_fallback() -> String:
+	if _reg == null or _reg.get_homunculi().is_empty(): return ""
+	return str(_reg.get_homunculi().keys()[0])
+
+func _hom_status(id: String) -> String:
+	var synced := not _hom_identity.is_empty() and _hom_identity == _verified_preferences_identity()
+	return HomProgress.collection_status(id, _is_combat_hom(id), _hom_progress, synced)
+
+func _clear_hom_ownership() -> void:
+	_hom_identity = ""
+	_hom_progress = {}
+	_refresh_hom_cards()
+
+func _update_hom_ownership(state: Dictionary, backend: BackendClient, expected: String = "") -> void:
+	var identity := str(state.get("player_id", ""))
+	if backend == null or backend.token.is_empty() or identity.is_empty() or identity != backend._verified_player_id or (not expected.is_empty() and identity != expected):
+		_clear_hom_ownership()
+		return
+	_hom_identity = identity
+	var progress: Variant = state.get("homunculus_progress", {})
+	_hom_progress = progress.duplicate(true) if progress is Dictionary else {}
+	_refresh_hom_cards()
+
+func _hom_texture(hom: Dictionary) -> Texture2D:
+	if hom.has("preview_texture"):
+		var path := str(hom.preview_texture)
+		return load(path) if ResourceLoader.exists(path) else null
+	return _load_preview_tex(str(hom.get("id", "")), "homunculus", str(hom.get("name", "")))
+
+func _refresh_hom_cards() -> void:
+	if not is_instance_valid(grid_homunculi): return
+	for card in grid_homunculi.get_children():
+		if card.has_meta("hom_id"):
+			_update_hom_card(card, _find_by_id(_homunculi, str(card.get_meta("hom_id"))))
+
+func _update_hom_card(card: Control, hom: Dictionary) -> void:
+	var id := str(hom.get("id", ""))
+	var portrait := card.get_node_or_null("CardContent/Portrait") as TextureRect
+	var title := card.get_node_or_null("CardContent/CardName") as Label
+	if portrait == null: return
+	var status := _hom_status(id)
+	var locked := status != "owned"
+	portrait.modulate = Color(0.5, 0.5, 0.5, 1.0) if locked else Color.WHITE
+	card.self_modulate = Color(0.5, 0.5, 0.5, 1.0) if locked else Color(1.35, 1.2, 0.8, 1.0) if id == _current_homunculus_id else Color.WHITE
+	var overlay := card.get_node_or_null("HomLock")
+	if overlay == null:
+		var center := CenterContainer.new()
+		center.name = "HomLock"
+		center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(center)
+		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var lock := LockIndicator.new()
+		lock.custom_minimum_size = Vector2(20, 20)
+		lock.scale = Vector2(1.7, 1.7)
+		lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		center.add_child(lock)
+		overlay = center
+	overlay.visible = locked
+	var name_text := GameLocalization.catalog("homunculus", id, "name", str(hom.get("name", id)))
+	if title: title.text = name_text
+	var parts: Array[String] = [name_text]
+	if hom.has("type"):
+		parts.append(tr("HOM_TYPE") % GameLocalization.catalog("type", str(hom.type), "name", str(hom.type).capitalize()))
+		parts.append(tr("INVENTORY_RARITY") % ("%d / 10" % int(hom.rarity)))
+		parts.append(tr("HOM_PASSIVE") % HomProgress.passive_text(hom))
+		if locked:
+			parts.append(tr("HOM_CAPTURE_REQUIRED"))
+			if status == "unknown": parts.append(tr("HOM_STATUS_UNKNOWN"))
+		else:
+			parts.append(tr("LOADOUT_HOM_PENDING"))
+	card.tooltip_text = "\n".join(parts)
