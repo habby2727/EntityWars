@@ -29,7 +29,7 @@ GlobalChatClient="*res://scripts/net/global_chat_client.gd"
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
-window/handheld/orientation.android=0
+window/handheld/orientation.android=4
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 

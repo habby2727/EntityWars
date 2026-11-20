@@ -60,6 +60,9 @@ var _db := StaticDB.new()
 var _spell_registry := DataRegistry.new()
 var _spell_section: VBoxContainer
 var _spell_entity_selector: OptionButton
+var _spell_entity_alert: Label
+var _spell_alert_icon: Texture2D
+var _spell_filter_buttons: Dictionary = {}
 var _spell_list: VBoxContainer
 var _spell_rows := {}
 var _spell_featured_header: Label
@@ -679,6 +682,18 @@ func _build_spell_section() -> void:
 	_spell_featured_header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_spell_section.add_child(_spell_featured_header)
 	_spell_entity_selector = OptionButton.new()
+	if OS.has_feature("android"):
+		_spell_entity_alert = Label.new()
+		_spell_entity_alert.text = "!"
+		_spell_entity_alert.add_theme_color_override("font_color", Color.YELLOW)
+		_spell_entity_alert.add_theme_font_size_override("font_size", 28)
+		_spell_entity_alert.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		_spell_entity_alert.offset_left = -48
+		_spell_entity_alert.offset_right = -24
+		_spell_entity_alert.offset_bottom = 36
+		_spell_entity_alert.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_spell_entity_alert.hide()
+		_spell_entity_selector.add_child(_spell_entity_alert)
 	var entity_ids := _spell_registry.entities.keys()
 	entity_ids.sort()
 	for entity_id in entity_ids:
@@ -713,6 +728,7 @@ func _build_spell_section() -> void:
 			filter.add_theme_stylebox_override(state, style)
 		filter.button_pressed = kind == "All"
 		filter.pressed.connect(_set_spell_filter.bind(kind))
+		_spell_filter_buttons[kind] = filter
 		filters.add_child(filter)
 	_spell_section.add_child(filters)
 	var scroll := ScrollContainer.new()
@@ -917,6 +933,21 @@ func _update_spell_section() -> void:
 	var active: Variant = progress.get("active_research")
 	if not active is Dictionary:
 		active = {}
+	if OS.has_feature("android") and is_instance_valid(_spell_entity_alert):
+		var alert_entity := str(active.get("entity_id", ""))
+		_spell_entity_alert.visible = not alert_entity.is_empty()
+		if _spell_alert_icon == null:
+			var icon_image := Image.create(12, 20, false, Image.FORMAT_RGBA8)
+			icon_image.fill(Color.TRANSPARENT)
+			icon_image.fill_rect(Rect2i(4, 1, 4, 12), Color.YELLOW)
+			icon_image.fill_rect(Rect2i(4, 16, 4, 4), Color.YELLOW)
+			_spell_alert_icon = ImageTexture.create_from_image(icon_image)
+		for i in _spell_entity_selector.item_count:
+			_spell_entity_selector.set_item_icon(i, _spell_alert_icon if str(_spell_entity_selector.get_item_metadata(i)) == alert_entity and not alert_entity.is_empty() else null)
+		var active_spell: Dictionary = _spell_registry.get_spell_by_id(str(active.get("spell_id", "")))
+		var active_group := SpellView.group(active_spell) if not active_spell.is_empty() and alert_entity == entity_id else ""
+		for kind in _spell_filter_buttons:
+			_spell_filter_buttons[kind].icon = _spell_alert_icon if kind == active_group else null
 	var now := int(Time.get_unix_time_from_system() * 1000) + (0 if _debug.unlock_all_buildings else _spell_server_offset_ms)
 	var rotation_seconds := maxi(1, int(_db.get_balance("spell_featured_rotation_seconds", 86400)))
 	var discount := clampf(float(_db.get_balance("spell_featured_discount_pct", 0.2)), 0.0, 1.0)

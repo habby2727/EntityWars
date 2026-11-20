@@ -126,17 +126,21 @@ func _build_ui() -> void:
 	if OS.has_feature("android"):
 		var scroll := ScrollContainer.new()
 		scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		scroll.offset_top = 24
+		scroll.offset_bottom = -12
 		scroll.follow_focus = true
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		add_child(scroll)
 		center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		center.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		scroll.add_child(center)
 	else:
 		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(560, 0)
+	if OS.has_feature("android"):
+		panel.custom_minimum_size = Vector2(1120, 700)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.015, 0.025, 0.04, 0.92)
 	style.border_color = Color(0.65, 0.49, 0.22)
@@ -153,9 +157,13 @@ func _build_ui() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_override("font", load("res://assets/fonts/UncialAntiqua-Regular.ttf"))
 	title.add_theme_font_size_override("font_size", 40)
+	if OS.has_feature("android"):
+		title.add_theme_font_size_override("font_size", 56)
 	title.add_theme_color_override("font_color", Color(0.9, 0.75, 0.42))
 	box.add_child(title)
 	tabs = TabContainer.new()
+	if OS.has_feature("android"):
+		tabs.add_theme_font_size_override("font_size", 32)
 	box.add_child(tabs)
 	for index in 2:
 		var form := VBoxContainer.new()
@@ -174,6 +182,9 @@ func _build_ui() -> void:
 		var button := Button.new()
 		button.text = tr("AUTH_LOGIN") if index == 0 else tr("AUTH_REGISTER")
 		button.custom_minimum_size.y = 55
+		if OS.has_feature("android"):
+			button.custom_minimum_size.y = 100
+			button.add_theme_font_size_override("font_size", 32)
 		MenuArt.button(button)
 		button.pressed.connect(_submit.bind(index))
 		form.add_child(button)
@@ -209,6 +220,9 @@ func _field(parent: Control, placeholder: String, secret: bool) -> LineEdit:
 	field.placeholder_text = tr(placeholder)
 	field.secret = secret
 	field.custom_minimum_size.y = 48
+	if OS.has_feature("android"):
+		field.custom_minimum_size.y = 96
+		field.add_theme_font_size_override("font_size", 32)
 	parent.add_child(field)
 	return field
 

@@ -100,8 +100,9 @@ func _ready() -> void:
 	for button in [$Aspect/Canvas/TopOverlay/BackButton, _structures_button]:
 		MenuArt.button(button)
 	if OS.has_feature("android"):
-		_structures_button.offset_top = $Aspect/Canvas/TopOverlay/BackButton.offset_top + 20.0
-		_structures_button.offset_bottom = $Aspect/Canvas/TopOverlay/BackButton.offset_bottom + 20.0
+		_structures_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		get_viewport().size_changed.connect(_position_android_structures, CONNECT_DEFERRED)
+		_position_android_structures.call_deferred()
 		_icon_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_background.mouse_filter = Control.MOUSE_FILTER_STOP
 		_background.gui_input.connect(_pan_lab_background)
@@ -240,14 +241,19 @@ func _build_resource_bar() -> void:
 		_resource_rows = ResourceBars.build(_resource_bar, _catalog, not OS.has_feature("android"), 5 if OS.has_feature("android") else -10)
 		if OS.has_feature("android") and _resource_bar_panel != null:
 			var band := HBoxContainer.new()
-			band.add_theme_constant_override("separation", 12)
+			band.add_theme_constant_override("separation", 10)
 			_resource_bar.get_parent().add_child(band)
 			for id in _resource_rows:
 				_resource_rows[id].row.reparent(band)
+				_resource_rows[id].icon.custom_minimum_size = Vector2(72, 72)
+				_resource_rows[id].bar.custom_minimum_size = Vector2(220, 36)
+				_resource_rows[id].label.add_theme_font_size_override("font_size", 22)
+				_resource_rows[id].clip.size.y = 32
+				_resource_rows[id].clip.get_child(0).size.y = 32
 			_resource_bar.queue_free()
 			_resource_bar_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 			_resource_bar_panel.offset_left = 24
-			_resource_bar_panel.offset_top = -100
+			_resource_bar_panel.offset_top = -112
 			_resource_bar_panel.offset_right = -350
 			_resource_bar_panel.offset_bottom = -24
 
@@ -306,6 +312,18 @@ func _resize_android_canvas() -> void:
 	var viewport_size := get_viewport_rect().size
 	if viewport_size.y > 0.0:
 		$Aspect.ratio = viewport_size.x / viewport_size.y
+
+func _position_android_structures() -> void:
+	var viewport_size := get_viewport_rect().size
+	var target := GameTypography.touch_size(_structures_button)
+	var chat_width := minf(maxf(360.0, target * 3.0), viewport_size.x - 30.0)
+	var button_width := maxf(180.0, _structures_button.get_combined_minimum_size().x)
+	_structures_button.offset_right = -chat_width - 25.0
+	_structures_button.offset_left = _structures_button.offset_right - button_width
+	_structures_button.offset_bottom = -15.0
+	_structures_button.offset_top = -15.0 - maxf(target, _structures_button.get_combined_minimum_size().y)
+	if is_instance_valid(_resource_bar_panel):
+		_resource_bar_panel.offset_right = _structures_button.offset_left - 10.0
 
 func _on_canvas_resized() -> void:
 	_layout_icons()

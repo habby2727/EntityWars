@@ -70,6 +70,10 @@ var _items: Array = []
 var _combat_spell_state := {}
 var _log_presenter := CombatLogPresenter.new()
 var _spell_detail: AcceptDialog
+var _spell_hold_token := 0
+var _spell_hold_index := -1
+var _spell_hold_open := false
+var _spell_hold_overlay: Control
 var _highlights := {"damage": 0, "damage_text": "", "reflection": 0, "reflection_text": ""}
 var _spell_damage_totals := {}
 var _combat_backend: BackendClient
@@ -269,6 +273,11 @@ func _ready() -> void:
 	_setup_physical_anomaly_ui()
 	_setup_hp_styles()
 	_setup_hom_ui()
+	if OS.has_feature("android"):
+		player_entity.offset_left += 70
+		player_entity.offset_right += 70
+		enemy_entity.offset_left -= 70
+		enemy_entity.offset_right -= 70
 	var enemy_hom_frame := enemy_hom.get_parent() as Control
 	enemy_hom_frame.resized.connect(_align_enemy_hom_to_circle, CONNECT_DEFERRED)
 	get_viewport().size_changed.connect(_align_enemy_hom_to_circle, CONNECT_DEFERRED)
@@ -1685,7 +1694,8 @@ func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool
 	get_node("EnemyPanel").show()
 	_enemy_hom_status.hide()
 	_enemy_inspiration.hide()
-	_player_inspiration.hide()
+	_player_inspiration.show()
+	_player_inspiration.call("set_fighter", p)
 	player_hom_name.modulate.a = 0.0
 	enemy_hom_name.modulate.a = 0.0
 	$EnemyPanel/EnemyBuildTitle.modulate.a = 0.0
@@ -1983,6 +1993,12 @@ func _apply_dungeon_combat_visuals() -> void:
 	for entry in [[player_hom, Vector2(190, 505), Vector2(165, 165)], [player_entity, Vector2(480, 555), Vector2(250, 275)], [enemy_entity, Vector2(1438, 555), Vector2(250, 275)], [enemy_hom, Vector2(1730, 505), Vector2(165, 165)]]:
 		var sprite: TextureRect = entry[0]
 		var center: Vector2 = entry[1]
+		if OS.has_feature("android") and sprite == player_entity:
+			center.x += 70
+		elif OS.has_feature("android") and sprite == enemy_entity:
+			center.x = size.x * 0.80
+		elif OS.has_feature("android") and sprite == enemy_hom:
+			center.x = size.x * 0.93
 		var dimensions: Vector2 = entry[2]
 		sprite.reparent(layer)
 		sprite.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -1991,7 +2007,19 @@ func _apply_dungeon_combat_visuals() -> void:
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_player_hom_status.position = Vector2(70, 540)
 	_enemy_hom_status.position = Vector2(1610, 540)
+	if OS.has_feature("android"):
+		get_viewport().size_changed.connect(_align_android_dungeon_opponents, CONNECT_DEFERRED)
+		_align_android_dungeon_opponents.call_deferred()
 	call_deferred("_align_health_panels")
+
+func _align_android_dungeon_opponents() -> void:
+	if not has_node("DungeonCombatSprites"):
+		return
+	enemy_entity.position.x = size.x * 0.80 - enemy_entity.size.x / 2.0
+	enemy_hom.position.x = size.x * 0.93 - enemy_hom.size.x / 2.0
+	var status_width := maxf(_enemy_hom_status.size.x, _enemy_hom_status.get_combined_minimum_size().x)
+	_enemy_hom_status.position.x = clampf(size.x * 0.93 - status_width / 2.0, 0.0, maxf(0.0, size.x - status_width))
+	_align_health_panels()
 
 func _apply_world_combat_visuals(zone_id: String) -> void:
 	var layouts := {
@@ -3250,7 +3278,31 @@ func _setup_inspiration_ui() -> void:
 		cancel.add_theme_stylebox_override(state, next_turn_btn.get_theme_stylebox(state))
 	cancel.pressed.connect(_on_inspiration_cancel)
 	column.add_child(cancel)
+	if OS.has_feature("android"):
+		_inspiration_panel.resized.connect(_center_android_inspiration, CONNECT_DEFERRED)
+		resized.connect(_center_android_inspiration, CONNECT_DEFERRED)
+		_compact_inspiration.call_deferred()
 	_inspiration_panel.hide()
+
+func _compact_inspiration() -> void:
+	if not is_instance_valid(_inspiration_panel):
+		return
+	_inspiration_panel.custom_minimum_size = Vector2(1100, 600)
+	_inspiration_panel.size = Vector2(size.x * 0.8, size.y * 0.78)
+	var content := _inspiration_panel.get_node("Content") as VBoxContainer
+	content.get_child(0).add_theme_font_size_override("font_size", 36)
+	content.get_child(1).add_theme_font_size_override("font_size", 28)
+	for button in _inspiration_cards:
+		button.custom_minimum_size = Vector2(280, 340)
+		button.add_theme_font_size_override("font_size", 28)
+	var cancel := content.get_node("Cancel") as Button
+	cancel.custom_minimum_size = Vector2(180, 54)
+	cancel.add_theme_font_size_override("font_size", 32)
+	_center_android_inspiration.call_deferred()
+
+func _center_android_inspiration() -> void:
+	if is_instance_valid(_inspiration_panel):
+		_inspiration_panel.position = (size - _inspiration_panel.size) / 2.0
 
 func _award_inspiration(caster: Dictionary, recipient: Dictionary, kind: String) -> void:
 	if is_same(caster, recipient) or bool(caster.get("inspiration_used_this_battle", false)):
@@ -3498,7 +3550,67 @@ func _on_next_turn() -> void:
 	if _battle_over and not _processing_steps and ResourceLoader.exists("res://scenes/LoadoutGrid.tscn"):
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
+func _input(event: InputEvent) -> void:
+	if not OS.has_feature("android"):
+		return
+	if event is InputEventScreenDrag and event.index == _spell_hold_index and event.relative.length() > 8.0:
+		_spell_hold_token += 1
+		_spell_hold_index = -1
+	elif event is InputEventScreenTouch:
+		if event.pressed:
+			if _spell_hold_open:
+				_spell_hold_open = false
+				if is_instance_valid(_spell_hold_overlay):
+					_spell_hold_overlay.queue_free()
+				get_viewport().set_input_as_handled()
+				return
+			for button in spell_buttons:
+				if button.is_visible_in_tree() and button.get_global_rect().has_point(event.position):
+					_spell_hold_index = event.index
+					_spell_hold_token += 1
+					_show_spell_on_hold(button, _spell_hold_token)
+					break
+		elif event.index == _spell_hold_index:
+			_spell_hold_token += 1
+			_spell_hold_index = -1
+			if _spell_hold_open:
+				get_viewport().set_input_as_handled()
+
+func _show_spell_on_hold(button: Button, token: int) -> void:
+	await get_tree().create_timer(0.55).timeout
+	if token != _spell_hold_token or not is_instance_valid(button) or not button.is_visible_in_tree():
+		return
+	var data: Dictionary = button.get_meta("localized_spell", {})
+	var spell: Dictionary = data.get("spell", {})
+	if spell.is_empty():
+		return
+	_spell_hold_open = true
+	_spell_hold_overlay = Control.new()
+	_spell_hold_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_spell_hold_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_spell_hold_overlay.z_index = 300
+	add_child(_spell_hold_overlay)
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.7)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_spell_hold_overlay.add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_spell_hold_overlay.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(650, 300)
+	center.add_child(panel)
+	var description := Label.new()
+	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	description.text = GameLocalization.catalog("spell", str(spell.get("id", "")), "name", str(data.get("name", ""))) + "\n\n" + _spell_description(spell)
+	description.add_theme_font_size_override("font_size", 24)
+	panel.add_child(description)
+
 func _on_spell_chosen(index: int) -> void:
+	if _spell_hold_open:
+		return
 	if _ranked_controller:
 		_ranked_controller.spell(index)
 		return
@@ -5473,12 +5585,13 @@ func _show_damage_number(sprite: Control, damage: int) -> void:
 	var label := Label.new()
 	label.text = "-%d" % damage
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 30)
+	label.add_theme_font_size_override("font_size", 90 if OS.has_feature("android") else 30)
 	label.add_theme_color_override("font_color", Color(1.0, 0.18, 0.18))
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
 	label.add_theme_constant_override("outline_size", 4)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.size = Vector2(120, 40)
+	var label_size := Vector2(360, 120) if OS.has_feature("android") else Vector2(120, 40)
+	label.size = label_size
 	add_child(label)
 	var viewport_rect := get_viewport_rect()
 	var offset := 0
@@ -5486,9 +5599,9 @@ func _show_damage_number(sprite: Control, damage: int) -> void:
 		if child is Label and child.has_meta("floating_damage") and child.get_meta("floating_damage") == sprite.get_instance_id():
 			offset += 1
 	label.set_meta("floating_damage", sprite.get_instance_id())
-	var global_pos := sprite.get_global_rect().get_center() - Vector2(60, sprite.get_global_rect().size.y * 0.5 + 42 + (offset % 4) * 18)
-	global_pos.x = clampf(global_pos.x, viewport_rect.position.x, viewport_rect.end.x - 120)
-	global_pos.y = clampf(global_pos.y, viewport_rect.position.y + 55, viewport_rect.end.y - 40)
+	var global_pos := sprite.get_global_rect().get_center() - Vector2(label_size.x / 2.0, sprite.get_global_rect().size.y * 0.5 + label_size.y + 2.0 + (offset % 4) * 18)
+	global_pos.x = clampf(global_pos.x, viewport_rect.position.x, viewport_rect.end.x - label_size.x)
+	global_pos.y = clampf(global_pos.y, viewport_rect.position.y + 55, viewport_rect.end.y - label_size.y)
 	label.global_position = global_pos
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property(label, "position:y", label.position.y - 50.0, 2.0)

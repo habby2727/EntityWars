@@ -311,7 +311,15 @@ func _setup_zone_view() -> void:
 	add_child(panel)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
-	panel.add_child(content)
+	if OS.has_feature("android"):
+		var card_scroll := ScrollContainer.new()
+		card_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		card_scroll.follow_focus = true
+		content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.add_child(card_scroll)
+		card_scroll.add_child(content)
+	else:
+		panel.add_child(content)
 	_preview_status = Label.new()
 	_preview_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_preview_status.visible = false
@@ -733,6 +741,30 @@ func _fit_encounter_card() -> void:
 	var panel := _world_modal.get_node_or_null("WorldBossPanel") as Control
 	if panel == null:
 		return
+	if OS.has_feature("android") and _hunt_selected.has("appearance_id"):
+		var available := _world_modal.size
+		var width := minf(available.x - 48.0, maxf(700.0, available.x * 0.58))
+		var height := minf(available.y - 48.0, maxf(650.0, available.y * 0.90))
+		_boss_portrait.custom_minimum_size.y = 180.0
+		panel.set_anchors_preset(Control.PRESET_CENTER)
+		panel.offset_left = -width / 2.0
+		panel.offset_right = width / 2.0
+		panel.offset_top = -height / 2.0
+		panel.offset_bottom = height / 2.0
+		return
+	if OS.has_feature("android") and not _hunt_selected.is_empty() and not _hunt_selected.has("appearance_id") and not _hunt_selected.has("global_event_id"):
+		var available := _world_modal.size
+		var width := minf(available.x - 48.0, maxf(640.0, available.x * 0.46))
+		var height := minf(available.y - 48.0, maxf(500.0, available.y * 0.80))
+		_boss_portrait.custom_minimum_size.y = minf(320.0, height * 0.35)
+		panel.set_anchors_preset(Control.PRESET_CENTER)
+		panel.offset_left = -width / 2.0
+		panel.offset_right = width / 2.0
+		panel.offset_top = -height / 2.0
+		panel.offset_bottom = height / 2.0
+		return
+	if OS.has_feature("android"):
+		_boss_portrait.custom_minimum_size.y = 115.0
 	panel.anchor_left = 1.0
 	panel.anchor_right = 1.0
 	panel.anchor_top = 0.0
@@ -783,6 +815,8 @@ func _show_common_details() -> void:
 	_debug_fight.visible = false
 	_world_modal.visible = true
 	_update_common_details()
+	if OS.has_feature("android"):
+		_fit_encounter_card.call_deferred()
 
 func _update_common_details() -> void:
 	var active := _active_hunt_matches("")
@@ -1086,7 +1120,7 @@ func _render_global_boss() -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_constant_override("outline_size", 5)
 	if OS.has_feature("android"):
-		label.add_theme_font_size_override("font_size", label.get_theme_font_size("font_size") * 3)
+		label.add_theme_font_size_override("font_size", roundi(label.get_theme_font_size("font_size") * 1.5))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_global_actor.add_child(label)
 	if OS.has_feature("android"):
