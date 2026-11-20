@@ -275,3 +275,11 @@ EXPERIMENT_TIMING,Duration: %s | Cooldown: %s,Duración: %s | Espera: %s
 EXPEDITION_START,Start Expedition,Iniciar expedición
 EXPEDITION_TITLE,Expeditions,Expediciones
 EXPEDITION_DEVELOPMENT,This mode is under development.,Este modo está en desarrollo.
+
+HOM_STATUS_OWNED,Captured,Capturado
+HOM_STATUS_LOCKED,Locked,Bloqueado
+HOM_STATUS_UNKNOWN,Syncing ownership?,Sincronizando propiedad?
+HOM_TYPE,Element: %s,Elemento: %s
+HOM_PASSIVE,Passive: %s,Pasiva: %s
+HOM_CAPTURE_REQUIRED,Requires capture in an expedition.,Requiere capturarlo en una expedici?n.
+HOM_LEVEL_MUTATION,Level %d / 10 | Mutation: %s,Nivel %d / 10 | Mutaci?n: %s

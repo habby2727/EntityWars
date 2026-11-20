@@ -3,6 +3,7 @@ class_name DataRegistry
 
 var entities := {}
 var homunculi := {}
+var _collection_homunculi := {}
 var items := {}
 var techniques := {}
 var spells := {}
@@ -19,6 +20,7 @@ func load_all() -> void:
 	var base = "res://data/"
 	_load_json_file(base + "entities.json", "entities")
 	_load_json_file(base + "homunculi.json", "homunculi")
+	_load_homunculus_collection(base + "static/expedition_homunculi.json")
 	_load_json_file(base + "items.json", "items")
 	_load_json_file(base + "techniques.json", "techniques")
 	_load_spells(base + "spells.json")
@@ -217,6 +219,37 @@ func get_entities() -> Dictionary:
 
 func get_homunculi() -> Dictionary:
 	return homunculi
+
+func _load_homunculus_collection(path: String) -> void:
+	_collection_homunculi = homunculi.duplicate(true)
+	var file := FileAccess.open(path, FileAccess.READ)
+	var data: Variant = JSON.parse_string(file.get_as_text()) if file else null
+	if not data is Dictionary or not data.get("homunculi") is Array:
+		push_warning("DataRegistry: Invalid expedition homunculus manifest")
+		return
+	var merged := _collection_homunculi.duplicate(true)
+	for record in data.homunculi:
+		if not record is Dictionary:
+			push_warning("DataRegistry: Invalid expedition homunculus")
+			return
+		var id: Variant = record.get("id")
+		var rarity: Variant = record.get("rarity")
+		var passive: Variant = record.get("passive")
+		if not id is String or id.is_empty() or merged.has(id) or not record.get("type") in ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"] or not (rarity is int or rarity is float) or not is_finite(float(rarity)) or float(rarity) != floor(float(rarity)) or rarity < 1 or rarity > 10:
+			push_warning("DataRegistry: Invalid expedition homunculus identity, type or rarity")
+			return
+		if not passive is Dictionary or not passive.get("description") is Dictionary or not passive.description.get("en") is String or passive.description.en.is_empty() or not passive.description.get("es") is String or passive.description.es.is_empty():
+			push_warning("DataRegistry: Missing localized homunculus passive")
+			return
+		var path_expected := "res://assets/entities/gameplay/homunculus/%s_pv.png" % id
+		if record.get("preview_texture") != path_expected or not ResourceLoader.exists(path_expected):
+			push_warning("DataRegistry: Invalid homunculus preview: %s" % id)
+			return
+		merged[id] = record.duplicate(true)
+	_collection_homunculi = merged
+
+func get_homunculus_collection() -> Dictionary:
+	return _collection_homunculi.duplicate(true)
 
 func get_items() -> Dictionary:
 	return items

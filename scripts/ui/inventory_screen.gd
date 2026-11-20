@@ -6,6 +6,7 @@ const HOM_PREVIEW_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const HomProgress := preload("res://scripts/domain/homunculus_progress.gd")
 const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 
@@ -51,6 +52,9 @@ var _spell_progress_known := false
 var _spell_backend: BackendClient
 var _spell_entity_option: OptionButton
 var _spell_filter_buttons: Array[Button] = []
+var _hom_progress: Dictionary = {}
+var _hom_progress_known := false
+var _selected_hom_id := ""
 var _item_progress: Dictionary = {}
 var _item_progress_known := false
 
@@ -184,8 +188,6 @@ func _setup_spell_progress() -> void:
 		_item_progress = debug_state.get("item_progress", {})
 		_item_progress_known = true
 		_spell_progress_known = true
-		debug.free()
-		return
 	debug.free()
 	_spell_backend = BackendClient.new()
 	_spell_backend.auto_dev_login = false
@@ -201,12 +203,18 @@ func _on_spell_progress_updated(state: Dictionary) -> void:
 	_spell_progress_known = not state.is_empty()
 	_item_progress = state.get("item_progress", {})
 	_item_progress_known = not state.is_empty()
+	_hom_progress_known = _spell_backend != null and _spell_backend.token != "" and not _spell_backend._verified_player_id.is_empty() and str(state.get("player_id", "")) == _spell_backend._verified_player_id
+	_hom_progress = state.get("homunculus_progress", {}) if _hom_progress_known and state.get("homunculus_progress", {}) is Dictionary else {}
+	_populate_homunculi()
 	_refresh_build_levels()
 	_refresh_spell_catalog()
 
 func _on_spell_auth_changed(_token: String) -> void:
 	_spell_progress = {}
 	_spell_progress_known = false
+	_hom_progress = {}
+	_hom_progress_known = false
+	_populate_homunculi()
 	_item_progress = {}
 	_item_progress_known = false
 	_refresh_build_levels()
@@ -259,6 +267,8 @@ func _on_inventory_tab_changed(index: int) -> void:
 	_detail_icon.texture = null
 
 func _show_entry(entry: Variant) -> void:
+	if entry is Dictionary and entry.get("kind") == "homunculus":
+		_selected_hom_id = str(entry.get("id", ""))
 	_detail_title.text = _extract_name(entry)
 	_detail_text.text = SpellView.detail(entry, str(entry.get("spell_status", "Unknown"))) if entry is Dictionary and entry.get("kind") == "spell" else _entry_details(entry)
 	var cost := _extract_cost(entry)
@@ -425,13 +435,17 @@ func _populate_homunculi() -> void:
 		push_warning("InventoryScreen: DataRegistry missing get_homunculi().")
 		_add_placeholder(_homunculi_list)
 		return
-	var homunculi = _registry.get_homunculi()
+	var homunculi = _registry.get_homunculus_collection()
 	var list = _dict_to_sorted_list(homunculi, "homunculus")
 	if list.is_empty():
 		_add_placeholder(_homunculi_list)
 		return
 	for entry in list:
-		_homunculi_list.add_child(_make_entry_row(entry))
+		var row := _make_entry_row(entry)
+		_homunculi_list.add_child(row)
+		if str(entry.get("id", "")) == _selected_hom_id:
+			row.button_pressed = true
+			_show_entry(entry)
 
 func _populate_spells() -> void:
 	if _ultrahit_list == null:
@@ -598,6 +612,12 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 		item_level.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		item_level.text = tr("INVENTORY_ROW_LEVEL") % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else tr("INVENTORY_ROW_UNAVAILABLE")
 		text_column.add_child(item_level)
+	if entry is Dictionary and entry.get("kind") == "homunculus":
+		var hom_status := _hom_status(entry)
+		var subtitle := Label.new()
+		subtitle.text = tr("HOM_STATUS_" + hom_status.to_upper())
+		subtitle.add_theme_font_size_override("font_size", 12)
+		text_column.add_child(subtitle)
 	if entry is Dictionary and entry.get("kind") == "spell":
 		var status := str(entry.get("spell_status", "Unknown"))
 		var subtitle := Label.new()
@@ -629,6 +649,22 @@ func _entry_details(entry: Variant) -> String:
 		if stats is Dictionary:
 			lines.append(tr("INVENTORY_BASE_STATS") % [stats.get("hp", "-"), stats.get("power", "-"), stats.get("guard", "-"), stats.get("tempo", "-")])
 	elif kind == "homunculus":
+		var id := str(entry.get("id", ""))
+		var status := _hom_status(entry)
+		lines.append(tr("HOM_STATUS_" + status.to_upper()))
+		if entry.has("type"):
+			lines.append(tr("HOM_TYPE") % GameLocalization.catalog("type", str(entry.type), "name", str(entry.type).capitalize()))
+			lines.append(tr("INVENTORY_RARITY") % ("%d / 10" % int(entry.rarity)))
+			lines.append(tr("HOM_PASSIVE") % HomProgress.passive_text(entry))
+			if status == "locked": lines.append(tr("HOM_CAPTURE_REQUIRED"))
+		if status == "owned" and _hom_progress_known:
+			var progress: Dictionary = _hom_progress.get(id, {}) if _hom_progress.get(id, {}) is Dictionary else {}
+			var level := clampi(int(progress.get("level", 0)), 0, 10)
+			var xp := int(progress.get("xp", 0))
+			lines.append(tr("HOM_LEVEL_MUTATION") % [level, GameLocalization.catalog("mutation", str(progress.get("mutation_id", "")), "name", tr("SPECIALIZATION_NONE_NAME"))])
+			lines.append(tr("VAT_XP_MAX") % xp if level >= 10 else tr("VAT_XP_PROGRESS") % [xp, HomProgress.xp_threshold(level + 1)])
+		elif status == "owned": lines.append(tr("HOM_STATUS_UNKNOWN"))
+		if entry.has("type"): return "\n".join(lines)
 		lines.append(tr("INVENTORY_RARITY") % GameLocalization.catalog("rarity", str(entry.get("rarity", "")), "name", str(entry.get("rarity", "Unknown")).capitalize()))
 		lines.append(tr("INVENTORY_BONUSES") % [int(entry.get("buff_atk", 0)), int(entry.get("buff_def", 0)), int(entry.get("buff_hp", 0))])
 		var per_type = entry.get("per_type", {})
@@ -711,7 +747,7 @@ func _extract_preview_texture(entry: Variant) -> Texture2D:
 		return null
 	if entry.has("preview_tex") and entry.get("preview_tex") is Texture2D:
 		return entry.get("preview_tex")
-	var preview_path = str(entry.get("preview_path", ""))
+	var preview_path = str(entry.get("preview_texture", entry.get("preview_path", "")))
 	if preview_path != "" and ResourceLoader.exists(preview_path):
 		return load(preview_path)
 	var kind = str(entry.get("kind", ""))
@@ -809,3 +845,7 @@ func _add_placeholder(container: Control) -> void:
 	var label := Label.new()
 	label.text = "INVENTORY_NO_DATA"
 	container.add_child(label)
+
+func _hom_status(entry: Dictionary) -> String:
+	var id := str(entry.get("id", ""))
+	return HomProgress.collection_status(id, _registry != null and _registry.get_homunculi().has(id), _hom_progress, _hom_progress_known)

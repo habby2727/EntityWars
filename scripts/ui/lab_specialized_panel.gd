@@ -79,7 +79,7 @@ func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cos
 		_backend.action_failed.connect(_forge_failed)
 		_backend.action_uncertain.connect(_forge_uncertain)
 		_backend.api_completed.connect(_on_dungeon_api_completed)
-		_backend.auth_changed.connect(func(_token): _update_forge_button())
+		_backend.auth_changed.connect(_on_catalog_auth_changed)
 		_backend.state_updated.connect(_on_dungeon_debug_state)
 	custom_minimum_size.y = 210
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -765,7 +765,7 @@ func _catalog(homunculi: bool) -> void:
 		var right_space := Control.new()
 		right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		center.add_child(right_space)
-	var entries: Dictionary = _registry.get_homunculi() if homunculi else _registry.get_items()
+	var entries: Dictionary = _registry.get_homunculus_collection() if homunculi else _registry.get_items()
 	var list := ItemList.new()
 	list.name = "LocalizationCatalogItems"
 	list.set_meta("catalog_kind", "homunculus" if homunculi else "item")
@@ -974,7 +974,7 @@ func _catalog(homunculi: bool) -> void:
 		else:
 			_update_forge_button()
 		var file: String = str(ITEM_FILES.get(id, id))
-		var path := ("res://assets/entities/previews_256/homunculus/" if homunculi else "res://assets/entities/builds/") + file + ".png"
+		var path := str(entry.get("preview_texture", "")) if homunculi and entry.has("preview_texture") else ("res://assets/entities/previews_256/homunculus/" if homunculi else "res://assets/entities/builds/") + file + ".png"
 		preview.texture = load(path) if ResourceLoader.exists(path) else null
 	list.item_selected.connect(select)
 	if list.item_count > 0:
@@ -986,7 +986,9 @@ func _update_vat_status() -> void:
 		return
 	var progress: Dictionary = _forge_state.get("homunculus_progress", {})
 	var entry: Dictionary = progress.get(_vat_item, {})
-	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
+	var hom: Dictionary = _registry.get_homunculus_collection().get(_vat_item, {})
+	var ready := _forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty() and str(_forge_state.get("player_id", "")) == _backend._verified_player_id
+	var status := HomProgress.collection_status(_vat_item, _registry.get_homunculi().has(_vat_item), progress, ready)
 	var level := clampi(int(entry.get("level", 0)), 0, 10)
 	var next_progress := progress.duplicate(true)
 	var next_entry := entry.duplicate(true)
@@ -994,17 +996,25 @@ func _update_vat_status() -> void:
 	next_progress[_vat_item] = next_entry
 	var mutations := HomProgress.mutation_catalog()
 	var active := str(entry.get("mutation_id", ""))
-	_vat_info.text = tr("VAT_DESCRIPTION").replace("\\n", "\n") % [GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", ""))), level, GameLocalization.catalog("mutation", active, "name", str(mutations.get(active, {}).get("name", tr("SPECIALIZATION_NONE_NAME")))), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
-	var synergy_values := _format_values(hom.get("per_type", {}))
-	if not synergy_values.is_empty() and _vat_info.text.ends_with(synergy_values):
-		_vat_info.text = _vat_info.text.left(_vat_info.text.length() - synergy_values.length()).strip_edges()
-		_vat_synergies.text = synergy_values
+	_vat_synergies.text = ""
+	if hom.has("type"):
+		_vat_info.text = "\n".join([tr("HOM_STATUS_" + status.to_upper()), tr("HOM_TYPE") % GameLocalization.catalog("type", str(hom.type), "name", str(hom.type).capitalize()), tr("INVENTORY_RARITY") % ("%d / 10" % int(hom.rarity)), tr("HOM_PASSIVE") % HomProgress.passive_text(hom), tr("HOM_CAPTURE_REQUIRED") if status == "locked" else ""])
+	elif ready:
+		_vat_info.text = tr("VAT_DESCRIPTION").replace("\\n", "\n") % [GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", ""))), level, GameLocalization.catalog("mutation", active, "name", str(mutations.get(active, {}).get("name", tr("SPECIALIZATION_NONE_NAME")))), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
+		var synergy_values := _format_values(hom.get("per_type", {}))
+		if not synergy_values.is_empty() and _vat_info.text.ends_with(synergy_values):
+			_vat_info.text = _vat_info.text.left(_vat_info.text.length() - synergy_values.length()).strip_edges()
+			_vat_synergies.text = synergy_values
 	else:
-		_vat_synergies.text = ""
-	var xp := maxi(int(entry.get("xp", HomProgress.xp_threshold(level))), HomProgress.xp_threshold(level))
-	_vat_xp.text = tr("VAT_XP_MAX") % xp if level >= 10 else tr("VAT_XP_PROGRESS") % [xp, HomProgress.xp_threshold(level + 1)]
+		_vat_info.text = GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", "")))
+	if ready and status == "owned":
+		if hom.has("type"):
+			_vat_info.text += "\n" + tr("HOM_LEVEL_MUTATION") % [level, GameLocalization.catalog("mutation", active, "name", tr("SPECIALIZATION_NONE_NAME"))]
+		var xp := int(entry.get("xp", 0))
+		_vat_xp.text = tr("VAT_XP_MAX") % xp if level >= 10 else tr("VAT_XP_PROGRESS") % [xp, HomProgress.xp_threshold(level + 1)]
+	else:
+		_vat_xp.text = ""
 	var cooldown := maxi(0, int(entry.get("mutation_changed_at", 0)) + 21600000 - _vat_now) if int(entry.get("mutation_changed_at", 0)) > 0 else 0
-	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
 	var vat_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("homunculus_vat", {}).get("level", 0))
 	var mutation_reason := ""
 	if not ready:
@@ -1013,7 +1023,7 @@ func _update_vat_status() -> void:
 		mutation_reason = tr("VAT_WAITING")
 	elif vat_level < 1:
 		mutation_reason = tr("VAT_NEEDS_VAT")
-	elif not bool(entry.get("owned", true)):
+	elif status != "owned":
 		mutation_reason = tr("VAT_NOT_OWNED")
 	elif level < 3:
 		mutation_reason = tr("VAT_NEEDS_LEVEL") % level
@@ -1032,7 +1042,7 @@ func _request_vat_mutation(id: String) -> void:
 	if index < 0 or _vat_mutations[index].disabled:
 		return
 	_vat_action = {"action_type": "HOM_MUTATE", "payload": {"homunculus_id": _vat_item, "mutation_id": id}}
-	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
+	var hom: Dictionary = _registry.get_homunculus_collection().get(_vat_item, {})
 	_vat_confirm.dialog_text = tr("VAT_CONFIRM_MUTATION").replace("\\n", "\n") % [GameLocalization.catalog("mutation", id, "name", id.capitalize()), GameLocalization.catalog("homunculus", _vat_item, "name", str(hom.get("name", _vat_item))), _vat_mutations[index].tooltip_text]
 	_vat_confirm.popup_centered()
 
@@ -1423,3 +1433,10 @@ func _format_values(values: Dictionary) -> String:
 		var type_name := GameLocalization.catalog("type", str(key), "name", resource)
 		lines.append("%s: %s" % [GameLocalization.catalog("stat", str(key), "name", type_name), formatted])
 	return "\n".join(lines)
+
+func _on_catalog_auth_changed(_token: String) -> void:
+	_forge_state = {}
+	_forge_synced = false
+	_vat_action = {}
+	_update_forge_button()
+	_update_vat_status()

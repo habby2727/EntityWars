@@ -32,3 +32,23 @@ static func effective_bonuses(homunculus: Dictionary, progress: Dictionary) -> D
 			if key in ["hp_flat", "power_flat", "guard_flat", "favorable_type_bonus"] and (amount is int or amount is float) and is_finite(float(amount)):
 				result[key] = result.get(key, 0) + amount
 	return result
+
+# Legacy combat companions are always owned; expedition ownership requires an
+# authenticated snapshot with an explicit boolean grant.
+static func collection_status(id: String, legacy: bool, progress: Dictionary, synced: bool) -> String:
+	if legacy:
+		return "owned"
+	if not synced:
+		return "unknown"
+	var entry: Variant = progress.get(id, {})
+	return "owned" if entry is Dictionary and entry.get("owned") is bool and entry.owned else "locked"
+
+static func passive_text(hom: Dictionary) -> String:
+	var passive: Variant = hom.get("passive", {})
+	if not passive is Dictionary:
+		return ""
+	var descriptions: Variant = passive.get("description", {})
+	if not descriptions is Dictionary:
+		return ""
+	var language := "es" if TranslationServer.get_locale().begins_with("es") else "en"
+	return str(descriptions.get(language, ""))
