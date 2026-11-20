@@ -1,3 +1,4 @@
+import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp, owned, PVE_VICTORY_XP, type HomunculusProgress } from "./homunculus_experience";
 import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
@@ -212,23 +213,33 @@ type ItemProgress = {
 	[key: string]: unknown;
 };
 
-type HomunculusProgress = { level: number; mutation_id?: string; mutation_changed_at?: number };
-
 function normalizeHomunculusProgress(value: unknown): Record<string, HomunculusProgress> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-	const result: Record<string, HomunculusProgress> = {};
-	for (const [id, raw] of Object.entries(value)) {
-		if (!staticData.homunculusIds.has(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-		const entry = raw as Record<string, unknown>;
-		const level = Number(entry.level);
-		const progress: HomunculusProgress = { level: Number.isInteger(level) ? Math.max(0, Math.min(10, level)) : 0 };
-		if (typeof entry.mutation_id === "string" && staticData.mutationIds.has(entry.mutation_id)) {
-			progress.mutation_id = entry.mutation_id;
-			progress.mutation_changed_at = clampInt(entry.mutation_changed_at, 0, Number.MAX_SAFE_INTEGER);
-		}
-		result[id] = progress;
-	}
-	return result;
+	return normalizeProgress(value, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
+}
+
+// Old homunculi are implicitly owned; expedition ownership must be persisted.
+function ownsHomunculus(progress: unknown, id: string): boolean {
+	if (staticData.homunculusIds.has(id)) return true;
+	if (!staticData.expeditionHomunculusIds.has(id)) return false;
+	return owned(normalizeHomunculusProgress(progress)[id]);
+}
+
+function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number): void {
+	if (!loadoutJson) return;
+	let selection: any;
+	try { selection = JSON.parse(loadoutJson); } catch { throw new HttpError(409, "Invalid stored loadout."); }
+	const id = selection?.homunculus_id;
+	if (id === null || id === undefined || id === "") return;
+	if (typeof id !== "string") throw new HttpError(409, "Invalid stored homunculus.");
+	const row = getPlayerByIdStmt.get(playerId) as { state_json: string; display_name: string } | undefined;
+	if (!row) throw new HttpError(404, "Player not found.");
+	const player = safeParseState(row.state_json, playerId, row.display_name);
+	if (!player) throw new HttpError(409, "Invalid player state.");
+	if (!ownsHomunculus(player.homunculus_progress, id)) throw new HttpError(409, "Homunculus is not owned.");
+	const current = player.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
+	player.homunculus_progress[id] = grantXp(current, PVE_VICTORY_XP);
+	player.updated_at = now;
+	if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
 }
 
 function normalizeItemProgress(value: unknown): Record<string, ItemProgress> {
@@ -947,26 +958,17 @@ function applyAction(
 	if (actionType == "UPGRADE_BUILDING") {
 		return applyUpgrade(next, payload, debugBypass);
 	}
-	if (actionType === "HOM_UPGRADE" || actionType === "HOM_MUTATE") {
+	if (actionType === "HOM_UPGRADE") return { state: next, error: "Homunculi gain levels through XP." };
+	if (actionType === "HOM_MUTATE") {
 		const id = typeof payload?.homunculus_id === "string" ? payload.homunculus_id : "";
-		if (!staticData.homunculusIds.has(id)) return { state: next, error: "Unknown homunculus." };
+		if (!ownsHomunculus(next.homunculus_progress, id)) return { state: next, error: "Unknown or unowned homunculus." };
 		if ((next.lab.buildings.homunculus_vat?.level ?? 0) < 1) return { state: next, error: "Homunculus Vat is not constructed." };
-		const current = next.homunculus_progress[id] ?? { level: 0 };
-		let cost: ResourceWallet;
-		if (actionType === "HOM_UPGRADE") {
-			if (next.lab.hqLevel < 2 || current.level >= 10) return { state: next, error: "Homunculus upgrade unavailable." };
-			cost = { essence: Math.trunc(getBalanceNumber("hom_upgrade_essence_base", 25) + current.level * getBalanceNumber("hom_upgrade_essence_per_level", 15)) };
-			if (current.level >= 5) cost.core = 1;
-		} else {
-			if (current.level < 3 || typeof payload?.mutation_id !== "string" || !staticData.mutationIds.has(payload.mutation_id) || payload.mutation_id === current.mutation_id || ((current.mutation_changed_at ?? 0) > 0 && now < current.mutation_changed_at! + getBalanceNumber("hom_mutation_cooldown_seconds", 21600) * 1000)) return { state: next, error: "Mutation unavailable." };
-			cost = staticData.balance.hom_mutation_cost;
-		}
-		if (!cost || typeof cost !== "object" || Array.isArray(cost) || Object.keys(cost).some(id => !staticData.resources.has(id)) || Object.values(cost).some(amount => !Number.isSafeInteger(amount) || amount < 0)) return { state: next, error: "Invalid homunculus cost configuration." };
-		if (Object.entries(cost).some(([res, amount]) => (next.wallet[res] ?? 0) < amount)) return { state: next, error: "Insufficient resources." };
-		for (const [res, amount] of Object.entries(cost)) next.wallet[res] = (next.wallet[res] ?? 0) - amount;
-		next.homunculus_progress[id] = actionType === "HOM_UPGRADE" ? { ...current, level: current.level + 1 } : { ...current, mutation_id: payload.mutation_id, mutation_changed_at: now };
+		const current = next.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
+		if (current.level < 3 || typeof payload?.mutation_id !== "string" || !staticData.mutationIds.has(payload.mutation_id) || payload.mutation_id === current.mutation_id || ((current.mutation_changed_at ?? 0) > 0 && now < current.mutation_changed_at! + getBalanceNumber("hom_mutation_cooldown_seconds", 21600) * 1000)) return { state: next, error: "Mutation unavailable." };
+		next.homunculus_progress[id] = { ...current, mutation_id: payload.mutation_id, mutation_changed_at: now };
 		return { state: next };
 	}
+
 	if (actionType == "FORGE_UPGRADE") {
 		const id = typeof payload?.item_id === "string" ? payload.item_id : "";
 		if (!staticData.itemIds.has(id)) return { state: next, error: "Unknown item_id." };
@@ -2240,7 +2242,7 @@ async function startServer(): Promise<void> {
 						state.lab.buildings.lab_th.level = Math.max(state.lab.buildings.lab_th.level, state.lab.hqLevel);
 						state.lab.buildings.sync_nexus ??= { level: 0, route: "", runtime: { stored_output: 0, last_tick: Date.now() } };
 						state.lab.buildings.sync_nexus.level = Math.max(1, state.lab.buildings.sync_nexus.level);
-						for (const id of staticData.homunculusIds) state.homunculus_progress[id] = { ...state.homunculus_progress[id], level: 10 };
+						for (const id of staticData.homunculusIds) state.homunculus_progress[id] = { ...state.homunculus_progress[id], level: 10, xp: xpThreshold(10), owned: true };
 						for (const item of items) if (item?.slot === "build" && staticData.itemIds.has(item.id)) state.item_progress[item.id] = { ...state.item_progress[item.id], level: 10 };
 						for (const entity of entities) {
 							if (typeof entity?.id !== "string" || typeof entity.type !== "string") continue;
@@ -2286,6 +2288,7 @@ async function startServer(): Promise<void> {
 						const saved = JSON.parse(row.player_snapshot_json);
 						// Reuse hunt loadout validation only; no boss state or result is created.
 						const trusted = { ...saved, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common };
+						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
 						const setup = buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true });
 						if (setup.error) throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
 						const seed = createHmac("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
@@ -2369,6 +2372,7 @@ async function startServer(): Promise<void> {
 							combat.player.hp = combat.player.max_hp;
 						}
 						if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
+						if (isTurn && combat.terminal_result === "WIN" && cleared === combat.floor && row.cleared_floor < cleared) awardHomunculusVictory(playerId, row.loadout_json, now);
 						const response = { run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };
 						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
@@ -2593,6 +2597,7 @@ async function startServer(): Promise<void> {
 							missions.record(db, playerId, now, {guardian:!!row.guardian_id, win:status === "VERIFIED_WIN", tier:boss.tier, zone:row.guardian_zone_id, appearance:boss.appearance_id, damage});
 						}
 						if (status === "VERIFIED_WIN" && row.global_event_id) settleGlobalBoss(row, now);
+						if (status === "VERIFIED_WIN") awardHomunculusVictory(playerId, row.combat_loadout_json, now);
 						if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
 							db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
 						}
@@ -2661,6 +2666,7 @@ async function startServer(): Promise<void> {
 						const boss = JSON.parse(row.boss_snapshot_json);
 						const saved = JSON.parse(row.player_snapshot_json);
 						const trusted = { ...saved, player_id: playerId, state_revision: Number.isSafeInteger(saved.state_revision) ? saved.state_revision : 0, boss_id: row.hunt_id, boss_entity_id: SOLO_HUNT_BOSS_ENTITIES[row.hunt_id] };
+						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
 						const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
 						if (setup.error) throw new HttpError(400, "Invalid or unsupported hunt loadout.");
 						const seed = createHmac("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
@@ -2902,6 +2908,7 @@ async function startServer(): Promise<void> {
 type StaticData = {
 	itemIds: Set<string>;
 	homunculusIds: Set<string>;
+	expeditionHomunculusIds: Set<string>;
 	mutationIds: Set<string>;
 	itemRarities: Record<string, string>;
 	resources: Set<string>;
@@ -2921,6 +2928,7 @@ function loadStaticData(): StaticData {
 	const entitiesRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "entities.json"), "utf8"));
 	const itemsRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "items.json"), "utf8"));
 	const homunculiRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "homunculi.json"), "utf8"));
+	const expeditionHomunculiRaw = JSON.parse(readFileSync(resolve(staticDir, "expedition_homunculi.json"), "utf8"));
 	const mutationsRaw = JSON.parse(readFileSync(resolve(staticDir, "mutations.json"), "utf8"));
 	const itemIds = new Set<string>((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).map((item: any) => item.id).filter((id: unknown): id is string => typeof id === "string"));
 	const itemRarities: Record<string, string> = Object.fromEntries((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).filter((item: any) => typeof item.id === "string" && typeof item.rarity === "string").map((item: any) => [item.id, item.rarity]));
@@ -2937,6 +2945,7 @@ function loadStaticData(): StaticData {
 	return {
 		itemIds,
 		homunculusIds: new Set<string>((homunculiRaw.homunculi ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
+		expeditionHomunculusIds: new Set<string>((expeditionHomunculiRaw.homunculi ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
 		mutationIds: new Set<string>((mutationsRaw.mutations ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
 		itemRarities,
 		resources: resources.ids,

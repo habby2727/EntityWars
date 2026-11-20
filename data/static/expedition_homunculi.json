@@ -1,0 +1,130 @@
+{
+  "homunculi": [
+    {
+      "id": "astralotl",
+      "name": "Astralotl",
+      "type": "aether",
+      "rarity": 7,
+      "passive_orientation": "Ataque",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/astralotl_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/astralotl.png"
+    },
+    {
+      "id": "cedix",
+      "name": "Cedix",
+      "type": "sulfur",
+      "rarity": 2,
+      "passive_orientation": "Ataque condicionado",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/cedix_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/cedix.png"
+    },
+    {
+      "id": "crishvin",
+      "name": "Crishvin",
+      "type": "vitriol",
+      "rarity": 3,
+      "passive_orientation": "Defensa + veneno",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/crishvin_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/crishvin.png"
+    },
+    {
+      "id": "flincho",
+      "name": "Flincho",
+      "type": "sodium",
+      "rarity": 5,
+      "passive_orientation": "Precisi?n + tempo",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/flincho_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/flincho.png"
+    },
+    {
+      "id": "honin",
+      "name": "Honin",
+      "type": "sulfur",
+      "rarity": 1,
+      "passive_orientation": "Defensa + precisi?n",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/honin_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/honin.png"
+    },
+    {
+      "id": "hyrox",
+      "name": "Hyrox",
+      "type": "gold",
+      "rarity": 6,
+      "passive_orientation": "Tempo + evasi?n",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/hyrox_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/hyrox.png"
+    },
+    {
+      "id": "luny",
+      "name": "Luny",
+      "type": "aether",
+      "rarity": 9,
+      "passive_orientation": "Ataque + tempo",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/luny_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/luny.png"
+    },
+    {
+      "id": "mantillo",
+      "name": "Mantillo",
+      "type": "mercury",
+      "rarity": 8,
+      "passive_orientation": "Da?o + evasi?n",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/mantillo_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/mantillo.png"
+    },
+    {
+      "id": "nebulynx",
+      "name": "Nebulynx",
+      "type": "aether",
+      "rarity": 9,
+      "passive_orientation": "Da?o + tempo",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/nebulynx_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/nebulynx.png"
+    },
+    {
+      "id": "neon",
+      "name": "Neon",
+      "type": "mercury",
+      "rarity": 10,
+      "passive_orientation": "Tempo + defensa",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/neon_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/neon.png"
+    },
+    {
+      "id": "ninux",
+      "name": "Ninux",
+      "type": "sodium",
+      "rarity": 8,
+      "passive_orientation": "Ataque + defensa",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/ninux_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/ninux.png"
+    },
+    {
+      "id": "solcarp",
+      "name": "Solcarp",
+      "type": "gold",
+      "rarity": 5,
+      "passive_orientation": "Ataque + precisi?n",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/solcarp_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/solcarp.png"
+    },
+    {
+      "id": "venam",
+      "name": "Venam",
+      "type": "vitriol",
+      "rarity": 4,
+      "passive_orientation": "Veneno + robo de vida",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/venam_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/venam.png"
+    },
+    {
+      "id": "voltibis",
+      "name": "Voltibis",
+      "type": "mercury",
+      "rarity": 6,
+      "passive_orientation": "Tempo + defensa",
+      "preview_texture": "res://assets/entities/gameplay/homunculus/voltibis_pv.png",
+      "combat_texture": "res://assets/entities/gameplay/homunculus/ingame/1024/voltibis.png"
+    }
+  ]
+}

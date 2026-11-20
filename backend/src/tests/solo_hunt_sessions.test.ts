@@ -343,6 +343,8 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
     db.query("UPDATE solo_hunt_sessions SET expires_at = ? WHERE session_id = ?").run(testNow() - 61000, next.data.session_id);
     for (const outcome of ["WIN", "LOSS"]) {
       const walletBeforeBattle = wallet(a.data.player_id);
+      const progressBefore = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(a.data.player_id) as any).state_json);
+      const xpBefore = progressBefore.homunculus_progress?.cinder?.xp ?? 0;
       const current = (await request("/world/boss-hunts")).data;
       const hunt = await start(`terminal-start-${outcome}`, "hunt_common", current.rotation_key);
       expect(hunt.status).toBe(200);
@@ -363,6 +365,9 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
         if (response.data.status !== "ACTIVE") { finalResponse = response.data; finalRequest = input; }
       }
       expect(finalResponse?.status).toBe(`VERIFIED_${outcome}`);
+      const progressAfter = JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(a.data.player_id) as any).state_json);
+      expect(progressAfter.homunculus_progress?.cinder?.xp ?? 0).toBe(xpBefore + (outcome === "WIN" ? 20 : 0));
+      if (outcome === "WIN") expect(progressAfter.state_revision).toBeGreaterThan(progressBefore.state_revision);
       expect((await request("/world/boss-hunts/session", undefined, a.data.token)).data.common_cooldown_until).toBe(0);
       const expectedWallet = { ...walletBeforeBattle };
       if (outcome === "WIN") {
@@ -388,6 +393,7 @@ test("solo hunts are isolated, persistent and idempotent without wallet changes"
       expect((await request("/world/boss-hunts/turn", finalRequest, a.data.token)).data).toEqual(finalResponse);
       expect((await request("/world/missions", undefined, a.data.token)).data.daily).toEqual(missionsBeforeRetry.daily);
       expect(wallet(a.data.player_id)).toEqual(expectedWallet);
+      expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(a.data.player_id) as any).state_json).homunculus_progress?.cinder?.xp ?? 0).toBe(xpBefore + (outcome === "WIN" ? 20 : 0));
       expect((db.query("SELECT COUNT(*) AS n FROM audit_wallet WHERE related_id = ? AND reason = ?").get(sessionId, "SOLO_HUNT_REWARD") as any).n).toBe(outcome === "WIN" ? 1 : 0);
       expect((await request("/world/boss-hunts/turn", { ...finalRequest, client_action_id: `closed-${outcome}` }, a.data.token)).status).toBe(409);
       const terminal = (await request(`/world/boss-hunts/session?session_id=${sessionId}`, undefined, a.data.token)).data.session;

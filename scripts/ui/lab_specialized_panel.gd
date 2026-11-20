@@ -38,7 +38,7 @@ var _vat_item := ""
 var _vat_info: Label
 var _vat_synergies: Label
 var _vat_status: Label
-var _vat_upgrade: Button
+var _vat_xp: Label
 var _vat_mutations: Array[Button] = []
 var _vat_confirm: ConfirmationDialog
 var _vat_action: Dictionary = {}
@@ -125,7 +125,7 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_dungeon_entry_status = null
 	_vat_info = null
 	_vat_status = null
-	_vat_upgrade = null
+	_vat_xp = null
 	_vat_confirm = null
 	_vat_mutations.clear()
 	_anomaly_confirm = null
@@ -863,7 +863,7 @@ func _catalog(homunculi: bool) -> void:
 		actions.alignment = BoxContainer.ALIGNMENT_CENTER
 		actions.add_theme_constant_override("separation", 10)
 	details.add_child(actions)
-	for label in (["Upgrade Homunculus"] if homunculi else ["Upgrade", "Reroll"]):
+	for label in ([] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
 		action.text = {"Upgrade Homunculus": "LAB_ACTION_UPGRADE_HOMUNCULUS", "Upgrade": "LAB_UPGRADE", "Reroll": "LAB_ACTION_REROLL"}[label]
 		action.disabled = true
@@ -877,15 +877,15 @@ func _catalog(homunculi: bool) -> void:
 		elif not homunculi and label == "Reroll":
 			_forge_reroll_button = action
 			action.pressed.connect(_request_forge_reroll)
-		elif homunculi:
-			_vat_upgrade = action
-			action.pressed.connect(_request_vat_upgrade)
 	var inventory := Button.new()
 	inventory.text = "LAB_OPEN_INVENTORY"
 	MenuArt.button(inventory)
 	inventory.pressed.connect(func(): SceneRouter.go_to_inventory("Homunculi" if homunculi else "Builds", true))
 	actions.add_child(inventory)
 	if homunculi:
+		_vat_xp = Label.new()
+		_vat_xp.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		details.add_child(_vat_xp)
 		var mutation_heading := Label.new()
 		mutation_heading.text = "VAT_MUTATIONS"
 		details.add_child(mutation_heading)
@@ -982,7 +982,7 @@ func _catalog(homunculi: bool) -> void:
 		select.call(0)
 
 func _update_vat_status() -> void:
-	if not is_instance_valid(_vat_info) or not is_instance_valid(_vat_upgrade) or _registry == null or _vat_item == "":
+	if not is_instance_valid(_vat_info) or not is_instance_valid(_vat_xp) or _registry == null or _vat_item == "":
 		return
 	var progress: Dictionary = _forge_state.get("homunculus_progress", {})
 	var entry: Dictionary = progress.get(_vat_item, {})
@@ -1001,51 +1001,31 @@ func _update_vat_status() -> void:
 		_vat_synergies.text = synergy_values
 	else:
 		_vat_synergies.text = ""
-	var wallet: Dictionary = _forge_state.get("wallet", {})
-	var essence_cost := 25 + 15 * level
-	var core_cost := 1 if level >= 5 else 0
+	var xp := maxi(int(entry.get("xp", HomProgress.xp_threshold(level))), HomProgress.xp_threshold(level))
+	_vat_xp.text = tr("VAT_XP_MAX") % xp if level >= 10 else tr("VAT_XP_PROGRESS") % [xp, HomProgress.xp_threshold(level + 1)]
 	var cooldown := maxi(0, int(entry.get("mutation_changed_at", 0)) + 21600000 - _vat_now) if int(entry.get("mutation_changed_at", 0)) > 0 else 0
 	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
 	var vat_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("homunculus_vat", {}).get("level", 0))
-	var hq_level := int(_forge_state.get("lab", {}).get("hqLevel", 0))
 	var mutation_reason := ""
 	if not ready:
-		mutation_reason = "Sign in and wait for server state."
+		mutation_reason = tr("VAT_SERVER_REQUIRED")
 	elif _vat_pending:
-		mutation_reason = "Waiting for action confirmation."
+		mutation_reason = tr("VAT_WAITING")
 	elif vat_level < 1:
 		mutation_reason = tr("VAT_NEEDS_VAT")
+	elif not bool(entry.get("owned", true)):
+		mutation_reason = tr("VAT_NOT_OWNED")
 	elif level < 3:
 		mutation_reason = tr("VAT_NEEDS_LEVEL") % level
 	elif cooldown > 0:
 		mutation_reason = tr("VAT_NEXT_MUTATION") % _clock(cooldown)
-	elif int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1:
-		mutation_reason = tr("VAT_NEEDS_RESOURCES") % [int(wallet.get("essence", 0)), int(wallet.get("core", 0)), int(wallet.get("arcane_shard", 0))]
-	_vat_upgrade.disabled = not ready or _vat_pending or vat_level < 1 or hq_level < 2 or level >= 10 or int(wallet.get("essence", 0)) < essence_cost or int(wallet.get("core", 0)) < core_cost
-	_vat_upgrade.tooltip_text = tr("VAT_UPGRADE_COST") % [essence_cost, tr("VAT_CORE_COST") if core_cost else ""]
 	for i in range(_vat_mutations.size()):
 		var id: String = ["catalyst", "vitality", "resonance"][i]
-		_vat_mutations[i].disabled = not ready or _vat_pending or vat_level < 1 or level < 3 or cooldown > 0 or active == id or int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1
+		_vat_mutations[i].disabled = mutation_reason != "" or active == id
 		_vat_mutations[i].modulate = Color(1.25, 1.1, 0.7) if active == id else Color.WHITE
 		var description := GameLocalization.catalog("mutation", id, "desc", str(mutations.get(id, {}).get("description", "")))
 		_vat_mutations[i].tooltip_text = description + ("\n" + tr("VAT_EQUIPPED") if active == id else "\n" + mutation_reason if mutation_reason != "" else "\n" + tr("VAT_SELECT"))
-	_vat_status.text = tr("VAT_STATUS").replace("\\n", "\n") % [essence_cost, tr("VAT_CORE_COST") if core_cost else "", _clock(cooldown) if cooldown > 0 else tr("LAB_READY")]
-	if vat_level < 1 or hq_level < 2:
-		_vat_status.text += "\n" + tr("VAT_REQUIRE_BUILDING") % [vat_level, hq_level]
-	if level < 3:
-		_vat_status.text += "\n" + tr("VAT_MUTATION_REQUIRED") % level
-	elif mutation_reason != "":
-		_vat_status.text += "\n" + mutation_reason
-	else:
-		_vat_status.text += "\n" + tr("VAT_CHOOSE_MUTATION")
-
-func _request_vat_upgrade() -> void:
-	if _vat_upgrade.disabled:
-		return
-	_vat_action = {"action_type": "HOM_UPGRADE", "payload": {"homunculus_id": _vat_item}}
-	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
-	_vat_confirm.dialog_text = tr("VAT_CONFIRM_UPGRADE") % [GameLocalization.catalog("homunculus", _vat_item, "name", str(hom.get("name", _vat_item))), _vat_upgrade.tooltip_text]
-	_vat_confirm.popup_centered()
+	_vat_status.text = mutation_reason if mutation_reason != "" else tr("VAT_CHOOSE_MUTATION")
 
 func _request_vat_mutation(id: String) -> void:
 	var index := ["catalyst", "vitality", "resonance"].find(id)
@@ -1062,7 +1042,7 @@ func _send_vat_action() -> void:
 	_update_vat_status()
 	var action_type := str(_vat_action.get("action_type", ""))
 	var index := ["catalyst", "vitality", "resonance"].find(_vat_action.get("payload", {}).get("mutation_id", ""))
-	if (action_type == "HOM_UPGRADE" and _vat_upgrade.disabled) or (action_type == "HOM_MUTATE" and (index < 0 or _vat_mutations[index].disabled)):
+	if action_type != "HOM_MUTATE" or index < 0 or _vat_mutations[index].disabled:
 		return
 	lab_action_requested.emit(_vat_action.duplicate(true), "homunculus_vat")
 

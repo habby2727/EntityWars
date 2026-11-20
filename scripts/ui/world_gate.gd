@@ -139,6 +139,9 @@ func _ready() -> void:
 	_apply_panel_background()
 	_connect_backend()
 	_connect_buttons()
+	var expedition_button := get_node("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ExpeditionMargin/ExpeditionButton") as Button
+	MenuArt.button(expedition_button)
+	expedition_button.pressed.connect(SceneRouter.go_to_expeditions)
 	if _back_button != null:
 		MenuArt.button(_back_button)
 	if _zone_refresh != null:

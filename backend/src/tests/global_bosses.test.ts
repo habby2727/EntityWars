@@ -71,7 +71,7 @@ test("global bosses persist per zone and use trusted sessions", async () => {
     const before = players.map((_, i) => wallet(i));
     const grants = JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data/static/balance.json"), "utf8")).balance.solo_hunt_rewards.boss[event.tier];
     for (let i = 0; i < 4; i++) {
-      const loadout = { session_id: sessions[i], client_action_id: `load-${i}`, entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
+      const loadout = { session_id: sessions[i], client_action_id: `load-${i}`, entity_id: "sulfur_01", weapon_ids: ["bismuth_talisman", "wind_amulet"], homunculus_id: i === 0 ? null : "cinder", spell_ids: ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], mode: "attack" };
       expect((await request("/world/boss-hunts/loadout", loadout, players[i].token)).status).toBe(200);
       if (i === 0) {
         const forgedTurn = {session_id: sessions[i], client_action_id: "forged-turn", expected_revision: 1, decision: {turn: 1, spell_id: "fake", target: "boss"}};
@@ -99,6 +99,7 @@ test("global bosses persist per zone and use trusted sessions", async () => {
         }
       }
       expect(final?.status).toBe("VERIFIED_WIN");
+      expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(players[i].player_id) as any).state_json).homunculus_progress?.cinder?.xp ?? 0).toBe(i === 0 ? 0 : 20);
       const after = (await request("/world/global-bosses", undefined, players[i].token)).data.events[0];
       expect(after.winner_count).toBe(i + 1);
       expect(after.reward_status).toBe("WAITING");
@@ -138,6 +139,7 @@ test("global bosses persist per zone and use trusted sessions", async () => {
       }
     }
     expect(finished.size).toBe(2);
+    for (const i of [4, 5]) expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(players[i].player_id) as any).state_json).homunculus_progress.cinder.xp).toBe(20);
     const raceWinners = db.query("SELECT player_id FROM global_boss_winners WHERE event_id = ? AND player_id IN (?, ?)").all(event.event_id, players[4].player_id, players[5].player_id) as {player_id: string}[];
     expect(raceWinners).toHaveLength(1);
     const fifth = players.findIndex(p => p.player_id === raceWinners[0].player_id);

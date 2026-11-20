@@ -142,6 +142,13 @@ func _run() -> void:
 				_fail("Homunculus details must stay inside the panel and clear of the list")
 				return
 	TranslationServer.set_locale("en")
+	vat_panel_layout._forge_state["homunculus_progress"] = {vat_panel_layout._vat_item: {"level": 3, "xp": 570, "owned": true}}
+	vat_panel_layout._forge_state["wallet"] = {"essence": 0, "core": 0, "arcane_shard": 0}
+	vat_panel_layout._forge_state["lab"]["buildings"]["homunculus_vat"] = {"level": 1}
+	vat_panel_layout._update_vat_status()
+	if not vat_panel_layout._vat_xp.text.contains("570") or not vat_panel_layout._vat_xp.text.contains("863") or vat_panel_layout._vat_mutations[0].disabled:
+		_fail("Vat must show XP and allow free level-gated mutation: %s | %s" % [vat_panel_layout._vat_xp.text, vat_panel_layout._vat_status.text])
+		return
 	for building_id in current_scene.BUILDING_ORDER:
 		current_scene._select_building(building_id)
 		await process_frame

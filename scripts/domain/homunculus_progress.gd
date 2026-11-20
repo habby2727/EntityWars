@@ -1,5 +1,13 @@
 extends RefCounted
 
+static func xp_threshold(level: int) -> int:
+	match clampi(level, 0, 10):
+		0: return 0
+		1: return 100
+		2: return 300
+		3: return 550
+		_: return roundi(800.0 * pow(1.25, level - 1) - 700.0)
+
 static func mutation_catalog() -> Dictionary:
 	var result := {}
 	var file := FileAccess.open("res://data/static/mutations.json", FileAccess.READ)

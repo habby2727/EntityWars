@@ -111,6 +111,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       if (commonResult.status === "VERIFIED_WIN") break;
     }
     expect(commonResult.status).toBe("VERIFIED_WIN");
+    expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(b.data.player_id) as any).state_json).homunculus_progress.cinder.xp).toBe(20);
     expect(commonResult.pve_reward).toEqual({ grants: { essence: 18, ...(coreDrop(common.data.session_id) ? { core: 1 } : {}), ...(shardDrop(common.data.session_id) ? { arcane_shard: 1 } : {}) }, source: "boss", tier: "common" });
     expect(wallet(b.data.player_id).core).toBe(beforeCore + Number(coreDrop(common.data.session_id)));
     expect(wallet(b.data.player_id).essence).toBe(beforeB + 18);
@@ -166,6 +167,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
         }
       }
       expect(terminal.status).toBe("VERIFIED_WIN");
+      expect(JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(account.data.player_id) as any).state_json).homunculus_progress.cinder.xp).toBe(20);
       expect(terminal.pve_reward.grants.essence).toBe(remaining);
       expect(terminal.pve_reward.grants.core ?? 0).toBe(Number(expectedCore));
       expect(wallet(account.data.player_id).core).toBe(coreBefore + Number(expectedCore));

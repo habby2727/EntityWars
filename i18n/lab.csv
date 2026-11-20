@@ -249,3 +249,8 @@ FORGE_REROLL_PRICE,"%d Essence, %d Core%s","%d de esencia, %d núcleos%s"
 FORGE_SHARD_PRICE,", %d Arcane Shard",", %d fragmentos arcanos"
 VAT_MUTATION_REQUIRED,Mutation requires homunculus level 3 (current: %d).,La mutación requiere un homúnculo de nivel 3 (actual: %d).
 VAT_CHOOSE_MUTATION,Choose a mutation above. The current mutation is highlighted.,Elige una mutación arriba. La mutación actual aparece resaltada.
+VAT_XP_PROGRESS,XP: %d / %d to next level,XP: %d / %d para el siguiente nivel
+VAT_XP_MAX,XP: %d | Maximum level,XP: %d | Nivel m?ximo
+VAT_SERVER_REQUIRED,Sign in and wait for server state.,Inicia sesi?n y espera los datos del servidor.
+VAT_WAITING,Waiting for confirmation.,Esperando confirmaci?n.
+VAT_NOT_OWNED,Homunculus not owned.,Hom?nculo no capturado.
