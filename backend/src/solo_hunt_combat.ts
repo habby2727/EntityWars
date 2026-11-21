@@ -1,3 +1,4 @@
+import { combatHomunculusAllowed } from "./homunculus_catalog";
 import { createHmac } from "node:crypto";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "./physical_anomaly";
 import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "./strategic_effects";
@@ -47,14 +48,15 @@ export function deterministicDraw(secret: Uint8Array, sessionId: string, turn: n
 // The caller must obtain snapshot and catalogs from trusted server storage. B4.1
 // does not persist validated selections or the boss entity; B4.2B must do so.
 export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs: any, options: { independentLoadout?: boolean } = {}): any {
-  if (!snapshot || typeof snapshot.player_id !== "string" || !Number.isSafeInteger(snapshot.state_revision) || snapshot.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some(k => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k))) return { error: "UNTRUSTED_SETUP" };
+  if (!snapshot || typeof snapshot.player_id !== "string" || !snapshot.player_id || !Number.isSafeInteger(snapshot.state_revision) || snapshot.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some(k => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k))) return { error: "UNTRUSTED_SETUP" };
   const entity = catalogs.entities?.find((v: any) => v.id === selection.entity_id);
   const bossEntity = catalogs.entities?.find((v: any) => v.id === snapshot.boss_entity_id);
   const boss = catalogs.bosses?.find((v: any) => v.id === snapshot.boss_id);
   if (!entity || !bossEntity || !boss || !Array.isArray(selection.weapon_ids) || selection.weapon_ids.length !== 2 || !Array.isArray(selection.spell_ids) || selection.spell_ids.length !== 4 || new Set(selection.spell_ids).size !== 4 || !["attack", "defense"].includes(selection.mode)) return { error: "UNTRUSTED_SETUP" };
   if (!Array.isArray(catalogs.spells) || !validBossCatalogEntry(boss, catalogs.spells)) return { error: "UNTRUSTED_SETUP" };
   for (const id of selection.weapon_ids) if (id != null && id !== "" && !catalogs.items?.some((v: any) => v.id === id && v.slot === "build")) return { error: "UNTRUSTED_SETUP" };
-  if (selection.homunculus_id && !catalogs.homunculi?.some((v: any) => v.id === selection.homunculus_id)) return { error: "UNTRUSTED_SETUP" };
+  if (!(selection.homunculus_id === null || selection.homunculus_id === undefined || selection.homunculus_id === "" || typeof selection.homunculus_id === "string")) return { error: "UNTRUSTED_SETUP" };
+  if (selection.homunculus_id && (!combatHomunculusAllowed(snapshot.homunculus_progress, selection.homunculus_id) || !catalogs.homunculi?.some((v: any) => v.id === selection.homunculus_id))) return { error: "UNTRUSTED_SETUP" };
   const defaults = catalogs.spells.filter((s: any) => s.type === entity.type).map((s: any) => s.id);
   const learned = snapshot.spell_progress?.learned_by_entity?.[entity.id] ?? [];
   const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;

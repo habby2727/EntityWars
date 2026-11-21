@@ -1,4 +1,5 @@
-import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp, owned, PVE_VICTORY_XP, type HomunculusProgress } from "./homunculus_experience";
+import { ownsHomunculus, combatHomunculusAllowed, legacyHomunculusIds, expeditionHomunculusIds, buildHomunculusCombatCatalog, homunculusCatalog } from "./homunculus_catalog";
+import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp, PVE_VICTORY_XP, type HomunculusProgress } from "./homunculus_experience";
 import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
@@ -214,14 +215,13 @@ type ItemProgress = {
 };
 
 function normalizeHomunculusProgress(value: unknown): Record<string, HomunculusProgress> {
-	return normalizeProgress(value, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
-}
-
-// Old homunculi are implicitly owned; expedition ownership must be persisted.
-function ownsHomunculus(progress: unknown, id: string): boolean {
-	if (staticData.homunculusIds.has(id)) return true;
-	if (!staticData.expeditionHomunculusIds.has(id)) return false;
-	return owned(normalizeHomunculusProgress(progress)[id]);
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const progress = { ...value as Record<string, any> };
+	for (const id of staticData.expeditionHomunculusIds) {
+		const entry = progress[id];
+		if (entry?.owned === true && (!ownsHomunculus(progress, id) || (entry.mutation_id !== undefined && !staticData.mutationIds.has(entry.mutation_id)))) delete progress[id];
+	}
+	return normalizeProgress(progress, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
 }
 
 function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number): void {
@@ -235,7 +235,7 @@ function awardHomunculusVictory(playerId: string, loadoutJson: string | null, no
 	if (!row) throw new HttpError(404, "Player not found.");
 	const player = safeParseState(row.state_json, playerId, row.display_name);
 	if (!player) throw new HttpError(409, "Invalid player state.");
-	if (!ownsHomunculus(player.homunculus_progress, id)) throw new HttpError(409, "Homunculus is not owned.");
+	if (!combatHomunculusAllowed(player.homunculus_progress, id)) throw new HttpError(409, "Homunculus is not available for combat.");
 	const current = player.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
 	player.homunculus_progress[id] = grantXp(current, PVE_VICTORY_XP);
 	player.updated_at = now;
@@ -300,7 +300,7 @@ function getRankedServices() {
 	const secret = Bun.env.PVP_RNG_SECRET;
 	if (!secret || new TextEncoder().encode(secret).length < 32) return null;
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
-	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
+	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().originals, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
 	if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance) throw new Error("PVP_CATALOG_UNAVAILABLE");
 	const matches = createPvpMatches(db, new TextEncoder().encode(secret));
 	rankedServices = { db, matches, queue: createPvpQueue(db, catalogs, (id, selection) => trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs)), chat: createPvpChat(db), ranking: createPvpRanking(db) };
@@ -2274,7 +2274,7 @@ async function startServer(): Promise<void> {
 					const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
 					const payload = { run_id: body.run_id, ...selection };
 					const dataDir = resolve(import.meta.dir, "..", "..", "data");
-					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().originals, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
 					return db.transaction(() => {
 						const now = Date.now();
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
@@ -2286,6 +2286,7 @@ async function startServer(): Promise<void> {
 						if (!row) throw new HttpError(404, "Dungeon run not found.");
 						if (row.status !== "ACTIVE" || row.expires_at <= now || row.loadout_json !== null) throw new HttpError(409, "Dungeon loadout unavailable.");
 						const saved = JSON.parse(row.player_snapshot_json);
+						if (saved.player_id !== undefined && saved.player_id !== playerId) throw new HttpError(400, "Invalid player snapshot.");
 						// Reuse hunt loadout validation only; no boss state or result is created.
 						const trusted = { ...saved, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common };
 						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
@@ -2352,7 +2353,7 @@ async function startServer(): Promise<void> {
 							if (current.terminal_result !== "WIN" || current.floor !== cleared) throw new HttpError(409, "Floor not cleared.");
 							if (cleared >= 1000) throw new HttpError(409, "Dungeon difficulty limit reached.");
 							const dataDir = resolve(import.meta.dir, "..", "..", "data");
-							const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+							const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().originals, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
 							let base: ReturnType<typeof dungeonPreviousBase>;
 							try { base = dungeonPreviousBase(current, catalogs.homunculi); } catch { throw new HttpError(409, "Dungeon base stats unavailable."); }
 							const previousStats = base ?? { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def };
@@ -2652,7 +2653,7 @@ async function startServer(): Promise<void> {
 					const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
 					const payload = { session_id: body.session_id, ...selection };
 					const dataDir = resolve(import.meta.dir, "..", "..", "data");
-					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
+					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().originals, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
 					db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
 					return db.transaction(() => {
 						const now = Date.now();
@@ -2665,6 +2666,7 @@ async function startServer(): Promise<void> {
 						if (row.status !== "ACTIVE" || row.expires_at <= now || row.combat_state_json) throw new HttpError(409, "Session unavailable for initialization.");
 						const boss = JSON.parse(row.boss_snapshot_json);
 						const saved = JSON.parse(row.player_snapshot_json);
+						if (saved.player_id !== undefined && saved.player_id !== playerId) throw new HttpError(400, "Invalid player snapshot.");
 						const trusted = { ...saved, player_id: playerId, state_revision: Number.isSafeInteger(saved.state_revision) ? saved.state_revision : 0, boss_id: row.hunt_id, boss_entity_id: SOLO_HUNT_BOSS_ENTITIES[row.hunt_id] };
 						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
 						const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
@@ -2927,8 +2929,8 @@ function loadStaticData(): StaticData {
 	const staticDir = resolve(import.meta.dir, "..", "..", "data", "static");
 	const entitiesRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "entities.json"), "utf8"));
 	const itemsRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "items.json"), "utf8"));
-	const homunculiRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "homunculi.json"), "utf8"));
-	const expeditionHomunculiRaw = JSON.parse(readFileSync(resolve(staticDir, "expedition_homunculi.json"), "utf8"));
+	const diskHomunculi = buildHomunculusCombatCatalog(JSON.parse(readFileSync(resolve(staticDir, "..", "homunculi.json"), "utf8")), JSON.parse(readFileSync(resolve(staticDir, "expedition_homunculi.json"), "utf8")));
+	if (JSON.stringify(diskHomunculi) !== JSON.stringify(homunculusCatalog())) throw new Error("Homunculus catalog differs from the validated server build.");
 	const mutationsRaw = JSON.parse(readFileSync(resolve(staticDir, "mutations.json"), "utf8"));
 	const itemIds = new Set<string>((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).map((item: any) => item.id).filter((id: unknown): id is string => typeof id === "string"));
 	const itemRarities: Record<string, string> = Object.fromEntries((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).filter((item: any) => typeof item.id === "string" && typeof item.rarity === "string").map((item: any) => [item.id, item.rarity]));
@@ -2944,8 +2946,8 @@ function loadStaticData(): StaticData {
 	if (Object.values(soloBossEntityTypes).some(type => typeof type !== "string" || !type)) throw new Error("Invalid solo boss entity type.");
 	return {
 		itemIds,
-		homunculusIds: new Set<string>((homunculiRaw.homunculi ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
-		expeditionHomunculusIds: new Set<string>((expeditionHomunculiRaw.homunculi ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
+		homunculusIds: legacyHomunculusIds(),
+		expeditionHomunculusIds: expeditionHomunculusIds(),
 		mutationIds: new Set<string>((mutationsRaw.mutations ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
 		itemRarities,
 		resources: resources.ids,

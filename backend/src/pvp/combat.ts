@@ -1,3 +1,4 @@
+import { combatHomunculusAllowed } from "../homunculus_catalog";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "../physical_anomaly";
 import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "../strategic_effects";
 
@@ -80,6 +81,7 @@ function effectiveWeapon(item: any, progress: any, catalogs: PvpCatalogs): any {
 function fighter(snapshot: PvpSnapshot, catalogs: PvpCatalogs): PvpFighter | null {
   if (!snapshot || typeof snapshot.player_id !== "string" || !snapshot.player_id || typeof snapshot.entity_id !== "string" || !Array.isArray(snapshot.weapon_ids) || snapshot.weapon_ids.length !== 2 || !Array.isArray(snapshot.spell_ids) || snapshot.spell_ids.length !== 4 || new Set(snapshot.spell_ids).size !== 4 || !snapshot.spell_ids.every(id => typeof id === "string" && id.length > 0) || !(snapshot.homunculus_id === null || typeof snapshot.homunculus_id === "string")) return null;
   if (![snapshot.item_progress ?? {}, snapshot.homunculus_progress ?? {}, snapshot.spell_progress ?? {}].every(object) || snapshot.weapon_ids.some(id => id !== null && (typeof id !== "string" || !id))) return null;
+  if (snapshot.homunculus_id !== null && !combatHomunculusAllowed(snapshot.homunculus_progress, snapshot.homunculus_id)) return null;
   const entity = catalogs.entities.find(e => e?.id === snapshot.entity_id);
   if (!entity || typeof entity.name !== "string" || typeof entity.type !== "string" || !object(entity.base_stats) || ![entity.base_stats.hp, entity.base_stats.power, entity.base_stats.guard].every(number) || entity.base_stats.hp <= 0 || entity.base_stats.power < 0 || entity.base_stats.guard < 0) return null;
   const weapons = snapshot.weapon_ids.map(id => id === null ? null : catalogs.items.find(i => i?.id === id && i.slot === "build"));

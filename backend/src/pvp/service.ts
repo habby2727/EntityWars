@@ -1,4 +1,5 @@
-﻿import type { Database } from "bun:sqlite";
+import { combatHomunculusAllowed } from "../homunculus_catalog";
+import type { Database } from "bun:sqlite";
 import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { createPvpCombatState, createPvpFighter, validatePvpDecision, resolvePvpExchange, resolvePvpInspiration, type PvpSide, type PvpCatalogs, type PvpSnapshot } from "./combat";
 import { createPvpRanking, pvpRank, pvpRatingDelta, pvpSeason } from "./ranking";
@@ -13,6 +14,7 @@ export function pvpRandom(secret: Uint8Array, matchId: string, battle: number, t
 /** Construct a snapshot exclusively from persisted server state and catalog IDs. */
 export function trustedPvpSnapshot(playerId: string, selection: any, state: any, catalogs: PvpCatalogs): PvpSnapshot | null {
   if (!selection || typeof selection !== "object" || Array.isArray(selection) || Object.keys(selection).some(k => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)) || !state || state.player_id !== playerId || !["attack", "defense"].includes(selection.mode)) return null;
+  if (selection.homunculus_id !== null && !combatHomunculusAllowed(state.homunculus_progress, selection.homunculus_id)) return null;
   const entity = catalogs.entities.find(e => e.id === selection.entity_id);
   const weapons = selection.weapon_ids, ids = selection.spell_ids;
   if (!entity || !Array.isArray(weapons) || weapons.length !== 2 || weapons.some((id: any) => id !== null && (typeof id !== "string" || !catalogs.items.some(i => i.id === id && i.slot === "build"))) || (weapons[0] !== null && weapons[0] === weapons[1]) || !(selection.homunculus_id === null || (typeof selection.homunculus_id === "string" && catalogs.homunculi.some(h => h.id === selection.homunculus_id))) || !Array.isArray(ids) || ids.length !== 4 || new Set(ids).size !== 4) return null;
