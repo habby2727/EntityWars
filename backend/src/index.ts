@@ -243,6 +243,26 @@ function awardHomunculusVictory(playerId: string, loadoutJson: string | null, no
 	if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
 }
 
+function captureExpeditionHomunculus(playerId: string, id: string, now: number): { duplicate: boolean } {
+	if (!expeditionHomunculusIds().has(id)) throw new HttpError(409, "Invalid capture candidate.");
+	const row = getPlayerByIdStmt.get(playerId) as {state_json:string; display_name:string} | undefined;
+	if (!row) throw new HttpError(404, "Player not found.");
+	let raw: any;
+	try { raw = JSON.parse(row.state_json); } catch { throw new HttpError(409, "Invalid player state."); }
+	if (!raw || typeof raw !== "object" || (raw.homunculus_progress !== undefined && (!raw.homunculus_progress || typeof raw.homunculus_progress !== "object" || Array.isArray(raw.homunculus_progress)))) throw new HttpError(409, "Invalid homunculus progress.");
+	const entry = raw.homunculus_progress?.[id];
+	if (entry !== undefined && (!entry || typeof entry !== "object" || Array.isArray(entry) || typeof entry.owned !== "boolean")) throw new HttpError(409, "Invalid homunculus progress.");
+	const duplicate = entry?.owned === true;
+	if (duplicate && !ownsHomunculus(raw.homunculus_progress,id)) throw new HttpError(409, "Invalid owned homunculus.");
+	if (entry && !duplicate && ((entry.level !== undefined && (!Number.isInteger(entry.level) || entry.level < 0 || entry.level > 10)) || (entry.xp !== undefined && (!Number.isSafeInteger(entry.xp) || entry.xp < 0)) || entry.mutation_id !== undefined || entry.mutation_changed_at !== undefined)) throw new HttpError(409, "Invalid homunculus progress.");
+	const player = safeParseState(row.state_json,playerId,row.display_name);
+	if (!player) throw new HttpError(409, "Invalid player state.");
+	player.homunculus_progress[id] = duplicate ? grantXp(player.homunculus_progress[id],20) : {owned:true,level:0,xp:0};
+	player.updated_at = now;
+	if (updatePlayerStmt.run(JSON.stringify(player),now,playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+	return {duplicate};
+}
+
 function normalizeItemProgress(value: unknown): Record<string, ItemProgress> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 	const result: Record<string, ItemProgress> = {};
@@ -300,7 +320,7 @@ function getExpeditionService() {
 	if (expeditionService) return expeditionService;
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
 	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
-	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, makeSetup: (playerId, snapshot, selection) => {
+	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, captureHomunculus: captureExpeditionHomunculus, makeSetup: (playerId, snapshot, selection) => {
 		if (selection.homunculus_id && !ownsHomunculus(snapshot.homunculus_progress, selection.homunculus_id)) return {error:"UNTRUSTED_SETUP"};
 		return buildTrustedCombatSetup({ ...snapshot, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, selection, catalogs, { independentLoadout: true });
 	} });
@@ -2275,7 +2295,7 @@ async function startServer(): Promise<void> {
 					const playerId = await requireAuth(req, ctx);
 					return jsonResponse(getExpeditionService().state(playerId));
 				}
-				if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|skip|advance|exit)$/.test(url.pathname)) {
+				if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|capture|skip|advance|exit)$/.test(url.pathname)) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
 					const body = await readJson(req, config.maxBodyBytes);

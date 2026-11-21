@@ -181,3 +181,9 @@ All backend processes serving the same players must use the same SQLite database
 Notes:
 - The tests will seed player states directly in the dev SQLite DB to set up scenarios.
 - The test runner prints PASS/FAIL per group and exits non-zero on failures.
+
+## Expedition resources and replay retention
+
+`GET /expeditions/state` and Expedition action responses include `mana`, `crystals`, `next_regeneration_at` (UTC milliseconds or `null` when full), and `remaining_cooldown_ms`. `POST /expeditions/capture` accepts `run_id`, `expected_revision`, and `client_action_id`; its result and the latest crystal-drop result are retained in the session as `latest_reward`. Reward events include a stable `reward_id` for display deduplication.
+
+The server retains exact action replays for seven days after a run finishes. Closed-run replay responses are compressed after two hours, and maintenance removes expired Expedition action records and finished runs in bounded batches. After removal, actions referencing that run fail closed; clients must not rely on replaying an old start action after this window.
