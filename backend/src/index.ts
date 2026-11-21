@@ -37,6 +37,7 @@ import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpel
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
 import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
+import { createExpeditionService, ExpeditionError, maintainExpeditionReplays } from "./expeditions_service";
 import { commonAppearance, commonAppearances, guardiansFor } from "./solo_guardians";
 import { globalBossRoll, globalBossTier } from "./global_boss_rotation";
 import { incrementalBossTokens, worldDropAmount } from "./world_economy";
@@ -294,6 +295,17 @@ for (let attempt = 0; ; attempt++) {
 	}
 }
 const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN);
+let expeditionService: ReturnType<typeof createExpeditionService> | null = null;
+function getExpeditionService() {
+	if (expeditionService) return expeditionService;
+	const dataDir = resolve(import.meta.dir, "..", "..", "data");
+	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, makeSetup: (playerId, snapshot, selection) => {
+		if (selection.homunculus_id && !ownsHomunculus(snapshot.homunculus_progress, selection.homunculus_id)) return {error:"UNTRUSTED_SETUP"};
+		return buildTrustedCombatSetup({ ...snapshot, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, selection, catalogs, { independentLoadout: true });
+	} });
+	return expeditionService;
+}
 let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking> } | null = null;
 function getRankedServices() {
 	if (rankedServices) return rankedServices;
@@ -1216,6 +1228,7 @@ async function startServer(): Promise<void> {
 	startDiscordBridge(db, globalChat);
 	const huntMaintenance = setInterval(() => {
 		try { maintainSoloHunts(db, Date.now()); } catch (error) { logError("solo hunt maintenance failed", { error: String(error) }); }
+		try { maintainExpeditionReplays(db, Date.now()); } catch (error) { logError("expedition replay maintenance failed", { error: String(error) }); }
 	}, 60000);
 	huntMaintenance.unref();
 	const server = Bun.serve({
@@ -2258,6 +2271,16 @@ async function startServer(): Promise<void> {
 						return stateResponse(state);
 					}).immediate();
 				}
+				if (url.pathname === "/expeditions/state" && req.method === "GET") {
+					const playerId = await requireAuth(req, ctx);
+					return jsonResponse(getExpeditionService().state(playerId));
+				}
+				if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|skip|advance|exit)$/.test(url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					return jsonResponse(getExpeditionService().action(playerId, url.pathname.split("/").at(-1)!, body));
+				}
 				if (req.method == "GET" && url.pathname == "/dungeon/leaderboard") {
 					const playerId = await requireAuth(req, ctx);
 					const month = url.searchParams.get("month") ?? dungeonSeason(Date.now());
@@ -2872,8 +2895,8 @@ async function startServer(): Promise<void> {
 			} catch (err) {
 				recordError();
 				const sqliteBusy = typeof err === "object" && err !== null && typeof (err as { code?: unknown }).code === "string" && String((err as { code: string }).code).startsWith("SQLITE_BUSY");
-				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
-				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof CombatRewardError ? err.status : 500;
+				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
+				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);

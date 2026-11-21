@@ -1,0 +1,115 @@
+﻿import { expect, test } from "bun:test";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { createServer } from "node:net";
+import { Database } from "bun:sqlite";
+import { expeditionEnemyAt, maintainExpeditionReplays } from "../expeditions_service";
+import { expeditionBackgroundAt, EXPEDITION_BACKGROUNDS } from "../expeditions_backgrounds";
+import { expeditionEnemies } from "../expeditions_rules";
+
+const seed = new Uint8Array(32).fill(29);
+test("shuffle bags exhaust every enemy and background and avoid boundary repeats", () => {
+  const enemies = Array.from({length:84},(_,i)=>expeditionEnemyAt(seed,"run",i));
+  const backgrounds = Array.from({length:78},(_,i)=>expeditionBackgroundAt(seed,"run",i));
+  for(let i=0;i<4;i++) expect(new Set(enemies.slice(i*21,(i+1)*21))).toEqual(new Set(expeditionEnemies.map(e=>e.id)));
+  for(let i=1;i<enemies.length;i++) expect(enemies[i]).not.toBe(enemies[i-1]);
+  for(let i=0;i<3;i++) expect(new Set(backgrounds.slice(i*26,(i+1)*26))).toEqual(new Set(EXPEDITION_BACKGROUNDS));
+  for(let i=1;i<backgrounds.length;i++) expect(backgrounds[i]).not.toBe(backgrounds[i-1]);
+  expect(Array.from({length:21},(_,i)=>expeditionEnemyAt(seed,"another-run",i))).not.toEqual(enemies.slice(0,21));
+  expect(Array.from({length:26},(_,i)=>expeditionBackgroundAt(seed,"another-run",i))).not.toEqual(backgrounds.slice(0,26));
+});
+
+test("authenticated persistent expedition battles, rewards, routing, loss and exit", async () => {
+  const port = await new Promise<number>(done => { const socket=createServer().listen(0,"127.0.0.1",()=>{ const p=(socket.address() as {port:number}).port; socket.close(()=>done(p)); }); });
+  const dir=mkdtempSync(join(tmpdir(),"entitywars-expedition-")), dbPath=join(dir,"test.sqlite"), db=new Database(dbPath);
+  for(const file of readdirSync(resolve(import.meta.dir,"../../migrations/sqlite")).filter(f=>f.endsWith(".sql")).sort()) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",file),"utf8"));
+  const redisPort=await new Promise<number>(done => { const socket=createServer().listen(0,"127.0.0.1",()=>{ const p=(socket.address() as {port:number}).port; socket.close(()=>done(p)); }); });
+  const redis=Bun.spawn([Bun.which("redis-server")!,"--port",String(redisPort),"--bind","127.0.0.1","--save","","--appendonly","no"],{cwd:dir,stdout:"ignore",stderr:"ignore"});
+  const env={...process.env,DB_PATH:dbPath,NODE_ENV:"development",BUN_ENV:"development",HOST:"127.0.0.1",PORT:String(port),DATABASE_URL:"postgres://x:x@127.0.0.1:1/test",REDIS_URL:`redis://127.0.0.1:${redisPort}`,PG_CONNECT_TIMEOUT_SECONDS:"1",AUTH_ACCOUNT_TIMEOUT_MS:"10",DEBUG_BYPASS:"0",WORLD_SECRET:"dev_world_secret",EXPENSIVE_RATE_LIMIT_MAX:"2000"};
+  const spawn=()=>Bun.spawn([process.execPath,"src/index.ts"],{cwd:resolve(import.meta.dir,"../.."),env,stdout:"ignore",stderr:"ignore"});
+  let server=spawn(), serial=0;
+  const request=async(path:string,body?:any,token?:string)=>{const r=await fetch(`http://127.0.0.1:${port}${path}`,{method:body===undefined?"GET":"POST",headers:{"content-type":"application/json",...(token?{authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)}); return {status:r.status,data:await r.json() as any};};
+  const ready=async()=>{for(let i=0;i<100;i++){try{if((await request("/health")).status===200)return;}catch{} await Bun.sleep(100);}throw Error("Server not ready");};
+  const id=()=>`e5b-${serial++}`;
+  const loadout={entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:"cinder",spell_ids:["cinder_fist","furnace_rush","ash_temper","brimstone_crash"],mode:"attack"};
+  try {
+    await ready();
+    let a=(await request("/auth/dev_login",{name:"expedition_test_a"})).data;
+    let b=(await request("/auth/dev_login",{name:"expedition_test_b"})).data;
+    expect((await request("/expeditions/state")).status).toBe(401);
+    const bad=await request("/expeditions/start",{...loadout,homunculus_id:"honin",client_action_id:id()},a.token); expect(bad.status).toBe(400);
+    const startBody={...loadout,client_action_id:id()}, started=await request("/expeditions/start",startBody,a.token);
+    expect(started.status).toBe(200); let session=started.data.session;
+    expect(session.phase).toBe("EXPLORE"); expect(session.choices).toHaveLength(2); expect(session.choices[0].id).not.toBe(session.choices[1].id);
+    expect((await request("/expeditions/start",startBody,a.token)).data).toEqual(started.data);
+    expect((await request("/expeditions/start",{...startBody,entity_id:"sodium_01"},a.token)).status).toBe(409);
+    expect((await request("/expeditions/start",{...loadout,client_action_id:id()},a.token)).status).toBe(409);
+    expect((await request("/expeditions/select",{run_id:session.run_id,expected_revision:session.revision,choice:0,client_action_id:id()},b.token)).status).toBe(404);
+    expect((await request("/expeditions/select",{run_id:session.run_id,expected_revision:session.revision,choice:2,client_action_id:id()},a.token)).status).toBe(400);
+    expect((await request("/expeditions/select",{run_id:session.run_id,expected_revision:session.revision,choice:0,enemy_id:"forged",client_action_id:id()},a.token)).status).toBe(400);
+    server.kill(); await server.exited; server=spawn(); await ready(); a=(await request("/auth/dev_login",{name:"expedition_test_a"})).data; b=(await request("/auth/dev_login",{name:"expedition_test_b"})).data;
+    expect((await request("/expeditions/state",undefined,a.token)).data.session).toEqual(session);
+    let rewardCandidate=false, sawAdvance=false, firstRun=session.run_id, nextBackground="";
+    for(let node=0;node<18 && !rewardCandidate;node++) {
+      if(!session) {
+        const restart=await request("/expeditions/start",{...loadout,client_action_id:id()},a.token); expect(restart.status).toBe(200); session=restart.data.session;
+      }
+      const choice=Math.max(0,session.choices.findIndex((v:any)=>v.capturable));
+      const selected=session.choices[choice], background=session.background_key;
+      const selectBody={run_id:session.run_id,expected_revision:session.revision,choice,client_action_id:id()};
+      const selectedResult=await request("/expeditions/select",selectBody,a.token); expect(selectedResult.status).toBe(200); session=selectedResult.data.session;
+      expect(session.background_key).toBe(background); expect(session.phase).toBe("COMBAT"); expect(session.combat_state.npc.id).toBe(selected.id); expect(session.combat_state.npc.hom_id).toBeNull(); expect(session.combat_state.npc.spell_ids).toBeUndefined();
+      expect((await request("/expeditions/select",selectBody,a.token)).data).toEqual(selectedResult.data);
+      expect((await request("/expeditions/turn",{run_id:session.run_id,expected_revision:session.revision-1,decision:{turn:1,spell_id:"cinder_fist"},client_action_id:id()},a.token)).status).toBe(409);
+      for(let turn=0;turn<100 && session?.phase==="COMBAT";turn++) {
+        if(session.combat_state.player.inspiration_pending) {
+          const inspire=await request("/expeditions/inspiration",{run_id:session.run_id,expected_revision:session.revision,decision:{kind:"decline"},client_action_id:id()},a.token); expect(inspire.status).toBe(200); session=inspire.data.session;
+        }
+        const player=session.combat_state.player;
+        const chosen=player.spell_ids.find((s:string)=>s==="cinder_fist" && !(player.cooldowns[s]>0)) ?? player.spell_ids.find((s:string)=>!(player.cooldowns[s]>0));
+        const turnBody={run_id:session.run_id,expected_revision:session.revision,decision:{turn:session.combat_state.turn+1,spell_id:chosen,...(player.hom_energy>=3?{hom_action:"attack"}:{})},client_action_id:id()};
+        const result=await request("/expeditions/turn",turnBody,a.token); expect(result.status).toBe(200);
+        expect((await request("/expeditions/turn",turnBody,a.token)).data).toEqual(result.data);
+        session=result.data.session;
+      }
+      if(session.phase==="LOSS") { expect((await request("/expeditions/state",undefined,a.token)).data.session).toBeNull(); session=null; continue; }
+      expect(session.phase).toBe("REWARD"); expect(session.background_key).toBe(background);
+      if(selected.capturable) { expect(session.capture_candidate?.id).toBeTruthy(); expect(session.capture_candidate.preview_texture).toContain("_pv.png"); rewardCandidate=true; }
+      else expect(session.capture_candidate).toBeNull();
+      const reconnected=(await request("/expeditions/state",undefined,a.token)).data.session; expect(reconnected).toEqual(session);
+      const skipped=await request("/expeditions/skip",{run_id:session.run_id,expected_revision:session.revision,client_action_id:id()},a.token); expect(skipped.status).toBe(200); session=skipped.data.session; expect(session.directions).toEqual(["left","forward","right"]);
+      const advanced=await request("/expeditions/advance",{run_id:session.run_id,expected_revision:session.revision,direction:"left",client_action_id:id()},a.token); expect(advanced.status).toBe(200); session=advanced.data.session; expect(session.phase).toBe("EXPLORE"); expect(session.background_key).not.toBe(background); expect(session.choices).toHaveLength(2); sawAdvance=true; nextBackground=session.background_key;
+    }
+    expect(rewardCandidate).toBe(true); expect(sawAdvance).toBe(true); expect(nextBackground).toBeTruthy();
+    const second=await request("/expeditions/select",{run_id:session.run_id,expected_revision:session.revision,choice:0,client_action_id:id()},a.token); expect(second.status).toBe(200); session=second.data.session;
+    const secondTurn=await request("/expeditions/turn",{run_id:session.run_id,expected_revision:session.revision,decision:{turn:1,spell_id:"cinder_fist"},client_action_id:id()},a.token); expect(secondTurn.status).toBe(200); session=secondTurn.data.session;
+    expect(session.phase).toBe("COMBAT"); expect(session.background_key).toBe(nextBackground);
+    server.kill(); await server.exited; server=spawn(); await ready(); a=(await request("/auth/dev_login",{name:"expedition_test_a"})).data; b=(await request("/auth/dev_login",{name:"expedition_test_b"})).data;
+    expect((await request("/expeditions/state",undefined,a.token)).data.session).toEqual(session);
+    const exitBody={run_id:session.run_id,expected_revision:session.revision,client_action_id:id()}, exited=await request("/expeditions/exit",exitBody,a.token); expect(exited.status).toBe(200); expect(exited.data.session).toBeNull(); expect(exited.data.remaining_cooldown_ms).toBe(60000);
+    expect((await request("/expeditions/exit",exitBody,a.token)).data).toEqual(exited.data);
+    expect(maintainExpeditionReplays(db,Date.now()+3*60*60*1000)).toBeGreaterThan(0);
+    expect((await request("/expeditions/exit",exitBody,a.token)).data).toEqual(exited.data);
+    expect((await request("/expeditions/start",{...loadout,client_action_id:id()},a.token)).status).toBe(409);
+    expect((await request("/expeditions/state",undefined,a.token)).data.remaining_cooldown_ms).toBeGreaterThan(0);
+    expect((await request("/expeditions/select",{run_id:session.run_id,expected_revision:session.revision,choice:0,client_action_id:id()},a.token)).status).toBe(409);
+    const closed=db.query("SELECT state_json,setup_json,snapshot_json,loadout_json FROM expedition_runs WHERE run_id=?").get(session.run_id) as any; expect(Object.values(closed).every(v=>v===null)).toBe(true);
+    server.kill(); await server.exited; server=spawn(); await ready(); a=(await request("/auth/dev_login",{name:"expedition_test_a"})).data; b=(await request("/auth/dev_login",{name:"expedition_test_b"})).data;
+    expect((await request("/expeditions/state",undefined,a.token)).data.remaining_cooldown_ms).toBeGreaterThan(0);
+    const lossStart=await request("/expeditions/start",{...loadout,client_action_id:id()},b.token); expect(lossStart.status).toBe(200);
+    let losing=lossStart.data.session;
+    const lossSelect=await request("/expeditions/select",{run_id:losing.run_id,expected_revision:losing.revision,choice:0,client_action_id:id()},b.token); expect(lossSelect.status).toBe(200); losing=lossSelect.data.session;
+    const stored=JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(losing.run_id) as any).state_json);
+    stored.combat.player.hp=1; stored.combat.npc.atk=1000; stored.combat.npc.tempo=100;
+    db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(stored),losing.run_id);
+    for(let i=0;i<10 && losing.phase==="COMBAT";i++) {
+      const lossTurn=await request("/expeditions/turn",{run_id:losing.run_id,expected_revision:losing.revision,decision:{turn:losing.combat_state.turn+1,spell_id:"cinder_fist"},client_action_id:id()},b.token);
+      expect(lossTurn.status).toBe(200); losing=lossTurn.data.session;
+    }
+    expect(losing.phase).toBe("LOSS"); expect((await request("/expeditions/state",undefined,b.token)).data.session).toBeNull();
+  } finally {
+    server.kill(); await server.exited; redis.kill(); await redis.exited; db.close();
+    for (let i=0;i<10;i++) { try { rmSync(dir,{recursive:true,force:true}); break; } catch { await Bun.sleep(100); } }
+  }
+},60000);

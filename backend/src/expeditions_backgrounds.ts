@@ -36,10 +36,15 @@ if (EXPEDITION_BACKGROUNDS.length !== 26 || new Set(EXPEDITION_BACKGROUNDS).size
 export function expeditionBackgroundAt(seed: Uint8Array, runId: string, index: number): string {
   if (!runId || !Number.isSafeInteger(index) || index < 0) throw new Error("INVALID_EXPEDITION_BACKGROUND_INDEX");
   const cycle = Math.floor(index / EXPEDITION_BACKGROUNDS.length);
-  const permutation: string[] = [...EXPEDITION_BACKGROUNDS];
-  for (let i = permutation.length - 1; i > 0; i--) {
-    const j = Math.floor(expeditionDraw(seed, JSON.stringify(["background", runId, cycle]), i) * (i + 1));
-    [permutation[i], permutation[j]] = [permutation[j], permutation[i]];
-  }
+  const shuffle = (n: number) => {
+    const permutation: string[] = [...EXPEDITION_BACKGROUNDS];
+    for (let i = permutation.length - 1; i > 0; i--) {
+      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["background", runId, n]), i) * (i + 1));
+      [permutation[i], permutation[j]] = [permutation[j], permutation[i]];
+    }
+    return permutation;
+  };
+  const permutation = shuffle(cycle);
+  if (cycle > 0 && permutation[0] === shuffle(cycle - 1).at(-1)) [permutation[0], permutation[1]] = [permutation[1], permutation[0]];
   return permutation[index % permutation.length];
 }

@@ -2,10 +2,11 @@
 import { expeditionDraw, expeditionEnemies } from "./expeditions_rules";
 
 /** setup must be produced by buildTrustedCombatSetup from server-owned player data. */
-export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, depth: number, capturable: boolean, setup: any, catalogs: any) {
+export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, depth: number, capturable: boolean, setup: any, catalogs: any, enemyId?: string) {
   if (!encounterKey || !Number.isSafeInteger(depth) || depth < 1 || typeof capturable !== "boolean" || !setup?.entity?.base_stats || !Array.isArray(setup.spells) || !Array.isArray(setup.spell_ids) || !Array.isArray(catalogs?.spells)) throw new Error("INVALID_EXPEDITION_SETUP");
   const draw = (label: string) => expeditionDraw(seed, JSON.stringify([encounterKey, depth, label]), 0);
-  const enemy = expeditionEnemies[Math.floor(draw("enemy") * expeditionEnemies.length)];
+  const enemy = enemyId === undefined ? expeditionEnemies[Math.floor(draw("enemy") * expeditionEnemies.length)] : expeditionEnemies.find(e => e.id === enemyId);
+  if (!enemy) throw new Error("INVALID_EXPEDITION_ENEMY");
   const candidates = catalogs.spells.filter((s: any) => expeditionSpellSupported(s, enemy.types)).sort((a: any, b: any) => a.id.localeCompare(b.id));
   const basic = candidates.filter((s: any) => s.category === "attack" && s.cooldown_turns === 0 && s.power_mult > 0);
   if (!basic.length) throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
