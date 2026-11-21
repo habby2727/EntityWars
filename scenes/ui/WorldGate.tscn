@@ -133,8 +133,9 @@ layout_mode = 2
 theme_override_constants/margin_bottom = 18
 
 [node name="ExpeditionButton" type="Button" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ExpeditionMargin"]
-custom_minimum_size = Vector2(0, 56)
+custom_minimum_size = Vector2(420, 68)
 layout_mode = 2
+size_flags_horizontal = 4
 text = "EXPEDITION_START"
 
 [node name="ZonesHeaderRow" type="HBoxContainer" parent="Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox"]

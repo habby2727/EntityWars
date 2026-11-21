@@ -333,8 +333,8 @@ EXPEDITION_CAPTURE,Capture,Capturar
 EXPEDITION_SKIP,Skip and continue,Omitir y continuar
 EXPEDITION_RARITY,Rarity,Rareza
 EXPEDITION_CAPTURE_COUNTS,Attempts remaining: %d / 3   |   Crystals: %d / 5,Intentos restantes: %d / 3   |   Cristales: %d / 5
-EXPEDITION_CAPTURE_SUSPENSE,Attempting capture...,Intentando capturar...
-EXPEDITION_CAPTURE_FAILED,Capture failed.,La captura ha fallado.
+EXPEDITION_CAPTURE_SUSPENSE,Trying to catch...,Intentando capturar...
+EXPEDITION_CAPTURE_FAILED,The homunculus resisted the Crystal.,El hom?nculo resisti? el cristal.
 EXPEDITION_CAPTURE_SUCCESS,Homunculus captured,Homúnculo capturado
 EXPEDITION_DUPLICATE_XP,Duplicate homunculus: +20 XP,Homúnculo duplicado: +20 XP
 EXPEDITION_CRYSTAL_GAINED,Capture crystal gained,Cristal de captura obtenido
@@ -354,3 +354,4 @@ HOM_TYPE,Element: %s,Elemento: %s
 HOM_PASSIVE,Passive: %s,Pasiva: %s
 HOM_CAPTURE_REQUIRED,Requires capture in an expedition.,Requiere capturarlo en una expedici?n.
 HOM_LEVEL_MUTATION,Level %d / 10 | Mutation: %s,Nivel %d / 10 | Mutaci?n: %s
+EXPEDITION_TURN,Turn,Turno

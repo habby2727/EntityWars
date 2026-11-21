@@ -73,7 +73,35 @@ func _run() -> void:
 			await process_frame
 			assert(screen.combat_view.enemy_sprite.texture.resource_path == inspector.enemies[i].texture)
 			assert(screen.combat_view.enemy_sprite.flip_h and not screen.combat_view.player_sprite.flip_h)
+			var combat = screen.combat_view
+			assert(combat.player_hom_sprite.position.x < combat.player_sprite.position.x)
+			assert(combat.enemy_hom_sprite.position.x > combat.enemy_sprite.position.x)
+			assert(combat.player_sprite.position.y + combat.player_sprite.size.y == combat.player_hom_sprite.position.y + combat.player_hom_sprite.size.y)
+			assert(combat.enemy_sprite.position.y + combat.enemy_sprite.size.y == combat.enemy_hom_sprite.position.y + combat.enemy_hom_sprite.size.y)
+			assert(combat.player_hp.size.x == 220 and combat.enemy_hp.size.x == 220)
+			assert(combat.stage.get_node("BattleLog").size.x == 620)
+			assert(combat.stage.get_node("SpellPanel/SpellGrid").columns == 2 and combat.spell_buttons.size() == 4)
+			assert(combat.weapon_buttons.size() == 2)
+			assert(combat.weapon_buttons[0].position.x >= combat.player_hp.position.x)
+			assert(combat.weapon_buttons[1].position.x + combat.weapon_buttons[1].size.x <= combat.stage.get_node("BattleLog").position.x)
+			assert(combat.stage.get_node("PlayerHomunculusMeter") and combat.stage.get_node("EnemyHomunculusMeter"))
+			assert(combat.stage.get_node_or_null("EnemyWeaponSlot1") == null)
+			assert(combat.stage.get_node("PlayerHomunculusMeter").position.y >= combat.player_hom_sprite.position.y + combat.player_hom_sprite.size.y)
+			assert(combat.stage.get_node("EnemyHomunculusMeter").position.y >= combat.enemy_hom_sprite.position.y + combat.enemy_hom_sprite.size.y)
+			assert(combat.hom_attack.position.y >= combat.stage.get_node("PlayerHomunculusMeter").position.y + combat.stage.get_node("PlayerHomunculusMeter").size.y * combat.stage.get_node("PlayerHomunculusMeter").scale.y)
+			assert(combat.player_hom_sprite.position.x + combat.player_hom_sprite.size.x <= combat.player_sprite.position.x)
+			assert(combat.enemy_sprite.position.x + combat.enemy_sprite.size.x <= combat.enemy_hom_sprite.position.x)
+			assert(not screen.background_shade.visible)
+			assert(not combat.spell_buttons[0].tooltip_text.is_empty())
+			assert(combat.stage.get_node("PlayerHomunculusMeter").find_child("HomTypeAndAttack", true, false) != null)
+			assert(combat.stage.get_node("EnemyHomunculusMeter").find_child("HomTypeAndAttack", true, false) != null)
 			assert(screen.combat_view.spell_buttons.all(func(button): return button.disabled))
+			if i == 0:
+				assert(combat.log.get_parsed_text().contains("Cinder Fist"))
+				combat.log.meta_clicked.emit("cinder_fist")
+				var dialogs: Array = combat.find_children("*", "AcceptDialog", true, false)
+				assert(dialogs.size() == 1)
+				dialogs[0].queue_free()
 		for i in (range(1) if capture_mode else range(inspector.homunculi.size())):
 			inspector.select_hom(i)
 			await process_frame
@@ -118,8 +146,10 @@ func _run() -> void:
 		assert(screen.pending.is_empty() and screen.backend == null)
 		inspector.preview_action("failure")
 		assert(screen.message.text == screen.tr("EXPEDITION_CAPTURE_FAILED"))
+		assert(screen.capture_heading.text == screen.tr("EXPEDITION_CAPTURE_FAILED"))
 		inspector.preview_action("suspense")
 		assert(screen.playing_events and is_instance_valid(screen.capture_tween))
+		assert(screen.capture_heading.text == screen.tr("EXPEDITION_CAPTURE_SUSPENSE"))
 		inspector.preview_action("duplicate")
 		assert(is_instance_valid(screen.reward_popup))
 		assert(screen.reward_popup.find_children("*", "Label", true, false).any(func(label): return label.text == screen.tr("EXPEDITION_DUPLICATE_XP")))
@@ -142,8 +172,14 @@ func _run() -> void:
 		assert(screen.find_children("*", "VideoStreamPlayer", true, false).size() == 1)
 	for resized in [Vector2i(1024, 768), Vector2i(1500, 800)]:
 		root.size = resized
-		inspector.set_phase(0)
+		inspector.set_phase(1)
 		await process_frame
+		await process_frame
+		var combat = screen.combat_view
+		assert(combat.stage.position.x >= 0 and combat.stage.position.y >= 0)
+		assert(combat.stage.position.x + 1920 * combat.stage.scale.x <= combat.size.x + 1)
+		assert(combat.stage.position.y + 900 * combat.stage.scale.y <= combat.size.y + 1)
+		inspector.set_phase(0)
 		await process_frame
 		screen._fit_video()
 		assert(screen.video.size.x >= screen.video_clip.size.x and screen.video.size.y >= screen.video_clip.size.y)

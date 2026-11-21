@@ -56,3 +56,28 @@ func set_fighter(fighter: Dictionary) -> void:
 	_state.text = tr("HOM_SACRIFICED") if spent else "%d / 6  |  %s" % [energy, tr("HOM_OVERCHARGED") if energy >= 6 else tr("HOM_READY") if energy >= 3 else tr("HOM_CHARGING")]
 	tooltip_text = tr("HOM_STATUS_HINT").replace("\\n", "\n") % energy
 	modulate = Color(0.65, 0.65, 0.65) if spent else Color.WHITE
+
+# Expedition homunculi have their own elemental affinity and named passive.
+func set_expedition_type(type_id: String, attack_name: String) -> void:
+	if type_id.is_empty() or _title == null: return
+	custom_minimum_size.x = 190
+	_bar.custom_minimum_size.x = 178
+	_title.add_theme_font_size_override("font_size", 16)
+	_state.add_theme_font_size_override("font_size", 16)
+	var row := HBoxContainer.new()
+	row.name = "HomTypeAndAttack"
+	row.add_theme_constant_override("separation", 4)
+	var content := _title.get_parent()
+	content.add_child(row)
+	content.move_child(row, 1)
+	var icon := preload("res://scripts/ui/combat_type_icon.gd").new()
+	row.add_child(icon)
+	icon.configure(type_id)
+	var name_label := Label.new()
+	name_label.name = "AttackName"
+	name_label.text = attack_name
+	name_label.clip_text = true
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.tooltip_text = attack_name
+	row.add_child(name_label)

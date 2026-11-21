@@ -14,6 +14,7 @@ var state_data := {}
 var background_key := ""
 var video: VideoStreamPlayer
 var video_clip: Control
+var background_shade: ColorRect
 var content: VBoxContainer
 var status: Label
 var message: Label
@@ -30,6 +31,7 @@ var back_button: Button
 var exit_button: Button
 var exit_confirmation: ConfirmationDialog
 var capture_sprite: TextureRect
+var capture_heading: Label
 var capture_tween: Tween
 var capture_started := 0
 var reward_popup: CanvasLayer
@@ -176,11 +178,11 @@ func _build_ui() -> void:
 	video.finished.connect(func(): if video.stream != null: video.play())
 	video_clip.add_child(video)
 	resized.connect(_fit_video)
-	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.38)
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(shade)
+	background_shade = ColorRect.new()
+	background_shade.color = Color(0, 0, 0, 0.38)
+	background_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(background_shade)
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right", "top", "bottom"]: margin.add_theme_constant_override("margin_" + side, 36)
@@ -219,8 +221,27 @@ func _build_ui() -> void:
 	exit_button.hide()
 	exit_confirmation = ConfirmationDialog.new()
 	exit_confirmation.title = tr("EXPEDITION_EXIT")
+	exit_confirmation.borderless = true
+	exit_confirmation.transparent = true
+	exit_confirmation.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
+	exit_confirmation.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
+	exit_confirmation.min_size = Vector2i(750, 320)
+	exit_confirmation.ok_button_text = tr("UI_CONFIRM")
+	exit_confirmation.cancel_button_text = tr("COMBAT_STAY")
 	exit_confirmation.dialog_text = tr("EXPEDITION_RISK_WARNING")
 	exit_confirmation.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	exit_confirmation.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(64, 50, 64, 45)))
+	exit_confirmation.get_label().horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	exit_confirmation.get_label().add_theme_font_size_override("font_size", 22)
+	MenuArt.button(exit_confirmation.get_ok_button())
+	MenuArt.button(exit_confirmation.get_cancel_button())
+	var exit_shade := ColorRect.new()
+	exit_shade.color = Color(0, 0, 0, 0.72)
+	exit_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	exit_shade.hide()
+	add_child(exit_shade)
+	exit_confirmation.about_to_popup.connect(exit_shade.show)
+	exit_confirmation.visibility_changed.connect(func(): exit_shade.visible = exit_confirmation.visible)
 	exit_confirmation.confirmed.connect(func(): _send_phase_action("exit"))
 	add_child(exit_confirmation)
 	body = Control.new()
@@ -509,6 +530,7 @@ func _send_phase_action(kind: String, direction: String = "") -> void:
 		_forfeit()
 
 func _start_capture_animation() -> void:
+	_set_capture_heading("EXPEDITION_CAPTURE_SUSPENSE")
 	playing_events = true
 	playback_epoch += 1
 	capture_started = Time.get_ticks_msec()
@@ -547,11 +569,15 @@ func _candidate(id: String = "") -> Dictionary:
 			return record
 	return {}
 
+func _set_capture_heading(key: String) -> void:
+	if is_instance_valid(capture_heading): capture_heading.text = tr(key)
+
 func _present_reward(event: Variant) -> void:
 	if visual_debug: return
 	if not event is Dictionary or account_id.is_empty() or is_instance_valid(reward_popup): return
 	var kind := str(event.get("kind", ""))
 	if kind == "capture_failure":
+		_set_capture_heading("EXPEDITION_CAPTURE_FAILED")
 		message.text = tr("EXPEDITION_CAPTURE_FAILED")
 		return
 	if kind != "capture_success" and not (kind == "crystal_drop" and bool(event.get("granted", false))): return
@@ -603,6 +629,7 @@ func _duration(ms: int) -> String:
 	return "%02d:%02d:%02d" % [seconds / 3600, (seconds / 60) % 60, seconds % 60]
 
 func _clear_body() -> void:
+	capture_heading = null
 	phase_buttons.clear()
 	capture_sprite = null
 	for child in body.get_children():
@@ -610,6 +637,7 @@ func _clear_body() -> void:
 		child.queue_free()
 
 func _render() -> void:
+	background_shade.visible = str(session.get("phase", "")) not in ["EXPLORE", "COMBAT"]
 	_clear_body()
 	_update_status()
 	_update_controls()
@@ -692,7 +720,8 @@ func _render_terminal(won: bool) -> void:
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	center.add_child(box)
-	box.add_child(_label(tr("EXPEDITION_VICTORY" if won else "EXPEDITION_DEFEAT"), 48))
+	capture_heading = _label(tr("EXPEDITION_VICTORY" if won else "EXPEDITION_DEFEAT"), 48)
+	box.add_child(capture_heading)
 	var candidate: Variant = session.get("capture_candidate")
 	var reward: Variant = session.get("reward_homunculus")
 	if won and reward is Dictionary:

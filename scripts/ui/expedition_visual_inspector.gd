@@ -201,6 +201,7 @@ func preview_action(action: String) -> void:
 	if action in ["suspense", "failure"]:
 		if PHASES[phase_index] != "REWARD": set_phase(PHASES.find("REWARD"))
 		if action == "failure":
+			host._set_capture_heading("EXPEDITION_CAPTURE_FAILED")
 			host.message.text = host.tr("EXPEDITION_CAPTURE_FAILED")
 		else:
 			host._start_capture_animation()
