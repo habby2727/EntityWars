@@ -270,6 +270,11 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         firePassive(side, "before_exchange");
       }
     }
+    for (const side of sides) {
+      const owner: any = next.fighters[side], choice = decisions[side];
+      const chosen = owner.spells.find((entry: any) => entry.id === choice.spell_id);
+      if (!owner.hom_spent && owner.expedition_passive?.id === "luny" && (owner.status.stun ?? 0) <= 0 && chosen?.category === "attack" && chosen.power_mult > 0) firePassive(side, "before_attack", 0, chosen);
+    }
     const l = pvpInitiative(next.fighters.left), r = pvpInitiative(next.fighters.right);
     next.fighters.left = l.fighter; next.fighters.right = r.fighter;
     const order = normalInitiativeOrder(l.initiative, r.initiative);

@@ -80,6 +80,7 @@ var _entities: Array = []
 var _homunculi: Array = []
 var _hom_progress: Dictionary = {}
 var _hom_identity := ""
+var _pending_restored_hom := ""
 var _hom_backend: BackendClient
 var _items: Array = []
 var _atk_techs: Array = []
@@ -1465,6 +1466,7 @@ func _on_card_picked(p_kind: String, p_id: String) -> void:
 	if p_kind == "entity":
 		_current_entity_id = p_id
 	elif p_kind == "homunculus":
+		_pending_restored_hom = ""
 		if not _is_combat_hom(p_id):
 			_set_build_error(tr("HOM_CAPTURE_REQUIRED") if _hom_status(p_id) == "locked" else tr("HOM_STATUS_UNKNOWN") if _hom_status(p_id) == "unknown" else tr("LOADOUT_HOM_PENDING"))
 			return
@@ -1901,6 +1903,10 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	# Practice uses local simulation; expedition passive parity is not yet available.
+	if not _hunt_mode and not _dungeon_mode and (ranked_queue == null or not ranked_queue.selected) and _reg != null and not _reg.get_homunculi().has(_current_homunculus_id):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return
 	if not _is_combat_hom(_current_homunculus_id):
 		_set_build_error(tr("LOADOUT_HOM_PENDING"))
 		return
@@ -2153,6 +2159,7 @@ func _restore_build_preferences(player_id: String) -> void:
 		return
 	var entity_id := str(build.get("entity_id", ""))
 	var hom_id := str(build.get("homunculus_id", ""))
+	_pending_restored_hom = hom_id if _hom_status(hom_id) == "unknown" and not _find_by_id(_homunculi, hom_id).is_empty() else ""
 	if not _find_by_id(_entities, entity_id).is_empty():
 		_current_entity_id = entity_id
 	_current_homunculus_id = hom_id if _is_combat_hom(hom_id) else _legacy_hom_fallback()
@@ -2439,7 +2446,9 @@ func _on_ready() -> void:
 	print("READY (attack) - next: combat scene should consume user://seal_attack.json")
 
 func _is_combat_hom(id: String) -> bool:
-	return _reg != null and _reg.get_homunculi().has(id)
+	if _reg == null or not _reg.get_homunculus_collection().has(id):
+		return false
+	return _hom_status(id) == "owned"
 
 func _payload_hom_safe(payload: Dictionary) -> bool:
 	var id := str(payload.get("homunculus_id", "")) if payload.get("homunculus_id") != null else ""
@@ -2451,11 +2460,13 @@ func _legacy_hom_fallback() -> String:
 
 func _hom_status(id: String) -> String:
 	var synced := not _hom_identity.is_empty() and _hom_identity == _verified_preferences_identity()
-	return HomProgress.collection_status(id, _is_combat_hom(id), _hom_progress, synced)
+	return HomProgress.collection_status(id, _reg != null and _reg.get_homunculi().has(id), _hom_progress, synced)
 
 func _clear_hom_ownership() -> void:
 	_hom_identity = ""
 	_hom_progress = {}
+	_pending_restored_hom = ""
+	_revalidate_hom_selection()
 	_refresh_hom_cards()
 
 func _update_hom_ownership(state: Dictionary, backend: BackendClient, expected: String = "") -> void:
@@ -2466,6 +2477,13 @@ func _update_hom_ownership(state: Dictionary, backend: BackendClient, expected: 
 	_hom_identity = identity
 	var progress: Variant = state.get("homunculus_progress", {})
 	_hom_progress = progress.duplicate(true) if progress is Dictionary else {}
+	if not _pending_restored_hom.is_empty() and identity == _verified_preferences_identity():
+		if _is_combat_hom(_pending_restored_hom):
+			_current_homunculus_id = _pending_restored_hom
+			_update_selected_visuals()
+			_refresh_details()
+		_pending_restored_hom = ""
+	_revalidate_hom_selection()
 	_refresh_hom_cards()
 
 func _hom_texture(hom: Dictionary) -> Texture2D:
@@ -2514,5 +2532,11 @@ func _update_hom_card(card: Control, hom: Dictionary) -> void:
 			parts.append(tr("HOM_CAPTURE_REQUIRED"))
 			if status == "unknown": parts.append(tr("HOM_STATUS_UNKNOWN"))
 		else:
-			parts.append(tr("LOADOUT_HOM_PENDING"))
+			parts.append(tr("HOM_STATUS_OWNED"))
 	card.tooltip_text = "\n".join(parts)
+
+func _revalidate_hom_selection() -> void:
+	if _cards_ready and not _current_homunculus_id.is_empty() and not _is_combat_hom(_current_homunculus_id):
+		_current_homunculus_id = _legacy_hom_fallback()
+		_update_selected_visuals()
+		_refresh_details()

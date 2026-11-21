@@ -398,6 +398,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     return true;
   };
   try {
+    if (!switching && next.player.expedition_passive?.id === "luny" && (next.player.status.stun ?? 0) <= 0 && spell.category === "attack" && spell.power_mult > 0) firePassive("before_attack", target, 0, spell);
     const playerFirst = (next.player.tempo ?? 10) + (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) + (modifiers().tempo_flat ?? 0) >= (next.boss.tempo ?? 10) + (next.boss.status.tempo_bonus ?? 0);
   for (const [id, fighter] of [["player", next.player], ["boss", next.boss]] as [string, any][]) {
     if (fighter.status.tempo_bonus) events.push({ actor: id, kind: "status_consumed", target: id, status: "tempo_bonus", previous: fighter.status.tempo_bonus });

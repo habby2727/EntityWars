@@ -46,12 +46,13 @@ func _run() -> void:
 		assert(screen._hom_status("astralotl") == "owned" and not card.get_node("HomLock").visible)
 		assert(scroll.scroll_vertical == pos)
 		screen._on_card_picked("homunculus", "astralotl")
-		assert(screen._current_homunculus_id == legacy and screen.lbl_build_error.text == screen.tr("LOADOUT_HOM_PENDING"))
+		assert(screen._current_homunculus_id == "astralotl" and screen._is_combat_hom("astralotl"))
 		var account_b := account + "-b"
 		backend._verified_player_id = account_b
 		assert(screen._hom_status("astralotl") == "unknown")
 		screen._update_hom_ownership({"player_id":account_b, "homunculus_progress":{}}, backend)
 		assert(screen._hom_status("astralotl") == "locked" and card.get_node("HomLock").visible)
+		assert(screen._current_homunculus_id == legacy)
 		screen._clear_hom_ownership()
 		assert(screen._hom_status("astralotl") == "unknown")
 		assert(not screen._payload_hom_safe({"homunculus_id":"astralotl"}) and screen._payload_hom_safe({"homunculus_id":legacy}))

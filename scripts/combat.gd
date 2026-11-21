@@ -2142,7 +2142,10 @@ func _load_player_from_seal() -> bool:
 		var hom_id := str(data.get("homunculus_id", ""))
 		var first := str(data.get("equip_1", ""))
 		var second := str(data.get("equip_2", ""))
-		if _find_by_id(_entities, entity_id).is_empty() or _find_by_id(_homunculi, hom_id).is_empty():
+		var valid_hom := not _find_by_id(_homunculi, hom_id).is_empty()
+		if not valid_hom and not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty() and _combat_backend != null and not _combat_backend.token.is_empty() and _combat_identity == _combat_backend._verified_player_id and str(_combat_spell_state.get("player_id", "")) == _combat_identity:
+			valid_hom = not _online_homunculus(hom_id).is_empty() and preload("res://scripts/domain/homunculus_progress.gd").collection_status(hom_id, false, _combat_spell_state.get("homunculus_progress", {}), true) == "owned"
+		if _find_by_id(_entities, entity_id).is_empty() or not valid_hom:
 			return false
 		if (not first.is_empty() and _find_by_id(_items, first).is_empty()) or (not second.is_empty() and _find_by_id(_items, second).is_empty()) or (not first.is_empty() and first == second):
 			return false
