@@ -8,6 +8,11 @@ static func _get_catalog() -> AssetCatalog:
 		_catalog = AssetCatalog.new()
 	return _catalog
 
+static func release_cache() -> void:
+	if is_instance_valid(_catalog):
+		_catalog.free()
+	_catalog = null
+
 static func build_theme() -> Theme:
 	var theme := Theme.new()
 	var catalog := _get_catalog()

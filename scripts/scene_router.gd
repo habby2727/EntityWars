@@ -144,7 +144,8 @@ static func go_to_trade_hall() -> void:
 	_go_to(SCENE_TRADE_HALL, "TradeHall")
 
 static func go_to_expeditions() -> void:
-	_expedition_context.erase("loadout")
+	if not _connection_gate().debug_lab_navigation_allowed():
+		_expedition_context.erase("loadout")
 	_go_to(SCENE_EXPEDITIONS, "Expeditions")
 
 static func go_to_world_gate() -> void:

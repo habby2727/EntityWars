@@ -38,10 +38,26 @@ func _run() -> void:
 		assert(await _wait_revision(screen, revision + 1))
 		if screen.session.phase == "REWARD": break
 	assert(screen.session.phase == "REWARD" and screen.video.stream == background)
-	assert(not is_instance_valid(screen.combat_view))
+	assert(not is_instance_valid(screen.combat_view) or not screen.combat_view.is_inside_tree())
 	var candidate: Dictionary = screen.session.capture_candidate
 	assert(screen.capture_sprite.texture.resource_path == "res://assets/entities/gameplay/homunculus/ingame/1024/%s.png" % candidate.id)
 	assert(int(screen.state_data.crystals) == 3)
+	# Presentation-only fixtures cover each result independently of capture RNG.
+	var failure := {"kind":"capture_failure", "reward_id":"fixture-failure"}
+	screen._present_reward(failure)
+	assert(not is_instance_valid(screen.reward_popup) and screen.message.text == screen.tr("EXPEDITION_CAPTURE_FAILED"))
+	for duplicate in [false, true]:
+		var fixture := {"kind":"capture_success", "reward_id":"fixture-duplicate" if duplicate else "fixture-success", "candidate_id":candidate.id, "preview_texture":candidate.preview_texture, "duplicate":duplicate, "duplicate_xp":20 if duplicate else 0}
+		screen._present_reward(fixture)
+		assert(is_instance_valid(screen.reward_popup))
+		var pictures: Array = screen.reward_popup.find_children("*", "TextureRect", true, false)
+		assert(pictures.size() == 1 and pictures[0].texture.resource_path == candidate.preview_texture)
+		var expected_title: String = screen.tr("EXPEDITION_DUPLICATE_XP" if duplicate else "EXPEDITION_CAPTURE_SUCCESS")
+		assert(screen.reward_popup.find_children("*", "Label", true, false).any(func(label): return label.text == expected_title))
+		screen.reward_popup.acknowledged.emit()
+		assert(Seen.has_seen(player_id, fixture.reward_id))
+		screen._present_reward(fixture)
+		assert(not is_instance_valid(screen.reward_popup))
 	var before := int(screen.session.revision)
 	screen._send_phase_action("capture")
 	var capture_pending: Dictionary = screen.pending.duplicate(true)

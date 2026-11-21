@@ -16,6 +16,7 @@ var inspiration_buttons: Array[Button] = []
 var decline_button: Button
 var hom_attack: CheckButton
 var player_sprite: TextureRect
+var player_hom_sprite: TextureRect
 var enemy_sprite: TextureRect
 var player_hp: ProgressBar
 var enemy_hp: ProgressBar
@@ -45,6 +46,12 @@ func _build() -> void:
 	actors.add_child(_fighter(enemy, true, state))
 	var log_panel := PanelContainer.new()
 	log_panel.custom_minimum_size.y = 112
+	var log_style := StyleBoxFlat.new()
+	log_style.bg_color = Color(0.01, 0.025, 0.04, 0.92)
+	log_style.border_color = Color("397d89")
+	log_style.set_border_width_all(1)
+	log_style.set_content_margin_all(6)
+	log_panel.add_theme_stylebox_override("panel", log_style)
 	main.add_child(log_panel)
 	log = RichTextLabel.new()
 	log.fit_content = false
@@ -61,6 +68,8 @@ func _build() -> void:
 		var item_id := str(equipped[i].get("id", "")) if i < equipped.size() and equipped[i] is Dictionary and equipped[i].get("id") != null else ""
 		var item: Dictionary = registry.get_items().get(item_id, {})
 		var button := Button.new()
+		button.add_theme_font_size_override("font_size", 20)
+		button.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 		button.text = "%s %d: %s%s" % [tr("EXPEDITION_WEAPON"), i + 1, GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id))) if not item_id.is_empty() else "—", " ✓" if int(state.get("active_weapon_slot", 0)) == i + 1 else ""]
 		button.disabled = item_id.is_empty() or int(state.get("active_weapon_slot", 0)) == i + 1 or bool(player.get("inspiration_pending", false))
 		button.pressed.connect(_switch.bind(i + 1))
@@ -69,6 +78,8 @@ func _build() -> void:
 		weapon_buttons.append(button)
 		controls.append(button)
 	hom_attack = CheckButton.new()
+	hom_attack.add_theme_font_size_override("font_size", 20)
+	hom_attack.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 	hom_attack.text = tr("EXPEDITION_HOM_ATTACK")
 	hom_attack.disabled = player.get("hom_id") == null or int(player.get("hom_energy", 0)) < 3 or bool(player.get("inspiration_pending", false))
 	hom_attack.tooltip_text = tr("EXPEDITION_HOM_HINT")
@@ -91,6 +102,7 @@ func _build() -> void:
 		spells.add_child(slot)
 		slot.add_child(button)
 		var detail := Button.new()
+		detail.add_theme_font_size_override("font_size", 18)
 		detail.text = tr("EXPEDITION_SPELL_DETAIL")
 		detail.disabled = spell.is_empty()
 		MenuArt.button(detail)
@@ -201,6 +213,7 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> Control:
 			var legacy := {"cinder":"Cinder", "chimera":"Chimera", "drakon":"Drakon", "mothy":"Mothy", "nighty":"Nighty", "pyritc":"Pyro", "silphide":"Silphide", "sodium":"Sodi"}
 			hom_path = "res://assets/entities/gameplay/homunculus/ingame/1024/%s.png" % str(legacy.get(hom_id, ""))
 		var hom_image := TextureRect.new()
+		player_hom_sprite = hom_image
 		hom_image.custom_minimum_size = Vector2(150, 120)
 		hom_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		hom_image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -214,6 +227,8 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> Control:
 
 func _spell_button(spell: Dictionary, cooldown: int = 0) -> Button:
 	var button := Button.new()
+	button.add_theme_font_size_override("font_size", 21)
+	button.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 	button.custom_minimum_size = Vector2(230, 90)
 	var id := str(spell.get("id", ""))
 	button.text = "%s\n%s  |  %s%%  |  CD %d" % [GameLocalization.catalog("spell", id, "name", str(spell.get("name", id))), str(roundi(float(spell.get("power_mult", 0)) * 100)) + "%", roundi(float(spell.get("accuracy", 0)) * 100), cooldown]
@@ -258,6 +273,8 @@ func _build_inspiration(main: VBoxContainer, player: Dictionary) -> void:
 		controls.append(button)
 		inspiration_buttons.append(button)
 	var decline := Button.new()
+	decline.add_theme_font_size_override("font_size", 20)
+	decline.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 	decline_button = decline
 	decline.text = tr("EXPEDITION_DECLINE")
 	MenuArt.button(decline)
@@ -287,7 +304,9 @@ func _append_event(event: Dictionary) -> void:
 		var id := str(event.spell_id)
 		var spell: Dictionary = registry.get_spell_by_id(id)
 		line += " — " + GameLocalization.catalog("spell", id, "name", str(spell.get("name", id)))
-	if event.has("status"): line += " — " + str(event.status).replace("_", " ").capitalize()
+	if event.has("status"):
+		var status_id := str(event.status)
+		line += " — " + GameLocalization.catalog("status_name", status_id, "name", status_id.replace("_", " ").capitalize())
 	if event.has("item_id"):
 		var item_id := str(event.item_id)
 		var item: Dictionary = registry.get_items().get(item_id, {})

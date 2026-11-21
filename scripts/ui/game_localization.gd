@@ -2,6 +2,9 @@ extends Node
 
 const SETTINGS_PATH := "user://settings.cfg"
 
+func _exit_tree() -> void:
+	UIThemeFactory.release_cache()
+
 func _enter_tree() -> void:
 	var config := ConfigFile.new()
 	config.load(SETTINGS_PATH)

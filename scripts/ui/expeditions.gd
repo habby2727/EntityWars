@@ -36,11 +36,17 @@ var capture_tween: Tween
 var capture_started := 0
 var reward_popup: CanvasLayer
 var phase_buttons: Array[Button] = []
+var visual_debug := false
+var visual_debug_entry: Button
+var visual_inspector: Control
 
 func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, clampf(minf(get_viewport_rect().size.x / 1920.0, get_viewport_rect().size.y / 1080.0), 0.65, 1.0))
 	$Background.hide()
 	_build_ui()
+	if _visual_debug_allowed():
+		status.text = "VISUAL DEBUG · OFFLINE"
+		return
 	backend = BackendClient.new()
 	backend.auto_dev_login = false
 	backend.state_updated.connect(_identity_changed)
@@ -53,6 +59,43 @@ func _exit_tree() -> void:
 	if is_instance_valid(video):
 		video.stop()
 		video.stream = null
+
+func _visual_debug_allowed() -> bool:
+	return OS.has_feature("editor") and get_node("/root/ConnectionGate").debug_lab_navigation_allowed()
+
+func _enter_visual_debug() -> void:
+	if not _visual_debug_allowed() or backend != null or visual_debug: return
+	visual_debug = true
+	visual_debug_entry.hide()
+	retry.hide()
+	visual_inspector = preload("res://scripts/ui/expedition_visual_inspector.gd").new()
+	content.add_child(visual_inspector)
+	content.move_child(visual_inspector, body.get_index())
+	visual_inspector.configure(self)
+
+func debug_render(sample: Dictionary) -> void:
+	if not visual_debug or not _visual_debug_allowed(): return
+	_stop_capture_animation()
+	playing_events = false
+	playback_epoch += 1
+	if is_instance_valid(reward_popup): reward_popup.queue_free()
+	reward_popup = null
+	session = sample.duplicate(true)
+	state_data = {"mana":4, "crystals":3, "server_time_unix_ms":0, "next_regeneration_at":null, "remaining_cooldown_ms":0}
+	received_ticks = Time.get_ticks_msec()
+	resumed = true
+	_render()
+	status.text = "VISUAL DEBUG · OFFLINE"
+	if is_instance_valid(combat_view): combat_view.lock_controls()
+
+func debug_popup(title: String, texture: Texture2D, detail: String) -> void:
+	if not visual_debug or not _visual_debug_allowed() or texture == null: return
+	if is_instance_valid(reward_popup): reward_popup.queue_free()
+	var popup := preload("res://scripts/ui/expedition_reward_popup.gd").new()
+	reward_popup = popup
+	add_child(popup)
+	popup.acknowledged.connect(func(): reward_popup = null; popup.queue_free())
+	popup.show_reward(title, texture, detail)
 
 func _build_ui() -> void:
 	video_clip = Control.new()
@@ -99,6 +142,12 @@ func _build_ui() -> void:
 	MenuArt.button(retry)
 	retry.pressed.connect(_refresh)
 	top.add_child(retry)
+	if _visual_debug_allowed():
+		visual_debug_entry = Button.new()
+		visual_debug_entry.text = "VISUAL DEBUG"
+		MenuArt.button(visual_debug_entry)
+		visual_debug_entry.pressed.connect(_enter_visual_debug)
+		top.add_child(visual_debug_entry)
 	exit_button = Button.new()
 	exit_button.text = tr("EXPEDITION_EXIT")
 	MenuArt.button(exit_button)
@@ -149,6 +198,17 @@ func _identity_changed(state: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	if video.is_playing(): _fit_video()
+	if visual_debug:
+		if not _visual_debug_allowed():
+			visual_debug = false
+			playing_events = false
+			_stop_capture_animation()
+			_set_background("")
+			_clear_body()
+			if is_instance_valid(visual_inspector): visual_inspector.queue_free()
+			if is_instance_valid(reward_popup): reward_popup.queue_free()
+			status.text = "Visual debug unavailable"
+		return
 	if playing_events and get_node("/root/ConnectionGate").blocked():
 		playback_epoch += 1
 		playing_events = false
@@ -162,6 +222,7 @@ func _process(delta: float) -> void:
 	if not state_data.is_empty(): _update_status()
 
 func _refresh() -> void:
+	if visual_debug or backend == null: return
 	if playing_events or is_instance_valid(reward_popup) or account_id.is_empty() or backend._verified_player_id != account_id or not request.is_empty(): return
 	request_kind = "state"
 	request = backend.request_api("GET", "/expeditions/state", null)
@@ -296,6 +357,7 @@ func _reconcile_pending() -> void:
 	if request.is_empty(): message.text = tr("EXPEDITION_CONNECTION")
 
 func send_combat_decision(kind: String, decision: Dictionary) -> void:
+	if visual_debug: return
 	if kind not in ["turn", "inspiration"] or playing_events or not request.is_empty() or not pending.is_empty() or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("phase", "")) != "COMBAT": return
 	var combat: Dictionary = session.get("combat_state", {})
 	if combat.get("terminal_result") != null or bool(combat.get("player", {}).get("inspiration_pending", false)) != (kind == "inspiration"): return
@@ -329,6 +391,7 @@ func _confirm_exit() -> void:
 	exit_confirmation.popup_centered()
 
 func _send_phase_action(kind: String, direction: String = "") -> void:
+	if visual_debug: return
 	if kind not in ["capture", "skip", "advance", "exit"] or playing_events or not request.is_empty() or not pending.is_empty() or is_instance_valid(reward_popup) or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("status", "")) != "ACTIVE": return
 	var phase := str(session.get("phase", ""))
 	if kind in ["capture", "skip"] and phase != "REWARD": return
@@ -393,6 +456,7 @@ func _candidate(id: String = "") -> Dictionary:
 	return {}
 
 func _present_reward(event: Variant) -> void:
+	if visual_debug: return
 	if not event is Dictionary or account_id.is_empty() or is_instance_valid(reward_popup): return
 	var kind := str(event.get("kind", ""))
 	if kind == "capture_failure":
@@ -524,7 +588,8 @@ func _render_choices() -> void:
 	_update_controls()
 
 func _select(index: int) -> void:
-	if not request.is_empty() or not pending.is_empty() or account_id != backend._verified_player_id or str(session.get("phase", "")) != "EXPLORE": return
+	if visual_debug: return
+	if backend == null or account_id.is_empty() or not request.is_empty() or not pending.is_empty() or account_id != backend._verified_player_id or str(session.get("phase", "")) != "EXPLORE": return
 	var payload := {"run_id": str(session.get("run_id", "")), "expected_revision": int(session.get("revision", 0)), "choice": index, "client_action_id": backend._make_uuid()}
 	if not Recovery.save_pending(account_id, "select", payload):
 		message.text = tr("EXPEDITION_SAVE_ERROR")
@@ -561,6 +626,9 @@ func _render_terminal(won: bool) -> void:
 			box.add_child(_label("%s  |  %s  |  %s %s" % [GameLocalization.catalog("homunculus", str(hom.id), "name", str(hom.name)), _types([hom.type]), tr("EXPEDITION_RARITY"), str(hom.rarity)], 26))
 			box.add_child(_label(tr("EXPEDITION_CAPTURE_COUNTS") % [int(session.get("capture_attempts_remaining", 0)), int(state_data.get("crystals", 0))], 22))
 			var capture := Button.new()
+			capture.custom_minimum_size.y = 54
+			capture.add_theme_font_size_override("font_size", 22)
+			capture.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 			capture.text = tr("EXPEDITION_CAPTURE")
 			capture.set_meta("unavailable", bool(session.get("capture_closed", true)) or int(session.get("capture_attempts_remaining", 0)) < 1 or int(state_data.get("crystals", 0)) < 1)
 			MenuArt.button(capture)
@@ -571,6 +639,9 @@ func _render_terminal(won: bool) -> void:
 			message.text = tr("EXPEDITION_BAD_STATE")
 	if won:
 		var skip := Button.new()
+		skip.custom_minimum_size.y = 54
+		skip.add_theme_font_size_override("font_size", 22)
+		skip.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 		skip.text = tr("EXPEDITION_SKIP")
 		MenuArt.button(skip)
 		skip.pressed.connect(func(): _send_phase_action("skip"))
@@ -579,6 +650,7 @@ func _render_terminal(won: bool) -> void:
 	if not won:
 		var back := Button.new()
 		back.text = tr("UI_BACK_UPPER")
+		back.disabled = visual_debug
 		MenuArt.button(back)
 		back.pressed.connect(SceneRouter.go_to_world_gate)
 		box.add_child(back)

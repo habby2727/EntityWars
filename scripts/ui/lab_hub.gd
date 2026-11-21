@@ -92,6 +92,19 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	UIThemeFactory.apply_theme_to(self)
+	if OS.has_feature("editor") and ConnectionGate.debug_lab_navigation_allowed():
+		var expedition_debug := Button.new()
+		expedition_debug.name = "ExpeditionVisualDebug"
+		expedition_debug.text = "EXPEDITIONS · VISUAL DEBUG"
+		expedition_debug.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		expedition_debug.offset_left = -350
+		expedition_debug.offset_top = -76
+		expedition_debug.offset_right = -24
+		expedition_debug.offset_bottom = -20
+		expedition_debug.add_theme_font_size_override("font_size", 18)
+		MenuArt.button(expedition_debug)
+		expedition_debug.pressed.connect(SceneRouter.go_to_expeditions)
+		add_child(expedition_debug)
 	_debug.reload()
 	_resolve_nodes()
 	_setup_background()

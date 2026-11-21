@@ -339,6 +339,10 @@ EXPEDITION_CRYSTAL_GAINED,Capture crystal gained,Cristal de captura obtenido
 EXPEDITION_DIRECTION_LEFT,Left,Izquierda
 EXPEDITION_DIRECTION_FORWARD,Forward,Adelante
 EXPEDITION_DIRECTION_RIGHT,Right,Derecha
+EXPEDITION_EVENT_COMBO_TRIGGER,Combo triggered,Combo activado
+EXPEDITION_EVENT_HOM_DOT,Homunculus damage,Daño del homúnculo
+EXPEDITION_EVENT_TRUE_ON_HIT,Bonus damage,Daño adicional
+EXPEDITION_EVENT_DOT_TRUE,Damage over time,Daño periódico
 EXPEDITION_DEVELOPMENT,This mode is under development.,Este modo está en desarrollo.
 
 HOM_STATUS_OWNED,Captured,Capturado
