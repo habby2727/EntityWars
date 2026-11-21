@@ -86,11 +86,21 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
     // deterministically through the authenticated API, independent of battle RNG.
     for (const decision of ["choose", "decline"] as const) {
       const player=(await request("/auth/dev_login",{name:`expedition_inspiration_${decision}`})).data;
+      const accountState=JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(player.player_id) as any).state_json);
+      accountState.item_progress={bismuth_talisman:{level:1},wind_amulet:{level:5},saltstone_charm:{level:10}};
+      db.query("UPDATE players SET state_json=? WHERE player_id=?").run(JSON.stringify(accountState),player.player_id);
       const started=await request("/expeditions/start",{...loadout,weapon_ids:["bismuth_talisman","wind_amulet"],client_action_id:id()},player.token);
       expect(started.status).toBe(200);
+      expect(JSON.stringify(started.data.session.choices)).not.toMatch(/item|weapon|level/);
+      accountState.item_progress.wind_amulet.level=10;
+      db.query("UPDATE players SET state_json=? WHERE player_id=?").run(JSON.stringify(accountState),player.player_id);
       const selected=await request("/expeditions/select",{run_id:started.data.session.run_id,expected_revision:started.data.session.revision,choice:0,client_action_id:id()},player.token);
       expect(selected.status).toBe(200);
       let combat=selected.data.session;
+      expect(combat.combat_state.npc.weapons).toHaveLength(1);
+      expect(combat.combat_state.npc.item_level).toBe(5);
+      expect(combat.combat_state.npc.weapons[0]).toEqual({id:combat.combat_state.npc.item_id,level:5});
+      const frozenNpcItem=structuredClone(combat.combat_state.npc.weapons);
       const saved=JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(combat.run_id) as any).state_json);
       saved.combat.player.inspiration=3;
       saved.combat.player.hp=saved.combat.player.max_hp=500;
@@ -100,6 +110,8 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
       expect(switched.status).toBe(200);
       expect(switched.data.session.revision).toBe(combat.revision+1);
       combat=switched.data.session;
+      expect(combat.combat_state.npc.weapons).toEqual(frozenNpcItem);
+      expect((await request("/expeditions/state",undefined,player.token)).data.session.combat_state.npc.weapons).toEqual(frozenNpcItem);
       expect(combat.combat_state.active_weapon_slot).toBe(2);
       expect(combat.combat_state.item_id).toBe("wind_amulet");
       expect(combat.combat_state.player.inspiration_pending).toBe(true);
@@ -112,7 +124,40 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
       const after=JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(combat.run_id) as any).state_json);
       expect(after.combat.blessing == null).toBe(true);
       expect(after.log.some((event:any)=>String(event.kind).includes("blessing"))).toBe(false);
+      after.phase="ROUTE"; after.combat=null; after.log=[]; after.choices=[];
+      db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(after),combat.run_id);
+      const advanced=await request("/expeditions/advance",{run_id:combat.run_id,expected_revision:resolved.data.session.revision,direction:"left",client_action_id:id()},player.token);
+      expect(advanced.status).toBe(200);
+      expect(JSON.stringify(advanced.data.session.choices)).not.toMatch(/item|weapon|level/);
+      const next=await request("/expeditions/select",{run_id:combat.run_id,expected_revision:advanced.data.session.revision,choice:0,client_action_id:id()},player.token);
+      expect(next.status).toBe(200);
+      expect(next.data.session.combat_state.npc.item_level).toBe(5);
+      expect(next.data.session.combat_state.npc.weapons).toHaveLength(1);
     }
+    // Only equipped items at start determine the frozen NPC level.
+    for (const level of [0, 1, 10]) {
+      const owner=(await request("/auth/dev_login",{name:`expedition_item_level_${level}`})).data;
+      const state=JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(owner.player_id) as any).state_json);
+      state.item_progress={bismuth_talisman:{level},saltstone_charm:{level:10}};
+      db.query("UPDATE players SET state_json=? WHERE player_id=?").run(JSON.stringify(state),owner.player_id);
+      const start=await request("/expeditions/start",{...loadout,weapon_ids:level===0?[null,null]:["bismuth_talisman",null],client_action_id:id()},owner.token);
+      expect(start.status).toBe(200);
+      const selected=await request("/expeditions/select",{run_id:start.data.session.run_id,expected_revision:start.data.session.revision,choice:0,client_action_id:id()},owner.token);
+      expect(selected.status).toBe(200);
+      expect(selected.data.session.combat_state.npc.weapons).toEqual([{id:selected.data.session.combat_state.npc.item_id,level}]);
+    }
+    const legacy=(await request("/auth/dev_login",{name:"expedition_legacy_choice"})).data;
+    const legacyStart=await request("/expeditions/start",{...loadout,client_action_id:id()},legacy.token);
+    expect(legacyStart.status).toBe(200);
+    const legacyRun=legacyStart.data.session.run_id;
+    const legacyState=JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(legacyRun) as any).state_json);
+    delete legacyState.npc_item_level;
+    for (const choice of legacyState.choices) for (const field of ["item_id","item_level","item_effects","item_power_allocated","item_guard_allocated"]) delete choice[field];
+    db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(legacyState),legacyRun);
+    const legacySelect=await request("/expeditions/select",{run_id:legacyRun,expected_revision:legacyStart.data.session.revision,choice:0,client_action_id:id()},legacy.token);
+    expect(legacySelect.status).toBe(200);
+    expect(legacySelect.data.session.combat_state.npc.weapons).toHaveLength(1);
+    expect(legacySelect.data.session.combat_state.npc.item_level).toBe(0);
     const bad=await request("/expeditions/start",{...loadout,homunculus_id:"honin",client_action_id:id()},a.token); expect(bad.status).toBe(400);
     const startBody={...loadout,client_action_id:id()}, started=await request("/expeditions/start",startBody,a.token);
     expect(started.status).toBe(200); let session=started.data.session;
@@ -190,4 +235,4 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
     server.kill(); await server.exited; redis.kill(); await redis.exited; db.close();
     for (let i=0;i<10;i++) { try { rmSync(dir,{recursive:true,force:true}); break; } catch { await Bun.sleep(100); } }
   }
-},60000);
+},120000);

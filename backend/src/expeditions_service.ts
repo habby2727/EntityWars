@@ -132,7 +132,7 @@ export function createExpeditionService(options: Options) {
       const cursor = state.enemy_cursor++, id = expeditionEnemyAt(seed, runId, cursor);
       const key = `${runId}:node:${state.depth}:enemy:${cursor}`;
       const capturable = expeditionDraw(seed, JSON.stringify(["capturable", key]), 0) < 0.35;
-      return buildExpeditionEnemy(seed, key, state.depth, capturable, setup, catalogs, id, expeditionHomunculusAt(seed, runId, cursor));
+      return buildExpeditionEnemy(seed, key, state.depth, capturable, setup, catalogs, id, expeditionHomunculusAt(seed, runId, cursor), state.npc_item_level ?? 0);
     });
     if (choices[0].entity_id === choices[1].entity_id || (state.background && state.background === background)) throw new Error("INVALID_EXPEDITION_ROTATION");
     Object.assign(state, {background, choices, phase:"EXPLORE", combat:null, log:[], candidate:null});
@@ -197,7 +197,7 @@ export function createExpeditionService(options: Options) {
         const selection={entity_id:body.entity_id,weapon_ids:body.weapon_ids,homunculus_id:body.homunculus_id,spell_ids:body.spell_ids,mode:body.mode};
         const setup=options.makeSetup(playerId,snapshot,selection);
         if (setup?.error) fail(400,"Invalid or unsupported expedition loadout.");
-        const runId=crypto.randomUUID(), newLease=randomBytes(32).toString("hex"); state={phase:"EXPLORE",depth:1,enemy_cursor:0,background_cursor:0};
+        const runId=crypto.randomUUID(), newLease=randomBytes(32).toString("hex"); state={phase:"EXPLORE",depth:1,enemy_cursor:0,background_cursor:0, npc_item_level: Math.max(0, ...selection.weapon_ids.filter((id: any) => !!id).map((id: string) => Math.min(10, Math.max(0, snapshot.item_progress?.[id]?.level ?? 0))))};
         makeNode(state,setup,runId,seedFor(runId));
         row={run_id:runId,player_id:playerId,status:"ACTIVE",revision:1,loadout_json:JSON.stringify(selection),newLease};
         db.query("INSERT INTO expedition_runs(run_id,player_id,status,revision,snapshot_json,loadout_json,setup_json,state_json,started_at,updated_at,lease_hash,heartbeat_at) VALUES(?,?,'ACTIVE',1,?,?,?,?,?,?,?,?)").run(runId,playerId,JSON.stringify(snapshot),row.loadout_json,JSON.stringify(setup),JSON.stringify(state),now,now,leaseHash(newLease),now);
@@ -208,7 +208,15 @@ export function createExpeditionService(options: Options) {
         state=JSON.parse(row.state_json); const seed=seedFor(row.run_id);
         if (action === "select") {
           if (state.phase!=="EXPLORE") fail(409,"Enemy selection unavailable.");
-          const selected=state.choices[body.choice]; const setup=JSON.parse(row.setup_json);
+          let selected=state.choices[body.choice]; const setup=JSON.parse(row.setup_json);
+          // Old active runs may have generated their choices before NPC items existed.
+          if (!selected.item_id) {
+            const frozen=JSON.parse(row.snapshot_json), loadout=JSON.parse(row.loadout_json);
+            state.npc_item_level ??= Math.max(0, ...loadout.weapon_ids.filter((id: any) => !!id).map((id: string) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0))));
+            const cursor=state.enemy_cursor - 2 + body.choice;
+            const key=`${row.run_id}:node:${state.depth}:enemy:${cursor}`;
+            selected=buildExpeditionEnemy(seed,key,state.depth,selected.capturable,setup,catalogs,selected.entity_id,selected.homunculus_id,state.npc_item_level);
+          }
           const combat=createExpeditionCombatState(setup,selected,catalogs);
           if (combat.error) fail(409,"Expedition combat unavailable.");
           state.phase="COMBAT"; state.combat=combat; state.selected=selected; state.choices=[]; state.log=[];
@@ -252,7 +260,9 @@ export function createExpeditionService(options: Options) {
           if (granted) saveBalance(playerId,{...pool,crystals:pool.crystals+1});
           const reward={reward_id:`${row.run_id}:${state.depth}:crystal`,kind:"crystal_drop",granted,amount:granted ? 1 : 0,...(granted ? {asset_key:"res://assets/entities/expeditions/capture.png"} : {})};
           state.latest_reward=reward; events=[reward];
-          state.depth++; state.last_direction=body.direction; makeNode(state,JSON.parse(row.setup_json),row.run_id,seed);
+          state.depth++; state.last_direction=body.direction;
+          if (state.npc_item_level === undefined) { const frozen = JSON.parse(row.snapshot_json), loadout = JSON.parse(row.loadout_json); state.npc_item_level = Math.max(0, ...loadout.weapon_ids.filter((id: any) => !!id).map((id: string) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0)))); }
+          makeNode(state,JSON.parse(row.setup_json),row.run_id,seed);
         } else {
           const pool=balance(playerId,now);
           if (pool.mana > 0) saveBalance(playerId,{...changeExpeditionMana(pool,-1,now),crystals:pool.crystals});

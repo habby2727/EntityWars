@@ -1,7 +1,7 @@
 ﻿import { expect, test } from "bun:test";
 import { buildTrustedCombatSetup, deterministicDraw } from "../solo_hunt_combat";
 import { homunculusCatalog } from "../homunculus_catalog";
-import { buildExpeditionEnemy, createExpeditionCombatState, resolveExpeditionTurn, resolveExpeditionInspiration } from "../expeditions_combat";
+import { buildExpeditionEnemy, createExpeditionCombatState, resolveExpeditionTurn, resolveExpeditionInspiration, expeditionItemEffects } from "../expeditions_combat";
 import { expeditionSpellSupported, chooseDungeonNpcSpell } from "../dungeon_combat";
 import { expeditionEnemies, expeditionCaptures, expeditionDualTypeMultiplier } from "../expeditions_rules";
 import entities from "../../../data/entities.json";
@@ -146,4 +146,107 @@ test("Inspiration resolves and tactical AI uses available second-type spells", (
   const moves=catalogs.spells.filter(s=>["rift_touch","silver_needle","veil_rupture","false_signal"].includes(s.id));
   const choice=chooseDungeonNpcSpell(8,moves.map(s=>s.id),moves,{rift_touch:1,veil_rupture:1,false_signal:1},{type:"aether",expedition_types:["aether","mercury"],hp:100,max_hp:100,atk:20,status:{}},{type:"gold",hp:100,max_hp:100,def:5,status:{}},0.5,{types,personality:"AGGRESSIVE"});
   expect(choice).toBe("silver_needle");
+});
+
+
+test("catalog items have trusted, exact level effects and encounter budgets include flats once", () => {
+  for (const item of items.items) for (const level of [0, 1, 5, 10]) {
+    const actual = expeditionItemEffects(item, level);
+    for (const [key, values] of Object.entries(item.effects) as [string, number[]][]) {
+      const expected = level === 0 && values.length === 10 && Object.hasOwn(item.base_effects ?? {}, key) ? (item.base_effects as any)[key] : values[Math.min(Math.max(0, level - 1), values.length - 1)];
+      expect(actual[key]).toBe(expected);
+    }
+  }
+  expect(() => expeditionItemEffects({...items.items[0],effects:{power_flat:[NaN]}}, 1)).toThrow();
+  for (const level of [0,1,5,10]) {
+    const encounter=buildExpeditionEnemy(seed,"level-"+level,1,false,setup,catalogs,undefined,undefined,level);
+    expect(encounter.item_level).toBe(level);
+    expect(createExpeditionCombatState(setup,encounter,catalogs).npc.weapons).toEqual([{id:encounter.item_id,level}]);
+  }
+  const enemy = buildExpeditionEnemy(seed,"item-level",1,false,setup,catalogs,undefined,undefined,10);
+  expect(enemy.item_level).toBe(10);
+  const state = createExpeditionCombatState(setup,enemy,catalogs);
+  expect(state.npc.weapons).toEqual([{id:enemy.item_id,level:10}]);
+  const hom = expeditionCaptures.find(h => h.id === enemy.homunculus_id)! as any;
+  expect(state.npc.atk).toBe(enemy.attack + (hom.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5));
+  expect(state.npc.def).toBe(enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3));
+  expect(createExpeditionCombatState(setup,{...enemy,item_effects:{power_flat:999}},catalogs).error).toBe("UNTRUSTED_SETUP");
+  const budgetAttack=enemy.attack, budgetGuard=enemy.defense;
+  for (const item of items.items) {
+    const fx=expeditionItemEffects(item,10), power=Math.trunc(fx.power_flat ?? 0), guard=Math.trunc(fx.guard_flat ?? 0);
+    const candidate={...enemy,item_id:item.id,item_level:10,item_effects:fx,item_power_allocated:power,item_guard_allocated:guard,attack:budgetAttack,defense:budgetGuard};
+    const equipped=createExpeditionCombatState(setup,candidate,catalogs);
+    expect(equipped.error).toBeUndefined();
+    expect(equipped.npc.weapons).toEqual([{id:item.id,level:10}]);
+    expect(equipped.npc.atk).toBe(state.npc.atk);
+    expect(equipped.npc.def).toBe(state.npc.def);
+  }
+});
+
+test("tactical equipment is deterministic and responds to opposing loadout", () => {
+  const defensive = {...setup, weapons:[{id:"mirror_sigel",effects:{reflect_pct:0.8,ward_pct:0.3,guard_flat:9}},{id:null,effects:{}}], spells:setup.spells.map((spell:any)=>({...spell,effects:[...spell.effects,{kind:"reflect",value:0.8,target:"self"}]}))};
+  const fast = {...setup, entity:{...setup.entity,base_stats:{...setup.entity.base_stats,tempo:100}}, weapons:[{id:"wind_amulet",effects:{tempo_flat:8,evasion_pct:0.08}},{id:null,effects:{}}]};
+  const seen = new Set<string>(), profiles: string[][] = [];
+  for (const profile of [setup, defensive, fast]) {
+    const picks: string[] = [];
+    for (let i=0;i<80;i++) {
+      const key=`profile-${i}`, enemy=buildExpeditionEnemy(seed,key,2,false,profile,catalogs,undefined,undefined,5);
+      expect(buildExpeditionEnemy(seed,key,2,false,profile,catalogs,undefined,undefined,5).item_id).toBe(enemy.item_id);
+      expect(items.items.some(item=>item.id===enemy.item_id)).toBe(true);
+      picks.push(enemy.item_id); seen.add(enemy.item_id);
+    }
+    profiles.push(picks);
+  }
+  expect(seen.size).toBeGreaterThan(4);
+  expect(profiles[0].filter((v,i)=>v!==profiles[1][i]).length).toBeGreaterThan(20);
+  expect(profiles[0].filter((v,i)=>v!==profiles[2][i]).length).toBeGreaterThan(20);
+});
+
+test("NPC equipment triggers offense, defense, evasion, tempo and reflection without borrowing the player weapon", () => {
+  const base = createExpeditionCombatState(setup,build("item-effects"),catalogs);
+  const fight = (npcEffects:any, playerEffects:any = {}, configure:(state:any)=>void = ()=>{}) => {
+    const state=structuredClone(base);
+    state.player.hp=state.player.max_hp=5000; state.npc.hp=state.npc.max_hp=5000;
+    state.player.tempo=100; state.npc.tempo=10;
+    state.player.expedition_passive=null; state.npc.expedition_passive=null;
+    state.npc.item_id="vitriol_vial"; state.npc.item_effects=npcEffects;
+    state.item_effects=playerEffects;
+    state.npc.spell_ids=["cinder_fist","furnace_rush","ash_temper","brimstone_crash"];
+    state.npc.cooldowns={furnace_rush:9,ash_temper:9,brimstone_crash:9};
+    configure(state);
+    return resolveExpeditionTurn(state,{turn:state.turn+1,spell_id:"cinder_fist"},()=>0.01);
+  };
+  const offense=fight({true_on_hit:3,dot_true:2,vuln_on_hit:0.2});
+  expect(offense.events.some((e:any)=>e.actor==="npc" && e.kind==="true_on_hit" && e.amount===3)).toBe(true);
+  expect(offense.events.some((e:any)=>e.actor==="npc" && e.kind==="dot_true" && e.amount===2)).toBe(true);
+  expect(offense.events.some((e:any)=>e.actor==="npc" && e.status==="vuln" && e.source==="weapon")).toBe(true);
+  expect(offense.events.some((e:any)=>e.actor==="player" && ["true_on_hit","dot_true"].includes(e.kind))).toBe(false);
+  const evaded=fight({evasion_pct:1});
+  expect(evaded.events.some((e:any)=>e.kind==="evade" && e.actor==="npc")).toBe(true);
+  const defensive=fight({ward_pct:0.1,reflect_pct:0.2});
+  expect(defensive.next_state.npc.status.shield).toBe(0.1);
+  expect(defensive.next_state.npc.status.reflect).toBe(0.2);
+  const second=defensive.next_state; second.player.cooldowns={}; second.npc.cooldowns={};
+  const used=resolveExpeditionTurn(second,{turn:2,spell_id:"cinder_fist"},()=>0.01);
+  expect(used.events.some((e:any)=>e.kind==="reflect" && e.actor==="npc")).toBe(true);
+  expect(used.next_state.npc.status.shield ?? 0).toBe(0);
+  expect(used.next_state.npc.status.reflect ?? 0).toBe(0);
+  const ignore=fight({ignore_reflect_chance:1},{},s=>{s.player.status.reflect=0.5});
+  expect(ignore.events.some((e:any)=>e.kind==="reflect" && e.actor==="player" && e.ignored)).toBe(true);
+  const tempo=fight({tempo_flat:200});
+  expect(tempo.events.find((e:any)=>e.kind==="spell").actor).toBe("npc");
+  const winner=fight({tempo_on_win:4},{},s=>{s.npc.hp=5000; s.player.hp=4900;});
+  expect(winner.next_state.npc.status.tempo_bonus).toBe(4);
+  const normalGuard=fight({}, {}, s=>{s.npc.def=5;});
+  const higherGuard=fight({}, {}, s=>{s.npc.def=15;});
+  expect(higherGuard.events.find((e:any)=>e.kind==="damage" && e.actor==="player").amount).toBeLessThan(normalGuard.events.find((e:any)=>e.kind==="damage" && e.actor==="player").amount);
+  const mismatch=(s:any)=>{s.player.type="aether"; s.npc.type="sulfur"; s.npc.expedition_types=["sulfur","mercury"];};
+  const weak=fight({}, {}, mismatch), reduced=fight({disadvantage_reduction:0.15}, {}, mismatch);
+  expect(reduced.events.find((e:any)=>e.kind==="damage" && e.actor==="npc").amount).toBeGreaterThan(weak.events.find((e:any)=>e.kind==="damage" && e.actor==="npc").amount);
+  const hom=structuredClone(base);
+  hom.player.hp=hom.player.max_hp=5000; hom.npc.hp=hom.npc.max_hp=5000;
+  hom.player.tempo=100; hom.player.hom_energy=3; hom.npc.item_effects={evasion_pct:1};
+  hom.player.expedition_passive=null; hom.npc.expedition_passive=null;
+  const homEvade=resolveExpeditionTurn(hom,{turn:1,spell_id:"cinder_fist",hom_action:"attack"},()=>0.01);
+  expect(homEvade.events.filter((e:any)=>e.kind==="evade" && e.actor==="npc").length).toBe(2);
 });

@@ -272,7 +272,10 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any, 
   const npcHp = enemy.hp + ((hom as any)?.buff_hp ?? 0) + enemy.homunculus_level;
   const player: any = { id: setup.entity.id, type: setup.entity.type, tempo: stats.tempo ?? 10, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + Math.trunc(effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + Math.trunc(effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
   if (setup.hom_passive_level !== undefined) player.expedition_passive = newExpeditionPassiveState(setup.hom_id, setup.hom_passive_level);
-  const npc: any = { id: enemy.entity_id, type: enemy.type, ...(expedition ? { expedition_types: [...enemy.types] } : {}), tempo: npcTempo, hp: npcHp, max_hp: npcHp, atk: enemy.attack + ((hom as any)?.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: enemy.defense + ((hom as any)?.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom?.id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
+  // Expedition item flats are reserved within the generated total budget.
+  const npcBaseAttack = enemy.attack - (expedition ? enemy.item_power_allocated : 0);
+  const npcBaseGuard = enemy.defense - (expedition ? enemy.item_guard_allocated : 0);
+  const npc: any = { id: enemy.entity_id, type: enemy.type, ...(expedition ? { expedition_types: [...enemy.types] } : {}), tempo: npcTempo, hp: npcHp, max_hp: npcHp, atk: npcBaseAttack + (expedition ? enemy.item_power_allocated : 0) + ((hom as any)?.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: npcBaseGuard + (expedition ? enemy.item_guard_allocated : 0) + ((hom as any)?.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom?.id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
   if (expedition) npc.expedition_passive = newExpeditionPassiveState(enemy.homunculus_id, enemy.homunculus_level);
   if (!enemy.elite && enemy.special_encounter?.kind === "corrupted_fog") Object.assign(player.status, { vuln: 0.1 });
   if (!enemy.elite && enemy.special_encounter?.kind === "crystal_bastion") Object.assign(npc.status, { shield: 0.15 });
@@ -330,7 +333,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     firePassive("before_exchange");
   }
   if (next.npc.expedition_passive) { next.npc.expedition_passive = beginPassiveExchange(next.npc.expedition_passive, decision.turn); fireNpcPassive("before_exchange"); }
-  let vitriolCorrosionUsed = 0;
+  let vitriolCorrosionUsed = 0, npcVitriolCorrosionUsed = 0;
   for (const fighter of [next.player, next.npc]) {
     fighter.spell_hit_last_exchange = fighter.spell_hit_this_exchange ?? false;
     fighter.spell_hit_this_exchange = false;
@@ -338,6 +341,8 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     fighter.spell_neutralize_pending = 0;
   }
   next.weapon_defenses ??= {}; next.other_defenses ??= {};
+  if (next.combat_mode === "expedition") { next.npc_weapon_defenses ??= {}; next.npc_other_defenses ??= {}; }
+  const npcEffects = next.combat_mode === "expedition" ? (next.npc.item_effects ?? {}) : {};
   const pendingJams: { target: any; actor: string; targetId: string }[] = [];
   let counter = next.rng_counter;
   const draw = () => { const value = rng(decision.turn, counter++); if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error("INVALID_RNG"); return value; };
@@ -352,9 +357,11 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   const clearDefense = (fighter: any, field: string) => {
     delete fighter.status[field];
     if (fighter === next.player) { delete next.weapon_defenses[field]; delete next.other_defenses[field]; }
+    else if (fighter === next.npc && next.combat_mode === "expedition") { delete next.npc_weapon_defenses[field]; delete next.npc_other_defenses[field]; }
   };
   const applyDefense = (fighter: any, field: string, value: number) => {
     if (fighter === next.player && next.weapon_defenses[field] !== undefined) next.other_defenses[field] = Math.max(next.other_defenses[field] ?? 0, value);
+    else if (fighter === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses[field] !== undefined) next.npc_other_defenses[field] = Math.max(next.npc_other_defenses[field] ?? 0, value);
     fighter.status[field] = Math.max(fighter.status[field] ?? 0, value);
   };
   const awardInspiration = (actor: any, who: string, source: string) => {
@@ -375,7 +382,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   const act = (actor: any, target: any, chosen: any, who: string) => {
     if (actor.hp <= 0 || target.hp <= 0) return;
     actor.cooldowns[chosen.id] = chosen.cooldown_turns + 1;
-    if (chosen.category === "attack" && who === "player" && (modifiers(target).evasion_pct ?? 0) > 0 && draw() < modifiers(target).evasion_pct) { events.push({ kind: "evade", actor: "npc", target: "player" }); fireNpcPassive("dodge"); return; }
+    if (chosen.category === "attack" && who === "player" && (modifiers(target).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(target).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) { events.push({ kind: "evade", actor: "npc", target: "player" }); fireNpcPassive("dodge"); return; }
     if (chosen.category === "attack" && who === "npc" && (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) > 0 && draw() < Math.min(1, (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0))) { if (actor.expedition_types && actor.hom_id) actor.hom_energy = Math.min(6, actor.hom_energy + 1); events.push({ kind: "evade", actor: "player", target: "npc" }); firePassive("dodge"); return; }
     const poisonedBefore = (target.status.poison ?? 0) > 0;
     const mark = target.status.hybrid_mark;
@@ -396,7 +403,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     }
     if (!hit) { if (chosen.category !== "attack") (who === "player" ? firePassive : fireNpcPassive)("spell_miss"); return; }
     let directDamage = 0, unblessedDirectDamage = 0;
-    const previousWard = actor === next.player && next.weapon_defenses.shield !== undefined ? next.other_defenses.shield ?? 0 : actor.status.shield ?? 0;
+    const previousWard = actor === next.player && next.weapon_defenses.shield !== undefined ? next.other_defenses.shield ?? 0 : actor === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses.shield !== undefined ? next.npc_other_defenses.shield ?? 0 : actor.status.shield ?? 0;
     if (chosen.category === "attack") {
       const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
       let mult = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
@@ -408,7 +415,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         if (chosen.type === "hybrid") mult = Math.pow(expeditionDualTypeMultiplier(chosen.primary_type, target.expedition_types), 0.65) * Math.pow(expeditionDualTypeMultiplier(chosen.secondary_type, target.expedition_types), 0.35);
         else mult = expeditionDualTypeMultiplier(chosen.type, target.expedition_types);
       }
-      if (who === "player" && chosen.type === actor.type && (target.expedition_types ? mult < 1 : relation < 1)) mult = Math.min(1, mult + (next.item_effects?.disadvantage_reduction ?? 0));
+      if ((who === "player" && chosen.type === actor.type || who === "npc" && actor.expedition_types?.includes(chosen.type)) && (target.expedition_types ? mult < 1 : relation < 1)) mult = Math.min(1, mult + (who === "player" ? next.item_effects?.disadvantage_reduction ?? 0 : npcEffects.disadvantage_reduction ?? 0));
       if (who === "player" && chosen.type !== "universal" && mult > 1) mult += next.hom_advantage ?? 0;
       if (chosen.type !== "universal") mult = 1 + (mult - 1) * (1 - Math.max(actor.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0));
       const poisonBonus = chosen.effects.find((e: any) => e.kind === "bonus_if_poisoned");
@@ -440,7 +447,8 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       directDamage = Math.min(target.hp, damage); unblessedDirectDamage = who === "player" && next.blessing?.selected === "elemental_surge" ? Math.min(target.hp, unblessedDamage) : directDamage;
       target.hp = Math.max(0, target.hp - damage); if (directDamage > 0) (who === "npc" ? firePassive : fireNpcPassive)("damage_received"); if (directDamage > 0) target.spell_hit_this_exchange = true; events.push({ kind: "damage", actor: who, amount: damage, hp: target.hp, target_status: structuredClone(target.status) });
       if ((target.status.reflect ?? 0) > 0) {
-        const ignored = who === "player" && (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < Math.min(1, next.item_effects.ignore_reflect_chance);
+        const ignoreChance = who === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
+        const ignored = ignoreChance > 0 && draw() < Math.min(1, ignoreChance);
         const amount = ignored ? 0 : Math.min(actor.hp, Math.round((who === "player" && next.blessing?.selected === "elemental_surge" ? unblessedDamage : damage) * target.status.reflect));
         actor.hp -= amount;
         if (amount > 0) (who === "player" ? firePassive : fireNpcPassive)("damage_received");
@@ -461,12 +469,25 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         const homDot = Math.min(target.hp, Math.max(0, Math.trunc(next.hom_synergy?.dot_true ?? 0)));
         if (homDot > 0) { target.hp -= homDot; events.push({ kind: "hom_dot", actor: who, target: "npc", amount: homDot, hp: target.hp }); }
       }
+      if (who === "npc" && next.combat_mode === "expedition") {
+        for (const key of ["true_on_hit", "dot_true"]) {
+          let amount = Math.min(target.hp, Math.max(0, Math.trunc(npcEffects[key] ?? 0)));
+          if (key === "dot_true" && next.npc.item_id === "vitriol_vial") { amount = Math.min(amount, 4 - npcVitriolCorrosionUsed); npcVitriolCorrosionUsed += amount; }
+          if (amount > 0) { target.hp -= amount; events.push({ kind:key, actor:who, target:"player", amount, hp:target.hp, item_id:next.npc.item_id }); firePassive("damage_received"); }
+        }
+        if ((npcEffects.dot_true ?? 0) > 0 && (npcEffects.vuln_on_hit ?? 0) > 0) {
+          const previous = target.status.vuln ?? 0;
+          target.status.vuln = Math.max(previous, Math.min(1, npcEffects.vuln_on_hit));
+          if (target.status.vuln > previous) events.push({kind:"status_applied", actor:"npc", target:"player", status:"vuln", previous, value:target.status.vuln, source:"weapon", item_id:next.npc.item_id});
+        }
+      }
       if (poisonBonus && target.status.poison > 0 && directDamage > baseline) events.push({ kind: "combo_trigger", actor: who, target: who === "player" ? "npc" : "player", source_spell_id: chosen.id, prerequisite: "poison", actual_bonus_damage: directDamage - baseline, resulting_status: { poison: target.status.poison } });
     }
     if (chosen.type === "hybrid" && marked) delete target.status.hybrid_mark;
     const conversion = chosen.effects.find((e: any) => e.kind === "ward_convert");
     if (chosen.category === "attack" && conversion && previousWard > 0) {
       if (actor === next.player && next.weapon_defenses.shield !== undefined) { delete next.other_defenses.shield; actor.status.shield = next.weapon_defenses.shield; }
+      else if (actor === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses.shield !== undefined) { delete next.npc_other_defenses.shield; actor.status.shield = next.npc_weapon_defenses.shield; }
       else delete actor.status.shield;
       const amount = Math.min(target.hp, Math.floor(target.max_hp * 0.2), Math.floor(actor.max_hp * previousWard * conversion.value));
       target.hp -= amount;
@@ -540,7 +561,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     next.active_weapon_slot = decision.switch_slot; next.item_id = weapon.id; next.item_effects = weapon.effects;
     events.push({ kind: "switch", actor: "player", slot: decision.switch_slot, item_id: weapon.id }); firePassive("weapon_switched");
   } else act(next.player, next.npc, spell, "player");
-  if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) { if (next.player.status.hom_stun > 0) { next.player.status.hom_stun--; events.push({ kind: "status_consumed", target: "player", status: "hom_stun", remaining: next.player.status.hom_stun }); } else if ((modifiers(next.npc).evasion_pct ?? 0) > 0 && draw() < modifiers(next.npc).evasion_pct) { events.push({kind:"evade",actor:"npc",target:"player"}); fireNpcPassive("dodge"); } else if (draw() < 0.95) { const neutralizations = [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]; const homFactor = (type: string) => homunculusAttackMultiplierById(next.player.hom_id, type, next.types, neutralizations); const factor = next.npc.expedition_types ? Math.sqrt(homFactor(next.npc.expedition_types[0]) * homFactor(next.npc.expedition_types[1])) : homFactor(next.npc.type); let damage = Math.max(1, Math.round((next.player.atk + (modifiers().power_flat ?? 0)) * (next.player.hom_energy >= 6 ? 0.6 : 0.4) * factor)); if (next.npc.status.shield > 0) { damage = Math.max(0, Math.round(damage * (1 - next.npc.status.shield))); delete next.npc.status.shield; } next.npc.hp = Math.max(0, next.npc.hp - damage); if (damage > 0) fireNpcPassive("damage_received"); events.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp }); } else events.push({ kind: "hom_miss", actor: "player" }); next.player.hom_energy = 0; }
+  if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) { if (next.player.status.hom_stun > 0) { next.player.status.hom_stun--; events.push({ kind: "status_consumed", target: "player", status: "hom_stun", remaining: next.player.status.hom_stun }); } else if ((modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) { events.push({kind:"evade",actor:"npc",target:"player"}); fireNpcPassive("dodge"); } else if (draw() < 0.95) { const neutralizations = [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]; const homFactor = (type: string) => homunculusAttackMultiplierById(next.player.hom_id, type, next.types, neutralizations); const factor = next.npc.expedition_types ? Math.sqrt(homFactor(next.npc.expedition_types[0]) * homFactor(next.npc.expedition_types[1])) : homFactor(next.npc.type); let damage = Math.max(1, Math.round((next.player.atk + (modifiers().power_flat ?? 0)) * (next.player.hom_energy >= 6 ? 0.6 : 0.4) * factor)); if (next.npc.status.shield > 0) { damage = Math.max(0, Math.round(damage * (1 - next.npc.status.shield))); clearDefense(next.npc, "shield"); } next.npc.hp = Math.max(0, next.npc.hp - damage); if (damage > 0) fireNpcPassive("damage_received"); events.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp }); } else events.push({ kind: "hom_miss", actor: "player" }); next.player.hom_energy = 0; }
   };
   const npcAction = () => {
   act(next.npc, next.player, npcSpell, "npc");
@@ -565,7 +586,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   };
   if (!switching && next.player.expedition_passive?.id === "luny" && (next.player.status.stun ?? 0) <= 0 && spell.category === "attack" && spell.power_mult > 0) firePassive("before_attack", 0, spell);
   if (next.npc.expedition_passive?.id === "luny" && (next.npc.status.stun ?? 0) <= 0 && npcSpell.category === "attack" && npcSpell.power_mult > 0) fireNpcPassive("before_attack", 0, npcSpell);
-  const playerFirst = (next.player.tempo ?? 10) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_tempo ?? 0) + (modifiers().tempo_flat ?? 0) + (next.player.status.tempo_bonus ?? 0) >= (next.npc.tempo ?? 10) + (modifiers(next.npc).tempo_flat ?? 0) + (next.npc.status.tempo_bonus ?? 0);
+  const playerFirst = (next.player.tempo ?? 10) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_tempo ?? 0) + (modifiers().tempo_flat ?? 0) + (next.player.status.tempo_bonus ?? 0) >= (next.npc.tempo ?? 10) + (npcEffects.tempo_flat ?? 0) + (modifiers(next.npc).tempo_flat ?? 0) + (next.npc.status.tempo_bonus ?? 0);
   delete next.player.status.tempo_bonus; delete next.npc.status.tempo_bonus;
   if (playerFirst) { playerAction(); npcAction(); } else { npcAction(); if (next.player.hp > 0 && next.npc.hp > 0) playerAction(); }
   for (const fighter of [next.player, next.npc]) {
@@ -589,6 +610,18 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       }
     }
     if (next.turn === 1 && next.player.hp > next.npc.hp && (next.item_effects?.tempo_on_win ?? 0) > 0) next.player.status.tempo_bonus = next.item_effects.tempo_on_win;
+    if (next.combat_mode === "expedition") {
+      for (const [effect, field] of [["ward_pct", "shield"], ["reflect_pct", "reflect"]]) {
+        const value = Math.max(0, Math.min(1, npcEffects[effect] ?? 0));
+        if (value > 0) {
+          if (next.npc_weapon_defenses[field] === undefined) next.npc_other_defenses[field] = next.npc.status[field] ?? 0;
+          next.npc_weapon_defenses[field] = Math.max(next.npc_weapon_defenses[field] ?? 0, value);
+          next.npc.status[field] = Math.max(next.npc_other_defenses[field] ?? 0, next.npc_weapon_defenses[field]);
+          events.push({kind:"status_applied", actor:"npc", target:"npc", status:field, value:next.npc.status[field], source:"weapon", item_id:next.npc.item_id});
+        }
+      }
+      if (next.turn === 1 && next.npc.hp > next.player.hp && (npcEffects.tempo_on_win ?? 0) > 0) next.npc.status.tempo_bonus = npcEffects.tempo_on_win;
+    }
   }
   next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
   if (next.terminal_result) {

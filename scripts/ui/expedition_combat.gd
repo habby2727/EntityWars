@@ -121,7 +121,7 @@ func _build() -> void:
 		button.add_child(icon)
 		weapon_buttons.append(button)
 		controls.append(button)
-	# An expedition NPC currently has no equipment; only draw slots the server supplies.
+	# Draw only equipment supplied by the server.
 	var npc_weapons: Variant = enemy.get("weapons", [])
 	if npc_weapons is Array:
 		for i in mini(npc_weapons.size(), 2):
@@ -131,7 +131,7 @@ func _build() -> void:
 			var item: Dictionary = registry.get_items().get(item_id, {})
 			var slot := Control.new()
 			slot.name = "EnemyWeaponSlot%d" % (i + 1)
-			slot.tooltip_text = GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id)))
+			slot.tooltip_text = "%s  |  +%d" % [GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id))), int(entry.get("level", 0))]
 			_place(slot, Vector2(1296 + i * 112, 765), Vector2(104, 104))
 			var frame := TextureRect.new()
 			frame.texture = preload("res://assets/ui/new-elements/marco-slot-small.png")
@@ -149,6 +149,15 @@ func _build() -> void:
 			icon.offset_left = 16; icon.offset_top = 16; icon.offset_right = -16; icon.offset_bottom = -16
 			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			slot.add_child(icon)
+			var level_label := Label.new()
+			level_label.text = "+%d" % int(entry.get("level", 0))
+			level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			level_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+			level_label.add_theme_font_size_override("font_size", 17)
+			level_label.add_theme_constant_override("outline_size", 3)
+			level_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			level_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			slot.add_child(level_label)
 	var panel := PanelContainer.new()
 	panel.name = "SpellPanel"
 	var panel_style := StyleBoxFlat.new()
@@ -505,6 +514,14 @@ func _animate_item(slot: int) -> void:
 		icon.pivot_offset = icon.size / 2.0
 		_animate_pulse(icon, Color(1.8, 1.6, 0.8), 1.12)
 
+func _animate_npc_item() -> void:
+	var slot := stage.get_node_or_null("EnemyWeaponSlot1") as Control
+	if not is_instance_valid(slot) or slot.get_child_count() < 2: return
+	var icon := slot.get_child(1) as TextureRect
+	if icon != null and icon.texture != null:
+		icon.pivot_offset = icon.size / 2.0
+		_animate_pulse(icon, Color(1.8, 1.6, 0.8), 1.12)
+
 func _animate_event(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
 	var actor := str(event.get("actor", ""))
@@ -526,6 +543,8 @@ func _animate_event(event: Dictionary) -> void:
 		_animate_item(displayed_weapon_slot)
 	elif kind in ["true_on_hit", "dot_true"] and actor == "player":
 		_animate_item(displayed_weapon_slot)
+	elif actor == "npc" and event.get("item_id") == session.get("combat_state", {}).get("npc", {}).get("item_id") and (kind in ["true_on_hit", "dot_true"] or event.get("source") == "weapon"):
+		_animate_npc_item()
 	if target in ["player", "npc"]:
 		var sprite := player_sprite if target == "player" else enemy_sprite
 		if kind in ["damage", "hom_attack", "hom_dot", "true_on_hit", "dot_true", "delayed_damage", "reflect", "poison"]:

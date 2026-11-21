@@ -185,7 +185,7 @@ func _sample() -> Dictionary:
 	var phase: String = PHASES[phase_index]
 	var inspiration := phase == "INSPIRATION"
 	var player := {"id":"sulfur_01", "type":"sulfur", "hp":78, "max_hp":104, "hom_id":hom.id, "hom_energy":4, "inspiration":2, "inspiration_used":false, "inspiration_pending":inspiration, "inspiration_offers":["steady_script", "ward_glyph", "rift_touch"], "spell_ids":["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], "cooldowns":{"furnace_rush":2}, "status":{"shield":0.15, "hom_stun":1}, "expedition_passive":{"markers":["sample_marker"], "modifiers":[{"kind":"power_flat", "amount":2, "duration":"exchange"}]}}
-	var npc := {"id":enemy.id, "type":enemy.types[0], "expedition_types":enemy.types, "texture":enemy.texture, "hom_id":hom.id, "hom_texture":hom.combat_texture, "hom_type":hom.type, "hom_energy":4, "hp":67, "max_hp":100, "status":{"poison":2, "vuln":0.1}, "inspiration":1}
+	var npc := {"id":enemy.id, "type":enemy.types[0], "expedition_types":enemy.types, "texture":enemy.texture, "hom_id":hom.id, "hom_texture":hom.combat_texture, "hom_type":hom.type, "hom_energy":4, "weapons":[{"id":"wind_amulet", "level":5}], "item_id":"wind_amulet", "item_level":5, "hp":67, "max_hp":100, "status":{"poison":2, "vuln":0.1}, "inspiration":1}
 	var choices := []
 	for i in 2:
 		var e: Dictionary = enemy if i == 0 else other
