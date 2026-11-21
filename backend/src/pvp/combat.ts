@@ -258,9 +258,9 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       f.spell_neutralize_active = f.spell_neutralize_pending; f.spell_neutralize_pending = 0;
       if (decisions[side].ultra) f.ultra_used = true;
     }
-    const firePassive = (side: PvpSide, event: any, poisonDamage = 0) => {
+    const firePassive = (side: PvpSide, event: any, poisonDamage = 0, attack: any = null) => {
       const owner: any = next.fighters[side], opponent: any = next.fighters[other(side)];
-      if (!owner.hom_spent) applyCombatPassive(owner, opponent, event, next.types, side, other(side), events, poisonDamage);
+      if (!owner.hom_spent) applyCombatPassive(owner, opponent, event, next.types, side, other(side), events, poisonDamage, attack);
     };
     const mods = (fighter: any) => fighter.expedition_passive && !fighter.hom_spent ? passiveModifiers(fighter.expedition_passive) : {};
     for (const side of sides) {
@@ -306,7 +306,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         else if (effect.kind === "ward_dispel") spellContext.dispel = effect.value;
       }
       if (spell.category === "attack") {
-      firePassive(side, "before_attack");
+      firePassive(side, "before_attack", 0, spell);
       const focus = a.status.focus_next ?? 0, misalign = a.status.misalign_next ?? 0;
       if (focus > 0 || misalign > 0) { delete a.status.focus_next; delete a.status.misalign_next; }
       const evasion = Math.min(1, (b.item_fx.evasion_pct ?? 0) + (mods(b).evasion_pct ?? 0));
@@ -472,6 +472,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       } else if (decision.hom_action === "attack") {
         const boosted = actor.hom_energy >= 6; actor.hom_energy = 0;
         if (actor.status.hom_stun > 0) { actor.status.hom_stun--; emit(side, "debuff", "'s homunculus is nullified.", { kind: "hom_stun" }); }
+        else if ((mods(b).evasion_pct ?? 0) > 0 && draw() < Math.min(1, mods(b).evasion_pct)) { emit(opponent, "miss", " evades the homunculus.", { kind: "evade", target_side: side }); firePassive(opponent, "dodge"); }
         else if (draw() >= Math.max(0.6, Math.min(0.98, 0.95 - (actor.atk > b.def * 1.6 ? 0.08 : 0) - (actor.max_hp > b.max_hp ? Math.min(0.15, (actor.max_hp - b.max_hp) / actor.max_hp * 0.2) : 0)))) emit(side, "miss", "'s homunculus misses.", { kind: "hom_miss", target_side: opponent });
         else {
           const incoming = b.hom_spent ? 1 : Math.max(0.1, Math.min(1, b.hom_synergy.incoming_mult ?? 1));
@@ -484,7 +485,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       }
     }
     if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0) for (const side of sides) {
-      const f = next.fighters[side]; if (f.status.poison > 0) { const damage = Math.min(3, f.hp); const provenance = poisonTickMetadata(f, side, sides, damage, turn); f.status.poison--; f.hp -= damage; f.spell_hit_this_exchange = true; if (provenance.source && provenance.source !== side && damage > 0) firePassive(provenance.source as PvpSide, "opponent_poison_damage", damage); emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp, ...provenance }); recordPoisonChange(f, f.status.poison, null); }
+      const f = next.fighters[side]; if (f.status.poison > 0) { const damage = Math.min(3, f.hp); const provenance = poisonTickMetadata(f, side, sides, damage, turn); f.status.poison--; f.hp -= damage; f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp, ...provenance }); if (provenance.source && provenance.source !== side && damage > 0) { firePassive(provenance.source as PvpSide, "opponent_poison_damage", damage); firePassive(side, "damage_received"); } recordPoisonChange(f, f.status.poison, null); }
     }
     for (const side of sides) { const f: any = next.fighters[side]; if (f.expedition_passive) f.expedition_passive = finishPassiveExchange(f.expedition_passive); }
     for (const side of sides) { const f = next.fighters[side]; if (!f.hom_spent) f.hom_energy = Math.min(f.hom_max_energy, f.hom_energy + 1); f.spell_neutralize_active = 0; }

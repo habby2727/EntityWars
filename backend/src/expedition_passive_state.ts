@@ -2,8 +2,7 @@ import { evaluateExpeditionPassive, type PassiveContext, type PassiveEvent } fro
 import { recordPoisonChange } from "./combat_event_provenance";
 import { strategicHeal } from "./strategic_effects";
 
-// Staging-only state machine: no live combat path imports this module. The
-// engines must provide authoritative, source-attributed events before enabling it.
+// Passive state is owned by the authoritative combat state.
 type TemporaryKind = "power_flat" | "guard_flat" | "tempo_flat" | "accuracy_pct" | "evasion_pct";
 type Duration = "current_attack" | "current_exchange" | "next_exchange";
 type Modifier = { kind: TemporaryKind; amount: number; duration: Duration; exchange: number };
@@ -78,12 +77,23 @@ export function triggerInspirationActivation(state: ExpeditionPassiveState, acti
 }
 
 /** Apply the shared passive proposal to a server-owned fighter and target. */
-export function applyCombatPassive(fighter: any, target: any, event: PassiveEvent, types: any, actorId: string, targetId: string, events: any[], poisonDamage = 0): void {
+export function applyCombatPassive(fighter: any, target: any, event: PassiveEvent, types: any, actorId: string, targetId: string, events: any[], poisonDamage = 0, attack: any = null): void {
   if (!fighter?.expedition_passive || !target || fighter.hp <= 0) return;
-  const relation = types?.effectiveness?.[fighter.type]?.[target.element_type || target.type] ?? 1;
+  const targetType = target.element_type || target.type;
+  const relationFor = (type: string) => types?.effectiveness?.[type]?.[targetType] ?? 1;
+  let relation = relationFor(fighter.type);
+  if (event === "before_attack" && attack) {
+    if (attack.type === "universal") relation = 1;
+    else if (attack.type === "hybrid") {
+      const factor = (type: string) => relationFor(type) > 1 ? 1.25 : relationFor(type) < 1 ? 0.8 : 1;
+      relation = Math.pow(factor(attack.primary_type), 0.65) * Math.pow(factor(attack.secondary_type), 0.35);
+    } else relation = relationFor(attack.type);
+  }
   const debuffs = ["poison", "stun", "vuln", "vuln_pct", "atk_down", "hom_stun", "misalign_next"];
-  const context = {fighter: {hp: fighter.hp, max_hp: fighter.max_hp, shielded: (fighter.status?.shield_pct ?? fighter.status?.shield ?? 0) > 0, consecutive_spell_hits: 0, attacks_made: 0}, target: {debuffed: debuffs.some(key => (target.status?.[key] ?? 0) > 0)}, type_relation: relation > 1 ? "advantage" as const : relation < 1 ? "disadvantage" as const : "neutral" as const, poison_damage: poisonDamage};
-  const result = triggerExpeditionPassive(fighter.expedition_passive, event, context);
+  const context = {fighter: {hp: fighter.hp, max_hp: fighter.max_hp, shielded: (fighter.status?.shield_pct ?? fighter.status?.shield ?? 0) > 0, consecutive_spell_hits: 0, attacks_made: 0}, target: {debuffed: debuffs.some(key => (target.status?.[key] ?? 0) > 0) || !!target.status?.hybrid_mark || !!target.strategic_heal_suppression}, type_relation: relation > 1 ? "advantage" as const : relation < 1 ? "disadvantage" as const : "neutral" as const, poison_damage: poisonDamage};
+  const result = event === "inspiration_activated" && fighter.inspiration_activation
+    ? triggerInspirationActivation(fighter.expedition_passive, fighter.inspiration_activation, context)
+    : triggerExpeditionPassive(fighter.expedition_passive, event, context);
   fighter.expedition_passive = result.state;
   if (!result.activated) return;
   events.push({kind: "hom_passive", actor: actorId, target: targetId, passive_id: result.state.id, trigger: event});

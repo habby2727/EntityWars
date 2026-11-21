@@ -301,7 +301,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   if (!switching && (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || (decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3)))) return { error: "INVALID_DECISION" };
   if (state.spells.some((s: any) => !Array.isArray(s.effects) || s.effects.some((e: any) => !validEffect(e) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
-  const firePassive = (event: any, poisonDamage = 0) => applyCombatPassive(next.player, next.npc, event, next.types, "player", "npc", events, poisonDamage);
+  const firePassive = (event: any, poisonDamage = 0, attack: any = null) => applyCombatPassive(next.player, next.npc, event, next.types, "player", "npc", events, poisonDamage, attack);
   const modifiers = () => next.player.expedition_passive ? passiveModifiers(next.player.expedition_passive) : {};
   if (next.player.expedition_passive) {
     next.player.expedition_passive = beginPassiveExchange(next.player.expedition_passive, decision.turn);
@@ -357,7 +357,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     const mark = target.status.hybrid_mark;
     const marked = mark?.owner === who && mark.remaining > 0;
     if (marked && --mark.remaining <= 0) delete target.status.hybrid_mark;
-    if (chosen.category === "attack" && who === "player") firePassive("before_attack");
+    if (chosen.category === "attack" && who === "player") firePassive("before_attack", 0, chosen);
     let accuracy = chosen.accuracy;
     if (chosen.category === "attack") {
       accuracy = Math.max(0, Math.min(1, accuracy + (actor.status.focus_next ?? 0) - (actor.status.misalign_next ?? 0) + (who === "player" ? modifiers().accuracy_pct ?? 0 : 0)));
@@ -517,8 +517,8 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   if (next.npc.hom_id && next.npc.hom_energy >= 3 && next.npc.hp > 0 && next.player.hp > 0) {
     if (next.npc.status.hom_stun > 0) {
       next.npc.status.hom_stun--; events.push({ kind: "status_consumed", target: "npc", status: "hom_stun", remaining: next.npc.status.hom_stun });
-    } else if ((next.item_effects?.evasion_pct ?? 0) > 0 && draw() < Math.min(1, next.item_effects.evasion_pct)) {
-      events.push({ kind: "evade", actor: "player", target: "npc" });
+    } else if ((next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) > 0 && draw() < Math.min(1, (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0))) {
+      events.push({ kind: "evade", actor: "player", target: "npc" }); firePassive("dodge");
     } else if (draw() < 0.95) {
       let damage = Math.max(1, Math.round(next.npc.atk * (next.npc.hom_energy >= 6 ? 0.6 : 0.4) * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1))));
       if (next.blessing?.selected === "player_shield" && !next.blessing.shield_used) { damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100))); next.blessing.shield_used = true; }
@@ -534,7 +534,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   delete next.player.status.tempo_bonus; delete next.npc.status.tempo_bonus;
   if (playerFirst) { playerAction(); npcAction(); } else { npcAction(); if (next.player.hp > 0 && next.npc.hp > 0) playerAction(); }
   for (const fighter of [next.player, next.npc]) {
-    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 3; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = 3 * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder; const prevented = Math.min(2, Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); const victim = fighter === next.player ? "player" : "npc"; const provenance = poisonTickMetadata(fighter, victim, ["player", "npc"], amount, decision.turn); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; if (provenance.source === "player" && victim === "npc" && amount > 0) firePassive("opponent_poison_damage", amount); events.push({ kind: "poison", target: fighter.id, side: victim, amount, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); recordPoisonChange(fighter, fighter.status.poison, null); }
+    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 3; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = 3 * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder; const prevented = Math.min(2, Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); const victim = fighter === next.player ? "player" : "npc"; const provenance = poisonTickMetadata(fighter, victim, ["player", "npc"], amount, decision.turn); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: victim, amount, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); if (provenance.source === "player" && victim === "npc" && amount > 0) firePassive("opponent_poison_damage", amount); if (provenance.source === "npc" && victim === "player" && amount > 0) firePassive("damage_received"); recordPoisonChange(fighter, fighter.status.poison, null); }
     for (const id of Object.keys(fighter.cooldowns)) fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   }
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);

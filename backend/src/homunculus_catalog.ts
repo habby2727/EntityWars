@@ -43,13 +43,13 @@ export function ownsHomunculus(progress: unknown, id: unknown): boolean {
   const entry = object(progress) && Object.hasOwn(progress, id) ? progress[id] : undefined;
   if (entry === undefined) return originals.has(id);
   if (!object(entry) || (entry.owned !== undefined && typeof entry.owned !== "boolean") || (entry.level !== undefined && (!Number.isInteger(entry.level) || entry.level < 0 || entry.level > 10)) || (entry.xp !== undefined && (!Number.isSafeInteger(entry.xp) || entry.xp < 0)) || (entry.mutation_id !== undefined && (typeof entry.mutation_id !== "string" || !mutationIds.has(entry.mutation_id))) || (entry.mutation_changed_at !== undefined && (!Number.isSafeInteger(entry.mutation_changed_at) || entry.mutation_changed_at < 0))) return false;
-  if (expedition.has(id) && (entry.owned !== true || (entry.mutation_id !== undefined && (entry.level ?? 0) < 3) || (entry.level !== undefined && entry.xp !== undefined && levelFromXp(entry.xp) !== entry.level))) return false;
+  if (expedition.has(id) && (entry.owned !== true || !Number.isInteger(entry.level) || !Number.isSafeInteger(entry.xp) || (entry.mutation_id !== undefined && entry.level < 3) || levelFromXp(entry.xp) !== entry.level)) return false;
   return true;
 }
 
-/** E4C1 intentionally gates every expedition ID, regardless of ownership. */
+/** Combat selection is derived solely from trusted persisted ownership. */
 export function combatHomunculusAllowed(progress: unknown, id: unknown): boolean {
-  return typeof id === "string" && originals.has(id) && ownsHomunculus(progress, id);
+  return ownsHomunculus(progress, id);
 }
 
 /** Returns only the elemental factor; callers must apply it once, at attack time. */

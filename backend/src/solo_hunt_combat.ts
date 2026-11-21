@@ -1,6 +1,6 @@
 import { newExpeditionPassiveState, beginPassiveExchange, applyCombatPassive, passiveModifiers, finishPassiveAttack, finishPassiveExchange, recordPassiveSpellHit, triggerInspirationActivation } from "./expedition_passive_state";
 import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "./combat_event_provenance";
-import { combatHomunculusAllowed, homunculusAttackMultiplierById } from "./homunculus_catalog";
+import { combatHomunculusAllowed, homunculusAttackMultiplierById, legacyHomunculusIds } from "./homunculus_catalog";
 import { createHmac } from "node:crypto";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "./physical_anomaly";
 import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "./strategic_effects";
@@ -88,7 +88,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
     return highest;
   };
   const ownedWeapon = highestLevel(snapshot.item_progress, catalogs.items.filter((v: any) => v.slot === "build"));
-  const ownedHom = highestLevel(snapshot.homunculus_progress, catalogs.homunculi);
+  const ownedHom = highestLevel(snapshot.homunculus_progress, catalogs.homunculi.filter((h: any) => legacyHomunculusIds().has(h.id) || combatHomunculusAllowed(snapshot.homunculus_progress, h.id)));
   if (ownedWeapon === null || ownedHom === null) return { error: "UNTRUSTED_SETUP" };
   const selectedWeapon = Math.max(0, ...selection.weapon_ids.map((id: any) => snapshot.item_progress?.[id]?.level ?? 0));
   const selectedHom = selection.homunculus_id ? snapshot.homunculus_progress?.[selection.homunculus_id] : null;
@@ -232,10 +232,10 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   const next = structuredClone(state), events: any[] = [];
   let vitriolCorrosionUsed = 0;
   const target = switching ? null : decision.target === "boss" ? next.boss : next.minions.find((m: any) => m.id === decision.target);
+  for (const minion of next.minions) if (!minion.element_type) minion.element_type = next.minion_config?.type ?? next.boss.type;
   const passiveTarget = target ?? next.boss;
-  const passiveTargetId = () => passiveTarget === next.boss ? "boss" : passiveTarget.id;
-  const firePassive = (event: any, opponent: any = passiveTarget, poisonDamage = 0) => {
-    if (!next.hom_spent) applyCombatPassive(next.player, opponent, event, next.types, "player", opponent === next.boss ? "boss" : opponent.id, events, poisonDamage);
+  const firePassive = (event: any, opponent: any = passiveTarget, poisonDamage = 0, attack: any = null) => {
+    if (!next.hom_spent) applyCombatPassive(next.player, opponent, event, next.types, "player", opponent === next.boss ? "boss" : opponent.id, events, poisonDamage, attack);
   };
   const modifiers = () => next.player.expedition_passive && !next.hom_spent ? passiveModifiers(next.player.expedition_passive) : {};
   if (next.player.expedition_passive && !next.hom_spent) {
@@ -517,7 +517,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         if (effect.kind === "bonus_if_marked" && marked) power += effect.value;
       }
       if (target.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0))) {
-        firePassive("before_attack", target);
+        firePassive("before_attack", target, 0, spell);
         success = hit(next.player, target, spell.accuracy, power, "player");
         if (next.player.expedition_passive && !next.hom_spent) {
           next.player.expedition_passive = recordPassiveSpellHit(next.player.expedition_passive, success);
@@ -642,7 +642,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       hit(minion, next.player, 0.9, 1, "minion");
       events.push({ actor: id, kind: "minion_attack" });
     }
-    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { const victim = fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id; const damage = Math.min(3, fighter.hp); const provenance = poisonTickMetadata(fighter, victim, ["player", "boss", ...next.minions.map((m: any) => m.id)], damage, next.turn + 1); fighter.status.poison--; fighter.hp -= damage; fighter.spell_hit_this_exchange = true; if (provenance.source === "player" && victim !== "player" && damage > 0) firePassive("opponent_poison_damage", fighter, damage); events.push({ kind: "status_tick", status: "poison", target: victim, damage, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); recordPoisonChange(fighter, fighter.status.poison, null); }
+    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { const victim = fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id; const damage = Math.min(3, fighter.hp); const provenance = poisonTickMetadata(fighter, victim, ["player", "boss", ...next.minions.map((m: any) => m.id)], damage, next.turn + 1); fighter.status.poison--; fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: victim, damage, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); if (provenance.source === "player" && victim !== "player" && damage > 0) firePassive("opponent_poison_damage", fighter, damage); if (victim === "player" && damage > 0 && provenance.source && provenance.source !== "player") { const attacker = provenance.source === "boss" ? next.boss : next.minions.find((m: any) => m.id === provenance.source); if (attacker) firePassive("damage_received", attacker); } recordPoisonChange(fighter, fighter.status.poison, null); }
     if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   if (next.player.expedition_passive) next.player.expedition_passive = finishPassiveExchange(next.player.expedition_passive);
