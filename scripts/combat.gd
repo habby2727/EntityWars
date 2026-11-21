@@ -783,8 +783,8 @@ func _dungeon_render() -> void:
 		icon.call("configure", str(pair[1].get("type", "")))
 	var pe := _find_by_id(_entities, str(p.get("id", "")))
 	var ne := _find_by_id(_entities, str(n.get("id", "")))
-	var ph := _find_by_id(_homunculi, str(p.get("hom_id", "")))
-	var nh := _find_by_id(_homunculi, str(n.get("hom_id", "")))
+	var ph := _online_homunculus(str(p.get("hom_id", "")))
+	var nh := _online_homunculus(str(n.get("hom_id", "")))
 	player_entity_name.text = str(pe.get("name", p.get("id", "")))
 	enemy_entity_name.text = str(ne.get("name", n.get("id", "")))
 	player_entity.texture = _load_preview_tex(str(p.id), "entity", str(p.get("type", "")))
@@ -1689,7 +1689,7 @@ func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool
 	var entity_id := str(loadout.get("entity_id", ""))
 	var entity := _find_by_id(_entities, entity_id)
 	var hom_id := str(loadout.get("homunculus_id", "")) if loadout.get("homunculus_id") != null else ""
-	var hom := _find_by_id(_homunculi, hom_id)
+	var hom := _online_homunculus(hom_id)
 	player_entity_name.text = str(entity.get("name", entity_id))
 	enemy_entity_name.text = str(boss_def.get("name", "Boss"))
 	enemy_name.text = "BOSS - " + str(b.get("tier", "")).to_upper()
@@ -5108,10 +5108,21 @@ func _as_array(v) -> Array:
 		return v.values()
 	return []
 
+# Online presentation reads the collection only for display; local combat and
+# enemy generation continue to use the legacy combat registry.
+func _online_homunculus(id: String) -> Dictionary:
+	if _reg != null and _reg.has_method("get_homunculus_collection"):
+		return _reg.get_homunculus_collection().get(id, {})
+	return _find_by_id(_homunculi, id)
+
 func _load_preview_tex(pid: String, kind: String = "entity", display_name: String = "") -> Texture2D:
 	if pid == "":
 		return null
 	if kind == "homunculus":
+		var record := _online_homunculus(pid)
+		if record.has("combat_texture"):
+			var path := str(record.get("combat_texture", ""))
+			return load(path) if ResourceLoader.exists(path) else null
 		var stem := _resolve_homunculus_stem(pid, display_name)
 		if COMBAT_HOM_TEXTURES.has(stem):
 			return COMBAT_HOM_TEXTURES[stem]

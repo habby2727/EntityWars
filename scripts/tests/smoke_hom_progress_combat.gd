@@ -21,6 +21,13 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	await process_frame
+	var collection: Dictionary = scene._reg.get_homunculus_collection()
+	_check(scene._homunculi.size() == 8 and collection.size() == 22, "online collection does not expand local combat")
+	for id in collection:
+		var hom: Dictionary = collection[id]
+		if hom.has("combat_texture"):
+			var texture: Texture2D = scene._load_preview_tex(str(id), "homunculus")
+			_check(texture != null and texture.resource_path == str(hom.combat_texture), "manifest combat texture: " + str(id))
 	scene._combat_spell_state["homunculus_progress"] = {"cinder": {"level": 10, "mutation_id": "vitality"}}
 	var data := {"entity_id": "sulfur_01", "homunculus_id": "cinder", "equip_1": "bismuth_talisman", "equip_2": "wind_amulet"}
 	scene.player = scene._build_fighter(data, true)

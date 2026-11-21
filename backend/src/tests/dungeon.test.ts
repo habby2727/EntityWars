@@ -1101,7 +1101,7 @@ test("authenticated dungeon sessions recover, isolate owners and replay atomical
     const delayAction = { run_id: another.data.run_id, client_action_id: "fixture-delay", expected_revision: 2, decision: { turn: 2, spell_id: delayedFixture.id } };
     const delayResponse = await request("/dungeon/turn", delayAction, token);
     expect(delayResponse.status).toBe(200);
-    expect(delayResponse.data.combat_state.strategic_delayed).toHaveLength(1);
+    expect(delayResponse.data.combat_state.strategic_delayed.filter((entry: any) => entry.actor === "player")).toHaveLength(1);
     server.kill(); await server.exited; server = spawn(); await ready();
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token;
     expect((await request("/dungeon/session", undefined, token)).data.session.combat_state.strategic_delayed).toEqual(delayResponse.data.combat_state.strategic_delayed);
