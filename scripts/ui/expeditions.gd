@@ -17,6 +17,12 @@ var video_clip: Control
 var background_shade: ColorRect
 var content: VBoxContainer
 var status: Label
+var mana_bar: ProgressBar
+var crystal_bar: ProgressBar
+var mana_text: Label
+var crystal_text: Label
+var mana_prompt := false
+var mana_continue_requested := false
 var message: Label
 var body: Control
 var retry: Button
@@ -207,6 +213,10 @@ func _build_ui() -> void:
 	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status.add_theme_font_size_override("font_size", 24)
 	top.add_child(status)
+	mana_bar = _make_resource_bar(top, "res://assets/entities/expeditions/mana.png", 6, Color("318bd3"))
+	mana_text = mana_bar.get_node("Amount")
+	crystal_bar = _make_resource_bar(top, "res://assets/entities/expeditions/capture.png", 5, Color("e469a6"))
+	crystal_text = crystal_bar.get_node("Amount")
 	retry = Button.new()
 	retry.text = tr("EXPEDITION_RETRY")
 	MenuArt.button(retry)
@@ -257,6 +267,43 @@ func _build_ui() -> void:
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(message)
 	_set_background("")
+
+func _make_resource_bar(parent: Control, icon_path: String, capacity: int, color: Color) -> ProgressBar:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	parent.add_child(row)
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(28, 28)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	if ResourceLoader.exists(icon_path): icon.texture = load(icon_path)
+	row.add_child(icon)
+	var bar := ProgressBar.new()
+	bar.custom_minimum_size = Vector2(106, 26)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.max_value = capacity
+	bar.show_percentage = false
+	var background := StyleBoxFlat.new()
+	background.bg_color = Color("17232c")
+	background.border_color = Color("b9a66c")
+	background.set_border_width_all(1)
+	background.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("background", background)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = color
+	fill.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("fill", fill)
+	row.add_child(bar)
+	var amount := Label.new()
+	amount.name = "Amount"
+	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	amount.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	amount.add_theme_font_size_override("font_size", 17)
+	amount.add_theme_constant_override("outline_size", 3)
+	amount.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	amount.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bar.add_child(amount)
+	return bar
 
 func _stop_lease() -> void:
 	lease = ""
@@ -407,6 +454,7 @@ func _refresh() -> void:
 	if is_instance_valid(combat_view): combat_view.lock_controls()
 	_update_controls()
 	if request.is_empty():
+		countdown_refresh = false
 		recovery_required = true
 		message.text = tr("EXPEDITION_CONNECTION")
 		_update_controls()
@@ -421,8 +469,22 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 	if not ok:
 		var http_status := int(data.get("http_status", 0))
 		if http_status == 0 or http_status >= 500 or http_status in [408, 429]:
+			countdown_refresh = false
 			connection_gate_lost()
 			message.text = tr("EXPEDITION_CONNECTION")
+			return
+		if request_kind == "select" and http_status == 400 and str(data.get("error", "")) == "Not enough expedition mana.":
+			pending.clear()
+			mana_prompt = true
+			_refresh()
+			return
+		if request_kind == "buy_mana" and http_status == 400:
+			pending.clear()
+			var error := str(data.get("error", ""))
+			var key := "EXPEDITION_MANA_INSUFFICIENT" if error == "Insufficient essence." else "EXPEDITION_MANA_LIMIT" if error == "Expedition mana purchase limit reached." else "EXPEDITION_MANA_FULL_NOTICE" if error == "Expedition mana is full." else ""
+			last_error = tr(key) if not key.is_empty() else error
+			message.text = last_error
+			_refresh()
 			return
 		if request_kind == "start" and int(data.get("http_status", 0)) == 400:
 			pending.clear()
@@ -496,13 +558,18 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 			return
 		playing_events = false
 	var response_kind := request_kind
-	if response_kind == "state": recovery_required = false
+	if response_kind == "state":
+		recovery_required = false
+		if mana_continue_requested:
+			mana_prompt = float(data.get("mana", 0)) < 0.1
+			mana_continue_requested = false
 	var response_events: Array = data.get("events", []) if data.get("events") is Array else []
 	state_data = data.duplicate(true)
 	state_data.erase("lease")
 	received_ticks = Time.get_ticks_msec()
 	countdown_refresh = false
 	session = received.duplicate(true) if received is Dictionary else {}
+	if session.get("status") == "ACTIVE" and float(data.get("mana", 0)) < 0.1 and str(session.get("phase", "")) != "COMBAT": mana_prompt = true
 	if request_kind != "state":
 		pending.clear()
 		if response_kind == "exit":
@@ -511,6 +578,7 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 			SceneRouter.go_to_world_gate()
 			return
 	if session.get("status") == "LOSS": _stop_lease()
+	if response_kind == "buy_mana": backend.refresh_state()
 	message.text = last_error
 	last_error = ""
 	_render()
@@ -561,8 +629,9 @@ func _confirm_exit() -> void:
 
 func _send_phase_action(kind: String, direction: String = "") -> void:
 	if visual_debug: return
-	if kind not in ["capture", "skip", "advance", "exit"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or is_instance_valid(reward_popup) or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("status", "")) != "ACTIVE": return
+	if kind not in ["capture", "skip", "advance", "exit", "buy_mana"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or is_instance_valid(reward_popup) or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("status", "")) != "ACTIVE": return
 	var phase := str(session.get("phase", ""))
+	if kind == "buy_mana" and not mana_prompt: return
 	if kind in ["capture", "skip"] and phase != "REWARD": return
 	if kind == "advance" and (phase != "ROUTE" or direction not in ["left", "forward", "right"] or direction not in session.get("directions", [])): return
 	if kind == "capture" and (_candidate().is_empty() or str(session.get("capture_candidate", {}).get("id", "")) != str(session.get("reward_homunculus", {}).get("id", "")) or bool(session.get("capture_closed", true)) or int(session.get("capture_attempts_remaining", 0)) < 1 or int(state_data.get("crystals", 0)) < 1): return
@@ -692,8 +761,15 @@ func _update_status() -> void:
 	var regen_at: Variant = state_data.get("next_regeneration_at")
 	var regen := maxi(0, int(regen_at) - int(state_data.get("server_time_unix_ms", 0)) - elapsed) if regen_at != null else 0
 	var cooldown := maxi(0, int(state_data.get("remaining_cooldown_ms", 0)) - elapsed)
-	status.text = tr("EXPEDITION_BALANCE") % [int(state_data.get("mana", 0)), int(state_data.get("crystals", 0)), _duration(regen), _duration(cooldown)]
-	if session.is_empty() and not countdown_refresh and ((int(state_data.get("remaining_cooldown_ms", 0)) > 0 and cooldown == 0) or (state_data.get("next_regeneration_at") != null and regen == 0)):
+	var mana := float(state_data.get("mana", 0))
+	mana_bar.value = mana
+	crystal_bar.value = int(state_data.get("crystals", 0))
+	mana_text.text = "%s/6" % (str(int(mana)) if mana == floor(mana) else str(mana))
+	crystal_text.text = "%d/5" % int(state_data.get("crystals", 0))
+	mana_bar.tooltip_text = tr("EXPEDITION_MANA_TOOLTIP") % (tr("EXPEDITION_MANA_FULL") if regen_at == null else _duration(regen))
+	crystal_bar.tooltip_text = tr("EXPEDITION_CRYSTALS_TOOLTIP")
+	if not state_data.is_empty() and (not visual_debug or visual_debug_view != 0): status.text = ""
+	if not countdown_refresh and not recovery_required and not recovery_conflict and request.is_empty() and pending.is_empty() and (not is_instance_valid(combat_view) or combat_view.pending_hom_decision.is_empty()) and not playing_events and not is_instance_valid(reward_popup) and not get_node("/root/ConnectionGate").blocked() and ((session.is_empty() and int(state_data.get("remaining_cooldown_ms", 0)) > 0 and cooldown == 0) or (state_data.get("next_regeneration_at") != null and regen == 0) or (mana_prompt and state_data.get("next_mana_purchase_at") != null and int(state_data.get("next_mana_purchase_at")) <= int(state_data.get("server_time_unix_ms", 0)) + elapsed)):
 		countdown_refresh = true
 		call_deferred("_refresh")
 
@@ -729,6 +805,9 @@ func _render() -> void:
 		center.add_child(start)
 		return
 	_set_background(str(session.get("background_key", "")))
+	if mana_prompt and session.get("status") == "ACTIVE":
+		_render_mana_prompt()
+		return
 	match str(session.get("phase", "")):
 		"EXPLORE": _render_choices()
 		"COMBAT": _render_combat()
@@ -736,6 +815,36 @@ func _render() -> void:
 		"ROUTE": _render_route()
 		"LOSS": _render_terminal(false)
 		_: message.text = tr("EXPEDITION_PHASE_UNAVAILABLE") % str(session.get("phase", ""))
+
+func _render_mana_prompt() -> void:
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	body.add_child(center)
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 12)
+	center.add_child(box)
+	box.add_child(_label(tr("EXPEDITION_MANA_EMPTY"), 32))
+	box.add_child(_label(tr("EXPEDITION_MANA_PURCHASES") % int(state_data.get("mana_purchases_remaining", 0)), 20))
+	var buy := Button.new()
+	buy.text = tr("EXPEDITION_MANA_BUY")
+	buy.custom_minimum_size = Vector2(320, 56)
+	buy.set_meta("unavailable", float(state_data.get("mana", 0)) > 5.0 or int(state_data.get("mana_purchases_remaining", 0)) <= 0)
+	MenuArt.button(buy)
+	buy.pressed.connect(func(): _send_phase_action("buy_mana"))
+	box.add_child(buy)
+	phase_buttons.append(buy)
+	var proceed := Button.new()
+	proceed.text = tr("EXPEDITION_CONTINUE")
+	proceed.custom_minimum_size = Vector2(320, 56)
+	proceed.set_meta("unavailable", float(state_data.get("mana", 0)) < 0.1)
+	MenuArt.button(proceed)
+	proceed.pressed.connect(func():
+		mana_continue_requested = true
+		_refresh())
+	box.add_child(proceed)
+	phase_buttons.append(proceed)
+	_update_controls()
 
 func _render_choices() -> void:
 	var choices: Variant = session.get("choices", [])

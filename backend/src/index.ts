@@ -336,6 +336,18 @@ function getExpeditionService() {
 		if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
 		auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "EXPEDITION_VICTORY", rewardId, now);
 		return credited;
+	}, spendManaEssence: (playerId, actionId, now) => {
+		const row = getPlayerByIdStmt.get(playerId) as {state_json:string} | undefined;
+		if (!row) throw new HttpError(404, "Player not found.");
+		let player: PlayerState;
+		try { player = JSON.parse(row.state_json); } catch { throw new HttpError(409, "Invalid player state."); }
+		if (!player?.wallet || !Number.isSafeInteger(player.wallet.essence) || player.wallet.essence < 0) throw new HttpError(409, "Invalid player wallet.");
+		if (player.wallet.essence < 300) throw new HttpError(400, "Insufficient essence.");
+		const before = {...player.wallet};
+		player.wallet.essence -= 300;
+		player.updated_at = now;
+		if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+		auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "EXPEDITION_BUY_MANA", actionId, now);
 	}, captureHomunculus: captureExpeditionHomunculus, makeSetup: (playerId, snapshot, selection) => {
 		if (selection.homunculus_id && !ownsHomunculus(snapshot.homunculus_progress, selection.homunculus_id)) return {error:"UNTRUSTED_SETUP"};
 		return buildTrustedCombatSetup({ ...snapshot, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, selection, catalogs, { independentLoadout: true });
@@ -2339,7 +2351,7 @@ async function startServer(): Promise<void> {
 					const body = await readJson(req, config.maxBodyBytes);
 					return jsonResponse(getExpeditionService().heartbeat(playerId, req.headers.get("x-expedition-lease"), body));
 				}
-				if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|capture|skip|advance|exit)$/.test(url.pathname)) {
+				if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|capture|skip|advance|exit|buy_mana)$/.test(url.pathname)) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
 					const body = await readJson(req, config.maxBodyBytes);

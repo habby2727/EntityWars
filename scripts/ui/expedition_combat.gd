@@ -26,6 +26,8 @@ var weapon_buttons: Array[Button] = []
 var inspiration_buttons: Array[Button] = []
 var decline_button: Button
 var hom_attack: Button
+var hom_hold: Button
+var pending_hom_decision := {}
 var player_sprite: TextureRect
 var player_hom_sprite: TextureRect
 var enemy_sprite: TextureRect
@@ -204,7 +206,7 @@ func _build() -> void:
 		controls.append(button)
 	var switch := Button.new()
 	switch.name = "SwitchWeapon"
-	switch.text = tr("EXPEDITION_WEAPON") + "  ?"
+	switch.text = "Swap Weapon"
 	var other := 2 if active == 1 else 1
 	switch.disabled = other > equipped.size() or (equipped[other - 1] as Dictionary).get("id") == null or bool(player.get("inspiration_pending", false))
 	MenuArt.button(switch)
@@ -212,16 +214,22 @@ func _build() -> void:
 	_place(switch, Vector2(760, 160), Vector2(400, 42))
 	controls.append(switch)
 	hom_attack = Button.new()
-	hom_attack.toggle_mode = true
+	hom_attack.name = "HomAttack"
 	MenuArt.button(hom_attack)
-	hom_attack.add_theme_stylebox_override("hover_pressed", hom_attack.get_theme_stylebox("pressed"))
-	hom_attack.add_theme_font_size_override("font_size", 20)
-	hom_attack.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
-	hom_attack.text = tr("EXPEDITION_HOM_ATTACK")
-	hom_attack.disabled = player.get("hom_id") == null or int(player.get("hom_energy", 0)) < 3 or bool(player.get("inspiration_pending", false))
-	hom_attack.tooltip_text = tr("EXPEDITION_HOM_HINT")
-	_place(hom_attack, Vector2(20, 788), Vector2(300, 55))
-	controls.append(hom_attack)
+	hom_attack.add_theme_font_size_override("font_size", 18)
+	hom_attack.text = tr("COMBAT_ATTACK")
+	hom_attack.pressed.connect(_choose_hom.bind("attack"))
+	_place(hom_attack, Vector2(20, 788), Vector2(145, 55))
+	hom_attack.hide()
+	hom_hold = Button.new()
+	hom_hold.name = "HomHold"
+	MenuArt.button(hom_hold)
+	hom_hold.add_theme_font_size_override("font_size", 18)
+	hom_hold.text = tr("COMBAT_HOLD")
+	hom_hold.tooltip_text = tr("COMBAT_HOLD_HINT")
+	hom_hold.pressed.connect(_choose_hom.bind("hold"))
+	_place(hom_hold, Vector2(170, 788), Vector2(150, 55))
+	hom_hold.hide()
 	if bool(player.get("inspiration_pending", false)):
 		var offers := VBoxContainer.new()
 		_place(offers, Vector2(580, 300), Vector2(760, 180))
@@ -444,14 +452,33 @@ func _build_inspiration(main: VBoxContainer, player: Dictionary) -> void:
 	controls.append(decline)
 
 func _cast(id: String) -> void:
+	if not pending_hom_decision.is_empty(): return
 	var state: Dictionary = session.get("combat_state", {})
-	var decision := {"turn": int(state.get("turn", 0)) + 1, "spell_id":id, "hom_action":"attack" if hom_attack.button_pressed else "hold"}
+	var player: Dictionary = state.get("player", {})
+	var decision := {"turn": int(state.get("turn", 0)) + 1, "spell_id":id, "hom_action":"hold"}
+	if not str(player.get("hom_id", "")).is_empty() and player.get("hom_id") != null and int(player.get("hom_energy", 0)) >= 3:
+		lock_controls()
+		pending_hom_decision = decision
+		hom_attack.show()
+		hom_hold.show()
+		hom_hold.grab_focus()
+	else:
+		host.send_combat_decision("turn", decision)
+
+func _choose_hom(choice: String) -> void:
+	if pending_hom_decision.is_empty() or choice not in ["attack", "hold"]: return
+	var decision := pending_hom_decision.duplicate(true)
+	decision.hom_action = choice
+	lock_controls()
 	host.send_combat_decision("turn", decision)
 
 func _switch(slot: int) -> void:
 	host.send_combat_decision("turn", {"turn":int(session.get("combat_state", {}).get("turn", 0)) + 1, "switch_slot":slot})
 
 func lock_controls() -> void:
+	pending_hom_decision.clear()
+	if is_instance_valid(hom_attack): hom_attack.hide()
+	if is_instance_valid(hom_hold): hom_hold.hide()
 	for control in controls: control.disabled = true
 
 func _append_event(event: Dictionary) -> void:

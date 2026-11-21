@@ -10,7 +10,7 @@ test("exit settles mana and cooldown once, including at zero mana", () => {
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
   for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(resolve(migrations, file), "utf8"));
   const service = createExpeditionService({db, secret:"test", catalogs:{}, getPlayer:() => ({}), makeSetup:() => ({}), awardVictory:() => {}, captureHomunculus:() => ({duplicate:false})});
-  for (const mana of [0, 1, 6]) {
+  for (const mana of [0, 0.1, 0.5, 0.9, 1, 6]) {
     const player = `player-${mana}`, run = `run-${mana}`, now = Date.now();
     db.query("INSERT INTO expedition_balances(player_id,mana,crystals,regen_at) VALUES(?,?,0,?)").run(player,mana,mana === 6 ? 0 : now + 1800000);
     const lease="a".repeat(64), hash=createHmac("sha256","test").update("expedition-lease:"+lease).digest("hex");

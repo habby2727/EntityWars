@@ -12,7 +12,7 @@ func _run() -> void:
 	for locale in ["en", "es"]:
 		TranslationServer.set_locale(locale)
 		var warning := tr("EXPEDITION_RISK_WARNING")
-		assert(warning != "EXPEDITION_RISK_WARNING" and warning.contains("15") and warning.contains("60") and warning.contains("1"))
+		assert(warning != "EXPEDITION_RISK_WARNING" and warning.contains("240") and warning.contains("60") and warning.contains("1"))
 	TranslationServer.set_locale("en")
 	token = OS.get_environment("EXPEDITION_TEST_TOKEN")
 	player_id = OS.get_environment("EXPEDITION_TEST_PLAYER")
@@ -57,6 +57,7 @@ func _run() -> void:
 	for attempt in 3:
 		var revision := int(screen.session.revision)
 		screen.combat_view._cast("cinder_fist")
+		if screen.combat_view.hom_hold.visible: screen.combat_view.hom_hold.pressed.emit()
 		assert(await _wait_revision(screen, revision + 1))
 		if screen.session.phase == "REWARD": break
 	assert(screen.session.phase == "REWARD")
@@ -145,6 +146,7 @@ func _run() -> void:
 	for attempt in 5:
 		var previous: int = int(losing.session.revision)
 		losing.combat_view._cast("cinder_fist")
+		if losing.combat_view.hom_hold.visible: losing.combat_view.hom_hold.pressed.emit()
 		assert(await _wait_revision(losing, previous + 1))
 		if losing.session.phase == "LOSS": break
 	assert(losing.session.phase == "LOSS" and losing.lease.is_empty() and not losing.forfeited)

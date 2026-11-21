@@ -92,10 +92,10 @@ export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, dep
   const equipment = chooseNpcItem(seed, encounterKey, setup, selected, enemy.types, hom, personality, catalogs, npcItemLevel);
   // Reserve item flats inside the existing target budget, rather than stacking them on top.
   const attackBudget = Math.max(1, Math.round(attack * (0.60 + Math.min(0.15, spellQuality * 0.1)) * threat));
-  const defenseBudget = Math.max(1, Math.round(defense * 0.82 * threat));
+  const defenseBudget = Math.min(100000, Math.max(1, Math.round(defense * 0.82 * threat)) + Math.min(26, 2 * (difficultyDepth - 1)));
   const item_power_allocated = Math.trunc(equipment.item_effects.power_flat ?? 0);
   const item_guard_allocated = Math.trunc(equipment.item_effects.guard_flat ?? 0);
-  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((difficultyDepth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map(s => s.id), npc_personality: personality };
+  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((difficultyDepth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth) + Math.min(40, (difficultyDepth - 1) * 5)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map(s => s.id), npc_personality: personality };
 }
 
 export function createExpeditionCombatState(setup: any, enemy: any, catalogs: any, previousActiveSlot = 0) {

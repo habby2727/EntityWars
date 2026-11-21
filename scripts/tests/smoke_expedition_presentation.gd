@@ -1,5 +1,10 @@
 extends SceneTree
 
+class DecisionHost extends Control:
+	var decisions: Array = []
+	func send_combat_decision(kind: String, decision: Dictionary) -> void:
+		decisions.append({"kind":kind, "decision":decision.duplicate(true)})
+
 func _initialize() -> void:
 	call_deferred("_run")
 
@@ -33,7 +38,7 @@ func _run() -> void:
 	assert(icon.scale.x > initial_scale.x)
 	view.animation_tweens[icon].custom_step(0.5)
 	assert(icon.scale.is_equal_approx(initial_scale))
-	assert(view.hom_attack.toggle_mode)
+	assert(not view.hom_attack.visible and not view.hom_hold.visible)
 	assert(view.hom_attack.get_theme_stylebox("normal") is StyleBoxTexture)
 	assert(view.hom_attack.get_theme_stylebox("normal").texture == preload("res://scripts/ui/menu_art.gd")._button_frame("boton-loadout-opciones.png").texture)
 	for locale in ["en", "es"]:
@@ -73,6 +78,57 @@ func _run() -> void:
 	if not capture_path.is_empty() and DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(capture_path)
+	dialog.queue_free()
+	await process_frame
+	var decision_host := DecisionHost.new()
+	root.add_child(decision_host)
+	view.host = decision_host
+	view.session.combat_state.player.hom_energy = 3
+	view._cast("cinder_fist")
+	assert(decision_host.decisions.is_empty() and view.hom_attack.visible and view.hom_hold.visible)
+	var click_at: Vector2 = view.hom_attack.get_global_transform_with_canvas() * (view.hom_attack.size * 0.5)
+	var motion := InputEventMouseMotion.new()
+	motion.position = click_at
+	motion.global_position = click_at
+	root.push_input(motion, true)
+	assert(root.gui_get_hovered_control() == view.hom_attack)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.position = click_at
+	click.global_position = click_at
+	click.pressed = true
+	root.push_input(click, true)
+	click = click.duplicate()
+	click.pressed = false
+	root.push_input(click, true)
+	await process_frame
+	assert(decision_host.decisions.size() == 1 and decision_host.decisions[0].decision.hom_action == "attack" and decision_host.decisions[0].decision.spell_id == "cinder_fist")
+	view._cast("cinder_fist")
+	assert(view.hom_attack.visible and view.hom_hold.visible)
+	click_at = view.hom_hold.get_global_transform_with_canvas() * (view.hom_hold.size * 0.5)
+	motion.position = click_at
+	motion.global_position = click_at
+	root.push_input(motion, true)
+	assert(root.gui_get_hovered_control() == view.hom_hold)
+	click.position = click_at
+	click.global_position = click_at
+	click.pressed = true
+	root.push_input(click, true)
+	click = click.duplicate()
+	click.pressed = false
+	root.push_input(click, true)
+	await process_frame
+	assert(decision_host.decisions.size() == 2 and decision_host.decisions[1].decision.hom_action == "hold")
+	view.session.combat_state.player.hom_energy = 6
+	view._cast("cinder_fist")
+	assert(view.hom_attack.visible and view.hom_hold.visible)
+	view.hom_hold.pressed.emit()
+	assert(decision_host.decisions.size() == 3 and decision_host.decisions[2].decision.hom_action == "hold")
+	view.session.combat_state.player.hom_energy = 2
+	view._cast("cinder_fist")
+	assert(decision_host.decisions.size() == 4 and decision_host.decisions[3].decision.hom_action == "hold" and not view.hom_hold.visible)
+	view.host = screen
+	decision_host.queue_free()
 	# Exercise the same pending action across transient disconnects and failures.
 	screen.backend = BackendClient.new()
 	screen.add_child(screen.backend)

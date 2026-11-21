@@ -18,9 +18,9 @@
       "type": "mercury",
       "role": "trickster",
       "base_stats": {
-        "hp": 96,
-        "power": 29,
-        "guard": 15,
+        "hp": 91,
+        "power": 23,
+        "guard": 10,
         "tempo": 18
       }
     },
@@ -30,7 +30,7 @@
       "type": "sodium",
       "role": "tank",
       "base_stats": {
-        "hp": 132,
+        "hp": 122,
         "power": 16,
         "guard": 16,
         "tempo": 10

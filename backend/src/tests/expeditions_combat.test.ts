@@ -23,6 +23,11 @@ const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
 const setup = buildTrustedCombatSetup({player_id:"p",state_revision:1,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{},homunculus_progress:{honin:{owned:true,level:0,xp:0}}}, {entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:"honin",spell_ids:ids,mode:"attack"}, catalogs, {independentLoadout:true});
 const rng = (turn: number, draw: number) => deterministicDraw(seed, "battle", turn, draw);
 
+test("updated entity base statistics", () => {
+  expect(entities.entities.find(e => e.id === "mercury_01")?.base_stats).toEqual({hp:91,power:23,guard:10,tempo:18});
+  expect(entities.entities.find(e => e.id === "sodium_01")?.base_stats).toEqual({hp:122,power:16,guard:16,tempo:10});
+});
+
 test("routes preserve floor identity and persist independent difficulty, including legacy runs", () => {
   const db = new Database(":memory:");
   const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
@@ -69,6 +74,32 @@ test("enemy growth uses difficulty without changing floor or deterministic choic
   expect(first.floor).toBe(11); expect(stronger.floor).toBe(11);
   expect([first.entity_id,first.homunculus_id,first.spell_ids,first.item_id]).toEqual([stronger.entity_id,stronger.homunculus_id,stronger.spell_ids,stronger.item_id]);
   expect(stronger.hp).toBeGreaterThan(first.hp); expect(stronger.attack).toBeGreaterThan(first.attack); expect(stronger.defense).toBeGreaterThan(first.defense); expect(stronger.homunculus_level).toBeGreaterThan(first.homunculus_level);
+});
+test("difficulty adds two defense per step, capped at 26", () => {
+  for (const capturable of [false, true]) for (const difficulty of [1,2,3,9,13,14,15,20,100]) {
+    const enemy = buildExpeditionEnemy(seed,"defense-bonus",11,capturable,setup,catalogs,undefined,undefined,0,difficulty);
+    const baseGuard = setup.entity.base_stats.guard + (setup.bonuses?.def ?? 0);
+    const growth = 1 + Math.min(0.55, Math.log2(difficulty) * 0.035);
+    const oldDefense = Math.max(1, Math.round(baseGuard * 0.82 * (capturable ? 1.12 : 1) * growth));
+    expect(enemy.defense).toBe(oldDefense + Math.min(26, 2 * (difficulty - 1)));
+    const state = createExpeditionCombatState(setup,enemy,catalogs);
+    const hom = expeditionCaptures.find(h => h.id === enemy.homunculus_id)!;
+    expect(state.npc.def).toBe(enemy.defense + (hom.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3));
+  }
+});
+
+test("difficulty adds five HP per step, capped at forty", () => {
+  for (const capturable of [false, true]) for (const difficulty of [1, 2, 3, 8, 9, 10, 100]) {
+    const enemy = buildExpeditionEnemy(seed,"hp-bonus",11,capturable,setup,catalogs,undefined,undefined,0,difficulty);
+    const baseHp = setup.entity.base_stats.hp + (setup.bonuses?.hp ?? 0);
+    const growth = 1 + Math.min(0.55, Math.log2(difficulty) * 0.035);
+    const previousHp = Math.max(1, Math.round(baseHp * (capturable ? 0.85 : 0.75) * growth));
+    expect(enemy.hp - previousHp).toBe(Math.min(40, (difficulty - 1) * 5));
+    const state = createExpeditionCombatState(setup,enemy,catalogs);
+    expect(state.error).toBeUndefined();
+    expect(state.npc.hp).toBe(state.npc.max_hp);
+    expect(state.npc.hp).toBe(enemy.hp + (expeditionCaptures.find(h => h.id === enemy.homunculus_id)?.buff_hp ?? 0) + enemy.homunculus_level);
+  }
 });
 const build = (key: string, depth = 1, capture = false) => buildExpeditionEnemy(seed, key, depth, capture, setup, catalogs);
 const simulate = (state: any, random = rng) => {
@@ -167,6 +198,30 @@ test("normal and capturable encounters resolve actual turns to terminal states",
   }
   const injured = createExpeditionCombatState(setup, tough, catalogs); injured.player.hp = 1;
   expect(simulate(injured).state.terminal_result).toBe("LOSS");
+});
+
+test("charged homunculus and entity attack together, or hold its charge", () => {
+  const state = createExpeditionCombatState(setup,build("hom-choice"),catalogs);
+  state.player.hp = state.player.max_hp = 5000;
+  state.npc.hp = state.npc.max_hp = 5000;
+  state.player.tempo = 1000;
+  state.player.hom_energy = 3;
+  state.npc.item_effects.evasion_pct = 0;
+  const cast = (hom_action: string) => resolveExpeditionTurn(structuredClone(state),{turn:1,spell_id:"cinder_fist",hom_action},()=>0.1);
+  const attack = cast("attack");
+  expect(attack.error).toBeUndefined();
+  expect(attack.events.some((e:any)=>e.kind === "spell" && e.actor === "player" && e.spell_id === "cinder_fist")).toBe(true);
+  expect(attack.events.some((e:any)=>e.kind === "damage" && e.actor === "player" && e.amount > 0)).toBe(true);
+  expect(attack.events.some((e:any)=>e.kind === "hom_attack" && e.actor === "player" && e.amount > 0)).toBe(true);
+  expect(attack.next_state.player.hom_energy).toBe(0);
+  const hold = cast("hold");
+  expect(hold.error).toBeUndefined();
+  expect(hold.events.some((e:any)=>e.kind === "damage" && e.actor === "player" && e.amount > 0)).toBe(true);
+  expect(hold.events.some((e:any)=>e.kind === "hom_attack" && e.actor === "player")).toBe(false);
+  expect(hold.next_state.player.hom_energy).toBeGreaterThanOrEqual(3);
+  state.player.hom_energy = 6;
+  expect(cast("hold").next_state.player.hom_energy).toBe(6);
+  expect(cast("attack").events.some((e:any)=>e.kind === "hom_attack" && e.actor === "player")).toBe(true);
 });
 
 test("dual type defense affects real damage, neutralization and homunculus attacks", () => {

@@ -32,18 +32,19 @@ export const expeditionCaptures = (() => {
 export type ExpeditionMana = { mana: number; regen_at: number };
 /** regen_at is the next tick; zero while the pool is full. */
 export function regenerateExpeditionMana(pool: ExpeditionMana, now: number): ExpeditionMana {
-  if (!pool || !Number.isSafeInteger(pool.mana) || pool.mana < 0 || pool.mana > EXPEDITION_MANA_CAP || !Number.isSafeInteger(pool.regen_at) || pool.regen_at < 0 || !Number.isSafeInteger(now) || now < 0 || (pool.mana < EXPEDITION_MANA_CAP && pool.regen_at === 0)) throw new Error("INVALID_EXPEDITION_MANA");
+  if (!pool || typeof pool.mana !== "number" || !Number.isSafeInteger(pool.mana * 10) || pool.mana < 0 || pool.mana > EXPEDITION_MANA_CAP || !Number.isSafeInteger(pool.regen_at) || pool.regen_at < 0 || !Number.isSafeInteger(now) || now < 0 || (pool.mana < EXPEDITION_MANA_CAP && pool.regen_at === 0)) throw new Error("INVALID_EXPEDITION_MANA");
   if (pool.mana === EXPEDITION_MANA_CAP) return { mana: pool.mana, regen_at: 0 };
   if (now < pool.regen_at) return { ...pool };
   const ticks = Math.floor((now - pool.regen_at) / EXPEDITION_MANA_INTERVAL_MS) + 1;
-  const mana = Math.min(EXPEDITION_MANA_CAP, pool.mana + ticks);
+  const mana = Math.min(EXPEDITION_MANA_CAP * 10, Math.round(pool.mana * 10) + ticks * 10) / 10;
   return { mana, regen_at: mana === EXPEDITION_MANA_CAP ? 0 : pool.regen_at + ticks * EXPEDITION_MANA_INTERVAL_MS };
 }
-export function changeExpeditionMana(pool: ExpeditionMana, delta: -1 | 1, now: number): ExpeditionMana {
-  if (delta !== -1 && delta !== 1) throw new Error("INVALID_EXPEDITION_MANA_CHANGE");
+export function changeExpeditionMana(pool: ExpeditionMana, delta: number, now: number): ExpeditionMana {
+  if (typeof delta !== "number" || !Number.isSafeInteger(delta * 10) || !(delta === 1 || (delta < 0 && delta >= -1))) throw new Error("INVALID_EXPEDITION_MANA_CHANGE");
   const current = regenerateExpeditionMana(pool, now);
-  if (delta === -1 && current.mana === 0) throw new Error("EXPEDITION_MANA_EMPTY");
-  const mana = Math.min(EXPEDITION_MANA_CAP, current.mana + delta);
+  const tenths = Math.round(current.mana * 10) + Math.round(delta * 10);
+  if (tenths < 0) throw new Error("EXPEDITION_MANA_EMPTY");
+  const mana = Math.min(EXPEDITION_MANA_CAP * 10, tenths) / 10;
   return { mana, regen_at: mana === EXPEDITION_MANA_CAP ? 0 : current.mana === EXPEDITION_MANA_CAP ? now + EXPEDITION_MANA_INTERVAL_MS : current.regen_at };
 }
 
