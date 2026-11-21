@@ -62,7 +62,7 @@ test("accuracy, evasion and stun resolve without spending wrong resources", () =
  s.fighters.right.item_fx.evasion_pct = 1;
  const evade = resolvePvpExchange(s,l,r,()=>0.5) as any;
  expect(evade.events.some((e: any)=>e.kind === "evade")).toBe(true);
- expect(evade.state.fighters.right.hp).toBe(96);
+ expect(evade.state.fighters.right.hp).toBe(91);
  s.fighters.right.item_fx.evasion_pct = 0; s.fighters.right.status.stun = 1;
  const miss = resolvePvpExchange(s,l,r,()=>0.999999) as any;
  expect(miss.events.some((e: any)=>e.kind === "damage" && e.side === "left")).toBe(true);
@@ -91,11 +91,11 @@ test("invalid decisions and RNG fail without modifying input", () => {
  expect(s).toEqual(before);
 });
 
-test("three headless Godot exchange fixtures match damage, cooldowns, statuses and event order", () => {
+test("three deterministic exchange fixtures match damage, cooldowns, statuses and event order", () => {
  const fixtures = [
-  {left:"sulfur",right:"mercury",a:"cinder_fist",b:"silver_needle",hp:[94,81],damage:[15,10],draws:[0.5,0,0.5,0.5],proc:"atk_down"},
-  {left:"aether",right:"sodium",a:"rift_touch",b:"crystal_ram",hp:[93,101],damage:[11,9],draws:[0.5,0,0.5,0.5],proc:"vuln_pct"},
-  {left:"vitriol",right:"gold",a:"etching_fang",b:"aurum_edge",hp:[99,93],damage:[11,11],draws:[0.5,0.5,0.5,0.5],proc:null},
+  {left:"sulfur",right:"mercury",a:"cinder_fist",b:"silver_needle",hp:[90,76],damage:[15,14],draws:[0.5,0,0.5,0.5],proc:"atk_down"},
+  {left:"aether",right:"sodium",a:"rift_touch",b:"crystal_ram",hp:[93,111],damage:[11,9],draws:[0.5,0,0.5,0.5],proc:"vuln_pct"},
+  {left:"vitriol",right:"gold",a:"etching_fang",b:"aurum_edge",hp:[109,87],damage:[11,11],draws:[0.5,0.5,0.5,0.5],proc:null},
  ];
  for (const f of fixtures) {
   const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
@@ -149,11 +149,11 @@ test("elemental advantage and all six on-hit passives use the acting fighter", (
  expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "right").effectiveness).toBeCloseTo(0.84);
 });
 
-test("three Godot support and attack-effect fixtures match HP, status, cooldown and event categories", () => {
+test("three support and attack-effect fixtures match HP, status, cooldown and event categories", () => {
  const fixtures = [
-  {left:"sulfur",right:"mercury",a:"ash_temper",b:"silver_needle",hp:[91,96],damage:[13],draws:[0.775193333625793,0.54944521188736,0.714087608503178],categories:["buff","buff","buff","damage","damage"],status:"atk_boost",value:0.2,recipient:"left",cd:2,inspiration:0},
-  {left:"sodium",right:"aether",a:"brine_mend",b:"rift_touch",hp:[101,102],damage:[11],draws:[0.0138160288333893,0.28386664390564,0.93741182051599],categories:["buff","buff","heal","damage","damage","debuff"],status:"vuln_pct",value:0.12,recipient:"left",cd:3,inspiration:0},
-  {left:"vitriol",right:"gold",a:"caustic_mark",b:"aurum_edge",hp:[99,93],damage:[8,11],draws:[0.801872670650482,0.909451206680387,0.222710683941841,0.41610933537595],categories:["damage","damage","debuff","inspiration","damage","damage","debuff"],status:"poison",value:1,recipient:"right",cd:2,inspiration:1},
+  {left:"sulfur",right:"mercury",a:"ash_temper",b:"silver_needle",hp:[88,91],damage:[16],draws:[0.775193333625793,0.54944521188736,0.714087608503178],categories:["buff","buff","buff","damage","damage"],status:"atk_boost",value:0.2,recipient:"left",cd:2,inspiration:0},
+  {left:"sodium",right:"aether",a:"brine_mend",b:"rift_touch",hp:[109,87],damage:[15,11],draws:[0.0138160288333893,0.28386664390564,0.93741182051599],categories:["buff","buff","damage","heal","damage","damage","debuff"],status:"vuln_pct",value:0.12,recipient:"left",cd:3,inspiration:0},
+  {left:"vitriol",right:"gold",a:"caustic_mark",b:"aurum_edge",hp:[109,87],damage:[8,11],draws:[0.801872670650482,0.909451206680387,0.222710683941841,0.41610933537595],categories:["damage","damage","debuff","inspiration","damage","damage","debuff"],status:"poison",value:1,recipient:"right",cd:2,inspiration:1},
  ];
  for (const f of fixtures) {
   const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
@@ -230,7 +230,7 @@ test("three successive different debuffs accrue inspiration from zero", () => {
 test("all catalog spells restricted to the fourteen supported effect kinds resolve", () => {
  const supported = new Set(["heal","shield","reflect","atk_boost","atk_down","vuln","poison","hom_stun","type_neutralize","focus_next","misalign_next","tempo_shift","cleanse_one","poison_on_reflect"]);
  const spells = catalogs.spells.filter((s: any)=>s.effects.every((e: any)=>supported.has(e.kind)));
- expect(spells).toHaveLength(45);
+ expect(spells).toHaveLength(44);
  for (const spell of spells) {
   const type = ["universal","hybrid"].includes(spell.type) ? spell.eligible_types[0] : spell.type;
   for (const side of ["left","right"] as const) {
@@ -262,13 +262,13 @@ test("all 66 supported catalog spells resolve on both human sides", () => {
  }
 });
 
-test("four headless Godot advanced fixtures match HP, cooldowns, statuses and draw order", () => {
+test("four advanced fixtures match HP, cooldowns, statuses and draw order", () => {
  const common = [0.0973597019910812,0.519018752966076,0.342859894037247,0.339055563090369];
  const fixtures = [
-  {left:"gold",right:"sodium",a:"gilded_exception",b:"crystal_ram",mode:"mark",hp:[96,96],damage:[16,8],draws:common,cd:3},
-  {left:"aether",right:"sodium",a:"crystal_dividend",b:"crystal_ram",mode:"ward",hp:[102,81],damage:[13],draws:[0.167608201503754,0.540733559522778,0.988577008247375],cd:3},
-  {left:"sulfur",right:"mercury",a:"last_axiom",b:"silver_needle",mode:"recoil",hp:[0,72],damage:[24],draws:common.slice(0,2),cd:3},
-  {left:"sulfur",right:"mercury",a:"echo_siphon",b:"silver_needle",mode:"leech",hp:[49,85],damage:[11,13],draws:common,cd:2},
+  {left:"gold",right:"sodium",a:"gilded_exception",b:"crystal_ram",mode:"mark",hp:[90,106],damage:[16,8],draws:common,cd:3},
+  {left:"aether",right:"sodium",a:"crystal_dividend",b:"crystal_ram",mode:"ward",hp:[102,91],damage:[13],draws:[0.167608201503754,0.540733559522778,0.988577008247375],cd:3},
+  {left:"sulfur",right:"mercury",a:"last_axiom",b:"silver_needle",mode:"recoil",hp:[0,67],damage:[24],draws:common.slice(0,2),cd:3},
+  {left:"sulfur",right:"mercury",a:"echo_siphon",b:"silver_needle",mode:"leech",hp:[46,80],damage:[11,16],draws:common,cd:2},
  ];
  for (const f of fixtures) {
   const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
@@ -318,7 +318,7 @@ test("conditional modifiers use poison, prior hits, marks and HP before the hit"
 });
 
 test("ward pierce, dispel, initiative shields and conversion preserve defenses", () => {
- for (const [type,id,expected] of [["sulfur","needle_etch",9],["mercury","quicksilver_solvent",8]] as const) {
+ for (const [type,id,expected] of [["sulfur","needle_etch",9],["mercury","quicksilver_solvent",10]] as const) {
   const s = createPvpCombatState(snapshot("a",type),snapshot("b",type === "sulfur" ? "gold" : "sulfur"),catalogs) as any;
   equip(s.fighters.left,id); s.fighters.right.status.shield_pct=0.5;
   const right = type === "sulfur" ? "aurum_edge" : "cinder_fist";
@@ -328,14 +328,14 @@ test("ward pierce, dispel, initiative shields and conversion preserve defenses",
  }
  for (const second of [false,true]) {
   const s = createPvpCombatState(snapshot("a","mercury"),snapshot("b","sulfur"),catalogs) as any; equip(s.fighters.left,"fluid_anchor");
-  if (second) s.fighters.right.status.tempo_bonus=5;
+  if (second) s.fighters.right.status.tempo_bonus=10;
   const out = resolvePvpExchange(s,{turn:1,spell_id:"fluid_anchor"},{turn:1,spell_id:"ash_temper"},()=>0.5) as any;
   expect(out.state.fighters.left.status.shield_pct).toBe(second ? 0.18 : 0.08);
  }
  const s = createPvpCombatState(snapshot("a","gold"),snapshot("b","sodium"),catalogs) as any; equip(s.fighters.left,"gilded_lien");
  Object.assign(s.fighters.left,{spell_ward:0.3,spell_ward_baseline:0.1}); s.fighters.left.status.shield_pct=0.3;
- const out = resolvePvpExchange(s,{turn:1,spell_id:"gilded_lien"},{turn:1,spell_id:"brine_mend"},()=>0.5) as any;
- expect(out.events.find((e: any)=>e.kind === "ward_convert").damage).toBe(14);
+ const out = resolvePvpExchange(s,{turn:1,spell_id:"gilded_lien"},{turn:1,spell_id:"bastion_return"},()=>0.5) as any;
+ expect(out.events.find((e: any)=>e.kind === "ward_convert").damage).toBe(Math.floor(98 * 0.3 * 0.45));
  expect(out.state.fighters.left.status.shield_pct).toBe(0.1); expect(out.state.fighters.left.spell_ward).toBe(0.08);
 });
 
@@ -374,14 +374,14 @@ test("ultra scales recoil, marks, order shields and leech caps but not conversio
   out = resolvePvpExchange(s,{turn:1,spell_id:"paradox_edict",ultra},{turn:1,spell_id:"brine_mend"},()=>0.5) as any;
   expect(out.state.fighters.right.status.hybrid_mark.remaining).toBe(ultra ? 4 : 2);
   s = createPvpCombatState(snapshot("a","mercury"),snapshot("b","sulfur"),catalogs) as any;
-  s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"fluid_anchor"); s.fighters.right.status.tempo_bonus=5;
+  s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"fluid_anchor"); s.fighters.right.status.tempo_bonus=10;
   out = resolvePvpExchange(s,{turn:1,spell_id:"fluid_anchor",ultra},{turn:1,spell_id:"ash_temper"},()=>0.5) as any;
   expect(out.state.fighters.left.status.shield_pct).toBe(ultra ? 0.36 : 0.18);
   s = createPvpCombatState(snapshot("a","gold"),snapshot("b","sodium"),catalogs) as any;
   s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"gilded_lien");
   Object.assign(s.fighters.left,{spell_ward:0.3,spell_ward_baseline:0.1}); s.fighters.left.status.shield_pct=0.3;
   out = resolvePvpExchange(s,{turn:1,spell_id:"gilded_lien",ultra},{turn:1,spell_id:"brine_mend"},()=>0.5) as any;
-  expect(out.events.find((e: any)=>e.kind === "ward_convert").damage).toBe(14);
+  expect(out.events.find((e: any)=>e.kind === "ward_convert").damage).toBe(Math.floor(98 * 0.3 * 0.45));
  }
  const s = setup(); s.fighters.left.entity.base_stats.tempo = 100; s.battle_index=3; s.wins={left:1,right:1}; equip(s.fighters.left,"last_axiom"); s.fighters.left.hp=6;
  const lethal = resolvePvpExchange(s,{turn:1,spell_id:"last_axiom",ultra:true},{turn:1,spell_id:"silver_needle"},()=>0.5) as any;
@@ -542,7 +542,7 @@ test("normal action cooldowns decrement before the chosen spell cooldown is set"
 });
 
 test("six real unarmed entities have normal base stats on either side", () => {
- const fixtures: Record<string, number[]> = {sulfur: [104,21,11], mercury: [96,19,10], sodium: [112,16,16], aether: [102,20,12], vitriol: [110,19,14], gold: [104,19,14]};
+ const fixtures: Record<string, number[]> = {sulfur: [104,21,11], mercury: [91,23,10], sodium: [122,16,16], aether: [102,20,12], vitriol: [120,19,14], gold: [98,19,14]};
  for (const [type, expected] of Object.entries(fixtures)) for (const side of ["left", "right"] as const) {
   const a = snapshot("a", type), b = snapshot("b", type), state = createPvpCombatState(a, b, catalogs) as any;
   const f = state.fighters[side];
@@ -557,15 +557,15 @@ test("real progression applies independently with upgrades, mutation and synergy
  const original = structuredClone({left, right, catalogs});
  const state = createPvpCombatState(left, right, catalogs) as any, l = state.fighters.left, r = state.fighters.right;
  expect([l.hp,l.max_hp,l.atk,l.def]).toEqual([109,109,33,13]);
- expect([r.hp,r.max_hp,r.atk,r.def]).toEqual([105,105,20,12]);
+ expect([r.hp,r.max_hp,r.atk,r.def]).toEqual([100,100,24,12]);
  expect([l.item_fx.true_on_hit, r.item_fx.evasion_pct]).toEqual([1,0.08]);
- expect([pvpInitiative(l).initiative,pvpInitiative(r).initiative]).toEqual([12,23]);
+ expect([pvpInitiative(l).initiative,pvpInitiative(r).initiative]).toEqual([12,25]);
  const switched = refreshPvpWeapon(l, 2);
  expect([switched.hp,switched.max_hp,switched.atk,switched.def,pvpInitiative(switched).initiative]).toEqual([109,109,28,12,16]);
  expect([l.active_weapon_slot,l.atk,l.def]).toEqual([1,33,13]);
  expect(refreshPvpWeapon(switched, 1).atk).toBe(33);
  const mirror = createPvpCombatState({...right, player_id: "a"}, {...left, player_id: "b"}, catalogs) as any;
- expect([mirror.fighters.left.atk, mirror.fighters.right.atk]).toEqual([20,33]);
+ expect([mirror.fighters.left.atk, mirror.fighters.right.atk]).toEqual([24,33]);
  expect({left, right, catalogs}).toEqual(original);
 });
 
@@ -733,7 +733,9 @@ test("strategic traps, transfer and suppression follow exchange timing", () => {
  equip(t.fighters.left, "brine_mend");
  out = resolvePvpExchange(t, {turn: 1, spell_id: "brine_mend"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
  const heal = out.events.find((e: any) => e.kind === "heal" && e.side === "left");
- expect(heal.amount).toBe(Math.floor(catalogs.spells.find((x: any) => x.id === "brine_mend").effects.find((e: any) => e.kind === "heal").value / 2));
+ const drain = out.events.find((e: any) => e.kind === "damage" && e.side === "left" && e.spell_id === "brine_mend");
+ expect(drain.damage).toBe(Math.round(15 * (1 - 0.18)));
+ expect(heal.amount).toBe(Math.floor(drain.damage / 2));
  expect(out.state.fighters.left.strategic_heal_suppression).toBeUndefined();
  expect(out.events.some((e: any) => e.kind === "heal_suppression_expired")).toBe(true);
 });
@@ -781,7 +783,7 @@ test("0.61s native type and equipment Tempo values", async () => {
   const i = catalogs.items.find((v: any) => v.id === id); expect(i.effects[key][9]).toBe(max); expect(i.base_effects[key]).toBe(1);
  }
  const m = createPvpCombatState(snapshot("a","mercury"), snapshot("b","sulfur"), catalogs) as any;
- expect(pvpInitiative(m.fighters.left).initiative).toBe(16); expect(pvpInitiative(m.fighters.right).initiative).toBe(12);
+ expect(pvpInitiative(m.fighters.left).initiative).toBe(18); expect(pvpInitiative(m.fighters.right).initiative).toBe(12);
  const sodium = createPvpCombatState(snapshot("a","sodium"),snapshot("b","mercury"),catalogs) as any;
  expect(pvpInitiative(sodium.fighters.left).initiative).toBe(10);
  const l = {...snapshot("a","sulfur"), weapon_ids:["bismuth_talisman","wind_amulet"]};

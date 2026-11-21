@@ -19,6 +19,15 @@ jobs:
       - name: Run isolated backend regression tests
         working-directory: backend
         run: bun run test:isolated
+      - name: Run PvP combat regression tests
+        working-directory: backend
+        run: bun test src/tests/pvp_combat.test.ts
+      - name: Run Dungeon and Expeditions combat regression tests
+        working-directory: backend
+        run: bun test src/tests/dungeon.test.ts src/tests/expeditions_combat.test.ts
+      - name: Build backend
+        working-directory: backend
+        run: bun run build
       - name: Install Godot 4.6
         run: |
           curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot/releases/download/4.6-stable/Godot_v4.6-stable_linux.x86_64.zip
