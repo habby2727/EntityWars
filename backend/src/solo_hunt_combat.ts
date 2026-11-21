@@ -1,3 +1,4 @@
+import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "./combat_event_provenance";
 import { combatHomunculusAllowed } from "./homunculus_catalog";
 import { createHmac } from "node:crypto";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "./physical_anomaly";
@@ -337,10 +338,12 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (!ignored && armedPoison > 0) {
         const previous = a.status.poison ?? 0;
         a.status.poison = Math.max(previous, armedPoison);
+        recordPoisonChange(a, previous, typeof d.poison_reflect_source === "string" ? d.poison_reflect_source : null);
         if (a.status.poison !== previous) events.push({ kind: "status_applied", actor: targetId, target: actorId, status: "poison", previous, value: a.status.poison, source: "poison_on_reflect" });
       }
       if (armedPoison > 0) events.push({ kind: "status_consumed", target: targetId, status: "poison_on_reflect", previous: armedPoison, value: 0, source: "reflection", ignored });
       delete d.status.poison_on_reflect;
+      delete d.poison_reflect_source;
       events.push({ actor: targetId, target: actorId, kind: "reflect", damage: reflected, actual_damage: actualReflected, hp: a.hp });
     }
     if (actor === "player" && (next.item_effects?.true_on_hit ?? 0) > 0) {
@@ -373,7 +376,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (a.type === "mercury") d.status.stun = 1;
       if (a.type === "sodium") otherDefense(a, "shield_pct", 0.12);
       if (a.type === "aether") d.status.vuln_pct = Math.max(d.status.vuln_pct ?? 0, 0.12);
-      if (a.type === "vitriol") d.status.poison = 2;
+      if (a.type === "vitriol") { const previous = d.status.poison ?? 0; d.status.poison = 2; recordPoisonChange(d, previous, actorId); }
       if (a.type === "gold" && a.hp > 0) a.hp = Math.min(a.max_hp, a.hp + strategicHeal(a, 3));
       events.push({ actor, kind: "elemental_proc", type: a.type });
     }
@@ -430,6 +433,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
             const field = effect.kind === "vuln" ? "vuln_pct" : effect.kind;
             const previous = recipient.status[field] ?? 0;
             recipient.status[field] = Math.max(previous, effect.value);
+            if (field === "poison") recordPoisonChange(recipient, previous, "boss");
             if (recipient.status[field] > previous) applied.push({ kind: effect.kind, target: recipient === next.boss ? "boss" : "player", value: recipient.status[field] });
           }
           events.push({ actor: "boss", target: "player", kind: "boss_special_cast", spell_id: signature.id, landed, applied_effects: applied });
@@ -526,7 +530,10 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (effect.kind === "cooldown_jam") { if (target === next.boss) pendingBossJam = true; continue; }
       if (effect.kind === "hom_energy_siphon") continue;
       if (effect.kind === "debuff_transfer" || effect.kind === "buff_steal") {
+        const previousPoison = target.status.poison ?? 0;
         transferStrategicStatus(effect.kind, next.player, target, "player", target === next.boss ? "boss" : target.id, { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }, events, (fighter, field) => { if (["shield_pct", "reflect_pct"].includes(field)) clearDefense(fighter, field); else delete fighter.status[field]; }, (fighter, field, value) => { if (["shield_pct", "reflect_pct"].includes(field)) otherDefense(fighter, field, value); else fighter.status[field] = Math.max(fighter.status[field] ?? 0, value); });
+        recordPoisonChange(target, previousPoison, "player");
+        recordPoisonChange(next.player, next.player.status.poison ?? 0, null);
         continue;
       }
       if (recipient === next.boss && next.minions.some((m: any) => m.hp > 0)) continue;
@@ -534,14 +541,14 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       if (effect.kind === "hybrid_mark") { const before = JSON.stringify(recipient.status.hybrid_mark ?? {}); recipient.status.hybrid_mark = { owner: "player", remaining: Math.trunc(effect.value) }; if (before !== JSON.stringify(recipient.status.hybrid_mark)) { events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "hybrid_mark", value: structuredClone(recipient.status.hybrid_mark), spell_id: spell.id }); if (recipient === target) award(effect.kind); } continue; }
       if (effect.kind === "tempo_shift") { const before = recipient.status.tempo_bonus ?? 0; recipient.status.tempo_bonus = effect.value; if (before !== effect.value) events.push({ kind: "status_changed", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "tempo_bonus", previous: before, value: effect.value, spell_id: spell.id }); if (recipient === target && effect.value < 0 && effect.value < before) award(effect.kind); continue; }
       if (effect.kind === "shield_by_order") { const ward = playerFirst ? effect.value : effect.second_value ?? effect.value; if (recipient === next.player) { next.player_spell_ward_baseline ??= next.player.status.shield_pct ?? 0; next.player_spell_ward = Math.max(next.player_spell_ward ?? 0, ward); } otherDefense(recipient, "shield_pct", ward); continue; }
-      if (effect.kind === "poison_on_reflect") { const previous = recipient.status.poison_on_reflect ?? 0; recipient.status.poison_on_reflect = Math.trunc(effect.value); if (previous !== recipient.status.poison_on_reflect) events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "poison_on_reflect", previous, value: recipient.status.poison_on_reflect, source: spell.id, spell_id: spell.id }); continue; }
+      if (effect.kind === "poison_on_reflect") { const previous = recipient.status.poison_on_reflect ?? 0; recipient.status.poison_on_reflect = Math.trunc(effect.value); if (recipient.status.poison_on_reflect > previous) recipient.poison_reflect_source = "player"; if (previous !== recipient.status.poison_on_reflect) events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: "poison_on_reflect", previous, value: recipient.status.poison_on_reflect, source: spell.id, spell_id: spell.id }); continue; }
       if (effect.kind === "life_leech") { if (recipient.hp > 0) recipient.hp = Math.min(recipient.max_hp, recipient.hp + strategicHeal(recipient, Math.min(effect.max_heal ?? 0, Math.floor(actualDamage * effect.value)))); continue; }
       if (effect.kind === "cleanse_one") {
-        for (const field of ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { events.push({ kind: "status_cleansed", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: field, previous: recipient.status[field], spell_id: spell.id }); recipient.status[field] = 0; break; }
+        for (const field of ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { events.push({ kind: "status_cleansed", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: field, previous: recipient.status[field], spell_id: spell.id }); recipient.status[field] = 0; if (field === "poison") recordPoisonChange(recipient, 0, null); break; }
         continue;
       }
       if (effect.kind === "recoil") { if (recipient.hp > 0 && effect.value > 0) recipient.spell_hit_this_exchange = true; recipient.hp = Math.max(0, recipient.hp - Math.trunc(effect.value)); continue; }
-      if (effect.kind === "consume_poison") { if (poisonedBefore) recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(effect.value)); continue; }
+      if (effect.kind === "consume_poison") { if (poisonedBefore) { recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(effect.value)); recordPoisonChange(recipient, recipient.status.poison, null); } continue; }
       if (effect.kind === "type_neutralize") {
         recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, effect.value);
       } else if (effect.kind === "heal") {
@@ -552,6 +559,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         if (field === "shield_pct" && recipient === next.player) { next.player_spell_ward_baseline ??= next.player.status.shield_pct ?? 0; next.player_spell_ward = Math.max(next.player_spell_ward ?? 0, effect.value); }
         if (["shield_pct", "reflect_pct"].includes(field)) otherDefense(recipient, field, effect.value);
         else recipient.status[field] = Math.max(recipient.status[field] ?? 0, effect.value);
+        if (field === "poison") recordPoisonChange(recipient, before, "player");
         if (recipient.status[field] > before) events.push({ kind: "status_applied", actor: "player", target: recipient === next.player ? "player" : recipient === next.boss ? "boss" : recipient.id, status: field, value: recipient.status[field], previous: before, spell_id: spell.id });
         if (recipient === target && ["atk_down", "vuln", "poison", "hom_stun", "misalign_next"].includes(effect.kind) && recipient.status[field] > before) award(effect.kind);
       }
@@ -607,7 +615,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       hit(minion, next.player, 0.9, 1, "minion");
       events.push({ actor: id, kind: "minion_attack" });
     }
-    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { fighter.status.poison--; const damage = Math.min(3, fighter.hp); fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id, damage, hp: fighter.hp, remaining: fighter.status.poison }); }
+    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { const victim = fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id; const damage = Math.min(3, fighter.hp); const provenance = poisonTickMetadata(fighter, victim, ["player", "boss", ...next.minions.map((m: any) => m.id)], damage, next.turn + 1); fighter.status.poison--; fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: victim, damage, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); recordPoisonChange(fighter, fighter.status.poison, null); }
     if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
   finishStrategicExchange(next, { player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m: any) => [m.id, m])) }, next.turn + 1, events);
@@ -720,9 +728,10 @@ export function resolveInspirationDecision(state: any, decision: any, rng: (turn
     if (!next.spells.some((entry: any) => entry.id === spell.id)) next.spells.push(structuredClone(spell));
     next.temporary_spell_id = spell.id;
     next.temporary_replaced_slot = slot;
+    recordInspirationActivation(next.player, "player", next.turn);
   } else next.player.inspiration = 0;
   next.player.inspiration_pending = false;
   next.player.inspiration_used_this_battle = true;
   next.inspiration_offers = [];
-  return { next_state: next };
+  return { next_state: next, events: decision.kind === "choose" ? [{kind: "inspiration_activated", ...next.player.inspiration_activation}] : [] };
 }

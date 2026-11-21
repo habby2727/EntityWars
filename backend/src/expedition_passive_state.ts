@@ -68,3 +68,9 @@ export function finishPassiveExchange(state: ExpeditionPassiveState): Expedition
 export function clearExpeditionPassive(state: ExpeditionPassiveState): ExpeditionPassiveState {
   return newExpeditionPassiveState(state.id, state.level);
 }
+
+/** Apply a server-recorded choice after its exchange has ended. */
+export function triggerInspirationActivation(state: ExpeditionPassiveState, activation: {marker: string; actor: string; exchange: number; activates_at: number}, context: Omit<PassiveContext, "exchange" | "applied_markers">): PassiveOutcome {
+  if (!activation || !activation.actor || activation.exchange !== state.exchange || activation.activates_at !== state.exchange + 1 || activation.marker !== `inspiration:${activation.actor}:${activation.exchange}`) throw new Error("INVALID_INSPIRATION_ACTIVATION");
+  return triggerExpeditionPassive(state, "inspiration_activated", context);
+}

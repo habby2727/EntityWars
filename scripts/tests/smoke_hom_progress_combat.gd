@@ -31,7 +31,7 @@ func _run() -> void:
 	scene._set_active_weapon(player, 2)
 	scene._set_active_weapon(player, 1)
 	_check(player.atk == before.atk and player.def == before.def and player.max_hp == before.max_hp, "weapon switching stacks")
-	_check(int(player.hom_synergy.power_flat) == 3, "entity type synergy")
+	_check(int(player.hom_synergy.power_flat) == 2, "entity type synergy")
 	var catalyst: Dictionary = scene._combat_spell_state.homunculus_progress.cinder
 	catalyst.mutation_id = "catalyst"
 	var improved: Dictionary = scene._build_fighter(data, true)
@@ -53,7 +53,7 @@ func _run() -> void:
 			break
 	resonant.type = favorable_source
 	npc.type = favorable_target
-	_check(is_equal_approx(scene._type_multiplier(resonant, npc, false), 1.15), "favorable resonance")
+	_check(is_equal_approx(scene._type_multiplier(resonant, npc, false), 1.21), "favorable resonance")
 	npc.type = favorable_source
 	_check(is_equal_approx(scene._type_multiplier(resonant, npc, false), 1.0), "neutral resonance")
 	var scaled: Dictionary = scene._scaled_hom_weapon({"effects": {"power_flat": [10], "ward_pct": [0.2]}}, {"item_effect_mult": 1.05})

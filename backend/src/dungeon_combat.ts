@@ -1,3 +1,4 @@
+import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "./combat_event_provenance";
 import { createHmac } from "node:crypto";
 import type { Database } from "bun:sqlite";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "./physical_anomaly";
@@ -401,8 +402,8 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         clearDefense(target, "reflect");
         if (amount > 0) actor.spell_hit_this_exchange = true;
         const poison = target.status.poison_on_reflect ?? 0;
-        if (!ignored && poison > 0) { const previous = actor.status.poison ?? 0; actor.status.poison = Math.max(previous, poison); if (actor.status.poison > previous) events.push({ kind: "status_applied", actor: who === "player" ? "npc" : "player", target: who, status: "poison", previous, value: actor.status.poison, source: "poison_on_reflect" }); }
-        delete target.status.poison_on_reflect;
+        if (!ignored && poison > 0) { const previous = actor.status.poison ?? 0; actor.status.poison = Math.max(previous, poison); recordPoisonChange(actor, previous, typeof target.poison_reflect_source === "string" ? target.poison_reflect_source : null); if (actor.status.poison > previous) events.push({ kind: "status_applied", actor: who === "player" ? "npc" : "player", target: who, status: "poison", previous, value: actor.status.poison, source: "poison_on_reflect" }); }
+        delete target.status.poison_on_reflect; delete target.poison_reflect_source;
         events.push({ kind: "reflect", actor: who === "player" ? "npc" : "player", target: who, amount, hp: actor.hp, ignored });
       }
       if (who === "player") {
@@ -431,7 +432,10 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       if (e.kind === "physical_anomaly") { next.physical_anomaly = castPhysicalAnomaly(chosen, decision.turn); events.push({ kind: "physical_anomaly_cast", actor: who, anomaly: structuredClone(next.physical_anomaly) }); continue; }
       if (e.kind === "debuff_transfer" || e.kind === "buff_steal") {
         const previousEvents = events.length;
+        const previousPoison = target.status.poison ?? 0;
         transferStrategicStatus(e.kind, actor, target, who, who === "player" ? "npc" : "player", { vuln: "vuln", shield: "shield", reflect: "reflect" }, events, clearDefense, applyDefense);
+        recordPoisonChange(target, previousPoison, who);
+        recordPoisonChange(actor, actor.status.poison ?? 0, null);
         const changed = events[previousEvents];
         if (e.kind === "debuff_transfer" && changed && ["poison", "vuln", "atk_down"].includes(changed.status) && changed.value > changed.previous) awardInspiration(actor, who, e.kind);
         continue;
@@ -449,9 +453,9 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       const recipient = e.target === "self" ? actor : target;
       const recipientId = recipient === next.player ? "player" : "npc";
       if (e.kind === "type_neutralize") { recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, e.value); continue; }
-      if (e.kind === "cleanse_one") { for (const field of ["poison", "stun", "vuln", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { events.push({ kind: "status_cleansed", actor: who, target: recipientId, status: field, previous: recipient.status[field] }); delete recipient.status[field]; break; } continue; }
+      if (e.kind === "cleanse_one") { for (const field of ["poison", "stun", "vuln", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { events.push({ kind: "status_cleansed", actor: who, target: recipientId, status: field, previous: recipient.status[field] }); delete recipient.status[field]; if (field === "poison") recordPoisonChange(recipient, 0, null); break; } continue; }
       if (e.kind === "recoil") { const amount = Math.min(recipient.hp, Math.trunc(e.value)); recipient.hp -= amount; if (amount > 0) recipient.spell_hit_this_exchange = true; events.push({ kind: "recoil", actor: who, target: recipientId, amount, hp: recipient.hp }); continue; }
-      if (e.kind === "consume_poison") { if (poisonedBefore) recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(e.value)); continue; }
+      if (e.kind === "consume_poison") { if (poisonedBefore) { recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(e.value)); recordPoisonChange(recipient, recipient.status.poison, null); } continue; }
       if (e.kind === "life_leech") { const before = recipient.hp; if (before > 0) recipient.hp = Math.min(recipient.max_hp, before + strategicHeal(recipient, Math.min(e.max_heal ?? 0, Math.floor(directDamage * e.value)))); if (recipient.hp > before) events.push({ kind: "heal", actor: who, target: recipientId, amount: recipient.hp - before, hp: recipient.hp }); continue; }
       if (e.kind === "hybrid_mark") { const before = JSON.stringify(recipient.status.hybrid_mark ?? {}); recipient.status.hybrid_mark = { owner: who, remaining: Math.trunc(e.value) }; if (before !== JSON.stringify(recipient.status.hybrid_mark) && recipient === target) awardInspiration(actor, who, e.kind); events.push({ kind: "status_applied", actor: who, target: recipientId, status: "hybrid_mark", value: structuredClone(recipient.status.hybrid_mark) }); continue; }
       if (e.kind === "tempo_shift") { const previous = recipient.status.tempo_bonus ?? 0; recipient.status.tempo_bonus = e.value; if (recipient === target && e.value < 0 && e.value < previous) awardInspiration(actor, who, e.kind); events.push({ kind: "status_applied", actor: who, target: recipientId, status: "tempo_bonus", previous, value: e.value }); continue; }
@@ -464,6 +468,8 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         const previous = recipient.status[e.kind] ?? 0;
         if (["shield", "reflect"].includes(e.kind)) applyDefense(recipient, e.kind, e.value);
         else recipient.status[e.kind] = Math.max(previous, e.value);
+        if (e.kind === "poison") recordPoisonChange(recipient, previous, who);
+        if (e.kind === "poison_on_reflect" && recipient.status[e.kind] > previous) recipient.poison_reflect_source = who;
         if (recipient.status[e.kind] !== previous) events.push({ kind: "status_applied", actor: who, target: recipientId, status: e.kind, previous, value: recipient.status[e.kind], spell_id: chosen.id });
         if (recipient === target && ["poison", "vuln", "atk_down", "hom_stun", "misalign_next"].includes(e.kind) && recipient.status[e.kind] > previous) awardInspiration(actor, who, e.kind);
       }
@@ -511,7 +517,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   delete next.player.status.tempo_bonus; delete next.npc.status.tempo_bonus;
   if (playerFirst) { playerAction(); npcAction(); } else { npcAction(); if (next.player.hp > 0 && next.npc.hp > 0) playerAction(); }
   for (const fighter of [next.player, next.npc]) {
-    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 3; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = 3 * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder; const prevented = Math.min(2, Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: fighter === next.player ? "player" : "npc", amount, hp: fighter.hp, remaining: fighter.status.poison }); }
+    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 3; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = 3 * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder; const prevented = Math.min(2, Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); const victim = fighter === next.player ? "player" : "npc"; const provenance = poisonTickMetadata(fighter, victim, ["player", "npc"], amount, decision.turn); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: victim, amount, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); recordPoisonChange(fighter, fighter.status.poison, null); }
     for (const id of Object.keys(fighter.cooldowns)) fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   }
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);
@@ -553,7 +559,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         fighter.spell_ids[slot] = selected; fighter.temporary_spell_id = selected; fighter.temporary_replaced_slot = slot;
         if (!next.spells.some((s: any) => s.id === selected)) next.spells.push(structuredClone(chosen));
         fighter.inspiration_used = true; fighter.inspiration_pending = false; fighter.inspiration_offers = [];
-        events.push({ kind: "inspiration_chosen", actor: who, spell_id: selected, slot });
+        events.push({ kind: "inspiration_chosen", actor: who, spell_id: selected, slot, activation: recordInspirationActivation(fighter, who, next.turn) });
       }
     }
   }
@@ -576,7 +582,7 @@ export function resolveDungeonInspiration(state: any, decision: any, rng: (turn:
     const slot = Math.floor(roll * 4); next.rng_counter++;
     p.spell_ids[slot] = spell.id; p.temporary_spell_id = spell.id; p.temporary_replaced_slot = slot;
     if (!next.spells.some((s: any) => s.id === spell.id)) next.spells.push(structuredClone(spell));
-    events.push({ kind: "inspiration_chosen", actor: "player", spell_id: spell.id, slot });
+    events.push({ kind: "inspiration_chosen", actor: "player", spell_id: spell.id, slot, activation: recordInspirationActivation(p, "player", next.turn) });
   } else events.push({ kind: "inspiration_declined", actor: "player" });
   p.inspiration_used = true; p.inspiration_pending = false; p.inspiration_offers = [];
   return { next_state: next, events };

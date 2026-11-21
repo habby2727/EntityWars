@@ -1,3 +1,4 @@
+import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "../combat_event_provenance";
 import { combatHomunculusAllowed } from "../homunculus_catalog";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "../physical_anomaly";
 import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "../strategic_effects";
@@ -156,7 +157,7 @@ export function resetPvpFighter(fighter: PvpFighter): PvpFighter {
   f.original_spell_ids = [...f.spell_ids];
   f.temporary_spell_id = ""; f.temporary_replaced_slot = -1;
   f.inspiration = 0; f.inspiration_pending = false; f.inspiration_used_this_battle = false; f.inspiration_offers = [];
-  for (const key of ["strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline", "hom_reflect_active", "hom_other_reflect", "weapon_shield_pct", "other_shield_pct", "weapon_reflect_pct", "other_reflect_pct"]) delete f[key];
+  for (const key of ["strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline", "hom_reflect_active", "hom_other_reflect", "weapon_shield_pct", "other_shield_pct", "weapon_reflect_pct", "other_reflect_pct", "poison_source", "poison_reflect_source", "inspiration_activation"]) delete f[key];
   f.hom_energy = 0; f.hp = f.max_hp; f.spell_cooldowns = {}; f.status = statusInitial();
   f.spell_hit_this_exchange = false; f.spell_hit_last_exchange = false;
   f.spell_neutralize_pending = 0; f.spell_neutralize_active = 0;
@@ -309,8 +310,8 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         const ignored = (a.item_fx.ignore_reflect_chance ?? 0) > 0 && draw() < a.item_fx.ignore_reflect_chance;
         const reflected = ignored ? 0 : Math.round(amount * b.status.reflect_pct);
         if (reflected > 0) { dmg(opponent, side, reflected, "reflect", spell); a.spell_hit_this_exchange = true; }
-        if (!ignored && (b.status.poison_on_reflect ?? 0) > 0) a.status.poison = Math.max(a.status.poison, b.status.poison_on_reflect);
-        clearDefense(b, "reflect_pct"); delete b.status.poison_on_reflect;
+        if (!ignored && (b.status.poison_on_reflect ?? 0) > 0) { const previous = a.status.poison; a.status.poison = Math.max(previous, b.status.poison_on_reflect); recordPoisonChange(a, previous, typeof (b as any).poison_reflect_source === "string" ? (b as any).poison_reflect_source : null); }
+        clearDefense(b, "reflect_pct"); delete b.status.poison_on_reflect; delete (b as any).poison_reflect_source;
       }
       for (const key of ["true_on_hit", "dot_true"]) {
         let value = Math.trunc(a.item_fx[key] ?? 0);
@@ -319,7 +320,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       }
       const homDot = Math.max(0, Math.trunc(as.dot_true ?? 0)); if (homDot > 0) dmg(side, opponent, homDot, "hom_dot", spell);
       const proc = Math.floor(draw() * 0x100000000) % 100;
-      if (a.type === "vitriol" && proc < 30) b.status.poison = 2;
+      if (a.type === "vitriol" && proc < 30) { const previous = b.status.poison; b.status.poison = 2; recordPoisonChange(b, previous, side); }
       if (a.type === "mercury" && proc < 20) b.status.stun = 1;
       if (a.type === "sulfur" && proc < 20) b.status.atk_down = Math.max(b.status.atk_down, 0.15);
       if (a.type === "sodium" && proc < 20) applyOther(a, "shield_pct", 0.12);
@@ -364,7 +365,9 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
           const ev: any[] = []; if (spell.category === "attack") queueDelayedDamage(next, side, opponent, value, spellContext.direct_damage, turn, ev); strategicEvents(ev);
         } else if (kind === "debuff_transfer" || kind === "buff_steal") {
           const ev: any[] = [];
+          const previousPoison = b.status.poison;
           transferStrategicStatus(kind, a, b, side, opponent, { vuln: "vuln_pct", shield: "shield_pct", reflect: "reflect_pct" }, ev, (f, field) => { if (["shield_pct", "reflect_pct"].includes(field)) clearDefense(f, field); else f.status[field] = 0; }, (f, field, amount) => { if (["shield_pct", "reflect_pct"].includes(field)) applyOther(f, field, amount); else f.status[field] = Math.max(f.status[field] ?? 0, amount); });
+          recordPoisonChange(b, previousPoison, side); recordPoisonChange(a, a.status.poison, null);
           strategicEvents(ev); if (kind === "debuff_transfer" && ev[0] && ev[0].value > ev[0].previous) award(opponent);
         } else if (kind === "cooldown_jam") {
           next.strategic_jams.push({ actor: side, target: opponent });
@@ -389,7 +392,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
             emit(targetSide, "heal", ` restores ${recipient.hp - before} HP from life leech.`, {kind: "life_leech_heal", amount: recipient.hp - before, hp: recipient.hp, spell_id: spell.id, show_spell_link: false, source_side: side});
           }
         } else if (kind === "consume_poison") {
-          if (poisonedBefore) { recipient.status.poison = Math.max(0, Math.trunc(recipient.status.poison) - Math.trunc(value)); emit(side, "combo", " consumes poison.", {kind, target_side: targetSide, spell_id: spell.id, show_spell_link: false}); }
+          if (poisonedBefore) { recipient.status.poison = Math.max(0, Math.trunc(recipient.status.poison) - Math.trunc(value)); recordPoisonChange(recipient, recipient.status.poison, null); emit(side, "combo", " consumes poison.", {kind, target_side: targetSide, spell_id: spell.id, show_spell_link: false}); }
         } else if (kind === "hybrid_mark") {
           const before = JSON.stringify(recipient.status.hybrid_mark ?? {});
           recipient.status.hybrid_mark = {owner: side, remaining: Math.trunc(value)};
@@ -406,13 +409,13 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
           emit(targetSide, "heal", ` restores ${recipient.hp - before} HP.`, {kind: "heal", spell_id: spell.id, show_spell_link: false, hp: recipient.hp, amount: recipient.hp - before, source_side: side});
         } else if (kind === "cleanse_one") {
           const field = ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"].find(k => (recipient.status[k] ?? 0) > 0);
-          if (field) recipient.status[field] = 0;
+          if (field) { recipient.status[field] = 0; if (field === "poison") recordPoisonChange(recipient, 0, null); }
           emit(targetSide, "buff", " cleanses one negative status.", {kind: "cleanse_one", status: field ?? null, spell_id: spell.id, show_spell_link: false, source_side: side});
         } else if (kind === "type_neutralize") {
           recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending, value);
           emit(targetSide, "buff", " prepares type neutralization.", {kind, value: recipient.spell_neutralize_pending, spell_id: spell.id, show_spell_link: false, source_side: side});
         } else if (kind === "poison_on_reflect") {
-          recipient.status.poison_on_reflect = Math.trunc(value);
+          const previous = recipient.status.poison_on_reflect ?? 0; recipient.status.poison_on_reflect = Math.trunc(value); if (recipient.status.poison_on_reflect > previous) (recipient as any).poison_reflect_source = side;
           emit(targetSide, "shield", " prepares a toxic reflection.", {kind, value: recipient.status.poison_on_reflect, spell_id: spell.id, show_spell_link: false, source_side: side});
         } else if (kind === "tempo_shift") {
           const before = recipient.status.tempo_bonus ?? 0; recipient.status.tempo_bonus = value;
@@ -425,6 +428,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
             if (kind === "shield") { if (recipient.spell_ward_baseline === undefined) recipient.spell_ward_baseline = before; recipient.spell_ward = Math.max(recipient.spell_ward ?? 0, value); }
             applyOther(recipient, field, value);
           } else recipient.status[field] = Math.max(before, value);
+          if (field === "poison") recordPoisonChange(recipient, before, side);
           emit(targetSide, kind === "shield" || kind === "reflect" ? "shield" : kind === "atk_boost" || kind === "focus_next" ? "buff" : "debuff", ` gains ${kind}.`, {kind: "status_applied", status: field, value: recipient.status[field], previous: before, spell_id: spell.id, show_spell_link: false, source_side: side});
           if (["atk_down", "vuln", "poison", "hom_stun", "misalign_next"].includes(kind) && recipient.status[field] > before) award();
         }
@@ -458,7 +462,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       }
     }
     if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0) for (const side of sides) {
-      const f = next.fighters[side]; if (f.status.poison > 0) { f.status.poison--; const damage = Math.min(3, f.hp); f.hp -= damage; f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp }); }
+      const f = next.fighters[side]; if (f.status.poison > 0) { const damage = Math.min(3, f.hp); const provenance = poisonTickMetadata(f, side, sides, damage, turn); f.status.poison--; f.hp -= damage; f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp, ...provenance }); recordPoisonChange(f, f.status.poison, null); }
     }
     for (const side of sides) { const f = next.fighters[side]; if (!f.hom_spent) f.hom_energy = Math.min(f.hom_max_energy, f.hom_energy + 1); f.spell_neutralize_active = 0; }
     // The shared helper also expires effects; defer that part until after jams.
@@ -536,9 +540,10 @@ export function resolvePvpInspiration(state: PvpCombatState, side: PvpSide, deci
     const slot = Math.floor(roll * 4); next.rng_counter++;
     fighter.spell_ids[slot] = spell.id; fighter.temporary_spell_id = spell.id; fighter.temporary_replaced_slot = slot;
     if (!fighter.spells.some(s => s.id === spell.id)) fighter.spells.push(structuredClone(spell));
+    recordInspirationActivation(fighter, side, next.turn);
   } else fighter.inspiration = 0;
   fighter.inspiration_pending = false; fighter.inspiration_used_this_battle = true; fighter.inspiration_offers = [];
-  return { state: next, events: [{ turn: next.turn, side, kind: decision.kind === "choose" ? "inspiration_chosen" : "inspiration_declined" }] };
+  return { state: next, events: [{ turn: next.turn, side, kind: decision.kind === "choose" ? "inspiration_chosen" : "inspiration_declined", ...(decision.kind === "choose" ? {activation: structuredClone((fighter as any).inspiration_activation)} : {}) }] };
 }
 
 /** A view for a single player; offers and candidate catalogs are private. */
