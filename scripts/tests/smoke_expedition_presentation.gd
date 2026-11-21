@@ -20,15 +20,30 @@ func _run() -> void:
 		view._animate_event({"kind":entry[0], "actor":entry[1], "spell_id":"cinder_fist"})
 		view.animation_tweens[sprite].custom_step(0.06)
 		assert(not sprite.position.is_equal_approx(initial))
-		view.animation_tweens[sprite].custom_step(0.3)
+		view.animation_tweens[sprite].custom_step(0.5)
 		assert(sprite.position.is_equal_approx(initial))
 	var icon: TextureRect = view.weapon_buttons[1].get_child(1)
 	var initial_scale := icon.scale
 	view._animate_event({"kind":"switch", "actor":"player", "slot":2})
 	view.animation_tweens[icon].custom_step(0.06)
 	assert(icon.scale.x > initial_scale.x)
-	view.animation_tweens[icon].custom_step(0.3)
+	view.animation_tweens[icon].custom_step(0.5)
 	assert(icon.scale.is_equal_approx(initial_scale))
+	assert(view.hom_attack.toggle_mode)
+	assert(view.hom_attack.get_theme_stylebox("normal") is StyleBoxTexture)
+	assert(view.hom_attack.get_theme_stylebox("normal").texture == preload("res://scripts/ui/menu_art.gd")._button_frame("boton-loadout-opciones.png").texture)
+	var previous_hp: float = view.enemy_hp.value
+	var impact_hp := 5 if previous_hp != 5 else 6
+	var before_log: String = view.log.get_parsed_text()
+	view.present_events([{"kind":"spell", "actor":"player", "spell_id":"cinder_fist"}, {"kind":"damage", "actor":"player", "target":"npc", "hp":impact_hp, "amount":10}], screen.playback_epoch)
+	await create_timer(0.2).timeout
+	assert(view.log.get_parsed_text() != before_log and view.enemy_hp.value == previous_hp)
+	assert(view.controls.all(func(control): return control.disabled))
+	var spell_log: String = view.log.get_parsed_text()
+	await create_timer(0.55).timeout
+	assert(view.log.get_parsed_text() != spell_log and view.enemy_hp.value == impact_hp)
+	assert(view.animation_tweens.has(view.enemy_sprite))
+	await create_timer(0.6).timeout
 	view.log.meta_clicked.emit("cinder_fist")
 	var dialogs: Array = view.find_children("*", "AcceptDialog", true, false)
 	assert(dialogs.size() == 1)

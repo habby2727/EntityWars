@@ -41,6 +41,7 @@ func _run() -> void:
 	preview._confirm_expedition_start("visual-preview", {})
 	var confirmation: ConfirmationDialog = preview.get_node("ExpeditionRiskConfirmation")
 	assert(confirmation.visible and confirmation.dialog_text == preview.tr("EXPEDITION_RISK_WARNING"))
+	assert(confirmation.get_label().get_theme_color("font_color") == Color.WHITE)
 	confirmation.canceled.emit()
 	assert(preview._current_homunculus_id == selected_hom and not SceneRouter._expedition_context.has("pending_start"))
 	preview.queue_free()

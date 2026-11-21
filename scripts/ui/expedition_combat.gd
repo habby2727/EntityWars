@@ -25,7 +25,7 @@ var spell_buttons: Array[Button] = []
 var weapon_buttons: Array[Button] = []
 var inspiration_buttons: Array[Button] = []
 var decline_button: Button
-var hom_attack: CheckButton
+var hom_attack: Button
 var player_sprite: TextureRect
 var player_hom_sprite: TextureRect
 var enemy_sprite: TextureRect
@@ -211,23 +211,16 @@ func _build() -> void:
 	switch.pressed.connect(_switch.bind(other))
 	_place(switch, Vector2(760, 160), Vector2(400, 42))
 	controls.append(switch)
-	var action_bg := Panel.new()
-	action_bg.name = "HomActionBackground"
-	action_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var action_style := StyleBoxFlat.new()
-	action_style.bg_color = Color(0.025, 0.06, 0.09, 0.92)
-	action_style.border_color = Color("c9a85c")
-	action_style.set_border_width_all(1)
-	action_style.set_corner_radius_all(3)
-	action_bg.add_theme_stylebox_override("panel", action_style)
-	_place(action_bg, Vector2(20, 788), Vector2(300, 55))
-	hom_attack = CheckButton.new()
+	hom_attack = Button.new()
+	hom_attack.toggle_mode = true
+	MenuArt.button(hom_attack)
+	hom_attack.add_theme_stylebox_override("hover_pressed", hom_attack.get_theme_stylebox("pressed"))
 	hom_attack.add_theme_font_size_override("font_size", 20)
 	hom_attack.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 	hom_attack.text = tr("EXPEDITION_HOM_ATTACK")
 	hom_attack.disabled = player.get("hom_id") == null or int(player.get("hom_energy", 0)) < 3 or bool(player.get("inspiration_pending", false))
 	hom_attack.tooltip_text = tr("EXPEDITION_HOM_HINT")
-	_place(hom_attack, Vector2(30, 790), Vector2(285, 55))
+	_place(hom_attack, Vector2(20, 788), Vector2(300, 55))
 	controls.append(hom_attack)
 	if bool(player.get("inspiration_pending", false)):
 		var offers := VBoxContainer.new()
@@ -518,18 +511,18 @@ func _animate_lunge(node: Control, distance: float) -> void:
 	if not is_instance_valid(node): return
 	var tween := _begin_animation(node)
 	var original: Dictionary = animation_original[node]
-	tween.tween_property(node, "position", original.position + Vector2(distance, 0), 0.12)
-	tween.tween_property(node, "position", original.position, 0.16)
+	tween.tween_property(node, "position", original.position + Vector2(distance, 0), 0.22)
+	tween.tween_property(node, "position", original.position, 0.28)
 
 func _animate_pulse(node: Control, color: Color, factor: float = 1.05) -> void:
 	if not is_instance_valid(node): return
 	var tween := _begin_animation(node)
 	var original: Dictionary = animation_original[node]
 	tween.set_parallel(true)
-	tween.tween_property(node, "scale", original.scale * factor, 0.12)
-	tween.tween_property(node, "modulate", original.modulate.lerp(color, 0.55), 0.12)
-	tween.chain().tween_property(node, "scale", original.scale, 0.16)
-	tween.parallel().tween_property(node, "modulate", original.modulate, 0.16)
+	tween.tween_property(node, "scale", original.scale * factor, 0.22)
+	tween.tween_property(node, "modulate", original.modulate.lerp(color, 0.55), 0.22)
+	tween.chain().tween_property(node, "scale", original.scale, 0.28)
+	tween.parallel().tween_property(node, "modulate", original.modulate, 0.28)
 
 func _animate_item(slot: int) -> void:
 	if slot < 1 or slot > weapon_buttons.size(): return
@@ -573,10 +566,17 @@ func _animate_event(event: Dictionary) -> void:
 		_animate_npc_item()
 	if target in ["player", "npc"]:
 		var sprite := player_sprite if target == "player" else enemy_sprite
-		if kind in ["damage", "hom_attack", "hom_dot", "true_on_hit", "dot_true", "delayed_damage", "reflect", "poison"]:
+		if kind in ["damage", "hom_attack", "hom_dot", "true_on_hit", "dot_true", "delayed_damage", "reflect", "poison", "ward_convert", "recoil"]:
 			_animate_pulse(sprite, Color(1.8, 0.35, 0.35), 1.02)
 		elif kind in ["heal", "status_applied"]:
 			_animate_pulse(sprite, Color(0.68, 1.0, 0.75))
+
+func _event_delay(kind: String) -> float:
+	if kind in ["spell", "hom_attack", "hom_miss", "damage", "heal", "evade", "miss", "switch"]:
+		return 0.65
+	if kind in ["poison", "hom_dot", "true_on_hit", "dot_true", "delayed_damage", "reflect", "ward_convert", "recoil", "status_applied", "hom_passive"]:
+		return 0.5
+	return 0.3
 
 func present_events(events: Array, epoch: int) -> void:
 	lock_controls()
@@ -594,4 +594,4 @@ func present_events(events: Array, epoch: int) -> void:
 			hp.value = int(event.hp)
 			_update_hp(hp)
 		_animate_event(event)
-		await get_tree().create_timer(0.12).timeout
+		await get_tree().create_timer(_event_delay(kind)).timeout

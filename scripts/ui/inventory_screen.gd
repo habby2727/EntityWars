@@ -59,6 +59,10 @@ var _item_progress: Dictionary = {}
 var _item_progress_known := false
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
+const ROWS_PER_FRAME := 3
+var _list_loaded := [false, false, false, false, false]
+var _list_building := [false, false, false, false, false]
+var _list_generation := [0, 0, 0, 0, 0]
 
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
@@ -72,7 +76,6 @@ func _ready() -> void:
 	_entry_group.allow_unpress = false
 	_load_registry()
 	_setup_spell_progress()
-	_populate_lists()
 	_apply_initial_tab()
 	_tabs.tab_changed.connect(_on_inventory_tab_changed)
 	_on_inventory_tab_changed(_tabs.current_tab)
@@ -205,7 +208,7 @@ func _on_spell_progress_updated(state: Dictionary) -> void:
 	_item_progress_known = not state.is_empty()
 	_hom_progress_known = _spell_backend != null and _spell_backend.token != "" and not _spell_backend._verified_player_id.is_empty() and str(state.get("player_id", "")) == _spell_backend._verified_player_id
 	_hom_progress = state.get("homunculus_progress", {}) if _hom_progress_known and state.get("homunculus_progress", {}) is Dictionary else {}
-	_populate_homunculi()
+	if _list_loaded[2]: _populate_homunculi()
 	_refresh_build_levels()
 	_refresh_spell_catalog()
 
@@ -214,7 +217,7 @@ func _on_spell_auth_changed(_token: String) -> void:
 	_spell_progress_known = false
 	_hom_progress = {}
 	_hom_progress_known = false
-	_populate_homunculi()
+	if _list_loaded[2]: _populate_homunculi()
 	_item_progress = {}
 	_item_progress_known = false
 	_refresh_build_levels()
@@ -231,7 +234,7 @@ func _on_spell_entity_changed(index: int) -> void:
 	_refresh_spell_catalog()
 
 func _refresh_spell_catalog() -> void:
-	if _registry == null or _ultrahit_list == null:
+	if _registry == null or _ultrahit_list == null or not _list_loaded[3]:
 		return
 	var selected_id := ""
 	var old_button := _entry_group.get_pressed_button()
@@ -241,21 +244,25 @@ func _refresh_spell_catalog() -> void:
 			selected_id = str(old_entry.get("id", ""))
 	var scroll := _ultrahit_list.get_parent() as ScrollContainer
 	var old_scroll := scroll.scroll_vertical if scroll else 0
-	_populate_spells()
-	if _tabs.current_tab == 3:
-		for child in _ultrahit_list.get_children():
-			if child is Button and str(child.get_meta("entry").get("id", "")) == selected_id:
-				child.button_pressed = true
-				_show_entry(child.get_meta("entry"))
-				if scroll: scroll.set_deferred("scroll_vertical", old_scroll)
-				return
-		_on_inventory_tab_changed(3)
+	_populate_spells(selected_id, old_scroll)
 
 func _on_inventory_tab_changed(index: int) -> void:
 	if index < 0 or index >= _tab_layouts.size():
 		return
+	for i in _list_building.size():
+		if i != index and _list_building[i]:
+			_list_generation[i] += 1
+			_list_building[i] = false
+			_list_loaded[i] = false
 	if _detail_panel.get_parent() != _tab_layouts[index]:
 		_detail_panel.reparent(_tab_layouts[index])
+	if not _list_loaded[index]:
+		match index:
+			0: _populate_entities()
+			1: _populate_builds()
+			2: _populate_homunculi()
+			3: _populate_spells()
+			4: _populate_techs()
 	var lists := [_entities_list, _builds_list, _homunculi_list, _ultrahit_list, _techs_list]
 	for child in lists[index].get_children():
 		if child is Button:
@@ -379,17 +386,40 @@ func _load_registry() -> void:
 	else:
 		push_warning("InventoryScreen: data_registry.gd is not a DataRegistry.")
 
-func _populate_lists() -> void:
-	_populate_entities()
-	_populate_builds()
-	_populate_homunculi()
-	_populate_spells()
-	_populate_techs()
+func _fill_entries(container: VBoxContainer, entries: Array, index: int, selected_id: String = "", old_scroll: int = -1) -> void:
+	_list_generation[index] += 1
+	var generation: int = _list_generation[index]
+	_list_loaded[index] = true
+	_list_building[index] = true
+	_clear_container(container)
+	if entries.is_empty():
+		_add_placeholder(container)
+		_list_building[index] = false
+		return
+	# Let the inventory or newly selected tab draw before loading its previews.
+	await get_tree().process_frame
+	var selected_found := false
+	for i in entries.size():
+		if not is_inside_tree() or generation != _list_generation[index]: return
+		var entry: Dictionary = entries[i]
+		var row := _make_entry_row(entry, index == 1)
+		container.add_child(row)
+		if _tabs.current_tab == index and ((selected_id.is_empty() and i == 0) or str(entry.get("id", "")) == selected_id):
+			row.button_pressed = true
+			_show_entry(entry)
+			selected_found = true
+		if (i + 1) % ROWS_PER_FRAME == 0 and i + 1 < entries.size():
+			await get_tree().process_frame
+	if not is_inside_tree() or generation != _list_generation[index]: return
+	_list_building[index] = false
+	if _tabs.current_tab == index and not selected_found:
+		_on_inventory_tab_changed(index)
+	if old_scroll >= 0 and container.get_parent() is ScrollContainer:
+		container.get_parent().set_deferred("scroll_vertical", old_scroll)
 
 func _populate_entities() -> void:
 	if _entities_list == null:
 		return
-	_clear_container(_entities_list)
 	if _registry == null:
 		_add_placeholder(_entities_list)
 		return
@@ -402,13 +432,11 @@ func _populate_entities() -> void:
 	if list.is_empty():
 		_add_placeholder(_entities_list)
 		return
-	for entry in list:
-		_entities_list.add_child(_make_entry_row(entry))
+	_fill_entries(_entities_list, list, 0)
 
 func _populate_builds() -> void:
 	if _builds_list == null:
 		return
-	_clear_container(_builds_list)
 	if _registry == null:
 		_add_placeholder(_builds_list)
 		return
@@ -421,13 +449,11 @@ func _populate_builds() -> void:
 	if list.is_empty():
 		_add_placeholder(_builds_list)
 		return
-	for entry in list:
-		_builds_list.add_child(_make_entry_row(entry, true))
+	_fill_entries(_builds_list, list, 1)
 
 func _populate_homunculi() -> void:
 	if _homunculi_list == null:
 		return
-	_clear_container(_homunculi_list)
 	if _registry == null:
 		_add_placeholder(_homunculi_list)
 		return
@@ -440,28 +466,20 @@ func _populate_homunculi() -> void:
 	if list.is_empty():
 		_add_placeholder(_homunculi_list)
 		return
-	for entry in list:
-		var row := _make_entry_row(entry)
-		_homunculi_list.add_child(row)
-		if str(entry.get("id", "")) == _selected_hom_id:
-			row.button_pressed = true
-			_show_entry(entry)
+	_fill_entries(_homunculi_list, list, 2, _selected_hom_id)
 
-func _populate_spells() -> void:
+func _populate_spells(selected_id: String = "", old_scroll: int = -1) -> void:
 	if _ultrahit_list == null:
 		return
-	_clear_container(_ultrahit_list)
 	var entries = _build_spell_entries()
 	if entries.is_empty():
 		_add_placeholder(_ultrahit_list)
 		return
-	for entry in entries:
-		_ultrahit_list.add_child(_make_entry_row(entry))
+	_fill_entries(_ultrahit_list, entries, 3, selected_id, old_scroll)
 
 func _populate_techs() -> void:
 	if _techs_list == null:
 		return
-	_clear_container(_techs_list)
 	if _registry == null:
 		_add_placeholder(_techs_list)
 		return
@@ -489,8 +507,7 @@ func _populate_techs() -> void:
 	if entries.is_empty():
 		_add_placeholder(_techs_list)
 		return
-	for entry in entries:
-		_techs_list.add_child(_make_entry_row(entry))
+	_fill_entries(_techs_list, entries, 4)
 
 func _build_spell_entries() -> Array:
 	var out: Array = []

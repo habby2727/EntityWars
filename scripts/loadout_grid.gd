@@ -1977,6 +1977,7 @@ func _confirm_expedition_start(owner: String, payload: Dictionary) -> void:
 	confirm.title = tr("EXPEDITION_START")
 	confirm.dialog_text = tr("EXPEDITION_RISK_WARNING")
 	confirm.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	confirm.get_label().add_theme_color_override("font_color", Color.WHITE)
 	confirm.confirmed.connect(func():
 		if _spell_backend != null and _spell_backend._verified_player_id == owner and not get_node("/root/ConnectionGate").blocked():
 			SceneRouter._expedition_context["pending_start"] = payload

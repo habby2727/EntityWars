@@ -22,13 +22,16 @@ func _run() -> void:
 	assert(HomProgress.collection_status("cinder", true, {}, false) == "owned")
 	assert(HomProgress.collection_status("astralotl", false, {}, false) == "unknown")
 	assert(HomProgress.collection_status("astralotl", false, {}, true) == "locked")
-	assert(HomProgress.collection_status("astralotl", false, {"astralotl": {"owned": true}}, true) == "owned")
+	assert(HomProgress.collection_status("astralotl", false, {"astralotl": {"owned": true, "level": 0, "xp": 0}}, true) == "owned")
 	assert(HomProgress.collection_status("astralotl", false, {"astralotl": {"owned": 1}}, true) == "locked")
 	for viewport_size in [Vector2i(1280, 720), Vector2i(1920, 1080)]:
 		root.size = viewport_size
 		var inventory = load("res://scenes/ui/Inventory.tscn").instantiate()
 		root.add_child(inventory)
 		await process_frame
+		inventory._tabs.current_tab = 2
+		while inventory._list_building[2]:
+			await process_frame
 		assert(inventory._homunculi_list.get_child_count() == 22)
 		var hom: Dictionary = registry.get_homunculus_collection().astralotl
 		hom["kind"] = "homunculus"
