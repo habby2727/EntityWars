@@ -1,3 +1,4 @@
+import { expeditionDualTypeMultiplier } from "./expeditions_rules";
 import { evaluateExpeditionPassive, type PassiveContext, type PassiveEvent } from "./expedition_passives";
 import { recordPoisonChange } from "./combat_event_provenance";
 import { strategicHeal } from "./strategic_effects";
@@ -80,7 +81,7 @@ export function triggerInspirationActivation(state: ExpeditionPassiveState, acti
 export function applyCombatPassive(fighter: any, target: any, event: PassiveEvent, types: any, actorId: string, targetId: string, events: any[], poisonDamage = 0, attack: any = null): void {
   if (!fighter?.expedition_passive || !target || fighter.hp <= 0) return;
   const targetType = target.element_type || target.type;
-  const relationFor = (type: string) => types?.effectiveness?.[type]?.[targetType] ?? 1;
+  const relationFor = (type: string) => target.expedition_types ? expeditionDualTypeMultiplier(type, target.expedition_types) : types?.effectiveness?.[type]?.[targetType] ?? 1;
   let relation = relationFor(fighter.type);
   if (event === "before_attack" && attack) {
     if (attack.type === "universal") relation = 1;
