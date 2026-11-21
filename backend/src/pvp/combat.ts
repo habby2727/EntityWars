@@ -1,5 +1,6 @@
+import { newExpeditionPassiveState, beginPassiveExchange, applyCombatPassive, passiveModifiers, finishPassiveAttack, finishPassiveExchange, recordPassiveSpellHit } from "../expedition_passive_state";
 import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "../combat_event_provenance";
-import { combatHomunculusAllowed } from "../homunculus_catalog";
+import { combatHomunculusAllowed, homunculusAttackMultiplierById } from "../homunculus_catalog";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "../physical_anomaly";
 import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "../strategic_effects";
 
@@ -103,6 +104,7 @@ function fighter(snapshot: PvpSnapshot, catalogs: PvpCatalogs): PvpFighter | nul
   const level = entry.level ?? 0, me = mutation?.effects ?? {};
   const hom_bonus = hom ? { hp_flat: hom.buff_hp + level + (me.hp_flat ?? 0), power_flat: hom.buff_atk + Math.trunc(level / 5) + (me.power_flat ?? 0), guard_flat: hom.buff_def + Math.trunc(level / 3) + (me.guard_flat ?? 0), favorable_type_bonus: me.favorable_type_bonus ?? 0 } : { hp_flat: 0, power_flat: 0, guard_flat: 0, favorable_type_bonus: 0 };
   const base: PvpFighter = structuredClone({ player_id: snapshot.player_id, entity, weapons: weapons.map(w => effectiveWeapon(w, itemProgress, catalogs)), homunculus: hom, spells, item_progress: itemProgress, homunculus_progress: homProgress, spell_progress: snapshot.spell_progress ?? {}, active_weapon_slot: 1, spell_cooldowns: {}, hom_energy: 0, hom_spent: hom === null, ultra_used: false, id: entity.id, name: entity.name, type: entity.type, hp: 0, max_hp: 0, atk: 0, def: 0, hom_id: hom?.id ?? "", hom_name: hom?.name ?? "", hom_max_energy: 6, hom_ready_at: 3, hom_synergy: synergy, hom_bonus, mutation, mods: { atk_flat: 0, def_flat: 0 }, item_fx: {}, active_weapon: null, status: statusInitial(), spell_ids: [...snapshot.spell_ids], original_spell_ids: [...snapshot.spell_ids], inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false, inspiration_offers: [], inspiration_catalog: catalogs.spells.filter(s => !snapshot.spell_ids.includes(s.id) && ["attack", "support"].includes(s.category) && number(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && number(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isSafeInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e: any) => object(e) && supportedEffects.has(e.kind) && number(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["self", "enemy"].includes(e.target) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e))) && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type)))).sort((a, b) => a.id.localeCompare(b.id)), temporary_spell_id: "", temporary_replaced_slot: -1, spell_hit_this_exchange: false, spell_hit_last_exchange: false, spell_neutralize_pending: 0, spell_neutralize_active: 0 });
+  if (hom?.passive) (base as any).expedition_passive = newExpeditionPassiveState(hom.id, level);
   base.name = displayName(base.name); base.hom_name = displayName(base.hom_name);
   const result = refreshPvpWeapon(base); result.hp = result.max_hp; return result;
 }
@@ -156,6 +158,7 @@ export function resetPvpFighter(fighter: PvpFighter): PvpFighter {
   if (f.temporary_spell_id) { f.spell_ids = [...f.original_spell_ids]; f.spells = f.spells.filter(s => s.id !== f.temporary_spell_id || f.original_spell_ids.includes(s.id)); delete f.spell_cooldowns[f.temporary_spell_id]; }
   f.original_spell_ids = [...f.spell_ids];
   f.temporary_spell_id = ""; f.temporary_replaced_slot = -1;
+  if (f.expedition_passive && !f.hom_spent) f.expedition_passive = newExpeditionPassiveState(f.expedition_passive.id, f.expedition_passive.level);
   f.inspiration = 0; f.inspiration_pending = false; f.inspiration_used_this_battle = false; f.inspiration_offers = [];
   for (const key of ["strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline", "hom_reflect_active", "hom_other_reflect", "weapon_shield_pct", "other_shield_pct", "weapon_reflect_pct", "other_reflect_pct", "poison_source", "poison_reflect_source", "inspiration_activation"]) delete f[key];
   f.hom_energy = 0; f.hp = f.max_hp; f.spell_cooldowns = {}; f.status = statusInitial();
@@ -179,7 +182,7 @@ export function pvpHomReady(fighter: PvpFighter): boolean {
 /** _initiative consumes tempo_bonus; return the new fighter without mutating input. */
 export function pvpInitiative(fighter: PvpFighter): { initiative: number; fighter: PvpFighter } {
   const next = structuredClone(fighter);
-  const value = (next.entity?.base_stats?.tempo ?? 10) + (next.active_weapon?.effects?.tempo_flat?.[0] ?? 0) + (next.hom_spent ? 0 : next.hom_synergy.tempo_flat ?? 0) + (next.status.tempo_bonus ?? 0);
+  const value = (next.entity?.base_stats?.tempo ?? 10) + (next.active_weapon?.effects?.tempo_flat?.[0] ?? 0) + (next.hom_spent ? 0 : next.hom_synergy.tempo_flat ?? 0) + (next.status.tempo_bonus ?? 0) + ((next as any).expedition_passive && !next.hom_spent ? passiveModifiers((next as any).expedition_passive).tempo_flat ?? 0 : 0);
   next.status.tempo_bonus = 0;
   return { initiative: value, fighter: next };
 }
@@ -255,6 +258,18 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       f.spell_neutralize_active = f.spell_neutralize_pending; f.spell_neutralize_pending = 0;
       if (decisions[side].ultra) f.ultra_used = true;
     }
+    const firePassive = (side: PvpSide, event: any, poisonDamage = 0) => {
+      const owner: any = next.fighters[side], opponent: any = next.fighters[other(side)];
+      if (!owner.hom_spent) applyCombatPassive(owner, opponent, event, next.types, side, other(side), events, poisonDamage);
+    };
+    const mods = (fighter: any) => fighter.expedition_passive && !fighter.hom_spent ? passiveModifiers(fighter.expedition_passive) : {};
+    for (const side of sides) {
+      const owner: any = next.fighters[side];
+      if (owner.expedition_passive && !owner.hom_spent) {
+        owner.expedition_passive = beginPassiveExchange(owner.expedition_passive, turn);
+        firePassive(side, "before_exchange");
+      }
+    }
     const l = pvpInitiative(next.fighters.left), r = pvpInitiative(next.fighters.right);
     next.fighters.left = l.fighter; next.fighters.right = r.fighter;
     const order = normalInitiativeOrder(l.initiative, r.initiative);
@@ -271,6 +286,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         } else {
           next.fighters[side] = refreshPvpWeapon(a, decision.switch_slot);
           emit(side, "switch", " switches weapons.", { kind: "switch", slot: decision.switch_slot });
+          firePassive(side, "weapon_switched");
         }
         return;
       }
@@ -290,14 +306,16 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         else if (effect.kind === "ward_dispel") spellContext.dispel = effect.value;
       }
       if (spell.category === "attack") {
+      firePassive(side, "before_attack");
       const focus = a.status.focus_next ?? 0, misalign = a.status.misalign_next ?? 0;
       if (focus > 0 || misalign > 0) { delete a.status.focus_next; delete a.status.misalign_next; }
-      if ((b.item_fx.evasion_pct ?? 0) > 0 && draw() < b.item_fx.evasion_pct) { emit(opponent, "miss", " evades.", { kind: "evade", target_side: side, spell_id: spell.id }); return; }
-      const accuracy = spell.accuracy + focus - misalign;
-      if (draw() >= Math.max(0, Math.min(1, accuracy))) { emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id }); return; }
+      const evasion = Math.min(1, (b.item_fx.evasion_pct ?? 0) + (mods(b).evasion_pct ?? 0));
+      if (evasion > 0 && draw() < evasion) { emit(opponent, "miss", " evades.", { kind: "evade", target_side: side, spell_id: spell.id }); firePassive(opponent, "dodge"); if (a.expedition_passive && !a.hom_spent) { a.expedition_passive = finishPassiveAttack(recordPassiveSpellHit(a.expedition_passive, false)); firePassive(side, "spell_miss"); } return; }
+      const accuracy = spell.accuracy + focus - misalign + (mods(a).accuracy_pct ?? 0);
+      if (draw() >= Math.max(0, Math.min(1, accuracy))) { emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id }); if (a.expedition_passive && !a.hom_spent) { a.expedition_passive = finishPassiveAttack(recordPassiveSpellHit(a.expedition_passive, false)); firePassive(side, "spell_miss"); } return; }
       const as = a.hom_spent ? {} : a.hom_synergy, bs = b.hom_spent ? {} : b.hom_synergy;
       const mult = normalSpellMultiplier({ attacker_type: a.type, defender_type: b.type, spell_type: spell.type, primary_type: spell.primary_type, secondary_type: spell.secondary_type, effectiveness: (next.types as any).effectiveness, advantage_bonus: a.hom_spent ? 0 : (as.type_adv_bonus ?? 0) + (a.hom_bonus.favorable_type_bonus ?? 0), disadvantage_reduction: a.item_fx.disadvantage_reduction, attacker_neutralize: a.spell_neutralize_active, defender_neutralize: b.spell_neutralize_active, attacker_hom_neutralize: as.type_neutralize, defender_hom_neutralize: bs.type_neutralize });
-      const amount = normalDirectDamage({ attack: a.atk, defense: b.def, power, type_multiplier: mult, anomaly_multiplier: physicalAnomalyMultiplier(next.physical_anomaly, a.type), attack_down: a.status.atk_down, attack_boost: a.status.atk_boost, incoming_multiplier: bs.incoming_mult, vulnerability: b.status.vuln_pct, shield: b.status.shield_pct, pierce: spellContext.pierce, dispel: spellContext.dispel, ultra: decision.ultra });
+      const amount = normalDirectDamage({ attack: a.atk + (mods(a).power_flat ?? 0), defense: b.def + (mods(b).guard_flat ?? 0), power, type_multiplier: mult, anomaly_multiplier: physicalAnomalyMultiplier(next.physical_anomaly, a.type), attack_down: a.status.atk_down, attack_boost: a.status.atk_boost, incoming_multiplier: bs.incoming_mult, vulnerability: b.status.vuln_pct, shield: b.status.shield_pct, pierce: spellContext.pierce, dispel: spellContext.dispel, ultra: decision.ultra });
       if (a.status.atk_down > 0) emit(side, "debuff", " shakes off the weakness.", {kind: "status_consumed", status: "atk_down", spell_id: spell.id});
       if (a.status.atk_boost > 0) emit(side, "combo", " expends the surge.", {kind: "status_consumed", status: "atk_boost", spell_id: spell.id});
       if (b.status.vuln_pct > 0) emit(side, "combo", " exploits vulnerability.", {kind: "status_consumed", status: "vuln_pct", target_side: opponent, spell_id: spell.id});
@@ -305,11 +323,13 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       if (b.status.shield_pct > 0) clearDefense(b, "shield_pct");
       spellContext.direct_damage = Math.min(b.hp, amount); spellContext.actual_damage += spellContext.direct_damage;
       dmg(side, opponent, amount, "damage", spell); events[events.length - 1].effectiveness = mult;
+      if (a.expedition_passive && !a.hom_spent) a.expedition_passive = finishPassiveAttack(recordPassiveSpellHit(a.expedition_passive, true));
+      if (spellContext.direct_damage > 0) firePassive(opponent, "damage_received");
       if (amount > 0) b.spell_hit_this_exchange = true;
       if (b.status.reflect_pct > 0) {
         const ignored = (a.item_fx.ignore_reflect_chance ?? 0) > 0 && draw() < a.item_fx.ignore_reflect_chance;
         const reflected = ignored ? 0 : Math.round(amount * b.status.reflect_pct);
-        if (reflected > 0) { dmg(opponent, side, reflected, "reflect", spell); a.spell_hit_this_exchange = true; }
+        if (reflected > 0) { dmg(opponent, side, reflected, "reflect", spell); a.spell_hit_this_exchange = true; firePassive(side, "damage_received"); }
         if (!ignored && (b.status.poison_on_reflect ?? 0) > 0) { const previous = a.status.poison; a.status.poison = Math.max(previous, b.status.poison_on_reflect); recordPoisonChange(a, previous, typeof (b as any).poison_reflect_source === "string" ? (b as any).poison_reflect_source : null); }
         clearDefense(b, "reflect_pct"); delete b.status.poison_on_reflect; delete (b as any).poison_reflect_source;
       }
@@ -328,7 +348,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       if (a.type === "gold" && proc < 20) { const before = a.hp; a.hp = Math.min(a.max_hp, a.hp + strategicHeal(a, 3)); if (a.hp !== before) emit(side, "heal", " restores 3 HP.", { kind: "elemental_heal", spell_id: spell.id, hp: a.hp, amount: a.hp - before }); }
       if (proc < (a.type === "vitriol" ? 30 : 20) && a.type !== "gold") emit(side, a.type === "sodium" ? "shield" : "debuff", " triggers an elemental effect.", {kind: "elemental_proc", spell_id: spell.id, target_side: a.type === "sodium" ? side : opponent, status: ({vitriol:"poison",mercury:"stun",sulfur:"atk_down",sodium:"shield_pct",aether:"vuln_pct"} as Record<string,string>)[a.type]});
       } else {
-        if (draw() >= spell.accuracy) { emit(side, "miss", "'s spell misses.", {kind: "miss", spell_id: spell.id}); return; }
+        if (draw() >= Math.max(0, Math.min(1, spell.accuracy + (mods(a).accuracy_pct ?? 0)))) { emit(side, "miss", "'s spell misses.", {kind: "miss", spell_id: spell.id}); firePassive(side, "spell_miss"); return; }
         emit(side, "buff", "'s spell succeeds.", {kind: "support_hit", spell_id: spell.id, show_spell_link: false});
       }
       if (spell.type === "hybrid" && marked) { delete b.status.hybrid_mark; emit(side, "combo", " consumes the hybrid mark.", {kind: "mark_consumed", target_side: opponent, spell_id: spell.id, show_spell_link: false}); }
@@ -439,7 +459,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       const actor: any = next.fighters[side];
       if (actor.hp <= 0 || (b.hp <= 0 && decision.hom_action !== "sacrifice") || !pvpHomReady(actor)) continue;
       if (decision.hom_action === "sacrifice") {
-        actor.hom_spent = true; actor.hom_energy = 0;
+        actor.hom_spent = true; actor.hom_energy = 0; delete actor.expedition_passive;
         if (actor.hom_reflect_active !== undefined) {
           actor.status.reflect_pct = Math.max(actor.hom_other_reflect ?? 0, actor.weapon_reflect_pct ?? 0);
           if (actor.other_reflect_pct !== undefined) actor.other_reflect_pct = actor.hom_other_reflect ?? 0;
@@ -455,15 +475,18 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         else if (draw() >= Math.max(0.6, Math.min(0.98, 0.95 - (actor.atk > b.def * 1.6 ? 0.08 : 0) - (actor.max_hp > b.max_hp ? Math.min(0.15, (actor.max_hp - b.max_hp) / actor.max_hp * 0.2) : 0)))) emit(side, "miss", "'s homunculus misses.", { kind: "hom_miss", target_side: opponent });
         else {
           const incoming = b.hom_spent ? 1 : Math.max(0.1, Math.min(1, b.hom_synergy.incoming_mult ?? 1));
-          const amount = Math.max(1, Math.round(actor.atk * (boosted ? 0.6 : 0.4) * incoming));
+          const factor = homunculusAttackMultiplierById(actor.hom_id, b.type, next.types, [actor.spell_neutralize_active ?? 0, b.spell_neutralize_active ?? 0, actor.hom_synergy?.type_neutralize ?? 0, b.hom_spent ? 0 : b.hom_synergy?.type_neutralize ?? 0]);
+          const amount = Math.max(1, Math.round((actor.atk + (mods(actor).power_flat ?? 0)) * (boosted ? 0.6 : 0.4) * incoming * factor));
           b.hp = Math.max(0, b.hp - amount); b.spell_hit_this_exchange = true;
+          if (amount > 0) firePassive(opponent, "damage_received");
           emit(side, "homunculus", " strikes.", { kind: "hom_attack", target_side: opponent, damage: amount, hp: b.hp, boosted });
         }
       }
     }
     if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0) for (const side of sides) {
-      const f = next.fighters[side]; if (f.status.poison > 0) { const damage = Math.min(3, f.hp); const provenance = poisonTickMetadata(f, side, sides, damage, turn); f.status.poison--; f.hp -= damage; f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp, ...provenance }); recordPoisonChange(f, f.status.poison, null); }
+      const f = next.fighters[side]; if (f.status.poison > 0) { const damage = Math.min(3, f.hp); const provenance = poisonTickMetadata(f, side, sides, damage, turn); f.status.poison--; f.hp -= damage; f.spell_hit_this_exchange = true; if (provenance.source && provenance.source !== side && damage > 0) firePassive(provenance.source as PvpSide, "opponent_poison_damage", damage); emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp, ...provenance }); recordPoisonChange(f, f.status.poison, null); }
     }
+    for (const side of sides) { const f: any = next.fighters[side]; if (f.expedition_passive) f.expedition_passive = finishPassiveExchange(f.expedition_passive); }
     for (const side of sides) { const f = next.fighters[side]; if (!f.hom_spent) f.hom_energy = Math.min(f.hom_max_energy, f.hom_energy + 1); f.spell_neutralize_active = 0; }
     // The shared helper also expires effects; defer that part until after jams.
     const expiry: Record<string, any> = {};
@@ -489,6 +512,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       events.push({ turn, kind: "battle_result", result: battleResult, wins: structuredClone(next.wins) });
       if (outcome.result !== null) {
         next.battle_over = true; next.battle_result = battleResult; next.match_result = outcome.result;
+        for (const side of sides) delete (next.fighters[side] as any).expedition_passive;
         for (const side of sides) { const f = next.fighters[side]; if (f.temporary_spell_id) { f.spell_ids = [...f.original_spell_ids]; f.spells = f.spells.filter(s => s.id !== f.temporary_spell_id || f.original_spell_ids.includes(s.id)); delete f.spell_cooldowns[f.temporary_spell_id]; } f.temporary_spell_id = ""; f.temporary_replaced_slot = -1; f.inspiration_pending = false; f.inspiration_offers = []; }
         events.push({ turn, kind: "match_result", result: outcome.result, wins: structuredClone(next.wins) });
       } else {
@@ -532,7 +556,7 @@ export function resolvePvpInspiration(state: PvpCombatState, side: PvpSide, deci
   if (!f?.inspiration_pending || f.inspiration_used_this_battle || !Array.isArray(f.inspiration_offers) || f.inspiration_offers.length !== 3 || new Set(f.inspiration_offers).size !== 3) return { error: "INVALID_DECISION" };
   const keys = Object.keys(decision).sort().join(",");
   if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && f.inspiration_offers.includes(decision.spell_id))) return { error: "INVALID_DECISION" };
-  const next = structuredClone(state), fighter = next.fighters[side];
+  const next = structuredClone(state), fighter = next.fighters[side], passiveEvents: any[] = [];
   if (decision.kind === "choose") {
     const spell = fighter.inspiration_catalog.find(s => s.id === decision.spell_id);
     if (!spell || fighter.spell_ids.includes(spell.id)) return { error: "INVALID_DECISION" };
@@ -541,9 +565,10 @@ export function resolvePvpInspiration(state: PvpCombatState, side: PvpSide, deci
     fighter.spell_ids[slot] = spell.id; fighter.temporary_spell_id = spell.id; fighter.temporary_replaced_slot = slot;
     if (!fighter.spells.some(s => s.id === spell.id)) fighter.spells.push(structuredClone(spell));
     recordInspirationActivation(fighter, side, next.turn);
+    if (!fighter.hom_spent) applyCombatPassive(fighter, next.fighters[side === "left" ? "right" : "left"], "inspiration_activated", next.types, side, side === "left" ? "right" : "left", passiveEvents);
   } else fighter.inspiration = 0;
   fighter.inspiration_pending = false; fighter.inspiration_used_this_battle = true; fighter.inspiration_offers = [];
-  return { state: next, events: [{ turn: next.turn, side, kind: decision.kind === "choose" ? "inspiration_chosen" : "inspiration_declined", ...(decision.kind === "choose" ? {activation: structuredClone((fighter as any).inspiration_activation)} : {}) }] };
+  return { state: next, events: [{ turn: next.turn, side, kind: decision.kind === "choose" ? "inspiration_chosen" : "inspiration_declined", ...(decision.kind === "choose" ? {activation: structuredClone((fighter as any).inspiration_activation)} : {}) }, ...passiveEvents] };
 }
 
 /** A view for a single player; offers and candidate catalogs are private. */

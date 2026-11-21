@@ -1,4 +1,6 @@
 import { evaluateExpeditionPassive, type PassiveContext, type PassiveEvent } from "./expedition_passives";
+import { recordPoisonChange } from "./combat_event_provenance";
+import { strategicHeal } from "./strategic_effects";
 
 // Staging-only state machine: no live combat path imports this module. The
 // engines must provide authoritative, source-attributed events before enabling it.
@@ -73,4 +75,28 @@ export function clearExpeditionPassive(state: ExpeditionPassiveState): Expeditio
 export function triggerInspirationActivation(state: ExpeditionPassiveState, activation: {marker: string; actor: string; exchange: number; activates_at: number}, context: Omit<PassiveContext, "exchange" | "applied_markers">): PassiveOutcome {
   if (!activation || !activation.actor || activation.exchange !== state.exchange || activation.activates_at !== state.exchange + 1 || activation.marker !== `inspiration:${activation.actor}:${activation.exchange}`) throw new Error("INVALID_INSPIRATION_ACTIVATION");
   return triggerExpeditionPassive(state, "inspiration_activated", context);
+}
+
+/** Apply the shared passive proposal to a server-owned fighter and target. */
+export function applyCombatPassive(fighter: any, target: any, event: PassiveEvent, types: any, actorId: string, targetId: string, events: any[], poisonDamage = 0): void {
+  if (!fighter?.expedition_passive || !target || fighter.hp <= 0) return;
+  const relation = types?.effectiveness?.[fighter.type]?.[target.element_type || target.type] ?? 1;
+  const debuffs = ["poison", "stun", "vuln", "vuln_pct", "atk_down", "hom_stun", "misalign_next"];
+  const context = {fighter: {hp: fighter.hp, max_hp: fighter.max_hp, shielded: (fighter.status?.shield_pct ?? fighter.status?.shield ?? 0) > 0, consecutive_spell_hits: 0, attacks_made: 0}, target: {debuffed: debuffs.some(key => (target.status?.[key] ?? 0) > 0)}, type_relation: relation > 1 ? "advantage" as const : relation < 1 ? "disadvantage" as const : "neutral" as const, poison_damage: poisonDamage};
+  const result = triggerExpeditionPassive(fighter.expedition_passive, event, context);
+  fighter.expedition_passive = result.state;
+  if (!result.activated) return;
+  events.push({kind: "hom_passive", actor: actorId, target: targetId, passive_id: result.state.id, trigger: event});
+  for (const effect of result.instant) {
+    if (effect.kind === "poison" && target.hp > 0) {
+      const previous = target.status.poison ?? 0;
+      target.status.poison = Math.max(previous, effect.amount);
+      recordPoisonChange(target, previous, actorId);
+      if (target.status.poison > previous) events.push({kind: "status_applied", actor: actorId, target: targetId, status: "poison", previous, value: target.status.poison, source: "hom_passive"});
+    } else if (effect.kind === "heal" && fighter.hp > 0) {
+      const amount = Math.min(strategicHeal(fighter, effect.amount), fighter.max_hp - fighter.hp);
+      fighter.hp += amount;
+      if (amount > 0) events.push({kind: "heal", actor: actorId, target: actorId, amount, hp: fighter.hp, source: "hom_passive"});
+    }
+  }
 }

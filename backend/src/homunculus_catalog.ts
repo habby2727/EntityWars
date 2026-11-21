@@ -63,3 +63,11 @@ export function homunculusAttackMultiplier(hom: any, defenderType: string, types
   const base = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
   return 1 + (base - 1) * (1 - Math.max(0, ...neutralizations));
 }
+
+/** Resolve the elemental factor from server-owned catalog data. */
+export function homunculusAttackMultiplierById(id: string, defenderType: string, types: any, neutralizations: readonly number[] = []): number {
+  if (originals.has(id)) return 1;
+  const hom = catalog.expedition.find((entry: any) => entry.id === id);
+  if (!hom) throw new Error("INVALID_HOMUNCULUS_ATTACK");
+  return homunculusAttackMultiplier(hom, defenderType, types, neutralizations);
+}

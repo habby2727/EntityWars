@@ -1,5 +1,6 @@
+import { newExpeditionPassiveState, beginPassiveExchange, applyCombatPassive, passiveModifiers, finishPassiveAttack, finishPassiveExchange, recordPassiveSpellHit, triggerInspirationActivation } from "./expedition_passive_state";
 import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "./combat_event_provenance";
-import { combatHomunculusAllowed } from "./homunculus_catalog";
+import { combatHomunculusAllowed, homunculusAttackMultiplierById } from "./homunculus_catalog";
 import { createHmac } from "node:crypto";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "./physical_anomaly";
 import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "./strategic_effects";
@@ -149,7 +150,7 @@ export function buildTrustedCombatSetup(snapshot: any, selection: any, catalogs:
   const synergy = hom?.per_type?.[entity.type] ?? {};
   if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value))) return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id: string) => catalogs.spells.find((s: any) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id: string) => catalogs.spells.find((s: any) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  const result = { rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id: string) => catalogs.spells.find((s: any) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id: string) => catalogs.spells.find((s: any) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, ...(hom?.passive ? {hom_passive_level: homLevel} : {}), hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -158,7 +159,8 @@ export function createCombatState(setup: any, serverRng?: (turn: number, draw: n
   if (!setup || !validated.has(setup)) return { error: "UNTRUSTED_SETUP" };
   setup = validated.get(setup);
   const fighter = (e: any, hpMult = 1, atkMult = 1) => ({ id: e.id, type: e.type, hp: Math.round(e.base_stats.hp * hpMult), max_hp: Math.round(e.base_stats.hp * hpMult), atk: Math.round(e.base_stats.power * atkMult), def: e.base_stats.guard, tempo: e.base_stats.tempo ?? 10, status: {}, spell_hit_this_exchange: false, spell_hit_last_exchange: false, inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false });
-  const player = fighter(setup.entity);
+  const player: any = fighter(setup.entity);
+  if (setup.hom_passive_level !== undefined) player.expedition_passive = newExpeditionPassiveState(setup.hom_id, setup.hom_passive_level);
   const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
   const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
   const active = weapons[activeSlot - 1];
@@ -230,6 +232,16 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
   const next = structuredClone(state), events: any[] = [];
   let vitriolCorrosionUsed = 0;
   const target = switching ? null : decision.target === "boss" ? next.boss : next.minions.find((m: any) => m.id === decision.target);
+  const passiveTarget = target ?? next.boss;
+  const passiveTargetId = () => passiveTarget === next.boss ? "boss" : passiveTarget.id;
+  const firePassive = (event: any, opponent: any = passiveTarget, poisonDamage = 0) => {
+    if (!next.hom_spent) applyCombatPassive(next.player, opponent, event, next.types, "player", opponent === next.boss ? "boss" : opponent.id, events, poisonDamage);
+  };
+  const modifiers = () => next.player.expedition_passive && !next.hom_spent ? passiveModifiers(next.player.expedition_passive) : {};
+  if (next.player.expedition_passive && !next.hom_spent) {
+    next.player.expedition_passive = beginPassiveExchange(next.player.expedition_passive, next.turn + 1);
+    firePassive("before_exchange");
+  }
   const minionsAtStart = next.minions.filter((m: any) => m.hp > 0).map((m: any) => m.id);
   const shieldAtStart = next.boss_shield_turns > 0;
   const reduceBossDamage = (damage: number): { damage: number; heal: number } => {
@@ -277,10 +289,11 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     }
   };
   const hit = (a: any, d: any, accuracy: number, power: number, actor: string, signatureType?: string) => {
-    if ((actor === "boss" || actor === "minion") && (next.item_effects?.evasion_pct ?? 0) > 0 && draw() < next.item_effects.evasion_pct) { events.push({ actor: "player", target: actor === "minion" ? a.id : actor, kind: "evade" }); return false; }
+    const evasion = Math.min(1, (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0));
+    if ((actor === "boss" || actor === "minion") && evasion > 0 && draw() < evasion) { events.push({ actor: "player", target: actor === "minion" ? a.id : actor, kind: "evade" }); firePassive("dodge", a); return false; }
     let acc = accuracy;
     if (actor === "player" || signatureType !== undefined) {
-      acc += accuracyFocus - accuracyMisalign;
+      acc += accuracyFocus - accuracyMisalign + (actor === "player" ? modifiers().accuracy_pct ?? 0 : 0);
     } else {
       if (a.atk > d.def * 1.6) acc -= 0.08;
       if (a.max_hp > d.max_hp) acc -= Math.min(0.15, (a.max_hp - d.max_hp) / a.max_hp * 0.2);
@@ -301,10 +314,10 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (actor === "player" && spell.type !== "universal" && baseMult > 1 && !next.hom_spent) baseMult += next.hom_advantage ?? 0;
     const neutralize = Math.max(a.spell_neutralize_active ?? 0, d.spell_neutralize_active ?? 0, next.hom_spent ? 0 : next.hom_synergy?.type_neutralize ?? 0);
     const mult = actor === "player" && spell.type === "universal" ? 1 : 1 + (baseMult - 1) * (1 - neutralize);
-    let atk = a.atk;
+    let atk = a.atk + (actor === "player" ? modifiers().power_flat ?? 0 : 0);
     if (a.status.atk_down > 0) { atk = Math.round(atk * (1 - a.status.atk_down)); events.push({ kind: "status_consumed", target: actorId, status: "atk_down", previous: a.status.atk_down }); delete a.status.atk_down; }
     if (a.status.atk_boost > 0) { atk = Math.round(atk * (1 + a.status.atk_boost)); events.push({ kind: "status_consumed", target: actorId, status: "atk_boost", previous: a.status.atk_boost }); delete a.status.atk_boost; }
-    let damage = Math.max(1, Math.round((atk - Math.trunc(d.def * 0.5)) * mult * power * (actor === "player" || signatureType !== undefined ? physicalAnomalyMultiplier(next.physical_anomaly, a.type) : 1)));
+    let damage = Math.max(1, Math.round((atk - Math.trunc((d.def + (d === next.player ? modifiers().guard_flat ?? 0 : 0)) * 0.5)) * mult * power * (actor === "player" || signatureType !== undefined ? physicalAnomalyMultiplier(next.physical_anomaly, a.type) : 1)));
     if (actor === "player" && d === next.boss && next.power_turn_active) damage *= 2;
     if ((actor === "boss" || actor === "minion") && !next.hom_spent) damage = Math.max(1, Math.round(damage * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1))));
     if (d.status.vuln_pct > 0) { damage = Math.round(damage * (1 + d.status.vuln_pct)); events.push({ kind: "status_consumed", target: targetId, status: "vuln_pct", previous: d.status.vuln_pct }); delete d.status.vuln_pct; }
@@ -323,6 +336,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (actor === "player") { actualDamage = dealt; playerDirectDamage = dealt; }
     if (actor === "boss" && signatureType !== undefined) bossDirectDamage = dealt;
     d.hp = Math.max(0, d.hp - damage);
+    if (d === next.player && dealt > 0) firePassive("damage_received", a);
     if (shielded) healBossShield(shieldResult.heal, prevented);
     if (damage > 0) d.spell_hit_this_exchange = true;
     events.push({ actor: actorId, target: targetId, kind: "damage", damage, actual_damage: dealt, hp: d.hp });
@@ -331,6 +345,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       const reflected = ignored ? 0 : Math.round(damage * d.status.reflect_pct);
       const actualReflected = Math.min(a.hp, reflected);
       a.hp = Math.max(0, a.hp - reflected);
+      if (a === next.player && actualReflected > 0) firePassive("damage_received", d);
       if (reflected > 0) a.spell_hit_this_exchange = true;
       events.push({ kind: "status_consumed", target: targetId, status: "reflect_pct", previous: d.status.reflect_pct });
       clearDefense(d, "reflect_pct");
@@ -383,7 +398,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     return true;
   };
   try {
-    const playerFirst = (next.player.tempo ?? 10) + (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) >= (next.boss.tempo ?? 10) + (next.boss.status.tempo_bonus ?? 0);
+    const playerFirst = (next.player.tempo ?? 10) + (next.player.status.tempo_bonus ?? 0) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_spent ? 0 : next.hom_tempo ?? 0) + (modifiers().tempo_flat ?? 0) >= (next.boss.tempo ?? 10) + (next.boss.status.tempo_bonus ?? 0);
   for (const [id, fighter] of [["player", next.player], ["boss", next.boss]] as [string, any][]) {
     if (fighter.status.tempo_bonus) events.push({ actor: id, kind: "status_consumed", target: id, status: "tempo_bonus", previous: fighter.status.tempo_bonus });
     delete fighter.status.tempo_bonus;
@@ -403,7 +418,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         const fury = !!next.fury_pending;
         if (!fury && next.boss_intent === "Summon") {
           const c = next.minion_config;
-          next.minions = Array.from({ length: c.count }, (_, i) => ({ id: `minion_${i}`, hp: c.hp, max_hp: c.hp, atk: c.atk, def: c.def, type: "", status: {}, spell_hit_this_exchange: false }));
+          next.minions = Array.from({ length: c.count }, (_, i) => ({ id: `minion_${i}`, hp: c.hp, max_hp: c.hp, atk: c.atk, def: c.def, type: "", element_type: c.type, status: {}, spell_hit_this_exchange: false }));
           next.summoned = true;
           next.last_boss_action = "Summon";
           events.push({ actor: "boss", kind: "boss_summon", minion_ids: next.minions.map((m: any) => m.id), count: next.minions.length, minions: next.minions.map((m: any) => ({ id: m.id, hp: m.hp, max_hp: m.max_hp })) });
@@ -470,6 +485,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         next.item_id = weapon.id;
         next.item_effects = effects;
         events.push({ actor: "player", kind: "switch", slot: decision.switch_slot });
+        firePassive("weapon_switched");
       }
     } else {
     next.cooldowns[spell.id] = spell.cooldown_turns;
@@ -500,11 +516,19 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         if (effect.kind === "bonus_power_if_hit_last_exchange" && next.player.spell_hit_last_exchange) power += effect.value;
         if (effect.kind === "bonus_if_marked" && marked) power += effect.value;
       }
-      if (target.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0))) success = hit(next.player, target, spell.accuracy, power, "player");
+      if (target.hp > 0 && (target !== next.boss || !next.minions.some((m: any) => m.hp > 0))) {
+        firePassive("before_attack", target);
+        success = hit(next.player, target, spell.accuracy, power, "player");
+        if (next.player.expedition_passive && !next.hom_spent) {
+          next.player.expedition_passive = recordPassiveSpellHit(next.player.expedition_passive, success);
+          next.player.expedition_passive = finishPassiveAttack(next.player.expedition_passive);
+          if (!success) firePassive("spell_miss", target);
+        }
+      }
     }
     else {
-      success = draw() < spell.accuracy;
-      if (!success) events.push({ actor: "player", kind: "miss", spell_id: spell.id });
+      success = draw() < Math.max(0, Math.min(1, spell.accuracy + (modifiers().accuracy_pct ?? 0)));
+      if (!success) { events.push({ actor: "player", kind: "miss", spell_id: spell.id }); firePassive("spell_miss", target); }
     }
     const targetId = target === next.boss ? "boss" : target.id;
     const conversion = spell.effects.find((effect: any) => effect.kind === "ward_convert");
@@ -580,6 +604,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       next.player.def += Math.trunc(unscaled.guard_flat ?? 0) - Math.trunc(oldEffects.guard_flat ?? 0);
       next.item_effects = unscaled;
       next.hom_spent = true;
+      delete next.player.expedition_passive;
       next.hom_energy = 0;
       next.player.atk -= next.hom_bonuses.atk;
       next.player.def -= next.hom_bonuses.def;
@@ -594,7 +619,9 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         let accuracy = 0.95 - (next.player.atk > target.def * 1.6 ? 0.08 : 0);
         if (next.player.max_hp > target.max_hp) accuracy -= Math.min(0.15, (next.player.max_hp - target.max_hp) / next.player.max_hp * 0.2);
         if (draw() < Math.max(0.6, Math.min(0.98, accuracy))) {
-          const rawDamage = Math.max(1, Math.round(next.player.atk * (boosted ? 0.6 : 0.4))) * (target === next.boss && next.power_turn_active ? 2 : 1);
+          const defenderType = target === next.boss ? target.type : target.element_type ?? next.minion_config?.type;
+          const factor = homunculusAttackMultiplierById(next.hom_id, defenderType, next.types, [next.player.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]);
+          const rawDamage = Math.max(1, Math.round((next.player.atk + (modifiers().power_flat ?? 0)) * (boosted ? 0.6 : 0.4) * factor)) * (target === next.boss && next.power_turn_active ? 2 : 1);
           const shielded = target === next.boss && next.boss_shield_turns > 0;
           const shieldResult = shielded ? reduceBossDamage(rawDamage) : { damage: rawDamage, heal: 0 };
           const damage = shieldResult.damage;
@@ -615,9 +642,10 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
       hit(minion, next.player, 0.9, 1, "minion");
       events.push({ actor: id, kind: "minion_attack" });
     }
-    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { const victim = fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id; const damage = Math.min(3, fighter.hp); const provenance = poisonTickMetadata(fighter, victim, ["player", "boss", ...next.minions.map((m: any) => m.id)], damage, next.turn + 1); fighter.status.poison--; fighter.hp -= damage; fighter.spell_hit_this_exchange = true; events.push({ kind: "status_tick", status: "poison", target: victim, damage, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); recordPoisonChange(fighter, fighter.status.poison, null); }
+    for (const fighter of [next.player, next.boss, ...next.minions]) if (fighter.hp > 0 && fighter.status.poison > 0) { const victim = fighter === next.player ? "player" : fighter === next.boss ? "boss" : fighter.id; const damage = Math.min(3, fighter.hp); const provenance = poisonTickMetadata(fighter, victim, ["player", "boss", ...next.minions.map((m: any) => m.id)], damage, next.turn + 1); fighter.status.poison--; fighter.hp -= damage; fighter.spell_hit_this_exchange = true; if (provenance.source === "player" && victim !== "player" && damage > 0) firePassive("opponent_poison_damage", fighter, damage); events.push({ kind: "status_tick", status: "poison", target: victim, damage, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); recordPoisonChange(fighter, fighter.status.poison, null); }
     if (next.hom_id && !next.hom_spent) next.hom_energy = Math.min(6, next.hom_energy + 1);
   } catch (error) { if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC") return { error: "UNSUPPORTED_MECHANIC" }; throw error; }
+  if (next.player.expedition_passive) next.player.expedition_passive = finishPassiveExchange(next.player.expedition_passive);
   finishStrategicExchange(next, { player: next.player, boss: next.boss, ...Object.fromEntries(next.minions.map((m: any) => [m.id, m])) }, next.turn + 1, events);
   if (pendingBossJam) jamStrategicCooldown([next.boss_signature], next.boss_cooldowns, "player", "boss", events);
   next.turn++;
@@ -658,6 +686,7 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
     if (furyQueued) events.push({ actor: "boss", kind: "fury_queued", multiplier: next.fury_mult });
   }
   if (next.terminal_result) {
+    delete next.player.expedition_passive;
     next.strategic_delayed = [];
     for (const fighter of [next.player, next.boss, ...next.minions]) { delete fighter.strategic_trap; delete fighter.strategic_heal_suppression; }
     events.push({ kind: "combat_terminal", result: next.terminal_result, player_hp: next.player.hp, boss_hp: next.boss.hp });
@@ -728,7 +757,12 @@ export function resolveInspirationDecision(state: any, decision: any, rng: (turn
     if (!next.spells.some((entry: any) => entry.id === spell.id)) next.spells.push(structuredClone(spell));
     next.temporary_spell_id = spell.id;
     next.temporary_replaced_slot = slot;
-    recordInspirationActivation(next.player, "player", next.turn);
+    const activation = recordInspirationActivation(next.player, "player", next.turn);
+    if (next.player.expedition_passive && !next.hom_spent) {
+      const p = next.player, foe = next.boss;
+      const relation = next.types?.effectiveness?.[p.type]?.[foe.type] ?? 1;
+      p.expedition_passive = triggerInspirationActivation(p.expedition_passive, activation, {fighter: {hp:p.hp,max_hp:p.max_hp,shielded:(p.status.shield_pct ?? 0)>0,consecutive_spell_hits:0,attacks_made:0},target:{debuffed:false},type_relation:relation>1?"advantage":relation<1?"disadvantage":"neutral",poison_damage:0}).state;
+    }
   } else next.player.inspiration = 0;
   next.player.inspiration_pending = false;
   next.player.inspiration_used_this_battle = true;
