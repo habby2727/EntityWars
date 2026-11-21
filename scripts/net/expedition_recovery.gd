@@ -10,16 +10,18 @@ static func load_pending(owner: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null or file.get_length() > 16384: return {"error": "invalid_journal"}
 	var entry: Variant = JSON.parse_string(file.get_as_text())
-	if not entry is Dictionary or entry.get("owner") != owner or entry.get("kind") not in ["start", "select", "turn", "inspiration"] or not entry.get("payload") is Dictionary or str(entry.payload.get("client_action_id", "")).is_empty():
+	if not entry is Dictionary or entry.get("owner") != owner or entry.get("kind") not in ["start", "select", "turn", "inspiration", "capture", "skip", "advance", "exit"] or not entry.get("payload") is Dictionary or str(entry.payload.get("client_action_id", "")).is_empty():
 		return {"error": "invalid_journal"}
-	if entry.kind in ["turn", "inspiration"]:
+	if entry.kind in ["turn", "inspiration", "capture", "skip", "advance", "exit"]:
 		var revision: Variant = entry.payload.get("expected_revision")
-		if str(entry.payload.get("run_id", "")).is_empty() or not (revision is int or revision is float) or revision < 1 or floor(revision) != revision or not entry.payload.get("decision") is Dictionary:
+		if str(entry.payload.get("run_id", "")).is_empty() or not (revision is int or revision is float) or revision < 1 or floor(revision) != revision:
 			return {"error": "invalid_journal"}
+		if entry.kind in ["turn", "inspiration"] and not entry.payload.get("decision") is Dictionary: return {"error": "invalid_journal"}
+		if entry.kind == "advance" and entry.payload.get("direction") not in ["left", "forward", "right"]: return {"error": "invalid_journal"}
 	return entry
 
 static func save_pending(owner: String, kind: String, payload: Dictionary) -> bool:
-	if owner.is_empty() or kind not in ["start", "select", "turn", "inspiration"] or not load_pending(owner).is_empty(): return false
+	if owner.is_empty() or kind not in ["start", "select", "turn", "inspiration", "capture", "skip", "advance", "exit"] or not load_pending(owner).is_empty(): return false
 	var path := _path(owner)
 	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
 	if file == null: return false

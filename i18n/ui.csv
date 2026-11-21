@@ -324,6 +324,21 @@ EXPEDITION_EVENT_BUFF_STEAL,Buff stolen,Mejora robada
 EXPEDITION_EVENT_DEBUFF_TRANSFER,Debuff transferred,Debilitación transferida
 EXPEDITION_EVENT_WARD_CONVERT,Shield converted,Escudo convertido
 EXPEDITION_EVENT_HOM_ENERGY_SIPHON,Homunculus energy siphoned,Energía de homúnculo absorbida
+EXPEDITION_EXIT,Exit expedition,Salir de la expedición
+EXPEDITION_EXIT_CONFIRM,Exit this expedition? The server will close the run and apply the exit cooldown.,¿Salir de esta expedición? El servidor cerrará la partida y aplicará el tiempo de espera de salida.
+EXPEDITION_CONTINUE,Continue,Continuar
+EXPEDITION_CAPTURE,Capture,Capturar
+EXPEDITION_SKIP,Skip and continue,Omitir y continuar
+EXPEDITION_RARITY,Rarity,Rareza
+EXPEDITION_CAPTURE_COUNTS,Attempts remaining: %d / 3   |   Crystals: %d / 5,Intentos restantes: %d / 3   |   Cristales: %d / 5
+EXPEDITION_CAPTURE_SUSPENSE,Attempting capture...,Intentando capturar...
+EXPEDITION_CAPTURE_FAILED,Capture failed.,La captura ha fallado.
+EXPEDITION_CAPTURE_SUCCESS,Homunculus captured,Homúnculo capturado
+EXPEDITION_DUPLICATE_XP,Duplicate homunculus: +20 XP,Homúnculo duplicado: +20 XP
+EXPEDITION_CRYSTAL_GAINED,Capture crystal gained,Cristal de captura obtenido
+EXPEDITION_DIRECTION_LEFT,Left,Izquierda
+EXPEDITION_DIRECTION_FORWARD,Forward,Adelante
+EXPEDITION_DIRECTION_RIGHT,Right,Derecha
 EXPEDITION_DEVELOPMENT,This mode is under development.,Este modo está en desarrollo.
 
 HOM_STATUS_OWNED,Captured,Capturado

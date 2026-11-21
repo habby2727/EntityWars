@@ -164,7 +164,10 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> Control:
 			extra.append({"icon":"type", "label":"•", "tooltip":str(marker).replace("_", " ").capitalize()})
 		for modifier in passive.get("modifiers", []):
 			if modifier is Dictionary:
-				extra.append({"icon":"power", "label":str(modifier.get("value", "")), "tooltip":str(modifier.get("stat", modifier.get("kind", ""))).replace("_", " ").capitalize()})
+				var modifier_type := str(modifier.get("stat", modifier.get("kind", ""))).replace("_", " ").capitalize()
+				var amount := str(modifier.get("amount", ""))
+				var duration := str(modifier.get("expires_at", modifier.get("duration", "")))
+				extra.append({"icon":"power", "label":amount, "tooltip":"%s: %s  %s" % [modifier_type, amount, duration]})
 	var anomaly: Variant = state.get("physical_anomaly")
 	if anomaly is Dictionary and not anomaly.is_empty():
 		var affinity := str(fighter.get("type", ""))

@@ -11,6 +11,10 @@ func _run() -> void:
 			backgrounds += 1
 			assert(ResourceLoader.exists("res://assets/entities/expeditions/backgrounds/" + file))
 	assert(backgrounds == 26)
+	var hom_catalog: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/expedition_homunculi.json"))
+	assert(hom_catalog.homunculi.size() == 14)
+	for hom in hom_catalog.homunculi:
+		assert(ResourceLoader.exists(str(hom.preview_texture)) and ResourceLoader.exists(str(hom.combat_texture)))
 	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/expedition_enemies.json"))
 	var choices := []
 	for i in 2:
@@ -56,10 +60,19 @@ func _run() -> void:
 		assert(screen.combat_view.spell_buttons.all(func(button): return button.disabled))
 		assert(screen.combat_view.decline_button != null)
 		screen.session["phase"] = "REWARD"
-		screen.session["capture_candidate"] = {"name":"Astralotl", "preview_texture":"res://assets/entities/gameplay/homunculus/astralotl_pv.png"}
+		screen.session["capture_candidate"] = {"id":"astralotl", "name":"Astralotl", "type":"aether", "rarity":7, "preview_texture":"res://assets/entities/gameplay/homunculus/astralotl_pv.png"}
+		screen.session["capture_attempts_remaining"] = 3
+		screen.session["capture_closed"] = false
 		screen._render()
 		await process_frame
 		assert(screen.video.stream == stream and screen.body.get_child(screen.body.get_child_count() - 1) is CenterContainer)
+		assert(screen.capture_sprite.texture.resource_path == "res://assets/entities/gameplay/homunculus/ingame/1024/astralotl.png")
+		assert(screen.phase_buttons.size() == 2)
+		screen.session["phase"] = "ROUTE"
+		screen.session["directions"] = ["left", "forward", "right"]
+		screen._render()
+		await process_frame
+		assert(screen.phase_buttons.size() == 3 and screen.video.stream == stream)
 		screen.session["phase"] = "LOSS"
 		screen._render()
 		await process_frame
