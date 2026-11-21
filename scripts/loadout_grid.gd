@@ -93,6 +93,7 @@ var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
 var _hunt_mode := false
 var _dungeon_mode := false
+var _expedition_mode := false
 var _dungeon_backend: BackendClient
 var _dungeon_request := ""
 var _dungeon_kind := ""
@@ -222,7 +223,8 @@ func _resolve_nodes() -> void:
 func _ready() -> void:
 	_resolve_nodes()
 	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
-	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
+	_expedition_mode = bool(SceneRouter._expedition_context.get("loadout", false)) and not _dungeon_mode
+	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode and not _expedition_mode
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("replaced_session_id", "")).is_empty():
 		var notice := Label.new()
 		notice.text = "Previous hunt abandoned."
@@ -235,9 +237,9 @@ func _ready() -> void:
 		add_child(notice)
 		SceneRouter._solo_hunt_context.erase("replaced_session_id")
 		get_tree().create_timer(5.0).timeout.connect(notice.queue_free)
-	if _hunt_mode or _dungeon_mode:
+	if _hunt_mode or _dungeon_mode or _expedition_mode:
 		$RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter.hide()
-		if _dungeon_mode:
+		if _dungeon_mode or _expedition_mode:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol.hide()
@@ -250,7 +252,7 @@ func _ready() -> void:
 		var original_back := Callable(back, "_on_pressed")
 		if back.pressed.is_connected(original_back):
 			back.pressed.disconnect(original_back)
-		back.pressed.connect(SceneRouter.return_from_dungeon if _dungeon_mode else _on_hunt_back)
+		back.pressed.connect(SceneRouter.go_to_expeditions if _expedition_mode else (SceneRouter.return_from_dungeon if _dungeon_mode else _on_hunt_back))
 	if tooltip_panel:
 		tooltip_panel.visible = false
 		if tooltip_panel.get_parent() != self:
@@ -298,7 +300,7 @@ func _ready() -> void:
 	_refresh_build_warning()
 	_build_cards()
 	_cards_ready = true
-	if not _hunt_mode and not _dungeon_mode:
+	if not _hunt_mode and not _dungeon_mode and not _expedition_mode:
 		ranked_queue = preload("res://scripts/ui/ranked_queue.gd").new()
 		add_child(ranked_queue)
 		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "PRACTICE"
@@ -736,7 +738,7 @@ func _load_registry_safe() -> void:
 
 func _setup_spell_state() -> void:
 	_spell_debug.reload()
-	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
+	if _spell_debug.unlock_all_buildings and not _dungeon_mode and not _expedition_mode:
 		_spell_state = _spell_debug.load_lab_state()
 		_spell_synced = true
 		if not _hunt_mode:
@@ -777,7 +779,7 @@ func _on_spell_auth_changed(token: String) -> void:
 func _on_spell_state_updated(state: Dictionary) -> void:
 	if not _hunt_mode and not _dungeon_mode:
 		_update_hom_ownership(state, _spell_backend)
-	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
+	if _spell_debug.unlock_all_buildings and not _dungeon_mode and not _expedition_mode:
 		return
 	_spell_state = state.duplicate(true)
 	if _dungeon_mode and _dungeon_spell_progress is Dictionary: _spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
@@ -801,7 +803,7 @@ func _read_seal_data(mode: String) -> Dictionary:
 func _equipped_spells(mode: String, entity_id: String) -> Array:
 	if _reg == null:
 		return []
-	if _hunt_mode or _dungeon_mode:
+	if _hunt_mode or _dungeon_mode or _expedition_mode:
 		var selected: Variant = _hunt_spells.get(entity_id, [])
 		if SpellLoadout.valid(_reg, entity_id, _spell_state.get("spell_progress", {}), selected):
 			return selected.duplicate()
@@ -1086,7 +1088,7 @@ func _refresh_spell_draft(slot_index: int) -> void:
 func _confirm_spell_dialog() -> void:
 	if not SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft):
 		return
-	if _hunt_mode or _dungeon_mode:
+	if _hunt_mode or _dungeon_mode or _expedition_mode:
 		if not _spell_debug.unlock_all_buildings and not _spell_synced:
 			_set_build_error("Server state is unavailable.")
 			return
@@ -1094,7 +1096,7 @@ func _confirm_spell_dialog() -> void:
 			_dungeon_spells_changed[_current_entity_id] = true
 		_hunt_spells[_current_entity_id] = _spell_draft.duplicate()
 		_refresh_spell_button()
-		_set_build_error("" if _dungeon_mode else "Boss Hunt spells selected.")
+		_set_build_error("" if _dungeon_mode or _expedition_mode else "Boss Hunt spells selected.")
 		return
 	if _spell_debug.unlock_all_buildings:
 		var next := _spell_debug.load_lab_state()
@@ -1906,6 +1908,9 @@ func _on_play_pressed() -> void:
 	if not _is_combat_hom(_current_homunculus_id):
 		_set_build_error(tr("LOADOUT_HOM_PENDING"))
 		return
+	if _expedition_mode:
+		_submit_expedition_loadout()
+		return
 	if ranked_queue != null and ranked_queue.selected:
 		ranked_queue._join()
 		return
@@ -1936,6 +1941,26 @@ func _on_play_pressed() -> void:
 		get_tree().change_scene_to_file("res://scenes/Combat.tscn")
 	else:
 		_on_ready()
+
+func _submit_expedition_loadout() -> void:
+	var owner := str(SceneRouter._expedition_context.get("player_id", ""))
+	if _spell_backend == null or owner.is_empty() or _spell_backend._verified_player_id != owner or _spell_backend.token.is_empty() or not _spell_synced or _hom_identity != owner:
+		_set_build_error(tr("EXPEDITION_ACCOUNT_REQUIRED"))
+		return
+	var first := _idx_to_id(_items, dd_item1)
+	var second := _idx_to_id(_items, dd_item2)
+	var spells := _equipped_spells("attack", _current_entity_id)
+	if _current_entity_id.is_empty() or (not first.is_empty() and first == second):
+		_set_build_error(tr("LOADOUT_CHOOSE_ENTITY_WEAPONS"))
+		return
+	if spells.size() != 4 or not SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), spells):
+		_set_build_error(tr("LOADOUT_CHOOSE_FOUR_SPELLS"))
+		return
+	var payload := {"client_action_id": _spell_backend._make_uuid(), "entity_id": _current_entity_id, "weapon_ids": [null if first.is_empty() else first, null if second.is_empty() else second], "homunculus_id": _current_homunculus_id, "spell_ids": spells.duplicate(), "mode": "attack"}
+	if not preload("res://scripts/net/expedition_recovery.gd").save_pending(owner, "start", payload):
+		_set_build_error(tr("EXPEDITION_SAVE_ERROR"))
+		return
+	SceneRouter.go_to_expeditions()
 
 func _on_dungeon_identity(state: Dictionary) -> void:
 	_update_hom_ownership(state, _dungeon_backend, str(SceneRouter._dungeon_context.get("player_id", "")))

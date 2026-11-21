@@ -38,6 +38,37 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
     let a=(await request("/auth/dev_login",{name:"expedition_test_a"})).data;
     let b=(await request("/auth/dev_login",{name:"expedition_test_b"})).data;
     expect((await request("/expeditions/state")).status).toBe(401);
+    // Seed the meter in the persisted combat fixture so both decisions are exercised
+    // deterministically through the authenticated API, independent of battle RNG.
+    for (const decision of ["choose", "decline"] as const) {
+      const player=(await request("/auth/dev_login",{name:`expedition_inspiration_${decision}`})).data;
+      const started=await request("/expeditions/start",{...loadout,weapon_ids:["bismuth_talisman","wind_amulet"],client_action_id:id()},player.token);
+      expect(started.status).toBe(200);
+      const selected=await request("/expeditions/select",{run_id:started.data.session.run_id,expected_revision:started.data.session.revision,choice:0,client_action_id:id()},player.token);
+      expect(selected.status).toBe(200);
+      let combat=selected.data.session;
+      const saved=JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(combat.run_id) as any).state_json);
+      saved.combat.player.inspiration=3;
+      saved.combat.player.hp=saved.combat.player.max_hp=500;
+      saved.combat.npc.hp=saved.combat.npc.max_hp=500;
+      db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(saved),combat.run_id);
+      const switched=await request("/expeditions/turn",{run_id:combat.run_id,expected_revision:combat.revision,decision:{turn:1,switch_slot:2},client_action_id:id()},player.token);
+      expect(switched.status).toBe(200);
+      expect(switched.data.session.revision).toBe(combat.revision+1);
+      combat=switched.data.session;
+      expect(combat.combat_state.active_weapon_slot).toBe(2);
+      expect(combat.combat_state.item_id).toBe("wind_amulet");
+      expect(combat.combat_state.player.inspiration_pending).toBe(true);
+      const offer=combat.combat_state.player.inspiration_offers[0];
+      const resolved=await request("/expeditions/inspiration",{run_id:combat.run_id,expected_revision:combat.revision,decision:decision === "choose" ? {kind:decision,spell_id:offer} : {kind:decision},client_action_id:id()},player.token);
+      expect(resolved.status).toBe(200);
+      expect(resolved.data.session.revision).toBe(combat.revision+1);
+      expect(resolved.data.session.combat_state.player.inspiration_pending).toBe(false);
+      if (decision === "choose") expect(resolved.data.session.combat_state.player.spell_ids).toContain(offer);
+      const after=JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(combat.run_id) as any).state_json);
+      expect(after.combat.blessing == null).toBe(true);
+      expect(after.log.some((event:any)=>String(event.kind).includes("blessing"))).toBe(false);
+    }
     const bad=await request("/expeditions/start",{...loadout,homunculus_id:"honin",client_action_id:id()},a.token); expect(bad.status).toBe(400);
     const startBody={...loadout,client_action_id:id()}, started=await request("/expeditions/start",startBody,a.token);
     expect(started.status).toBe(200); let session=started.data.session;

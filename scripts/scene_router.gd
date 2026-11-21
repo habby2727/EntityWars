@@ -30,6 +30,11 @@ static var _hunt_loadout := {}
 static var _debug_guardian_wins := {}
 static var _dungeon_context := {}
 static var _ranked_context := {}
+static var _expedition_context := {}
+
+static func go_to_expedition_loadout(player_id: String) -> void:
+	_expedition_context = {"player_id": player_id, "loadout": true}
+	_go_to(SCENE_LOADOUT, "LoadoutGrid")
 
 static func go_to_ranked_combat(match_id: String) -> void:
 	if _connection_gate().blocked():
@@ -139,6 +144,7 @@ static func go_to_trade_hall() -> void:
 	_go_to(SCENE_TRADE_HALL, "TradeHall")
 
 static func go_to_expeditions() -> void:
+	_expedition_context.erase("loadout")
 	_go_to(SCENE_EXPEDITIONS, "Expeditions")
 
 static func go_to_world_gate() -> void:
