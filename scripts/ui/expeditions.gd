@@ -49,6 +49,8 @@ var heartbeat_http: HTTPRequest
 var heartbeat_timer: Timer
 var heartbeat_in_flight := false
 var forfeited := false
+var recovery_required := false
+var recovery_conflict := false
 
 func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, clampf(minf(get_viewport_rect().size.x / 1920.0, get_viewport_rect().size.y / 1080.0), 0.65, 1.0))
@@ -287,13 +289,18 @@ func _forfeit() -> void:
 	retry.disabled = true
 
 func connection_gate_lost() -> void:
-	if not lease.is_empty() or request_kind == "start" and not request.is_empty(): _forfeit()
+	if lease.is_empty() and pending.is_empty(): return
+	recovery_required = true
+	playback_epoch += 1
+	playing_events = false
+	_stop_capture_animation()
+	if is_instance_valid(combat_view): combat_view.lock_controls()
+	_update_controls()
 
 func _heartbeat() -> void:
 	if lease.is_empty() or forfeited or heartbeat_in_flight: return
-	if backend == null or backend.token != lease_token or get_node("/root/ConnectionGate").blocked():
-		_forfeit()
-		return
+	var gate = get_node("/root/ConnectionGate")
+	if backend == null or backend.token != lease_token or (gate.blocked() and gate.state != gate.State.RECONNECTING): return
 	var headers := PackedStringArray(["Content-Type: application/json", "Authorization: Bearer " + lease_token, "X-Expedition-Lease: " + lease, preload("res://scripts/net/client_build.gd").header()])
 	heartbeat_in_flight = true
 	var err := heartbeat_http.request(backend.base_url + "/expeditions/heartbeat", headers, HTTPClient.METHOD_POST, JSON.stringify({"run_id":lease_run}))
@@ -302,18 +309,26 @@ func _heartbeat() -> void:
 func _heartbeat_completed(result: int, code: int, _headers: PackedStringArray, body_bytes: PackedByteArray) -> void:
 	heartbeat_in_flight = false
 	if lease.is_empty() or forfeited: return
+	if backend == null or backend.token != lease_token: return
 	if result != HTTPRequest.RESULT_SUCCESS or code >= 500 or code in [408, 429]:
+		return
+	if code == 409 and str(pending.get("kind", "")) == "exit":
+		recovery_required = true
 		return
 	if code != 200:
 		_forfeit()
 		return
 	var result_data: Variant = JSON.parse_string(body_bytes.get_string_from_utf8())
-	if backend.token != lease_token or str(session.get("run_id", "")) != lease_run or not result_data is Dictionary or int(result_data.get("expires_at", 0)) <= int(result_data.get("server_time_unix_ms", 0)):
+	if str(session.get("run_id", "")) != lease_run or not result_data is Dictionary or int(result_data.get("expires_at", 0)) <= int(result_data.get("server_time_unix_ms", 0)):
 		_forfeit()
 
 func _auth_changed(_token: String) -> void:
-	if not lease.is_empty() or request_kind == "start" and not request.is_empty():
-		_forfeit()
+	if not lease.is_empty() or not pending.is_empty():
+		if _token.is_empty():
+			_forfeit()
+		else:
+			request = ""
+			connection_gate_lost()
 		return
 	account_id = ""
 	request = ""
@@ -325,7 +340,7 @@ func _auth_changed(_token: String) -> void:
 func _identity_changed(state: Dictionary) -> void:
 	var identity := str(state.get("player_id", ""))
 	if backend == null or identity.is_empty() or identity != backend._verified_player_id or backend.token.is_empty():
-		_auth_changed("")
+		if account_id.is_empty(): _auth_changed("")
 		return
 	if not account_id.is_empty() and account_id != identity:
 		_forfeit()
@@ -339,7 +354,7 @@ func _identity_changed(state: Dictionary) -> void:
 			request_kind = "start"
 			request = backend.request_api("POST", "/expeditions/start", start_payload)
 			if request.is_empty():
-				pending.clear()
+				recovery_required = true
 				message.text = tr("EXPEDITION_CONNECTION")
 		else:
 			_refresh()
@@ -358,44 +373,70 @@ func _process(delta: float) -> void:
 			if is_instance_valid(reward_popup): reward_popup.queue_free()
 			status.text = "Visual debug unavailable"
 		return
-	if not lease.is_empty() and (get_node("/root/ConnectionGate").blocked() or backend.token != lease_token):
-		_forfeit()
 	if forfeited: return
+	var gate = get_node("/root/ConnectionGate")
+	if not lease.is_empty() and not gate.blocked():
+		if backend.token.is_empty() or (not backend._verified_player_id.is_empty() and backend._verified_player_id != account_id) or (not gate.player_id.is_empty() and gate.player_id != account_id):
+			_forfeit()
+			return
+		if backend._verified_player_id == account_id and gate.player_id == account_id:
+			lease_token = backend.token
 	poll += delta
 	if poll < 2.0: return
 	poll = 0.0
-	if not playing_events and not account_id.is_empty() and request.is_empty() and not get_node("/root/ConnectionGate").blocked() and (state_data.is_empty() or not pending.is_empty()):
+	if not playing_events and not account_id.is_empty() and request.is_empty() and not get_node("/root/ConnectionGate").blocked() and (recovery_required or state_data.is_empty() or not pending.is_empty()):
 		_refresh()
 	if not state_data.is_empty(): _update_status()
 
 func _refresh() -> void:
 	if visual_debug or backend == null: return
-	if playing_events or is_instance_valid(reward_popup) or account_id.is_empty() or backend._verified_player_id != account_id or not request.is_empty(): return
-	request_kind = "state"
-	request = backend.request_api("GET", "/expeditions/state", null, false, false, false, lease)
+	if recovery_conflict or playing_events or is_instance_valid(reward_popup) or account_id.is_empty() or backend._verified_player_id != account_id or not request.is_empty(): return
+	if get_node("/root/ConnectionGate").blocked(): return
+	if not pending.is_empty():
+		# A lost start response cannot recover its server-generated lease safely.
+		if str(pending.get("kind", "")) == "start" and lease.is_empty(): return
+		var payload: Dictionary = pending.get("payload", {})
+		if lease.is_empty() or str(payload.get("run_id", "")) != lease_run or str(payload.get("client_action_id", "")).is_empty() or int(payload.get("expected_revision", 0)) != int(session.get("revision", 0)):
+			_forfeit()
+			return
+		request_kind = str(pending.kind)
+		request = backend.request_api("POST", "/expeditions/" + request_kind, payload, false, false, false, lease)
+	else:
+		request_kind = "state"
+		request = backend.request_api("GET", "/expeditions/state", null, false, false, false, lease)
 	if is_instance_valid(combat_view): combat_view.lock_controls()
 	_update_controls()
 	if request.is_empty():
-		if not lease.is_empty(): _forfeit()
-		else: message.text = tr("EXPEDITION_CONNECTION")
+		recovery_required = true
+		message.text = tr("EXPEDITION_CONNECTION")
+		_update_controls()
 
 func _completed(id: String, ok: bool, data: Dictionary) -> void:
 	if id != request or id.is_empty(): return
 	request = ""
 	if account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty():
-		_auth_changed("")
+		if not backend._verified_player_id.is_empty() and backend._verified_player_id != account_id: _forfeit()
+		else: recovery_required = true
 		return
 	if not ok:
+		var http_status := int(data.get("http_status", 0))
+		if http_status == 0 or http_status >= 500 or http_status in [408, 429]:
+			connection_gate_lost()
+			message.text = tr("EXPEDITION_CONNECTION")
+			return
 		if request_kind == "start" and int(data.get("http_status", 0)) == 400:
 			pending.clear()
 			last_error = str(data.get("error", tr("EXPEDITION_BAD_STATE")))
 			state_data.clear()
 			_refresh()
 			return
-		if not lease.is_empty() or request_kind == "start" or not pending.is_empty():
+		var error := str(data.get("error", ""))
+		if (http_status in [401, 403, 404] or (http_status == 409 and (error == "Expedition lease expired or unavailable." or error == "Expedition action no longer available."))) and (not lease.is_empty() or not pending.is_empty()):
 			_forfeit()
 		else:
-			message.text = str(data.get("error", tr("EXPEDITION_CONNECTION")))
+			message.text = error if not error.is_empty() else tr("EXPEDITION_CONNECTION")
+			recovery_required = true
+			recovery_conflict = http_status >= 400 and http_status < 500
 		return
 	var received: Variant = data.get("session")
 	if request_kind != "start" and lease.is_empty() and received is Dictionary:
@@ -455,6 +496,7 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 			return
 		playing_events = false
 	var response_kind := request_kind
+	if response_kind == "state": recovery_required = false
 	var response_events: Array = data.get("events", []) if data.get("events") is Array else []
 	state_data = data.duplicate(true)
 	state_data.erase("lease")
@@ -489,7 +531,7 @@ func _valid_action_response(received: Variant) -> bool:
 
 func send_combat_decision(kind: String, decision: Dictionary) -> void:
 	if visual_debug: return
-	if kind not in ["turn", "inspiration"] or playing_events or not request.is_empty() or not pending.is_empty() or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("phase", "")) != "COMBAT": return
+	if kind not in ["turn", "inspiration"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("phase", "")) != "COMBAT": return
 	var combat: Dictionary = session.get("combat_state", {})
 	if combat.get("terminal_result") != null or bool(combat.get("player", {}).get("inspiration_pending", false)) != (kind == "inspiration"): return
 	var payload := {"run_id": str(session.get("run_id", "")), "expected_revision": int(session.get("revision", 0)), "client_action_id": backend._make_uuid(), "decision": decision.duplicate(true)}
@@ -499,12 +541,13 @@ func send_combat_decision(kind: String, decision: Dictionary) -> void:
 	if is_instance_valid(combat_view): combat_view.lock_controls()
 	_update_controls()
 	if request.is_empty():
-		_forfeit()
+		recovery_required = true
+		message.text = tr("EXPEDITION_CONNECTION")
 
 func _update_controls() -> void:
 	if not is_instance_valid(exit_button): return
 	var active := not session.is_empty() and str(session.get("status", "")) == "ACTIVE"
-	var busy: bool = playing_events or not pending.is_empty() or not request.is_empty() or is_instance_valid(reward_popup) or account_id.is_empty() or backend == null or backend._verified_player_id != account_id or get_node("/root/ConnectionGate").blocked()
+	var busy: bool = recovery_required or playing_events or not pending.is_empty() or not request.is_empty() or is_instance_valid(reward_popup) or account_id.is_empty() or backend == null or backend._verified_player_id != account_id or get_node("/root/ConnectionGate").blocked()
 	exit_button.visible = active
 	exit_button.disabled = busy
 	back_button.visible = not active
@@ -518,7 +561,7 @@ func _confirm_exit() -> void:
 
 func _send_phase_action(kind: String, direction: String = "") -> void:
 	if visual_debug: return
-	if kind not in ["capture", "skip", "advance", "exit"] or playing_events or not request.is_empty() or not pending.is_empty() or is_instance_valid(reward_popup) or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("status", "")) != "ACTIVE": return
+	if kind not in ["capture", "skip", "advance", "exit"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or is_instance_valid(reward_popup) or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("status", "")) != "ACTIVE": return
 	var phase := str(session.get("phase", ""))
 	if kind in ["capture", "skip"] and phase != "REWARD": return
 	if kind == "advance" and (phase != "ROUTE" or direction not in ["left", "forward", "right"] or direction not in session.get("directions", [])): return
@@ -535,7 +578,8 @@ func _send_phase_action(kind: String, direction: String = "") -> void:
 		playback_epoch += 1
 		playing_events = false
 		_stop_capture_animation()
-		_forfeit()
+		recovery_required = true
+		message.text = tr("EXPEDITION_CONNECTION")
 
 func _start_capture_animation() -> void:
 	_set_capture_heading("EXPEDITION_CAPTURE_SUSPENSE")
@@ -728,13 +772,15 @@ func _render_choices() -> void:
 
 func _select(index: int) -> void:
 	if visual_debug: return
-	if backend == null or account_id.is_empty() or not request.is_empty() or not pending.is_empty() or account_id != backend._verified_player_id or str(session.get("phase", "")) != "EXPLORE": return
+	if backend == null or recovery_required or account_id.is_empty() or not request.is_empty() or not pending.is_empty() or account_id != backend._verified_player_id or str(session.get("phase", "")) != "EXPLORE": return
 	var payload := {"run_id": str(session.get("run_id", "")), "expected_revision": int(session.get("revision", 0)), "choice": index, "client_action_id": backend._make_uuid()}
 	pending = {"kind":"select", "payload":payload}
 	request_kind = "select"
 	request = backend.request_api("POST", "/expeditions/select", payload, false, false, false, lease)
 	_update_controls()
-	if request.is_empty(): _forfeit()
+	if request.is_empty():
+		recovery_required = true
+		message.text = tr("EXPEDITION_CONNECTION")
 
 func _render_combat() -> void:
 	combat_view = preload("res://scripts/ui/expedition_combat.gd").new()

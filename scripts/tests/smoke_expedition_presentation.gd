@@ -73,5 +73,41 @@ func _run() -> void:
 	if not capture_path.is_empty() and DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(capture_path)
+	# Exercise the same pending action across transient disconnects and failures.
+	screen.backend = BackendClient.new()
+	screen.add_child(screen.backend)
+	screen.backend.token = "original-token"
+	screen.backend._verified_player_id = "owner"
+	screen.account_id = "owner"
+	screen.lease = "original-lease"
+	screen.lease_run = "run"
+	screen.lease_token = "original-token"
+	screen.session = {"run_id":"run", "revision":3, "status":"ACTIVE"}
+	screen.pending = {"kind":"turn", "payload":{"run_id":"run", "expected_revision":3, "client_action_id":"original-action"}}
+	screen.request_kind = "turn"
+	assert(screen._valid_action_response({"run_id":"run", "revision":4}))
+	assert(not screen._valid_action_response({"run_id":"run", "revision":5}))
+	screen.request = "attempt"
+	var gate = root.get_node("ConnectionGate")
+	var old_gate_state = gate.state
+	gate.state = gate.State.RECONNECTING
+	screen.connection_gate_lost()
+	assert(screen.recovery_required and not screen.forfeited and screen.lease == "original-lease")
+	screen._completed("attempt", false, {"http_status":503})
+	assert(not screen.forfeited and screen.pending.payload.client_action_id == "original-action")
+	screen.request = "timeout"
+	screen._completed("timeout", false, {"error":"network_error"})
+	assert(not screen.forfeited and screen.pending.payload.expected_revision == 3)
+	gate.state = old_gate_state
+	screen._heartbeat_completed(HTTPRequest.RESULT_SUCCESS, 409, PackedStringArray(), PackedByteArray())
+	assert(screen.forfeited and screen.lease.is_empty())
+	await process_frame
+	screen.forfeited = false
+	screen.account_id = "owner"
+	screen.lease = "original-lease"
+	screen.backend._verified_player_id = "other"
+	screen._identity_changed({"player_id":"other"})
+	assert(screen.forfeited and screen.lease.is_empty())
+	await process_frame
 	print("EXPEDITION_PRESENTATION_PASS")
 	quit()

@@ -109,13 +109,20 @@ func _run() -> void:
 	SceneRouter._expedition_context = {"player_id":player_id, "pending_start":payload}
 	var interrupted = await _new_screen()
 	assert(await _wait_phase(interrupted, "EXPLORE"))
+	var retained_lease: String = interrupted.lease
+	var retained_run: String = interrupted.lease_run
 	interrupted.backend.base_url = "http://127.0.0.1:1"
 	interrupted._heartbeat()
+	await create_timer(0.5).timeout
+	assert(not interrupted.forfeited and interrupted.lease == retained_lease and interrupted.lease_run == retained_run)
+	interrupted.backend.base_url = base_url
+	interrupted.connection_gate_lost()
+	interrupted._process(2.1)
 	for i in 120:
-		if interrupted.forfeited: break
+		if not interrupted.recovery_required: break
 		await create_timer(0.05).timeout
-	assert(interrupted.forfeited and interrupted.lease.is_empty() and interrupted.session.is_empty())
-	assert(interrupted.message.text == interrupted.tr("EXPEDITION_FORFEITED"))
+	assert(not interrupted.forfeited and not interrupted.recovery_required and interrupted.lease == retained_lease and interrupted.session.run_id == retained_run)
+	interrupted._forfeit() # Finish this fixture before changing screens.
 	var restarted = await _new_screen()
 	assert(await _wait_state(restarted))
 	assert(restarted.session.is_empty() and restarted.lease.is_empty())
