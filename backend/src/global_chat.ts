@@ -7,7 +7,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 	const presence = new Map<string, number>();
 	const lastSend = new ExpiringMap<number>();
 	const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
-		CASE WHEN m.discord_message_id IS NOT NULL THEN 'discord' ELSE 'game' END AS source
+		CASE WHEN m.source = 'system' THEN 'system' WHEN m.discord_message_id IS NOT NULL THEN 'discord' ELSE 'game' END AS source
 		FROM global_chat_messages m LEFT JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
 	const existing = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
 		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
@@ -23,6 +23,21 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 	}
 	return {
 		onlineCount,
+		announceLogin(playerId: string, registered: boolean) {
+			return db.transaction(() => {
+				const player = db.query("SELECT display_name FROM players WHERE player_id = ?").get(playerId) as { display_name: string } | null;
+				if (!player) throw new Error("Player unavailable for announcement.");
+				const now = clock();
+				const text = `${registered ? 'Welcome' : 'Welcome back'}, ${player.display_name}!`;
+				const inserted = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, source) VALUES (?, ?, ?, ?, 'Entity Wars', 'system')")
+					.run('', crypto.randomUUID(), text, now);
+				if (bridgeEnabled) {
+					db.query("INSERT INTO discord_chat_outbox (message_id, username, text, created_at, source) VALUES (?, 'Entity Wars', ?, ?, 'system')").run(inserted.lastInsertRowid, text, now);
+					db.query('DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)').run();
+				}
+				prune.run();
+			}).immediate();
+		},
 		close() { messages.finalize(); existing.finalize(); insert.finalize(); prune.finalize(); profile.finalize(); },
 		acceptDiscord(id: string, name: string, content: string) {
 			if (!/^\d{1,32}$/.test(id) || typeof name !== 'string' || typeof content !== 'string') return false;
@@ -44,11 +59,11 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 			onlineCount();
 			const season = pvpSeason(now);
 			const rows = messages.all().reverse() as any[];
-			const ids = [...new Set([...presence.keys(), ...rows.filter(row => row.source !== 'discord').map(row => row.player_id)])];
+			const ids = [...new Set([...presence.keys(), ...rows.filter(row => row.source === 'game').map(row => row.player_id)])];
 			const profiles = new Map((profile.all(season, JSON.stringify(ids)) as { player_id: string; username: string; rating: number | null }[]).map(row => [row.player_id, { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) }]));
 			const online_players = Array.from(presence.keys(), id => profiles.get(id)).filter(row => row !== undefined)
 				.sort((a, b) => a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
-			return { messages: rows.map(row => ({ ...row, league: row.source === 'discord' ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
+			return { messages: rows.map(row => ({ ...row, league: row.source !== 'game' ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
 		},
 		send(playerId: string, body: any) {
 			const text = body?.text;

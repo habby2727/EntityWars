@@ -215,7 +215,7 @@ FORGE_REROLL_TRAIT,Trait to reroll,Rasgo para volver a tirar
 FORGE_CONFIRM_CHOICE,Choose %s?\n%s,¿Elegir %s?\n%s
 FORGE_CONFIRM_REROLL,Reroll %s for %s?,¿Volver a tirar %s por %s?
 VAT_CONFIRM_UPGRADE,Upgrade %s? %s,¿Mejorar %s? %s
-VAT_CONFIRM_MUTATION,"Apply %s to %s for 70 Essence, 2 Core and 1 Arcane Shard?\n%s","¿Aplicar %s a %s por 70 de esencia, 2 núcleos y 1 fragmento arcano?\n%s"
+VAT_CONFIRM_MUTATION,"Apply %s to %s?\n%s","¿Aplicar %s a %s?\n%s"
 LAB_OFFLINE_ESTIMATE,Unverified Offline (backend offline; estimates capped to 1h).,Sin verificar y sin conexión (estimaciones limitadas a 1 h).
 SPELL_FEATURED_HEADER,Daily Featured Research -%d%%\nRotation in %02d:%02d:%02d%s,Investigación destacada del día -%d%%\nRenovación en %02d:%02d:%02d%s
 SPELL_AWAITING_TIME, (awaiting server time), (esperando la hora del servidor)
@@ -249,3 +249,17 @@ FORGE_REROLL_PRICE,"%d Essence, %d Core%s","%d de esencia, %d núcleos%s"
 FORGE_SHARD_PRICE,", %d Arcane Shard",", %d fragmentos arcanos"
 VAT_MUTATION_REQUIRED,Mutation requires homunculus level 3 (current: %d).,La mutación requiere un homúnculo de nivel 3 (actual: %d).
 VAT_CHOOSE_MUTATION,Choose a mutation above. The current mutation is highlighted.,Elige una mutación arriba. La mutación actual aparece resaltada.
+VAT_XP_PROGRESS,XP: %d / %d to next level,XP: %d / %d para el siguiente nivel
+VAT_XP_MAX,XP: %d | Maximum level,XP: %d | Nivel máximo
+VAT_SERVER_REQUIRED,Sign in and wait for server state.,Inicia sesión y espera los datos del servidor.
+VAT_WAITING,Waiting for confirmation.,Esperando confirmación.
+VAT_NOT_OWNED,Homunculus not owned.,Homúnculo no capturado.
+
+LOADOUT_HOM_PENDING,Expedition homunculi are not yet available in combat. Choose an original homunculus.,Los homúnculos de expedición aún no están disponibles en combate. Elige un homúnculo original.
+
+DUNGEON_ENTRY_WARNING,"Dungeon runs cannot be resumed. Leaving, closing the game or losing your internet connection will permanently end your run. Your previously cleared floors will remain recorded, but you will lose your current progress.","Las partidas de Dungeon no pueden reanudarse. Salir, cerrar el juego o perder la conexión a Internet finalizará definitivamente la partida. Los pisos superados anteriormente seguirán registrados, pero perderás el progreso de la sesión actual."
+DUNGEON_ENTRY_CONFIRM,ENTER DUNGEON,ENTRAR
+DUNGEON_CANCEL,CANCEL,CANCELAR
+DUNGEON_EXIT_WARNING,Leaving Dungeon will permanently end this run as a defeat. You will not be able to resume this session. Are you sure?,Salir de Dungeon finalizará definitivamente esta partida como una derrota. No podrás reanudar esta sesión. ¿Estás seguro?
+DUNGEON_EXIT_CONFIRM,EXIT DUNGEON,SALIR
+DUNGEON_STAY,STAY,QUEDARSE

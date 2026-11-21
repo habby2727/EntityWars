@@ -183,3 +183,15 @@ LOG_HOMUNCULUS_OF, (homunculus of , (homúnculo de
 LOG_NEUTRAL,Neutral,Neutral
 LOG_EFFECTIVE,Effective,Eficaz
 LOG_INEFFECTIVE,Ineffective,Poco eficaz
+MISSION_DESC_DAILY_BOSS,Defeat 1 Solo Hunt boss (excluding guardians and global bosses).,Derrota a 1 jefe de Caza Ancestral (sin guardianes ni jefes globales).
+MISSION_DESC_DAILY_DAMAGE,Deal 500 HP of damage to Solo Hunt bosses (excluding guardians and global bosses).,Inflige 500 puntos de daño a jefes de Caza Ancestral (sin guardianes ni jefes globales).
+MISSION_DESC_DAILY_ELITE,"Defeat 1 Mythic, Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).","Derrota a 1 jefe mítico, raro, épico o legendario de Caza Ancestral (sin guardianes ni jefes globales)."
+MISSION_DESC_WEEKLY_BOSS,Defeat 5 Solo Hunt bosses (excluding guardians and global bosses).,Derrota a 5 jefes de Caza Ancestral (sin guardianes ni jefes globales).
+MISSION_DESC_WEEKLY_ELITE,"Defeat 3 Mythic, Rare, Epic or Legendary Solo Hunt bosses (excluding guardians and global bosses).","Derrota a 3 jefes míticos, raros, épicos o legendarios de Caza Ancestral (sin guardianes ni jefes globales)."
+MISSION_DESC_WEEKLY_RARE,"Defeat 1 Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).","Derrota a 1 jefe raro, épico o legendario de Caza Ancestral (sin guardianes ni jefes globales)."
+MISSION_DESC_WEEKLY_GUARDIANS,Defeat 5 guardians in Solo Hunt.,Derrota a 5 guardianes en Caza Ancestral.
+MISSION_DESC_WEEKLY_COMMON,Defeat 4 distinct Common boss appearances in their zones.,Derrota a 4 apariencias distintas de jefes de Caza Común en sus zonas.
+MISSION_DESC_WEEKLY_INSPIRATION,Choose an Inspiration spell in 3 different Solo Hunt boss fights (excluding guardians and global bosses).,Elige un hechizo de Inspiración en 3 combates distintos de Caza Ancestral (sin guardianes ni jefes globales).
+
+WORLD_COMMON_HUNT,Common Hunt,Caza Común
+WORLD_ANCIENT_HUNT,Ancient Hunt,Caza Ancestral

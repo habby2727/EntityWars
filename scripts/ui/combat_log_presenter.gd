@@ -7,11 +7,12 @@ var _icons := {}
 func append(label: RichTextLabel, turn: int, message: String, event: Dictionary = {}) -> void:
 	var category := str(event.get("category", "system"))
 	var color := Color("d9a4f5") if category == "inspiration" else Color("73d9d4") if category == "switch" else Color.from_string(COLORS.get(category, COLORS.system), Color.WHITE)
-	label.push_bold()
-	label.push_color(Color("e6d4a2"))
-	label.add_text("T%d  " % turn)
-	label.pop()
-	label.pop()
+	if turn >= 0:
+		label.push_bold()
+		label.push_color(Color("e6d4a2"))
+		label.add_text("T%d  " % turn)
+		label.pop()
+		label.pop()
 	label.add_image(_icon(category), 18, 18)
 	label.add_text("  ")
 	var actor := str(event.get("actor", ""))

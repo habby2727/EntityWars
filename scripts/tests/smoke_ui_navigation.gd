@@ -142,6 +142,30 @@ func _run() -> void:
 				_fail("Homunculus details must stay inside the panel and clear of the list")
 				return
 	TranslationServer.set_locale("en")
+	# Supply a synchronized identity through a test-only backend; the production
+	# Vat still verifies the token, player ID, and synchronized state.
+	var original_vat_backend: BackendClient = vat_panel_layout._backend
+	var original_vat_synced: bool = vat_panel_layout._forge_synced
+	var vat_backend := BackendClient.new()
+	vat_backend.auto_dev_login = false
+	vat_backend.auto_flush = false
+	vat_backend.base_url = "http://127.0.0.1:1"
+	root.add_child(vat_backend)
+	vat_backend.token = "navigation-test-token"
+	vat_backend._verified_player_id = "navigation-test-player"
+	vat_panel_layout._backend = vat_backend
+	vat_panel_layout._forge_synced = true
+	vat_panel_layout._forge_state["player_id"] = "navigation-test-player"
+	vat_panel_layout._forge_state["homunculus_progress"] = {vat_panel_layout._vat_item: {"level": 3, "xp": 570, "owned": true}}
+	vat_panel_layout._forge_state["wallet"] = {"essence": 0, "core": 0, "arcane_shard": 0}
+	vat_panel_layout._forge_state["lab"]["buildings"]["homunculus_vat"] = {"level": 1}
+	vat_panel_layout._update_vat_status()
+	if not vat_panel_layout._vat_xp.text.contains("570") or not vat_panel_layout._vat_xp.text.contains("863") or vat_panel_layout._vat_mutations[0].disabled:
+		_fail("Vat must show XP and allow free level-gated mutation: %s | %s" % [vat_panel_layout._vat_xp.text, vat_panel_layout._vat_status.text])
+		return
+	vat_panel_layout._backend = original_vat_backend
+	vat_panel_layout._forge_synced = original_vat_synced
+	vat_panel_layout._forge_state.erase("player_id")
 	for building_id in current_scene.BUILDING_ORDER:
 		current_scene._select_building(building_id)
 		await process_frame
@@ -166,13 +190,27 @@ func _run() -> void:
 	TranslationServer.set_locale("en")
 	current_scene._select_building("homunculus_vat")
 	var vat_panel = current_scene._specialized_panel
+	var localized_vat_list: ItemList = vat_panel.find_child("LocalizationCatalogItems", true, false)
+	for index in range(localized_vat_list.item_count):
+		if str(localized_vat_list.get_item_metadata(index)) == "cinder":
+			localized_vat_list.select(index)
+			localized_vat_list.item_selected.emit(index)
+			break
 	var selected_homunculus: String = vat_panel._vat_item
+	vat_panel._backend = vat_backend
+	vat_panel._forge_synced = true
+	vat_panel._forge_state["player_id"] = "navigation-test-player"
+	vat_panel._forge_state["homunculus_progress"] = {selected_homunculus: {"owned": true, "level": 3, "xp": 570}}
+	vat_panel._update_vat_status()
 	var vat_state: Dictionary = vat_panel._forge_state.duplicate(true)
 	TranslationServer.set_locale("es")
 	if vat_panel._vat_item != selected_homunculus or vat_panel._forge_state != vat_state or not vat_panel._vat_info.text.contains("Mutación:") or not vat_panel._vat_mutations[0].tooltip_text.contains("Potencia +1."):
-		_fail("Changing language must preserve the homunculus and update mutation details")
+		_fail("Changing language must preserve the homunculus and update mutation details: %s / %s / %s / %s" % [vat_panel._vat_item == selected_homunculus, vat_panel._forge_state == vat_state, vat_panel._vat_info.text, vat_panel._vat_mutations[0].tooltip_text])
 		return
 	TranslationServer.set_locale("en")
+	vat_panel._backend = original_vat_backend
+	vat_panel._forge_synced = original_vat_synced
+	vat_backend.queue_free()
 	current_scene._select_building("build_forge")
 	current_scene._select_building("sync_nexus")
 	var sync_panel = current_scene._specialized_panel

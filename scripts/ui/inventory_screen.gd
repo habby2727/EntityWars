@@ -6,6 +6,7 @@ const HOM_PREVIEW_DIR := "res://assets/entities/previews_256/homunculus/"
 const BUILD_DIR := "res://assets/entities/builds/"
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const HomProgress := preload("res://scripts/domain/homunculus_progress.gd")
 const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 
@@ -54,13 +55,18 @@ var _spell_progress_known := false
 var _spell_backend: BackendClient
 var _spell_entity_option: OptionButton
 var _spell_filter_buttons: Array[Button] = []
+var _hom_progress: Dictionary = {}
+var _hom_progress_known := false
+var _selected_hom_id := ""
 var _item_progress: Dictionary = {}
 var _item_progress_known := false
-var _loaded_tabs := {}
-var _list_generation := {}
 var _android_tab_buttons: Array[Button] = []
 
 const CONTENT_BASE_SIZE := Vector2(1400, 660)
+const ROWS_PER_FRAME := 3
+var _list_loaded := [false, false, false, false, false]
+var _list_building := [false, false, false, false, false]
+var _list_generation := [0, 0, 0, 0, 0]
 
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
@@ -74,8 +80,6 @@ func _ready() -> void:
 	_entry_group.allow_unpress = false
 	_load_registry()
 	_setup_spell_progress()
-	if not _android_ui():
-		_populate_lists()
 	_apply_initial_tab()
 	_tabs.tab_changed.connect(_on_inventory_tab_changed)
 	_on_inventory_tab_changed(_tabs.current_tab)
@@ -221,8 +225,6 @@ func _setup_spell_progress() -> void:
 		_item_progress = debug_state.get("item_progress", {})
 		_item_progress_known = true
 		_spell_progress_known = true
-		debug.free()
-		return
 	debug.free()
 	_spell_backend = BackendClient.new()
 	_spell_backend.auto_dev_login = false
@@ -238,12 +240,18 @@ func _on_spell_progress_updated(state: Dictionary) -> void:
 	_spell_progress_known = not state.is_empty()
 	_item_progress = state.get("item_progress", {})
 	_item_progress_known = not state.is_empty()
+	_hom_progress_known = _spell_backend != null and _spell_backend.token != "" and not _spell_backend._verified_player_id.is_empty() and str(state.get("player_id", "")) == _spell_backend._verified_player_id
+	_hom_progress = state.get("homunculus_progress", {}) if _hom_progress_known and state.get("homunculus_progress", {}) is Dictionary else {}
+	if _list_loaded[2]: _populate_homunculi()
 	_refresh_build_levels()
 	_refresh_spell_catalog()
 
 func _on_spell_auth_changed(_token: String) -> void:
 	_spell_progress = {}
 	_spell_progress_known = false
+	_hom_progress = {}
+	_hom_progress_known = false
+	if _list_loaded[2]: _populate_homunculi()
 	_item_progress = {}
 	_item_progress_known = false
 	_refresh_build_levels()
@@ -260,9 +268,7 @@ func _on_spell_entity_changed(index: int) -> void:
 	_refresh_spell_catalog()
 
 func _refresh_spell_catalog() -> void:
-	if _registry == null or _ultrahit_list == null:
-		return
-	if _android_ui() and not _loaded_tabs.has(3):
+	if _registry == null or _ultrahit_list == null or not _list_loaded[3]:
 		return
 	var selected_id := ""
 	var old_button := _entry_group.get_pressed_button()
@@ -272,25 +278,21 @@ func _refresh_spell_catalog() -> void:
 			selected_id = str(old_entry.get("id", ""))
 	var scroll := _ultrahit_list.get_parent() as ScrollContainer
 	var old_scroll := scroll.scroll_vertical if scroll else 0
-	_populate_spells()
-	if _tabs.current_tab == 3:
-		for child in _ultrahit_list.get_children():
-			if child is Button and str(child.get_meta("entry").get("id", "")) == selected_id:
-				child.button_pressed = true
-				_show_entry(child.get_meta("entry"))
-				if scroll: scroll.set_deferred("scroll_vertical", old_scroll)
-				return
-		_on_inventory_tab_changed(3)
+	_populate_spells(selected_id, old_scroll)
 
 func _on_inventory_tab_changed(index: int) -> void:
 	for i in _android_tab_buttons.size():
 		_android_tab_buttons[i].set_pressed_no_signal(i == index)
 	if index < 0 or index >= _tab_layouts.size():
 		return
+	for i in _list_building.size():
+		if i != index and _list_building[i]:
+			_list_generation[i] += 1
+			_list_building[i] = false
+			_list_loaded[i] = false
 	if _detail_panel.get_parent() != _tab_layouts[index]:
 		_detail_panel.reparent(_tab_layouts[index])
-	if _android_ui() and not _loaded_tabs.has(index):
-		_loaded_tabs[index] = true
+	if not _list_loaded[index]:
 		match index:
 			0: _populate_entities()
 			1: _populate_builds()
@@ -308,6 +310,8 @@ func _on_inventory_tab_changed(index: int) -> void:
 	_detail_icon.texture = null
 
 func _show_entry(entry: Variant) -> void:
+	if entry is Dictionary and entry.get("kind") == "homunculus":
+		_selected_hom_id = str(entry.get("id", ""))
 	_detail_title.text = _extract_name(entry)
 	_detail_text.text = SpellView.detail(entry, str(entry.get("spell_status", "Unknown"))) if entry is Dictionary and entry.get("kind") == "spell" else _entry_details(entry)
 	var cost := _extract_cost(entry)
@@ -420,17 +424,40 @@ func _load_registry() -> void:
 	else:
 		push_warning("InventoryScreen: data_registry.gd is not a DataRegistry.")
 
-func _populate_lists() -> void:
-	_populate_entities()
-	_populate_builds()
-	_populate_homunculi()
-	_populate_spells()
-	_populate_techs()
+func _fill_entries(container: VBoxContainer, entries: Array, index: int, selected_id: String = "", old_scroll: int = -1) -> void:
+	_list_generation[index] += 1
+	var generation: int = _list_generation[index]
+	_list_loaded[index] = true
+	_list_building[index] = true
+	_clear_container(container)
+	if entries.is_empty():
+		_add_placeholder(container)
+		_list_building[index] = false
+		return
+	# Let the inventory or newly selected tab draw before loading its previews.
+	await get_tree().process_frame
+	var selected_found := false
+	for i in entries.size():
+		if not is_inside_tree() or generation != _list_generation[index]: return
+		var entry: Dictionary = entries[i]
+		var row := _make_entry_row(entry, index == 1)
+		container.add_child(row)
+		if _tabs.current_tab == index and ((selected_id.is_empty() and i == 0) or str(entry.get("id", "")) == selected_id):
+			row.button_pressed = true
+			_show_entry(entry)
+			selected_found = true
+		if (i + 1) % ROWS_PER_FRAME == 0 and i + 1 < entries.size():
+			await get_tree().process_frame
+	if not is_inside_tree() or generation != _list_generation[index]: return
+	_list_building[index] = false
+	if _tabs.current_tab == index and not selected_found:
+		_on_inventory_tab_changed(index)
+	if old_scroll >= 0 and container.get_parent() is ScrollContainer:
+		container.get_parent().set_deferred("scroll_vertical", old_scroll)
 
 func _populate_entities() -> void:
 	if _entities_list == null:
 		return
-	_clear_container(_entities_list)
 	if _registry == null:
 		_add_placeholder(_entities_list)
 		return
@@ -443,12 +470,11 @@ func _populate_entities() -> void:
 	if list.is_empty():
 		_add_placeholder(_entities_list)
 		return
-	_append_inventory_rows(_entities_list, list, 0)
+	_fill_entries(_entities_list, list, 0)
 
 func _populate_builds() -> void:
 	if _builds_list == null:
 		return
-	_clear_container(_builds_list)
 	if _registry == null:
 		_add_placeholder(_builds_list)
 		return
@@ -461,12 +487,11 @@ func _populate_builds() -> void:
 	if list.is_empty():
 		_add_placeholder(_builds_list)
 		return
-	_append_inventory_rows(_builds_list, list, 1, true)
+	_fill_entries(_builds_list, list, 1)
 
 func _populate_homunculi() -> void:
 	if _homunculi_list == null:
 		return
-	_clear_container(_homunculi_list)
 	if _registry == null:
 		_add_placeholder(_homunculi_list)
 		return
@@ -474,28 +499,22 @@ func _populate_homunculi() -> void:
 		push_warning("InventoryScreen: DataRegistry missing get_homunculi().")
 		_add_placeholder(_homunculi_list)
 		return
-	var homunculi = _registry.get_homunculi()
+	var homunculi = _registry.get_homunculus_collection()
 	var list = _dict_to_sorted_list(homunculi, "homunculus")
 	if list.is_empty():
 		_add_placeholder(_homunculi_list)
 		return
-	_append_inventory_rows(_homunculi_list, list, 2)
+	_fill_entries(_homunculi_list, list, 2, _selected_hom_id)
 
-func _populate_spells() -> void:
+func _populate_spells(selected_id: String = "", old_scroll: int = -1) -> void:
 	if _ultrahit_list == null:
 		return
-	_list_generation[3] = int(_list_generation.get(3, 0)) + 1
-	_clear_container(_ultrahit_list)
 	var entries = _build_spell_entries()
-	if entries.is_empty():
-		_add_placeholder(_ultrahit_list)
-		return
-	_append_inventory_rows(_ultrahit_list, entries, 3)
+	_fill_entries(_ultrahit_list, entries, 3, selected_id, old_scroll)
 
 func _populate_techs() -> void:
 	if _techs_list == null:
 		return
-	_clear_container(_techs_list)
 	if _registry == null:
 		_add_placeholder(_techs_list)
 		return
@@ -523,17 +542,7 @@ func _populate_techs() -> void:
 	if entries.is_empty():
 		_add_placeholder(_techs_list)
 		return
-	_append_inventory_rows(_techs_list, entries, 4)
-
-func _append_inventory_rows(list: VBoxContainer, entries: Array, tab: int, include_costs: bool = false) -> void:
-	var generation: int = int(_list_generation.get(tab, 0)) + 1
-	_list_generation[tab] = generation
-	for index in entries.size():
-		if not is_instance_valid(list) or int(_list_generation.get(tab, 0)) != generation:
-			return
-		list.add_child(_make_entry_row(entries[index], include_costs))
-		if _android_ui() and index > 0 and index % 3 == 0:
-			await get_tree().process_frame
+	_fill_entries(_techs_list, entries, 4)
 
 func _build_spell_entries() -> Array:
 	var out: Array = []
@@ -663,6 +672,12 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 		item_level.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		item_level.text = tr("INVENTORY_ROW_LEVEL") % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else tr("INVENTORY_ROW_UNAVAILABLE")
 		text_column.add_child(item_level)
+	if entry is Dictionary and entry.get("kind") == "homunculus":
+		var hom_status := _hom_status(entry)
+		var subtitle := Label.new()
+		subtitle.text = tr("HOM_STATUS_" + hom_status.to_upper())
+		subtitle.add_theme_font_size_override("font_size", 12)
+		text_column.add_child(subtitle)
 	if entry is Dictionary and entry.get("kind") == "spell":
 		var status := str(entry.get("spell_status", "Unknown"))
 		var subtitle := Label.new()
@@ -697,6 +712,22 @@ func _entry_details(entry: Variant) -> String:
 		if stats is Dictionary:
 			lines.append(tr("INVENTORY_BASE_STATS") % [stats.get("hp", "-"), stats.get("power", "-"), stats.get("guard", "-"), stats.get("tempo", "-")])
 	elif kind == "homunculus":
+		var id := str(entry.get("id", ""))
+		var status := _hom_status(entry)
+		lines.append(tr("HOM_STATUS_" + status.to_upper()))
+		if entry.has("type"):
+			lines.append(tr("HOM_TYPE") % GameLocalization.catalog("type", str(entry.type), "name", str(entry.type).capitalize()))
+			lines.append(tr("INVENTORY_RARITY") % ("%d / 10" % int(entry.rarity)))
+			lines.append(tr("HOM_PASSIVE") % HomProgress.passive_text(entry))
+			if status == "locked": lines.append(tr("HOM_CAPTURE_REQUIRED"))
+		if status == "owned" and _hom_progress_known:
+			var progress: Dictionary = _hom_progress.get(id, {}) if _hom_progress.get(id, {}) is Dictionary else {}
+			var level := clampi(int(progress.get("level", 0)), 0, 10)
+			var xp := int(progress.get("xp", 0))
+			lines.append(tr("HOM_LEVEL_MUTATION") % [level, GameLocalization.catalog("mutation", str(progress.get("mutation_id", "")), "name", tr("SPECIALIZATION_NONE_NAME"))])
+			lines.append(tr("VAT_XP_MAX") % xp if level >= 10 else tr("VAT_XP_PROGRESS") % [xp, HomProgress.xp_threshold(level + 1)])
+		elif status == "owned": lines.append(tr("HOM_STATUS_UNKNOWN"))
+		if entry.has("type"): return "\n".join(lines)
 		lines.append(tr("INVENTORY_RARITY") % GameLocalization.catalog("rarity", str(entry.get("rarity", "")), "name", str(entry.get("rarity", "Unknown")).capitalize()))
 		lines.append(tr("INVENTORY_BONUSES") % [int(entry.get("buff_atk", 0)), int(entry.get("buff_def", 0)), int(entry.get("buff_hp", 0))])
 		var per_type = entry.get("per_type", {})
@@ -779,7 +810,7 @@ func _extract_preview_texture(entry: Variant) -> Texture2D:
 		return null
 	if entry.has("preview_tex") and entry.get("preview_tex") is Texture2D:
 		return entry.get("preview_tex")
-	var preview_path = str(entry.get("preview_path", ""))
+	var preview_path = str(entry.get("preview_texture", entry.get("preview_path", "")))
 	if preview_path != "" and ResourceLoader.exists(preview_path):
 		return load(preview_path)
 	var kind = str(entry.get("kind", ""))
@@ -877,3 +908,7 @@ func _add_placeholder(container: Control) -> void:
 	var label := Label.new()
 	label.text = "INVENTORY_NO_DATA"
 	container.add_child(label)
+
+func _hom_status(entry: Dictionary) -> String:
+	var id := str(entry.get("id", ""))
+	return HomProgress.collection_status(id, _registry != null and _registry.get_homunculi().has(id), _hom_progress, _hom_progress_known)

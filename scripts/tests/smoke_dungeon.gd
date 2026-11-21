@@ -125,6 +125,21 @@ func _run() -> void:
 	loadout._dungeon_spell_progress = {"learned_by_entity": {"sulfur_01": ["fixture_snapshot"]}}
 	loadout._on_spell_state_updated({"spell_progress": {"learned_by_entity": {"sulfur_01": ["fixture_late"]}}})
 	assert(loadout._spell_state.spell_progress.learned_by_entity.sulfur_01 == ["fixture_snapshot"])
+	for entity_id in ["gold_01", "aether_01"]:
+		loadout._dungeon_spell_progress = {"learned_by_entity": {entity_id: ["gilded_exception"]}}
+		loadout._on_spell_state_updated({})
+		loadout._on_card_picked("entity", entity_id)
+		loadout._open_spell_dialog()
+		loadout._filter_spell_catalog("Hybrid")
+		var rows = loadout._spell_catalog.get_children().filter(func(row): return str(row.get_meta("spell").get("id")) == "gilded_exception")
+		assert(rows.size() == 1)
+		loadout._select_spell_slot(0)
+		rows[0].pressed.emit()
+		assert(loadout._spell_draft[0] == "gilded_exception" and not loadout._spell_confirm.disabled)
+		loadout._confirm_spell_dialog()
+		assert("gilded_exception" in loadout._equipped_spells("attack", entity_id))
+		loadout._spell_dialog.hide()
+	loadout._on_card_picked("entity", "sulfur_01")
 	loadout._dungeon_spell_progress = null
 	loadout._spell_state = {}
 	assert(loadout._spell_button.is_visible_in_tree())

@@ -173,7 +173,7 @@ test("trusted progression scales boss once with bounded equipment and owned floo
   const zero = createCombatState(buildTrustedCombatSetup(progress(0), chosen, catalogs));
   const middle = createCombatState(buildTrustedCombatSetup(progress(5), chosen, catalogs));
   const max = createCombatState(buildTrustedCombatSetup(progress(10), chosen, catalogs));
-  expect([zero.boss.hp, middle.boss.hp, max.boss.hp]).toEqual([112, 137, 162]);
+  expect([zero.boss.hp, middle.boss.hp, max.boss.hp]).toEqual([122, 149, 177]);
   expect([zero.boss.atk, middle.boss.atk, max.boss.atk]).toEqual([16, 18, 19]);
   expect(max.boss.def).toBe(Math.round(zero.boss.def * 1.08));
   const bare = createCombatState(buildTrustedCombatSetup(progress(10), selection, catalogs));
@@ -187,7 +187,7 @@ test("trusted progression scales boss once with bounded equipment and owned floo
   expect(createCombatState(setup).boss).toEqual(middle.boss);
   for (const boss of catalogs.bosses) {
     const state = createCombatState(buildTrustedCombatSetup({ ...progress(10), boss_id: boss.id }, chosen, catalogs));
-    expect(state.boss.hp).toBe(Math.round(112 * boss.hp_mult * 1.45));
+    expect(state.boss.hp).toBe(Math.round(122 * boss.hp_mult * 1.45));
   }
   expect(buildTrustedCombatSetup(progress(5), { ...chosen, level: 10 }, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
   expect(buildTrustedCombatSetup({ ...progress(5), item_progress: { bismuth_talisman: { level: 11 } } }, chosen, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
@@ -226,7 +226,7 @@ test("all five tiers initialize with scaled stats and eligible tiers summon", ()
     const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: boss.id }, selection, catalogs);
     expect(setup.error).toBeUndefined();
     let state = createCombatState(setup);
-    expect([state.boss_tier, state.boss.hp, state.boss.atk]).toEqual([boss.tier, Math.round(112 * boss.hp_mult), Math.round(16 * boss.attack_mult)]);
+    expect([state.boss_tier, state.boss.hp, state.boss.atk]).toEqual([boss.tier, Math.round(122 * boss.hp_mult), Math.round(16 * boss.attack_mult)]);
     for (let turn = 1; turn <= 2; turn++) {
       const before = structuredClone(state);
       const decision = { turn, spell_id: "cinder_fist", target: "boss" };
@@ -262,7 +262,7 @@ test("summoned minions protect their boss, have independent HP and attack on lat
   const setup = buildTrustedCombatSetup({ ...snapshot, boss_id: "hunt_rare" }, selection, catalogs);
   let state = createCombatState(setup);
   for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
-  expect(state.minions.map((m: any) => [m.id, m.hp, m.atk])).toEqual([["minion_0", 22, 4], ["minion_1", 22, 4]]);
+  expect(state.minions.map((m: any) => [m.id, m.hp, m.atk])).toEqual([["minion_0", 24, 4], ["minion_1", 24, 4]]);
   const before = structuredClone(state);
   let draws = 0;
   expect(resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "boss" }, () => { draws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
@@ -272,8 +272,8 @@ test("summoned minions protect their boss, have independent HP and attack on lat
   const result = resolveCombatTurn(state, decision, () => 0);
   expect(result.error).toBeUndefined();
   expect(result.next_state.boss.hp).toBe(state.boss.hp);
-  expect(result.next_state.minions[0].hp).toBeLessThan(22);
-  expect(result.next_state.minions[1].hp).toBe(22);
+  expect(result.next_state.minions[0].hp).toBeLessThan(24);
+  expect(result.next_state.minions[1].hp).toBe(24);
   expect(result.events.filter((e: any) => e.kind === "minion_attack").length).toBe(result.next_state.minions.filter((m: any) => m.hp > 0).length);
   expect(resolveCombatTurn(state, decision, () => 0)).toEqual(result);
   state.minions[0].hp = 1;
@@ -281,7 +281,7 @@ test("summoned minions protect their boss, have independent HP and attack on lat
   expect(killed.next_state.minions[0].hp).toBe(0);
   expect(killed.events.some((e: any) => e.kind === "minion_defeated" && e.actor === "minion_0")).toBe(true);
   expect(killed.events.some((e: any) => e.kind === "boss_exposed")).toBe(false);
-  expect(killed.next_state.minions[1].hp).toBe(22);
+  expect(killed.next_state.minions[1].hp).toBe(24);
   let staleDraws = 0;
   expect(resolveCombatTurn(killed.next_state, { ...decision, turn: 5 }, () => { staleDraws++; return 0; })).toEqual({ error: "INVALID_DECISION" });
   expect(staleDraws).toBe(0);
@@ -306,13 +306,13 @@ test("minion stun and poison expire independently without affecting the other mi
   for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
   state.minions[0].status = { stun: 1, poison: 2 };
   const result = resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "minion_1" }, () => 0.99);
-  expect(result.next_state.minions[0].hp).toBe(19);
+  expect(result.next_state.minions[0].hp).toBe(21);
   expect(result.next_state.minions[0].status.stun).toBe(0);
   expect(result.events.filter((e: any) => e.kind === "status_consumed" && e.target === "minion_0" && e.status === "stun")).toHaveLength(1);
   expect(result.next_state.minions[0].status.poison).toBe(1);
-  expect(result.events.some((e: any) => e.kind === "status_tick" && e.target === "minion_0" && e.damage === 3 && e.hp === 19 && e.remaining === 1)).toBe(true);
+  expect(result.events.some((e: any) => e.kind === "status_tick" && e.target === "minion_0" && e.damage === 3 && e.hp === 21 && e.remaining === 1)).toBe(true);
   expect(result.events.find((e: any) => e.kind === "status_snapshot" && e.target === "minion_0").status).toEqual({ stun: 0, poison: 1 });
-  expect(result.next_state.minions[1].hp).toBe(22);
+  expect(result.next_state.minions[1].hp).toBe(24);
   expect(result.events.filter((e: any) => e.kind === "minion_attack").map((e: any) => e.actor)).toEqual(["minion_1"]);
 });
 
@@ -656,16 +656,16 @@ test("validated setup and deterministic direct exchange", () => {
   expect(setup.error).toBeUndefined();
   const state = createCombatState(setup);
   expect([state.player.hp, state.player.atk, state.player.def]).toEqual([104, 21, 11]);
-  expect([state.boss.hp, state.boss.atk, state.boss.def]).toEqual([112, 16, 16]);
+  expect([state.boss.hp, state.boss.atk, state.boss.def]).toEqual([122, 16, 16]);
   const before = structuredClone(state);
   const decision = { turn: 1, spell_id: "cinder_fist", target: "boss" };
   const result = resolveCombatTurn(state, decision, rng);
   expect(result.error).toBeUndefined();
-  expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([93, 100]);
+  expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([93, 110]);
   expect(result.next_state.turn).toBe(1);
   expect(resolveCombatTurn(state, decision, rng)).toEqual(result);
   const missed = resolveCombatTurn(state, decision, () => 0.99);
-  expect([missed.next_state.player.hp, missed.next_state.boss.hp, missed.next_state.rng_counter]).toEqual([104, 100, 3]);
+  expect([missed.next_state.player.hp, missed.next_state.boss.hp, missed.next_state.rng_counter]).toEqual([104, 110, 3]);
   expect(resolveCombatTurn({ ...state, terminal_result: "WIN" }, decision, rng)).toEqual({ error: "INVALID_DECISION" });
   expect(state).toEqual(before);
   expect(resolveCombatTurn(state, { ...decision, hp: 999 }, rng)).toEqual({ error: "INVALID_DECISION" });
@@ -737,32 +737,35 @@ test("validated Mercury and Sodium defensive spells", () => {
   expect(failedSupportResult.events.filter((e: any) => e.kind === "miss" && e.actor === "player")).toEqual([{ actor: "player", kind: "miss", spell_id: "liquid_decoy", turn: 1 }]);
   expect(failedSupportResult.next_state.player.status.shield_pct ?? 0).toBe(0);
   expect(decoy.events.some((e: any) => e.kind === "miss" && e.actor === "player")).toBe(false);
-  expect(decoy.next_state.player.hp).toBe(85);
+  expect(decoy.next_state.player.hp).toBe(80);
+  expect(decoy.events.find((e: any) => e.kind === "damage" && e.actor === "boss").damage).toBe(11);
   expect(decoy.next_state.player.status.shield_pct ?? 0).toBe(0);
   const stronger = mercury(); stronger.player.status.shield_pct = 0.3;
-  expect(cast(stronger, "liquid_decoy").next_state.player.hp).toBe(87);
+  expect(cast(stronger, "liquid_decoy").next_state.player.hp).toBe(82);
   const barrier = cast(sodium(), "salt_barrier");
-  expect(barrier.next_state.player.hp).toBe(106);
+  expect(barrier.next_state.player.hp).toBe(116);
   const barrierProc = cast(sodium(), "salt_barrier", () => 0);
-  expect(barrierProc.next_state.player.hp).toBe(106);
+  expect(barrierProc.next_state.player.hp).toBe(116);
   expect(barrierProc.next_state.boss.status.shield_pct).toBe(0.12);
   const injured = sodium(); injured.player.hp = 50;
   const healed = cast(injured, "brine_mend");
-  expect(healed.next_state.player.hp).toBe(53);
+  expect(healed.next_state.player.hp).toBe(57);
+  expect(healed.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(15);
+  expect(healed.events.find((e: any) => e.kind === "heal" && e.actor === "player").amount).toBe(15);
   const full = sodium(); full.boss.status.stun = 1;
-  expect(cast(full, "brine_mend").next_state.player.hp).toBe(112);
+  expect(cast(full, "brine_mend").next_state.player.hp).toBe(122);
   const reflected = cast(sodium(), "bastion_return");
   expect(reflected.events.find((e: any) => e.kind === "reflect").damage).toBe(1);
-  expect(reflected.next_state.boss.hp).toBe(111);
+  expect(reflected.next_state.boss.hp).toBe(121);
   expect(reflected.next_state.player.status.reflect_pct ?? 0).toBe(0);
   const snare = cast(mercury(), "mercury_snare", () => 0);
   expect(snare.next_state.boss.status.hom_stun).toBe(1);
   const miss = cast(mercury(), "mercury_snare", () => 0.99);
-  expect(miss.next_state.boss.hp).toBe(106);
+  expect(miss.next_state.boss.hp).toBe(114);
   expect(miss.next_state.cooldowns.mercury_snare).toBe(3);
   expect(cast(sodium(), "bastion_return")).toEqual(reflected);
   for (const [state, id] of [[mercury(), "silver_needle"], [mercury(), "false_signal"], [sodium(), "crystal_ram"]] as const) {
-    expect(cast(state, id, () => 0).next_state.boss.hp).toBeLessThan(112);
+    expect(cast(state, id, () => 0).next_state.boss.hp).toBeLessThan(state.boss.hp);
   }
 });
 
@@ -795,9 +798,9 @@ test("native Aether and Vitriol spells, delayed neutralization and poison", () =
   const plain = fixture("vitriol", vitriol, "sodium_01"); plain.boss.status.stun = 1;
   const poisoned = structuredClone(plain); poisoned.boss.status.poison = 2;
   const action = { turn: 1, spell_id: "rot_harvest", target: "boss" };
-  expect(resolveCombatTurn(plain, action, draws).next_state.boss.hp).toBe(97);
+  expect(resolveCombatTurn(plain, action, draws).next_state.boss.hp).toBe(107);
   const harvest = resolveCombatTurn(poisoned, action, draws).next_state;
-  expect([harvest.boss.hp, harvest.boss.status.poison]).toEqual([92, 1]);
+  expect([harvest.boss.hp, harvest.boss.status.poison]).toEqual([102, 1]);
   const marked = resolveCombatTurn(plain, { turn: 1, spell_id: "caustic_mark", target: "boss" }, draws).next_state;
   expect(marked.boss.status.poison).toBe(1);
 });
@@ -807,7 +810,7 @@ test("reflection uses calculated damage even when the target has little HP", () 
   state.player.hp = 1;
   state.player.status.reflect_pct = 0.5;
   const result = resolveCombatTurn(state, { turn: 1, spell_id: "ash_temper", target: "boss" }, () => 0.1);
-  expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([0, 106]);
+  expect([result.next_state.player.hp, result.next_state.boss.hp]).toEqual([0, 116]);
   expect(result.events.find((event: any) => event.kind === "reflect").damage).toBe(6);
 });
 
@@ -816,14 +819,14 @@ test("Gold spells and received-hit tracking across exchanges", () => {
   const fixture = () => createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, entity_id: "gold_01", spell_ids: spells }, catalogs));
   const action = (turn: number, spell_id: string) => ({ turn, spell_id, target: "boss" });
   const state = fixture();
-  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([104, 19, 14]);
+  expect([state.player.hp, state.player.atk, state.player.def]).toEqual([98, 19, 14]);
   for (const spell of spells) {
     const result = resolveCombatTurn(fixture(), action(1, spell), rng);
     expect(result.error).toBeUndefined();
     expect(result.next_state.cooldowns[spell]).toBe(state.spells.find((s: any) => s.id === spell).cooldown_turns);
   }
   const normal = resolveCombatTurn(fixture(), action(1, "tribunal_strike"), rng);
-  expect(normal.next_state.boss.hp).toBe(98);
+  expect(normal.next_state.boss.hp).toBe(108);
   const first = resolveCombatTurn(fixture(), action(1, "aurum_edge"), rng).next_state;
   expect(first.player.spell_hit_this_exchange).toBe(true);
   const boosted = resolveCombatTurn(first, action(2, "tribunal_strike"), rng);
@@ -841,10 +844,10 @@ test("Gold spells and received-hit tracking across exchanges", () => {
   expect(resolveCombatTurn(reflection, action(1, "aurum_edge"), rng).next_state.player.spell_hit_this_exchange).toBe(true);
   const poison = fixture(); poison.player.status.poison = 1; poison.boss.status.stun = 1;
   const poisoned = resolveCombatTurn(poison, action(1, "aurum_edge"), rng).next_state;
-  expect(poisoned.player.hp).toBe(101);
+  expect(poisoned.player.hp).toBe(95);
   expect(poisoned.player.spell_hit_this_exchange).toBe(true);
-  const healing = fixture(); healing.player.hp = 103; healing.boss.status.stun = 1;
-  expect(resolveCombatTurn(healing, action(1, "aurum_edge"), () => 0).next_state.player.hp).toBe(104);
+  const healing = fixture(); healing.player.hp = 97; healing.boss.status.stun = 1;
+  expect(resolveCombatTurn(healing, action(1, "aurum_edge"), () => 0).next_state.player.hp).toBe(98);
 });
 
 test("researchable catalog spells resolve or fail closed", () => {
@@ -879,6 +882,15 @@ test("universal is neutral and hybrid uses both catalog types", () => {
   expect(resolveCombatTurn(neutral, { turn: 1, spell_id: "steady_script", target: "boss" }, rng).next_state.boss.hp).toBe(92);
   const hybrid = setupFor("void_etching"); hybrid.boss.status.stun = 1;
   expect(resolveCombatTurn(hybrid, { turn: 1, spell_id: "void_etching", target: "boss" }, rng).next_state.boss.hp).toBe(91);
+  hybrid.player.atk = 100; hybrid.boss.def = 0; hybrid.boss.hp = hybrid.boss.max_hp = 1000;
+  const spell = hybrid.spells.find((s: any) => s.id === "void_etching");
+  spell.primary_type = "sulfur"; spell.power_mult = 1; spell.accuracy = 1; spell.effects = [];
+  const damage = (secondary: string) => {
+    const state = structuredClone(hybrid); state.spells.find((s: any) => s.id === spell.id).secondary_type = secondary;
+    return resolveCombatTurn(state, { turn: 1, spell_id: spell.id, target: "boss" }, () => 0).events.find((e: any) => e.kind === "damage" && e.actor === "player").damage;
+  };
+  expect(damage("aether")).toBe(Math.round(100 * Math.pow(1.25, 0.35)));
+  expect(damage("vitriol")).toBe(Math.round(100 * Math.pow(0.8, 0.35)));
 });
 
 test("catalog sweep includes all 94 equipped spells", () => {
@@ -906,9 +918,12 @@ test("precision, shields, leech and initiative have observable effects", () => {
   };
   const cast = (state: any, spell_id: string, random = rng) => resolveCombatTurn(state, { turn: state.turn + 1, spell_id, target: "boss" }, random);
   const pierce = fixture("needle_etch"); pierce.boss.status.shield_pct = 0.5; pierce.boss.status.stun = 1;
-  expect(cast(pierce, "needle_etch").next_state.boss.hp).toBe(104);
+  expect(cast(pierce, "needle_etch").next_state.boss.hp).toBe(114);
   const dispel = fixture("quicksilver_solvent", "mercury_01"); dispel.boss.status.shield_pct = 0.5; dispel.boss.status.stun = 1;
-  expect(cast(dispel, "quicksilver_solvent").next_state.boss.hp).toBe(105);
+  const dispelled = cast(dispel, "quicksilver_solvent");
+  expect(dispelled.next_state.boss.hp).toBe(112);
+  expect(dispelled.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(10);
+  expect(dispelled.events.some((e: any) => e.kind === "status_consumed" && e.status === "shield_pct" && e.target === "boss")).toBe(true);
   const leech = fixture("echo_siphon"); leech.player.hp = 80; leech.boss.status.stun = 1;
   expect(cast(leech, "echo_siphon").next_state.player.hp).toBe(81);
   const overkill = fixture("echo_siphon"); overkill.player.hp = 80; overkill.boss.hp = 1; overkill.boss.max_hp = 2;
@@ -938,13 +953,13 @@ test("precision, shields, leech and initiative have observable effects", () => {
   expect(cast(tempo, "second_measure").next_state.player.status.tempo_bonus).toBe(2);
   const recoil = fixture("last_axiom"); recoil.player.hp = 2; recoil.boss.status.stun = 1;
   expect(cast(recoil, "last_axiom").terminal_result).toBe("LOSS");
-  const second = fixture("fluid_anchor", "mercury_01"); second.player.status.tempo_bonus = -7;
+  const second = fixture("fluid_anchor", "mercury_01"); second.player.status.tempo_bonus = -100;
   const result = cast(second, "fluid_anchor");
   expect(result.events.find((e: any) => ["boss_action", "damage", "miss"].includes(e.kind)).actor).toBe("boss");
   expect(result.next_state.player.status.shield_pct).toBe(0.18);
   const first = fixture("fluid_anchor", "mercury_01"); first.boss.status.stun = 1;
   expect(cast(first, "fluid_anchor").next_state.player.status.shield_pct).toBe(0.08);
-  const killed = fixture("fluid_anchor", "mercury_01"); killed.player.status.tempo_bonus = -7; killed.player.hp = 1;
+  const killed = fixture("fluid_anchor", "mercury_01"); killed.player.status.tempo_bonus = -100; killed.player.hp = 1;
   expect(cast(killed, "fluid_anchor").events.some((e: any) => e.actor === "player" && e.kind !== "status_consumed")).toBe(false);
   const toxic = fixture("toxic_mirror", "mercury_01");
   const reflected = cast(toxic, "toxic_mirror", rng);
@@ -999,7 +1014,7 @@ test("catalog homunculi and validated flat Forge traits use server progression",
   const enhanced = createCombatState(buildTrustedCombatSetup(progress, selected, catalogs));
   expect([enhanced.player.hp, enhanced.player.atk, enhanced.item_effects.true_on_hit]).toEqual([114, 34, 2]);
   enhanced.boss.status.stun = 1;
-  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(111);
+  expect(resolveCombatTurn(enhanced, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBe(123);
   const supported = structuredClone(progress); supported.item_progress.bismuth_talisman.specialization = "technical";
   supported.item_progress.bismuth_talisman.traits = [{ id: "guard_flat", points: 2 }, { id: "power_flat", points: 1 }, { id: "tempo_flat", points: 0 }];
   expect(buildTrustedCombatSetup(supported, selected, catalogs)).toEqual({ error: "UNTRUSTED_SETUP" });
@@ -1088,7 +1103,7 @@ test("synergy damage, neutralization, corrosion and incoming reduction", () => {
   expect(resolveCombatTurn(pyritc, { turn: 1, spell_id: "etching_fang", target: "boss" }, () => 0.999999).events.some((e: any) => e.kind === "hom_corrosion")).toBe(true);
   const silk = fixture("sodium_01", "silphide", "sodium_01");
   const reduced = resolveCombatTurn(silk, { turn: 1, spell_id: "salt_barrier", target: "boss" }, (_t, i) => [0, 0, 0.99][i % 3]);
-  expect(reduced.next_state.player.hp).toBe(107);
+  expect(reduced.next_state.player.hp).toBe(117);
 });
 
 test("Nighty scaling and Chimera reflection are removed safely on sacrifice", () => {
@@ -1144,7 +1159,7 @@ test("Forge paths and all donor imprints derive from official balance", () => {
     const base = createCombatState(buildTrustedCombatSetup({ ...snapshot, item_progress: { bismuth_talisman: { level: 5 } } }, { ...selection, weapon_ids: ["bismuth_talisman", null] }, catalogs));
     expect(state.item_effects[traits[0].id]).toBe((base.item_effects[traits[0].id] ?? 0) + pool[traits[0].id] * 2);
     state.boss.status.stun = 1;
-    expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBeLessThan(112);
+    expect(resolveCombatTurn(state, { turn: 1, spell_id: "cinder_fist", target: "boss" }, rng).next_state.boss.hp).toBeLessThan(state.boss.hp);
   }
   for (const donor of catalogs.items) {
     const target = donor.id === "bismuth_talisman" ? "wind_amulet" : "bismuth_talisman";
@@ -1244,10 +1259,13 @@ test("switch consumes action, preserves independent defenses and recalculates st
   const sodium = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, entity_id: "sodium_01", spell_ids: ["crystal_ram", "salt_barrier", "brine_mend", "bastion_return"], weapon_ids: ["mirror_sigel", "bismuth_talisman"] }, catalogs));
   sodium.boss.status.stun = 1;
   const protectedState = resolveCombatTurn(sodium, { turn: 1, spell_id: "salt_barrier", target: "boss" }, rng).next_state;
-  expect([protectedState.player.status.shield_pct, protectedState.weapon_defenses.shield_pct, protectedState.other_defenses.shield_pct]).toEqual([0.24, 0.08, 0.24]);
+  expect([protectedState.player.status.shield_pct, protectedState.weapon_defenses.shield_pct, protectedState.other_defenses.shield_pct]).toEqual([0.08, 0.08, 0]);
+  expect(protectedState.player.timed_defenses.shield_pct.value).toBe(0.24);
+  expect(protectedState.player.timed_defenses.reflect_pct.value).toBe(0.5);
   protectedState.boss.status.stun = 1;
   const preserved = resolveCombatTurn(protectedState, { turn: 2, switch_slot: 2 }, rng).next_state;
-  expect(preserved.player.status.shield_pct).toBe(0.24);
+  expect(preserved.player.status.shield_pct ?? 0).toBe(0);
+  expect(preserved.player.timed_defenses).toBeUndefined();
   const withoutTempo = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["bismuth_talisman", "wind_amulet"] }, catalogs));
   const withTempo = createCombatState(buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: ["wind_amulet", "bismuth_talisman"] }, catalogs));
   withoutTempo.boss.status.tempo_bonus = 3; withTempo.boss.status.tempo_bonus = 3;

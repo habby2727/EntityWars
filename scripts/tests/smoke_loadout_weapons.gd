@@ -15,16 +15,15 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	await process_frame
-	var defense_notice: Label = scene.btn_seal_defense.get_node("ComingSoon")
 	var attack_item = scene._idx_to_id(scene._items, scene.dd_item1)
 	scene.btn_seal_defense.pressed.emit()
-	if scene._mode != "attack" or not scene.btn_seal_attack.button_pressed or scene.btn_seal_defense.button_pressed or not defense_notice.visible or defense_notice.text != "UI_COMING_SOON" or scene._idx_to_id(scene._items, scene.dd_item1) != attack_item:
-		push_error("Defense seal should show Coming soon while keeping attack active: %s" % str([scene._mode, scene.btn_seal_attack.button_pressed, scene.btn_seal_defense.button_pressed, defense_notice.visible, defense_notice.text, tr("UI_COMING_SOON")]))
+	if not scene.ranked_queue.selected or scene.btn_seal_attack.button_pressed or not scene.btn_seal_defense.button_pressed or scene._idx_to_id(scene._items, scene.dd_item1) != attack_item or not scene.ranked_queue.request_id.is_empty():
+		push_error("Ranked selection should preserve the loadout without joining a queue")
 		quit(1)
 		return
 	scene.btn_seal_attack.pressed.emit()
-	if defense_notice.visible or scene._mode != "attack":
-		push_error("Attack seal did not remain active")
+	if scene.ranked_queue.selected or scene._mode != "attack" or not scene.btn_seal_attack.button_pressed or scene.btn_seal_defense.button_pressed:
+		push_error("Practice selection did not restore the attack seal")
 		quit(1)
 		return
 	var sword: Dictionary = scene._reg.get_items().get("bismuth_talisman", {})

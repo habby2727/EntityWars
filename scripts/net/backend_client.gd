@@ -171,7 +171,7 @@ func send_action(action_dict: Dictionary) -> String:
 	var action_id: String = action.get("client_action_id", "")
 	if _pending.contains_id(action_id):
 		return ""
-	var online_only := str(action.get("action_type", "")) in ["SET_SPELL_LOADOUT", "FORGE_UPGRADE", "FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL", "FORGE_FUSE", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "QUEUE_RESEARCH"]
+	var online_only := str(action.get("action_type", "")) in ["SET_SPELL_LOADOUT", "FORGE_UPGRADE", "FORGE_SPECIALIZE", "FORGE_ALLOCATE_TRAIT", "FORGE_REROLL_TRAIT", "FORGE_CHOOSE_REROLL", "FORGE_FUSE", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "QUEUE_RESEARCH"]
 	var key := _make_action_key(action)
 	if key != "" and _pending_keys.has(key):
 		return str(_pending_keys[key])
@@ -213,18 +213,18 @@ func refresh_state() -> void:
 	if err != OK:
 		push_error("BackendClient: refresh_state failed to send (%s)" % err)
 
-func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false, replay: bool = false) -> String:
+func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false, replay: bool = false, expedition_lease: String = "") -> String:
 	if _connection_gate().debug_offline_enabled or _connection_gate().state in [_connection_gate().State.UPDATE_REQUIRED, _connection_gate().State.IDLE] or (_connection_gate().blocked() and not recovery):
 		return ""
 	_ensure_api_http()
 	if _api_in_flight.size() > 0:
 		return ""
-	var recovery_paths := {"/world/boss-hunts/loadout": ["hunt", "loadout"], "/world/boss-hunts/turn": ["hunt", "turn"], "/world/boss-hunts/inspiration": ["hunt", "inspiration"], "/world/boss-hunts/forfeit": ["hunt", "forfeit"], "/dungeon/loadout": ["dungeon", "loadout"], "/dungeon/turn": ["dungeon", "turn"], "/dungeon/inspiration": ["dungeon", "inspiration"], "/dungeon/blessing": ["dungeon", "blessing"], "/dungeon/next": ["dungeon", "next"]}
+	var recovery_paths := {"/world/boss-hunts/loadout": ["hunt", "loadout"], "/world/boss-hunts/turn": ["hunt", "turn"], "/world/boss-hunts/inspiration": ["hunt", "inspiration"], "/world/boss-hunts/forfeit": ["hunt", "forfeit"]}
 	if method == "POST" and recovery_paths.has(path):
 		if not body is Dictionary or not _connection_gate().journal_pending(self, recovery_paths[path][0], recovery_paths[path][1], body):
 			return ""
 	var request_id := _make_uuid()
-	var meta := {"kind": "api", "request_id": request_id, "expect_state": expect_state, "replay": recovery or replay}
+	var meta := {"kind": "api", "request_id": request_id, "expect_state": expect_state, "replay": recovery or replay, "expedition_lease": expedition_lease if path.begins_with("/expeditions/") and path != "/expeditions/start" else ""}
 	var err = _send_api_request(method, path, body, meta)
 	if err != OK:
 		return ""
@@ -377,6 +377,8 @@ func _send_api_request(method: String, path: String, body: Variant, meta: Dictio
 	var headers: PackedStringArray = ["Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()]
 	if token != "":
 		headers.append("Authorization: Bearer %s" % token)
+	if not str(meta.get("expedition_lease", "")).is_empty():
+		headers.append("X-Expedition-Lease: " + str(meta.expedition_lease))
 	if bool(meta.get("replay", false)):
 		headers.append("X-EntityWars-Replay: 1")
 	if _debug_bypass:

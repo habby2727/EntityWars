@@ -7,6 +7,7 @@ const REG_PATH := "res://scripts/data_registry.gd"
 const SpellLoadout := preload("res://scripts/domain/spell_loadout.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
+const HomProgress := preload("res://scripts/domain/homunculus_progress.gd")
 const LockIndicator := preload("res://scripts/ui/lock_indicator.gd")
 const BuildPreferences := preload("res://scripts/domain/build_preferences.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
@@ -77,6 +78,10 @@ var _reg: Object = null
 
 var _entities: Array = []
 var _homunculi: Array = []
+var _hom_progress: Dictionary = {}
+var _hom_identity := ""
+var _pending_restored_hom := ""
+var _hom_backend: BackendClient
 var _items: Array = []
 var _atk_techs: Array = []
 var _def_techs: Array = []
@@ -88,6 +93,8 @@ var _mode: String = "attack" # "attack" or "defense"
 var _has_saved: bool = false
 var _hunt_mode := false
 var _dungeon_mode := false
+var _expedition_mode := false
+var _expedition_preview := false
 var _dungeon_backend: BackendClient
 var _dungeon_request := ""
 var _dungeon_kind := ""
@@ -227,7 +234,10 @@ func _ready() -> void:
 		var entity_scroll := grid_entities.get_parent() as ScrollContainer
 		entity_scroll.add_theme_constant_override("scrollbar_margin_right", 0)
 	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
-	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode
+	_expedition_preview = OS.has_feature("editor") and get_node("/root/ConnectionGate").debug_lab_navigation_allowed() and bool(SceneRouter._expedition_context.get("visual_preview", false))
+	if _expedition_preview: _dungeon_mode = false
+	_expedition_mode = bool(SceneRouter._expedition_context.get("loadout", false)) and not _dungeon_mode
+	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode and not _expedition_mode
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("replaced_session_id", "")).is_empty():
 		var notice := Label.new()
 		notice.text = "Previous hunt abandoned."
@@ -240,9 +250,9 @@ func _ready() -> void:
 		add_child(notice)
 		SceneRouter._solo_hunt_context.erase("replaced_session_id")
 		get_tree().create_timer(5.0).timeout.connect(notice.queue_free)
-	if _hunt_mode or _dungeon_mode:
+	if _hunt_mode or _dungeon_mode or _expedition_mode:
 		$RootMargin/MainHSplit/RightPanel/Card/CardMargin/CardVBox/TechCenter.hide()
-		if _dungeon_mode:
+		if _dungeon_mode or _expedition_mode:
 			$RootMargin/MainHSplit/LeftPanel/ModeRow.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol.hide()
 			$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol.hide()
@@ -255,7 +265,11 @@ func _ready() -> void:
 		var original_back := Callable(back, "_on_pressed")
 		if back.pressed.is_connected(original_back):
 			back.pressed.disconnect(original_back)
-		back.pressed.connect(SceneRouter.return_from_dungeon if _dungeon_mode else _on_hunt_back)
+		back.pressed.connect(SceneRouter.go_to_expeditions if _expedition_mode else (_dungeon_exit_warning if _dungeon_mode else _on_hunt_back))
+		if _expedition_preview:
+			back.pressed.disconnect(SceneRouter.go_to_expeditions)
+			back.pressed.connect(queue_free)
+			btn_play.disabled = true
 	if tooltip_panel:
 		tooltip_panel.visible = false
 		if tooltip_panel.get_parent() != self:
@@ -303,7 +317,7 @@ func _ready() -> void:
 	_refresh_build_warning()
 	_build_cards()
 	_cards_ready = true
-	if not _hunt_mode and not _dungeon_mode:
+	if not _hunt_mode and not _dungeon_mode and not _expedition_mode:
 		ranked_queue = preload("res://scripts/ui/ranked_queue.gd").new()
 		add_child(ranked_queue)
 		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "PRACTICE"
@@ -385,6 +399,7 @@ func _finish_hunt_exit(session_id: String) -> void:
 	SceneRouter.cancel_hunt_loadout()
 
 func _on_hunt_auth_changed(_token: String) -> void:
+	_clear_hom_ownership()
 	if not _hunt_identity.is_empty():
 		_hunt_ready_requested = false
 	_preferences_ready = false
@@ -398,6 +413,7 @@ func _on_hunt_auth_changed(_token: String) -> void:
 	_set_build_error("Account changed. Return to World Zone to reopen the Boss Hunt.")
 
 func _on_hunt_identity_updated(state: Dictionary) -> void:
+	_update_hom_ownership(state, _hunt_backend, str(SceneRouter._solo_hunt_context.get("loadout_identity", "")))
 	if _hunt_backend == null or state.is_empty():
 		_hunt_recovered = false
 		return
@@ -411,6 +427,7 @@ func _on_hunt_identity_updated(state: Dictionary) -> void:
 	if _hunt_identity.is_empty():
 		_hunt_identity = identity
 		SceneRouter._solo_hunt_context["loadout_identity"] = identity
+	_refresh_hom_cards()
 	if not _hunt_recovered and _hunt_recovery_request.is_empty() and _hunt_submit_request.is_empty():
 		_recover_hunt_session()
 
@@ -508,6 +525,9 @@ func _on_hunt_recovery_completed(request_id: String, ok: bool, data: Dictionary)
 	if ok and session is Dictionary and not _hunt_identity.is_empty() and _hunt_backend._verified_player_id == _hunt_identity and str(session.get("session_id", "")) == str(SceneRouter._solo_hunt_context.get("session_id", "")) and str(session.get("status", "")) in ["EXPIRED", "FORFEIT"]:
 		var gate := get_node("/root/ConnectionGate")
 		if not _hunt_payload.is_empty():
+			if not _payload_hom_safe(_hunt_payload):
+				_set_build_error(tr("LOADOUT_HOM_PENDING"))
+				return
 			_hunt_closed_recovery = str(session.status)
 			_hunt_submit_request = _hunt_backend.request_api("POST", "/world/boss-hunts/loadout", _hunt_payload.duplicate(true), false, gate.blocked() and gate._player_verified)
 			return
@@ -715,8 +735,8 @@ func _load_registry_safe() -> void:
 		_entities = []
 
 	# Homunculi
-	if _reg != null and _reg.has_method("get_homunculi"):
-		_homunculi = _as_array(_reg.call("get_homunculi"))
+	if _reg != null and _reg.has_method("get_homunculus_collection"):
+		_homunculi = _as_array(_reg.call("get_homunculus_collection"))
 	elif _reg != null and _reg.get_script() != null:
 		var vv = _reg.get("homunculi")
 		_homunculi = _as_array(vv)
@@ -748,10 +768,21 @@ func _load_registry_safe() -> void:
 		_def_techs = []
 
 func _setup_spell_state() -> void:
+	if _expedition_preview:
+		_spell_state = {"player_id":"visual-preview", "spell_progress":{}, "item_progress":{}, "homunculus_progress":{}}
+		_spell_synced = true
+		return
 	_spell_debug.reload()
-	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
+	if _spell_debug.unlock_all_buildings and not _dungeon_mode and not _expedition_mode:
 		_spell_state = _spell_debug.load_lab_state()
 		_spell_synced = true
+		if not _hunt_mode:
+			_hom_backend = BackendClient.new()
+			_hom_backend.auto_dev_login = false
+			_hom_backend.base_url = spell_backend_url
+			_hom_backend.auth_changed.connect(func(_token): _clear_hom_ownership())
+			_hom_backend.state_updated.connect(func(state): _update_hom_ownership(state, _hom_backend))
+			add_child(_hom_backend)
 		return
 	_spell_backend = BackendClient.new()
 	if _dungeon_mode:
@@ -767,6 +798,7 @@ func _setup_spell_state() -> void:
 		_spell_backend.request_api("GET", "/player/state", null, true)
 
 func _on_spell_auth_changed(token: String) -> void:
+	_clear_hom_ownership()
 	if not _hunt_mode and not _dungeon_mode:
 		_preferences_owner = ""
 		_preferences_ready = false
@@ -780,7 +812,9 @@ func _on_spell_auth_changed(token: String) -> void:
 		_spell_backend.request_api("GET", "/player/state", null, true)
 
 func _on_spell_state_updated(state: Dictionary) -> void:
-	if _spell_debug.unlock_all_buildings and not _dungeon_mode:
+	if not _hunt_mode and not _dungeon_mode:
+		_update_hom_ownership(state, _spell_backend)
+	if _spell_debug.unlock_all_buildings and not _dungeon_mode and not _expedition_mode:
 		return
 	_spell_state = state.duplicate(true)
 	if _dungeon_mode and _dungeon_spell_progress is Dictionary: _spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
@@ -804,7 +838,7 @@ func _read_seal_data(mode: String) -> Dictionary:
 func _equipped_spells(mode: String, entity_id: String) -> Array:
 	if _reg == null:
 		return []
-	if _hunt_mode or _dungeon_mode:
+	if _hunt_mode or _dungeon_mode or _expedition_mode:
 		var selected: Variant = _hunt_spells.get(entity_id, [])
 		if SpellLoadout.valid(_reg, entity_id, _spell_state.get("spell_progress", {}), selected):
 			return selected.duplicate()
@@ -1006,6 +1040,7 @@ func _notification(what: int) -> void:
 	if lbl_mode != null:
 		lbl_mode.text = _localized_mode()
 	_refresh_spell_button()
+	_refresh_hom_cards()
 	if is_instance_valid(_spell_empty_notice):
 		_spell_empty_notice.text = tr("LOADOUT_SPELLS_EMPTY")
 	if btn_play != null and (_hunt_mode or _dungeon_mode):
@@ -1088,7 +1123,7 @@ func _refresh_spell_draft(slot_index: int) -> void:
 func _confirm_spell_dialog() -> void:
 	if not SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), _spell_draft):
 		return
-	if _hunt_mode or _dungeon_mode:
+	if _hunt_mode or _dungeon_mode or _expedition_mode:
 		if not _spell_debug.unlock_all_buildings and not _spell_synced:
 			_set_build_error("Server state is unavailable.")
 			return
@@ -1096,7 +1131,7 @@ func _confirm_spell_dialog() -> void:
 			_dungeon_spells_changed[_current_entity_id] = true
 		_hunt_spells[_current_entity_id] = _spell_draft.duplicate()
 		_refresh_spell_button()
-		_set_build_error("" if _dungeon_mode else "Boss Hunt spells selected.")
+		_set_build_error("" if _dungeon_mode or _expedition_mode else "Boss Hunt spells selected.")
 		return
 	if _spell_debug.unlock_all_buildings:
 		var next := _spell_debug.load_lab_state()
@@ -1376,17 +1411,18 @@ func _build_cards() -> void:
 	for d2 in _homunculi:
 		var hid := str(d2.get("id",""))
 		var hname := _clean_name(str(d2.get("name", hid)))
-		var htex := _load_preview_tex(hid, "homunculus", hname)
+		var htex := _hom_texture(d2)
 		var hcard := _make_card("homunculus", hid, hname, htex)
+		hcard.set_meta("hom_id", hid)
 		if grid_homunculi: grid_homunculi.add_child(hcard)
+		_update_hom_card(hcard, d2)
 
 	# Add bottom padding so entity labels aren't clipped.
 	_add_grid_padding(grid_entities)
 
 	if _entities.size() > 0:
 		_current_entity_id = str(_entities[0].get("id",""))
-	if _homunculi.size() > 0:
-		_current_homunculus_id = str(_homunculi[0].get("id",""))
+	_current_homunculus_id = _legacy_hom_fallback()
 
 	_update_selected_visuals()
 
@@ -1405,6 +1441,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.pressed.connect(func(): _on_card_picked(p_kind, p_id))
 
 	var v := VBoxContainer.new()
+	v.name = "CardContent"
 	v.set_anchors_preset(Control.PRESET_FULL_RECT)
 	v.offset_left = 18
 	v.offset_right = -18
@@ -1418,6 +1455,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.add_child(v)
 
 	var tex_rect := TextureRect.new()
+	tex_rect.name = "Portrait"
 	tex_rect.custom_minimum_size = Vector2(85, 85) if p_kind == "homunculus" else Vector2(118, 118)
 	tex_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tex_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1431,6 +1469,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	v.add_child(tex_rect)
 
 	var lbl := Label.new()
+	lbl.name = "CardName"
 	lbl.text = p_name
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1464,6 +1503,10 @@ func _on_card_picked(p_kind: String, p_id: String) -> void:
 	if p_kind == "entity":
 		_current_entity_id = p_id
 	elif p_kind == "homunculus":
+		_pending_restored_hom = ""
+		if not _is_combat_hom(p_id):
+			_set_build_error(tr("HOM_CAPTURE_REQUIRED") if _hom_status(p_id) == "locked" else tr("HOM_STATUS_UNKNOWN") if _hom_status(p_id) == "unknown" else tr("LOADOUT_HOM_PENDING"))
+			return
 		_current_homunculus_id = p_id
 	_update_selected_visuals()
 	_refresh_details()
@@ -1474,10 +1517,7 @@ func _update_selected_visuals() -> void:
 		for c in grid_entities.get_children():
 			if c and c.has_method("set_selected"):
 				c.call("set_selected", c.get("id") == _current_entity_id)
-	if grid_homunculi:
-		for c2 in grid_homunculi.get_children():
-			if c2 and c2.has_method("set_selected"):
-				c2.call("set_selected", c2.get("id") == _current_homunculus_id)
+	_refresh_hom_cards()
 
 func _localized_mode() -> String:
 	if _dungeon_mode:
@@ -1528,7 +1568,7 @@ func _refresh_details() -> void:
 			hom = _homunculi[0]
 		var hid := str(hom.get("id","")) if typeof(hom) == TYPE_DICTIONARY else ""
 		var hname := str(hom.get("name", hid)) if typeof(hom) == TYPE_DICTIONARY else ""
-		hom_preview.texture = _load_preview_tex(hid, "homunculus", hname)
+		hom_preview.texture = _hom_texture(hom)
 
 func _find_by_id(arr: Array, pid: String) -> Dictionary:
 	for d in arr:
@@ -1900,6 +1940,13 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	if _expedition_preview: return
+	if not _is_combat_hom(_current_homunculus_id):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return
+	if _expedition_mode:
+		_submit_expedition_loadout()
+		return
 	if ranked_queue != null and ranked_queue.selected:
 		ranked_queue._join()
 		return
@@ -1931,7 +1978,47 @@ func _on_play_pressed() -> void:
 	else:
 		_on_ready()
 
+func _submit_expedition_loadout() -> void:
+	var owner := str(SceneRouter._expedition_context.get("player_id", ""))
+	if _spell_backend == null or owner.is_empty() or _spell_backend._verified_player_id != owner or _spell_backend.token.is_empty() or not _spell_synced or _hom_identity != owner:
+		_set_build_error(tr("EXPEDITION_ACCOUNT_REQUIRED"))
+		return
+	var first := _idx_to_id(_items, dd_item1)
+	var second := _idx_to_id(_items, dd_item2)
+	var spells := _equipped_spells("attack", _current_entity_id)
+	if _current_entity_id.is_empty() or (not first.is_empty() and first == second):
+		_set_build_error(tr("LOADOUT_CHOOSE_ENTITY_WEAPONS"))
+		return
+	if spells.size() != 4 or not SpellLoadout.valid(_reg, _current_entity_id, _spell_state.get("spell_progress", {}), spells):
+		_set_build_error(tr("LOADOUT_CHOOSE_FOUR_SPELLS"))
+		return
+	var payload := {"client_action_id": _spell_backend._make_uuid(), "entity_id": _current_entity_id, "weapon_ids": [null if first.is_empty() else first, null if second.is_empty() else second], "homunculus_id": _current_homunculus_id, "spell_ids": spells.duplicate(), "mode": "attack"}
+	_confirm_expedition_start(owner, payload)
+
+func _confirm_expedition_start(owner: String, payload: Dictionary) -> void:
+	var confirm := ConfirmationDialog.new()
+	confirm.name = "ExpeditionRiskConfirmation"
+	confirm.title = tr("EXPEDITION_START")
+	confirm.borderless = true
+	confirm.transparent = true
+	confirm.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
+	confirm.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
+	confirm.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+	confirm.dialog_text = tr("EXPEDITION_RISK_WARNING")
+	confirm.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	confirm.get_label().horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	confirm.get_label().vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	confirm.get_label().add_theme_color_override("font_color", Color.WHITE)
+	confirm.confirmed.connect(func():
+		if _spell_backend != null and _spell_backend._verified_player_id == owner and not get_node("/root/ConnectionGate").blocked():
+			SceneRouter._expedition_context["pending_start"] = payload
+			SceneRouter.go_to_expeditions())
+	confirm.canceled.connect(confirm.queue_free)
+	add_child(confirm)
+	confirm.popup_centered(Vector2i(750, 300))
+
 func _on_dungeon_identity(state: Dictionary) -> void:
+	_update_hom_ownership(state, _dungeon_backend, str(SceneRouter._dungeon_context.get("player_id", "")))
 	if _dungeon_backend == null or state.is_empty() or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")):
 		_dungeon_recovered = false
 		_dungeon_spell_progress = null
@@ -1945,12 +2032,17 @@ func _on_dungeon_identity(state: Dictionary) -> void:
 		_recover_dungeon()
 
 func _recover_dungeon() -> void:
-	if _dungeon_backend == null or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")) or _dungeon_backend.token.is_empty():
-		_set_build_error("Sign in with the original account to recover this Dungeon.")
+	var session: Variant = SceneRouter._dungeon_context.get("session")
+	if _dungeon_backend == null or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")) or not session is Dictionary or str(session.get("run_id", "")) != str(SceneRouter._dungeon_context.get("run_id", "")) or not session.get("spell_progress") is Dictionary:
+		_dungeon_recovered = false
+		_set_build_error("Dungeon unavailable. Return to Sync Nexus.")
 		return
-	_dungeon_kind = "session"
-	_dungeon_request = _dungeon_backend.request_api("GET", "/dungeon/session", null)
-	_set_build_error("Recovering Dungeon..." if not _dungeon_request.is_empty() else "Connection busy. Retry.")
+	_dungeon_spell_progress = session.spell_progress.duplicate(true)
+	_spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
+	_dungeon_recovered = true
+	_refresh_spell_button()
+	_set_build_error("")
+	_restore_build_preferences(_dungeon_backend._verified_player_id)
 
 func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary) -> void:
 	if request_id.is_empty() or request_id != _dungeon_request:
@@ -1964,18 +2056,16 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 	if _dungeon_kind == "loadout" and not ok:
 		var message := str(data.get("error", ""))
 		if message in ["Invalid or unsupported dungeon loadout.", "Invalid dungeon loadout.", "UNSUPPORTED_MECHANIC", "UNTRUSTED_SETUP"]:
-			if not get_node("/root/ConnectionGate").journal_confirm(str(_dungeon_payload.get("client_action_id", ""))): return
 			_dungeon_payload.clear()
 			SceneRouter._dungeon_context.erase("pending_loadout")
 			_set_build_error("The server rejected this loadout. Check your entity, homunculus, weapons and learned spells; verify the backend is up to date.")
 		else:
 			_dungeon_recovered = false
-			_recover_dungeon()
+			_set_build_error("Dungeon ended. Return to Sync Nexus.")
 		return
-	var session: Variant = data.get("session") if _dungeon_kind == "session" else data
+	var session: Variant = data
 	if ok and _dungeon_kind == "session" and session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and str(session.get("status", "")) in ["LOSS", "EXPIRED", "ABANDONED"]:
 		var gate := get_node("/root/ConnectionGate")
-		if not gate.journal_close("dungeon", str(session.run_id)): return
 		_dungeon_payload.clear()
 		SceneRouter._dungeon_context.erase("pending_loadout")
 		if gate.blocked(): gate.recovery_to_combat()
@@ -2002,7 +2092,6 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 					_dungeon_recovered = false
 					_set_build_error("Recovered loadout differs. Return to Sync Nexus.")
 					return
-			if not get_node("/root/ConnectionGate").journal_confirm(str(_dungeon_payload.get("client_action_id", ""))): return
 		_dungeon_payload.clear()
 		SceneRouter._dungeon_context.erase("pending_loadout")
 		SceneRouter._dungeon_context["session"] = session.duplicate(true)
@@ -2013,6 +2102,9 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 			_restore_build_preferences(_dungeon_backend._verified_player_id)
 
 func _submit_dungeon_loadout() -> void:
+	if not _is_combat_hom(_current_homunculus_id) or (not _dungeon_payload.is_empty() and not _payload_hom_safe(_dungeon_payload)):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return
 	if not _dungeon_request.is_empty():
 		return
 	if not _dungeon_recovered:
@@ -2046,6 +2138,9 @@ func _submit_dungeon_loadout() -> void:
 		_set_build_error("Confirming Dungeon loadout...")
 
 func _submit_hunt_loadout() -> void:
+	if not _is_combat_hom(_current_homunculus_id) or (not _hunt_payload.is_empty() and not _payload_hom_safe(_hunt_payload)):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return
 	if _hunt_exit_requested or not _hunt_exit_request.is_empty() or not _hunt_submit_request.is_empty() or not _hunt_recovery_request.is_empty():
 		return
 	if not _hunt_recovered or _hunt_backend == null or _hunt_identity.is_empty() or _hunt_backend._verified_player_id != _hunt_identity or _hunt_backend.token.is_empty():
@@ -2142,10 +2237,10 @@ func _restore_build_preferences(player_id: String) -> void:
 		return
 	var entity_id := str(build.get("entity_id", ""))
 	var hom_id := str(build.get("homunculus_id", ""))
+	_pending_restored_hom = hom_id if _hom_status(hom_id) == "unknown" and not _find_by_id(_homunculi, hom_id).is_empty() else ""
 	if not _find_by_id(_entities, entity_id).is_empty():
 		_current_entity_id = entity_id
-	if not _find_by_id(_homunculi, hom_id).is_empty():
-		_current_homunculus_id = hom_id
+	_current_homunculus_id = hom_id if _is_combat_hom(hom_id) else _legacy_hom_fallback()
 	for entry in [[dd_item1, _items, "equip_1"], [dd_item2, _items, "equip_2"], [dd_side1, _items, "side_1"], [dd_side2, _items, "side_2"], [dd_atktech, _atk_techs, "attack_tech"], [dd_deftech, _def_techs, "defense_tech"]]:
 		if build.has(entry[2]):
 			_set_button_selection(entry[0], entry[1], build[entry[2]])
@@ -2156,8 +2251,7 @@ func _restore_build_preferences(player_id: String) -> void:
 func _reset_build_defaults() -> void:
 	if not _entities.is_empty():
 		_current_entity_id = str(_entities[0].get("id", ""))
-	if not _homunculi.is_empty():
-		_current_homunculus_id = str(_homunculi[0].get("id", ""))
+	_current_homunculus_id = _legacy_hom_fallback()
 	for entry in [[dd_item1, _items], [dd_item2, _items], [dd_side1, _items], [dd_side2, _items], [dd_atktech, _atk_techs], [dd_deftech, _def_techs]]:
 		_set_button_selection(entry[0], entry[1], "")
 	_ensure_distinct_weapons()
@@ -2165,6 +2259,7 @@ func _reset_build_defaults() -> void:
 	_refresh_details()
 
 func _save_build_preferences() -> void:
+	if _expedition_preview: return
 	if not _preferences_ready or not _preferences_can_edit() or _preferences_owner.is_empty() or _preferences_owner != _verified_preferences_identity():
 		return
 	var build := {"entity_id": _current_entity_id, "homunculus_id": _current_homunculus_id, "equip_1": _idx_to_id(_items, dd_item1), "equip_2": _idx_to_id(_items, dd_item2), "side_1": _idx_to_id(_items, dd_side1), "side_2": _idx_to_id(_items, dd_side2), "attack_tech": _idx_to_id(_atk_techs, dd_atktech), "defense_tech": _idx_to_id(_def_techs, dd_deftech)}
@@ -2172,6 +2267,10 @@ func _save_build_preferences() -> void:
 		_set_build_error("Could not save build preferences.")
 
 func _save_seal(which: String) -> bool:
+	if _expedition_preview: return false
+	if not _is_combat_hom(_current_homunculus_id):
+		_set_build_error(tr("LOADOUT_HOM_PENDING"))
+		return false
 	var payload := {
 		"mode": which,
 		"entity_id": _current_entity_id,
@@ -2222,7 +2321,8 @@ func _load_seal(which: String) -> void:
 	if data.has("entity_id"):
 		_current_entity_id = str(data.get("entity_id", _current_entity_id))
 	if data.has("homunculus_id"):
-		_current_homunculus_id = str(data.get("homunculus_id", _current_homunculus_id))
+		var saved_hom := str(data.get("homunculus_id", ""))
+		_current_homunculus_id = saved_hom if _is_combat_hom(saved_hom) else _legacy_hom_fallback()
 	_refresh_details()
 
 	_set_button_selection(dd_item1, _items, data.get("equip_1", ""))
@@ -2424,3 +2524,103 @@ func _idx_to_id(_arr: Array, dd: Node) -> String:
 
 func _on_ready() -> void:
 	print("READY (attack) - next: combat scene should consume user://seal_attack.json")
+
+func _is_combat_hom(id: String) -> bool:
+	if _reg == null or not _reg.get_homunculus_collection().has(id):
+		return false
+	return _hom_status(id) == "owned"
+
+func _payload_hom_safe(payload: Dictionary) -> bool:
+	var id := str(payload.get("homunculus_id", "")) if payload.get("homunculus_id") != null else ""
+	return id.is_empty() or _is_combat_hom(id)
+
+func _legacy_hom_fallback() -> String:
+	if _reg == null or _reg.get_homunculi().is_empty(): return ""
+	return str(_reg.get_homunculi().keys()[0])
+
+func _hom_status(id: String) -> String:
+	if _expedition_preview: return "owned"
+	var synced := not _hom_identity.is_empty() and _hom_identity == _verified_preferences_identity()
+	return HomProgress.collection_status(id, _reg != null and _reg.get_homunculi().has(id), _hom_progress, synced)
+
+func _clear_hom_ownership() -> void:
+	_hom_identity = ""
+	_hom_progress = {}
+	_pending_restored_hom = ""
+	_revalidate_hom_selection()
+	_refresh_hom_cards()
+
+func _update_hom_ownership(state: Dictionary, backend: BackendClient, expected: String = "") -> void:
+	var identity := str(state.get("player_id", ""))
+	if backend == null or backend.token.is_empty() or identity.is_empty() or identity != backend._verified_player_id or (not expected.is_empty() and identity != expected):
+		_clear_hom_ownership()
+		return
+	_hom_identity = identity
+	var progress: Variant = state.get("homunculus_progress", {})
+	_hom_progress = progress.duplicate(true) if progress is Dictionary else {}
+	if not _pending_restored_hom.is_empty() and identity == _verified_preferences_identity():
+		if _is_combat_hom(_pending_restored_hom):
+			_current_homunculus_id = _pending_restored_hom
+			_update_selected_visuals()
+			_refresh_details()
+		_pending_restored_hom = ""
+	_revalidate_hom_selection()
+	_refresh_hom_cards()
+
+func _hom_texture(hom: Dictionary) -> Texture2D:
+	if hom.has("preview_texture"):
+		var path := str(hom.preview_texture)
+		return load(path) if ResourceLoader.exists(path) else null
+	return _load_preview_tex(str(hom.get("id", "")), "homunculus", str(hom.get("name", "")))
+
+func _refresh_hom_cards() -> void:
+	if not is_instance_valid(grid_homunculi): return
+	for card in grid_homunculi.get_children():
+		if card.has_meta("hom_id"):
+			_update_hom_card(card, _find_by_id(_homunculi, str(card.get_meta("hom_id"))))
+
+func _update_hom_card(card: Control, hom: Dictionary) -> void:
+	var id := str(hom.get("id", ""))
+	var portrait := card.get_node_or_null("CardContent/Portrait") as TextureRect
+	var title := card.get_node_or_null("CardContent/CardName") as Label
+	if portrait == null: return
+	var status := _hom_status(id)
+	var locked := status != "owned"
+	portrait.modulate = Color(0.5, 0.5, 0.5, 1.0) if locked else Color.WHITE
+	card.self_modulate = Color(0.5, 0.5, 0.5, 1.0) if locked else Color(1.35, 1.2, 0.8, 1.0) if id == _current_homunculus_id else Color.WHITE
+	var overlay := card.get_node_or_null("HomLock")
+	if overlay == null:
+		var center := CenterContainer.new()
+		center.name = "HomLock"
+		center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(center)
+		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var lock := LockIndicator.new()
+		lock.custom_minimum_size = Vector2(20, 20)
+		lock.scale = Vector2(1.7, 1.7)
+		lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		center.add_child(lock)
+		overlay = center
+	overlay.visible = locked
+	var name_text := GameLocalization.catalog("homunculus", id, "name", str(hom.get("name", id)))
+	if title: title.text = name_text
+	var parts: Array[String] = [name_text]
+	if hom.has("type"):
+		parts.append(tr("HOM_TYPE") % GameLocalization.catalog("type", str(hom.type), "name", str(hom.type).capitalize()))
+		parts.append(tr("INVENTORY_RARITY") % ("%d / 10" % int(hom.rarity)))
+		parts.append(tr("HOM_PASSIVE") % HomProgress.passive_text(hom))
+		if locked:
+			parts.append(tr("HOM_CAPTURE_REQUIRED"))
+			if status == "unknown": parts.append(tr("HOM_STATUS_UNKNOWN"))
+		else:
+			parts.append(tr("HOM_STATUS_OWNED"))
+	card.tooltip_text = "\n".join(parts)
+
+func _revalidate_hom_selection() -> void:
+	if _cards_ready and not _current_homunculus_id.is_empty() and not _is_combat_hom(_current_homunculus_id):
+		_current_homunculus_id = _legacy_hom_fallback()
+		_update_selected_visuals()
+		_refresh_details()
+
+func _dungeon_exit_warning() -> void:
+	get_node("/root/ConnectionGate").dungeon_exit_warning()

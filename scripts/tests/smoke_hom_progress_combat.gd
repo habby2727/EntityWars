@@ -21,6 +21,13 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	await process_frame
+	var collection: Dictionary = scene._reg.get_homunculus_collection()
+	_check(scene._homunculi.size() == 8 and collection.size() == 22, "online collection does not expand local combat")
+	for id in collection:
+		var hom: Dictionary = collection[id]
+		if hom.has("combat_texture"):
+			var texture: Texture2D = scene._load_preview_tex(str(id), "homunculus")
+			_check(texture != null and texture.resource_path == str(hom.combat_texture), "manifest combat texture: " + str(id))
 	scene._combat_spell_state["homunculus_progress"] = {"cinder": {"level": 10, "mutation_id": "vitality"}}
 	var data := {"entity_id": "sulfur_01", "homunculus_id": "cinder", "equip_1": "bismuth_talisman", "equip_2": "wind_amulet"}
 	scene.player = scene._build_fighter(data, true)
@@ -31,7 +38,7 @@ func _run() -> void:
 	scene._set_active_weapon(player, 2)
 	scene._set_active_weapon(player, 1)
 	_check(player.atk == before.atk and player.def == before.def and player.max_hp == before.max_hp, "weapon switching stacks")
-	_check(int(player.hom_synergy.power_flat) == 3, "entity type synergy")
+	_check(int(player.hom_synergy.power_flat) == 2, "entity type synergy")
 	var catalyst: Dictionary = scene._combat_spell_state.homunculus_progress.cinder
 	catalyst.mutation_id = "catalyst"
 	var improved: Dictionary = scene._build_fighter(data, true)
@@ -53,7 +60,7 @@ func _run() -> void:
 			break
 	resonant.type = favorable_source
 	npc.type = favorable_target
-	_check(is_equal_approx(scene._type_multiplier(resonant, npc, false), 1.15), "favorable resonance")
+	_check(is_equal_approx(scene._type_multiplier(resonant, npc, false), 1.21), "favorable resonance")
 	npc.type = favorable_source
 	_check(is_equal_approx(scene._type_multiplier(resonant, npc, false), 1.0), "neutral resonance")
 	var scaled: Dictionary = scene._scaled_hom_weapon({"effects": {"power_flat": [10], "ward_pct": [0.2]}}, {"item_effect_mult": 1.05})

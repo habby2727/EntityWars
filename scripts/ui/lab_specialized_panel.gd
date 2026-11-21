@@ -38,7 +38,7 @@ var _vat_item := ""
 var _vat_info: Label
 var _vat_synergies: Label
 var _vat_status: Label
-var _vat_upgrade: Button
+var _vat_xp: Label
 var _vat_mutations: Array[Button] = []
 var _vat_confirm: ConfirmationDialog
 var _vat_action: Dictionary = {}
@@ -79,7 +79,7 @@ func setup(registry: DataRegistry, backend: BackendClient, debug: bool, base_cos
 		_backend.action_failed.connect(_forge_failed)
 		_backend.action_uncertain.connect(_forge_uncertain)
 		_backend.api_completed.connect(_on_dungeon_api_completed)
-		_backend.auth_changed.connect(func(_token): _update_forge_button())
+		_backend.auth_changed.connect(_on_catalog_auth_changed)
 		_backend.state_updated.connect(_on_dungeon_debug_state)
 	custom_minimum_size.y = 210
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -125,7 +125,7 @@ func show_building(building_id: String, state: Dictionary, building_names: Dicti
 	_dungeon_entry_status = null
 	_vat_info = null
 	_vat_status = null
-	_vat_upgrade = null
+	_vat_xp = null
 	_vat_confirm = null
 	_vat_mutations.clear()
 	_anomaly_confirm = null
@@ -408,6 +408,9 @@ func _style_dungeon_dialog(dialog: ConfirmationDialog, extra_buttons: Array = []
 		MenuArt.button(button)
 
 func _enter_dungeon() -> void:
+	get_node("/root/ConnectionGate").dungeon_warning("DUNGEON_ENTRY_WARNING", "DUNGEON_ENTRY_CONFIRM", "DUNGEON_CANCEL", _confirm_enter_dungeon)
+
+func _confirm_enter_dungeon() -> void:
 	if _backend == null or not _dungeon_entry_request.is_empty() or _dungeon_debug_waiting:
 		return
 	if _dungeon_local_debug():
@@ -433,9 +436,9 @@ func _enter_dungeon() -> void:
 
 func _dungeon_check_session() -> void:
 	_dungeon_entry_owner = _backend._verified_player_id
-	_dungeon_entry_kind = "session"
-	_dungeon_entry_request = _backend.request_api("GET", "/dungeon/session", null)
-	_dungeon_entry_status.text = "Checking Dungeon session..." if not _dungeon_entry_request.is_empty() else "Connection busy. Try again."
+	_dungeon_entry_kind = "start"
+	_dungeon_entry_request = _backend.request_api("POST", "/dungeon/start", {"client_action_id": _backend._make_uuid()})
+	_dungeon_entry_status.text = "Starting Dungeon..." if not _dungeon_entry_request.is_empty() else "Connection busy. Try again."
 	_update_sync_status()
 
 func _dungeon_debug_login() -> void:
@@ -502,83 +505,19 @@ func _on_dungeon_entry_completed(request_id: String, ok: bool, data: Dictionary)
 	if _dungeon_entry_kind == "debug_prepare":
 		_dungeon_check_session()
 		return
-	if _dungeon_entry_kind == "debug_abandon":
-		SceneRouter._dungeon_context.erase("pending_debug_abandon")
-		_dungeon_check_session()
-		return
-	var session: Variant = data.get("session") if _dungeon_entry_kind == "session" else data
-	var pending: Variant = SceneRouter._dungeon_context.get("pending_debug_abandon")
-	if _dungeon_entry_kind == "session" and _dungeon_local_debug() and pending is Dictionary and str(pending.get("owner", "")) == _dungeon_entry_owner:
-		_dungeon_entry_kind = "debug_abandon"
-		_dungeon_entry_request = _backend.request_api("POST", "/dungeon/abandon", pending.get("payload", {}).duplicate(true))
-		_dungeon_entry_status.text = "Resolving previous test run..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
-		_update_sync_status()
-		return
-	if session is Dictionary and str(session.get("status", "")) == "ACTIVE" and not str(session.get("run_id", "")).is_empty():
-		if _dungeon_entry_kind == "session" and _dungeon_local_debug():
-			_dungeon_debug_session = session.duplicate(true)
-			if not is_instance_valid(_dungeon_debug_run_choice):
-				_dungeon_debug_run_choice = ConfirmationDialog.new()
-				_dungeon_debug_run_choice.title = ""
-				_dungeon_debug_run_choice.dialog_text = "Resume the active run or start a new test run."
-				_dungeon_debug_run_choice.get_ok_button().text = "RESUME RUN"
-				var new_run_button := _dungeon_debug_run_choice.add_button("NEW RUN", false, "new_test_run")
-				_dungeon_debug_run_choice.confirmed.connect(_dungeon_debug_resume)
-				_dungeon_debug_run_choice.custom_action.connect(_dungeon_debug_run_action)
-				add_child(_dungeon_debug_run_choice)
-				_style_dungeon_dialog(_dungeon_debug_run_choice, [new_run_button])
-			_dungeon_debug_run_choice.popup_centered()
-		else:
-			_dungeon_open_session(session)
-		return
-	if _dungeon_entry_kind != "session" or session != null:
+	if _dungeon_entry_kind == "start" and str(data.get("status", "")) == "ACTIVE" and not str(data.get("run_id", "")).is_empty():
+		_dungeon_open_session(data)
+	else:
 		_dungeon_entry_status.text = "Dungeon session unavailable. Retry."
 		_update_sync_status()
-		return
-	var action_id := str(SceneRouter._dungeon_context.get("start_action_id", "")) if str(SceneRouter._dungeon_context.get("player_id", "")) == _dungeon_entry_owner else ""
-	if action_id.is_empty():
-		action_id = _backend._make_uuid()
-		SceneRouter._dungeon_context = {"player_id": _dungeon_entry_owner, "start_action_id": action_id}
-	_dungeon_entry_kind = "start"
-	_dungeon_entry_request = _backend.request_api("POST", "/dungeon/start", {"client_action_id": action_id})
-	_dungeon_entry_status.text = "Starting Dungeon..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
-	_update_sync_status()
 
 func _dungeon_open_session(session: Dictionary) -> void:
 	SceneRouter._dungeon_context = {"run_id": str(session.run_id), "player_id": _dungeon_entry_owner, "session": session.duplicate(true)}
+	get_node("/root/ConnectionGate").dungeon_started()
 	if bool(session.get("combat_ready", false)) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
 		SceneRouter.go_to_dungeon_combat()
 	else:
 		SceneRouter.go_to_dungeon_loadout(str(session.run_id), _dungeon_entry_owner)
-
-func _dungeon_debug_resume() -> void:
-	if _dungeon_local_debug() and _backend._verified_player_id == _dungeon_entry_owner and not _dungeon_debug_session.is_empty():
-		_dungeon_open_session(_dungeon_debug_session)
-
-func _dungeon_debug_run_action(action: StringName) -> void:
-	if action != "new_test_run" or not _dungeon_local_debug() or _backend._verified_player_id != _dungeon_entry_owner:
-		return
-	_dungeon_debug_run_choice.hide()
-	if not is_instance_valid(_dungeon_debug_abandon_confirm):
-		_dungeon_debug_abandon_confirm = ConfirmationDialog.new()
-		_dungeon_debug_abandon_confirm.title = ""
-		_dungeon_debug_abandon_confirm.dialog_text = "Abandon current run?\n\nThe current Dungeon run will end before starting a new run."
-		_dungeon_debug_abandon_confirm.confirmed.connect(_dungeon_debug_abandon)
-		add_child(_dungeon_debug_abandon_confirm)
-		_style_dungeon_dialog(_dungeon_debug_abandon_confirm)
-	_dungeon_debug_abandon_confirm.popup_centered()
-
-func _dungeon_debug_abandon() -> void:
-	if not _dungeon_local_debug() or _backend._verified_player_id != _dungeon_entry_owner or not _dungeon_entry_request.is_empty() or _dungeon_debug_session.is_empty():
-		return
-	var pending: Variant = SceneRouter._dungeon_context.get("pending_debug_abandon")
-	if not pending is Dictionary or str(pending.get("owner", "")) != _dungeon_entry_owner or str(pending.get("payload", {}).get("run_id", "")) != str(_dungeon_debug_session.get("run_id", "")):
-		pending = {"owner": _dungeon_entry_owner, "payload": {"run_id": str(_dungeon_debug_session.run_id), "client_action_id": _backend._make_uuid()}}
-		SceneRouter._dungeon_context["pending_debug_abandon"] = pending.duplicate(true)
-	_dungeon_entry_kind = "debug_abandon"
-	_dungeon_entry_request = _backend.request_api("POST", "/dungeon/abandon", pending.payload.duplicate(true))
-	_dungeon_entry_status.text = "Ending previous test run..." if not _dungeon_entry_request.is_empty() else "Connection busy. Retry."
-	_update_sync_status()
 
 func _open_dungeon_ranking() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
@@ -765,7 +704,7 @@ func _catalog(homunculi: bool) -> void:
 		var right_space := Control.new()
 		right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		center.add_child(right_space)
-	var entries: Dictionary = _registry.get_homunculi() if homunculi else _registry.get_items()
+	var entries: Dictionary = _registry.get_homunculus_collection() if homunculi else _registry.get_items()
 	var list := ItemList.new()
 	list.name = "LocalizationCatalogItems"
 	list.set_meta("catalog_kind", "homunculus" if homunculi else "item")
@@ -885,7 +824,7 @@ func _catalog(homunculi: bool) -> void:
 		actions_scroll.add_child(actions)
 	else:
 		details.add_child(actions)
-	for label in (["Upgrade Homunculus"] if homunculi else ["Upgrade", "Reroll"]):
+	for label in ([] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
 		action.text = {"Upgrade Homunculus": "LAB_ACTION_UPGRADE_HOMUNCULUS", "Upgrade": "LAB_UPGRADE", "Reroll": "LAB_ACTION_REROLL"}[label]
 		action.disabled = true
@@ -899,22 +838,26 @@ func _catalog(homunculi: bool) -> void:
 		elif not homunculi and label == "Reroll":
 			_forge_reroll_button = action
 			action.pressed.connect(_request_forge_reroll)
-		elif homunculi:
-			_vat_upgrade = action
-			action.pressed.connect(_request_vat_upgrade)
 	var inventory := Button.new()
 	inventory.text = "LAB_OPEN_INVENTORY"
 	MenuArt.button(inventory)
 	inventory.pressed.connect(func(): SceneRouter.go_to_inventory("Homunculi" if homunculi else "Builds", true))
 	actions.add_child(inventory)
 	if homunculi:
+		_vat_xp = Label.new()
+		_vat_xp.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		details.add_child(_vat_xp)
+		var mutation_parent: Control = actions if OS.has_feature("android") else details
 		var mutation_heading := Label.new()
 		mutation_heading.text = "VAT_MUTATIONS"
-		details.add_child(mutation_heading)
-		var mutation_row := HBoxContainer.new()
-		details.add_child(mutation_row)
+		mutation_parent.add_child(mutation_heading)
+		var mutation_row: BoxContainer = VBoxContainer.new() if OS.has_feature("android") else HBoxContainer.new()
+		mutation_parent.add_child(mutation_row)
 		for mutation_id in ["catalyst", "vitality", "resonance"]:
 			var button := Button.new()
+			if OS.has_feature("android"):
+				button.custom_minimum_size = Vector2(200, 64)
+				button.add_theme_font_size_override("font_size", 24)
 			button.text = GameLocalization.catalog("mutation", mutation_id, "name", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("name", mutation_id)))
 			button.tooltip_text = GameLocalization.catalog("mutation", mutation_id, "desc", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("description", "")))
 			MenuArt.button(button)
@@ -923,7 +866,7 @@ func _catalog(homunculi: bool) -> void:
 			_vat_mutations.append(button)
 		_vat_status = Label.new()
 		_vat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		details.add_child(_vat_status)
+		mutation_parent.add_child(_vat_status)
 		_vat_confirm = ConfirmationDialog.new()
 		_vat_confirm.title = "Confirm Homunculus Vat"
 		_vat_confirm.confirmed.connect(_send_vat_action)
@@ -996,7 +939,7 @@ func _catalog(homunculi: bool) -> void:
 		else:
 			_update_forge_button()
 		var file: String = str(ITEM_FILES.get(id, id))
-		var path := ("res://assets/entities/previews_256/homunculus/" if homunculi else "res://assets/entities/builds/") + file + ".png"
+		var path := str(entry.get("preview_texture", "")) if homunculi and entry.has("preview_texture") else ("res://assets/entities/previews_256/homunculus/" if homunculi else "res://assets/entities/builds/") + file + ".png"
 		preview.texture = load(path) if ResourceLoader.exists(path) else null
 	list.item_selected.connect(select)
 	if list.item_count > 0:
@@ -1004,11 +947,13 @@ func _catalog(homunculi: bool) -> void:
 		select.call(0)
 
 func _update_vat_status() -> void:
-	if not is_instance_valid(_vat_info) or not is_instance_valid(_vat_upgrade) or _registry == null or _vat_item == "":
+	if not is_instance_valid(_vat_info) or not is_instance_valid(_vat_xp) or _registry == null or _vat_item == "":
 		return
 	var progress: Dictionary = _forge_state.get("homunculus_progress", {})
 	var entry: Dictionary = progress.get(_vat_item, {})
-	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
+	var hom: Dictionary = _registry.get_homunculus_collection().get(_vat_item, {})
+	var ready := _forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty() and str(_forge_state.get("player_id", "")) == _backend._verified_player_id
+	var status := HomProgress.collection_status(_vat_item, _registry.get_homunculi().has(_vat_item), progress, ready)
 	var level := clampi(int(entry.get("level", 0)), 0, 10)
 	var next_progress := progress.duplicate(true)
 	var next_entry := entry.duplicate(true)
@@ -1016,65 +961,53 @@ func _update_vat_status() -> void:
 	next_progress[_vat_item] = next_entry
 	var mutations := HomProgress.mutation_catalog()
 	var active := str(entry.get("mutation_id", ""))
-	_vat_info.text = tr("VAT_DESCRIPTION").replace("\\n", "\n") % [GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", ""))), level, GameLocalization.catalog("mutation", active, "name", str(mutations.get(active, {}).get("name", tr("SPECIALIZATION_NONE_NAME")))), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
-	var synergy_values := _format_values(hom.get("per_type", {}))
-	if not synergy_values.is_empty() and _vat_info.text.ends_with(synergy_values):
-		_vat_info.text = _vat_info.text.left(_vat_info.text.length() - synergy_values.length()).strip_edges()
-		_vat_synergies.text = synergy_values
+	_vat_synergies.text = ""
+	if hom.has("type"):
+		_vat_info.text = "\n".join([tr("HOM_STATUS_" + status.to_upper()), tr("HOM_TYPE") % GameLocalization.catalog("type", str(hom.type), "name", str(hom.type).capitalize()), tr("INVENTORY_RARITY") % ("%d / 10" % int(hom.rarity)), tr("HOM_PASSIVE") % HomProgress.passive_text(hom), tr("HOM_CAPTURE_REQUIRED") if status == "locked" else ""])
+	elif ready:
+		_vat_info.text = tr("VAT_DESCRIPTION").replace("\\n", "\n") % [GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", ""))), level, GameLocalization.catalog("mutation", active, "name", str(mutations.get(active, {}).get("name", tr("SPECIALIZATION_NONE_NAME")))), _format_values(HomProgress.effective_bonuses(hom, progress)).replace("\n", ", "), _format_values(HomProgress.effective_bonuses(hom, next_progress)).replace("\n", ", "), _format_values(hom.get("per_type", {}))]
+		var synergy_values := _format_values(hom.get("per_type", {}))
+		if not synergy_values.is_empty() and _vat_info.text.ends_with(synergy_values):
+			_vat_info.text = _vat_info.text.left(_vat_info.text.length() - synergy_values.length()).strip_edges()
+			_vat_synergies.text = synergy_values
 	else:
-		_vat_synergies.text = ""
-	var wallet: Dictionary = _forge_state.get("wallet", {})
-	var essence_cost := 25 + 15 * level
-	var core_cost := 1 if level >= 5 else 0
+		_vat_info.text = GameLocalization.catalog("homunculus", _vat_item, "desc", str(hom.get("desc", "")))
+	if ready and status == "owned":
+		if hom.has("type"):
+			_vat_info.text += "\n" + tr("HOM_LEVEL_MUTATION") % [level, GameLocalization.catalog("mutation", active, "name", tr("SPECIALIZATION_NONE_NAME"))]
+		var xp := int(entry.get("xp", 0))
+		_vat_xp.text = tr("VAT_XP_MAX") % xp if level >= 10 else tr("VAT_XP_PROGRESS") % [xp, HomProgress.xp_threshold(level + 1)]
+	else:
+		_vat_xp.text = ""
 	var cooldown := maxi(0, int(entry.get("mutation_changed_at", 0)) + 21600000 - _vat_now) if int(entry.get("mutation_changed_at", 0)) > 0 else 0
-	var ready := _forge_debug or (_forge_synced and _backend != null and _backend.token != "" and not _backend._verified_player_id.is_empty())
 	var vat_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("homunculus_vat", {}).get("level", 0))
-	var hq_level := int(_forge_state.get("lab", {}).get("hqLevel", 0))
 	var mutation_reason := ""
 	if not ready:
-		mutation_reason = "Sign in and wait for server state."
+		mutation_reason = tr("VAT_SERVER_REQUIRED")
 	elif _vat_pending:
-		mutation_reason = "Waiting for action confirmation."
+		mutation_reason = tr("VAT_WAITING")
 	elif vat_level < 1:
 		mutation_reason = tr("VAT_NEEDS_VAT")
+	elif status != "owned":
+		mutation_reason = tr("VAT_NOT_OWNED")
 	elif level < 3:
 		mutation_reason = tr("VAT_NEEDS_LEVEL") % level
 	elif cooldown > 0:
 		mutation_reason = tr("VAT_NEXT_MUTATION") % _clock(cooldown)
-	elif int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1:
-		mutation_reason = tr("VAT_NEEDS_RESOURCES") % [int(wallet.get("essence", 0)), int(wallet.get("core", 0)), int(wallet.get("arcane_shard", 0))]
-	_vat_upgrade.disabled = not ready or _vat_pending or vat_level < 1 or hq_level < 2 or level >= 10 or int(wallet.get("essence", 0)) < essence_cost or int(wallet.get("core", 0)) < core_cost
-	_vat_upgrade.tooltip_text = tr("VAT_UPGRADE_COST") % [essence_cost, tr("VAT_CORE_COST") if core_cost else ""]
 	for i in range(_vat_mutations.size()):
 		var id: String = ["catalyst", "vitality", "resonance"][i]
-		_vat_mutations[i].disabled = not ready or _vat_pending or vat_level < 1 or level < 3 or cooldown > 0 or active == id or int(wallet.get("essence", 0)) < 70 or int(wallet.get("core", 0)) < 2 or int(wallet.get("arcane_shard", 0)) < 1
+		_vat_mutations[i].disabled = mutation_reason != "" or active == id
 		_vat_mutations[i].modulate = Color(1.25, 1.1, 0.7) if active == id else Color.WHITE
 		var description := GameLocalization.catalog("mutation", id, "desc", str(mutations.get(id, {}).get("description", "")))
 		_vat_mutations[i].tooltip_text = description + ("\n" + tr("VAT_EQUIPPED") if active == id else "\n" + mutation_reason if mutation_reason != "" else "\n" + tr("VAT_SELECT"))
-	_vat_status.text = tr("VAT_STATUS").replace("\\n", "\n") % [essence_cost, tr("VAT_CORE_COST") if core_cost else "", _clock(cooldown) if cooldown > 0 else tr("LAB_READY")]
-	if vat_level < 1 or hq_level < 2:
-		_vat_status.text += "\n" + tr("VAT_REQUIRE_BUILDING") % [vat_level, hq_level]
-	if level < 3:
-		_vat_status.text += "\n" + tr("VAT_MUTATION_REQUIRED") % level
-	elif mutation_reason != "":
-		_vat_status.text += "\n" + mutation_reason
-	else:
-		_vat_status.text += "\n" + tr("VAT_CHOOSE_MUTATION")
-
-func _request_vat_upgrade() -> void:
-	if _vat_upgrade.disabled:
-		return
-	_vat_action = {"action_type": "HOM_UPGRADE", "payload": {"homunculus_id": _vat_item}}
-	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
-	_vat_confirm.dialog_text = tr("VAT_CONFIRM_UPGRADE") % [GameLocalization.catalog("homunculus", _vat_item, "name", str(hom.get("name", _vat_item))), _vat_upgrade.tooltip_text]
-	_vat_confirm.popup_centered()
+	_vat_status.text = mutation_reason if mutation_reason != "" else tr("VAT_CHOOSE_MUTATION")
 
 func _request_vat_mutation(id: String) -> void:
 	var index := ["catalyst", "vitality", "resonance"].find(id)
 	if index < 0 or _vat_mutations[index].disabled:
 		return
 	_vat_action = {"action_type": "HOM_MUTATE", "payload": {"homunculus_id": _vat_item, "mutation_id": id}}
-	var hom: Dictionary = _registry.get_homunculi().get(_vat_item, {})
+	var hom: Dictionary = _registry.get_homunculus_collection().get(_vat_item, {})
 	_vat_confirm.dialog_text = tr("VAT_CONFIRM_MUTATION").replace("\\n", "\n") % [GameLocalization.catalog("mutation", id, "name", id.capitalize()), GameLocalization.catalog("homunculus", _vat_item, "name", str(hom.get("name", _vat_item))), _vat_mutations[index].tooltip_text]
 	_vat_confirm.popup_centered()
 
@@ -1084,7 +1017,7 @@ func _send_vat_action() -> void:
 	_update_vat_status()
 	var action_type := str(_vat_action.get("action_type", ""))
 	var index := ["catalyst", "vitality", "resonance"].find(_vat_action.get("payload", {}).get("mutation_id", ""))
-	if (action_type == "HOM_UPGRADE" and _vat_upgrade.disabled) or (action_type == "HOM_MUTATE" and (index < 0 or _vat_mutations[index].disabled)):
+	if action_type != "HOM_MUTATE" or index < 0 or _vat_mutations[index].disabled:
 		return
 	lab_action_requested.emit(_vat_action.duplicate(true), "homunculus_vat")
 
@@ -1465,3 +1398,10 @@ func _format_values(values: Dictionary) -> String:
 		var type_name := GameLocalization.catalog("type", str(key), "name", resource)
 		lines.append("%s: %s" % [GameLocalization.catalog("stat", str(key), "name", type_name), formatted])
 	return "\n".join(lines)
+
+func _on_catalog_auth_changed(_token: String) -> void:
+	_forge_state = {}
+	_forge_synced = false
+	_vat_action = {}
+	_update_forge_button()
+	_update_vat_status()

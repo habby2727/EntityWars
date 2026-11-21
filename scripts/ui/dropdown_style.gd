@@ -20,9 +20,10 @@ func _on_node_added(node: Node) -> void:
 	elif node is OptionButton:
 		call_deferred("_configure_button", node)
 	elif node is Panel or node is PanelContainer or node is PopupPanel or node is AcceptDialog:
-		call_deferred("_configure_default_panel", node)
+		call_deferred("_configure_default_panel", node.get_instance_id())
 
-func _configure_default_panel(panel: Node) -> void:
+func _configure_default_panel(panel_id: int) -> void:
+	var panel := instance_from_id(panel_id) as Node
 	if not is_instance_valid(panel) or not panel.is_inside_tree() or panel.has_theme_stylebox_override("panel"):
 		return
 	var current: StyleBox = panel.get_theme_stylebox("panel")

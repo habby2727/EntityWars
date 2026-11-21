@@ -202,6 +202,9 @@ func _join() -> void:
 	if host._has_duplicate_build_items():
 		info.text = "Choose different weapons"
 		return
+	if not host._is_combat_hom(host._current_homunculus_id):
+		info.text = tr("LOADOUT_HOM_PENDING")
+		return
 	if not host._save_seal("attack"):
 		info.text = "Could not save loadout"
 		return
@@ -227,6 +230,9 @@ func _join() -> void:
 	var a := str(seal.get("equip_1", ""))
 	var b := str(seal.get("equip_2", ""))
 	var hom := str(seal.get("homunculus_id", ""))
+	if not hom.is_empty() and not host._is_combat_hom(hom):
+		info.text = tr("LOADOUT_HOM_PENDING")
+		return
 	var selection := {"entity_id": entity, "weapon_ids": [null if a.is_empty() else a, null if b.is_empty() else b], "homunculus_id": null if hom.is_empty() else hom, "spell_ids": spells.duplicate(), "mode": "attack"}
 	if _send("POST", "/pvp/queue/join", {"client_action_id": backend._make_uuid(), "selection": selection}, "join"):
 		joined_at = 0

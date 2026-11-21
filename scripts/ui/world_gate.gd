@@ -139,6 +139,9 @@ func _ready() -> void:
 	_apply_panel_background()
 	_connect_backend()
 	_connect_buttons()
+	var expedition_button := get_node("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ExpeditionMargin/ExpeditionButton") as Button
+	MenuArt.button(expedition_button)
+	expedition_button.pressed.connect(SceneRouter.go_to_expeditions)
 	if _back_button != null:
 		MenuArt.button(_back_button)
 	if _zone_refresh != null:
@@ -1332,7 +1335,9 @@ func _render_missions() -> void:
 		title.add_theme_color_override("font_color", Color("e8ce83"))
 		col.add_child(title)
 		var description := Label.new()
-		description.text = str(mission.get("description", ""))
+		var description_key := "MISSION_DESC_" + str(mission.get("id", "")).to_upper()
+		var translated := tr(description_key)
+		description.text = str(mission.get("description", "")) if translated == description_key else translated
 		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		description.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		col.add_child(description)

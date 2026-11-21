@@ -1,0 +1,214 @@
+{
+  "enemies": [
+    {
+      "id": "dullahan",
+      "name": "Dullahan",
+      "types": [
+        "aether",
+        "mercury"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/A-M_Dullahan.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/A-M_Dullahan.png"
+    },
+    {
+      "id": "necromap",
+      "name": "Necromap",
+      "types": [
+        "aether",
+        "mercury"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/A-M_Necromap.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/A-M_Necromap.png"
+    },
+    {
+      "id": "scriptor",
+      "name": "Scriptor",
+      "types": [
+        "aether",
+        "sodium"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/A-SO_Scriptor.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/A-SO_Scriptor.png"
+    },
+    {
+      "id": "lichcore",
+      "name": "Lichcore",
+      "types": [
+        "aether",
+        "gold"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/A_G_Lichcore.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/A_G_Lichcore.png"
+    },
+    {
+      "id": "nullshade",
+      "name": "Nullshade",
+      "types": [
+        "aether",
+        "sulfur"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/A_SU_Nullshade.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/A_SU_Nullshade.png"
+    },
+    {
+      "id": "wailbyte",
+      "name": "Wailbyte",
+      "types": [
+        "aether",
+        "vitriol"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/A_V_Wailbyte.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/A_V_Wailbyte.png"
+    },
+    {
+      "id": "draugr",
+      "name": "Draugr",
+      "types": [
+        "gold",
+        "aether"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/G-A_Draugr.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/G-A_Draugr.png"
+    },
+    {
+      "id": "confessor",
+      "name": "Confessor",
+      "types": [
+        "gold",
+        "mercury"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/G-M_Confessor.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/G-M_Confessor.png"
+    },
+    {
+      "id": "goldroot",
+      "name": "Goldroot",
+      "types": [
+        "gold",
+        "sodium"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/G_SO_Goldroot.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/G_SO_Goldroot.png"
+    },
+    {
+      "id": "hexwitch",
+      "name": "Hexwitch",
+      "types": [
+        "mercury",
+        "aether"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/M-A_Hexwitch.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/M-A_Hexwitch.png"
+    },
+    {
+      "id": "mercjiang",
+      "name": "Mercjiang",
+      "types": [
+        "mercury",
+        "aether"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/M_A_Mercjiang.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/M_A_Mercjiang.png"
+    },
+    {
+      "id": "chromurai",
+      "name": "Chromurai",
+      "types": [
+        "mercury",
+        "gold"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/M_G_Chromurai.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/M_G_Chromurai.png"
+    },
+    {
+      "id": "argentbane",
+      "name": "Argentbane",
+      "types": [
+        "mercury",
+        "sodium"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/M_SO_Argentbane.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/M_SO_Argentbane.png"
+    },
+    {
+      "id": "transurgeon",
+      "name": "Transurgeon",
+      "types": [
+        "mercury",
+        "vitriol"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/M_V_Transurgeon.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/M_V_Transurgeon.png"
+    },
+    {
+      "id": "railhunter",
+      "name": "Railhunter",
+      "types": [
+        "sodium",
+        "mercury"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/SO-M_Railhunter.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/SO-M_Railhunter.png"
+    },
+    {
+      "id": "ironroot",
+      "name": "Ironroot",
+      "types": [
+        "sodium",
+        "vitriol"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/SO-V_Ironroot.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/SO-V_Ironroot.png"
+    },
+    {
+      "id": "saltkeeper",
+      "name": "Saltkeeper",
+      "types": [
+        "sodium",
+        "vitriol"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/SO-V_Saltkeeper.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/SO-V_Saltkeeper.png"
+    },
+    {
+      "id": "saltguard",
+      "name": "Saltguard",
+      "types": [
+        "sodium",
+        "vitriol"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/SO_V_Saltguard.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/SO_V_Saltguard.png"
+    },
+    {
+      "id": "archmagus",
+      "name": "Archmagus",
+      "types": [
+        "sulfur",
+        "gold"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/SU-G_Archmagus.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/SU-G_Archmagus.png"
+    },
+    {
+      "id": "voltengu",
+      "name": "Voltengu",
+      "types": [
+        "sulfur",
+        "mercury"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/SU_M_Voltengu.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/SU_M_Voltengu.png"
+    },
+    {
+      "id": "rustmare",
+      "name": "Rustmare",
+      "types": [
+        "vitriol",
+        "mercury"
+      ],
+      "texture": "res://assets/entities/expeditions/gameplay/V-M_Rustmare.png",
+      "preview_texture": "res://assets/entities/expeditions/preview/V-M_Rustmare.png"
+    }
+  ]
+}

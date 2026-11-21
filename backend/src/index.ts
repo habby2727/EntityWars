@@ -1,3 +1,5 @@
+import { ownsHomunculus, combatHomunculusAllowed, legacyHomunculusIds, expeditionHomunculusIds, buildHomunculusCombatCatalog, homunculusCatalog } from "./homunculus_catalog";
+import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp, PVE_VICTORY_XP, type HomunculusProgress } from "./homunculus_experience";
 import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
@@ -35,6 +37,7 @@ import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpel
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
 import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
+import { createExpeditionService, ExpeditionError, maintainExpeditionReplays } from "./expeditions_service";
 import { commonAppearance, commonAppearances, guardiansFor } from "./solo_guardians";
 import { globalBossRoll, globalBossTier } from "./global_boss_rotation";
 import { incrementalBossTokens, worldDropAmount } from "./world_economy";
@@ -212,23 +215,52 @@ type ItemProgress = {
 	[key: string]: unknown;
 };
 
-type HomunculusProgress = { level: number; mutation_id?: string; mutation_changed_at?: number };
-
 function normalizeHomunculusProgress(value: unknown): Record<string, HomunculusProgress> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-	const result: Record<string, HomunculusProgress> = {};
-	for (const [id, raw] of Object.entries(value)) {
-		if (!staticData.homunculusIds.has(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-		const entry = raw as Record<string, unknown>;
-		const level = Number(entry.level);
-		const progress: HomunculusProgress = { level: Number.isInteger(level) ? Math.max(0, Math.min(10, level)) : 0 };
-		if (typeof entry.mutation_id === "string" && staticData.mutationIds.has(entry.mutation_id)) {
-			progress.mutation_id = entry.mutation_id;
-			progress.mutation_changed_at = clampInt(entry.mutation_changed_at, 0, Number.MAX_SAFE_INTEGER);
-		}
-		result[id] = progress;
+	const progress = { ...value as Record<string, any> };
+	for (const id of staticData.expeditionHomunculusIds) {
+		const entry = progress[id];
+		if (entry?.owned === true && (!ownsHomunculus(progress, id) || (entry.mutation_id !== undefined && !staticData.mutationIds.has(entry.mutation_id)))) delete progress[id];
 	}
-	return result;
+	return normalizeProgress(progress, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
+}
+
+function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number): void {
+	if (!loadoutJson) return;
+	let selection: any;
+	try { selection = JSON.parse(loadoutJson); } catch { throw new HttpError(409, "Invalid stored loadout."); }
+	const id = selection?.homunculus_id;
+	if (id === null || id === undefined || id === "") return;
+	if (typeof id !== "string") throw new HttpError(409, "Invalid stored homunculus.");
+	const row = getPlayerByIdStmt.get(playerId) as { state_json: string; display_name: string } | undefined;
+	if (!row) throw new HttpError(404, "Player not found.");
+	const player = safeParseState(row.state_json, playerId, row.display_name);
+	if (!player) throw new HttpError(409, "Invalid player state.");
+	if (!combatHomunculusAllowed(player.homunculus_progress, id)) throw new HttpError(409, "Homunculus is not available for combat.");
+	const current = player.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
+	player.homunculus_progress[id] = grantXp(current, PVE_VICTORY_XP);
+	player.updated_at = now;
+	if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+}
+
+function captureExpeditionHomunculus(playerId: string, id: string, now: number): { duplicate: boolean } {
+	if (!expeditionHomunculusIds().has(id)) throw new HttpError(409, "Invalid capture candidate.");
+	const row = getPlayerByIdStmt.get(playerId) as {state_json:string; display_name:string} | undefined;
+	if (!row) throw new HttpError(404, "Player not found.");
+	let raw: any;
+	try { raw = JSON.parse(row.state_json); } catch { throw new HttpError(409, "Invalid player state."); }
+	if (!raw || typeof raw !== "object" || (raw.homunculus_progress !== undefined && (!raw.homunculus_progress || typeof raw.homunculus_progress !== "object" || Array.isArray(raw.homunculus_progress)))) throw new HttpError(409, "Invalid homunculus progress.");
+	const entry = raw.homunculus_progress?.[id];
+	if (entry !== undefined && (!entry || typeof entry !== "object" || Array.isArray(entry) || typeof entry.owned !== "boolean")) throw new HttpError(409, "Invalid homunculus progress.");
+	const duplicate = entry?.owned === true;
+	if (duplicate && !ownsHomunculus(raw.homunculus_progress,id)) throw new HttpError(409, "Invalid owned homunculus.");
+	if (entry && !duplicate && ((entry.level !== undefined && (!Number.isInteger(entry.level) || entry.level < 0 || entry.level > 10)) || (entry.xp !== undefined && (!Number.isSafeInteger(entry.xp) || entry.xp < 0)) || entry.mutation_id !== undefined || entry.mutation_changed_at !== undefined)) throw new HttpError(409, "Invalid homunculus progress.");
+	const player = safeParseState(row.state_json,playerId,row.display_name);
+	if (!player) throw new HttpError(409, "Invalid player state.");
+	player.homunculus_progress[id] = duplicate ? grantXp(player.homunculus_progress[id],20) : {owned:true,level:0,xp:0};
+	player.updated_at = now;
+	if (updatePlayerStmt.run(JSON.stringify(player),now,playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+	return {duplicate};
 }
 
 function normalizeItemProgress(value: unknown): Record<string, ItemProgress> {
@@ -283,13 +315,52 @@ for (let attempt = 0; ; attempt++) {
 	}
 }
 const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN);
+let expeditionService: ReturnType<typeof createExpeditionService> | null = null;
+function getExpeditionService() {
+	if (expeditionService) return expeditionService;
+	const dataDir = resolve(import.meta.dir, "..", "..", "data");
+	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
+		const row = getPlayerByIdStmt.get(playerId) as { state_json: string } | undefined;
+		if (!row) throw new HttpError(404, "Player not found.");
+		let player: PlayerState;
+		try { player = JSON.parse(row.state_json); } catch { throw new HttpError(409, "Invalid player state."); }
+		if (!player || !player.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
+		const before = {...player.wallet};
+		assertWalletInvariant(player.wallet);
+		const caps = walletCapacities(player), credited: Record<string, number> = {};
+		for (const [id, amount] of Object.entries(grants)) credited[id] = Math.min(amount, Math.max(0, (caps[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
+		applyWalletGrant(player.wallet, credited);
+		assertWalletInvariant(player.wallet);
+		player.updated_at = now;
+		if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+		auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "EXPEDITION_VICTORY", rewardId, now);
+		return credited;
+	}, spendManaEssence: (playerId, actionId, now) => {
+		const row = getPlayerByIdStmt.get(playerId) as {state_json:string} | undefined;
+		if (!row) throw new HttpError(404, "Player not found.");
+		let player: PlayerState;
+		try { player = JSON.parse(row.state_json); } catch { throw new HttpError(409, "Invalid player state."); }
+		if (!player?.wallet || !Number.isSafeInteger(player.wallet.essence) || player.wallet.essence < 0) throw new HttpError(409, "Invalid player wallet.");
+		if (player.wallet.essence < 300) throw new HttpError(400, "Insufficient essence.");
+		const before = {...player.wallet};
+		player.wallet.essence -= 300;
+		player.updated_at = now;
+		if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+		auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "EXPEDITION_BUY_MANA", actionId, now);
+	}, captureHomunculus: captureExpeditionHomunculus, makeSetup: (playerId, snapshot, selection) => {
+		if (selection.homunculus_id && !ownsHomunculus(snapshot.homunculus_progress, selection.homunculus_id)) return {error:"UNTRUSTED_SETUP"};
+		return buildTrustedCombatSetup({ ...snapshot, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, selection, catalogs, { independentLoadout: true });
+	} });
+	return expeditionService;
+}
 let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking> } | null = null;
 function getRankedServices() {
 	if (rankedServices) return rankedServices;
 	const secret = Bun.env.PVP_RNG_SECRET;
 	if (!secret || new TextEncoder().encode(secret).length < 32) return null;
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
-	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
+	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
 	if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance) throw new Error("PVP_CATALOG_UNAVAILABLE");
 	const matches = createPvpMatches(db, new TextEncoder().encode(secret));
 	rankedServices = { db, matches, queue: createPvpQueue(db, catalogs, (id, selection) => trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs)), chat: createPvpChat(db), ranking: createPvpRanking(db) };
@@ -947,26 +1018,17 @@ function applyAction(
 	if (actionType == "UPGRADE_BUILDING") {
 		return applyUpgrade(next, payload, debugBypass);
 	}
-	if (actionType === "HOM_UPGRADE" || actionType === "HOM_MUTATE") {
+	if (actionType === "HOM_UPGRADE") return { state: next, error: "Homunculi gain levels through XP." };
+	if (actionType === "HOM_MUTATE") {
 		const id = typeof payload?.homunculus_id === "string" ? payload.homunculus_id : "";
-		if (!staticData.homunculusIds.has(id)) return { state: next, error: "Unknown homunculus." };
+		if (!ownsHomunculus(next.homunculus_progress, id)) return { state: next, error: "Unknown or unowned homunculus." };
 		if ((next.lab.buildings.homunculus_vat?.level ?? 0) < 1) return { state: next, error: "Homunculus Vat is not constructed." };
-		const current = next.homunculus_progress[id] ?? { level: 0 };
-		let cost: ResourceWallet;
-		if (actionType === "HOM_UPGRADE") {
-			if (next.lab.hqLevel < 2 || current.level >= 10) return { state: next, error: "Homunculus upgrade unavailable." };
-			cost = { essence: Math.trunc(getBalanceNumber("hom_upgrade_essence_base", 25) + current.level * getBalanceNumber("hom_upgrade_essence_per_level", 15)) };
-			if (current.level >= 5) cost.core = 1;
-		} else {
-			if (current.level < 3 || typeof payload?.mutation_id !== "string" || !staticData.mutationIds.has(payload.mutation_id) || payload.mutation_id === current.mutation_id || ((current.mutation_changed_at ?? 0) > 0 && now < current.mutation_changed_at! + getBalanceNumber("hom_mutation_cooldown_seconds", 21600) * 1000)) return { state: next, error: "Mutation unavailable." };
-			cost = staticData.balance.hom_mutation_cost;
-		}
-		if (!cost || typeof cost !== "object" || Array.isArray(cost) || Object.keys(cost).some(id => !staticData.resources.has(id)) || Object.values(cost).some(amount => !Number.isSafeInteger(amount) || amount < 0)) return { state: next, error: "Invalid homunculus cost configuration." };
-		if (Object.entries(cost).some(([res, amount]) => (next.wallet[res] ?? 0) < amount)) return { state: next, error: "Insufficient resources." };
-		for (const [res, amount] of Object.entries(cost)) next.wallet[res] = (next.wallet[res] ?? 0) - amount;
-		next.homunculus_progress[id] = actionType === "HOM_UPGRADE" ? { ...current, level: current.level + 1 } : { ...current, mutation_id: payload.mutation_id, mutation_changed_at: now };
+		const current = next.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
+		if (current.level < 3 || typeof payload?.mutation_id !== "string" || !staticData.mutationIds.has(payload.mutation_id) || payload.mutation_id === current.mutation_id || ((current.mutation_changed_at ?? 0) > 0 && now < current.mutation_changed_at! + getBalanceNumber("hom_mutation_cooldown_seconds", 21600) * 1000)) return { state: next, error: "Mutation unavailable." };
+		next.homunculus_progress[id] = { ...current, mutation_id: payload.mutation_id, mutation_changed_at: now };
 		return { state: next };
 	}
+
 	if (actionType == "FORGE_UPGRADE") {
 		const id = typeof payload?.item_id === "string" ? payload.item_id : "";
 		if (!staticData.itemIds.has(id)) return { state: next, error: "Unknown item_id." };
@@ -1214,6 +1276,8 @@ async function startServer(): Promise<void> {
 	startDiscordBridge(db, globalChat);
 	const huntMaintenance = setInterval(() => {
 		try { maintainSoloHunts(db, Date.now()); } catch (error) { logError("solo hunt maintenance failed", { error: String(error) }); }
+		try { maintainExpeditionReplays(db, Date.now()); } catch (error) { logError("expedition replay maintenance failed", { error: String(error) }); }
+		try { getExpeditionService().expireLeases(); } catch (error) { logError("expedition lease maintenance failed", { error: String(error) }); }
 	}, 60000);
 	huntMaintenance.unref();
 	const server = Bun.serve({
@@ -1283,7 +1347,9 @@ async function startServer(): Promise<void> {
 						playerId = credential.player_id;
 					}
 					if (await isUserDisabled(playerId)) throw new HttpError(403, "User disabled.");
-					return loginResponse(playerId, await issueToken(playerId));
+					const response = loginResponse(playerId, await issueToken(playerId));
+					globalChat.announceLogin(playerId, url.pathname == "/auth/register");
+					return response;
 				}
 
 				if (req.method == "POST" && url.pathname == "/auth/dev_login") {
@@ -1428,6 +1494,26 @@ async function startServer(): Promise<void> {
 						if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code)) return jsonResponse({ error: code }, 400);
 						logError("pvp request failed", { error: String(error) }); return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
 					}
+				}
+
+				if (req.method == "POST" && url.pathname == "/chat/announce-reconnect") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || Object.keys(body).length !== 1 || typeof body.event_id !== "string" || !/^[0-9a-f]{32}$/.test(body.event_id)) throw new HttpError(400, "Invalid event ID.");
+					return db.transaction(() => {
+						const id = "chat-reconnect:" + body.event_id;
+						const prior = getActionStmt.get(playerId, id) as { action_type: string } | null;
+						if (prior) {
+							if (prior.action_type !== "CHAT_RECONNECT") throw new HttpError(409, "Action ID already used.");
+							return jsonResponse({ ok: true, duplicate: true });
+						}
+						const now = Date.now();
+						const recent = db.query("SELECT 1 FROM action_log WHERE player_id = ? AND action_type = 'CHAT_RECONNECT' AND created_at > ? LIMIT 1").get(playerId, now - 30000);
+						if (recent) throw new HttpError(429, "Announcement rate limit exceeded.");
+						globalChat.announceLogin(playerId, false);
+						insertActionStmt.run(playerId, id, "CHAT_RECONNECT", "{}", "{}", now);
+						return jsonResponse({ ok: true, duplicate: false });
+					}).immediate();
 				}
 
 				if (req.method == "GET" && url.pathname == "/chat/state") {
@@ -2240,7 +2326,7 @@ async function startServer(): Promise<void> {
 						state.lab.buildings.lab_th.level = Math.max(state.lab.buildings.lab_th.level, state.lab.hqLevel);
 						state.lab.buildings.sync_nexus ??= { level: 0, route: "", runtime: { stored_output: 0, last_tick: Date.now() } };
 						state.lab.buildings.sync_nexus.level = Math.max(1, state.lab.buildings.sync_nexus.level);
-						for (const id of staticData.homunculusIds) state.homunculus_progress[id] = { ...state.homunculus_progress[id], level: 10 };
+						for (const id of staticData.homunculusIds) state.homunculus_progress[id] = { ...state.homunculus_progress[id], level: 10, xp: xpThreshold(10), owned: true };
 						for (const item of items) if (item?.slot === "build" && staticData.itemIds.has(item.id)) state.item_progress[item.id] = { ...state.item_progress[item.id], level: 10 };
 						for (const entity of entities) {
 							if (typeof entity?.id !== "string" || typeof entity.type !== "string") continue;
@@ -2256,15 +2342,35 @@ async function startServer(): Promise<void> {
 						return stateResponse(state);
 					}).immediate();
 				}
+				if (url.pathname === "/expeditions/state" && req.method === "GET") {
+					const playerId = await requireAuth(req, ctx);
+					return jsonResponse(getExpeditionService().state(playerId, req.headers.get("x-expedition-lease")));
+				}
+				if (url.pathname === "/expeditions/heartbeat" && req.method === "POST") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					return jsonResponse(getExpeditionService().heartbeat(playerId, req.headers.get("x-expedition-lease"), body));
+				}
+				if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|capture|skip|advance|exit|buy_mana)$/.test(url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+					const body = await readJson(req, config.maxBodyBytes);
+					return jsonResponse(getExpeditionService().action(playerId, url.pathname.split("/").at(-1)!, body, req.headers.get("x-expedition-lease")));
+				}
 				if (req.method == "GET" && url.pathname == "/dungeon/leaderboard") {
 					const playerId = await requireAuth(req, ctx);
 					const month = url.searchParams.get("month") ?? dungeonSeason(Date.now());
 					if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HttpError(400, "Invalid dungeon month.");
-					return jsonResponse(dungeonLeaderboard(db, month, playerId));
+					return db.transaction(() => {
+						const now = Date.now();
+						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
+						return jsonResponse(dungeonLeaderboard(db, month, playerId));
+					}).immediate();
 				}
 				if (req.method == "POST" && url.pathname == "/dungeon/loadout") {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+				db.transaction(() => db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, Date.now())).immediate();
 					const body = await readJson(req, config.maxBodyBytes);
 					const allowed = ["run_id", "client_action_id", "entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"];
 					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !allowed.includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id: unknown) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || (typeof body.homunculus_id === "string" && body.homunculus_id.length > 0)) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id: unknown) => typeof id !== "string" || !id) || !["attack", "defense"].includes(body.mode)) throw new HttpError(400, "Invalid dungeon loadout.");
@@ -2272,26 +2378,31 @@ async function startServer(): Promise<void> {
 					const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
 					const payload = { run_id: body.run_id, ...selection };
 					const dataDir = resolve(import.meta.dir, "..", "..", "data");
-					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
 					return db.transaction(() => {
 						const now = Date.now();
+						const liveRun = db.query("SELECT status, expires_at FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { status: string; expires_at: number } | null;
+						if (!liveRun) throw new HttpError(404, "Dungeon run not found.");
+						if (liveRun.status !== "ACTIVE" || liveRun.expires_at <= now) throw new HttpError(409, "Dungeon run is closed.");
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
 						if (prior) {
 							if (prior.action_type !== "DUNGEON_LOADOUT" || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
 							return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
 						}
-						const row = db.query("SELECT status, expires_at, player_snapshot_json, loadout_json FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { status: string; expires_at: number; player_snapshot_json: string; loadout_json: string | null } | null;
+						const row = db.query("SELECT season, status, expires_at, player_snapshot_json, loadout_json FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { season: string; status: string; expires_at: number; player_snapshot_json: string; loadout_json: string | null } | null;
 						if (!row) throw new HttpError(404, "Dungeon run not found.");
 						if (row.status !== "ACTIVE" || row.expires_at <= now || row.loadout_json !== null) throw new HttpError(409, "Dungeon loadout unavailable.");
 						const saved = JSON.parse(row.player_snapshot_json);
+						if (saved.player_id !== undefined && saved.player_id !== playerId) throw new HttpError(400, "Invalid player snapshot.");
 						// Reuse hunt loadout validation only; no boss state or result is created.
 						const trusted = { ...saved, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common };
+						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
 						const setup = buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true });
 						if (setup.error) throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
 						const seed = createHmac("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
 						const elitesEnabled = Bun.env.DUNGEON_ELITES_ENABLED === "1";
 						const tacticsEnabled = Bun.env.DUNGEON_TACTICS_ENABLED === "1";
-						const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, catalogs, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
+						const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, { ...catalogs, homunculi: homunculusCatalog().originals }, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
 						const combat = createDungeonCombatState(setup, enemy, catalogs);
 						if (combat.error) throw new HttpError(400, combat.error);
 						combat.blessings_enabled = Bun.env.DUNGEON_BLESSINGS_ENABLED === "1";
@@ -2301,7 +2412,7 @@ async function startServer(): Promise<void> {
 						combat.elite_trait_used = false;
 						combat.tactics_enabled = tacticsEnabled;
 						if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
-						const response = { run_id: body.run_id, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
+						const response = { run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
 						insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
@@ -2309,11 +2420,15 @@ async function startServer(): Promise<void> {
 				if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next" || url.pathname == "/dungeon/inspiration" || url.pathname == "/dungeon/blessing")) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+				db.transaction(() => db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, Date.now())).immediate();
 					const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn"), isInspiration = url.pathname.endsWith("/inspiration"), isBlessing = url.pathname.endsWith("/blessing"), hasDecision = isTurn || isInspiration || isBlessing;
 					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !["run_id", "client_action_id", "expected_revision", ...(hasDecision ? ["decision"] : [])].includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || (hasDecision && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))) throw new HttpError(400, "Invalid dungeon action.");
 					const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : isInspiration ? "DUNGEON_INSPIRATION" : isBlessing ? "DUNGEON_BLESSING" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...(hasDecision ? { decision: body.decision } : {}) };
 					return db.transaction(() => {
 						const now = Date.now();
+						const liveRun = db.query("SELECT status, expires_at FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { status: string; expires_at: number } | null;
+						if (!liveRun) throw new HttpError(404, "Dungeon run not found.");
+						if (liveRun.status !== "ACTIVE" || liveRun.expires_at <= now) throw new HttpError(409, "Dungeon run is closed.");
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
 						if (prior) {
 							if (prior.action_type !== actionType || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
@@ -2349,14 +2464,14 @@ async function startServer(): Promise<void> {
 							if (current.terminal_result !== "WIN" || current.floor !== cleared) throw new HttpError(409, "Floor not cleared.");
 							if (cleared >= 1000) throw new HttpError(409, "Dungeon difficulty limit reached.");
 							const dataDir = resolve(import.meta.dir, "..", "..", "data");
-							const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+							const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
 							let base: ReturnType<typeof dungeonPreviousBase>;
 							try { base = dungeonPreviousBase(current, catalogs.homunculi); } catch { throw new HttpError(409, "Dungeon base stats unavailable."); }
 							const previousStats = base ?? { hp: current.npc.max_hp, attack: current.npc.atk, defense: current.npc.def };
 							if ([previousStats.hp, previousStats.attack, previousStats.defense].some((value: unknown) => !Number.isSafeInteger(value) || (value as number) < 0 || (value as number) >= 100000)) throw new HttpError(409, "Dungeon difficulty limit reached.");
 							const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
 							if (setup.error) throw new HttpError(409, "Dungeon loadout unavailable.");
-							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, catalogs, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1, special_encounter: generateDungeonEncounter(seed, row.run_id, cleared + 1, current.special_encounters_enabled === true) };
+							const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, { ...catalogs, homunculi: homunculusCatalog().originals }, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1, special_encounter: generateDungeonEncounter(seed, row.run_id, cleared + 1, current.special_encounters_enabled === true) };
 							combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
 							if (combat.error) throw new HttpError(409, combat.error);
 							combat.blessings_enabled = current.blessings_enabled === true;
@@ -2369,6 +2484,7 @@ async function startServer(): Promise<void> {
 							combat.player.hp = combat.player.max_hp;
 						}
 						if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
+						if (isTurn && combat.terminal_result === "WIN" && cleared === combat.floor && row.cleared_floor < cleared) awardHomunculusVictory(playerId, row.loadout_json, now);
 						const response = { run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };
 						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
@@ -2380,11 +2496,22 @@ async function startServer(): Promise<void> {
 						const now = Date.now();
 						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
 						const runId = url.searchParams.get("run_id");
-						const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json";
-						const row = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'`).get(playerId)) as (Record<string, any> & { loadout_json: string | null; combat_state_json: string | null }) | null;
-						const session = row ? (({ loadout_json, combat_state_json, player_snapshot_json, ...rest }) => { const combat = combat_state_json ? JSON.parse(combat_state_json) : null; return { ...rest, ...(!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}), ...(loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}), ...(combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: rest.status === "LOSS" ? "LOSS" : combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {}) }; })(row) : null;
+						const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision";
+						const session = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : null) ?? null;
 						return jsonResponse({ session, server_time_unix_ms: now });
 					}).immediate();
+				}
+				if (req.method == "POST" && url.pathname == "/dungeon/heartbeat") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => k !== "run_id") || typeof body.run_id !== "string" || !body.run_id) throw new HttpError(400, "Invalid dungeon heartbeat.");
+					const now = Date.now();
+					const renewed = db.transaction(() => {
+						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
+						return db.query("UPDATE dungeon_runs SET expires_at = ? WHERE player_id = ? AND run_id = ? AND status = 'ACTIVE' AND expires_at > ?").run(now + 20000, playerId, body.run_id, now).changes === 1;
+					}).immediate();
+					if (!renewed) throw new HttpError(409, "Dungeon run is closed.");
+					return jsonResponse({ ok: true, expires_at: now + 20000 });
 				}
 				if (req.method == "POST" && (url.pathname == "/dungeon/start" || url.pathname == "/dungeon/abandon")) {
 					const playerId = await requireAuth(req, ctx);
@@ -2399,16 +2526,22 @@ async function startServer(): Promise<void> {
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
 						if (prior) {
 							if (prior.action_type !== actionType || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+							if (start) {
+								const previous = JSON.parse(prior.result_state_json ?? "null");
+								if (!previous || !db.query("SELECT 1 FROM dungeon_runs WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ?").get(previous.run_id, playerId, now)) throw new HttpError(409, "Dungeon run is closed.");
+							}
 							return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
 						}
 						let runId: string;
+						let spellProgress: unknown;
 						if (start) {
 							const state = ensurePlayerState(playerId);
 							if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
-							if (db.query("SELECT 1 FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) throw new HttpError(409, "An active dungeon run already exists.");
+							db.query("UPDATE dungeon_runs SET status = 'ABANDONED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE'").run(now, playerId);
 							runId = crypto.randomUUID();
 							const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {} };
-							db.query("INSERT INTO dungeon_runs (run_id,player_id,season,status,started_at,expires_at,player_snapshot_json) VALUES (?,?,?,'ACTIVE',?,?,?)").run(runId, playerId, dungeonSeason(now), now, now + 86400000, JSON.stringify(snapshot));
+							spellProgress = snapshot.spell_progress;
+							db.query("INSERT INTO dungeon_runs (run_id,player_id,season,status,started_at,expires_at,player_snapshot_json) VALUES (?,?,?,'ACTIVE',?,?,?)").run(runId, playerId, dungeonSeason(now), now, now + 20000, JSON.stringify(snapshot));
 						} else {
 							runId = body.run_id;
 							const row = db.query("SELECT status FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId) as { status: string } | null;
@@ -2416,7 +2549,8 @@ async function startServer(): Promise<void> {
 							if (row.status !== "ACTIVE") throw new HttpError(409, "Dungeon run is closed.");
 							if (db.query("UPDATE dungeon_runs SET status = 'ABANDONED', finished_at = ? WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE'").run(now, runId, playerId).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
 						}
-						const response = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId);
+						const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId) as Record<string, unknown>;
+						const response = start ? { ...row, spell_progress: spellProgress } : row;
 						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
@@ -2593,6 +2727,7 @@ async function startServer(): Promise<void> {
 							missions.record(db, playerId, now, {guardian:!!row.guardian_id, win:status === "VERIFIED_WIN", tier:boss.tier, zone:row.guardian_zone_id, appearance:boss.appearance_id, damage});
 						}
 						if (status === "VERIFIED_WIN" && row.global_event_id) settleGlobalBoss(row, now);
+						if (status === "VERIFIED_WIN") awardHomunculusVictory(playerId, row.combat_loadout_json, now);
 						if (status === "VERIFIED_WIN" && row.guardian_id && row.guardian_zone_id && row.guardian_parent_id) {
 							db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
 						}
@@ -2647,7 +2782,7 @@ async function startServer(): Promise<void> {
 					const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
 					const payload = { session_id: body.session_id, ...selection };
 					const dataDir = resolve(import.meta.dir, "..", "..", "data");
-					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: readJsonFile(resolve(dataDir, "homunculi.json"))?.homunculi, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
+					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
 					db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
 					return db.transaction(() => {
 						const now = Date.now();
@@ -2660,7 +2795,9 @@ async function startServer(): Promise<void> {
 						if (row.status !== "ACTIVE" || row.expires_at <= now || row.combat_state_json) throw new HttpError(409, "Session unavailable for initialization.");
 						const boss = JSON.parse(row.boss_snapshot_json);
 						const saved = JSON.parse(row.player_snapshot_json);
+						if (saved.player_id !== undefined && saved.player_id !== playerId) throw new HttpError(400, "Invalid player snapshot.");
 						const trusted = { ...saved, player_id: playerId, state_revision: Number.isSafeInteger(saved.state_revision) ? saved.state_revision : 0, boss_id: row.hunt_id, boss_entity_id: SOLO_HUNT_BOSS_ENTITIES[row.hunt_id] };
+						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
 						const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
 						if (setup.error) throw new HttpError(400, "Invalid or unsupported hunt loadout.");
 						const seed = createHmac("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
@@ -2844,7 +2981,7 @@ async function startServer(): Promise<void> {
 
 				return jsonResponse({ error: "Not found" }, 404);
 				})();
-				if (idleEnabled() && res && ctx.userId && req.method === "POST" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
+				if (idleEnabled() && res && ctx.userId && req.method === "POST" && ctx.path !== "/expeditions/heartbeat" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
 					const data = await res.clone().json().catch(() => null) as { ok?: boolean; duplicate?: boolean } | null;
 					if (data && data.ok !== false && data.duplicate !== true) {
 						try { await touchIdle(extractToken(req)!); }
@@ -2864,8 +3001,8 @@ async function startServer(): Promise<void> {
 			} catch (err) {
 				recordError();
 				const sqliteBusy = typeof err === "object" && err !== null && typeof (err as { code?: unknown }).code === "string" && String((err as { code: string }).code).startsWith("SQLITE_BUSY");
-				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
-				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof CombatRewardError ? err.status : 500;
+				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
+				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);
@@ -2902,6 +3039,7 @@ async function startServer(): Promise<void> {
 type StaticData = {
 	itemIds: Set<string>;
 	homunculusIds: Set<string>;
+	expeditionHomunculusIds: Set<string>;
 	mutationIds: Set<string>;
 	itemRarities: Record<string, string>;
 	resources: Set<string>;
@@ -2920,7 +3058,8 @@ function loadStaticData(): StaticData {
 	const staticDir = resolve(import.meta.dir, "..", "..", "data", "static");
 	const entitiesRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "entities.json"), "utf8"));
 	const itemsRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "items.json"), "utf8"));
-	const homunculiRaw = JSON.parse(readFileSync(resolve(staticDir, "..", "homunculi.json"), "utf8"));
+	const diskHomunculi = buildHomunculusCombatCatalog(JSON.parse(readFileSync(resolve(staticDir, "..", "homunculi.json"), "utf8")), JSON.parse(readFileSync(resolve(staticDir, "expedition_homunculi.json"), "utf8")));
+	if (JSON.stringify(diskHomunculi) !== JSON.stringify(homunculusCatalog())) throw new Error("Homunculus catalog differs from the validated server build.");
 	const mutationsRaw = JSON.parse(readFileSync(resolve(staticDir, "mutations.json"), "utf8"));
 	const itemIds = new Set<string>((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).map((item: any) => item.id).filter((id: unknown): id is string => typeof id === "string"));
 	const itemRarities: Record<string, string> = Object.fromEntries((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).filter((item: any) => typeof item.id === "string" && typeof item.rarity === "string").map((item: any) => [item.id, item.rarity]));
@@ -2936,7 +3075,8 @@ function loadStaticData(): StaticData {
 	if (Object.values(soloBossEntityTypes).some(type => typeof type !== "string" || !type)) throw new Error("Invalid solo boss entity type.");
 	return {
 		itemIds,
-		homunculusIds: new Set<string>((homunculiRaw.homunculi ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
+		homunculusIds: legacyHomunculusIds(),
+		expeditionHomunculusIds: expeditionHomunculusIds(),
 		mutationIds: new Set<string>((mutationsRaw.mutations ?? []).map((entry: any) => entry.id).filter((id: unknown): id is string => typeof id === "string")),
 		itemRarities,
 		resources: resources.ids,

@@ -857,8 +857,18 @@ func _build_spell_rows() -> void:
 			var group_label := Label.new()
 			group_label.text = "SPELL_GROUP_INITIAL" if group == "Initial Spells" else "SPELL_FILTER_" + group.to_upper()
 			_spell_list.add_child(group_label)
+		var panel := PanelContainer.new()
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.035, 0.11, 0.11, 0.95)
+		style.border_color = Color(0.28, 0.44, 0.39, 0.85)
+		style.set_border_width_all(1)
+		style.set_content_margin_all(8)
+		panel.add_theme_stylebox_override("panel", style)
 		var row := VBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.add_child(row)
 		var name_label := Label.new()
+		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		var types := SpellView.affinity(spell)
 		name_label.set_meta("localization_body_font", true)
 		name_label.text = "%s  |  %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), types]
@@ -886,7 +896,7 @@ func _build_spell_rows() -> void:
 		button.pressed.connect(_on_spell_research_pressed.bind(str(spell.id)))
 		actions.add_child(button)
 		row.add_child(actions)
-		_spell_list.add_child(row)
+		_spell_list.add_child(panel)
 		_spell_rows[str(spell.id)] = {"spell": spell, "status": status, "button": button, "name": name_label, "base_name": name_label.text}
 
 func _featured_spell_ids(entity_type: String, tower_level: int, now_ms: int, rotation_seconds: int) -> Array[String]:
@@ -1533,7 +1543,7 @@ func _on_open_pressed() -> void:
 
 func _send_action(action: Dictionary, building_id: String) -> void:
 	if _debug.unlock_all_buildings:
-		if str(action.get("action_type", "")) in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "START_EXPERIMENT"] or not _debug.lab_cooldown_active(_state, building_id):
+		if str(action.get("action_type", "")) in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "START_EXPERIMENT"] or not _debug.lab_cooldown_active(_state, building_id):
 			_simulate_debug_action(action)
 		return
 	if _backend == null:
@@ -1556,7 +1566,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 		building_id = "lab_th"
 	elif action_type == "REACTOR_OVERCHARGE":
 		building_id = "essence_reactor"
-	elif action_type in ["HOM_UPGRADE", "HOM_MUTATE"]:
+	elif action_type == "HOM_MUTATE":
 		building_id = "homunculus_vat"
 	elif action_type == "ANOMALY_RESOLVE":
 		building_id = "anomaly_containment"
@@ -1610,43 +1620,21 @@ func _simulate_debug_action(action: Dictionary) -> void:
 			runtime["anomaly"] = {"next_at": now + cooldown * 1000, "last_choice": choice, "last_reward": reward, "last_at": now}
 			lab["runtime"] = runtime
 			_state["lab"] = lab
-		"HOM_UPGRADE", "HOM_MUTATE":
+		"HOM_MUTATE":
 			var id := str(payload.get("homunculus_id", ""))
 			if not _spell_registry.get_homunculi().has(id) or _get_building_level("homunculus_vat") < 1:
 				return
 			var progress: Dictionary = _state.get("homunculus_progress", {})
 			var entry: Dictionary = progress.get(id, {"level": 0})
-			var level := int(entry.get("level", 0))
-			var cost: Dictionary
-			if action_type == "HOM_UPGRADE":
-				if _get_hq_level() < 2 or level >= 10:
-					return
-				cost = {"essence": int(_db.get_balance("hom_upgrade_essence_base", 25)) + int(_db.get_balance("hom_upgrade_essence_per_level", 15)) * level}
-				if level >= 5:
-					cost["core"] = 1
-			else:
-				var mutation := str(payload.get("mutation_id", ""))
-				var changed := int(entry.get("mutation_changed_at", 0))
-				if level < 3 or not _db.mutations.has(mutation) or mutation == str(entry.get("mutation_id", "")) or (changed > 0 and int(Time.get_unix_time_from_system() * 1000) < changed + int(_db.get_balance("hom_mutation_cooldown_seconds", 21600)) * 1000):
-					return
-				cost = _db.get_balance("hom_mutation_cost", {}).duplicate()
-			var wallet: Dictionary = _state.get("wallet", {})
-			for res in cost:
-				if int(wallet.get(res, 0)) < int(cost[res]):
-					_action_message = "LAB_INSUFFICIENT_SENTENCE"
-					_action_message_building = building_id
-					_refresh_from_state()
-					return
-			for res in cost:
-				wallet[res] = int(wallet.get(res, 0)) - int(cost[res])
-			if action_type == "HOM_UPGRADE":
-				entry["level"] = level + 1
-			else:
-				entry["mutation_id"] = str(payload.get("mutation_id", ""))
-				entry["mutation_changed_at"] = int(Time.get_unix_time_from_system() * 1000)
+			var mutation := str(payload.get("mutation_id", ""))
+			var changed := int(entry.get("mutation_changed_at", 0))
+			if not bool(entry.get("owned", true)) or int(entry.get("level", 0)) < 3 or not _db.mutations.has(mutation) or mutation == str(entry.get("mutation_id", "")) or (changed > 0 and int(Time.get_unix_time_from_system() * 1000) < changed + int(_db.get_balance("hom_mutation_cooldown_seconds", 21600)) * 1000):
+				return
+			entry["mutation_id"] = mutation
+			entry["mutation_changed_at"] = int(Time.get_unix_time_from_system() * 1000)
 			progress[id] = entry
 			_state["homunculus_progress"] = progress
-			_state["wallet"] = wallet
+
 		"SET_HQ_DIRECTIVE":
 			var lab: Dictionary = _state.get("lab", {})
 			var runtime: Dictionary = lab.get("runtime", {})
@@ -1795,7 +1783,7 @@ func _simulate_debug_action(action: Dictionary) -> void:
 			_state["lab"] = lab
 		_:
 			return
-	if action_type not in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_UPGRADE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "START_EXPERIMENT"]:
+	if action_type not in ["CLAIM_PRODUCTION", "SET_HQ_DIRECTIVE", "REACTOR_OVERCHARGE", "HOM_MUTATE", "ANOMALY_RESOLVE", "SYNC_START", "SYNC_CLAIM", "START_EXPERIMENT"]:
 		_debug.start_lab_cooldown(_state, building_id)
 	_action_message_building = building_id
 	if not _debug.save_lab_state(_state):
@@ -1924,7 +1912,7 @@ func _rebuild_pending_from_queue() -> void:
 
 func _resolve_building_from_key(action_key: String) -> String:
 	var parts = action_key.split(":")
-	if parts[0] in ["HOM_UPGRADE", "HOM_MUTATE"]:
+	if parts[0] == "HOM_MUTATE":
 		return "homunculus_vat"
 	if parts[0] == "ANOMALY_RESOLVE":
 		return "anomaly_containment"
