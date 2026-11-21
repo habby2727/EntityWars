@@ -174,8 +174,30 @@ test("Dungeon hybrid tactical estimates use weighted effectiveness", () => {
   const attack = (id: string, type: string, power: number, extra: any = {}) => ({ id, type, eligible_types: ["sulfur"], category: "attack", power_mult: power, accuracy: 1, cooldown_turns: 0, effects: [], ...extra });
   const spells = [attack("hybrid", "hybrid", 1, { primary_type: "sulfur", secondary_type: "sodium" }), attack("plain", "universal", 1.1), attack("weak1", "sulfur", 0.1), attack("weak2", "sulfur", 0.2)];
   const npc = { type: "sulfur", atk: 100, hp: 100, max_hp: 100, status: {} }, target = { type: "gold", hp: 120, max_hp: 200, def: 0, status: {} }, types = { effectiveness: { sulfur: { gold: 2 }, sodium: { gold: 2 } } };
-  expect(chooseDungeonNpcSpell(8, spells.map(s => s.id), spells, {}, npc, target, 0, { types, personality: "AGGRESSIVE" })).toBe("hybrid");
-  expect(chooseDungeonNpcSpell(8, spells.map(s => s.id), spells, {}, npc, target, 0, { types })).toBe("plain");
+  const choose = (personality?: string, cooldowns = {}) => chooseDungeonNpcSpell(8, spells.map(s => s.id), spells, cooldowns, npc, target, 0, { types, personality });
+  for (const personality of [undefined, "AGGRESSIVE"]) {
+    for (const [primary, secondary, hp, expected] of [[2, 2, 120, "hybrid"], [1, 2, 106, "hybrid"], [1, 0.5, 96, "plain"], [1, 1, 101, "plain"], [0.5, 2, 95, "plain"], [2, 0.5, 105, "hybrid"]] as const) {
+      types.effectiveness.sulfur.gold = primary; types.effectiveness.sodium.gold = secondary; target.hp = hp; spells[1].power_mult = expected === "hybrid" ? 0.9 : 1.1;
+      expect(choose(personality)).toBe(expected);
+      expect(choose(personality)).toBe(expected);
+    }
+    target.hp = 120; spells[1].power_mult = 1.1; types.effectiveness.sulfur.gold = 2; types.effectiveness.sodium.gold = 2;
+    expect(choose(personality, { hybrid: 1 })).toBe("plain");
+  }
+});
+
+test("Dungeon hybrid secondary type changes resolved damage", () => {
+  const all = { ...catalogs, items: read("items.json").items, bosses: read("static/solo_bosses.json").bosses, types: read("types.json"), mutations: read("static/mutations.json").mutations, balance: read("static/balance.json").balance };
+  const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
+  const setup = buildTrustedCombatSetup({player_id:"test",state_revision:1,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{}}, {entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:null,spell_ids:ids,mode:"attack"}, all, {independentLoadout:true});
+  const state = createDungeonCombatState(setup, {floor:4,entity_id:"sulfur_01",type:"sulfur",hp:1000,attack:1,defense:1,homunculus_id:"cinder",homunculus_level:0,spell_ids:ids}, all);
+  state.player.atk = 100; state.player.tempo = 100; state.npc.def = 0; state.npc.hp = state.npc.max_hp = 1000;
+  state.npc.type = "gold";
+  const spell = state.spells.find((s: any) => s.id === "cinder_fist"); Object.assign(spell, {type:"hybrid",eligible_types:["sulfur"],primary_type:"sulfur",secondary_type:"mercury",power_mult:1,accuracy:1,effects:[]});
+  const damage = (s: any) => resolveDungeonTurn(s,{turn:1,spell_id:spell.id},()=>0.5).events.find((e: any) => e.kind === "damage" && e.actor === "player").amount;
+  const weak = structuredClone(state); weak.spells.find((s: any) => s.id === spell.id).secondary_type = "aether";
+  expect(damage(state)).toBe(Math.round(100 * 1.25 ** 0.35));
+  expect(damage(weak)).toBe(Math.round(100 * 0.8 ** 0.35));
 });
 
 test("Dungeon base migration removes prior homunculus bonuses exactly once", () => {

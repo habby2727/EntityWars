@@ -498,6 +498,28 @@ test("normal spell multipliers follow catalog relationships and hybrid weights",
  const secondary = matrix[strong.d]?.[strong.d] ?? 1;
  const factor = secondary > 1 ? 1.25 : secondary < 1 ? 0.8 : 1;
  expect(normalSpellMultiplier(h)).toBeCloseTo(Math.pow(1.25, 0.65) * Math.pow(factor, 0.35));
+ const hybrid = {...input("sulfur", "sulfur", "hybrid"), primary_type: "sulfur"};
+ expect(normalSpellMultiplier({...hybrid, secondary_type: "aether"})).toBeCloseTo(1.25 ** 0.35, 8);
+ expect(normalSpellMultiplier({...hybrid, secondary_type: "vitriol"})).toBeCloseTo(0.8 ** 0.35, 8);
+ expect(normalSpellMultiplier({...hybrid, primary_type: "vitriol", secondary_type: "aether"})).toBeCloseTo(0.8 ** 0.65 * 1.25 ** 0.35, 8);
+ expect(normalSpellMultiplier({...hybrid, primary_type: "aether", secondary_type: "aether"})).toBeCloseTo(1.25, 8);
+ expect(normalSpellMultiplier({...hybrid, secondary_type: "aether", defender_neutralize: 1})).toBe(1);
+});
+
+test("PvP hybrid secondary type changes effectiveness and direct damage", () => {
+ const state = createPvpCombatState(snapshot("a", "sulfur"), snapshot("b", "gold"), catalogs) as any;
+ equip(state.fighters.left, "golden_crucible");
+ const left = state.fighters.left, right = state.fighters.right;
+ left.atk = 100; left.tempo = 100; right.def = 0; right.hp = right.max_hp = 1000;
+ const spell = left.spells.find((s: any) => s.id === "golden_crucible");
+ spell.primary_type = "sulfur"; spell.secondary_type = "mercury"; spell.power_mult = 1; spell.accuracy = 1; spell.effects = [];
+ const run = (s: any) => resolvePvpExchange(s, {turn:1,spell_id:spell.id}, {turn:1,spell_id:"aurum_edge"}, () => 0.5) as any;
+ const strong = run(state), weakState = structuredClone(state);
+ weakState.fighters.left.spells.find((s: any) => s.id === spell.id).secondary_type = "aether";
+ const weak = run(weakState);
+ const a = strong.events.find((e: any) => e.kind === "damage" && e.side === "left"), b = weak.events.find((e: any) => e.kind === "damage" && e.side === "left");
+ expect(a.effectiveness).toBeCloseTo(1.25 ** 0.35, 8); expect(b.effectiveness).toBeCloseTo(0.8 ** 0.35, 8);
+ expect(a.damage).toBe(Math.round(100 * a.effectiveness)); expect(b.damage).toBe(Math.round(100 * b.effectiveness));
 });
 
 test("normal direct damage applies rounding, status, wards and ultra in reference order", async () => {

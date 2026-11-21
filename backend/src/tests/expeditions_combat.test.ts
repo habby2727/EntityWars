@@ -241,6 +241,22 @@ test("dual type defense affects real damage, neutralization and homunculus attac
   expect(turn(neutral).events.find((e:any)=>e.kind==="damage"&&e.actor==="player").amount).toBeGreaterThan(rb.events.find((e:any)=>e.kind==="damage"&&e.actor==="player").amount);
 });
 
+test("hybrid damage against two types uses both components and neutralization", () => {
+  const state = createExpeditionCombatState(setup, build("hybrid-dual"), catalogs);
+  state.player.atk = 100; state.player.tempo = 100; state.npc.def = 0; state.npc.hp = state.npc.max_hp = 1000;
+  state.npc.expedition_types = ["gold", "sulfur"];
+  state.hom_advantage = 0; state.hom_synergy.type_neutralize = 0;
+  const spell = state.spells.find((s: any) => s.id === "cinder_fist");
+  Object.assign(spell, {type:"hybrid",primary_type:"sulfur",secondary_type:"mercury",power_mult:1,accuracy:1,effects:[]});
+  const run = (s: any) => resolveExpeditionTurn(s,{turn:1,spell_id:spell.id},()=>0.5).events.find((e: any) => e.kind === "damage" && e.actor === "player").amount;
+  const weak = structuredClone(state); weak.spells.find((s: any) => s.id === spell.id).secondary_type = "aether";
+  const mult = (secondary: string) => expeditionDualTypeMultiplier("sulfur", state.npc.expedition_types) ** 0.65 * expeditionDualTypeMultiplier(secondary, state.npc.expedition_types) ** 0.35;
+  expect(mult("mercury")).toBeGreaterThan(mult("aether"));
+  expect(run(state)).toBe(Math.round(100 * mult("mercury"))); expect(run(weak)).toBe(Math.round(100 * mult("aether")));
+  const neutral = structuredClone(state); neutral.player.spell_neutralize_pending = 1;
+  expect(run(neutral)).toBe(100);
+});
+
 test("Inspiration resolves and tactical AI uses available second-type spells", () => {
   let state=createExpeditionCombatState(setup,build("inspiration",5,true),catalogs);
   state.player.inspiration=3; state.npc.inspiration=3; state.npc.hp=state.npc.max_hp=500; state.player.hp=state.player.max_hp=500;

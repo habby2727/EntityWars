@@ -123,7 +123,7 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
   const estimate = (s: any) => {
     const relation = context.types?.effectiveness?.[s.type]?.[target.type] ?? 1;
     let typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
-    if (context.personality && s.type === "hybrid") {
+    if (s.type === "hybrid") {
       const factor = (type: string) => { const value = context.types?.effectiveness?.[type]?.[target.type] ?? 1; return value > 1 ? 1.25 : value < 1 ? 0.8 : 1; };
       typeMultiplier = Math.max(0.8, Math.min(1.25, Math.pow(factor(s.primary_type), 0.65) * Math.pow(factor(s.secondary_type), 0.35)));
     } else if (context.personality && s.type === "universal") typeMultiplier = 1;
