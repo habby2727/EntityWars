@@ -6,6 +6,7 @@ const CombatLogPresenter := preload("res://scripts/ui/combat_log_presenter.gd")
 const CombatTypeIcon := preload("res://scripts/ui/combat_type_icon.gd")
 const CombatHomStatus := preload("res://scripts/ui/combat_hom_status.gd")
 const CombatInspiration := preload("res://scripts/ui/combat_inspiration.gd")
+const ExpeditionPassive := preload("res://scripts/domain/expedition_passive.gd")
 const SpellPresentation := preload("res://scripts/ui/spell_presentation.gd")
 const Stats := preload("res://scripts/ui/stat_presentation.gd")
 const PREVIEW_256_DIR := "res://assets/entities/previews_256/"
@@ -2165,6 +2166,9 @@ func _load_player_from_seal() -> bool:
 			data["homunculus_id"] = str(_homunculi[0].get("id", ""))
 		data["equip_1"] = ""
 		data["equip_2"] = ""
+	var selected_hom := str(data.get("homunculus_id", ""))
+	if _find_by_id(_homunculi, selected_hom).is_empty() and not _trusted_expedition_hom(selected_hom):
+		data["homunculus_id"] = str(_homunculi[0].get("id", "")) if not _homunculi.is_empty() else ""
 	var debug := DebugFlags.new()
 	var debug_enabled := debug.unlock_all_buildings
 	debug.free()
@@ -2660,6 +2664,11 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 	else:
 		fighter_spells = requested_spells.duplicate() if SpellLoadout.valid(_reg, entity_id, {}, requested_spells, true) else SpellLoadout.initial_ids(_reg, entity_id)
 	var hom := _find_by_id(_homunculi, str(data.get("homunculus_id", "")))
+	if hom.is_empty() and _is_player and _trusted_expedition_hom(str(data.get("homunculus_id", ""))):
+		hom = _online_homunculus(str(data.get("homunculus_id", ""))).duplicate(true)
+		hom["buff_hp"] = 1
+		hom["buff_atk"] = 1
+		hom["buff_def"] = 1
 	var stats := _get_base_stats(ent)
 	var hom_progress: Dictionary = _combat_spell_state.get("homunculus_progress", {}) if _is_player else {}
 	var effective := preload("res://scripts/domain/homunculus_progress.gd").effective_bonuses(hom, hom_progress)
@@ -2683,7 +2692,7 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 	atk += mods.atk_flat
 	def += mods.def_flat
 
-	return {
+	var result := {
 		"id": str(ent.get("id", "")),
 		"name": str(ent.get("name", "")),
 		"type": str(ent.get("type", "")),
@@ -2717,6 +2726,9 @@ func _build_fighter(data: Dictionary, _is_player: bool) -> Dictionary:
 		"spell_cooldowns": {}, "spell_hit_this_exchange": false, "spell_hit_last_exchange": false,
 		"spell_neutralize_pending": 0.0, "spell_neutralize_active": 0.0
 	}
+	if hom.has("passive"):
+		result["expedition_passive"] = ExpeditionPassive.create(hom, int(hom_progress.get(str(hom.id), {}).get("level", 0)))
+	return result
 
 func _update_ui() -> void:
 	if is_instance_valid(_hom_details) and _hom_details.visible:
@@ -3229,6 +3241,7 @@ func _replace_inspiration_spell(fighter: Dictionary, spell: Dictionary) -> void:
 	fighter.spell_ids[slot] = str(spell.id)
 	fighter.inspiration_used_this_battle = true
 	fighter.inspiration_pending = false
+	_fire_expedition_passive(fighter, enemy if is_same(fighter, player) else player, "inspiration_activated")
 	_append_combat_log("", _combat_event(fighter, "inspiration", " chooses %s: %s replaced until this battle ends." % [spell.name, old_spell.get("name", old_id)], {}))
 
 func _restore_inspiration(fighter: Dictionary) -> void:
@@ -3577,6 +3590,8 @@ func _npc_should_ultra(spell: Dictionary) -> bool:
 func _resolve_spell_exchange(chosen: Dictionary, npc_spell: Dictionary) -> void:
 	_turn += 1
 	_begin_spell_exchange()
+	_preinitiative_passive(player, enemy, chosen)
+	_preinitiative_passive(enemy, player, npc_spell)
 	var player_init: float = _initiative(player)
 	var enemy_init: float = _initiative(enemy)
 	var first: Dictionary = player if player_init >= enemy_init else enemy
@@ -3629,6 +3644,7 @@ func _resolve_spell_action(caster: Dictionary, target: Dictionary, spell: Dictio
 			var new_name := _item_label(caster.get("equip_%d" % slot, {}))
 			_log_step("%s switches %s to %s; action spent." % [caster.name, old_name, new_name], func():
 				_set_active_weapon(caster, slot)
+				_fire_expedition_passive(caster, target, "weapon_switched")
 				if is_same(caster, enemy):
 					caster.npc_weapon_switched = true
 			, _combat_event(caster, "switch", " switches %s to %s. Action spent; no spell." % [old_name, new_name], {}))
@@ -3688,10 +3704,18 @@ func _apply_spell_poison(fighter: Dictionary) -> void:
 		return
 	if fighter.status.poison > 0:
 		_log_step("%s suffers poison (3)." % fighter.name, func():
-			_record_highlight("damage", mini(int(fighter.hp), 3), "%s: poison" % fighter.name)
+			var actual := mini(int(fighter.hp), 3)
+			var source := str(fighter.get("poison_source", ""))
+			_record_highlight("damage", actual, "%s: poison" % fighter.name)
 			fighter.status.poison -= 1
 			fighter.hp = max(0, fighter.hp - 3)
 			fighter.spell_hit_this_exchange = true
+			var other := enemy if is_same(fighter, player) else player
+			if source == ("enemy" if is_same(fighter, player) else "player") and actual > 0:
+				_fire_expedition_passive(other, fighter, "opponent_poison_damage", {}, actual)
+				_fire_expedition_passive(fighter, other, "damage_received")
+			if int(fighter.status.poison) <= 0:
+				fighter.erase("poison_source")
 		, _combat_event(fighter, "debuff", " suffers 3 poison damage.", {}))
 
 func _refresh_spell_buttons() -> void:
@@ -3829,9 +3853,16 @@ func _begin_spell_exchange() -> void:
 		fighter.spell_hit_this_exchange = false
 		fighter.spell_neutralize_active = fighter.get("spell_neutralize_pending", 0.0)
 		fighter.spell_neutralize_pending = 0.0
+		if fighter.has("expedition_passive"):
+			ExpeditionPassive.begin_exchange(fighter.expedition_passive)
+	for pair in [[player, enemy], [enemy, player]]:
+		_fire_expedition_passive(pair[0], pair[1], "before_exchange")
 
 func _end_spell_exchange() -> void:
 	_spell_exchange_active = false
+	for fighter in [player, enemy]:
+		if fighter.has("expedition_passive"):
+			ExpeditionPassive.finish_exchange(fighter.expedition_passive)
 	for entry in _strategic_delays.duplicate():
 		if int(entry.due_turn) <= _turn:
 			var target: Dictionary = entry.target
@@ -3881,8 +3912,12 @@ func _strategic_transfer(kind: String, caster: Dictionary, target: Dictionary) -
 			_clear_defense(source, field)
 			_other_defense(destination, field, value)
 		else:
+			var destination_before := int(destination.status.get(field, 0))
 			source.status[field] = 0
 			destination.status[field] = maxf(float(destination.status.get(field, 0.0)), value)
+			if field == "poison":
+				source.erase("poison_source")
+				_record_poison_source(destination, destination_before, caster)
 		_append_combat_log("%s transfers %s." % [caster.name, str(field).replace("_", " ")])
 		return
 
@@ -3969,7 +4004,14 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 			attack_context.dispel = float(effect.value)
 	var hit := false
 	if spell.get("category") == "attack" and power > 0.0:
+		_fire_expedition_passive(caster, target, "before_attack", spell)
 		hit = _attack_entity(caster, target, power, float(spell.get("accuracy", 1.0)), true, attack_context, accuracy_focus, accuracy_misalign)
+		_log_step("", func():
+			if caster.has("expedition_passive") and not bool(caster.get("hom_spent", true)):
+				ExpeditionPassive.finish_attack(caster.expedition_passive, hit)
+				if not hit:
+					_fire_expedition_passive(caster, target, "spell_miss")
+		)
 	else:
 		hit = randf() < float(spell.get("accuracy", 1.0))
 		_log_step("%s's spell %s." % [caster.name, "succeeds" if hit else "misses"], Callable(), _combat_event(caster, "buff" if hit else "miss", "'s spell %s." % ("succeeds" if hit else "misses"), {}))
@@ -4047,6 +4089,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 					for field in ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"]:
 						if float(recipient.status.get(field, 0)) > 0:
 							recipient.status[field] = 0
+							if field == "poison": recipient.erase("poison_source")
 							break
 				, _combat_event(recipient, "buff", " cleanses one negative status.", {}))
 			"focus_next", "misalign_next":
@@ -4083,7 +4126,10 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 				, _combat_event(recipient, "heal", " siphons health.", {}))
 			"consume_poison":
 				if poisoned_before:
-					_log_step("%s consumes poison." % caster.name, func(): recipient.status.poison = maxi(0, int(recipient.status.poison) - int(value)), _combat_event(caster, "combo", " consumes poison.", {}))
+					_log_step("%s consumes poison." % caster.name, func():
+						recipient.status.poison = maxi(0, int(recipient.status.poison) - int(value))
+						if int(recipient.status.poison) == 0: recipient.erase("poison_source")
+					, _combat_event(caster, "combo", " consumes poison.", {}))
 			"hybrid_mark":
 				_log_step("%s marks %s." % [caster.name, recipient.name], func():
 					var before: Dictionary = recipient.status.get("hybrid_mark", {}).duplicate(true)
@@ -4128,6 +4174,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 						_other_defense(recipient, field, value)
 					else:
 						recipient.status[field] = max(recipient.status.get(field, 0), value)
+						if kind == "poison": _record_poison_source(recipient, int(before), caster)
 					if kind in ["atk_down", "vuln", "poison", "hom_stun"] and float(recipient.status.get(field, 0)) > before:
 						_award_inspiration(caster, recipient, kind)
 				, _combat_event(recipient, "shield" if kind in ["shield", "reflect"] else "buff" if kind == "atk_boost" else "debuff", " gains %s." % _status_effect_text(kind, value), {}))
@@ -4151,14 +4198,17 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		return false
 	if _try_evasion(defender):
 		var ev_item := _item_with_effect([_get_active_weapon(defender)], "evasion_pct")
-		_log_step("%s evades the strike via %s." % [defender.name, _item_label(ev_item)], func(): _animate_item_effect(defender, "evasion_pct"), _combat_event(defender, "miss", " evades via %s." % _item_label(ev_item), {}))
+		_log_step("%s evades the strike via %s." % [defender.name, _item_label(ev_item)], func():
+			_animate_item_effect(defender, "evasion_pct")
+			_fire_expedition_passive(defender, attacker, "dodge")
+		, _combat_event(defender, "miss", " evades via %s." % _item_label(ev_item), {}))
 		return false
 	if not _roll_hit(attacker, defender, accuracy, spell_attack, accuracy_focus, accuracy_misalign, spell_attack and not context.is_empty()):
 		_log_step("%s's attack misses %s." % [attacker.name, defender.name], Callable(), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}))
 		return false
 
 	var mult: float = _spell_multiplier(attacker, defender, context.get("spell", {})) if not context.is_empty() else _type_multiplier(attacker, defender)
-	var base_atk: int = int(attacker.atk)
+	var base_atk: int = int(attacker.atk) + int(_passive_modifiers(attacker).get("power_flat", 0))
 	if attacker.status.atk_down > 0:
 		base_atk = int(round(base_atk * (1.0 - attacker.status.atk_down)))
 		_log_step("%s shakes off the weakness." % attacker.name, func(): attacker.status.atk_down = 0, _combat_event(attacker, "debuff", " shakes off the weakness.", {}))
@@ -4177,7 +4227,8 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			anomaly_mult = 1.15
 		elif attacker_type == str(_physical_anomaly.get("weakened_type", "")):
 			anomaly_mult = 0.85
-	var dmg: int = max(1, int(round((base_atk - int(defender.def * 0.5)) * mult * power_mult * anomaly_mult)))
+	var passive_guard := int(_passive_modifiers(defender).get("guard_flat", 0))
+	var dmg: int = max(1, int(round((base_atk - int((int(defender.def) + passive_guard) * 0.5)) * mult * power_mult * anomaly_mult)))
 	dmg = maxi(1, int(round(dmg * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0))))
 	if defender.status.vuln_pct > 0:
 		var before_vulnerability := dmg
@@ -4222,6 +4273,8 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			context.direct_damage = mini(int(defender.hp), dmg)
 			context.actual_damage += mini(int(defender.hp), dmg)
 		defender.hp = max(0, defender.hp - dmg)
+		if dmg > 0:
+			_fire_expedition_passive(defender, attacker, "damage_received")
 		if boss_prevented > 0:
 			var before_heal := int(defender.hp)
 			defender.hp = mini(int(defender.max_hp), int(defender.hp) + _strategic_heal(defender, floori(boss_prevented * float(_solo_def.shield_heal_ratio))))
@@ -4252,7 +4305,9 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 					attacker.spell_hit_this_exchange = true
 				_clear_defense(defender, "reflect_pct")
 				if int(defender.status.get("poison_on_reflect", 0)) > 0 and not (_solo_boss_mode and is_same(attacker, enemy) and _solo_has_minions()):
+					var previous_poison := int(attacker.status.poison)
 					attacker.status.poison = maxi(int(attacker.status.poison), int(defender.status.poison_on_reflect))
+					_record_poison_source(attacker, previous_poison, defender)
 				defender.status.erase("poison_on_reflect")
 			, _combat_event(defender, "shield", " reflects %d damage." % r, {}))
 	var true_bonus: int = _true_on_hit(attacker)
@@ -4296,7 +4351,11 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		, _combat_event(attacker, "debuff", "'s homunculus %s corrodes for %d." % [attacker.hom_name, hom_dot], {}, true))
 
 	if attacker.type == "vitriol" and randi() % 100 < 30:
-		_log_step("%s corrodes %s (Poison)." % [attacker.name, defender.name], func(): defender.status.poison = 2, _combat_event(attacker, "debuff", " corrodes ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " (Poison)."}))
+		_log_step("%s corrodes %s (Poison)." % [attacker.name, defender.name], func():
+			var previous_poison := int(defender.status.poison)
+			defender.status.poison = 2
+			_record_poison_source(defender, previous_poison, attacker)
+		, _combat_event(attacker, "debuff", " corrodes ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " (Poison)."}))
 	if attacker.type == "mercury" and randi() % 100 < 20:
 		_log_step("%s shocks %s (Stun)." % [attacker.name, defender.name], func(): defender.status.stun = 1, _combat_event(attacker, "debuff", " shocks ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " (Stun)."}))
 	if attacker.type == "sulfur" and randi() % 100 < 20:
@@ -4336,7 +4395,7 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 	if not _roll_hit(attacker, defender, 0.95):
 		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], func(): _animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}, true))
 		return
-	var hom_dmg: int = max(1, int(round(attacker.atk * (0.6 if boosted else 0.4) * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0))))
+	var hom_dmg: int = max(1, int(round((int(attacker.atk) + int(_passive_modifiers(attacker).get("power_flat", 0))) * (0.6 if boosted else 0.4) * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0) * _expedition_hom_multiplier(attacker, defender))))
 	if _solo_boss_mode and _solo_power_active and is_same(attacker, player) and is_same(defender, enemy):
 		hom_dmg *= 2
 	var boss_prevented := 0
@@ -4350,6 +4409,8 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 		_record_highlight("damage", mini(int(defender.hp), hom_dmg), "%s (%s) to %s" % [attacker.hom_name, attacker.name, defender.name])
 		_animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false)
 		defender.hp = max(0, defender.hp - hom_dmg)
+		if hom_dmg > 0:
+			_fire_expedition_passive(defender, attacker, "damage_received")
 		if boss_prevented > 0:
 			defender.hp = mini(int(defender.max_hp), int(defender.hp) + _strategic_heal(defender, floori(boss_prevented * float(_solo_def.shield_heal_ratio))))
 		_animate_hit(_fighter_sprite(defender), hom_dmg, defender.max_hp)
@@ -4370,7 +4431,7 @@ func _apply_round_winner_tempo() -> void:
 
 func _apply_mods(f: Dictionary) -> void:
 	var ent := _find_by_id(_entities, f.id)
-	var hom := _find_by_id(_homunculi, f.hom_id)
+	var hom: Dictionary = f.get("hom_data", {})
 	var stats := _get_base_stats(ent)
 	var effective := preload("res://scripts/domain/homunculus_progress.gd").effective_bonuses(hom, f.get("hom_progress", {}))
 	var synergy := _hom_synergy(f)
@@ -4744,9 +4805,12 @@ func _show_highlights() -> void:
 
 func _reset_fighter(f: Dictionary) -> void:
 	_restore_inspiration(f)
+	if f.has("expedition_passive"):
+		f.expedition_passive = ExpeditionPassive.create(f.hom_data, int(f.hom_progress.get(str(f.hom_id), {}).get("level", 0)))
 	for field in ["strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline"]:
 		f.erase(field)
 	f.hom_energy = 0
+	f.erase("poison_source")
 	f.erase("hom_reflect_active")
 	f.erase("hom_other_reflect")
 	f.hp = f.max_hp
@@ -4813,6 +4877,64 @@ func _type_multiplier(attacker: Dictionary, defender: Dictionary, emit_log: bool
 		multiplier = min(0.84 + red, 1.0)
 	var neutralize := maxf(maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0))), maxf(float(_hom_synergy(attacker).get("type_neutralize", 0.0)), float(_hom_synergy(defender).get("type_neutralize", 0.0))))
 	return 1.0 + (multiplier - 1.0) * (1.0 - neutralize)
+
+func _expedition_hom_multiplier(attacker: Dictionary, defender: Dictionary) -> float:
+	var hom: Dictionary = attacker.get("hom_data", {})
+	if not hom.has("combat_texture"):
+		return 1.0
+	_ensure_type_effectiveness()
+	var row: Dictionary = _type_effectiveness.get(str(hom.get("type", "")), {})
+	var relation := float(row.get(str(defender.get("type", "")), 1.0))
+	var factor := 1.18 if relation > 1.0 else (0.84 if relation < 1.0 else 1.0)
+	var neutralize := maxf(maxf(float(attacker.get("spell_neutralize_active", 0.0)), float(defender.get("spell_neutralize_active", 0.0))), maxf(float(_hom_synergy(attacker).get("type_neutralize", 0.0)), float(_hom_synergy(defender).get("type_neutralize", 0.0))))
+	return 1.0 + (factor - 1.0) * (1.0 - clampf(neutralize, 0.0, 1.0))
+
+func _record_poison_source(target: Dictionary, previous: int, source: Dictionary) -> void:
+	if int(target.status.poison) <= 0:
+		target.erase("poison_source")
+	elif int(target.status.poison) > previous:
+		target["poison_source"] = "player" if is_same(source, player) else ("enemy" if is_same(source, enemy) else "")
+
+func _passive_modifiers(fighter: Dictionary) -> Dictionary:
+	if bool(fighter.get("hom_spent", true)) or not fighter.has("expedition_passive"):
+		return {}
+	return ExpeditionPassive.modifiers(fighter.expedition_passive)
+
+func _preinitiative_passive(fighter: Dictionary, target: Dictionary, action: Dictionary) -> void:
+	var spell: Dictionary = action.get("spell", action)
+	if str(fighter.get("hom_id", "")) == "luny" and action.get("kind", "spell") != "switch" and spell.get("category", "") == "attack" and int(fighter.status.stun) <= 0 and int(fighter.spell_cooldowns.get(str(spell.get("id", "")), 0)) <= 0:
+		_fire_expedition_passive(fighter, target, "before_attack", spell)
+
+func _fire_expedition_passive(fighter: Dictionary, target: Dictionary, event: String, spell: Dictionary = {}, poison_damage: int = 0) -> void:
+	if bool(fighter.get("hom_spent", true)) or not fighter.has("expedition_passive") or int(fighter.get("hp", 0)) <= 0:
+		return
+	_ensure_type_effectiveness()
+	var attack_type := str(fighter.get("type", ""))
+	if not spell.is_empty():
+		attack_type = str(spell.get("type", attack_type))
+	var defender_type := str(target.get("type", ""))
+	var row: Dictionary = _type_effectiveness.get(attack_type, {})
+	var relation := float(row.get(defender_type, 1.0))
+	if attack_type == "hybrid":
+		var primary: Dictionary = _type_effectiveness.get(str(spell.get("primary_type", "")), {})
+		var secondary: Dictionary = _type_effectiveness.get(str(spell.get("secondary_type", "")), {})
+		var p := float(primary.get(defender_type, 1.0))
+		var s := float(secondary.get(defender_type, 1.0))
+		relation = pow(1.25 if p > 1.0 else (0.8 if p < 1.0 else 1.0), 0.65) * pow(1.25 if s > 1.0 else (0.8 if s < 1.0 else 1.0), 0.35)
+	var status: Dictionary = target.get("status", {})
+	var debuffed := false
+	for key in ["poison", "stun", "vuln_pct", "atk_down", "hom_stun", "misalign_next"]:
+		debuffed = debuffed or float(status.get(key, 0)) > 0.0
+	debuffed = debuffed or status.has("hybrid_mark") or target.has("strategic_heal_suppression")
+	var context := {"hp":fighter.hp, "max_hp":fighter.max_hp, "relation":relation, "target_debuffed":debuffed, "shielded":float(fighter.status.get("shield_pct", 0)) > 0.0, "poison_damage":poison_damage}
+	for effect in ExpeditionPassive.trigger(fighter.expedition_passive, event, context):
+		if effect.kind == "heal":
+			fighter.hp = mini(int(fighter.max_hp), int(fighter.hp) + _strategic_heal(fighter, int(effect.amount)))
+		elif effect.kind == "poison" and int(target.get("hp", 0)) > 0:
+			var before := int(target.status.poison)
+			target.status.poison = maxi(before, int(effect.amount))
+			if int(target.status.poison) > before:
+				target["poison_source"] = "player" if is_same(fighter, player) else "enemy"
 
 func _hom_advantage_bonus(fighter: Dictionary) -> float:
 	if bool(fighter.get("hom_spent", true)):
@@ -4884,7 +5006,7 @@ func _item_with_effect(items: Array, key: String) -> Dictionary:
 	return {}
 
 func _try_evasion(defender: Dictionary) -> bool:
-	var chance: float = float(defender.item_fx.get("evasion_pct", 0.0))
+	var chance: float = float(defender.item_fx.get("evasion_pct", 0.0)) + float(_passive_modifiers(defender).get("evasion_pct", 0.0))
 	if chance <= 0.0:
 		return false
 	return randf() < chance
@@ -4896,7 +5018,7 @@ func _try_ignore_reflect(attacker: Dictionary) -> bool:
 	return randf() < chance
 
 func _roll_hit(attacker: Dictionary, defender: Dictionary, base_accuracy: float, spell_attack: bool = false, accuracy_focus: float = 0.0, accuracy_misalign: float = 0.0, spell_accuracy: bool = false) -> bool:
-	var acc := base_accuracy
+	var acc := base_accuracy + float(_passive_modifiers(attacker).get("accuracy_pct", 0.0))
 	if spell_accuracy:
 		acc += accuracy_focus - accuracy_misalign
 	else:
@@ -4969,6 +5091,7 @@ func _initiative(f: Dictionary) -> float:
 	var score: float = float(f.get("tempo", 10.0))
 	score += _item_initiative(_get_active_weapon(f)) + float(_hom_synergy(f).get("tempo_flat", 0.0))
 	score += float(f.status.get("tempo_bonus", 0.0))
+	score += float(_passive_modifiers(f).get("tempo_flat", 0.0))
 	f.status.tempo_bonus = 0.0
 	return score
 
@@ -5117,6 +5240,13 @@ func _online_homunculus(id: String) -> Dictionary:
 	if _reg != null and _reg.has_method("get_homunculus_collection"):
 		return _reg.get_homunculus_collection().get(id, {})
 	return _find_by_id(_homunculi, id)
+
+func _trusted_expedition_hom(id: String) -> bool:
+	if _combat_backend == null or _combat_backend.token.is_empty() or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity or str(_combat_spell_state.get("player_id", "")) != _combat_identity:
+		return false
+	var hom := _online_homunculus(id)
+	var progress: Variant = _combat_spell_state.get("homunculus_progress", {})
+	return hom.has("combat_texture") and progress is Dictionary and preload("res://scripts/domain/homunculus_progress.gd").collection_status(id, false, progress, true) == "owned"
 
 func _load_preview_tex(pid: String, kind: String = "entity", display_name: String = "") -> Texture2D:
 	if pid == "":

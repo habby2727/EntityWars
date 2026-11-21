@@ -41,7 +41,25 @@ static func collection_status(id: String, legacy: bool, progress: Dictionary, sy
 	if not synced:
 		return "unknown"
 	var entry: Variant = progress.get(id, {})
-	return "owned" if entry is Dictionary and entry.get("owned") is bool and entry.owned else "locked"
+	return "owned" if _valid_expedition_progress(entry) else "locked"
+
+static func _safe_nonnegative_integer(value: Variant) -> bool:
+	return (value is int or value is float) and is_finite(float(value)) and float(value) >= 0.0 and float(value) <= 9007199254740991.0 and floor(float(value)) == float(value)
+
+static func _valid_expedition_progress(entry: Variant) -> bool:
+	if not entry is Dictionary or not entry.get("owned") is bool or not entry.owned:
+		return false
+	if not _safe_nonnegative_integer(entry.get("level")) or not _safe_nonnegative_integer(entry.get("xp")):
+		return false
+	var level := int(entry.level)
+	var xp := int(entry.xp)
+	if level > 10 or xp < xp_threshold(level) or (level < 10 and xp >= xp_threshold(level + 1)):
+		return false
+	if entry.has("mutation_id") and (not entry.mutation_id is String or level < 3 or not mutation_catalog().has(entry.mutation_id)):
+		return false
+	if entry.has("mutation_changed_at") and not _safe_nonnegative_integer(entry.mutation_changed_at):
+		return false
+	return true
 
 static func passive_text(hom: Dictionary) -> String:
 	var passive: Variant = hom.get("passive", {})

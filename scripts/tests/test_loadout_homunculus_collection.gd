@@ -39,10 +39,13 @@ func _run() -> void:
 		backend.token = "e4b-test"
 		var account := "e4b-test-" + str(Time.get_ticks_usec())
 		backend._verified_player_id = account
+		for invalid in [{"owned":true}, {"owned":true, "level":1, "xp":0}, {"owned":true, "level":0, "xp":100}, {"owned":true, "level":0, "xp":0, "mutation_id":"vitality"}, {"owned":true, "level":3, "xp":550, "mutation_id":"unknown"}]:
+			screen._update_hom_ownership({"player_id":account, "homunculus_progress":{"astralotl":invalid}}, backend)
+			assert(screen._hom_status("astralotl") == "locked")
 		scroll.scroll_vertical = 300
 		await process_frame
 		var pos := scroll.scroll_vertical
-		screen._update_hom_ownership({"player_id":account, "homunculus_progress":{"astralotl":{"owned":true}}}, backend)
+		screen._update_hom_ownership({"player_id":account, "homunculus_progress":{"astralotl":{"owned":true, "level":0, "xp":0}}}, backend)
 		assert(screen._hom_status("astralotl") == "owned" and not card.get_node("HomLock").visible)
 		assert(scroll.scroll_vertical == pos)
 		screen._on_card_picked("homunculus", "astralotl")
