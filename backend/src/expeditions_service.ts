@@ -85,18 +85,13 @@ export function expeditionHomunculusAt(seed: Uint8Array, runId: string, index: n
   return bag[index % bag.length];
 }
 
-// Compare frozen NPC budgets with the trusted player stats used for encounter generation.
-export function expeditionVictoryTier(depth: number, enemy: any, setup: any): string {
-  const base = setup.entity.base_stats, bonus = setup.bonuses ?? {};
-  const weapons = Array.isArray(setup.weapons) ? setup.weapons.filter((w: any) => w.id).map((w: any) => w.effects) : [setup.itemEffects ?? {}];
-  const factor = Math.max(0, Math.min(2, setup.hom_id ? setup.hom_synergy?.item_effect_mult ?? 1 : 1));
-  const hp = base.hp + (bonus.hp ?? 0);
-  const attack = base.power + (bonus.atk ?? 0) + Math.trunc(Math.max(0, ...weapons.map((w: any) => w?.power_flat ?? 0)) * factor);
-  const defense = base.guard + (bonus.def ?? 0) + Math.trunc(Math.max(0, ...weapons.map((w: any) => w?.guard_flat ?? 0)) * factor);
-  const ratio = (enemy.hp / hp + enemy.attack / attack + enemy.defense / defense) / 3;
-  if (depth >= 8 && ratio >= 1.08) return "exceptional";
-  if (depth >= 4 && ratio >= 1.04) return "very_difficult";
-  if (depth >= 2 && ratio >= 1.005) return "difficult";
+// Encounter depth is frozen at selection. Capturable enemies have higher generated
+// budgets, so they reach each band modestly earlier, without stat-rounding jumps.
+export function expeditionVictoryTier(depth: number, enemy: any, _setup: any): string {
+  const capturable = enemy.capturable === true;
+  if (depth >= (capturable ? 30 : 35)) return "exceptional";
+  if (depth >= (capturable ? 12 : 15)) return "very_difficult";
+  if (depth >= (capturable ? 4 : 5)) return "difficult";
   return "normal";
 }
 export function expeditionVictoryGrants(tier: string, roll: number): Record<string, number> {

@@ -253,11 +253,22 @@ test("NPC equipment triggers offense, defense, evasion, tempo and reflection wit
 });
 
 
-test("all victory tiers are reachable from real frozen encounters", () => {
-  const found = new Set<string>();
-  for (let depth=1; depth<=65536; depth*=2) for (const capture of [false,true]) {
+test("real encounters progress through victory tiers for both capture variants", () => {
+  const depths = [1,5,10,15,25,35,50];
+  const tiers = ["normal","difficult","difficult","very_difficult","very_difficult","exceptional","exceptional"];
+  for (const capture of [false,true]) for (const [i,depth] of depths.entries()) {
     const enemy=build(`tier-${depth}-${capture}`,depth,capture);
-    found.add(expeditionVictoryTier(depth,enemy,setup));
+    const state=createExpeditionCombatState(setup,enemy,catalogs);
+    expect(state.error).toBeUndefined();
+    expect(enemy.capturable).toBe(capture);
+    const turn=resolveExpeditionTurn(state,{turn:1,spell_id:"cinder_fist"},rng);
+    expect(turn.error).toBeUndefined();
+    expect(turn.next_state.turn).toBe(1);
+    expect(["WIN", "LOSS"]).toContain(simulate(state).state.terminal_result);
+    expect(expeditionVictoryTier(depth,enemy,setup)).toBe(tiers[i]);
   }
-  expect(found).toEqual(new Set(["normal","difficult","very_difficult","exceptional"]));
+  for (const [depth, normal, capture] of [[4,"normal","difficult"],[12,"difficult","very_difficult"],[30,"very_difficult","exceptional"]] as const) {
+    expect(expeditionVictoryTier(depth,build(`normal-${depth}`,depth,false),setup)).toBe(normal);
+    expect(expeditionVictoryTier(depth,build(`capture-${depth}`,depth,true),setup)).toBe(capture);
+  }
 });

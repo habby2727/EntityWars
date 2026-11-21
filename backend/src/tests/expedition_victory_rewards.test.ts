@@ -2,15 +2,13 @@ import { expect, test } from "bun:test";
 import { expeditionVictoryTier, expeditionVictoryGrants } from "../expeditions_service";
 import { expeditionDraw } from "../expeditions_rules";
 
-test("frozen relative threat and depth determine the four bounded tiers", () => {
-  const setup={entity:{base_stats:{hp:100,power:100,guard:100}},spells:Array(4).fill({category:"attack",power_mult:1,accuracy:1})};
-  const enemy=(ratio:number)=>({hp:100*ratio,attack:100*ratio,defense:100*ratio});
-  expect(expeditionVictoryTier(1,enemy(2),setup)).toBe("normal");
-  expect(expeditionVictoryTier(2,enemy(1.004),setup)).toBe("normal");
-  expect(expeditionVictoryTier(2,enemy(1.006),setup)).toBe("difficult");
-  expect(expeditionVictoryTier(4,enemy(1.041),setup)).toBe("very_difficult");
-  expect(expeditionVictoryTier(8,enemy(1.081),setup)).toBe("exceptional");
-  expect(expeditionVictoryTier(100,enemy(1),setup)).toBe("normal");
+test("depth and capturable threat have stable bounded tier thresholds", () => {
+  const normal = {capturable:false}, capture = {capturable:true};
+  for (const [depth, expected] of [[1,"normal"],[4,"normal"],[5,"difficult"],[14,"difficult"],[15,"very_difficult"],[34,"very_difficult"],[35,"exceptional"]] as const)
+    expect(expeditionVictoryTier(depth,normal,{})).toBe(expected);
+  for (const [depth, expected] of [[1,"normal"],[3,"normal"],[4,"difficult"],[11,"difficult"],[12,"very_difficult"],[29,"very_difficult"],[30,"exceptional"]] as const)
+    expect(expeditionVictoryTier(depth,capture,{})).toBe(expected);
+  expect(expeditionVictoryTier(10,{...normal,hp:1,attack:1,defense:1},{})).toBe(expeditionVictoryTier(10,{...normal,hp:999,attack:999,defense:999},{}));
 });
 test("exclusive victory bonus has deterministic 8/2/90 boundaries", () => {
   expect(expeditionVictoryGrants("normal",0)).toEqual({essence:30,arcane_shard:1});

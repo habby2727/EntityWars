@@ -68,7 +68,10 @@ test("expedition economics and captures settle atomically through authenticated 
       const selected=Math.max(0,session.choices.findIndex((x:any)=>x.capturable));
       const select=await req("/expeditions/select",body(session,{choice:selected}),a.token); expect(select.status).toBe(200);session=select.data.session;
       // Fixture makes an actual resolver turn decisive without forging a terminal result.
-      const state=saved(session.run_id); state.combat.player.hp=state.combat.player.max_hp=500; state.combat.player.tempo=1000; state.combat.npc.hp=1; state.combat.npc.status={}; state.combat.npc.item_effects.evasion_pct=0; state.combat.spells.find((s:any)=>s.id==="cinder_fist").accuracy=1; save(session.run_id,state);
+      const state=saved(session.run_id); const frozenTier=state.victory_tier;
+      const expectedTier=state.depth >= (state.selected.capturable ? 30 : 35) ? "exceptional" : state.depth >= (state.selected.capturable ? 12 : 15) ? "very_difficult" : state.depth >= (state.selected.capturable ? 4 : 5) ? "difficult" : "normal";
+      expect(frozenTier).toBe(expectedTier);
+      state.combat.player.hp=state.combat.player.max_hp=500; state.combat.player.tempo=1000; state.combat.npc.hp=1; state.combat.npc.status={}; state.combat.npc.item_effects.evasion_pct=0; state.combat.spells.find((s:any)=>s.id==="cinder_fist").accuracy=1; save(session.run_id,state);
       const winBody=body(session,{decision:{turn:1,spell_id:"cinder_fist"}});
       const beforePlayer=player(a.player_id);
       if (victories === 0) {
@@ -80,6 +83,7 @@ test("expedition economics and captures settle atomically through authenticated 
       }
       const win=await req("/expeditions/turn",winBody,a.token); expect(win.status).toBe(200); expect(win.data.session.phase).toBe("REWARD"); expect(win.data.events.some((e:any)=>e.kind==="damage"&&e.actor==="player")).toBe(true);
       const reward=win.data.session.victory_reward;
+      expect(reward.tier).toBe(frozenTier);
       if (victories === 1) expect(reward.grants.essence).toBe(0);
       expect(reward.reward_id).toBe(`${session.run_id}:${session.depth}:victory`);
       expect(["normal","difficult","very_difficult","exceptional"]).toContain(reward.tier);
