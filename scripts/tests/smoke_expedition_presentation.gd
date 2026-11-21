@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -14,6 +14,10 @@ func _run() -> void:
 	screen.visual_inspector.set_phase(1)
 	await process_frame
 	var view = screen.combat_view
+	screen.lease = "test"
+	screen._heartbeat_completed(HTTPRequest.RESULT_TIMEOUT, 0, PackedStringArray(), PackedByteArray())
+	assert(not screen.forfeited and screen.lease == "test")
+	screen.lease = ""
 	for entry in [["spell", "player", view.player_sprite], ["spell", "npc", view.enemy_sprite], ["hom_attack", "player", view.player_hom_sprite], ["hom_attack", "npc", view.enemy_hom_sprite]]:
 		var sprite: Control = entry[2]
 		var initial := sprite.position
@@ -32,6 +36,13 @@ func _run() -> void:
 	assert(view.hom_attack.toggle_mode)
 	assert(view.hom_attack.get_theme_stylebox("normal") is StyleBoxTexture)
 	assert(view.hom_attack.get_theme_stylebox("normal").texture == preload("res://scripts/ui/menu_art.gd")._button_frame("boton-loadout-opciones.png").texture)
+	for locale in ["en", "es"]:
+		TranslationServer.set_locale(locale)
+		var before: String = view.log.get_parsed_text()
+		view._append_event({"kind":"damage", "actor":"player", "target":"npc", "amount":17, "hp":42})
+		view._append_event({"kind":"poison", "side":"player", "amount":3, "hp":39})
+		var added: String = view.log.get_parsed_text().substr(before.length())
+		assert("17" in added and "42" in added and "3" in added and "39" in added and "?" not in added)
 	var previous_hp: float = view.enemy_hp.value
 	var impact_hp := 5 if previous_hp != 5 else 6
 	var before_log: String = view.log.get_parsed_text()
@@ -43,7 +54,13 @@ func _run() -> void:
 	await create_timer(0.55).timeout
 	assert(view.log.get_parsed_text() != spell_log and view.enemy_hp.value == impact_hp)
 	assert(view.animation_tweens.has(view.enemy_sprite))
-	await create_timer(0.6).timeout
+	if impact_hp < previous_hp:
+		var numbers: Array = view.get_children().filter(func(child): return child is Label and child.has_meta("floating_damage"))
+		assert(numbers.size() == 1 and numbers[0].text == "-%d" % int(previous_hp - impact_hp))
+	var count_before: int = view.get_children().filter(func(child): return child is Label and child.has_meta("floating_damage")).size()
+	view.present_events([{"kind":"heal", "actor":"npc", "target":"npc", "hp":impact_hp + 1}, {"kind":"heal", "actor":"npc", "target":"npc", "hp":impact_hp + 1}], screen.playback_epoch)
+	await create_timer(1.4).timeout
+	assert(view.get_children().filter(func(child): return child is Label and child.has_meta("floating_damage")).size() <= count_before)
 	view.log.meta_clicked.emit("cinder_fist")
 	var dialogs: Array = view.find_children("*", "AcceptDialog", true, false)
 	assert(dialogs.size() == 1)

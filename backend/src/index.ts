@@ -1484,6 +1484,26 @@ async function startServer(): Promise<void> {
 					}
 				}
 
+				if (req.method == "POST" && url.pathname == "/chat/announce-reconnect") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || Object.keys(body).length !== 1 || typeof body.event_id !== "string" || !/^[0-9a-f]{32}$/.test(body.event_id)) throw new HttpError(400, "Invalid event ID.");
+					return db.transaction(() => {
+						const id = "chat-reconnect:" + body.event_id;
+						const prior = getActionStmt.get(playerId, id) as { action_type: string } | null;
+						if (prior) {
+							if (prior.action_type !== "CHAT_RECONNECT") throw new HttpError(409, "Action ID already used.");
+							return jsonResponse({ ok: true, duplicate: true });
+						}
+						const now = Date.now();
+						const recent = db.query("SELECT 1 FROM action_log WHERE player_id = ? AND action_type = 'CHAT_RECONNECT' AND created_at > ? LIMIT 1").get(playerId, now - 30000);
+						if (recent) throw new HttpError(429, "Announcement rate limit exceeded.");
+						globalChat.announceLogin(playerId, false);
+						insertActionStmt.run(playerId, id, "CHAT_RECONNECT", "{}", "{}", now);
+						return jsonResponse({ ok: true, duplicate: false });
+					}).immediate();
+				}
+
 				if (req.method == "GET" && url.pathname == "/chat/state") {
 					return jsonResponse(globalChat.state(await requireAuth(req, ctx)));
 				}
@@ -2949,7 +2969,7 @@ async function startServer(): Promise<void> {
 
 				return jsonResponse({ error: "Not found" }, 404);
 				})();
-				if (idleEnabled() && res && ctx.userId && req.method === "POST" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
+				if (idleEnabled() && res && ctx.userId && req.method === "POST" && ctx.path !== "/expeditions/heartbeat" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
 					const data = await res.clone().json().catch(() => null) as { ok?: boolean; duplicate?: boolean } | null;
 					if (data && data.ok !== false && data.duplicate !== true) {
 						try { await touchIdle(extractToken(req)!); }

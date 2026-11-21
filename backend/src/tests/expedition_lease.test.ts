@@ -16,7 +16,8 @@ test("leases expire and different client instances abandon atomically", () => {
     db.query("INSERT INTO expedition_balances(player_id,mana,crystals,regen_at) VALUES(?,?,2,?)").run(id,mana,mana===6?0:Date.now()+1800000);
     db.query("INSERT INTO expedition_runs(run_id,player_id,status,revision,loadout_json,state_json,started_at,updated_at,lease_hash,heartbeat_at) VALUES(?,?,'ACTIVE',1,'{}',?,?,?,?,?)").run(id,id,JSON.stringify({phase,depth:1,choices:[],log:[]}),heartbeat,heartbeat,hash,heartbeat);
   };
-  create("alive",6,Date.now());
+  expect(EXPEDITION_LEASE_EXPIRY_MS).toBe(240000);
+  create("alive",6,Date.now()-61000);
   expect(service.state("alive",lease).session?.run_id).toBe("alive");
   const beat=service.heartbeat("alive",lease,{run_id:"alive"});
   expect(beat.expires_at-beat.server_time_unix_ms).toBe(EXPEDITION_LEASE_EXPIRY_MS);

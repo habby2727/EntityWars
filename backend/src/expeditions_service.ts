@@ -16,7 +16,7 @@ const readReplay = (value: string) => JSON.parse(value.startsWith(replayPrefix) 
  * are removed in small batches; references to removed runs fail closed. */
 export const EXPEDITION_REPLAY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const EXPEDITION_HEARTBEAT_INTERVAL_MS = 5000;
-export const EXPEDITION_LEASE_EXPIRY_MS = 15000;
+export const EXPEDITION_LEASE_EXPIRY_MS = 240000;
 export const EXPEDITION_MAX_REVISION = 10000;
 export function maintainExpeditionReplays(db: Database, now: number): number {
   return db.transaction(() => {
@@ -247,7 +247,6 @@ export function createExpeditionService(options: Options) {
             state.phase="REWARD";
             state.candidate=state.selected.capturable ? expeditionCaptures.find(h => h.id === state.selected.homunculus_id) : null;
             state.capture_attempts=0; state.capture_closed=false;
-            const pool=balance(playerId,now); saveBalance(playerId,{...changeExpeditionMana(pool,1,now),crystals:pool.crystals});
             options.awardVictory(playerId,row.loadout_json,now);
             // Legacy active combats predate frozen tiers; use the original selected enemy and setup.
             const tier=state.victory_tier ?? expeditionVictoryTier(state.difficulty_depth ?? state.depth,state.selected,JSON.parse(row.setup_json));

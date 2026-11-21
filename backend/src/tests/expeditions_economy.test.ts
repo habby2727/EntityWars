@@ -16,6 +16,20 @@ test("50% drop and rarity capture distributions use separate deterministic domai
   expect(expeditionCaptureChance(1)).toBe(0.65); expect(expeditionCaptureChance(10)).toBe(0.2);
 });
 
+test("mana interval migration preserves earned points and extends pending regeneration", () => {
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE expedition_balances (mana INTEGER, regen_at INTEGER)");
+  const now = Math.floor(Date.now() / 1000) * 1000;
+  db.query("INSERT INTO expedition_balances VALUES (?, ?), (?, ?), (?, ?)").run(4, now + 600000, 2, now - 1800000, 6, 0);
+  db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite/0025_expedition_mana_interval.sql"), "utf8"));
+  expect(db.query("SELECT mana, regen_at FROM expedition_balances ORDER BY rowid").all()).toEqual([
+    {mana: 4, regen_at: now + 600000 + 5400000},
+    {mana: 4, regen_at: now + 1800000 + 5400000},
+    {mana: 6, regen_at: 0},
+  ]);
+  db.close();
+});
+
 test("expedition economics and captures settle atomically through authenticated routes",async()=>{
   const port=await freePort(),redisPort=await freePort(),dir=mkdtempSync(join(tmpdir(),"entitywars-e5c-")),db=new Database(join(dir,"test.sqlite"));
   const migrations=resolve(import.meta.dir,"../../migrations/sqlite");
@@ -99,7 +113,7 @@ test("expedition economics and captures settle atomically through authenticated 
       expect(player(a.player_id).homunculus_progress.cinder.xp).toBe(before+20);
       session=win.data.session; victories++; return win.data;
     };
-    let win=await victory(); expect(win.mana).toBe(5);
+    let win=await victory(); expect(win.mana).toBe(4);
     const skipAdvance=async(expectedPool?:number)=>{
       let skip=await req("/expeditions/skip",body(session),a.token); expect(skip.status).toBe(200); session=skip.data.session;
       const previousDepth=session.depth, advanceBody=body(session,{direction:"forward"});
@@ -108,7 +122,7 @@ test("expedition economics and captures settle atomically through authenticated 
       if(expectedPool!==undefined) expect(drop.granted).toBe(expectedPool<5 && expeditionDraw(runSeed,JSON.stringify(["crystal-drop",session.run_id,previousDepth]),0)<0.5);
       session=advanced.data.session; expect(session.latest_reward).toEqual(drop); return advanced.data;
     };
-    const firstAdvance=await skipAdvance(0); win=await victory(); expect(win.mana).toBe(6); expect(session.latest_reward).toEqual(firstAdvance.events[0]);
+    const firstAdvance=await skipAdvance(0); win=await victory(); expect(win.mana).toBe(4); expect(session.latest_reward).toEqual(firstAdvance.events[0]);
     server.kill(); await server.exited; server=spawn(); await ready(); a=(await req("/auth/dev_login",{name:"e5c_player_a"})).data;b=(await req("/auth/dev_login",{name:"e5c_player_b"})).data;
     expect((await req("/expeditions/state",undefined,a.token)).data.session).toEqual(session);
     // Find a genuinely flagged victory, then choose deterministic fixture candidates from the trusted manifest.

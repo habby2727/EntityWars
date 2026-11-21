@@ -461,27 +461,30 @@ func _append_event(event: Dictionary) -> void:
 	var translated := tr(event_key)
 	if translated == event_key: translated = kind.replace("_", " ").capitalize()
 	var category := "switch" if kind == "switch" else "miss" if kind in ["miss", "evade", "hom_miss"] or (kind == "spell" and not bool(event.get("hit", true))) else "homunculus" if kind in ["hom_attack", "hom_dot", "hom_passive"] else "damage" if kind in ["damage", "poison", "true_on_hit", "dot_true", "delayed_damage"] else "heal" if kind == "heal" else "debuff" if kind == "status_applied" else "inspiration" if kind.begins_with("inspiration") else "system"
-	var formatted := {"category":category, "actor":tr("EXPEDITION_PLAYER" if actor == "player" else "EXPEDITION_ENEMY") if actor in ["player", "npc"] else "?", "actor_color":"69d7e8" if actor == "player" else "f2a078" if actor == "npc" else "cdd3d9", "verb":": " + translated}
+	var formatted := {"category":category, "actor":tr("EXPEDITION_PLAYER" if actor == "player" else "EXPEDITION_ENEMY") if actor in ["player", "npc"] else translated, "actor_color":"69d7e8" if actor == "player" else "f2a078" if actor == "npc" else "cdd3d9", "verb":(": " + translated) if actor in ["player", "npc"] else ""}
 	if event.has("spell_id"):
 		var id := str(event.spell_id)
 		var spell: Dictionary = registry.get_spell_by_id(id)
-		formatted.verb += " ? "
+		formatted.verb += " - "
 		formatted["spell_id"] = id
 		formatted["spell_name"] = str(spell.get("name", id))
 	var suffix := ""
 	if event.has("status"):
 		var status_id := str(event.status)
-		suffix += " ? " + GameLocalization.catalog("status_name", status_id, "name", status_id.replace("_", " ").capitalize())
+		suffix += " - " + GameLocalization.catalog("status_name", status_id, "name", status_id.replace("_", " ").capitalize())
 	if event.has("item_id"):
 		var item_id := str(event.item_id)
 		var item: Dictionary = registry.get_items().get(item_id, {})
-		suffix += " ? " + GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id)))
-	if event.has("passive_id"): suffix += " ? " + str(event.passive_id).replace("_", " ").capitalize()
-	if event.get("target") in ["player", "npc"]: suffix += " ? " + tr("EXPEDITION_PLAYER" if event.target == "player" else "EXPEDITION_ENEMY")
-	if event.has("amount"): suffix += " (%s)" % str(event.amount)
-	elif event.has("value") and (event.value is int or event.value is float): suffix += " (%s)" % str(event.value)
+		suffix += " - " + GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id)))
+	if event.has("passive_id"): suffix += " - " + str(event.passive_id).replace("_", " ").capitalize()
+	if event.get("target") in ["player", "npc"]: suffix += " - " + tr("EXPEDITION_PLAYER" if event.target == "player" else "EXPEDITION_ENEMY")
+	for field in ["amount", "actual_damage", "damage", "actual_bonus_damage", "value"]:
+		if event.has(field) and (event[field] is int or event[field] is float):
+			suffix += " (%s)" % str(event[field])
+			break
+	if event.has("hp") and (event.hp is int or event.hp is float): suffix += " - HP %s" % str(event.hp)
 	if event.has("source"): suffix += " [%s]" % str(event.source).replace("_", " ")
-	if kind == "spell" and not bool(event.get("hit", true)): suffix += " ? " + tr("EXPEDITION_MISS")
+	if kind == "spell" and not bool(event.get("hit", true)): suffix += " - " + tr("EXPEDITION_MISS")
 	formatted["suffix"] = suffix
 	log_presenter.append(log, int(event.get("turn", -1)), "", formatted)
 
@@ -578,6 +581,34 @@ func _event_delay(kind: String) -> float:
 		return 0.5
 	return 0.3
 
+func _show_damage_number(sprite: Control, damage: int) -> void:
+	if damage <= 0 or not is_instance_valid(sprite): return
+	var label := Label.new()
+	label.text = "-%d" % damage
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 30)
+	label.add_theme_color_override("font_color", Color(1.0, 0.18, 0.18))
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 4)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.size = Vector2(120, 40)
+	label.top_level = true
+	add_child(label)
+	var offset := 0
+	for child in get_children():
+		if child is Label and child.has_meta("floating_damage") and child.get_meta("floating_damage") == sprite.get_instance_id(): offset += 1
+	label.set_meta("floating_damage", sprite.get_instance_id())
+	var rect := sprite.get_global_transform() * Rect2(Vector2.ZERO, sprite.size)
+	var viewport_rect := get_viewport_rect()
+	var pos := Vector2(rect.get_center().x - 60.0, rect.position.y - 42.0 - (offset % 4) * 18.0)
+	pos.x = clampf(pos.x, viewport_rect.position.x, viewport_rect.end.x - 120.0)
+	pos.y = clampf(pos.y, viewport_rect.position.y + 55.0, viewport_rect.end.y - 40.0)
+	label.global_position = pos
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 50.0, 2.0)
+	tween.tween_property(label, "modulate:a", 0.0, 2.0)
+	tween.chain().tween_callback(label.queue_free)
+
 func present_events(events: Array, epoch: int) -> void:
 	lock_controls()
 	for value in events:
@@ -591,6 +622,8 @@ func present_events(events: Array, epoch: int) -> void:
 		if target not in ["player", "npc"] and actor in ["player", "npc"] and kind in ["damage", "hom_attack", "hom_dot", "true_on_hit", "dot_true", "delayed_damage"]: target = "npc" if actor == "player" else "player"
 		if event.has("hp") and target in ["player", "npc"]:
 			var hp := player_hp if target == "player" else enemy_hp
+			var damage := maxi(0, int(hp.value) - int(event.hp))
+			_show_damage_number(player_sprite if target == "player" else enemy_sprite, damage)
 			hp.value = int(event.hp)
 			_update_hp(hp)
 		_animate_event(event)

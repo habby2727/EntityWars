@@ -19,6 +19,8 @@ describe("expedition isolated rules", () => {
   });
   test("mana is bounded, ticks lazily, and restarts its clock after spending from full", () => {
     const interval = EXPEDITION_MANA_INTERVAL_MS;
+    expect(interval).toBe(2 * 60 * 60 * 1000);
+    expect(regenerateExpeditionMana({ mana: 5, regen_at: 100 + interval }, 100 + 30 * 60 * 1000)).toEqual({ mana: 5, regen_at: 100 + interval });
     expect(changeExpeditionMana({ mana: 6, regen_at: 0 }, -1, 100)).toEqual({ mana: 5, regen_at: 100 + interval });
     expect(regenerateExpeditionMana({ mana: 2, regen_at: 100 }, 100 + 2 * interval)).toEqual({ mana: 5, regen_at: 100 + 3 * interval });
     expect(regenerateExpeditionMana({ mana: 2, regen_at: 100 }, 100 + 5 * interval)).toEqual({ mana: 6, regen_at: 0 });

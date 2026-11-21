@@ -62,7 +62,7 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
     expect(disconnectedStart.status).toBe(200);
     const disconnectedRun=disconnectedStart.data.session.run_id;
     expect((await request("/expeditions/heartbeat",{run_id:disconnectedRun},disconnected.token)).status).toBe(200);
-    db.query("UPDATE expedition_runs SET heartbeat_at=? WHERE run_id=?").run(Date.now()-15000,disconnectedRun);
+    db.query("UPDATE expedition_runs SET heartbeat_at=? WHERE run_id=?").run(Date.now()-240000,disconnectedRun);
     expect((await request("/expeditions/heartbeat",{run_id:disconnectedRun},disconnected.token)).status).toBe(409);
     expect((await request("/expeditions/state",undefined,disconnected.token)).data).toMatchObject({session:null,mana:5});
     expect((db.query("SELECT status FROM expedition_runs WHERE run_id=?").get(disconnectedRun) as any).status).toBe("ABANDONED");
@@ -75,7 +75,7 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
     const raced=(await request("/auth/dev_login",{name:"expedition_race"})).data;
     const raceStart=await request("/expeditions/start",{...loadout,client_action_id:id()},raced.token);
     const raceSession=raceStart.data.session;
-    db.query("UPDATE expedition_runs SET heartbeat_at=? WHERE run_id=?").run(Date.now()-15000,raceSession.run_id);
+    db.query("UPDATE expedition_runs SET heartbeat_at=? WHERE run_id=?").run(Date.now()-240000,raceSession.run_id);
     const race=await Promise.all([
       request("/expeditions/heartbeat",{run_id:raceSession.run_id},raced.token),
       request("/expeditions/exit",{run_id:raceSession.run_id,expected_revision:raceSession.revision,client_action_id:id()},raced.token),

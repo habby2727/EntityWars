@@ -31,6 +31,10 @@ var debug_offline_enabled := false
 var _dungeon_http: HTTPRequest
 var _dungeon_timer: Timer
 var _dungeon_return_after_disconnect := false
+var _explicit_login_pending := false
+var _announcement_http: HTTPRequest
+var _announcement_timer: Timer
+var _announcement_events: Array[Dictionary] = []
 
 func _ready() -> void:
 	_http = HTTPRequest.new()
@@ -42,6 +46,14 @@ func _ready() -> void:
 	_timer.one_shot = true
 	_timer.timeout.connect(_check)
 	add_child(_timer)
+	_announcement_http = HTTPRequest.new()
+	_announcement_http.timeout = 8.0
+	add_child(_announcement_http)
+	_announcement_http.request_completed.connect(_announcement_completed)
+	_announcement_timer = Timer.new()
+	_announcement_timer.one_shot = true
+	_announcement_timer.timeout.connect(_send_announcement)
+	add_child(_announcement_timer)
 	_create_overlay()
 	_dungeon_http = HTTPRequest.new()
 	_dungeon_http.timeout = 8.0
@@ -144,6 +156,7 @@ func begin_explicit_login() -> bool:
 	if directory == null:
 		return false
 	debug_offline_enabled = false
+	_explicit_login_pending = true
 	var session_active := not SceneRouter._solo_hunt_context.is_empty() or not SceneRouter._dungeon_context.is_empty() or _recovery_owner_id != 0
 	for filename in directory.get_files():
 		if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
@@ -508,6 +521,10 @@ func _recover_loadout(scene: Node) -> void:
 func _unlock() -> void:
 	if debug_offline_enabled or state in [State.UPDATE_REQUIRED, State.AUTH_REQUIRED, State.IDLE]:
 		return
+	if state != State.CONNECTED and not _explicit_login_pending:
+		_announcement_events.append({"id": Crypto.new().generate_random_bytes(16).hex_encode(), "token": token, "url": base_url})
+		_send_announcement()
+	_explicit_login_pending = false
 	state = State.CONNECTED
 	_attempt = 0
 	_player_verified = false
@@ -522,6 +539,25 @@ func _unlock() -> void:
 	for client in get_tree().get_nodes_in_group("backend_session_clients"):
 		if client.auto_flush and client._verified_player_id == player_id:
 			client.call_deferred("flush_queue")
+
+func _send_announcement() -> void:
+	if _announcement_events.is_empty() or _announcement_http.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+		return
+	var event: Dictionary = _announcement_events[0]
+	var headers := PackedStringArray(["Authorization: Bearer " + str(event.token), "Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()])
+	var error := _announcement_http.request(str(event.url) + "/chat/announce-reconnect", headers, HTTPClient.METHOD_POST, JSON.stringify({"event_id": event.id}))
+	if error != OK:
+		_announcement_timer.start(5.0)
+
+func _announcement_completed(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
+	if _announcement_events.is_empty():
+		return
+	if result == HTTPRequest.RESULT_SUCCESS and (code == 200 or code in [400, 401, 403, 426]):
+		_announcement_events.pop_front()
+		if not _announcement_events.is_empty():
+			_announcement_timer.start(0.1)
+	else:
+		_announcement_timer.start(31.0 if code == 429 else 5.0)
 
 func _input(event: InputEvent) -> void:
 	var scene := get_tree().current_scene

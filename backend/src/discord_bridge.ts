@@ -13,8 +13,8 @@ export function createPresenceUpdater(chat: Pick<Chat, 'onlineCount'>, client: P
 		lastCount = count;
 	};
 }
-export function outgoingDiscordMessage(row: { message_id: number; username: string; text: string }) {
-	return { content: `[Game] ${row.username}: ${row.text}`, allowedMentions: { parse: [] as never[] }, nonce: String(row.message_id), enforceNonce: true };
+export function outgoingDiscordMessage(row: { message_id: number; username: string; text: string; source?: string }) {
+	return { content: row.source === "system" ? `Entity Wars: ${row.text}` : `[Game] ${row.username}: ${row.text}`, allowedMentions: { parse: [] as never[] }, nonce: String(row.message_id), enforceNonce: true };
 }
 export function acceptDiscordMessage(chat: Chat, message: any, guildId: string, channelId: string, applicationId: string) {
 	if (message.guildId !== guildId || message.channelId !== channelId || message.author?.bot || message.author?.id === applicationId || message.webhookId || message.system || ![MessageType.Default, MessageType.Reply].includes(message.type)) return false;

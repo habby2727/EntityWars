@@ -65,11 +65,13 @@ func _ready() -> void:
 	backend.api_completed.connect(_completed)
 	add_child(backend)
 	heartbeat_http = HTTPRequest.new()
+	heartbeat_http.process_mode = Node.PROCESS_MODE_ALWAYS
 	heartbeat_http.timeout = 4.0
 	heartbeat_http.max_redirects = 0
 	add_child(heartbeat_http)
 	heartbeat_http.request_completed.connect(_heartbeat_completed)
 	heartbeat_timer = Timer.new()
+	heartbeat_timer.process_mode = Node.PROCESS_MODE_ALWAYS
 	heartbeat_timer.wait_time = 5.0
 	heartbeat_timer.timeout.connect(_heartbeat)
 	add_child(heartbeat_timer)
@@ -180,7 +182,7 @@ func _build_ui() -> void:
 	video_clip.add_child(video)
 	resized.connect(_fit_video)
 	background_shade = ColorRect.new()
-	background_shade.color = Color(0, 0, 0, 0.38)
+	background_shade.color = Color(0.2, 0.2, 0.2, 0.55)
 	background_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	background_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background_shade)
@@ -252,6 +254,7 @@ func _build_ui() -> void:
 	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(message)
+	_set_background("")
 
 func _stop_lease() -> void:
 	lease = ""
@@ -294,12 +297,14 @@ func _heartbeat() -> void:
 	var headers := PackedStringArray(["Content-Type: application/json", "Authorization: Bearer " + lease_token, "X-Expedition-Lease: " + lease, preload("res://scripts/net/client_build.gd").header()])
 	heartbeat_in_flight = true
 	var err := heartbeat_http.request(backend.base_url + "/expeditions/heartbeat", headers, HTTPClient.METHOD_POST, JSON.stringify({"run_id":lease_run}))
-	if err != OK: _forfeit()
+	if err != OK: heartbeat_in_flight = false
 
 func _heartbeat_completed(result: int, code: int, _headers: PackedStringArray, body_bytes: PackedByteArray) -> void:
 	heartbeat_in_flight = false
 	if lease.is_empty() or forfeited: return
-	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+	if result != HTTPRequest.RESULT_SUCCESS or code >= 500 or code in [408, 429]:
+		return
+	if code != 200:
 		_forfeit()
 		return
 	var result_data: Variant = JSON.parse_string(body_bytes.get_string_from_utf8())
@@ -661,6 +666,7 @@ func _clear_body() -> void:
 		child.queue_free()
 
 func _render() -> void:
+	background_shade.color = Color(0.2, 0.2, 0.2, 0.55) if session.is_empty() else Color(0, 0, 0, 0.38)
 	background_shade.visible = str(session.get("phase", "")) not in ["EXPLORE", "COMBAT"]
 	_clear_body()
 	_update_status()
@@ -851,13 +857,13 @@ func _texture(path: String, prefix: String) -> Texture2D:
 	return load(path) as Texture2D
 
 func _set_background(key: String) -> void:
+	if key.is_empty(): key = "@initiate"
 	if key == background_key: return
 	video.stop()
 	video.stream = null
 	background_key = ""
-	if key.is_empty(): return
-	if key.contains("/") or key.contains("\\") or key.contains("..") or not key.ends_with(".ogv"): return
-	var path := BACKGROUNDS + key
+	if key != "@initiate" and (key.contains("/") or key.contains("\\") or key.contains("..") or not key.ends_with(".ogv")): return
+	var path := "res://assets/entities/expeditions/initiate_bg.ogv" if key == "@initiate" else BACKGROUNDS + key
 	if not ResourceLoader.exists(path):
 		message.text = tr("EXPEDITION_VIDEO_MISSING")
 		return

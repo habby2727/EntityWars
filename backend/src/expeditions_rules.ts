@@ -6,7 +6,7 @@ import typeData from "../../data/types.json";
 /** Expedition-only rules. All random draws are keyed and domain-separated. */
 export const EXPEDITION_MANA_CAP = 6;
 export const EXPEDITION_CRYSTAL_CAP = 5;
-export const EXPEDITION_MANA_INTERVAL_MS = 30 * 60 * 1000;
+export const EXPEDITION_MANA_INTERVAL_MS = 2 * 60 * 60 * 1000;
 export const EXPEDITION_EXIT_COOLDOWN_MS = 60 * 1000;
 
 const elements = new Set(typeData.types.map(entry => entry.id));
