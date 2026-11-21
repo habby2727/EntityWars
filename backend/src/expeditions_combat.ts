@@ -1,12 +1,14 @@
 ﻿import { createDungeonCombatState, expeditionSpellSupported, resolveDungeonTurn, resolveDungeonInspiration } from "./dungeon_combat";
-import { expeditionDraw, expeditionEnemies } from "./expeditions_rules";
+import { expeditionDraw, expeditionEnemies, expeditionCaptures } from "./expeditions_rules";
 
 /** setup must be produced by buildTrustedCombatSetup from server-owned player data. */
-export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, depth: number, capturable: boolean, setup: any, catalogs: any, enemyId?: string) {
+export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, depth: number, capturable: boolean, setup: any, catalogs: any, enemyId?: string, homId?: string) {
   if (!encounterKey || !Number.isSafeInteger(depth) || depth < 1 || typeof capturable !== "boolean" || !setup?.entity?.base_stats || !Array.isArray(setup.spells) || !Array.isArray(setup.spell_ids) || !Array.isArray(catalogs?.spells)) throw new Error("INVALID_EXPEDITION_SETUP");
   const draw = (label: string) => expeditionDraw(seed, JSON.stringify([encounterKey, depth, label]), 0);
   const enemy = enemyId === undefined ? expeditionEnemies[Math.floor(draw("enemy") * expeditionEnemies.length)] : expeditionEnemies.find(e => e.id === enemyId);
   if (!enemy) throw new Error("INVALID_EXPEDITION_ENEMY");
+  const hom = homId === undefined ? expeditionCaptures[Math.floor(draw("homunculus") * expeditionCaptures.length)] : expeditionCaptures.find(h => h.id === homId);
+  if (!hom) throw new Error("INVALID_EXPEDITION_HOMUNCULUS");
   const candidates = catalogs.spells.filter((s: any) => expeditionSpellSupported(s, enemy.types)).sort((a: any, b: any) => a.id.localeCompare(b.id));
   const basic = candidates.filter((s: any) => s.category === "attack" && s.cooldown_turns === 0 && s.power_mult > 0);
   if (!basic.length) throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
@@ -45,7 +47,7 @@ export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, dep
   const spellQuality = setup.spells.reduce((sum: number, s: any) => sum + (s.category === "attack" ? Math.min(1.5, s.power_mult * s.accuracy) : 0.65), 0) / 4;
   const growth = 1 + Math.min(0.55, Math.log2(depth) * 0.035);
   const threat = (capturable ? 1.12 : 1) * growth;
-  return { combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: null, homunculus_level: 0, hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth)), attack: Math.max(1, Math.round(attack * (0.60 + Math.min(0.15, spellQuality * 0.1)) * threat)), defense: Math.max(1, Math.round(defense * 0.82 * threat)), spell_ids: selected.map(s => s.id), npc_personality: capturable ? "ALCHEMIST" : "OPPORTUNIST" };
+  return { combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((depth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth)), attack: Math.max(1, Math.round(attack * (0.60 + Math.min(0.15, spellQuality * 0.1)) * threat)), defense: Math.max(1, Math.round(defense * 0.82 * threat)), spell_ids: selected.map(s => s.id), npc_personality: capturable ? "ALCHEMIST" : "OPPORTUNIST" };
 }
 
 export function createExpeditionCombatState(setup: any, enemy: any, catalogs: any, previousActiveSlot = 0) {
@@ -53,7 +55,7 @@ export function createExpeditionCombatState(setup: any, enemy: any, catalogs: an
   const manifest = expeditionEnemies.find(e => e.id === enemy.entity_id);
   if (!manifest || JSON.stringify(manifest.types) !== JSON.stringify(enemy.types) || enemy.texture !== manifest.texture || enemy.preview_texture !== manifest.preview_texture) return { error: "UNTRUSTED_SETUP" };
   const state = createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot);
-  if (!state.error) { state.tactics_enabled = true; state.combat_mode = "expedition"; state.npc.texture = manifest.texture; state.npc.preview_texture = manifest.preview_texture; state.npc.capturable = enemy.capturable; }
+  if (!state.error) { const hom = expeditionCaptures.find(h => h.id === enemy.homunculus_id)!; state.tactics_enabled = true; state.combat_mode = "expedition"; state.npc.texture = manifest.texture; state.npc.preview_texture = manifest.preview_texture; state.npc.capturable = enemy.capturable; state.npc.hom_type = hom.type; state.npc.hom_texture = hom.combat_texture; }
   return state;
 }
 export function resolveExpeditionTurn(state: any, decision: any, rng: (turn: number, draw: number) => number) {

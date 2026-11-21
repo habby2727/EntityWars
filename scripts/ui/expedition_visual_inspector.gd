@@ -15,6 +15,7 @@ var enemy_picker: OptionButton
 var hom_picker: OptionButton
 var background_picker: OptionButton
 var asset_label: Label
+var minimize_button: Button
 
 func configure(scene: Control) -> void:
 	host = scene
@@ -47,6 +48,13 @@ func _build() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	box.add_child(row)
+	minimize_button = Button.new()
+	minimize_button.name = "MinimizeInspector"
+	minimize_button.text = "Minimize · F8"
+	minimize_button.tooltip_text = "Minimize inspector (F8)"
+	_style_button(minimize_button)
+	minimize_button.pressed.connect(func(): host._set_visual_debug_view(1))
+	row.add_child(minimize_button)
 	phase_picker = OptionButton.new()
 	phase_picker.add_theme_font_size_override("font_size", 18)
 	for phase in PHASES: phase_picker.add_item(phase)

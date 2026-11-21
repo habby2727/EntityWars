@@ -1249,6 +1249,7 @@ async function startServer(): Promise<void> {
 	const huntMaintenance = setInterval(() => {
 		try { maintainSoloHunts(db, Date.now()); } catch (error) { logError("solo hunt maintenance failed", { error: String(error) }); }
 		try { maintainExpeditionReplays(db, Date.now()); } catch (error) { logError("expedition replay maintenance failed", { error: String(error) }); }
+		try { getExpeditionService().expireLeases(); } catch (error) { logError("expedition lease maintenance failed", { error: String(error) }); }
 	}, 60000);
 	huntMaintenance.unref();
 	const server = Bun.serve({
@@ -2293,13 +2294,18 @@ async function startServer(): Promise<void> {
 				}
 				if (url.pathname === "/expeditions/state" && req.method === "GET") {
 					const playerId = await requireAuth(req, ctx);
-					return jsonResponse(getExpeditionService().state(playerId));
+					return jsonResponse(getExpeditionService().state(playerId, req.headers.get("x-expedition-lease")));
+				}
+				if (url.pathname === "/expeditions/heartbeat" && req.method === "POST") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					return jsonResponse(getExpeditionService().heartbeat(playerId, req.headers.get("x-expedition-lease"), body));
 				}
 				if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|capture|skip|advance|exit)$/.test(url.pathname)) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
 					const body = await readJson(req, config.maxBodyBytes);
-					return jsonResponse(getExpeditionService().action(playerId, url.pathname.split("/").at(-1)!, body));
+					return jsonResponse(getExpeditionService().action(playerId, url.pathname.split("/").at(-1)!, body, req.headers.get("x-expedition-lease")));
 				}
 				if (req.method == "GET" && url.pathname == "/dungeon/leaderboard") {
 					const playerId = await requireAuth(req, ctx);

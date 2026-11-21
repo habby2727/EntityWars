@@ -3,7 +3,7 @@ import { buildTrustedCombatSetup, deterministicDraw } from "../solo_hunt_combat"
 import { homunculusCatalog } from "../homunculus_catalog";
 import { buildExpeditionEnemy, createExpeditionCombatState, resolveExpeditionTurn, resolveExpeditionInspiration } from "../expeditions_combat";
 import { expeditionSpellSupported, chooseDungeonNpcSpell } from "../dungeon_combat";
-import { expeditionEnemies, expeditionDualTypeMultiplier } from "../expeditions_rules";
+import { expeditionEnemies, expeditionCaptures, expeditionDualTypeMultiplier } from "../expeditions_rules";
 import entities from "../../../data/entities.json";
 import items from "../../../data/items.json";
 import spells from "../../../data/spells.json";
@@ -31,9 +31,58 @@ const simulate = (state: any, random = rng) => {
     expect(result.error).toBeUndefined(); events.push(...result.events); state = result.next_state;
   }
   expect(["WIN", "LOSS"]).toContain(state.terminal_result);
-  expect(events.some(e => e.kind === "hom_attack" && e.actor === "npc")).toBe(false);
+  expect(events.some(e => e.kind === "hom_sacrifice")).toBe(false);
   return {state, events};
 };
+
+test("NPC homunculus holds charge, spends tactically, and uses its passive", () => {
+  const enemy = build("npc-charge"); enemy.homunculus_id = "solcarp";
+  const base = createExpeditionCombatState(setup,enemy,catalogs);
+  base.npc.hp=base.npc.max_hp=1000; base.player.hp=base.player.max_hp=1000;
+  base.player.tempo=1000; base.npc.hom_energy=2;
+  const first=resolveExpeditionTurn(base,{turn:1,spell_id:"cinder_fist"},()=>0.1);
+  expect(first.error).toBeUndefined();
+  expect(first.next_state.npc.hom_energy).toBe(3);
+  expect(first.events.some((e:any)=>e.actor==="npc" && e.kind==="hom_attack")).toBe(false);
+  expect(first.events.some((e:any)=>e.actor==="npc" && e.kind==="hom_passive" && e.passive_id==="solcarp")).toBe(true);
+  expect(first.next_state.npc.expedition_passive.modifiers).toHaveLength(0);
+  const charged=structuredClone(base); charged.npc.hom_energy=5;
+  const six=resolveExpeditionTurn(charged,{turn:1,spell_id:"cinder_fist"},()=>0.1);
+  expect(six.events.some((e:any)=>e.actor==="npc" && e.kind==="hom_attack")).toBe(true);
+  expect(six.next_state.npc.hom_energy).toBe(0);
+  const urgent=structuredClone(base); urgent.npc.hom_energy=2; urgent.npc.hp=1; urgent.npc.max_hp=1000; urgent.npc.tempo=1001;
+  const early=resolveExpeditionTurn(urgent,{turn:1,spell_id:"cinder_fist"},()=>0.1);
+  expect(early.events.some((e:any)=>e.actor==="npc" && e.kind==="hom_attack")).toBe(true);
+  expect(early.events.some((e:any)=>String(e.kind).includes("sacrifice"))).toBe(false);
+});
+
+test("each expedition species initializes its own NPC passive and HUD identity", () => {
+  for (const hom of expeditionCaptures) {
+    const enemy=build(`species-${hom.id}`,10); enemy.homunculus_id=hom.id;
+    const state=createExpeditionCombatState(setup,enemy,catalogs);
+    expect(state.error).toBeUndefined();
+    expect(state.npc).toMatchObject({hom_id:hom.id,hom_type:hom.type,hom_texture:hom.combat_texture,hom_energy:0,expedition_passive:{id:hom.id,level:enemy.homunculus_level}});
+  }
+  const forged=build("invalid-hom"); forged.homunculus_id="cinder";
+  expect(createExpeditionCombatState(setup,forged,catalogs).error).toBe("UNTRUSTED_SETUP");
+});
+
+test("NPC damage passive applies poison and its next-exchange guard expires", () => {
+  const enemy=build("npc-passive"); enemy.homunculus_id="crishvin";
+  const state=createExpeditionCombatState(setup,enemy,catalogs);
+  state.player.hp=state.player.max_hp=1000; state.npc.hp=state.npc.max_hp=1000;
+  state.player.tempo=1000;
+  const first=resolveExpeditionTurn(state,{turn:1,spell_id:"cinder_fist"},()=>0.1);
+  expect(first.events.some((e:any)=>e.kind==="hom_passive" && e.actor==="npc" && e.trigger==="damage_received")).toBe(true);
+  expect(first.events.some((e:any)=>e.kind==="status_applied" && e.actor==="npc" && e.target==="player" && e.status==="poison")).toBe(true);
+  expect(first.next_state.npc.expedition_passive.modifiers.some((m:any)=>m.kind==="guard_flat" && m.exchange===2)).toBe(true);
+  const next=first.next_state; next.player.inspiration_pending=false;
+  // Prevent another activation so the assertion observes expiry of the original modifier.
+  next.player.atk=0;
+  const second=resolveExpeditionTurn(next,{turn:2,spell_id:"ash_temper"},()=>0.1);
+  expect(second.error).toBeUndefined();
+  expect(second.next_state.npc.expedition_passive.modifiers.some((m:any)=>m.exchange===2)).toBe(false);
+});
 
 test("all expedition enemies produce reproducible legal real combat builds", () => {
   expect(setup.error).toBeUndefined();
@@ -41,7 +90,7 @@ test("all expedition enemies produce reproducible legal real combat builds", () 
   for (let i=0; i<300 && seen.size<21; i++) {
     const enemy=build(`encounter-${i}`, 15, true); seen.add(enemy.entity_id);
     expect(enemy).toEqual(build(`encounter-${i}`, 15, true));
-    expect(enemy.homunculus_id).toBeNull(); expect(new Set(enemy.spell_ids).size).toBe(4);
+    expect(expeditionCaptures.some(h => h.id === enemy.homunculus_id)).toBe(true); expect(new Set(enemy.spell_ids).size).toBe(4);
     const chosen = enemy.spell_ids.map((id:string)=>catalogs.spells.find(s=>s.id===id));
     for (const spell of chosen) { expect(expeditionSpellSupported(spell, enemy.types)).toBe(true); if(spell.type === "hybrid") hybrids.add(enemy.entity_id); }
     const has = (s: any, k: string) => s.effects.some((e: any) => e.kind === k);
@@ -57,10 +106,11 @@ test("normal and capturable encounters resolve actual turns to terminal states",
   expect(tough.hp).toBeGreaterThan(sameNormal.hp); expect(tough.attack).toBeGreaterThanOrEqual(sameNormal.attack);
   for(const enemy of [normal,tough]) {
     const state=createExpeditionCombatState(setup,enemy,catalogs);
-    expect(state.error).toBeUndefined(); expect(state.npc.hom_id).toBeNull(); expect(state.npc.hom_energy).toBeUndefined();
+    expect(state.error).toBeUndefined(); expect(state.npc.hom_id).toBe(enemy.homunculus_id); expect(state.npc.hom_energy).toBe(0);
     const outcomes = Array.from({length: 8}, (_, i) => simulate(state, (turn, draw) => deterministicDraw(seed, `battle-${i}`, turn, draw)));
     expect(outcomes.every(result => result.events.some(e=>e.kind==="damage"))).toBe(true);
-    expect(outcomes.some(result => result.state.terminal_result === "WIN")).toBe(true);
+    const stronger=structuredClone(state); stronger.player.hp=stronger.player.max_hp=500; stronger.player.atk=100;
+    expect(simulate(stronger).state.terminal_result).toBe("WIN");
   }
   const injured = createExpeditionCombatState(setup, tough, catalogs); injured.player.hp = 1;
   expect(simulate(injured).state.terminal_result).toBe("LOSS");

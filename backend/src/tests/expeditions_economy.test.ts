@@ -23,7 +23,19 @@ test("expedition economics and captures settle atomically through authenticated 
   const redis=Bun.spawn([Bun.which("redis-server")!,"--port",String(redisPort),"--bind","127.0.0.1","--save","","--appendonly","no"],{cwd:dir,stdout:"ignore",stderr:"ignore"});
   const env={...process.env,DB_PATH:join(dir,"test.sqlite"),NODE_ENV:"development",BUN_ENV:"development",HOST:"127.0.0.1",PORT:String(port),DATABASE_URL:"postgres://x:x@127.0.0.1:1/test",REDIS_URL:`redis://127.0.0.1:${redisPort}`,PG_CONNECT_TIMEOUT_SECONDS:"1",AUTH_ACCOUNT_TIMEOUT_MS:"10",DEBUG_BYPASS:"0",WORLD_SECRET:"dev_world_secret",EXPENSIVE_RATE_LIMIT_MAX:"2000"};
   const spawn=()=>Bun.spawn([process.execPath,"src/index.ts"],{cwd:resolve(import.meta.dir,"../.."),env,stdout:"ignore",stderr:"ignore"}); let server=spawn(),serial=0;
-  const req=async(path:string,body?:any,token?:string)=>{const r=await fetch(`http://127.0.0.1:${port}${path}`,{method:body===undefined?"GET":"POST",headers:{"content-type":"application/json",...(token?{authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json() as any};};
+  const leaseByName = new Map<string,string>(), nameByToken = new Map<string,string>(), runByName = new Map<string,string>();
+  const req=async(path:string,body?:any,token?:string)=>{
+    const name=token ? nameByToken.get(token) : undefined, lease=name ? leaseByName.get(name) : undefined;
+    const run=name ? runByName.get(name) : undefined;
+    if (lease && run && path.startsWith("/expeditions/") && !["/expeditions/heartbeat","/expeditions/exit","/expeditions/state","/expeditions/start"].includes(path)) {
+      await fetch(`http://127.0.0.1:${port}/expeditions/heartbeat`,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${token}`,"x-expedition-lease":lease},body:JSON.stringify({run_id:run})});
+    }
+    const r=await fetch(`http://127.0.0.1:${port}${path}`,{method:body===undefined?"GET":"POST",headers:{"content-type":"application/json",...(token?{authorization:`Bearer ${token}`}:{ }),...(lease?{"x-expedition-lease":lease}:{})},body:body===undefined?undefined:JSON.stringify(body)});
+    const data=await r.json() as any;
+    if(path==="/auth/dev_login" && data.token) nameByToken.set(data.token,body.name);
+    if(path==="/expeditions/start" && r.status===200 && name && data.lease) { leaseByName.set(name,data.lease); runByName.set(name,data.session.run_id); }
+    return {status:r.status,data};
+  };
   const ready=async()=>{for(let i=0;i<100;i++){try{if((await req("/health")).status===200)return;}catch{}await Bun.sleep(100);}throw Error("server unavailable");};
   const id=()=>`e5c-${serial++}`;
   const player=(id:string)=>JSON.parse((db.query("SELECT state_json FROM players WHERE player_id=?").get(id) as any).state_json);
@@ -77,7 +89,7 @@ test("expedition economics and captures settle atomically through authenticated 
       // Depth only selects a deterministic fixture; success is still resolved by the real server draw.
       for(let depth=state.depth;depth<state.depth+200 && !candidate;depth++) for(const item of expeditionCaptures) if(want(item,depth)){candidate=item;state.depth=depth;break;}
       if(!candidate) throw Error("no deterministic capture fixture");
-      state.candidate=candidate; save(session.run_id,state); session.depth=state.depth; session.capture_candidate=candidate; return candidate;
+      state.candidate=candidate; state.selected.homunculus_id=candidate.id; save(session.run_id,state); session.depth=state.depth; session.capture_candidate=candidate; return candidate;
     };
     const roll=(c:any,d:number,n:number)=>expeditionDraw(runSeed,JSON.stringify(["capture",session.run_id,d,c.id]),n);
     const first=chooseCandidate((c,d)=>roll(c,d,0)<expeditionCaptureChance(c.rarity));
@@ -114,7 +126,7 @@ test("expedition economics and captures settle atomically through authenticated 
     for(let i=1;i<=3;i++) {const failureBody=body(session),failure=await req("/expeditions/capture",failureBody,a.token);expect(failure.status).toBe(200);expect(failure.data.events[0]).toMatchObject({kind:"capture_failure",candidate_id:failCandidate.id,attempt:i,remaining_attempts:3-i});expect((await req("/expeditions/capture",failureBody,a.token)).data).toEqual(failure.data);session=failure.data.session;}
     expect(session.capture_closed).toBe(true); expect((await req("/expeditions/capture",body(session),a.token)).status).toBe(409);
     expect((await req("/expeditions/state",undefined,a.token)).data.session.latest_reward.kind).toBe("capture_failure");
-    const oldRun=session.run_id,exitBody=body(session),exited=await req("/expeditions/exit",exitBody,a.token); expect(exited.status).toBe(200);expect(exited.data.mana).toBe(6);expect(exited.data.remaining_cooldown_ms).toBe(60000);
+    const oldRun=session.run_id,exitBody=body(session),exited=await req("/expeditions/exit",exitBody,a.token); expect(exited.status).toBe(200);expect(exited.data.mana).toBe(5);expect(exited.data.remaining_cooldown_ms).toBe(60000);
     maintainExpeditionReplays(db,Date.now()+6*24*60*60*1000);
     expect((await req("/expeditions/exit",exitBody,a.token)).data).toEqual(exited.data);
     expect((await req("/expeditions/start",{...loadout,client_action_id:id()},a.token)).status).toBe(409);
@@ -122,7 +134,7 @@ test("expedition economics and captures settle atomically through authenticated 
     await req("/expeditions/state",undefined,b.token);let bs=(await req("/expeditions/start",{...loadout,client_action_id:id()},b.token)).data.session;
     bs=(await req("/expeditions/select",body(bs,{choice:0}),b.token)).data.session;
     const losing=saved(bs.run_id);losing.combat.player.hp=1;losing.combat.npc.atk=1000;losing.combat.npc.tempo=100;save(bs.run_id,losing);
-    for(let i=0;i<10 && bs.phase==="COMBAT";i++){const loseBody=body(bs,{decision:{turn:bs.combat_state.turn+1,spell_id:"cinder_fist"}}),lose=await req("/expeditions/turn",loseBody,b.token);expect(lose.status).toBe(200);if(lose.data.session.phase==="LOSS"){expect(lose.data.mana).toBe(5);expect(lose.data.next_regeneration_at).toBeGreaterThan(Date.now());expect((await req("/expeditions/turn",loseBody,b.token)).data).toEqual(lose.data);}bs=lose.data.session;}
+    for(let i=0;i<10 && bs.phase==="COMBAT";i++){const loseBody=body(bs,{decision:{turn:bs.combat_state.turn+1,spell_id:"cinder_fist"}}),lose=await req("/expeditions/turn",loseBody,b.token);expect(lose.status).toBe(200);if(lose.data.session.phase==="LOSS"){expect(lose.data.mana).toBe(5);expect(lose.data.next_regeneration_at).toBeGreaterThan(Date.now());expect((await req("/expeditions/turn",loseBody,b.token)).status).toBe(409);}bs=lose.data.session;}
     expect(bs.phase).toBe("LOSS");
     // Retention removes only finished Expedition history, in bounded passes.
     db.query("INSERT INTO action_log(player_id,client_action_id,action_type,payload_json,result_state_json,created_at,expedition_run_id) VALUES(?,?,?,?,?,?,?)").run(a.player_id,"unrelated","OTHER","{}","{}",0,oldRun);

@@ -39,6 +39,8 @@ var phase_buttons: Array[Button] = []
 var visual_debug := false
 var visual_debug_entry: Button
 var visual_inspector: Control
+var visual_debug_view := 0 # 0: expanded, 1: minimized, 2: clean
+var visual_debug_restore: Button
 
 func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, clampf(minf(get_viewport_rect().size.x / 1920.0, get_viewport_rect().size.y / 1080.0), 0.65, 1.0))
@@ -71,7 +73,47 @@ func _enter_visual_debug() -> void:
 	visual_inspector = preload("res://scripts/ui/expedition_visual_inspector.gd").new()
 	content.add_child(visual_inspector)
 	content.move_child(visual_inspector, body.get_index())
+	visual_debug_restore = Button.new()
+	visual_debug_restore.name = "VisualDebugRestore"
+	visual_debug_restore.text = "F8 +"
+	visual_debug_restore.tooltip_text = "Expand inspector (F8)"
+	visual_debug_restore.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	visual_debug_restore.offset_left = -74
+	visual_debug_restore.offset_top = -46
+	visual_debug_restore.offset_right = -12
+	visual_debug_restore.offset_bottom = -10
+	visual_debug_restore.z_index = 100
+	visual_debug_restore.add_theme_font_size_override("font_size", 18)
+	var restore_style := StyleBoxFlat.new()
+	restore_style.bg_color = Color(0.025, 0.05, 0.08, 0.92)
+	restore_style.border_color = Color("4faebc")
+	restore_style.set_border_width_all(1)
+	restore_style.set_corner_radius_all(4)
+	visual_debug_restore.add_theme_stylebox_override("normal", restore_style)
+	visual_debug_restore.add_theme_stylebox_override("hover", restore_style)
+	visual_debug_restore.add_theme_stylebox_override("pressed", restore_style)
+	visual_debug_restore.pressed.connect(func(): _set_visual_debug_view(0))
+	add_child(visual_debug_restore)
+	visual_debug_restore.hide()
 	visual_inspector.configure(self)
+
+func _input(event: InputEvent) -> void:
+	if not visual_debug or not _visual_debug_allowed(): return
+	if event is InputEventKey and event.keycode == KEY_F8 and event.pressed and not event.echo:
+		_set_visual_debug_view((visual_debug_view + 1) % 3)
+		get_viewport().set_input_as_handled()
+
+func _set_visual_debug_view(view: int) -> void:
+	if not visual_debug or not _visual_debug_allowed() or not is_instance_valid(visual_inspector) or view not in [0, 1, 2]: return
+	visual_debug_view = view
+	visual_inspector.visible = view == 0
+	visual_debug_restore.visible = view == 1
+	retry.visible = view != 0
+	retry.disabled = true
+	if view == 0:
+		status.text = "VISUAL DEBUG · OFFLINE"
+	else:
+		_update_status()
 
 func debug_render(sample: Dictionary) -> void:
 	if not visual_debug or not _visual_debug_allowed(): return
@@ -85,7 +127,7 @@ func debug_render(sample: Dictionary) -> void:
 	received_ticks = Time.get_ticks_msec()
 	resumed = true
 	_render()
-	status.text = "VISUAL DEBUG · OFFLINE"
+	if visual_debug_view == 0: status.text = "VISUAL DEBUG · OFFLINE"
 	if is_instance_valid(combat_view): combat_view.lock_controls()
 
 func debug_popup(title: String, texture: Texture2D, detail: String) -> void:
@@ -206,6 +248,7 @@ func _process(delta: float) -> void:
 			_set_background("")
 			_clear_body()
 			if is_instance_valid(visual_inspector): visual_inspector.queue_free()
+			if is_instance_valid(visual_debug_restore): visual_debug_restore.queue_free()
 			if is_instance_valid(reward_popup): reward_popup.queue_free()
 			status.text = "Visual debug unavailable"
 		return

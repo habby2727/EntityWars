@@ -1,5 +1,5 @@
 ﻿import type { Database } from "bun:sqlite";
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { buildExpeditionEnemy, createExpeditionCombatState, resolveExpeditionTurn, resolveExpeditionInspiration } from "./expeditions_combat";
 import { expeditionDraw, expeditionEnemies, expeditionCaptures, EXPEDITION_EXIT_COOLDOWN_MS, EXPEDITION_CRYSTAL_CAP, regenerateExpeditionMana, changeExpeditionMana, expeditionCaptureChance } from "./expeditions_rules";
@@ -15,6 +15,9 @@ const readReplay = (value: string) => JSON.parse(value.startsWith(replayPrefix) 
 /** Exact replays are retained for seven days after a run ends. Older actions and runs
  * are removed in small batches; references to removed runs fail closed. */
 export const EXPEDITION_REPLAY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const EXPEDITION_HEARTBEAT_INTERVAL_MS = 5000;
+export const EXPEDITION_LEASE_EXPIRY_MS = 15000;
+export const EXPEDITION_MAX_REVISION = 10000;
 export function maintainExpeditionReplays(db: Database, now: number): number {
   return db.transaction(() => {
     let changed = 0;
@@ -65,6 +68,23 @@ export function expeditionEnemyAt(seed: Uint8Array, runId: string, index: number
   return bag[index % bag.length];
 }
 
+/** A domain-separated permutation of all expedition homunculi for each cycle. */
+export function expeditionHomunculusAt(seed: Uint8Array, runId: string, index: number): string {
+  if (!runId || !Number.isSafeInteger(index) || index < 0) throw new Error("INVALID_EXPEDITION_HOMUNCULUS_INDEX");
+  const cycle = Math.floor(index / expeditionCaptures.length);
+  const shuffle = (n: number) => {
+    const bag = expeditionCaptures.map(h => h.id);
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["homunculus-bag", runId, n]), i) * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    return bag;
+  };
+  const bag = shuffle(cycle);
+  if (cycle && bag[0] === shuffle(cycle - 1).at(-1)) [bag[0], bag[1]] = [bag[1], bag[0]];
+  return bag[index % bag.length];
+}
+
 const publicEvent = (event: any) => {
   if (event?.kind === "inspiration_chosen" && event.actor === "npc") { const { spell_id, slot, ...visible } = event; return visible; }
   return event;
@@ -74,7 +94,7 @@ function publicCombat(combat: any) {
   return { player: combat.player, npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((w: any) => ({id:w.id})), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 function publicSession(row: any, state: any) {
-  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e: any, choice: number) => ({ choice, id:e.entity_id, name:e.name, types:e.types, preview_texture:e.preview_texture, capturable:e.capturable })) : [], ...(state.combat ? {combat_state:publicCombat(state.combat), battle_log:state.log.map(publicEvent)} : {}), ...(state.phase === "REWARD" ? {capture_candidate: state.candidate ? { id:state.candidate.id, name:state.candidate.name, type:state.candidate.type, rarity:state.candidate.rarity, preview_texture:state.candidate.preview_texture } : null, capture_attempts:state.capture_attempts ?? 0, capture_attempts_remaining:state.capture_closed === true ? 0 : Math.max(0, 3-(state.capture_attempts ?? 0)), capture_closed:state.capture_closed === true} : {}), ...(state.latest_reward ? {latest_reward:state.latest_reward} : {}), ...(state.phase === "ROUTE" ? { directions:["left","forward","right"], last_direction:state.last_direction ?? null } : {}) };
+  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e: any, choice: number) => ({ choice, id:e.entity_id, name:e.name, types:e.types, preview_texture:e.preview_texture, capturable:e.capturable })) : [], ...(state.combat && state.phase !== "REWARD" ? {combat_state:publicCombat(state.combat), battle_log:state.log.map(publicEvent)} : {}), ...(state.phase === "REWARD" ? {reward_homunculus: (() => { const h = expeditionCaptures.find(h => h.id === state.selected?.homunculus_id); return h ? {id:h.id,name:h.name,type:h.type,preview_texture:h.preview_texture,combat_texture:h.combat_texture} : null; })(), capture_candidate: state.candidate ? { id:state.candidate.id, name:state.candidate.name, type:state.candidate.type, rarity:state.candidate.rarity, preview_texture:state.candidate.preview_texture } : null, capture_attempts:state.capture_attempts ?? 0, capture_attempts_remaining:state.capture_closed === true ? 0 : Math.max(0, 3-(state.capture_attempts ?? 0)), capture_closed:state.capture_closed === true} : {}), ...(state.latest_reward ? {latest_reward:state.latest_reward} : {}), ...(state.phase === "ROUTE" ? { directions:["left","forward","right"], last_direction:state.last_direction ?? null } : {}) };
 }
 
 type Options = { db: Database; secret: string; catalogs: any; getPlayer: (playerId: string) => any; makeSetup: (playerId: string, snapshot: any, selection: any) => any; awardVictory: (playerId: string, loadoutJson: string, now: number) => void; captureHomunculus: (playerId: string, id: string, now: number) => { duplicate: boolean } };
@@ -94,6 +114,17 @@ export function createExpeditionService(options: Options) {
     if (!Number.isInteger(value.crystals) || value.crystals < 0 || value.crystals > EXPEDITION_CRYSTAL_CAP) throw new Error("INVALID_EXPEDITION_BALANCE");
     if (db.query("UPDATE expedition_balances SET mana=?,regen_at=?,crystals=? WHERE player_id=?").run(value.mana,value.regen_at,value.crystals,playerId).changes !== 1) throw new Error("EXPEDITION_BALANCE_UNAVAILABLE");
   };
+  const leaseHash = (lease: string) => createHmac("sha256", secret).update("expedition-lease:" + lease).digest("hex");
+  const validLease = (row: any, lease: unknown, now: number) => typeof lease === "string" && /^[a-f0-9]{64}$/.test(lease) && row.lease_hash === leaseHash(lease) && Number.isSafeInteger(row.heartbeat_at) && now < row.heartbeat_at + EXPEDITION_LEASE_EXPIRY_MS;
+  // Call only while holding the write transaction. A second closer cannot settle twice.
+  const abandon = (row: any, now: number) => {
+    const deadline = Number.isSafeInteger(row.heartbeat_at) ? row.heartbeat_at + EXPEDITION_LEASE_EXPIRY_MS : now;
+    const closedAt = Math.min(now, deadline);
+    if (db.query("UPDATE expedition_runs SET status='ABANDONED',revision=revision+1,snapshot_json=NULL,loadout_json=NULL,setup_json=NULL,state_json=NULL,lease_hash=NULL,updated_at=?,finished_at=? WHERE run_id=? AND status='ACTIVE'").run(now,closedAt,row.run_id).changes !== 1) return;
+    const pool=balance(row.player_id,closedAt);
+    if (pool.mana > 0) saveBalance(row.player_id,{...changeExpeditionMana(pool,-1,closedAt),crystals:pool.crystals});
+    db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(row.player_id,closedAt+EXPEDITION_EXIT_COOLDOWN_MS);
+  };
   const response = (playerId: string, now: number, row?: any, state?: any, events?: any[]) => { const pool=balance(playerId,now); return { session: row && state ? publicSession(row, state) : null, mana:pool.mana, crystals:pool.crystals, next_regeneration_at:pool.regen_at || null, remaining_cooldown_ms:cooldown(playerId, now), server_time_unix_ms:now, ...(events ? {events:events.map(publicEvent)} : {}) }; };
   const makeNode = (state: any, setup: any, runId: string, seed: Uint8Array) => {
     const background = expeditionBackgroundAt(seed, runId, state.background_cursor++);
@@ -101,7 +132,7 @@ export function createExpeditionService(options: Options) {
       const cursor = state.enemy_cursor++, id = expeditionEnemyAt(seed, runId, cursor);
       const key = `${runId}:node:${state.depth}:enemy:${cursor}`;
       const capturable = expeditionDraw(seed, JSON.stringify(["capturable", key]), 0) < 0.35;
-      return buildExpeditionEnemy(seed, key, state.depth, capturable, setup, catalogs, id);
+      return buildExpeditionEnemy(seed, key, state.depth, capturable, setup, catalogs, id, expeditionHomunculusAt(seed, runId, cursor));
     });
     if (choices[0].entity_id === choices[1].entity_id || (state.background && state.background === background)) throw new Error("INVALID_EXPEDITION_ROTATION");
     Object.assign(state, {background, choices, phase:"EXPLORE", combat:null, log:[], candidate:null});
@@ -115,21 +146,47 @@ export function createExpeditionService(options: Options) {
       if (typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id: any) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || typeof body.homunculus_id === "string" && !!body.homunculus_id) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id: any) => typeof id !== "string" || !id) || !["attack","defense"].includes(body.mode)) fail(400,"Invalid expedition loadout.");
     } else if (typeof body.run_id !== "string" || !body.run_id || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || action === "select" && ![0,1].includes(body.choice) || action === "advance" && !["left","forward","right"].includes(body.direction) || ["turn","inspiration"].includes(action) && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision))) fail(400,"Invalid expedition action.");
   };
-  function state(playerId: string) {
-    return db.transaction(() => { const now=Date.now(), row=db.query("SELECT * FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId) as any; return response(playerId,now,row,row ? JSON.parse(row.state_json) : null); }).immediate();
+  function state(playerId: string, lease?: string | null) {
+    return db.transaction(() => { const now=Date.now(), row=db.query("SELECT * FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId) as any; if (row && !validLease(row,lease,now)) { abandon(row,now); return response(playerId,now); } return response(playerId,now,row,row ? JSON.parse(row.state_json) : null); }).immediate();
   }
-  function action(playerId: string, action: string, body: any) {
+  function heartbeat(playerId: string, lease: string | null, body: any) {
+    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).join(",") !== "run_id" || typeof body.run_id !== "string" || !body.run_id) fail(400,"Invalid expedition heartbeat.");
+    const result = db.transaction(() => {
+      const now=Date.now(), row=db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id,playerId) as any;
+      if (!row || row.status !== "ACTIVE") return false;
+      if (!validLease(row,lease,now)) { abandon(row,now); return false; }
+      db.query("UPDATE expedition_runs SET heartbeat_at=? WHERE run_id=? AND status='ACTIVE'").run(now,row.run_id);
+      return {server_time_unix_ms:now, expires_at:now+EXPEDITION_LEASE_EXPIRY_MS};
+    }).immediate();
+    if (!result) fail(409,"Expedition lease expired or unavailable.");
+    return result;
+  }
+  function expireLeases(now: number = Date.now()) {
+    return db.transaction(() => {
+      const rows = db.query("SELECT * FROM expedition_runs WHERE status='ACTIVE' AND (heartbeat_at IS NULL OR heartbeat_at<=?) ORDER BY heartbeat_at LIMIT 50").all(now-EXPEDITION_LEASE_EXPIRY_MS) as any[];
+      for (const row of rows) abandon(row,now);
+      return rows.length;
+    }).immediate();
+  }
+  function action(playerId: string, action: string, body: any, lease?: string | null) {
     if (!["start","select","turn","inspiration","capture","skip","advance","exit"].includes(action)) fail(404,"Unknown expedition action.");
     validAction(action, body);
     const actionId=body.client_action_id.trim(), actionType=`EXPEDITION_${action.toUpperCase()}`, payload={...body}; delete payload.client_action_id;
-    return db.transaction(() => {
+    const outcome = db.transaction(() => {
       const now=Date.now();
+      const live = action === "start" ? db.query("SELECT * FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId) as any : db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id,playerId) as any;
+      if (live?.status === "ACTIVE" && !validLease(live,lease,now)) { abandon(live,now); return {leaseRejected:true}; }
       const prior=db.query("SELECT action_type,payload_json,result_state_json FROM action_log WHERE player_id=? AND client_action_id=?").get(playerId,actionId) as any;
       if (prior) {
         if (prior.action_type!==actionType || canonical(JSON.parse(prior.payload_json))!==canonical(payload)) fail(409,"Action ID already used with different content.");
         if (!prior.result_state_json) fail(409,"Expedition action no longer available.");
-        return readReplay(prior.result_state_json);
+        const replay=readReplay(prior.result_state_json);
+        const replayRun=replay?.session?.run_id ?? body.run_id;
+        const replayRow=replayRun ? db.query("SELECT status,lease_hash FROM expedition_runs WHERE run_id=? AND player_id=?").get(replayRun,playerId) as any : null;
+        if (replayRow?.status !== "ACTIVE" && !(action === "exit" && replayRow?.status === "EXIT" && typeof lease === "string" && replayRow.lease_hash === leaseHash(lease))) fail(409,"Expedition action no longer available.");
+        return action === "start" ? {...replay, lease} : replay;
       }
+      if (live?.status === "ACTIVE" && live.revision >= EXPEDITION_MAX_REVISION && action !== "exit") { abandon(live,now); return {limitReached:true}; }
       let row: any, state: any, events: any[] = [];
       if (action === "start") {
         if (cooldown(playerId, now)>0) fail(409,"Expedition exit cooldown active.");
@@ -140,10 +197,10 @@ export function createExpeditionService(options: Options) {
         const selection={entity_id:body.entity_id,weapon_ids:body.weapon_ids,homunculus_id:body.homunculus_id,spell_ids:body.spell_ids,mode:body.mode};
         const setup=options.makeSetup(playerId,snapshot,selection);
         if (setup?.error) fail(400,"Invalid or unsupported expedition loadout.");
-        const runId=crypto.randomUUID(); state={phase:"EXPLORE",depth:1,enemy_cursor:0,background_cursor:0};
+        const runId=crypto.randomUUID(), newLease=randomBytes(32).toString("hex"); state={phase:"EXPLORE",depth:1,enemy_cursor:0,background_cursor:0};
         makeNode(state,setup,runId,seedFor(runId));
-        row={run_id:runId,player_id:playerId,status:"ACTIVE",revision:1,loadout_json:JSON.stringify(selection)};
-        db.query("INSERT INTO expedition_runs(run_id,player_id,status,revision,snapshot_json,loadout_json,setup_json,state_json,started_at,updated_at) VALUES(?,?,'ACTIVE',1,?,?,?,?,?,?)").run(runId,playerId,JSON.stringify(snapshot),row.loadout_json,JSON.stringify(setup),JSON.stringify(state),now,now);
+        row={run_id:runId,player_id:playerId,status:"ACTIVE",revision:1,loadout_json:JSON.stringify(selection),newLease};
+        db.query("INSERT INTO expedition_runs(run_id,player_id,status,revision,snapshot_json,loadout_json,setup_json,state_json,started_at,updated_at,lease_hash,heartbeat_at) VALUES(?,?,'ACTIVE',1,?,?,?,?,?,?,?,?)").run(runId,playerId,JSON.stringify(snapshot),row.loadout_json,JSON.stringify(setup),JSON.stringify(state),now,now,leaseHash(newLease),now);
       } else {
         row=db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id,playerId) as any;
         if (!row) fail(404,"Expedition not found.");
@@ -163,7 +220,7 @@ export function createExpeditionService(options: Options) {
           state.combat=result.next_state; events=result.events; state.log.push(...events);
           if (state.combat.terminal_result === "WIN") {
             state.phase="REWARD";
-            state.candidate=state.selected.capturable ? expeditionCaptures[Math.floor(expeditionDraw(seed,JSON.stringify(["capture-candidate",row.run_id,state.depth]),0)*expeditionCaptures.length)] : null;
+            state.candidate=state.selected.capturable ? expeditionCaptures.find(h => h.id === state.selected.homunculus_id) : null;
             state.capture_attempts=0; state.capture_closed=false;
             const pool=balance(playerId,now); saveBalance(playerId,{...changeExpeditionMana(pool,1,now),crystals:pool.crystals});
             options.awardVictory(playerId,row.loadout_json,now);
@@ -175,7 +232,7 @@ export function createExpeditionService(options: Options) {
           const attempts=state.capture_attempts ?? 0;
           if (state.phase !== "REWARD" || !state.selected?.capturable || !state.candidate || state.capture_closed === true || !Number.isInteger(attempts) || attempts < 0 || attempts >= 3) fail(409,"Capture unavailable.");
           const candidate=expeditionCaptures.find(h => h.id === state.candidate.id);
-          if (!candidate || candidate.rarity !== state.candidate.rarity || candidate.preview_texture !== state.candidate.preview_texture) fail(409,"Invalid capture candidate.");
+          if (!candidate || candidate.id !== state.selected.homunculus_id || candidate.rarity !== state.candidate.rarity || candidate.preview_texture !== state.candidate.preview_texture) fail(409,"Invalid capture candidate.");
           const pool=balance(playerId,now);
           if (pool.crystals < 1) fail(409,"Not enough capture crystals.");
           const attempt=attempts+1;
@@ -197,6 +254,8 @@ export function createExpeditionService(options: Options) {
           state.latest_reward=reward; events=[reward];
           state.depth++; state.last_direction=body.direction; makeNode(state,JSON.parse(row.setup_json),row.run_id,seed);
         } else {
+          const pool=balance(playerId,now);
+          if (pool.mana > 0) saveBalance(playerId,{...changeExpeditionMana(pool,-1,now),crystals:pool.crystals});
           db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(playerId,now+EXPEDITION_EXIT_COOLDOWN_MS);
           row.status="EXIT";
         }
@@ -207,8 +266,11 @@ export function createExpeditionService(options: Options) {
       }
       const result=response(playerId,now,row.status === "EXIT" ? null : row,row.status === "EXIT" ? null : state,events);
       db.query("INSERT INTO action_log(player_id,client_action_id,action_type,payload_json,result_state_json,created_at,expedition_run_id) VALUES(?,?,?,?,?,?,?)").run(playerId,actionId,actionType,JSON.stringify(payload),JSON.stringify(result),now,row.run_id);
-      return result;
+      return action === "start" ? {...result,lease:row.newLease} : result;
     }).immediate();
+    if ((outcome as any).leaseRejected) fail(409,"Expedition lease expired or unavailable.");
+    if ((outcome as any).limitReached) fail(409,"Expedition action limit reached.");
+    return outcome;
   }
-  return {state,action};
+  return {state,action,heartbeat,expireLeases};
 }
