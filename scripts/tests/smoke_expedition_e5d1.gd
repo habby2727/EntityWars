@@ -43,10 +43,27 @@ func _run() -> void:
 		screen._render()
 		await process_frame
 		assert(screen.video.stream == stream and screen.background_key == "Ashen_Monastery_12s_1080p_Godot.ogv")
-		var battle: HBoxContainer = screen.body.get_child(screen.body.get_child_count() - 1)
-		assert(not (battle.get_child(0).get_child(0) as TextureRect).flip_h)
-		assert((battle.get_child(2).get_child(0) as TextureRect).flip_h)
-		assert((battle.get_child(2).get_child(0) as TextureRect).texture.resource_path == npc.texture)
+		assert(not screen.combat_view.player_sprite.flip_h)
+		assert(screen.combat_view.enemy_sprite.flip_h)
+		assert(screen.combat_view.enemy_sprite.texture.resource_path == npc.texture)
+		var p: Dictionary = screen.session.combat_state.player
+		p["spell_ids"] = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"]
+		p["inspiration_pending"] = true
+		p["inspiration_offers"] = ["steady_script", "ward_glyph", "rift_touch"]
+		screen._render()
+		await process_frame
+		assert(screen.combat_view.inspiration_buttons.size() == 3)
+		assert(screen.combat_view.spell_buttons.all(func(button): return button.disabled))
+		assert(screen.combat_view.decline_button != null)
+		screen.session["phase"] = "REWARD"
+		screen.session["capture_candidate"] = {"name":"Astralotl", "preview_texture":"res://assets/entities/gameplay/homunculus/astralotl_pv.png"}
+		screen._render()
+		await process_frame
+		assert(screen.video.stream == stream and screen.body.get_child(screen.body.get_child_count() - 1) is CenterContainer)
+		screen.session["phase"] = "LOSS"
+		screen._render()
+		await process_frame
+		assert(screen.video.stream == stream)
 		screen._auth_changed("")
 		assert(screen.session.is_empty() and screen.video.stream == null)
 		stream = null

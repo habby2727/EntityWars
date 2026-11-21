@@ -285,6 +285,45 @@ EXPEDITION_BAD_STATE,Expedition state could not be verified.,No se pudo verifica
 EXPEDITION_PHASE_UNAVAILABLE,This expedition is in phase %s. This phase is not yet available in the interface.,La expedición está en la fase %s. Esta fase aún no está disponible en la interfaz.
 EXPEDITION_COMBAT_PREVIEW,Combat controls will be available in the next update.,Los controles de combate estarán disponibles en la próxima actualización.
 EXPEDITION_VIDEO_MISSING,Expedition background unavailable.,Fondo de expedición no disponible.
+EXPEDITION_WEAPON,Weapon,Arma
+EXPEDITION_HOM_ATTACK,Homunculus: attack,Homúnculo: atacar
+EXPEDITION_HOM_HINT,When selected the homunculus attacks with the next spell if it has at least 3 charges. Otherwise it holds.,Al seleccionarlo el homúnculo atacará con el siguiente hechizo si tiene al menos 3 cargas. De lo contrario espera.
+EXPEDITION_INSPIRATION,Choose an Inspiration spell or decline.,Elige un hechizo de Inspiración o recházalo.
+EXPEDITION_DECLINE,Decline,Rechazar
+EXPEDITION_PLAYER,Player,Jugador
+EXPEDITION_ENEMY,Enemy,Enemigo
+EXPEDITION_MISS,Miss,Fallo
+EXPEDITION_DELAYED,Delayed damage at the end of exchange %d.,Daño retrasado al final del intercambio %d.
+EXPEDITION_VICTORY,Victory,Victoria
+EXPEDITION_DEFEAT,Defeat,Derrota
+EXPEDITION_SPELL_DETAIL,Spell details,Detalles del hechizo
+EXPEDITION_EVENT_SPELL,Spell,Hechizo
+EXPEDITION_EVENT_DAMAGE,Damage,Daño
+EXPEDITION_EVENT_EVADE,Evaded,Esquivado
+EXPEDITION_EVENT_HOM_ATTACK,Homunculus attack,Ataque del homúnculo
+EXPEDITION_EVENT_HOM_MISS,Homunculus missed,El homúnculo falló
+EXPEDITION_EVENT_POISON,Poison damage,Daño de veneno
+EXPEDITION_EVENT_HEAL,Healing,Curación
+EXPEDITION_EVENT_STATUS_APPLIED,Status applied,Estado aplicado
+EXPEDITION_EVENT_STATUS_CONSUMED,Status consumed,Estado consumido
+EXPEDITION_EVENT_STATUS_CLEANSED,Status cleansed,Estado eliminado
+EXPEDITION_EVENT_SWITCH,Weapon switched,Arma cambiada
+EXPEDITION_EVENT_HOM_PASSIVE,Homunculus passive,Pasiva del homúnculo
+EXPEDITION_EVENT_INSPIRATION,Inspiration,Inspiración
+EXPEDITION_EVENT_INSPIRATION_OFFERED,Inspiration offered,Inspiración ofrecida
+EXPEDITION_EVENT_INSPIRATION_CHOSEN,Inspiration chosen,Inspiración elegida
+EXPEDITION_EVENT_INSPIRATION_DECLINED,Inspiration declined,Inspiración rechazada
+EXPEDITION_EVENT_REFLECT,Reflected damage,Daño reflejado
+EXPEDITION_EVENT_RECOIL,Recoil,Retroceso
+EXPEDITION_EVENT_DELAYED_DAMAGE,Delayed damage,Daño retrasado
+EXPEDITION_EVENT_PHYSICAL_ANOMALY_CAST,Physical anomaly,Anomalía física
+EXPEDITION_EVENT_COUNTER_TRAP_ARMED,Counter trap armed,Trampa de contraataque preparada
+EXPEDITION_EVENT_HEAL_SUPPRESSION_APPLIED,Healing suppressed,Curación reducida
+EXPEDITION_EVENT_COOLDOWN_JAM,Cooldown increased,Espera aumentada
+EXPEDITION_EVENT_BUFF_STEAL,Buff stolen,Mejora robada
+EXPEDITION_EVENT_DEBUFF_TRANSFER,Debuff transferred,Debilitación transferida
+EXPEDITION_EVENT_WARD_CONVERT,Shield converted,Escudo convertido
+EXPEDITION_EVENT_HOM_ENERGY_SIPHON,Homunculus energy siphoned,Energía de homúnculo absorbida
 EXPEDITION_DEVELOPMENT,This mode is under development.,Este modo está en desarrollo.
 
 HOM_STATUS_OWNED,Captured,Capturado

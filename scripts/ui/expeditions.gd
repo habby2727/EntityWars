@@ -23,6 +23,10 @@ var received_ticks := 0
 var resumed := false
 var last_error := ""
 var countdown_refresh := false
+var playing_events := false
+var playback_epoch := 0
+var replaying_pending := false
+var combat_view: Control
 
 func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, clampf(minf(get_viewport_rect().size.x / 1920.0, get_viewport_rect().size.y / 1080.0), 0.65, 1.0))
@@ -95,6 +99,8 @@ func _build_ui() -> void:
 	content.add_child(message)
 
 func _auth_changed(_token: String) -> void:
+	playback_epoch += 1
+	playing_events = false
 	account_id = ""
 	request = ""
 	session.clear()
@@ -120,17 +126,22 @@ func _identity_changed(state: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	if video.is_playing(): _fit_video()
+	if playing_events and get_node("/root/ConnectionGate").blocked():
+		playback_epoch += 1
+		playing_events = false
+		state_data.clear()
 	poll += delta
 	if poll < 2.0: return
 	poll = 0.0
-	if not account_id.is_empty() and request.is_empty() and not get_node("/root/ConnectionGate").blocked() and (state_data.is_empty() or not pending.is_empty()):
+	if not playing_events and not account_id.is_empty() and request.is_empty() and not get_node("/root/ConnectionGate").blocked() and (state_data.is_empty() or not pending.is_empty()):
 		_refresh()
 	if not state_data.is_empty(): _update_status()
 
 func _refresh() -> void:
-	if account_id.is_empty() or backend._verified_player_id != account_id or not request.is_empty(): return
+	if playing_events or account_id.is_empty() or backend._verified_player_id != account_id or not request.is_empty(): return
 	request_kind = "state"
 	request = backend.request_api("GET", "/expeditions/state", null)
+	if is_instance_valid(combat_view): combat_view.lock_controls()
 	if request.is_empty(): message.text = tr("EXPEDITION_CONNECTION")
 
 func _completed(id: String, ok: bool, data: Dictionary) -> void:
@@ -157,6 +168,19 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 		message.text = tr("EXPEDITION_BAD_STATE")
 		state_data.clear()
 		return
+	if request_kind in ["turn", "inspiration"] and not replaying_pending and data.get("events") is Array and not data.events.is_empty():
+		playing_events = true
+		playback_epoch += 1
+		var epoch := playback_epoch
+		var identity := account_id
+		var action_id := str(pending.get("payload", {}).get("client_action_id", ""))
+		if is_instance_valid(combat_view):
+			await combat_view.present_events(data.events, epoch)
+		if not is_inside_tree() or epoch != playback_epoch or identity != account_id or backend._verified_player_id != identity or action_id != str(pending.get("payload", {}).get("client_action_id", "")) or get_node("/root/ConnectionGate").blocked():
+			playing_events = false
+			state_data.clear()
+			return
+		playing_events = false
 	state_data = data.duplicate(true)
 	received_ticks = Time.get_ticks_msec()
 	countdown_refresh = false
@@ -167,6 +191,7 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 			message.text = tr("EXPEDITION_SAVE_ERROR")
 			return
 		pending.clear()
+		replaying_pending = false
 	elif not pending.is_empty():
 		_reconcile_pending()
 		if not pending.is_empty(): return
@@ -197,9 +222,38 @@ func _reconcile_pending() -> void:
 		if int(session.get("revision", 0)) != int(payload.get("expected_revision", 0)):
 			message.text = tr("EXPEDITION_BAD_STATE")
 			return
+	if kind in ["turn", "inspiration"] and not session.is_empty():
+		if str(session.get("run_id", "")) != str(payload.get("run_id", "")):
+			message.text = tr("EXPEDITION_BAD_STATE")
+			return
+		var revision := int(session.get("revision", 0))
+		if revision > int(payload.get("expected_revision", 0)):
+			if Recovery.clear(account_id): pending.clear()
+			return
+		if revision != int(payload.get("expected_revision", 0)):
+			message.text = tr("EXPEDITION_BAD_STATE")
+			return
+	replaying_pending = true
 	request_kind = kind
 	request = backend.request_api("POST", "/expeditions/" + kind, payload)
 	if request.is_empty(): message.text = tr("EXPEDITION_CONNECTION")
+
+func send_combat_decision(kind: String, decision: Dictionary) -> void:
+	if kind not in ["turn", "inspiration"] or playing_events or not request.is_empty() or not pending.is_empty() or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("phase", "")) != "COMBAT": return
+	var combat: Dictionary = session.get("combat_state", {})
+	if combat.get("terminal_result") != null or bool(combat.get("player", {}).get("inspiration_pending", false)) != (kind == "inspiration"): return
+	var payload := {"run_id": str(session.get("run_id", "")), "expected_revision": int(session.get("revision", 0)), "client_action_id": backend._make_uuid(), "decision": decision.duplicate(true)}
+	if not Recovery.save_pending(account_id, kind, payload):
+		message.text = tr("EXPEDITION_SAVE_ERROR")
+		return
+	pending = Recovery.load_pending(account_id)
+	replaying_pending = false
+	request_kind = kind
+	request = backend.request_api("POST", "/expeditions/" + kind, payload)
+	if is_instance_valid(combat_view): combat_view.lock_controls()
+	if request.is_empty():
+		state_data.clear()
+		message.text = tr("EXPEDITION_CONNECTION")
 
 func _update_status() -> void:
 	var elapsed := maxi(0, Time.get_ticks_msec() - received_ticks)
@@ -216,7 +270,9 @@ func _duration(ms: int) -> String:
 	return "%02d:%02d:%02d" % [seconds / 3600, (seconds / 60) % 60, seconds % 60]
 
 func _clear_body() -> void:
-	for child in body.get_children(): child.queue_free()
+	for child in body.get_children():
+		body.remove_child(child)
+		child.queue_free()
 
 func _render() -> void:
 	_clear_body()
@@ -249,6 +305,8 @@ func _render() -> void:
 	match str(session.get("phase", "")):
 		"EXPLORE": _render_choices()
 		"COMBAT": _render_combat()
+		"REWARD": _render_terminal(true)
+		"LOSS": _render_terminal(false)
 		_: message.text = tr("EXPEDITION_PHASE_UNAVAILABLE") % str(session.get("phase", ""))
 
 func _render_choices() -> void:
@@ -293,44 +351,35 @@ func _select(index: int) -> void:
 	_refresh()
 
 func _render_combat() -> void:
-	var combat: Dictionary = session.get("combat_state", {})
-	var player: Dictionary = combat.get("player", {})
-	var enemy: Dictionary = combat.get("npc", {})
-	var enemies: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/expedition_enemies.json"))
-	if enemies is Dictionary:
-		for record in enemies.get("enemies", []):
-			if record is Dictionary and str(record.get("id", "")) == str(enemy.get("id", "")):
-				enemy = enemy.duplicate(true)
-				enemy["name"] = record.get("name", enemy.get("id", ""))
-				break
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	body.add_child(row)
-	var player_type := str(player.get("type", ""))
-	var player_path := "res://assets/entities/gameplay/ingame-entities/%s/%s_2_5d_1024.png" % [player_type, player_type]
-	var hom_id := str(session.get("loadout", {}).get("homunculus_id", ""))
-	var registry := preload("res://scripts/data_registry.gd").new()
-	var entity: Dictionary = registry.get_entities().get(str(player.get("id", "")), {})
-	if not entity.is_empty():
-		player = player.duplicate(true)
-		player["name"] = GameLocalization.catalog("entity", str(player.get("id", "")), "name", str(entity.get("name", "")))
-	var hom: Dictionary = registry.get_homunculus_collection().get(hom_id, {})
-	registry.free()
-	row.add_child(_actor(player, player_path, false))
-	var hom_path := str(hom.get("combat_texture", ""))
-	if hom_path.is_empty():
-		var legacy := {"cinder":"Cinder", "chimera":"Chimera", "drakon":"Drakon", "mothy":"Mothy", "nighty":"Nighty", "pyritc":"Pyro", "silphide":"Silphide", "sodium":"Sodi"}
-		hom_path = "res://assets/entities/gameplay/homunculus/ingame/1024/%s.png" % str(legacy.get(hom_id, ""))
-	var hom_image := TextureRect.new()
-	hom_image.texture = _texture(hom_path, "res://assets/entities/gameplay/homunculus/ingame/1024/")
-	hom_image.custom_minimum_size = Vector2(180, 220)
-	hom_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	hom_image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	hom_image.size_flags_vertical = Control.SIZE_SHRINK_END
-	row.add_child(hom_image)
-	row.add_child(_actor(enemy, str(enemy.get("texture", "")), true))
-	message.text = tr("EXPEDITION_COMBAT_PREVIEW")
+	combat_view = preload("res://scripts/ui/expedition_combat.gd").new()
+	combat_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	body.add_child(combat_view)
+	combat_view.configure(self, session)
+	message.text = ""
+
+func _render_terminal(won: bool) -> void:
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	body.add_child(center)
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	center.add_child(box)
+	box.add_child(_label(tr("EXPEDITION_VICTORY" if won else "EXPEDITION_DEFEAT"), 48))
+	var candidate: Variant = session.get("capture_candidate")
+	if won and candidate is Dictionary:
+		var portrait := TextureRect.new()
+		portrait.custom_minimum_size = Vector2(400, 400)
+		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait.texture = _texture(str(candidate.get("preview_texture", "")), "res://assets/entities/gameplay/homunculus/")
+		box.add_child(portrait)
+		box.add_child(_label(str(candidate.get("name", "")), 26))
+	if not won:
+		var back := Button.new()
+		back.text = tr("UI_BACK_UPPER")
+		MenuArt.button(back)
+		back.pressed.connect(SceneRouter.go_to_world_gate)
+		box.add_child(back)
 
 func _actor(fighter: Dictionary, path: String, flipped: bool) -> Control:
 	var box := VBoxContainer.new()
