@@ -3,17 +3,17 @@ import type { Database } from "bun:sqlite";
 export type Period = "daily" | "weekly";
 type Mission = { id: string; title: string; description: string; target: number; reward: Record<string, number> };
 export const DAILY: Mission[] = [
- {id:"daily_boss",title:"Boss Hunter",description:"Defeat 1 boss in Solo Hunt.",target:1,reward:{essence:100}},
- {id:"daily_damage",title:"Heavy Hitter",description:"Deal 500 HP of damage to bosses.",target:500,reward:{essence:100}},
- {id:"daily_elite",title:"Elite Slayer",description:"Defeat 1 Mythic, Rare, Epic or Legendary boss.",target:1,reward:{essence:100,core:1}},
+ {id:"daily_boss",title:"Boss Hunter",description:"Defeat 1 Solo Hunt boss (excluding guardians and global bosses).",target:1,reward:{essence:100}},
+ {id:"daily_damage",title:"Heavy Hitter",description:"Deal 500 HP of damage to Solo Hunt bosses (excluding guardians and global bosses).",target:500,reward:{essence:100}},
+ {id:"daily_elite",title:"Elite Slayer",description:"Defeat 1 Mythic, Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).",target:1,reward:{essence:100,core:1}},
 ];
 export const WEEKLY: Mission[] = [
- {id:"weekly_boss",title:"Boss Hunter",description:"Defeat 5 bosses in Solo Hunt.",target:5,reward:{essence:300}},
- {id:"weekly_elite",title:"Elite Slayer",description:"Defeat 3 non-common bosses.",target:3,reward:{essence:250,core:2}},
- {id:"weekly_rare",title:"Rising Threat",description:"Defeat 1 Rare, Epic or Legendary boss.",target:1,reward:{essence:200,core:2}},
+ {id:"weekly_boss",title:"Boss Hunter",description:"Defeat 5 Solo Hunt bosses (excluding guardians and global bosses).",target:5,reward:{essence:300}},
+ {id:"weekly_elite",title:"Elite Slayer",description:"Defeat 3 Mythic, Rare, Epic or Legendary Solo Hunt bosses (excluding guardians and global bosses).",target:3,reward:{essence:250,core:2}},
+ {id:"weekly_rare",title:"Rising Threat",description:"Defeat 1 Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).",target:1,reward:{essence:200,core:2}},
  {id:"weekly_guardians",title:"Guardian Breaker",description:"Defeat 5 guardians in Solo Hunt.",target:5,reward:{essence:300,core:1}},
- {id:"weekly_common",title:"Common Exterminator",description:"Defeat 4 different Common Boss appearances.",target:4,reward:{essence:250,core:1}},
- {id:"weekly_inspiration",title:"Inspired Warrior",description:"Choose an Inspiration spell in 3 different boss fights.",target:3,reward:{essence:200,core:2}},
+ {id:"weekly_common",title:"Common Exterminator",description:"Defeat 4 distinct Common boss appearances in their zones.",target:4,reward:{essence:250,core:1}},
+ {id:"weekly_inspiration",title:"Inspired Warrior",description:"Choose an Inspiration spell in 3 different Solo Hunt boss fights (excluding guardians and global bosses).",target:3,reward:{essence:200,core:2}},
 ];
 const DAY = 86400000, WEEK = 7 * DAY, MONDAY_EPOCH = Date.UTC(1970,0,5);
 export function period(now: number, type: Period) {

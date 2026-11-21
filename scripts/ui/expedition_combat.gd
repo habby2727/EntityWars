@@ -7,6 +7,15 @@ const HomStatus := preload("res://scripts/ui/combat_hom_status.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const LogPresenter := preload("res://scripts/ui/combat_log_presenter.gd")
+
+class GroundShadow extends Control:
+	func _draw() -> void:
+		# Concentric translucent ellipses give the edge a soft fade.
+		draw_set_transform(size * 0.5, 0.0, size * 0.5)
+		for i in 16:
+			draw_circle(Vector2.ZERO, 1.0 - i / 16.0, Color(0, 0, 0, 0.085), true, -1.0, true)
+		draw_set_transform(Vector2.ZERO)
+
 var log_presenter := LogPresenter.new()
 var host: Control
 var session := {}
@@ -39,6 +48,7 @@ func configure(scene: Control, data: Dictionary) -> void:
 
 const ITEM_ICONS := {"bismuth_talisman":"talisman_bismuth.png", "wind_amulet":"wind_amulet.png", "saltstone_charm":"saltstone_charm.png", "mirror_sigel":"mirror.png", "vitriol_vial":"vitriol.png", "gilded_scale":"gilded_scale.png", "mercury_lens":"mercury_lens.png", "aether_knot":"aether_knot.png"}
 var stage: Control
+var shadow_layer: Control
 
 func _place(node: Control, pos: Vector2, dimensions: Vector2) -> void:
 	stage.add_child(node)
@@ -62,6 +72,11 @@ func _build() -> void:
 	add_child(stage)
 	resized.connect(_fit_stage)
 	_fit_stage()
+	shadow_layer = Control.new()
+	shadow_layer.name = "GroundShadows"
+	shadow_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shadow_layer.size = Vector2(1920, 900)
+	stage.add_child(shadow_layer)
 	_fighter(player, false, state)
 	_fighter(enemy, true, state)
 	var log_panel := PanelContainer.new()
@@ -219,6 +234,15 @@ func _build() -> void:
 		_place(offers, Vector2(580, 300), Vector2(760, 180))
 		_build_inspiration(offers, player)
 
+func _add_ground_shadow(sprite: TextureRect, is_hom: bool, enemy: bool) -> void:
+	if sprite.texture == null: return
+	var shadow := GroundShadow.new()
+	shadow.name = ("Enemy" if enemy else "Player") + ("HomShadow" if is_hom else "EntityShadow")
+	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shadow.size = Vector2(210, 52) if is_hom else Vector2(360, 72)
+	shadow.position = Vector2(sprite.position.x + (sprite.size.x - shadow.size.x) * 0.5, sprite.position.y + sprite.size.y - shadow.size.y * 0.5)
+	shadow_layer.add_child(shadow)
+
 func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 	var id := str(fighter.get("id", ""))
 	var name_text := id
@@ -249,6 +273,7 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 	hom_image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hom_image.texture = host._texture(hom_path, "res://assets/entities/gameplay/homunculus/ingame/1024/") if not hom_path.is_empty() else null
 	_place(hom_image, Vector2(1640 if enemy else 40, 445), Vector2(240, 225))
+	_add_ground_shadow(hom_image, true, enemy)
 	if enemy: enemy_hom_sprite = hom_image
 	else: player_hom_sprite = hom_image
 	var portrait := TextureRect.new()
@@ -259,6 +284,7 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	portrait.texture = host._texture(path, "res://assets/entities/")
 	_place(portrait, Vector2(1200 if enemy else 320, 250), Vector2(420, 420))
+	_add_ground_shadow(portrait, false, enemy)
 	if enemy: enemy_sprite = portrait
 	else: player_sprite = portrait
 	var x := 1300.0 if enemy else 400.0

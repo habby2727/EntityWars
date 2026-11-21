@@ -255,7 +255,7 @@ func _ready() -> void:
 		var original_back := Callable(back, "_on_pressed")
 		if back.pressed.is_connected(original_back):
 			back.pressed.disconnect(original_back)
-		back.pressed.connect(SceneRouter.go_to_expeditions if _expedition_mode else (SceneRouter.return_from_dungeon if _dungeon_mode else _on_hunt_back))
+		back.pressed.connect(SceneRouter.go_to_expeditions if _expedition_mode else (_dungeon_exit_warning if _dungeon_mode else _on_hunt_back))
 		if _expedition_preview:
 			back.pressed.disconnect(SceneRouter.go_to_expeditions)
 			back.pressed.connect(queue_free)
@@ -2000,12 +2000,17 @@ func _on_dungeon_identity(state: Dictionary) -> void:
 		_recover_dungeon()
 
 func _recover_dungeon() -> void:
-	if _dungeon_backend == null or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")) or _dungeon_backend.token.is_empty():
-		_set_build_error("Sign in with the original account to recover this Dungeon.")
+	var session: Variant = SceneRouter._dungeon_context.get("session")
+	if _dungeon_backend == null or _dungeon_backend._verified_player_id != str(SceneRouter._dungeon_context.get("player_id", "")) or not session is Dictionary or str(session.get("run_id", "")) != str(SceneRouter._dungeon_context.get("run_id", "")) or not session.get("spell_progress") is Dictionary:
+		_dungeon_recovered = false
+		_set_build_error("Dungeon unavailable. Return to Sync Nexus.")
 		return
-	_dungeon_kind = "session"
-	_dungeon_request = _dungeon_backend.request_api("GET", "/dungeon/session", null)
-	_set_build_error("Recovering Dungeon..." if not _dungeon_request.is_empty() else "Connection busy. Retry.")
+	_dungeon_spell_progress = session.spell_progress.duplicate(true)
+	_spell_state["spell_progress"] = _dungeon_spell_progress.duplicate(true)
+	_dungeon_recovered = true
+	_refresh_spell_button()
+	_set_build_error("")
+	_restore_build_preferences(_dungeon_backend._verified_player_id)
 
 func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary) -> void:
 	if request_id.is_empty() or request_id != _dungeon_request:
@@ -2019,18 +2024,16 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 	if _dungeon_kind == "loadout" and not ok:
 		var message := str(data.get("error", ""))
 		if message in ["Invalid or unsupported dungeon loadout.", "Invalid dungeon loadout.", "UNSUPPORTED_MECHANIC", "UNTRUSTED_SETUP"]:
-			if not get_node("/root/ConnectionGate").journal_confirm(str(_dungeon_payload.get("client_action_id", ""))): return
 			_dungeon_payload.clear()
 			SceneRouter._dungeon_context.erase("pending_loadout")
 			_set_build_error("The server rejected this loadout. Check your entity, homunculus, weapons and learned spells; verify the backend is up to date.")
 		else:
 			_dungeon_recovered = false
-			_recover_dungeon()
+			_set_build_error("Dungeon ended. Return to Sync Nexus.")
 		return
-	var session: Variant = data.get("session") if _dungeon_kind == "session" else data
+	var session: Variant = data
 	if ok and _dungeon_kind == "session" and session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and str(session.get("status", "")) in ["LOSS", "EXPIRED", "ABANDONED"]:
 		var gate := get_node("/root/ConnectionGate")
-		if not gate.journal_close("dungeon", str(session.run_id)): return
 		_dungeon_payload.clear()
 		SceneRouter._dungeon_context.erase("pending_loadout")
 		if gate.blocked(): gate.recovery_to_combat()
@@ -2057,7 +2060,6 @@ func _on_dungeon_loadout_response(request_id: String, ok: bool, data: Dictionary
 					_dungeon_recovered = false
 					_set_build_error("Recovered loadout differs. Return to Sync Nexus.")
 					return
-			if not get_node("/root/ConnectionGate").journal_confirm(str(_dungeon_payload.get("client_action_id", ""))): return
 		_dungeon_payload.clear()
 		SceneRouter._dungeon_context.erase("pending_loadout")
 		SceneRouter._dungeon_context["session"] = session.duplicate(true)
@@ -2587,3 +2589,6 @@ func _revalidate_hom_selection() -> void:
 		_current_homunculus_id = _legacy_hom_fallback()
 		_update_selected_visuals()
 		_refresh_details()
+
+func _dungeon_exit_warning() -> void:
+	get_node("/root/ConnectionGate").dungeon_exit_warning()

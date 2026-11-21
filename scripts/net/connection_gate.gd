@@ -28,6 +28,9 @@ var _suspended_process_mode: int
 var _suspended_visible := true
 var _debug_lab_button: Button
 var debug_offline_enabled := false
+var _dungeon_http: HTTPRequest
+var _dungeon_timer: Timer
+var _dungeon_return_after_disconnect := false
 
 func _ready() -> void:
 	_http = HTTPRequest.new()
@@ -40,6 +43,14 @@ func _ready() -> void:
 	_timer.timeout.connect(_check)
 	add_child(_timer)
 	_create_overlay()
+	_dungeon_http = HTTPRequest.new()
+	_dungeon_http.timeout = 8.0
+	add_child(_dungeon_http)
+	_dungeon_http.request_completed.connect(_dungeon_heartbeat_completed)
+	_dungeon_timer = Timer.new()
+	_dungeon_timer.wait_time = 5.0
+	_dungeon_timer.timeout.connect(_dungeon_heartbeat)
+	add_child(_dungeon_timer)
 
 func register_identity(client: Node, identity: String) -> void:
 	if debug_offline_enabled:
@@ -217,6 +228,10 @@ func _fail(next: State, message: String) -> void:
 	if (state == State.AUTH_REQUIRED or _identity_mismatch) and next == State.RECONNECTING:
 		return
 	var was_connected := state == State.CONNECTED
+	var lost_dungeon := was_connected and not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
+	if lost_dungeon:
+		_dungeon_end(false)
+		_dungeon_return_after_disconnect = true
 	state = next
 	_player_verified = false
 	_loadout_session_requested = false
@@ -234,12 +249,12 @@ func _fail(next: State, message: String) -> void:
 	var auth_scene := get_tree().current_scene
 	if not debug_lab_navigation_allowed() and (next == State.IDLE or not (is_instance_valid(auth_scene) and auth_scene.has_method("auth_gate_screen"))):
 		_layer.show()
-	if was_connected:
+	if was_connected and not lost_dungeon:
 		var scene := get_tree().current_scene
 		if is_instance_valid(scene) and scene.has_method("connection_gate_lost"):
 			_recovery_owner_id = scene.get_instance_id()
 			scene.connection_gate_lost()
-		elif is_instance_valid(scene) and scene.has_method("_recover_hunt_session") and (not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty() or not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()):
+		elif is_instance_valid(scene) and scene.has_method("_recover_hunt_session") and (not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty()):
 			_recovery_owner_id = scene.get_instance_id()
 	if next == State.RECONNECTING:
 		_schedule_retry()
@@ -327,6 +342,9 @@ func _on_check_completed(result: int, code: int, _headers: PackedStringArray, bo
 	if not _journal_checked:
 		if not _restore_journal():
 			return
+	if _dungeon_return_after_disconnect:
+		_unlock()
+		return
 	var scene := get_tree().current_scene
 	if _recovery_owner_id != 0 and (not is_instance_valid(scene) or scene.get_instance_id() != _recovery_owner_id):
 		_detail.text = "The original session must be recovered before continuing."
@@ -334,17 +352,18 @@ func _on_check_completed(result: int, code: int, _headers: PackedStringArray, bo
 	elif is_instance_valid(scene) and scene.has_method("connection_gate_recover"):
 		scene.connection_gate_recover()
 		_timer.start(2.0)
-	elif is_instance_valid(scene) and scene.has_method("_recover_hunt_session") and (not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty() or not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()):
+	elif is_instance_valid(scene) and scene.has_method("_recover_hunt_session") and (not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty()):
 		_recover_loadout(scene)
 		if blocked():
 			_timer.start(2.0)
-	elif not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty() or not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
+	elif not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
 		_detail.text = "Session recovery is required before continuing."
 		_timer.start(2.0)
 	else:
 		_unlock()
 
 func _restore_journal() -> bool:
+	_discard_legacy_dungeon_journals()
 	var journal := RecoveryJournal.new()
 	if not journal.set_identity(player_id):
 		_fail(State.ERROR, "Invalid recovery identity.")
@@ -357,29 +376,23 @@ func _restore_journal() -> bool:
 	if entry.is_empty():
 		return true
 	var kind := str(entry.pending_kind)
-	if entry.mode == "hunt":
-		SceneRouter._dungeon_context.clear()
-		SceneRouter._solo_hunt_context = entry.context.duplicate(true)
-		SceneRouter._solo_hunt_context["session_id"] = entry.session_id
-		SceneRouter._solo_hunt_context["loadout_identity"] = player_id
-		if kind == "loadout":
-			SceneRouter._hunt_loadout_active = true
-			SceneRouter._solo_hunt_context["pending_loadout"] = entry.payload.duplicate(true)
-		elif not kind.is_empty():
-			SceneRouter._solo_hunt_context["pending_action"] = {"kind": kind, "payload": entry.payload.duplicate(true)}
-	else:
-		SceneRouter._solo_hunt_context.clear()
-		SceneRouter._hunt_loadout_active = false
-		SceneRouter._dungeon_context = {"run_id": entry.session_id, "player_id": player_id}
-		if kind == "loadout":
-			SceneRouter._dungeon_context["pending_loadout"] = entry.payload.duplicate(true)
-		elif not kind.is_empty():
-			SceneRouter._dungeon_context["pending_action"] = {"kind": kind, "payload": entry.payload.duplicate(true)}
+	if entry.mode != "hunt":
+		return journal.remove()
+	SceneRouter._dungeon_context.clear()
+	SceneRouter._solo_hunt_context = entry.context.duplicate(true)
+	SceneRouter._solo_hunt_context["session_id"] = entry.session_id
+	SceneRouter._solo_hunt_context["loadout_identity"] = player_id
+	if kind == "loadout":
+		SceneRouter._hunt_loadout_active = true
+		SceneRouter._solo_hunt_context["pending_loadout"] = entry.payload.duplicate(true)
+	elif not kind.is_empty():
+		SceneRouter._solo_hunt_context["pending_action"] = {"kind": kind, "payload": entry.payload.duplicate(true)}
 	var scene_path: String = SceneRouter.SCENE_LOADOUT if kind == "loadout" else SceneRouter.SCENE_COMBAT
 	_navigate_recovery(scene_path)
 	return false
 
 func journal_pending(client: Node, mode: String, kind: String, payload: Dictionary) -> bool:
+	if mode != "hunt": return false
 	if client._verified_player_id.is_empty() or client._verified_player_id != player_id:
 		return false
 	var journal := RecoveryJournal.new()
@@ -427,6 +440,7 @@ func journal_confirm(action_id: String) -> bool:
 	return true
 
 func journal_close(mode: String, session_id: String) -> bool:
+	if mode == "dungeon": return true
 	var journal := RecoveryJournal.new()
 	if not journal.set_identity(player_id): return false
 	var entry := journal.load_entry()
@@ -461,8 +475,7 @@ func _perform_recovery_navigation(scene_path: String) -> void:
 		_fail(State.ERROR, "Cannot open the recovery session.")
 
 func _recover_loadout(scene: Node) -> void:
-	var dungeon := not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
-	var client: BackendClient = scene._dungeon_backend if dungeon else scene._hunt_backend
+	var client: BackendClient = scene._hunt_backend
 	if client == null or client.token != token:
 		return
 	if client._verified_player_id.is_empty():
@@ -472,35 +485,21 @@ func _recover_loadout(scene: Node) -> void:
 		return
 	if not _loadout_session_verified:
 		if _loadout_session_requested:
-			var recovered: bool = scene._dungeon_recovered if dungeon else scene._hunt_recovered
-			if recovered:
+			if scene._hunt_recovered:
 				_loadout_session_verified = true
 			else:
 				_loadout_session_requested = false
 				return
 		else:
-			if dungeon:
-				scene._dungeon_recovered = false
-				scene._dungeon_kind = "session"
-				scene._dungeon_request = client.request_api("GET", "/dungeon/session?run_id=" + str(SceneRouter._dungeon_context.get("run_id", "")).uri_encode(), null, false, true)
-				_loadout_session_requested = not scene._dungeon_request.is_empty()
-			else:
-				scene._hunt_recovered = false
-				var path := "/world/boss-hunts/session?session_id=" + str(SceneRouter._solo_hunt_context.get("session_id", "")).uri_encode()
-				scene._hunt_recovery_request = client.request_api("GET", path, null, false, true)
-				_loadout_session_requested = not scene._hunt_recovery_request.is_empty()
+			scene._hunt_recovered = false
+			var path := "/world/boss-hunts/session?session_id=" + str(SceneRouter._solo_hunt_context.get("session_id", "")).uri_encode()
+			scene._hunt_recovery_request = client.request_api("GET", path, null, false, true)
+			_loadout_session_requested = not scene._hunt_recovery_request.is_empty()
 			return
-	var pending: Dictionary = scene._dungeon_payload if dungeon else scene._hunt_payload
-	if not pending.is_empty():
-		if dungeon:
-			scene._dungeon_kind = "loadout"
-			scene._dungeon_request = client.request_api("POST", "/dungeon/loadout", pending.duplicate(true), false, true)
-		else:
-			scene._hunt_submit_request = client.request_api("POST", "/world/boss-hunts/loadout", pending.duplicate(true), false, true)
+	if not scene._hunt_payload.is_empty():
+		scene._hunt_submit_request = client.request_api("POST", "/world/boss-hunts/loadout", scene._hunt_payload.duplicate(true), false, true)
 		return
-	if dungeon and SceneRouter._dungeon_context.has("session"):
-		_navigate_recovery(SceneRouter.SCENE_COMBAT)
-	elif not dungeon and int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) >= 1:
+	if int(SceneRouter._solo_hunt_context.get("recovered_session", {}).get("combat_revision", 0)) >= 1:
 		SceneRouter._hunt_loadout_active = false
 		_navigate_recovery(SceneRouter.SCENE_COMBAT)
 	else:
@@ -516,6 +515,9 @@ func _unlock() -> void:
 	_loadout_session_requested = false
 	_loadout_session_verified = false
 	_layer.hide()
+	if _dungeon_return_after_disconnect:
+		_dungeon_return_after_disconnect = false
+		SceneRouter.return_from_dungeon()
 	_timer.start(15.0)
 	for client in get_tree().get_nodes_in_group("backend_session_clients"):
 		if client.auto_flush and client._verified_player_id == player_id:
@@ -590,3 +592,101 @@ func _create_overlay() -> void:
 				SceneRouter.go_to_lab_hub())
 		box.add_child(_debug_lab_button)
 	_layer.hide()
+
+func _discard_legacy_dungeon_journals() -> void:
+	var directory := DirAccess.open("user://")
+	if directory == null: return
+	for filename in directory.get_files():
+		if not filename.begins_with("session_recovery_") or not filename.ends_with(".json"): continue
+		var path := "user://" + filename
+		var file := FileAccess.open(path, FileAccess.READ)
+		if file == null or file.get_length() > 65536: continue
+		var entry: Variant = JSON.parse_string(file.get_as_text())
+		file.close()
+		if entry is Dictionary and entry.get("mode") == "dungeon": DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+func dungeon_started() -> void:
+	_dungeon_timer.start()
+	_dungeon_heartbeat()
+
+func dungeon_finished() -> void:
+	_dungeon_timer.stop()
+	_dungeon_http.cancel_request()
+
+func _dungeon_heartbeat() -> void:
+	var run_id := str(SceneRouter._dungeon_context.get("run_id", ""))
+	if run_id.is_empty() or blocked() or token.is_empty(): return
+	if _dungeon_http.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED: return
+	var headers := PackedStringArray(["Authorization: Bearer " + token, "Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()])
+	if _dungeon_http.request(base_url + "/dungeon/heartbeat", headers, HTTPClient.METHOD_POST, JSON.stringify({"run_id": run_id})) != OK:
+		_fail(State.RECONNECTING, "Dungeon ended after connection loss.")
+
+func _dungeon_heartbeat_completed(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
+	if SceneRouter._dungeon_context.is_empty(): return
+	if result != HTTPRequest.RESULT_SUCCESS or code < 200 or code >= 300:
+		_fail(State.RECONNECTING, "Dungeon ended after connection loss.")
+
+func _dungeon_end(navigate: bool) -> void:
+	_dungeon_timer.stop()
+	_dungeon_http.cancel_request()
+	var run_id := str(SceneRouter._dungeon_context.get("run_id", ""))
+	if not run_id.is_empty() and not token.is_empty():
+		var request := HTTPRequest.new()
+		request.timeout = 8.0
+		add_child(request)
+		request.request_completed.connect(func(_r, _c, _h, _b): request.queue_free())
+		var headers := PackedStringArray(["Authorization: Bearer " + token, "Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()])
+		var action_id := "%s-%s" % [str(Time.get_ticks_usec()), run_id]
+		if request.request(base_url + "/dungeon/abandon", headers, HTTPClient.METHOD_POST, JSON.stringify({"run_id": run_id, "client_action_id": action_id})) != OK: request.queue_free()
+	SceneRouter._dungeon_context.clear()
+	if navigate: SceneRouter.return_from_dungeon()
+
+func dungeon_exit_warning() -> void:
+	dungeon_warning("DUNGEON_EXIT_WARNING", "DUNGEON_EXIT_CONFIRM", "DUNGEON_STAY", func(): _dungeon_end(true))
+
+func dungeon_warning(message_key: String, confirm_key: String, cancel_key: String, confirmed: Callable) -> void:
+	var existing := get_node_or_null("DungeonWarning")
+	if existing != null:
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "DungeonWarning"
+	layer.layer = 900
+	add_child(layer)
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.58)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(620, 300)
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(55, 50, 55, 40)))
+	center.add_child(panel)
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 20)
+	panel.add_child(box)
+	var label := Label.new()
+	label.name = "WarningText"
+	label.text = tr(message_key)
+	label.custom_minimum_size = Vector2(500, 110)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 18)
+	box.add_child(label)
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 20)
+	box.add_child(buttons)
+	for spec in [[confirm_key, true], [cancel_key, false]]:
+		var button := Button.new()
+		button.text = tr(spec[0])
+		button.custom_minimum_size = Vector2(180, 52)
+		MenuArt.button(button)
+		buttons.add_child(button)
+		if spec[1]:
+			button.pressed.connect(func(): layer.queue_free(); confirmed.call())
+		else:
+			button.pressed.connect(layer.queue_free)

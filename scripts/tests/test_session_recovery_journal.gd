@@ -14,6 +14,14 @@ func _run() -> void:
 	assert(journal.set_identity("owner"))
 	assert(journal.remove())
 	assert(journal.load_entry().is_empty())
+	var dungeon := {"version": 1, "mode": "dungeon", "player_id": "owner", "session_id": "run", "context": {}, "pending_kind": "", "payload": {}}
+	assert(not journal.save_entry(dungeon))
+	var legacy_path := "user://session_recovery_%s.json" % "owner".sha256_text()
+	var legacy := FileAccess.open(legacy_path, FileAccess.WRITE)
+	legacy.store_string(JSON.stringify(dungeon))
+	legacy.close()
+	get_root().get_node("ConnectionGate")._discard_legacy_dungeon_journals()
+	assert(not FileAccess.file_exists(legacy_path))
 	var entry := {"version": 1, "mode": "hunt", "player_id": "owner", "session_id": "session", "context": {"hunt_id": "hunt"}, "pending_kind": "turn", "payload": {"session_id": "session", "client_action_id": "action", "expected_revision": 1, "decision": {"turn": 1, "spell_id": "spell"}}}
 	assert(journal.save_entry(entry))
 	var loaded := journal.load_entry()

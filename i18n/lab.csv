@@ -256,3 +256,10 @@ VAT_WAITING,Waiting for confirmation.,Esperando confirmación.
 VAT_NOT_OWNED,Homunculus not owned.,Homúnculo no capturado.
 
 LOADOUT_HOM_PENDING,Expedition homunculi are not yet available in combat. Choose an original homunculus.,Los homúnculos de expedición aún no están disponibles en combate. Elige un homúnculo original.
+
+DUNGEON_ENTRY_WARNING,"Dungeon runs cannot be resumed. Leaving, closing the game or losing your internet connection will permanently end your run. Your previously cleared floors will remain recorded, but you will lose your current progress.","Las partidas de Dungeon no pueden reanudarse. Salir, cerrar el juego o perder la conexión a Internet finalizará definitivamente la partida. Los pisos superados anteriormente seguirán registrados, pero perderás el progreso de la sesión actual."
+DUNGEON_ENTRY_CONFIRM,ENTER DUNGEON,ENTRAR
+DUNGEON_CANCEL,CANCEL,CANCELAR
+DUNGEON_EXIT_WARNING,Leaving Dungeon will permanently end this run as a defeat. You will not be able to resume this session. Are you sure?,Salir de Dungeon finalizará definitivamente esta partida como una derrota. No podrás reanudar esta sesión. ¿Estás seguro?
+DUNGEON_EXIT_CONFIRM,EXIT DUNGEON,SALIR
+DUNGEON_STAY,STAY,QUEDARSE

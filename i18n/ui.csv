@@ -156,9 +156,9 @@ SPELL_MERCURY_SNARE_DESC,Blocks the enemy homunculus for one turn.,Bloquea al ho
 SPELL_CRYSTAL_RAM_NAME,Crystal Ram,Ariete de cristal
 SPELL_CRYSTAL_RAM_DESC,A reliable crystalline charge.,Una carga cristalina fiable.
 SPELL_SALT_BARRIER_NAME,Salt Barrier,Barrera de sal
-SPELL_SALT_BARRIER_DESC,Grants the user a 24% shield.,Otorga al usuario un escudo del 24%.
+SPELL_SALT_BARRIER_DESC,Grants a 24% shield and 50% reflection for two exchanges.,Otorga un escudo del 24% y un reflejo del 50% durante dos intercambios.
 SPELL_BRINE_MEND_NAME,Brine Mend,Curación salina
-SPELL_BRINE_MEND_DESC,Restores 11 HP to the user.,Restaura 11 PV al usuario.
+SPELL_BRINE_MEND_DESC,"Drains up to 15 HP from the enemy, healing the user for the health actually drained.","Drena hasta 15 PV del rival y cura al usuario la cantidad realmente drenada."
 SPELL_BASTION_RETURN_NAME,Bastion Return,Respuesta del bastión
 SPELL_BASTION_RETURN_DESC,Grants the user 18% damage reflection.,Otorga al usuario un 18% de reflejo de daño.
 SPELL_RIFT_TOUCH_NAME,Rift Touch,Toque de grieta

@@ -126,3 +126,16 @@ test("boss tiers and guardians advance only their matching objectives", () => {
  expect(current.daily.missions.every((m:any)=>m.progress===0)).toBe(true);
  db.close();
 });
+
+test("common zone identity, repeated wins and guardian exclusions follow active objectives", () => {
+ const db=database();
+ const commonWeek=Array.from({length:6},(_,i)=>monday+i*7*day).find(t=>active(t,"weekly").some(m=>m.id==="weekly_common"))!;
+ for (const [zone,appearance] of [["zone_chaos","a"],["zone_chaos","a"],["zone_crystal","a"],["zone_chaos","b"]]) record(db,"p",commonWeek,{guardian:false,win:true,tier:"common",zone,appearance});
+ let current=snapshot(db,"p",commonWeek);
+ expect(current.weekly.missions.find((m:any)=>m.id==="weekly_common").progress).toBe(3);
+ record(db,"p",commonWeek,{guardian:true,win:true,tier:"common",zone:"zone_chaos",appearance:"c",damage:500,choose:true,session:"g"});
+ current=snapshot(db,"p",commonWeek);
+ expect(current.weekly.missions.find((m:any)=>m.id==="weekly_common").progress).toBe(3);
+ expect(current.daily.missions.find((m:any)=>m.id==="daily_damage").progress).toBe(0);
+ db.close();
+});

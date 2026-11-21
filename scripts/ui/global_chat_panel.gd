@@ -280,7 +280,7 @@ func _refresh() -> void:
 			_log.pop()
 			_log.add_text(username.substr(9) + ": ")
 		else:
-			_log.push_color(Color.RED)
+			_log.push_color(Color("e5c76d") if entry.get("source", "") == "system" else Color.RED)
 			_log.add_text(username + ": ")
 		_log.pop()
 		_log.push_color(Color.WHITE)

@@ -219,7 +219,7 @@ func request_api(method: String, path: String, body: Variant, expect_state: bool
 	_ensure_api_http()
 	if _api_in_flight.size() > 0:
 		return ""
-	var recovery_paths := {"/world/boss-hunts/loadout": ["hunt", "loadout"], "/world/boss-hunts/turn": ["hunt", "turn"], "/world/boss-hunts/inspiration": ["hunt", "inspiration"], "/world/boss-hunts/forfeit": ["hunt", "forfeit"], "/dungeon/loadout": ["dungeon", "loadout"], "/dungeon/turn": ["dungeon", "turn"], "/dungeon/inspiration": ["dungeon", "inspiration"], "/dungeon/blessing": ["dungeon", "blessing"], "/dungeon/next": ["dungeon", "next"]}
+	var recovery_paths := {"/world/boss-hunts/loadout": ["hunt", "loadout"], "/world/boss-hunts/turn": ["hunt", "turn"], "/world/boss-hunts/inspiration": ["hunt", "inspiration"], "/world/boss-hunts/forfeit": ["hunt", "forfeit"]}
 	if method == "POST" and recovery_paths.has(path):
 		if not body is Dictionary or not _connection_gate().journal_pending(self, recovery_paths[path][0], recovery_paths[path][1], body):
 			return ""

@@ -43,7 +43,7 @@ func load_entry() -> Dictionary:
 	return parsed
 
 func save_entry(entry: Dictionary) -> bool:
-	if _path.is_empty() or not _valid(entry):
+	if entry.get("mode") != "hunt" or _path.is_empty() or not _valid(entry):
 		return false
 	var temp := _path + ".tmp"
 	var file := FileAccess.open(temp, FileAccess.WRITE)

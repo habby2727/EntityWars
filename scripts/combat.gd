@@ -450,11 +450,16 @@ func _dungeon_on_auth_changed(_token: String) -> void:
 func _dungeon_recover() -> void:
 	if _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or not _dungeon_request.is_empty():
 		return
-	_dungeon_kind = "session"
-	_dungeon_request = _combat_backend.request_api("GET", "/dungeon/session?run_id=" + str(SceneRouter._dungeon_context.get("run_id", "")).uri_encode(), null, false, _connection_gate().blocked())
-	if _dungeon_request.is_empty():
-		_dungeon_show_retry("Connection busy. Retry recovery.")
-	_dungeon_refresh_controls()
+	if not _dungeon_session.is_empty():
+		return
+	var session: Variant = SceneRouter._dungeon_context.get("session")
+	if not session is Dictionary or str(session.get("run_id", "")) != str(SceneRouter._dungeon_context.get("run_id", "")) or str(session.get("status", "")) != "ACTIVE" or not session.get("combat_state") is Dictionary:
+		_dungeon_show_retry("Dungeon unavailable. Return to Sync Nexus.")
+		return
+	_dungeon_session = session.duplicate(true)
+	SceneRouter._dungeon_context.erase("session")
+	_dungeon_synchronized = true
+	_dungeon_render()
 
 func _dungeon_show_retry(message: String) -> void:
 	_dungeon_synchronized = false
@@ -496,47 +501,29 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_refresh_controls()
 		_refresh_dungeon_blessing()
 		return
-	if _dungeon_kind == "session":
-		var session: Variant = data.get("session")
-		if not ok:
-			_dungeon_show_retry("Dungeon recovery failed. Retry.")
-			return
-		if session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and str(session.get("status", "")) in ["EXPIRED", "ABANDONED"]:
-			if not _connection_gate().journal_close("dungeon", str(session.run_id)): return
-			_dungeon_session = session.duplicate(true)
-			_dungeon_pending.clear()
-			SceneRouter._dungeon_context.erase("pending_action")
-			_gate_session_verified = true
-			_log_immediate("Dungeon " + str(session.status).to_lower() + ".")
-			_set_next_turn_action("return")
-			next_turn_btn.show()
-			connection_gate_recover()
-			return
-		if session is Dictionary and str(session.get("run_id", "")) == str(SceneRouter._dungeon_context.get("run_id", "")) and int(session.get("combat_revision", 0)) >= 1 and session.get("combat_state") is Dictionary:
-			if int(session.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
-				_gate_session_verified = not _connection_gate().blocked() or _connection_gate()._player_verified
-				_dungeon_session = session.duplicate(true)
-				_dungeon_synchronized = true
-				_dungeon_render()
-		elif _dungeon_pending.is_empty():
-			_dungeon_show_retry("Dungeon session unavailable. Return to Sync Nexus.")
-			return
-		if not _dungeon_pending.is_empty():
-			_dungeon_send_pending()
-		else:
-			if session is Dictionary and str(session.get("status", "")) == "LOSS" and not _connection_gate().journal_close("dungeon", str(session.get("run_id", ""))): return
-			connection_gate_recover()
+	if not ok and str(data.get("error", "")) in ["Dungeon run unavailable or stale.", "Dungeon run is closed."]:
+		_dungeon_synchronized = false
+		_connection_gate().dungeon_finished()
+		_log_immediate("Dungeon session ended. Return to Sync Nexus.")
+		_set_next_turn_action("return")
+		next_turn_btn.show()
+		_dungeon_refresh_controls()
 		return
-	if not ok and str(data.get("error", "")) in ["INVALID_DECISION", "UNSUPPORTED_MECHANIC", "Dungeon run unavailable or stale.", "Floor not cleared."]:
-		if not _connection_gate().journal_confirm(str(_dungeon_pending.get("payload", {}).get("client_action_id", ""))): return
+	if not ok and str(data.get("error", "")) in ["INVALID_DECISION", "UNSUPPORTED_MECHANIC", "Floor not cleared."]:
 		_dungeon_pending.clear()
 		SceneRouter._dungeon_context.erase("pending_action")
 		_log_immediate("Action rejected: " + str(data.get("error", "")))
-		_dungeon_recover()
+		_dungeon_synchronized = true
+		_dungeon_refresh_controls()
 		return
 	if not ok or str(data.get("run_id", "")) != str(SceneRouter._dungeon_context.get("run_id", "")) or not data.get("combat_state") is Dictionary or int(data.get("combat_revision", 0)) != int(_dungeon_pending.get("payload", {}).get("expected_revision", -1)) + 1:
-		_dungeon_show_retry("Action unresolved. Retry recovery.")
+		_dungeon_synchronized = false
+		_log_immediate("Dungeon session ended. Return to Sync Nexus.")
+		_set_next_turn_action("return")
+		next_turn_btn.show()
+		_dungeon_refresh_controls()
 		return
+	if str(data.get("status", "")) != "ACTIVE": _connection_gate().dungeon_finished()
 	var action_id := str(_dungeon_pending.get("payload", {}).get("client_action_id", ""))
 	if not _dungeon_seen_actions.has(action_id):
 		_dungeon_seen_actions[action_id] = true
@@ -557,9 +544,6 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_presentation_turn = -1
 		if not is_inside_tree() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
 			return
-	if not _connection_gate().journal_confirm(str(_dungeon_pending.get("payload", {}).get("client_action_id", ""))): return
-	if str(data.get("status", "")) != "ACTIVE":
-		if not _connection_gate().journal_close("dungeon", str(SceneRouter._dungeon_context.get("run_id", ""))): return
 	_dungeon_pending.clear()
 	SceneRouter._dungeon_context.erase("pending_action")
 	if int(data.combat_revision) >= int(_dungeon_session.get("combat_revision", 0)):
@@ -1152,7 +1136,7 @@ func _begin_combat_initialization() -> void:
 			_connection_gate().require_authentication()
 		else:
 			_connection_gate().register_identity(_combat_backend, _dungeon_identity)
-		_log_immediate("Recovering Dungeon session...")
+		_log_immediate("Starting Dungeon...")
 		return
 	if not str(SceneRouter._solo_hunt_context.get("session_id", "")).is_empty():
 		_online_hunt_guard = true
@@ -2018,10 +2002,7 @@ func _on_back_pressed() -> void:
 		_ranked_controller.back()
 		return
 	if not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty():
-		if not _dungeon_pending.is_empty() or not _dungeon_request.is_empty():
-			_dungeon_show_retry("Resolve the pending Dungeon request before leaving.")
-			return
-		SceneRouter.return_from_dungeon()
+		_connection_gate().dungeon_exit_warning()
 		return
 	if _online_hunt_guard:
 		_online_hunt_exit(false)
@@ -3350,7 +3331,10 @@ func _on_next_turn() -> void:
 		return
 	if _dungeon_guard:
 		if _next_turn_action == "retry":
-			_dungeon_recover()
+			if not _dungeon_pending.is_empty():
+				_dungeon_send_pending()
+			else:
+				_dungeon_recover()
 		elif _next_turn_action == "next_floor" and _dungeon_synchronized and _dungeon_pending.is_empty() and _dungeon_request.is_empty() and _combat_backend._verified_player_id == _dungeon_identity:
 			_dungeon_pending = {"kind": "next", "payload": {"run_id": str(SceneRouter._dungeon_context.get("run_id", "")), "client_action_id": _combat_backend._make_uuid(), "expected_revision": int(_dungeon_session.get("combat_revision", 0))}}
 			SceneRouter._dungeon_context["pending_action"] = _dungeon_pending.duplicate(true)
@@ -3895,6 +3879,13 @@ func _end_spell_exchange() -> void:
 		_show_physical_anomaly(_physical_anomaly)
 	for fighter in [player, enemy]:
 		fighter.spell_neutralize_active = 0.0
+		var defenses: Dictionary = fighter.get("timed_defenses", {})
+		for field in defenses.keys():
+			if int(defenses[field].expires_turn) <= _turn or int(player.hp) <= 0 or int(enemy.hp) <= 0: defenses.erase(field)
+		if defenses.is_empty(): fighter.erase("timed_defenses")
+
+func _timed_defense(fighter: Dictionary, field: String) -> float:
+	return maxf(float(fighter.status.get(field, 0.0)), float(fighter.get("timed_defenses", {}).get(field, {}).get("value", 0.0)))
 
 func _strategic_heal(fighter: Dictionary, amount: int) -> int:
 	return floori(amount * 0.5) if fighter.has("strategic_heal_suppression") else amount
@@ -4004,7 +3995,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 			power += float(effect.value)
 		elif effect.kind == "bonus_power_if_poisoned" and poisoned_before:
 			power += float(effect.value)
-		elif effect.kind == "bonus_if_shielded" and float(caster.status.shield_pct) > 0.0:
+		elif effect.kind == "bonus_if_shielded" and _timed_defense(caster, "shield_pct") > 0.0:
 			power += float(effect.value)
 		elif effect.kind == "bonus_power_if_hit_last_exchange" and caster.get("spell_hit_last_exchange", false):
 			power += float(effect.value)
@@ -4129,14 +4120,47 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 						_animate_hit(_fighter_sprite(recipient), int(value), recipient.max_hp)
 				, _combat_event(recipient, "damage", " takes %d recoil." % int(value), {}))
 			"life_leech":
-				var cap := int(effect.get("max_heal", 0)) * (2 if ultra_active else 1)
-				_log_step("%s siphons health." % recipient.name, func():
-					if recipient.hp > 0:
-						var recovered := _strategic_heal(recipient, mini(cap, int(floor(float(attack_context.actual_damage) * value))))
-						var actual := mini(recovered, int(recipient.max_hp) - int(recipient.hp))
-						recipient.hp = mini(recipient.max_hp, recipient.hp + recovered)
-						_append_combat_log("", _combat_event(recipient, "heal", " restores %d HP from life leech." % actual, {}))
-				, _combat_event(recipient, "heal", " siphons health.", {}))
+				if bool(effect.get("health_drain", false)):
+					_log_step("%s drains health." % caster.name, func():
+						if int(caster.hp) <= 0 or int(target.hp) <= 0: return
+						var mitigated := roundi(float(effect.get("max_heal", 0)) * (2.0 if ultra_active else 1.0) * (1.0 - clampf(_timed_defense(target, "shield_pct"), 0.0, 1.0)) * clampf(float(_hom_synergy(target).get("incoming_mult", 1.0)), 0.1, 1.0))
+						if _solo_boss_mode and is_same(target, enemy) and _solo_shield_turns > 0: mitigated = roundi(mitigated * (1.0 - float(_solo_def.shield_reduction)))
+						var amount := mini(int(target.hp), mini(int(caster.max_hp) - int(caster.hp), _strategic_heal(caster, mitigated)))
+						if float(target.status.get("shield_pct", 0.0)) > 0.0: _clear_defense(target, "shield_pct")
+						target.hp -= amount
+						caster.hp += amount
+						if amount > 0:
+							target.spell_hit_this_exchange = true
+							_fire_expedition_passive(target, caster, "damage_received")
+							_animate_hit(_fighter_sprite(target), amount, target.max_hp)
+							_animate_pulse(_fighter_sprite(caster), Color(0.55, 1.0, 0.65), 1.04)
+						_append_combat_log("%s drains %d HP from %s and restores %d HP." % [caster.name, amount, target.name, amount])
+						var reflect := _timed_defense(target, "reflect_pct")
+						if amount > 0 and reflect > 0.0:
+							var ignored := _try_ignore_reflect(caster)
+							var reflected := 0 if ignored else mini(int(caster.hp), roundi(amount * reflect))
+							caster.hp -= reflected
+							if reflected > 0:
+								caster.spell_hit_this_exchange = true
+								_fire_expedition_passive(caster, target, "damage_received")
+							if float(target.status.get("reflect_pct", 0.0)) > 0.0: _clear_defense(target, "reflect_pct")
+							if not ignored and int(target.status.get("poison_on_reflect", 0)) > 0:
+								var previous_poison := int(caster.status.poison)
+								caster.status.poison = maxi(previous_poison, int(target.status.poison_on_reflect))
+								if int(caster.status.poison) > previous_poison: caster.poison_source = str(target.get("poison_reflect_source", ""))
+							target.status.erase("poison_on_reflect")
+							target.erase("poison_reflect_source")
+							_append_combat_log("%s reflects %d damage." % [target.name, reflected])
+					, _combat_event(caster, "damage", " drains health.", {}))
+				else:
+					var cap := int(effect.get("max_heal", 0)) * (2 if ultra_active else 1)
+					_log_step("%s siphons health." % recipient.name, func():
+						if recipient.hp > 0:
+							var recovered := _strategic_heal(recipient, mini(cap, int(floor(float(attack_context.actual_damage) * value))))
+							var actual := mini(recovered, int(recipient.max_hp) - int(recipient.hp))
+							recipient.hp = mini(recipient.max_hp, recipient.hp + recovered)
+							_append_combat_log("", _combat_event(recipient, "heal", " restores %d HP from life leech." % actual, {}))
+					, _combat_event(recipient, "heal", " siphons health.", {}))
 			"consume_poison":
 				if poisoned_before:
 					_log_step("%s consumes poison." % caster.name, func():
@@ -4185,6 +4209,10 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 					if kind in ["shield", "reflect", "atk_boost"] and value > float(recipient.status.get(field, 0)):
 						_animate_pulse(_fighter_sprite(recipient), Color(0.62, 0.7, 1.0), 1.04)
 					if kind in ["shield", "reflect"]:
+						if int(effect.get("duration_exchanges", 0)) > 0:
+							if not recipient.has("timed_defenses"): recipient.timed_defenses = {}
+							recipient.timed_defenses[field] = {"value": value, "expires_turn": _turn + int(effect.duration_exchanges)}
+							return
 						if kind == "shield":
 							if not recipient.has("spell_ward_baseline"):
 								recipient.spell_ward_baseline = float(recipient.status.get("shield_pct", 0.0))
@@ -4256,7 +4284,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 			defender.status.vuln_pct = 0
 			_record_highlight("combo", vulnerability_gain, "%s: vulnerability" % attacker.name)
 		, _combat_event(attacker, "combo", " COMBO: exploits vulnerability.", {}))
-	if defender.status.shield_pct > 0:
+	if _timed_defense(defender, "shield_pct") > 0:
 		var dispel := clampf(float(context.get("dispel", 0.0)), 0.0, 1.0)
 		var pierce := clampf(float(context.get("pierce", 0.0)), 0.0, 1.0)
 		if dispel > 0.0:
@@ -4266,12 +4294,12 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 					if defender.has(field):
 						defender[field] *= 1.0 - dispel
 			, _combat_event(defender, "shield", "'s shield is weakened.", {}))
-		var effective_shield: float = defender.status.shield_pct * (1.0 - dispel) * (1.0 - pierce)
+		var effective_shield: float = _timed_defense(defender, "shield_pct") * (1.0 - dispel) * (1.0 - pierce)
 		var before_shield := dmg
 		dmg = int(round(dmg * (1.0 - effective_shield)))
 		var prevented := maxi(0, before_shield - dmg)
 		_log_step("%s's ward shatters." % defender.name, func():
-			_clear_defense(defender, "shield_pct")
+			if float(defender.status.get("shield_pct", 0.0)) > 0.0: _clear_defense(defender, "shield_pct")
 			_record_highlight("defense", prevented, str(defender.name))
 		, _combat_event(defender, "shield", "'s ward blocks %d damage." % prevented, {}))
 	if bool(context.get("ultra", false)):
@@ -4302,7 +4330,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		if spell_attack and dmg > 0:
 			defender.spell_hit_this_exchange = true
 	, _combat_event(attacker, "damage", " hits ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " for %d." % dmg, "damage": dmg, "effectiveness": mult, "spell_id": str(context.get("spell", {}).get("id", "")) if not context.is_empty() else "", "show_spell_link": false}))
-	if defender.status.reflect_pct > 0:
+	if _timed_defense(defender, "reflect_pct") > 0:
 		if _try_ignore_reflect(attacker):
 			var ir_item := _item_with_effect([_get_active_weapon(attacker)], "ignore_reflect_chance")
 			_log_step("%s nullifies reflect via %s." % [attacker.name, _item_label(ir_item)], func():
@@ -4312,7 +4340,7 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 				_animate_item_effect(attacker, "ignore_reflect_chance")
 			, _combat_event(attacker, "shield", " nullifies reflect via %s." % _item_label(ir_item), {}))
 		else:
-			var r := int(round(dmg * defender.status.reflect_pct))
+			var r := int(round(dmg * _timed_defense(defender, "reflect_pct")))
 			if _solo_boss_mode and is_same(attacker, enemy) and _solo_has_minions():
 				r = 0
 			_log_step("%s reflects %d damage." % [defender.name, r], func():
@@ -4424,6 +4452,8 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 		_log_step("%s's homunculus misses %s." % [attacker.name, defender.name], func(): _animate_lunge(_fighter_sprite(attacker, true), 12.0 if is_same(attacker, player) else -12.0, false), _combat_event(attacker, "miss", " misses ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": "."}, true))
 		return
 	var hom_dmg: int = max(1, int(round((int(attacker.atk) + int(_passive_modifiers(attacker).get("power_flat", 0))) * (0.6 if boosted else 0.4) * clampf(float(_hom_synergy(defender).get("incoming_mult", 1.0)), 0.1, 1.0) * _expedition_hom_multiplier(attacker, defender))))
+	var timed_shield := float(defender.get("timed_defenses", {}).get("shield_pct", {}).get("value", 0.0))
+	if timed_shield > 0.0: hom_dmg = maxi(0, roundi(hom_dmg * (1.0 - timed_shield)))
 	if _solo_boss_mode and _solo_power_active and is_same(attacker, player) and is_same(defender, enemy):
 		hom_dmg *= 2
 	var boss_prevented := 0
@@ -4446,6 +4476,16 @@ func _attack_homunculus(attacker: Dictionary, defender: Dictionary, boosted: boo
 		if track_hit:
 			defender.spell_hit_this_exchange = true
 	, _combat_event(attacker, "homunculus", " overcharged attack on " if boosted else " strikes ", {"target": defender.name, "target_color": _actor_color(defender), "suffix": " for %d." % hom_dmg}, true))
+	var timed_reflect := float(defender.get("timed_defenses", {}).get("reflect_pct", {}).get("value", 0.0))
+	if timed_reflect > 0.0 and not _try_ignore_reflect(attacker):
+		var reflected := roundi(hom_dmg * timed_reflect)
+		_log_step("%s reflects %d damage." % [defender.name, reflected], func():
+			var actual := mini(int(attacker.hp), reflected)
+			attacker.hp -= actual
+			if actual > 0:
+				_fire_expedition_passive(attacker, defender, "damage_received")
+				_animate_hit(_fighter_sprite(attacker), actual, attacker.max_hp)
+		, _combat_event(defender, "shield", " reflects %d damage." % reflected, {}))
 
 func _apply_round_winner_tempo() -> void:
 	if _round != 2:
@@ -4962,7 +5002,7 @@ func _fire_expedition_passive(fighter: Dictionary, target: Dictionary, event: St
 	if event == "before_attack" and not spell.is_empty() and str(mark.get("owner", "")) == ("player" if is_same(fighter, player) else "enemy") and int(mark.get("remaining", 0)) <= 1:
 		mark_active = false
 	debuffed = debuffed or mark_active or target.has("strategic_heal_suppression")
-	var context := {"hp":fighter.hp, "max_hp":fighter.max_hp, "relation":relation, "target_debuffed":debuffed, "shielded":float(fighter.status.get("shield_pct", 0)) > 0.0, "poison_damage":poison_damage}
+	var context := {"hp":fighter.hp, "max_hp":fighter.max_hp, "relation":relation, "target_debuffed":debuffed, "shielded":_timed_defense(fighter, "shield_pct") > 0.0, "poison_damage":poison_damage}
 	for effect in ExpeditionPassive.trigger(fighter.expedition_passive, event, context):
 		if effect.kind == "heal":
 			fighter.hp = mini(int(fighter.max_hp), int(fighter.hp) + _strategic_heal(fighter, int(effect.amount)))

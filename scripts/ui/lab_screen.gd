@@ -788,8 +788,18 @@ func _build_spell_rows() -> void:
 			var group_label := Label.new()
 			group_label.text = "SPELL_GROUP_INITIAL" if group == "Initial Spells" else "SPELL_FILTER_" + group.to_upper()
 			_spell_list.add_child(group_label)
+		var panel := PanelContainer.new()
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.035, 0.11, 0.11, 0.95)
+		style.border_color = Color(0.28, 0.44, 0.39, 0.85)
+		style.set_border_width_all(1)
+		style.set_content_margin_all(8)
+		panel.add_theme_stylebox_override("panel", style)
 		var row := VBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.add_child(row)
 		var name_label := Label.new()
+		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		var types := SpellView.affinity(spell)
 		name_label.set_meta("localization_body_font", true)
 		name_label.text = "%s  |  %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), types]
@@ -814,7 +824,7 @@ func _build_spell_rows() -> void:
 		button.pressed.connect(_on_spell_research_pressed.bind(str(spell.id)))
 		actions.add_child(button)
 		row.add_child(actions)
-		_spell_list.add_child(row)
+		_spell_list.add_child(panel)
 		_spell_rows[str(spell.id)] = {"spell": spell, "status": status, "button": button, "name": name_label, "base_name": name_label.text}
 
 func _featured_spell_ids(entity_type: String, tower_level: int, now_ms: int, rotation_seconds: int) -> Array[String]:

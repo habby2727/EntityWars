@@ -27,9 +27,14 @@ var timer_label: Label
 var event_queue: Array = []
 var event_delay := 0.0
 var event_presenting := false
+var hp_animation_bar: ProgressBar
+var hp_animation_from := 0.0
+var hp_animation_to := 0.0
+var hp_animation_elapsed := 0.0
+var battle_reset_pending := false
+const HP_ANIMATION_SECONDS := 0.6
 var hp_initialized := false
 var hp_reconcile_pending := false
-var playback_generation := 0
 var highlights_shown := false
 var result_popup_shown := false
 var debug_visual := false
@@ -190,12 +195,6 @@ func _on_identity(data: Dictionary) -> void:
 		next_poll = 0.0
 
 func _on_auth_changed(_token: String) -> void:
-	playback_generation += 1
-	event_queue.clear()
-	event_presenting = false
-	event_delay = 0.0
-	hp_reconcile_pending = false
-	hp_initialized = false
 	request_id = ""
 	request_kind = ""
 	header.text = "Reconnect to recover this match"
@@ -223,10 +222,22 @@ func _process(delta: float) -> void:
 		return
 	next_poll -= delta
 	event_delay -= delta
+	if event_presenting:
+		hp_animation_elapsed = minf(HP_ANIMATION_SECONDS, hp_animation_elapsed + delta)
+		var value := lerpf(hp_animation_from, hp_animation_to, hp_animation_elapsed / HP_ANIMATION_SECONDS)
+		host._set_display_hp(hp_animation_bar, roundi(value))
+		hp_animation_bar.value = value
+		if hp_animation_elapsed >= HP_ANIMATION_SECONDS:
+			event_presenting = false
 	if event_delay <= 0.0 and not event_presenting and not event_queue.is_empty():
-		_present_event(event_queue.pop_front())
-		event_delay = 0.35
+		_apply_battle_reset()
+		var event: Dictionary = event_queue.pop_front()
+		_present_event(event)
+		var category := str(event.get("category", ""))
+		var kind := str(event.get("kind", ""))
+		event_delay = 1.35 if category in ["combo", "strategic"] else 1.25 if category == "debuff" or kind.begins_with("status_") else 1.0
 	if hp_reconcile_pending and event_queue.is_empty() and not event_presenting and event_delay <= 0.0:
+		_apply_battle_reset()
 		hp_reconcile_pending = false
 		_render()
 	if str(state.get("status", "")) == "FINISHED" and event_queue.is_empty() and not event_presenting and event_delay <= 0.0 and not highlights_shown:
@@ -325,17 +336,22 @@ func _strategic_effects(fighter: Dictionary) -> Array:
 func _render() -> void:
 	if not state.get("player") is Dictionary or not state.get("enemy") is Dictionary:
 		return
-	for event in state.get("events", []):
+	var incoming: Array = state.get("events", [])
+	for index in incoming.size():
+		var event: Variant = incoming[index]
 		if not event is Dictionary or int(event.get("id", 0)) <= event_cursor:
 			continue
 		event_cursor = int(event.id)
 		var queued: Dictionary = event.duplicate(true)
 		queued["_initial_snapshot"] = not hp_initialized
+		if str(event.get("kind", "")) == "battle_result" and not queued["_initial_snapshot"]:
+			var next_is_match := index + 1 < incoming.size() and str(incoming[index + 1].get("kind", "")) == "match_result"
+			queued["_battle_reset"] = not next_is_match
 		event_queue.append(queued)
 		hp_reconcile_pending = true
 	var preserve_hp := hp_initialized and (event_presenting or not event_queue.is_empty() or event_delay > 0.0)
-	var old_player_hp := int(host.player_hp.value)
-	var old_enemy_hp := int(host.enemy_hp.value)
+	var old_player_hp: float = host.player_hp.value
+	var old_enemy_hp: float = host.enemy_hp.value
 	host.player = _fighter(state.player)
 	host.enemy = _fighter(state.enemy)
 	host._battle_index = int(state.get("battle_index", 1))
@@ -353,6 +369,8 @@ func _render() -> void:
 		host.player.hp = old_player_hp
 		host.enemy.hp = old_enemy_hp
 		host._update_ui()
+		host.player_hp.value = old_player_hp
+		host.enemy_hp.value = old_enemy_hp
 		host.player.hp = player_final
 		host.enemy.hp = enemy_final
 	else:
@@ -371,7 +389,7 @@ func _render() -> void:
 		if message is Dictionary and int(message.get("id", 0)) > chat_cursor:
 			chat_cursor = int(message.id)
 			_append_chat_message(message)
-	if host._battle_over and not preserve_hp:
+	if host._battle_over and event_queue.is_empty() and not event_presenting and event_delay <= 0.0:
 		timer_panel.hide()
 		var result: Dictionary = state.get("result", {})
 		header.text = "%s  |  MP %+d" % [str(result.get("result", "draw")).to_upper(), int(result.get("mp_delta", 0))]
@@ -417,6 +435,8 @@ func _present_event(source: Dictionary) -> void:
 	elif str(event.get("kind", "")) in ["hom_attack", "hom_miss"] and actor in ["player", "enemy"]:
 		host._animate_lunge(host.player_hom if actor == "player" else host.enemy_hom, 12.0 if actor == "player" else -12.0, false)
 	host._log_presenter.append(host.log_box, int(event.get("turn", 0)), str(event.get("kind", "event")).replace("_", " "), event)
+	if bool(source.get("_battle_reset", false)):
+		battle_reset_pending = true
 	if target not in ["player", "enemy"] or bool(source.get("_initial_snapshot", false)):
 		return
 	var bar: ProgressBar = host.player_hp if target == "player" else host.enemy_hp
@@ -436,14 +456,16 @@ func _present_event(source: Dictionary) -> void:
 		host._show_damage_number(sprite, lost)
 		host._record_highlight("damage", lost, "%s ? %s" % [str(event.get("actor", "")), str(event.get("target", ""))])
 	event_presenting = true
-	var generation := playback_generation
-	await get_tree().create_timer(0.26).timeout
-	if not is_inside_tree() or generation != playback_generation:
-		return
-	host._set_display_hp(bar, after)
-	event_presenting = false
-	if event_queue.is_empty() and event_delay <= 0.0:
-		_render()
+	hp_animation_bar = bar
+	hp_animation_from = bar.value
+	hp_animation_to = float(after)
+	hp_animation_elapsed = 0.0
+
+func _apply_battle_reset() -> void:
+	if battle_reset_pending:
+		battle_reset_pending = false
+		host._set_display_hp(host.player_hp, int(host.player_hp.max_value))
+		host._set_display_hp(host.enemy_hp, int(host.enemy_hp.max_value))
 
 func refresh_controls() -> void:
 	if host == null:

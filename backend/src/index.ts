@@ -1319,7 +1319,9 @@ async function startServer(): Promise<void> {
 						playerId = credential.player_id;
 					}
 					if (await isUserDisabled(playerId)) throw new HttpError(403, "User disabled.");
-					return loginResponse(playerId, await issueToken(playerId));
+					const response = loginResponse(playerId, await issueToken(playerId));
+					globalChat.announceLogin(playerId, url.pathname == "/auth/register");
+					return response;
 				}
 
 				if (req.method == "POST" && url.pathname == "/auth/dev_login") {
@@ -2311,11 +2313,16 @@ async function startServer(): Promise<void> {
 					const playerId = await requireAuth(req, ctx);
 					const month = url.searchParams.get("month") ?? dungeonSeason(Date.now());
 					if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HttpError(400, "Invalid dungeon month.");
-					return jsonResponse(dungeonLeaderboard(db, month, playerId));
+					return db.transaction(() => {
+						const now = Date.now();
+						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
+						return jsonResponse(dungeonLeaderboard(db, month, playerId));
+					}).immediate();
 				}
 				if (req.method == "POST" && url.pathname == "/dungeon/loadout") {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+				db.transaction(() => db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, Date.now())).immediate();
 					const body = await readJson(req, config.maxBodyBytes);
 					const allowed = ["run_id", "client_action_id", "entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"];
 					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !allowed.includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id: unknown) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || (typeof body.homunculus_id === "string" && body.homunculus_id.length > 0)) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id: unknown) => typeof id !== "string" || !id) || !["attack", "defense"].includes(body.mode)) throw new HttpError(400, "Invalid dungeon loadout.");
@@ -2326,12 +2333,15 @@ async function startServer(): Promise<void> {
 					const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
 					return db.transaction(() => {
 						const now = Date.now();
+						const liveRun = db.query("SELECT status, expires_at FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { status: string; expires_at: number } | null;
+						if (!liveRun) throw new HttpError(404, "Dungeon run not found.");
+						if (liveRun.status !== "ACTIVE" || liveRun.expires_at <= now) throw new HttpError(409, "Dungeon run is closed.");
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
 						if (prior) {
 							if (prior.action_type !== "DUNGEON_LOADOUT" || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
 							return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
 						}
-						const row = db.query("SELECT status, expires_at, player_snapshot_json, loadout_json FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { status: string; expires_at: number; player_snapshot_json: string; loadout_json: string | null } | null;
+						const row = db.query("SELECT season, status, expires_at, player_snapshot_json, loadout_json FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { season: string; status: string; expires_at: number; player_snapshot_json: string; loadout_json: string | null } | null;
 						if (!row) throw new HttpError(404, "Dungeon run not found.");
 						if (row.status !== "ACTIVE" || row.expires_at <= now || row.loadout_json !== null) throw new HttpError(409, "Dungeon loadout unavailable.");
 						const saved = JSON.parse(row.player_snapshot_json);
@@ -2354,7 +2364,7 @@ async function startServer(): Promise<void> {
 						combat.elite_trait_used = false;
 						combat.tactics_enabled = tacticsEnabled;
 						if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
-						const response = { run_id: body.run_id, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
+						const response = { run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
 						insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
@@ -2362,11 +2372,15 @@ async function startServer(): Promise<void> {
 				if (req.method == "POST" && (url.pathname == "/dungeon/turn" || url.pathname == "/dungeon/next" || url.pathname == "/dungeon/inspiration" || url.pathname == "/dungeon/blessing")) {
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+				db.transaction(() => db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, Date.now())).immediate();
 					const body = await readJson(req, config.maxBodyBytes), isTurn = url.pathname.endsWith("/turn"), isInspiration = url.pathname.endsWith("/inspiration"), isBlessing = url.pathname.endsWith("/blessing"), hasDecision = isTurn || isInspiration || isBlessing;
 					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => !["run_id", "client_action_id", "expected_revision", ...(hasDecision ? ["decision"] : [])].includes(k)) || typeof body.run_id !== "string" || !body.run_id || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64 || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || (hasDecision && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))) throw new HttpError(400, "Invalid dungeon action.");
 					const actionId = body.client_action_id.trim(), actionType = isTurn ? "DUNGEON_TURN" : isInspiration ? "DUNGEON_INSPIRATION" : isBlessing ? "DUNGEON_BLESSING" : "DUNGEON_NEXT", payload = { run_id: body.run_id, expected_revision: body.expected_revision, ...(hasDecision ? { decision: body.decision } : {}) };
 					return db.transaction(() => {
 						const now = Date.now();
+						const liveRun = db.query("SELECT status, expires_at FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId) as { status: string; expires_at: number } | null;
+						if (!liveRun) throw new HttpError(404, "Dungeon run not found.");
+						if (liveRun.status !== "ACTIVE" || liveRun.expires_at <= now) throw new HttpError(409, "Dungeon run is closed.");
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
 						if (prior) {
 							if (prior.action_type !== actionType || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
@@ -2434,11 +2448,22 @@ async function startServer(): Promise<void> {
 						const now = Date.now();
 						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
 						const runId = url.searchParams.get("run_id");
-						const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision, loadout_json, combat_state_json, player_snapshot_json";
-						const row = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'`).get(playerId)) as (Record<string, any> & { loadout_json: string | null; combat_state_json: string | null }) | null;
-						const session = row ? (({ loadout_json, combat_state_json, player_snapshot_json, ...rest }) => { const combat = combat_state_json ? JSON.parse(combat_state_json) : null; return { ...rest, ...(!loadout_json ? { spell_progress: JSON.parse(player_snapshot_json).spell_progress ?? {} } : {}), ...(loadout_json ? { loadout: JSON.parse(loadout_json), combat_ready: !!combat } : {}), ...(combat ? { combat_state: publicDungeonCombat(combat), floor: combat.floor, phase: rest.status === "LOSS" ? "LOSS" : combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : "COMBAT" } : {}) }; })(row) : null;
+						const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision";
+						const session = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : null) ?? null;
 						return jsonResponse({ session, server_time_unix_ms: now });
 					}).immediate();
+				}
+				if (req.method == "POST" && url.pathname == "/dungeon/heartbeat") {
+					const playerId = await requireAuth(req, ctx);
+					const body = await readJson(req, config.maxBodyBytes);
+					if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(k => k !== "run_id") || typeof body.run_id !== "string" || !body.run_id) throw new HttpError(400, "Invalid dungeon heartbeat.");
+					const now = Date.now();
+					const renewed = db.transaction(() => {
+						db.query("UPDATE dungeon_runs SET status = 'EXPIRED', finished_at = expires_at WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(playerId, now);
+						return db.query("UPDATE dungeon_runs SET expires_at = ? WHERE player_id = ? AND run_id = ? AND status = 'ACTIVE' AND expires_at > ?").run(now + 20000, playerId, body.run_id, now).changes === 1;
+					}).immediate();
+					if (!renewed) throw new HttpError(409, "Dungeon run is closed.");
+					return jsonResponse({ ok: true, expires_at: now + 20000 });
 				}
 				if (req.method == "POST" && (url.pathname == "/dungeon/start" || url.pathname == "/dungeon/abandon")) {
 					const playerId = await requireAuth(req, ctx);
@@ -2453,16 +2478,22 @@ async function startServer(): Promise<void> {
 						const prior = getActionStmt.get(playerId, actionId) as { action_type: string; payload_json: string; result_state_json: string | null } | null;
 						if (prior) {
 							if (prior.action_type !== actionType || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload)) throw new HttpError(409, "Action ID already used with different content.");
+							if (start) {
+								const previous = JSON.parse(prior.result_state_json ?? "null");
+								if (!previous || !db.query("SELECT 1 FROM dungeon_runs WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ?").get(previous.run_id, playerId, now)) throw new HttpError(409, "Dungeon run is closed.");
+							}
 							return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
 						}
 						let runId: string;
+						let spellProgress: unknown;
 						if (start) {
 							const state = ensurePlayerState(playerId);
 							if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
-							if (db.query("SELECT 1 FROM dungeon_runs WHERE player_id = ? AND status = 'ACTIVE'").get(playerId)) throw new HttpError(409, "An active dungeon run already exists.");
+							db.query("UPDATE dungeon_runs SET status = 'ABANDONED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE'").run(now, playerId);
 							runId = crypto.randomUUID();
 							const snapshot = { state_revision: state.state_revision, item_progress: state.item_progress ?? {}, homunculus_progress: state.homunculus_progress ?? {}, spell_progress: state.spell_progress ?? {}, research_flags: state.research_flags ?? {} };
-							db.query("INSERT INTO dungeon_runs (run_id,player_id,season,status,started_at,expires_at,player_snapshot_json) VALUES (?,?,?,'ACTIVE',?,?,?)").run(runId, playerId, dungeonSeason(now), now, now + 86400000, JSON.stringify(snapshot));
+							spellProgress = snapshot.spell_progress;
+							db.query("INSERT INTO dungeon_runs (run_id,player_id,season,status,started_at,expires_at,player_snapshot_json) VALUES (?,?,?,'ACTIVE',?,?,?)").run(runId, playerId, dungeonSeason(now), now, now + 20000, JSON.stringify(snapshot));
 						} else {
 							runId = body.run_id;
 							const row = db.query("SELECT status FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId) as { status: string } | null;
@@ -2470,7 +2501,8 @@ async function startServer(): Promise<void> {
 							if (row.status !== "ACTIVE") throw new HttpError(409, "Dungeon run is closed.");
 							if (db.query("UPDATE dungeon_runs SET status = 'ABANDONED', finished_at = ? WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE'").run(now, runId, playerId).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
 						}
-						const response = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId);
+						const row = db.query("SELECT run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(runId, playerId) as Record<string, unknown>;
+						const response = start ? { ...row, spell_progress: spellProgress } : row;
 						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
