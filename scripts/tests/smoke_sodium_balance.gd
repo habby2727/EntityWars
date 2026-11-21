@@ -34,12 +34,41 @@ func _run() -> void:
 	assert(int(fighter.hp) == int(fighter.max_hp))
 	assert(int(target.hp) == original_target_hp - 8)
 	fighter.spell_cooldowns.clear()
-	target.hp = 5
+	target.hp = 100
 	fighter.hp = fighter.max_hp
 	scene._execute_spell(fighter, target, brine)
 	await scene._flush_steps()
-	assert(int(target.hp) == 5 and int(fighter.hp) == int(fighter.max_hp))
+	assert(int(target.hp) == 85 and int(fighter.hp) == int(fighter.max_hp))
 	fighter.spell_cooldowns.clear()
+	target.hp = 100
+	fighter.hp = fighter.max_hp - 4
+	scene._execute_spell(fighter, target, brine)
+	await scene._flush_steps()
+	assert(int(target.hp) == 85 and int(fighter.hp) == int(fighter.max_hp))
+	fighter.spell_cooldowns.clear()
+	target.hp = 100
+	fighter.hp = fighter.max_hp - 30
+	fighter.strategic_heal_suppression = {"expires_turn": 2}
+	scene._execute_spell(fighter, target, brine)
+	await scene._flush_steps()
+	assert(int(target.hp) == 85 and int(fighter.hp) == int(fighter.max_hp) - 23)
+	fighter.spell_cooldowns.clear()
+	target.hp = 100
+	fighter.hp = fighter.max_hp - 4
+	scene._execute_spell(fighter, target, brine)
+	await scene._flush_steps()
+	assert(int(target.hp) == 85 and int(fighter.hp) == int(fighter.max_hp) - 2)
+	fighter.erase("strategic_heal_suppression")
+	fighter.spell_cooldowns.clear()
+	target.hp = 100
+	target.status.reflect_pct = 0.5
+	fighter.item_fx.ignore_reflect_chance = 0.0
+	fighter.hp = fighter.max_hp - 4
+	scene._execute_spell(fighter, target, brine)
+	await scene._flush_steps()
+	assert(int(target.hp) == 85 and int(fighter.hp) == int(fighter.max_hp) - 8)
+	fighter.spell_cooldowns.clear()
+	target.hp = 5
 	fighter.hp = fighter.max_hp - 20
 	scene._execute_spell(fighter, target, brine)
 	await scene._flush_steps()
@@ -69,13 +98,22 @@ func _run() -> void:
 		if hits == 2: break
 	assert(hits == 2)
 	assert(is_equal_approx(scene._timed_defense(fighter, "reflect_pct"), 0.5))
-	for turn in [1, 2, 3]:
+	for turn in [1, 2]:
 		scene._turn = turn
 		assert(is_equal_approx(scene._timed_defense(fighter, "shield_pct"), 0.24))
 		assert(is_equal_approx(scene._timed_defense(fighter, "reflect_pct"), 0.5))
 		scene._end_spell_exchange()
 	assert(is_zero_approx(scene._timed_defense(fighter, "shield_pct")))
 	assert(is_zero_approx(scene._timed_defense(fighter, "reflect_pct")))
+	target.hom_spent = true
+	target.hp = target.max_hp
+	target.spell_cooldowns.clear()
+	fighter.hp = 100
+	fighter.status.shield_pct = 0.0
+	fighter.status.reflect_pct = 0.0
+	scene._execute_spell(target, fighter, brine)
+	await scene._flush_steps()
+	assert(int(fighter.hp) == 85 and int(target.hp) == int(target.max_hp))
 	registry.free()
 	print("PASS Practice sodium drain and barrier")
 	quit(0)

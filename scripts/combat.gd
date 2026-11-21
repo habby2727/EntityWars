@@ -4125,16 +4125,17 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 						if int(caster.hp) <= 0 or int(target.hp) <= 0: return
 						var mitigated := roundi(float(effect.get("max_heal", 0)) * (2.0 if ultra_active else 1.0) * (1.0 - clampf(_timed_defense(target, "shield_pct"), 0.0, 1.0)) * clampf(float(_hom_synergy(target).get("incoming_mult", 1.0)), 0.1, 1.0))
 						if _solo_boss_mode and is_same(target, enemy) and _solo_shield_turns > 0: mitigated = roundi(mitigated * (1.0 - float(_solo_def.shield_reduction)))
-						var amount := mini(int(target.hp), mini(int(caster.max_hp) - int(caster.hp), _strategic_heal(caster, mitigated)))
+						var amount := mini(int(target.hp), mitigated)
+						var healed := _strategic_heal(caster, mini(amount, int(caster.max_hp) - int(caster.hp)))
 						if float(target.status.get("shield_pct", 0.0)) > 0.0: _clear_defense(target, "shield_pct")
 						target.hp -= amount
-						caster.hp += amount
+						caster.hp += healed
 						if amount > 0:
 							target.spell_hit_this_exchange = true
 							_fire_expedition_passive(target, caster, "damage_received")
 							_animate_hit(_fighter_sprite(target), amount, target.max_hp)
 							_animate_pulse(_fighter_sprite(caster), Color(0.55, 1.0, 0.65), 1.04)
-						_append_combat_log("%s drains %d HP from %s and restores %d HP." % [caster.name, amount, target.name, amount])
+						_append_combat_log("%s drains %d HP from %s and restores %d HP." % [caster.name, amount, target.name, healed])
 						var reflect := _timed_defense(target, "reflect_pct")
 						if amount > 0 and reflect > 0.0:
 							var ignored := _try_ignore_reflect(caster)
@@ -4211,7 +4212,7 @@ func _execute_spell(caster: Dictionary, target: Dictionary, spell: Dictionary, u
 					if kind in ["shield", "reflect"]:
 						if int(effect.get("duration_exchanges", 0)) > 0:
 							if not recipient.has("timed_defenses"): recipient.timed_defenses = {}
-							recipient.timed_defenses[field] = {"value": value, "expires_turn": _turn + int(effect.duration_exchanges)}
+							recipient.timed_defenses[field] = {"value": value, "expires_turn": _turn + int(effect.duration_exchanges) - 1}
 							return
 						if kind == "shield":
 							if not recipient.has("spell_ward_baseline"):
@@ -4695,100 +4696,13 @@ func _set_reward_status(message: String) -> void:
 
 # Shared presentation for authoritative end-of-match results.
 func _result_popup(title: String) -> VBoxContainer:
-	var layer := CanvasLayer.new()
-	layer.layer = 100
-	add_child(layer)
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.0, 0.0, 0.0, 0.78)
-	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	layer.add_child(backdrop)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_STOP
-	layer.add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(440, 0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("101b20")
-	style.border_color = Color("bfa45b")
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
-	style.set_content_margin_all(22)
-	style.shadow_color = Color(0.15, 0.75, 0.8, 0.35)
-	style.shadow_size = 14
-	panel.add_theme_stylebox_override("panel", style)
-	center.add_child(panel)
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 12)
-	panel.add_child(content)
-	var top := HBoxContainer.new()
-	content.add_child(top)
-	var heading := Label.new()
-	heading.text = "*  " + title + "  *"
-	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	heading.add_theme_font_size_override("font_size", 27)
-	heading.add_theme_color_override("font_color", Color("e7d293"))
-	top.add_child(heading)
-	var close := Button.new()
-	close.text = "X"
-	close.tooltip_text = "Close"
-	close.pressed.connect(layer.queue_free)
-	top.add_child(close)
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", 10)
-	content.add_child(body)
-	var button := Button.new()
-	button.text = "CONTINUE"
-	button.custom_minimum_size.y = 42
-	button.pressed.connect(layer.queue_free)
-	content.add_child(button)
-	panel.modulate.a = 0.0
-	panel.scale = Vector2(0.94, 0.94)
-	panel.pivot_offset = Vector2(220, 80)
-	var intro := create_tween().set_parallel(true)
-	intro.tween_property(panel, "modulate:a", 1.0, 0.25)
-	intro.tween_property(panel, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	var glow := create_tween().set_loops()
-	glow.tween_property(style, "border_color", Color("69d7e8"), 1.2)
-	glow.tween_property(style, "border_color", Color("bfa45b"), 1.2)
-	glow.bind_node(layer)
-	return body
+	return preload("res://scripts/ui/shared_reward_panel.gd").result_popup(self, title)
 
 func _show_pve_rewards(grants: Dictionary, possible: Dictionary = {}, global_status: Dictionary = {}) -> void:
 	var body := _result_popup("REWARDS")
 	if not global_status.is_empty():
 		_global_reward_popup_layer = body.get_parent().get_parent().get_parent().get_parent() as CanvasLayer
-	var catalog := AssetCatalog.new()
-	for resource in grants:
-		var row := HBoxContainer.new()
-		row.alignment = BoxContainer.ALIGNMENT_CENTER
-		row.add_theme_constant_override("separation", 18)
-		body.add_child(row)
-		var icon := TextureRect.new()
-		icon.custom_minimum_size = Vector2(80, 80)
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		if catalog.has(str(resource)):
-			icon.texture = catalog.get_tex(str(resource))
-		row.add_child(icon)
-		var label := Label.new()
-		var prefix := "Potential: " if global_status.get("reward_status") == "WAITING" else "+"
-		label.text = "%s%s  %s" % [prefix, str(grants[resource]), _reward_resource_name(str(resource)).replace("_", " ").capitalize()]
-		if possible.has(resource):
-			label.text += "\nPossible drop (%s%% chance)" % str(snappedf(float(possible[resource]) * 100.0, 0.1))
-		elif global_status.get("reward_status") == "WAITING":
-			label.text += "\nGuaranteed on completion"
-		label.add_theme_font_size_override("font_size", 24)
-		label.add_theme_color_override("font_color", Color("d9f7f4"))
-		row.add_child(label)
-		icon.pivot_offset = Vector2(40, 40)
-		var pulse := create_tween().set_loops()
-		pulse.tween_property(icon, "scale", Vector2(1.08, 1.08), 0.8).set_trans(Tween.TRANS_SINE)
-		pulse.tween_property(icon, "scale", Vector2.ONE, 0.8).set_trans(Tween.TRANS_SINE)
-		pulse.bind_node(icon)
-	catalog.free()
+	preload("res://scripts/ui/shared_reward_panel.gd").reward_rows(self, body, grants, possible, global_status)
 	if not global_status.is_empty():
 		var pending: bool = global_status.get("reward_status") == "WAITING"
 		var count := clampi(int(global_status.get("winner_count", 0)), 0, 5)

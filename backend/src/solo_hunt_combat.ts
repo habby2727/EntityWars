@@ -11,7 +11,7 @@ export function effectiveTimedDefense(fighter: any, field: string): number {
 }
 export function applyTimedDefense(fighter: any, field: string, value: number, turn: number, duration: number): void {
   fighter.timed_defenses ??= {};
-  fighter.timed_defenses[field] = { value, expires_turn: turn + duration };
+  fighter.timed_defenses[field] = { value, expires_turn: turn + duration - 1 };
 }
 export function expireTimedDefenses(fighter: any, turn: number): void {
   for (const [field, defense] of Object.entries(fighter.timed_defenses ?? {}) as [string, any][]) if (turn >= defense.expires_turn) delete fighter.timed_defenses[field];
@@ -25,12 +25,13 @@ export function applyTimedAwarePassive(fighter: any, target: any, event: any, ty
   try { applyCombatPassive(fighter, target, event, types, actor, targetId, events, poisonDamage, attack); }
   finally { if (previous === undefined) delete fighter.status[field]; else fighter.status[field] = previous; }
 }
-export function drainHealth(caster: any, target: any, value: number, shield: number, incoming = 1): number {
-  if (caster.hp <= 0 || target.hp <= 0) return 0;
+export function drainHealth(caster: any, target: any, value: number, shield: number, incoming = 1): { damage: number; healed: number } {
+  if (caster.hp <= 0 || target.hp <= 0) return { damage: 0, healed: 0 };
   const mitigated = Math.max(0, Math.round(Math.max(0, value) * (1 - Math.max(0, Math.min(1, shield))) * incoming));
-  const amount = Math.max(0, Math.min(target.hp, caster.max_hp - caster.hp, strategicHeal(caster, mitigated)));
-  target.hp -= amount; caster.hp += amount;
-  return amount;
+  const damage = Math.min(target.hp, mitigated);
+  const healed = Math.max(0, strategicHeal(caster, Math.min(damage, caster.max_hp - caster.hp)));
+  target.hp -= damage; caster.hp += healed;
+  return { damage, healed };
 }
 
 export const PARITY_GAPS = ["Normal Bo3 Ultraturn", "Boss tactical AI and complete minion/status parity require further verification", "Authoritative selection persistence, turn concurrency and settlement"] as const;
@@ -602,16 +603,16 @@ export function resolveCombatTurn(state: any, decision: any, rng: (turn: number,
         const shielded = target === next.boss && next.boss_shield_turns > 0;
         const raw = Math.max(0, Math.round((effect.max_heal ?? 0) * (1 - shield)));
         const bossResult = shielded ? reduceBossDamage(raw) : { damage: raw, heal: 0 };
-        const amount = drainHealth(next.player, target, bossResult.damage, 0);
+        const { damage, healed } = drainHealth(next.player, target, bossResult.damage, 0);
         if ((target.status.shield_pct ?? 0) > 0) clearDefense(target, "shield_pct");
-        if (amount > 0) target.spell_hit_this_exchange = true;
-        events.push({ kind: "damage", actor: "player", target: targetId, damage: amount, actual_damage: amount, hp: target.hp, spell_id: spell.id });
-        if (shielded && amount > 0) healBossShield(bossResult.heal, raw - bossResult.damage);
-        events.push({ kind: "heal", actor: "player", target: "player", amount, hp: next.player.hp, spell_id: spell.id });
+        if (damage > 0) target.spell_hit_this_exchange = true;
+        events.push({ kind: "damage", actor: "player", target: targetId, damage, actual_damage: damage, hp: target.hp, spell_id: spell.id });
+        if (shielded && damage > 0) healBossShield(bossResult.heal, raw - bossResult.damage);
+        events.push({ kind: "heal", actor: "player", target: "player", amount: healed, hp: next.player.hp, spell_id: spell.id });
         const reflect = effectiveTimedDefense(target, "reflect_pct");
-        if (amount > 0 && reflect > 0) {
+        if (damage > 0 && reflect > 0) {
           const ignored = (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < next.item_effects.ignore_reflect_chance;
-          const reflected = ignored ? 0 : Math.min(next.player.hp, Math.round(amount * reflect));
+          const reflected = ignored ? 0 : Math.min(next.player.hp, Math.round(damage * reflect));
           next.player.hp -= reflected;
           if (reflected > 0) { next.player.spell_hit_this_exchange = true; firePassive("damage_received", target); }
           if ((target.status.reflect_pct ?? 0) > 0) clearDefense(target, "reflect_pct");

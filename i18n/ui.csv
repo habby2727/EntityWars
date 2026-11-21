@@ -355,3 +355,7 @@ HOM_PASSIVE,Passive: %s,Pasiva: %s
 HOM_CAPTURE_REQUIRED,Requires capture in an expedition.,Requiere capturarlo en una expedici?n.
 HOM_LEVEL_MUTATION,Level %d / 10 | Mutation: %s,Nivel %d / 10 | Mutaci?n: %s
 EXPEDITION_TURN,Turn,Turno
+EXPEDITION_REWARD_NORMAL,Normal victory,Victoria normal
+EXPEDITION_REWARD_DIFFICULT,Difficult victory,Victoria dif?cil
+EXPEDITION_REWARD_VERY_DIFFICULT,Very difficult victory,Victoria muy dif?cil
+EXPEDITION_REWARD_EXCEPTIONAL,Exceptional victory,Victoria excepcional

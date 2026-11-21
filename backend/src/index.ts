@@ -320,7 +320,23 @@ function getExpeditionService() {
 	if (expeditionService) return expeditionService;
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
 	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
-	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, captureHomunculus: captureExpeditionHomunculus, makeSetup: (playerId, snapshot, selection) => {
+	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
+		const row = getPlayerByIdStmt.get(playerId) as { state_json: string } | undefined;
+		if (!row) throw new HttpError(404, "Player not found.");
+		let player: PlayerState;
+		try { player = JSON.parse(row.state_json); } catch { throw new HttpError(409, "Invalid player state."); }
+		if (!player || !player.wallet || typeof player.wallet !== "object" || Array.isArray(player.wallet) || Object.keys(grants).some(id => !Number.isSafeInteger(player.wallet[id] ?? 0))) throw new HttpError(409, "Invalid player wallet.");
+		const before = {...player.wallet};
+		assertWalletInvariant(player.wallet);
+		const caps = walletCapacities(player), credited: Record<string, number> = {};
+		for (const [id, amount] of Object.entries(grants)) credited[id] = Math.min(amount, Math.max(0, (caps[id] ?? getWalletCap(id)) - (player.wallet[id] ?? 0)));
+		applyWalletGrant(player.wallet, credited);
+		assertWalletInvariant(player.wallet);
+		player.updated_at = now;
+		if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+		auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "EXPEDITION_VICTORY", rewardId, now);
+		return credited;
+	}, captureHomunculus: captureExpeditionHomunculus, makeSetup: (playerId, snapshot, selection) => {
 		if (selection.homunculus_id && !ownsHomunculus(snapshot.homunculus_progress, selection.homunculus_id)) return {error:"UNTRUSTED_SETUP"};
 		return buildTrustedCombatSetup({ ...snapshot, player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, selection, catalogs, { independentLoadout: true });
 	} });

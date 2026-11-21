@@ -62,6 +62,16 @@ func _run() -> void:
 	assert(screen.session.phase == "REWARD")
 	assert(screen.session.reward_homunculus.id == fought and screen.session.capture_candidate.id == fought)
 	assert(screen.capture_sprite.texture.resource_path == npc.hom_texture)
+	assert(is_instance_valid(screen.reward_popup))
+	assert(screen.session.victory_reward.reward_id.ends_with(":victory"))
+	var reward_buttons: Array = screen.reward_popup.find_children("*", "Button", true, false)
+	var continue_button: Button
+	for button in reward_buttons:
+		if button.text == screen.tr("EXPEDITION_CONTINUE"): continue_button = button
+	assert(is_instance_valid(continue_button))
+	continue_button.pressed.emit()
+	await process_frame
+	assert(not is_instance_valid(screen.reward_popup))
 	var before_capture: int = int(screen.session.revision)
 	var heartbeats := {"count":0}
 	screen.heartbeat_http.request_completed.connect(func(_result, code, _headers, _body):

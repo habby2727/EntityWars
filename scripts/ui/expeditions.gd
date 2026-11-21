@@ -35,6 +35,7 @@ var capture_heading: Label
 var capture_tween: Tween
 var capture_started := 0
 var reward_popup: CanvasLayer
+var victory_rewards_acknowledged := {}
 var phase_buttons: Array[Button] = []
 var visual_debug := false
 var visual_debug_entry: Button
@@ -466,7 +467,9 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 	message.text = last_error
 	last_error = ""
 	_render()
-	if response_kind in ["capture", "advance"] and not response_events.is_empty():
+	if str(session.get("phase", "")) == "REWARD" and session.get("victory_reward") is Dictionary and _present_victory_reward(session.victory_reward):
+		pass
+	elif response_kind in ["capture", "advance"] and not response_events.is_empty():
 		_present_reward(response_events[0])
 	elif response_kind == "state" and session.get("latest_reward") is Dictionary:
 		_present_reward(session.latest_reward)
@@ -571,6 +574,27 @@ func _candidate(id: String = "") -> Dictionary:
 
 func _set_capture_heading(key: String) -> void:
 	if is_instance_valid(capture_heading): capture_heading.text = tr(key)
+
+func _present_victory_reward(reward: Dictionary) -> bool:
+	if visual_debug or account_id.is_empty() or is_instance_valid(reward_popup): return false
+	var reward_id := str(reward.get("reward_id", ""))
+	var tier := str(reward.get("tier", ""))
+	var grants: Variant = reward.get("grants")
+	if reward_id.is_empty() or victory_rewards_acknowledged.has(account_id + ":" + reward_id) or SeenRewards.has_seen(account_id, reward_id) or tier not in ["normal", "difficult", "very_difficult", "exceptional"] or not grants is Dictionary: return false
+	var owner := account_id
+	var panel = preload("res://scripts/ui/shared_reward_panel.gd")
+	var close := func():
+		if owner == account_id:
+			victory_rewards_acknowledged[owner + ":" + reward_id] = true
+			SeenRewards.mark_seen(owner, reward_id)
+		if is_instance_valid(reward_popup): reward_popup.queue_free()
+		reward_popup = null
+		_update_controls()
+	var reward_body: VBoxContainer = panel.result_popup(self, tr("EXPEDITION_REWARD_" + tier.to_upper()), tr("EXPEDITION_CONTINUE"), close)
+	reward_popup = reward_body.get_parent().get_parent().get_parent().get_parent() as CanvasLayer
+	panel.reward_rows(self, reward_body, grants)
+	_update_controls()
+	return true
 
 func _present_reward(event: Variant) -> void:
 	if visual_debug: return

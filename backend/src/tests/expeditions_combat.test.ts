@@ -2,6 +2,7 @@
 import { buildTrustedCombatSetup, deterministicDraw } from "../solo_hunt_combat";
 import { homunculusCatalog } from "../homunculus_catalog";
 import { buildExpeditionEnemy, createExpeditionCombatState, resolveExpeditionTurn, resolveExpeditionInspiration, expeditionItemEffects } from "../expeditions_combat";
+import { expeditionVictoryTier } from "../expeditions_service";
 import { expeditionSpellSupported, chooseDungeonNpcSpell } from "../dungeon_combat";
 import { expeditionEnemies, expeditionCaptures, expeditionDualTypeMultiplier } from "../expeditions_rules";
 import entities from "../../../data/entities.json";
@@ -249,4 +250,14 @@ test("NPC equipment triggers offense, defense, evasion, tempo and reflection wit
   hom.player.expedition_passive=null; hom.npc.expedition_passive=null;
   const homEvade=resolveExpeditionTurn(hom,{turn:1,spell_id:"cinder_fist",hom_action:"attack"},()=>0.01);
   expect(homEvade.events.filter((e:any)=>e.kind==="evade" && e.actor==="npc").length).toBe(2);
+});
+
+
+test("all victory tiers are reachable from real frozen encounters", () => {
+  const found = new Set<string>();
+  for (let depth=1; depth<=65536; depth*=2) for (const capture of [false,true]) {
+    const enemy=build(`tier-${depth}-${capture}`,depth,capture);
+    found.add(expeditionVictoryTier(depth,enemy,setup));
+  }
+  expect(found).toEqual(new Set(["normal","difficult","very_difficult","exceptional"]));
 });

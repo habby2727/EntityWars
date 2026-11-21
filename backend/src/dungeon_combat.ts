@@ -525,17 +525,17 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       if (e.kind === "consume_poison") { if (poisonedBefore) { recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(e.value)); recordPoisonChange(recipient, recipient.status.poison, null); } continue; }
       if (e.kind === "life_leech" && !e.health_drain) { const before = recipient.hp; if (before > 0) recipient.hp = Math.min(recipient.max_hp, before + strategicHeal(recipient, Math.min(e.max_heal ?? 0, Math.floor(directDamage * e.value)))); if (recipient.hp > before) events.push({ kind: "heal", actor: who, target: recipientId, amount: recipient.hp - before, hp: recipient.hp }); continue; }
       if (e.kind === "life_leech" && e.health_drain === true) {
-        const amount = drainHealth(actor, target, e.max_heal ?? 0, effectiveTimedDefense(target, "shield"), who === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
+        const { damage, healed } = drainHealth(actor, target, e.max_heal ?? 0, effectiveTimedDefense(target, "shield"), who === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
         if ((target.status.shield ?? 0) > 0) clearDefense(target, "shield");
-        if (amount > 0) target.spell_hit_this_exchange = true;
-        events.push({ kind: "damage", actor: who, target: who === "player" ? "npc" : "player", amount, hp: target.hp, spell_id: chosen.id });
-        if (amount > 0) (who === "player" ? fireNpcPassive : firePassive)("damage_received");
-        events.push({ kind: "heal", actor: who, target: who, amount, hp: actor.hp, spell_id: chosen.id });
+        if (damage > 0) target.spell_hit_this_exchange = true;
+        events.push({ kind: "damage", actor: who, target: who === "player" ? "npc" : "player", amount: damage, hp: target.hp, spell_id: chosen.id });
+        if (damage > 0) (who === "player" ? fireNpcPassive : firePassive)("damage_received");
+        events.push({ kind: "heal", actor: who, target: who, amount: healed, hp: actor.hp, spell_id: chosen.id });
         const reflect = effectiveTimedDefense(target, "reflect");
-        if (amount > 0 && reflect > 0) {
+        if (damage > 0 && reflect > 0) {
           const chance = who === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
           const ignored = chance > 0 && draw() < Math.min(1, chance);
-          const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(amount * reflect));
+          const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(damage * reflect));
           actor.hp -= reflected;
           if (reflected > 0) (who === "player" ? firePassive : fireNpcPassive)("damage_received");
           if ((target.status.reflect ?? 0) > 0) clearDefense(target, "reflect");

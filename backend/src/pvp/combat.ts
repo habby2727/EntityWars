@@ -433,17 +433,17 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         } else if (kind === "life_leech" && effect.health_drain === true) {
           const shield = effectiveTimedDefense(b, "shield_pct");
           const incoming = b.hom_spent ? 1 : Math.max(0.1, Math.min(1, b.hom_synergy.incoming_mult ?? 1));
-          const amount = drainHealth(a, b, Math.trunc(effect.max_heal ?? 0) * (decision.ultra ? 2 : 1), shield, incoming);
+          const { damage, healed } = drainHealth(a, b, Math.trunc(effect.max_heal ?? 0) * (decision.ultra ? 2 : 1), shield, incoming);
           if (b.status.shield_pct > 0) clearDefense(b, "shield_pct");
-          emit(side, "damage", ` drains ${amount} HP.`, {kind: "damage", target_side: opponent, damage: amount, hp: b.hp, spell_id: spell.id});
-          emit(side, "heal", ` restores ${amount} HP.`, {kind: "heal", amount, hp: a.hp, spell_id: spell.id});
-          if (amount > 0) {
+          emit(side, "damage", ` drains ${damage} HP.`, {kind: "damage", target_side: opponent, damage, hp: b.hp, spell_id: spell.id});
+          emit(side, "heal", ` restores ${healed} HP.`, {kind: "heal", amount: healed, hp: a.hp, spell_id: spell.id});
+          if (damage > 0) {
             b.spell_hit_this_exchange = true;
             firePassive(opponent, "damage_received");
             const reflect = effectiveTimedDefense(b, "reflect_pct");
             if (reflect > 0) {
               const ignored = (a.item_fx.ignore_reflect_chance ?? 0) > 0 && draw() < a.item_fx.ignore_reflect_chance;
-              const reflected = ignored ? 0 : Math.min(a.hp, Math.round(amount * reflect));
+              const reflected = ignored ? 0 : Math.min(a.hp, Math.round(damage * reflect));
               if (reflected > 0) { dmg(opponent, side, reflected, "reflect", spell); a.spell_hit_this_exchange = true; firePassive(side, "damage_received"); }
               if (!ignored && (b.status.poison_on_reflect ?? 0) > 0) { const previous = a.status.poison; a.status.poison = Math.max(previous, b.status.poison_on_reflect); recordPoisonChange(a, previous, typeof (b as any).poison_reflect_source === "string" ? (b as any).poison_reflect_source : null); }
               if (b.status.reflect_pct > 0) clearDefense(b, "reflect_pct");

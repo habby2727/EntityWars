@@ -60,13 +60,37 @@ test("expedition economics and captures settle atomically through authenticated 
     const runSeed=createHmac("sha256","dev_world_secret").update("expedition:"+session.run_id).digest();
     let victories=0;
     const victory=async()=>{
+      if (victories === 1) {
+        const capped=player(a.player_id); capped.wallet.essence=1_000_000;
+        db.query("UPDATE players SET state_json=? WHERE player_id=?").run(JSON.stringify(capped),a.player_id);
+      }
       const before=player(a.player_id).homunculus_progress.cinder?.xp ?? 0;
       const selected=Math.max(0,session.choices.findIndex((x:any)=>x.capturable));
       const select=await req("/expeditions/select",body(session,{choice:selected}),a.token); expect(select.status).toBe(200);session=select.data.session;
       // Fixture makes an actual resolver turn decisive without forging a terminal result.
-      const state=saved(session.run_id); state.combat.player.hp=state.combat.player.max_hp=500; state.combat.player.tempo=1000; state.combat.npc.hp=1; state.combat.npc.status={}; state.combat.spells.find((s:any)=>s.id==="cinder_fist").accuracy=1; save(session.run_id,state);
-      const winBody=body(session,{decision:{turn:1,spell_id:"cinder_fist"}}), win=await req("/expeditions/turn",winBody,a.token); expect(win.status).toBe(200); expect(win.data.session.phase).toBe("REWARD"); expect(win.data.events.some((e:any)=>e.kind==="damage"&&e.actor==="player")).toBe(true);
-      expect((await req("/expeditions/turn",winBody,a.token)).data).toEqual(win.data); expect(player(a.player_id).homunculus_progress.cinder.xp).toBe(before+20);
+      const state=saved(session.run_id); state.combat.player.hp=state.combat.player.max_hp=500; state.combat.player.tempo=1000; state.combat.npc.hp=1; state.combat.npc.status={}; state.combat.npc.item_effects.evasion_pct=0; state.combat.spells.find((s:any)=>s.id==="cinder_fist").accuracy=1; save(session.run_id,state);
+      const winBody=body(session,{decision:{turn:1,spell_id:"cinder_fist"}});
+      const beforePlayer=player(a.player_id);
+      if (victories === 0) {
+        db.exec("CREATE TRIGGER expedition_victory_failure BEFORE INSERT ON audit_wallet WHEN NEW.reason='EXPEDITION_VICTORY' BEGIN SELECT RAISE(ABORT, 'forced failure'); END");
+        expect((await req("/expeditions/turn",winBody,a.token)).status).toBeGreaterThanOrEqual(400);
+        expect(player(a.player_id)).toEqual(beforePlayer);
+        expect(saved(session.run_id).phase).toBe("COMBAT");
+        db.exec("DROP TRIGGER expedition_victory_failure");
+      }
+      const win=await req("/expeditions/turn",winBody,a.token); expect(win.status).toBe(200); expect(win.data.session.phase).toBe("REWARD"); expect(win.data.events.some((e:any)=>e.kind==="damage"&&e.actor==="player")).toBe(true);
+      const reward=win.data.session.victory_reward;
+      if (victories === 1) expect(reward.grants.essence).toBe(0);
+      expect(reward.reward_id).toBe(`${session.run_id}:${session.depth}:victory`);
+      expect(["normal","difficult","very_difficult","exceptional"]).toContain(reward.tier);
+      const afterPlayer=player(a.player_id);
+      const audit=db.query("SELECT delta_wallet FROM audit_wallet WHERE player_id=? AND reason='EXPEDITION_VICTORY' AND related_id=?").get(a.player_id,reward.reward_id) as any;
+      const nonzero=Object.fromEntries(Object.entries(reward.grants).filter(([, amount])=>Number(amount)>0));
+      if (Object.keys(nonzero).length) expect(JSON.parse(audit.delta_wallet)).toEqual(nonzero); else expect(audit).toBeNull();
+      for (const [resource, amount] of Object.entries(reward.grants)) expect((afterPlayer.wallet[resource] ?? 0)-(beforePlayer.wallet[resource] ?? 0)).toBe(amount);
+      expect((await req("/expeditions/turn",winBody,a.token)).data).toEqual(win.data);
+      expect(player(a.player_id)).toEqual(afterPlayer);
+      expect(player(a.player_id).homunculus_progress.cinder.xp).toBe(before+20);
       session=win.data.session; victories++; return win.data;
     };
     let win=await victory(); expect(win.mana).toBe(5);
@@ -133,9 +157,10 @@ test("expedition economics and captures settle atomically through authenticated 
     // Defeat spends exactly one mana, with the regeneration clock starting from full.
     await req("/expeditions/state",undefined,b.token);let bs=(await req("/expeditions/start",{...loadout,client_action_id:id()},b.token)).data.session;
     bs=(await req("/expeditions/select",body(bs,{choice:0}),b.token)).data.session;
+    const beforeLoss=player(b.player_id);
     const losing=saved(bs.run_id);losing.combat.player.hp=1;losing.combat.npc.atk=1000;losing.combat.npc.tempo=100;save(bs.run_id,losing);
     for(let i=0;i<10 && bs.phase==="COMBAT";i++){const loseBody=body(bs,{decision:{turn:bs.combat_state.turn+1,spell_id:"cinder_fist"}}),lose=await req("/expeditions/turn",loseBody,b.token);expect(lose.status).toBe(200);if(lose.data.session.phase==="LOSS"){expect(lose.data.mana).toBe(5);expect(lose.data.next_regeneration_at).toBeGreaterThan(Date.now());expect((await req("/expeditions/turn",loseBody,b.token)).status).toBe(409);}bs=lose.data.session;}
-    expect(bs.phase).toBe("LOSS");
+    expect(bs.phase).toBe("LOSS"); expect(player(b.player_id)).toEqual(beforeLoss); expect(bs.victory_reward).toBeUndefined();
     // Retention removes only finished Expedition history, in bounded passes.
     db.query("INSERT INTO action_log(player_id,client_action_id,action_type,payload_json,result_state_json,created_at,expedition_run_id) VALUES(?,?,?,?,?,?,?)").run(a.player_id,"unrelated","OTHER","{}","{}",0,oldRun);
     for(let i=0;i<30 && db.query("SELECT 1 FROM expedition_runs WHERE run_id=?").get(oldRun);i++) maintainExpeditionReplays(db,Date.now()+EXPEDITION_REPLAY_RETENTION_MS+1000);
