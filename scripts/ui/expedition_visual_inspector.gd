@@ -66,6 +66,12 @@ func _build() -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 5)
 	box.add_child(actions)
+	var loadout_preview := Button.new()
+	loadout_preview.name = "LoadoutPreview"
+	loadout_preview.text = "Loadout preview"
+	_style_button(loadout_preview)
+	loadout_preview.pressed.connect(_preview_loadout)
+	actions.add_child(loadout_preview)
 	for entry in [["Suspense", "suspense"], ["Failure", "failure"], ["Success popup", "success"], ["Duplicate +20 XP", "duplicate"], ["Crystal popup", "crystal"], ["Exit dialog", "exit"]]:
 		var button := Button.new()
 		button.text = entry[0]
@@ -76,6 +82,17 @@ func _build() -> void:
 	asset_label.add_theme_font_size_override("font_size", 16)
 	asset_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(asset_label)
+
+func _preview_loadout() -> void:
+	if not _allowed(): return
+	var previous := SceneRouter._expedition_context.duplicate(true)
+	SceneRouter._expedition_context = {"loadout":true, "visual_preview":true, "player_id":"visual-preview"}
+	var preview := preload("res://scenes/LoadoutGrid.tscn").instantiate()
+	preview.name = "ExpeditionLoadoutPreview"
+	preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	preview.z_index = 500
+	host.add_child(preview)
+	SceneRouter._expedition_context = previous
 
 func _selector(row: HBoxContainer, title: String, labels: Array, callback: Callable) -> OptionButton:
 	var caption := Label.new()
@@ -168,13 +185,13 @@ func _sample() -> Dictionary:
 	var phase: String = PHASES[phase_index]
 	var inspiration := phase == "INSPIRATION"
 	var player := {"id":"sulfur_01", "type":"sulfur", "hp":78, "max_hp":104, "hom_id":hom.id, "hom_energy":4, "inspiration":2, "inspiration_used":false, "inspiration_pending":inspiration, "inspiration_offers":["steady_script", "ward_glyph", "rift_touch"], "spell_ids":["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], "cooldowns":{"furnace_rush":2}, "status":{"shield":0.15, "hom_stun":1}, "expedition_passive":{"markers":["sample_marker"], "modifiers":[{"kind":"power_flat", "amount":2, "duration":"exchange"}]}}
-	var npc := {"id":enemy.id, "type":enemy.types[0], "expedition_types":enemy.types, "texture":enemy.texture, "hp":67, "max_hp":100, "status":{"poison":2, "vuln":0.1}, "inspiration":1}
+	var npc := {"id":enemy.id, "type":enemy.types[0], "expedition_types":enemy.types, "texture":enemy.texture, "hom_id":hom.id, "hom_texture":hom.combat_texture, "hom_type":hom.type, "hom_energy":4, "hp":67, "max_hp":100, "status":{"poison":2, "vuln":0.1}, "inspiration":1}
 	var choices := []
 	for i in 2:
 		var e: Dictionary = enemy if i == 0 else other
 		choices.append({"choice":i, "id":e.id, "name":e.name, "types":e.types, "preview_texture":e.preview_texture})
 	var candidate := {"id":hom.id, "name":hom.name, "type":hom.type, "rarity":hom.rarity, "preview_texture":hom.preview_texture}
-	return {"run_id":"visual-only", "status":"LOSS" if phase == "LOSS" else "ACTIVE", "revision":1, "phase":"COMBAT" if phase in ["COMBAT", "INSPIRATION", "EXIT"] else phase, "background_key":backgrounds[background_index], "choices":choices, "directions":["left", "forward", "right"], "loadout":{"homunculus_id":hom.id}, "capture_candidate":candidate, "capture_closed":false, "capture_attempts_remaining":2, "combat_state":{"turn":3, "player":player, "npc":npc, "weapons":[{"id":"bismuth_talisman"}, {"id":"wind_amulet"}], "active_weapon_slot":1, "terminal_result":null}, "battle_log":[{"kind":"spell", "actor":"player", "spell_id":"cinder_fist"}, {"kind":"damage", "actor":"player", "amount":18}]}
+	return {"run_id":"visual-only", "status":"LOSS" if phase == "LOSS" else "ACTIVE", "revision":1, "phase":"COMBAT" if phase in ["COMBAT", "INSPIRATION", "EXIT"] else phase, "background_key":backgrounds[background_index], "choices":choices, "directions":["left", "forward", "right"], "loadout":{"homunculus_id":hom.id}, "reward_homunculus":{"id":hom.id,"type":hom.type,"preview_texture":hom.preview_texture,"combat_texture":hom.combat_texture}, "capture_candidate":candidate, "capture_closed":false, "capture_attempts_remaining":2, "combat_state":{"turn":3, "player":player, "npc":npc, "weapons":[{"id":"bismuth_talisman"}, {"id":"wind_amulet"}], "active_weapon_slot":1, "terminal_result":null}, "battle_log":[{"kind":"spell", "actor":"player", "spell_id":"cinder_fist"}, {"kind":"damage", "actor":"player", "amount":18}]}
 
 func preview_action(action: String) -> void:
 	if not _allowed(): return

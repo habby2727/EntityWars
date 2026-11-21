@@ -213,7 +213,7 @@ func refresh_state() -> void:
 	if err != OK:
 		push_error("BackendClient: refresh_state failed to send (%s)" % err)
 
-func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false, replay: bool = false) -> String:
+func request_api(method: String, path: String, body: Variant, expect_state: bool = false, recovery: bool = false, replay: bool = false, expedition_lease: String = "") -> String:
 	if _connection_gate().debug_offline_enabled or _connection_gate().state in [_connection_gate().State.UPDATE_REQUIRED, _connection_gate().State.IDLE] or (_connection_gate().blocked() and not recovery):
 		return ""
 	_ensure_api_http()
@@ -224,7 +224,7 @@ func request_api(method: String, path: String, body: Variant, expect_state: bool
 		if not body is Dictionary or not _connection_gate().journal_pending(self, recovery_paths[path][0], recovery_paths[path][1], body):
 			return ""
 	var request_id := _make_uuid()
-	var meta := {"kind": "api", "request_id": request_id, "expect_state": expect_state, "replay": recovery or replay}
+	var meta := {"kind": "api", "request_id": request_id, "expect_state": expect_state, "replay": recovery or replay, "expedition_lease": expedition_lease if path.begins_with("/expeditions/") and path != "/expeditions/start" else ""}
 	var err = _send_api_request(method, path, body, meta)
 	if err != OK:
 		return ""
@@ -377,6 +377,8 @@ func _send_api_request(method: String, path: String, body: Variant, meta: Dictio
 	var headers: PackedStringArray = ["Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()]
 	if token != "":
 		headers.append("Authorization: Bearer %s" % token)
+	if not str(meta.get("expedition_lease", "")).is_empty():
+		headers.append("X-Expedition-Lease: " + str(meta.expedition_lease))
 	if bool(meta.get("replay", false)):
 		headers.append("X-EntityWars-Replay: 1")
 	if _debug_bypass:

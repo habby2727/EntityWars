@@ -1,6 +1,5 @@
 extends SceneTree
 
-const Recovery := preload("res://scripts/net/expedition_recovery.gd")
 const Seen := preload("res://scripts/net/expedition_rewards_seen.gd")
 var token := ""
 var player_id := ""
@@ -10,6 +9,11 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	for locale in ["en", "es"]:
+		TranslationServer.set_locale(locale)
+		var warning := tr("EXPEDITION_RISK_WARNING")
+		assert(warning != "EXPEDITION_RISK_WARNING" and warning.contains("15") and warning.contains("60") and warning.contains("1"))
+	TranslationServer.set_locale("en")
 	token = OS.get_environment("EXPEDITION_TEST_TOKEN")
 	player_id = OS.get_environment("EXPEDITION_TEST_PLAYER")
 	base_url = OS.get_environment("EXPEDITION_TEST_URL")
@@ -18,17 +22,35 @@ func _run() -> void:
 	gate.token = token
 	gate.base_url = base_url
 	gate.state = gate.State.CONNECTED
+	var old_journal := FileAccess.open("user://expedition_pending_legacy.json", FileAccess.WRITE)
+	old_journal.store_string("{}")
+	old_journal.close()
+	var other_journal := FileAccess.open("user://session_recovery_fixture.json", FileAccess.WRITE)
+	other_journal.store_string("untouched")
+	other_journal.close()
+	var payload := {"client_action_id":"e5e2-start", "entity_id":"sulfur_01", "weapon_ids":[null, null], "homunculus_id":"cinder", "spell_ids":["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], "mode":"attack"}
+	SceneRouter._expedition_context = {"player_id":player_id, "pending_start":payload}
 	var screen = await _new_screen()
-	assert(await _wait_state(screen))
-	var payload := {"client_action_id":screen.backend._make_uuid(), "entity_id":"sulfur_01", "weapon_ids":[null, null], "homunculus_id":"cinder", "spell_ids":["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"], "mode":"attack"}
-	assert(Recovery.save_pending(player_id, "start", payload))
-	screen.pending = Recovery.load_pending(player_id)
-	screen._refresh()
 	assert(await _wait_phase(screen, "EXPLORE"))
+	assert(not FileAccess.file_exists("user://expedition_pending_legacy.json"))
+	assert(FileAccess.get_file_as_string("user://session_recovery_fixture.json") == "untouched")
+	assert(screen.lease.length() == 64 and screen.lease_run == screen.session.run_id)
 	var run_id: String = screen.session.run_id
+	assert(not JSON.stringify(screen.session.choices).contains("hom_id"))
+	var first_heartbeat: HTTPRequest = screen.heartbeat_http
+	assert(first_heartbeat != screen.backend._api_http and screen.heartbeat_timer.wait_time == 5.0)
+	screen._heartbeat()
+	for i in 100:
+		if not screen.heartbeat_in_flight: break
+		await create_timer(0.05).timeout
+	assert(not screen.forfeited and screen.session.run_id == run_id)
 	screen._select(0)
 	assert(await _wait_phase(screen, "COMBAT"))
-	var background: VideoStream = screen.video.stream
+	var npc: Dictionary = screen.session.combat_state.npc
+	var fought := str(npc.hom_id)
+	assert(not fought.is_empty() and npc.hom_energy == 0)
+	assert(is_instance_valid(screen.combat_view.enemy_hom_sprite))
+	assert(screen.combat_view.enemy_hom_sprite.texture.resource_path == npc.hom_texture)
 	assert(await _fixture(screen, "win"))
 	screen._refresh()
 	assert(await _wait_state(screen))
@@ -37,96 +59,80 @@ func _run() -> void:
 		screen.combat_view._cast("cinder_fist")
 		assert(await _wait_revision(screen, revision + 1))
 		if screen.session.phase == "REWARD": break
-	assert(screen.session.phase == "REWARD" and screen.video.stream == background)
-	assert(not is_instance_valid(screen.combat_view) or not screen.combat_view.is_inside_tree())
-	var candidate: Dictionary = screen.session.capture_candidate
-	assert(screen.capture_sprite.texture.resource_path == "res://assets/entities/gameplay/homunculus/ingame/1024/%s.png" % candidate.id)
-	assert(int(screen.state_data.crystals) == 3)
-	# Presentation-only fixtures cover each result independently of capture RNG.
-	var failure := {"kind":"capture_failure", "reward_id":"fixture-failure"}
-	screen._present_reward(failure)
-	assert(not is_instance_valid(screen.reward_popup) and screen.message.text == screen.tr("EXPEDITION_CAPTURE_FAILED"))
-	for duplicate in [false, true]:
-		var fixture := {"kind":"capture_success", "reward_id":"fixture-duplicate" if duplicate else "fixture-success", "candidate_id":candidate.id, "preview_texture":candidate.preview_texture, "duplicate":duplicate, "duplicate_xp":20 if duplicate else 0}
-		screen._present_reward(fixture)
-		assert(is_instance_valid(screen.reward_popup))
-		var pictures: Array = screen.reward_popup.find_children("*", "TextureRect", true, false)
-		assert(pictures.size() == 1 and pictures[0].texture.resource_path == candidate.preview_texture)
-		var expected_title: String = screen.tr("EXPEDITION_DUPLICATE_XP" if duplicate else "EXPEDITION_CAPTURE_SUCCESS")
-		assert(screen.reward_popup.find_children("*", "Label", true, false).any(func(label): return label.text == expected_title))
-		screen.reward_popup.acknowledged.emit()
-		assert(Seen.has_seen(player_id, fixture.reward_id))
-		screen._present_reward(fixture)
-		assert(not is_instance_valid(screen.reward_popup))
-	var before := int(screen.session.revision)
+	assert(screen.session.phase == "REWARD")
+	assert(screen.session.reward_homunculus.id == fought and screen.session.capture_candidate.id == fought)
+	assert(screen.capture_sprite.texture.resource_path == npc.hom_texture)
+	var before_capture: int = int(screen.session.revision)
+	var heartbeats := {"count":0}
+	screen.heartbeat_http.request_completed.connect(func(_result, code, _headers, _body):
+		if code == 200: heartbeats.count += 1)
+	screen.heartbeat_timer.wait_time = 0.25
+	screen.heartbeat_timer.start()
 	screen._send_phase_action("capture")
-	var capture_pending: Dictionary = screen.pending.duplicate(true)
-	assert(screen.playing_events and capture_pending.kind == "capture")
-	await create_timer(0.4).timeout
-	assert(int(screen.session.revision) == before and screen.playing_events)
-	# Close the scene with the request unresolved; the account journal must
-	# recover the same action regardless of whether the server committed it.
-	screen = await _new_screen()
-	assert(await _wait_revision(screen, before + 1))
-	assert(int(screen.state_data.crystals) == 2)
-	var capture_reward: Dictionary = screen.session.latest_reward
-	assert(capture_reward.kind in ["capture_success", "capture_failure"])
-	print("E5D3 capture outcome: ", capture_reward.kind)
-	if capture_reward.kind == "capture_success":
-		assert(is_instance_valid(screen.reward_popup))
-		screen.reward_popup.acknowledged.emit()
-		assert(Seen.has_seen(player_id, str(capture_reward.reward_id)))
-	assert(Recovery.save_pending(player_id, "capture", capture_pending.payload))
-	screen.pending = Recovery.load_pending(player_id)
-	screen._refresh()
-	assert(await _wait_revision(screen, before + 1))
-	assert(int(screen.state_data.crystals) == 2 and not is_instance_valid(screen.reward_popup))
-	screen._send_phase_action("skip")
-	assert(await _wait_phase(screen, "ROUTE"))
-	assert(screen.phase_buttons.size() == 3 and screen.video.stream == background)
-	assert(await _fixture(screen, "crystal"))
-	screen._refresh()
-	assert(await _wait_state(screen))
-	before = int(screen.session.revision)
-	screen.phase_buttons[1].pressed.emit()
-	var advance_pending: Dictionary = screen.pending.duplicate(true)
-	assert(await _wait_phase(screen, "EXPLORE"))
-	assert(screen.session.choices.size() == 2 and screen.session.latest_reward.kind == "crystal_drop" and screen.session.latest_reward.granted)
-	assert(is_instance_valid(screen.reward_popup))
-	var reward_id := str(screen.session.latest_reward.reward_id)
-	screen.reward_popup.acknowledged.emit()
-	assert(Seen.has_seen(player_id, reward_id))
-	assert(Seen.mark_seen(player_id, "e5d3-extra-reward"))
-	assert(Seen.has_seen(player_id, reward_id) and Seen.has_seen(player_id, "e5d3-extra-reward"))
-	assert(Recovery.save_pending(player_id, "advance", advance_pending.payload))
-	screen.pending = Recovery.load_pending(player_id)
-	screen._refresh()
-	assert(await _wait_revision(screen, before + 1))
-	assert(not is_instance_valid(screen.reward_popup))
+	assert(screen.playing_events)
+	assert(await _wait_revision(screen, before_capture + 1))
+	assert(not screen.forfeited and int(screen.state_data.crystals) == 2 and heartbeats.count > 0)
+	screen.heartbeat_timer.wait_time = 5.0
+	screen.heartbeat_timer.start()
+	if is_instance_valid(screen.reward_popup): screen.reward_popup.acknowledged.emit()
 	assert(screen.exit_button.visible and not screen.exit_button.disabled)
 	screen._confirm_exit()
-	assert(screen.exit_confirmation.visible)
+	assert(screen.exit_confirmation.visible and screen.exit_confirmation.dialog_text == screen.tr("EXPEDITION_RISK_WARNING"))
 	screen.exit_confirmation.confirmed.emit()
-	var exit_pending: Dictionary = screen.pending.duplicate(true)
-	assert(exit_pending.kind == "exit")
 	for i in 300:
 		if not is_instance_valid(screen): break
 		await create_timer(0.05).timeout
 	assert(not is_instance_valid(screen))
-	assert(Recovery.save_pending(player_id, "exit", exit_pending.payload))
 	var recovered = await _new_screen()
-	for i in 300:
-		if not is_instance_valid(recovered): break
+	assert(await _wait_state(recovered))
+	assert(recovered.session.is_empty() and recovered.lease.is_empty())
+	var login_http := HTTPRequest.new()
+	root.add_child(login_http)
+	assert(login_http.request(base_url + "/auth/dev_login", PackedStringArray(["Content-Type: application/json"]), HTTPClient.METHOD_POST, JSON.stringify({"name":"e5e2_interrupted"})) == OK)
+	var login: Array = await login_http.request_completed
+	assert(login[1] == 200)
+	var account: Dictionary = JSON.parse_string(login[3].get_string_from_utf8())
+	token = str(account.token)
+	player_id = str(account.player_id)
+	gate.player_id = player_id
+	gate.token = token
+	SceneRouter._expedition_context = {"player_id":player_id, "pending_start":payload}
+	var interrupted = await _new_screen()
+	assert(await _wait_phase(interrupted, "EXPLORE"))
+	interrupted.backend.base_url = "http://127.0.0.1:1"
+	interrupted._heartbeat()
+	for i in 120:
+		if interrupted.forfeited: break
 		await create_timer(0.05).timeout
-	assert(not is_instance_valid(recovered) and Recovery.load_pending(player_id).is_empty())
-	var http := HTTPRequest.new()
-	root.add_child(http)
-	assert(http.request(base_url + "/expeditions/state", PackedStringArray(["Authorization: Bearer " + token])) == OK)
-	var response: Array = await http.request_completed
-	var result: Dictionary = JSON.parse_string(response[3].get_string_from_utf8())
-	assert(response[1] == 200 and result.session == null and int(result.remaining_cooldown_ms) > 0)
-	http.queue_free()
-	print("EXPEDITION_REAL_API_PASS E5D3")
+	assert(interrupted.forfeited and interrupted.lease.is_empty() and interrupted.session.is_empty())
+	assert(interrupted.message.text == interrupted.tr("EXPEDITION_FORFEITED"))
+	var restarted = await _new_screen()
+	assert(await _wait_state(restarted))
+	assert(restarted.session.is_empty() and restarted.lease.is_empty())
+	assert(login_http.request(base_url + "/auth/dev_login", PackedStringArray(["Content-Type: application/json"]), HTTPClient.METHOD_POST, JSON.stringify({"name":"e5e2_loss"})) == OK)
+	login = await login_http.request_completed
+	assert(login[1] == 200)
+	account = JSON.parse_string(login[3].get_string_from_utf8())
+	token = str(account.token)
+	player_id = str(account.player_id)
+	gate.player_id = player_id
+	gate.token = token
+	SceneRouter._expedition_context = {"player_id":player_id, "pending_start":payload}
+	var losing = await _new_screen()
+	assert(await _wait_phase(losing, "EXPLORE"))
+	losing._select(0)
+	assert(await _wait_phase(losing, "COMBAT"))
+	assert(await _fixture(losing, "loss"))
+	losing._refresh()
+	assert(await _wait_state(losing))
+	for attempt in 5:
+		var previous: int = int(losing.session.revision)
+		losing.combat_view._cast("cinder_fist")
+		assert(await _wait_revision(losing, previous + 1))
+		if losing.session.phase == "LOSS": break
+	assert(losing.session.phase == "LOSS" and losing.lease.is_empty() and not losing.forfeited)
+	login_http.queue_free()
+	print("EXPEDITION_REAL_API_PASS E5E2")
 	quit()
 
 func _new_screen() -> Control:

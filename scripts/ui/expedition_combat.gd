@@ -18,6 +18,7 @@ var hom_attack: CheckButton
 var player_sprite: TextureRect
 var player_hom_sprite: TextureRect
 var enemy_sprite: TextureRect
+var enemy_hom_sprite: TextureRect
 var player_hp: ProgressBar
 var enemy_hp: ProgressBar
 var log: RichTextLabel
@@ -203,7 +204,26 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> Control:
 	portrait.flip_h = enemy
 	portrait.texture = host._texture(path, "res://assets/entities/")
 	images.add_child(portrait)
-	if enemy: enemy_sprite = portrait
+	if enemy:
+		enemy_sprite = portrait
+		var hom_id := str(fighter.get("hom_id", ""))
+		var hom: Dictionary = host._candidate(hom_id)
+		if not hom.is_empty() and fighter.get("hom_texture") == hom.get("combat_texture") and fighter.get("hom_type") == hom.get("type"):
+			enemy_hom_sprite = TextureRect.new()
+			enemy_hom_sprite.name = "EnemyHomunculus"
+			enemy_hom_sprite.custom_minimum_size = Vector2(150, 120)
+			enemy_hom_sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			enemy_hom_sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			enemy_hom_sprite.flip_h = true
+			enemy_hom_sprite.texture = host._texture(str(hom.combat_texture), "res://assets/entities/gameplay/homunculus/ingame/1024/")
+			images.add_child(enemy_hom_sprite)
+			var meter := HomStatus.new()
+			meter.name = "EnemyHomunculusMeter"
+			var hom_type := str(hom.get("type", ""))
+			var hom_name := GameLocalization.catalog("homunculus", hom_id, "name", str(hom.get("name", hom_id)))
+			var meter_data := {"hom_name":"%s · %s" % [hom_name, GameLocalization.catalog("type", hom_type, "name", hom_type.capitalize())], "hom_energy":clampi(int(fighter.get("hom_energy", 0)), 0, 6)}
+			meter.ready.connect(func(): meter.set_fighter(meter_data), CONNECT_ONE_SHOT)
+			box.add_child(meter)
 	else:
 		player_sprite = portrait
 		var hom_id := str(fighter.get("hom_id", ""))
@@ -336,6 +356,7 @@ func present_events(events: Array, epoch: int) -> void:
 			(hp.get_child(0) as Label).text = "%d / %d HP" % [int(hp.value), int(hp.max_value)]
 		if kind in ["spell", "hom_attack", "damage", "evade", "hom_miss"]:
 			var sprite := player_sprite if (actor == "player" if kind in ["spell", "hom_attack", "hom_miss"] else target == "player") else enemy_sprite
+			if kind in ["hom_attack", "hom_miss"]: sprite = player_hom_sprite if actor == "player" else enemy_hom_sprite
 			if is_instance_valid(sprite):
 				sprite.modulate = Color(1.8, 1.4, 1.4)
 				var tween := create_tween()

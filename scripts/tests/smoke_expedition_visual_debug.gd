@@ -32,6 +32,19 @@ func _run() -> void:
 	screen._enter_visual_debug()
 	var inspector = screen.visual_inspector
 	assert(screen.visual_debug and inspector.enemies.size() == 21 and inspector.homunculi.size() == 14 and inspector.backgrounds.size() == 26)
+	(inspector.find_child("LoadoutPreview", true, false) as Button).pressed.emit()
+	await process_frame
+	var preview: Node = screen.get_node_or_null("ExpeditionLoadoutPreview")
+	assert(preview != null and preview.scene_file_path == "res://scenes/LoadoutGrid.tscn")
+	assert(preview._expedition_preview and preview._spell_backend == null and preview.btn_play.disabled)
+	var selected_hom: String = preview._current_homunculus_id
+	preview._confirm_expedition_start("visual-preview", {})
+	var confirmation: ConfirmationDialog = preview.get_node("ExpeditionRiskConfirmation")
+	assert(confirmation.visible and confirmation.dialog_text == preview.tr("EXPEDITION_RISK_WARNING"))
+	confirmation.canceled.emit()
+	assert(preview._current_homunculus_id == selected_hom and not SceneRouter._expedition_context.has("pending_start"))
+	preview.queue_free()
+	await process_frame
 	var source := FileAccess.get_file_as_string("res://backend/src/expeditions_backgrounds.ts")
 	var expression := RegEx.new()
 	assert(expression.compile('"([A-Za-z0-9_]+\\.ogv)"') == OK)
@@ -65,6 +78,7 @@ func _run() -> void:
 			inspector.select_hom(i)
 			await process_frame
 			assert(screen.combat_view.player_hom_sprite.texture.resource_path == inspector.homunculi[i].combat_texture)
+			assert(screen.combat_view.enemy_hom_sprite.texture.resource_path == inspector.homunculi[i].combat_texture)
 			inspector.set_phase(3)
 			await process_frame
 			assert(screen.capture_sprite.texture.resource_path == inspector.homunculi[i].combat_texture)

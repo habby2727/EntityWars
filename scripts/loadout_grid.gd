@@ -94,6 +94,7 @@ var _has_saved: bool = false
 var _hunt_mode := false
 var _dungeon_mode := false
 var _expedition_mode := false
+var _expedition_preview := false
 var _dungeon_backend: BackendClient
 var _dungeon_request := ""
 var _dungeon_kind := ""
@@ -223,6 +224,8 @@ func _resolve_nodes() -> void:
 func _ready() -> void:
 	_resolve_nodes()
 	_dungeon_mode = not str(SceneRouter._dungeon_context.get("run_id", "")).is_empty()
+	_expedition_preview = OS.has_feature("editor") and get_node("/root/ConnectionGate").debug_lab_navigation_allowed() and bool(SceneRouter._expedition_context.get("visual_preview", false))
+	if _expedition_preview: _dungeon_mode = false
 	_expedition_mode = bool(SceneRouter._expedition_context.get("loadout", false)) and not _dungeon_mode
 	_hunt_mode = SceneRouter._hunt_loadout_active and not _dungeon_mode and not _expedition_mode
 	if _hunt_mode and not str(SceneRouter._solo_hunt_context.get("replaced_session_id", "")).is_empty():
@@ -253,6 +256,10 @@ func _ready() -> void:
 		if back.pressed.is_connected(original_back):
 			back.pressed.disconnect(original_back)
 		back.pressed.connect(SceneRouter.go_to_expeditions if _expedition_mode else (SceneRouter.return_from_dungeon if _dungeon_mode else _on_hunt_back))
+		if _expedition_preview:
+			back.pressed.disconnect(SceneRouter.go_to_expeditions)
+			back.pressed.connect(queue_free)
+			btn_play.disabled = true
 	if tooltip_panel:
 		tooltip_panel.visible = false
 		if tooltip_panel.get_parent() != self:
@@ -737,6 +744,10 @@ func _load_registry_safe() -> void:
 		_def_techs = []
 
 func _setup_spell_state() -> void:
+	if _expedition_preview:
+		_spell_state = {"player_id":"visual-preview", "spell_progress":{}, "item_progress":{}, "homunculus_progress":{}}
+		_spell_synced = true
+		return
 	_spell_debug.reload()
 	if _spell_debug.unlock_all_buildings and not _dungeon_mode and not _expedition_mode:
 		_spell_state = _spell_debug.load_lab_state()
@@ -1905,6 +1916,7 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
+	if _expedition_preview: return
 	if not _is_combat_hom(_current_homunculus_id):
 		_set_build_error(tr("LOADOUT_HOM_PENDING"))
 		return
@@ -1957,10 +1969,21 @@ func _submit_expedition_loadout() -> void:
 		_set_build_error(tr("LOADOUT_CHOOSE_FOUR_SPELLS"))
 		return
 	var payload := {"client_action_id": _spell_backend._make_uuid(), "entity_id": _current_entity_id, "weapon_ids": [null if first.is_empty() else first, null if second.is_empty() else second], "homunculus_id": _current_homunculus_id, "spell_ids": spells.duplicate(), "mode": "attack"}
-	if not preload("res://scripts/net/expedition_recovery.gd").save_pending(owner, "start", payload):
-		_set_build_error(tr("EXPEDITION_SAVE_ERROR"))
-		return
-	SceneRouter.go_to_expeditions()
+	_confirm_expedition_start(owner, payload)
+
+func _confirm_expedition_start(owner: String, payload: Dictionary) -> void:
+	var confirm := ConfirmationDialog.new()
+	confirm.name = "ExpeditionRiskConfirmation"
+	confirm.title = tr("EXPEDITION_START")
+	confirm.dialog_text = tr("EXPEDITION_RISK_WARNING")
+	confirm.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	confirm.confirmed.connect(func():
+		if _spell_backend != null and _spell_backend._verified_player_id == owner and not get_node("/root/ConnectionGate").blocked():
+			SceneRouter._expedition_context["pending_start"] = payload
+			SceneRouter.go_to_expeditions())
+	confirm.canceled.connect(confirm.queue_free)
+	add_child(confirm)
+	confirm.popup_centered(Vector2i(750, 300))
 
 func _on_dungeon_identity(state: Dictionary) -> void:
 	_update_hom_ownership(state, _dungeon_backend, str(SceneRouter._dungeon_context.get("player_id", "")))
@@ -2202,6 +2225,7 @@ func _reset_build_defaults() -> void:
 	_refresh_details()
 
 func _save_build_preferences() -> void:
+	if _expedition_preview: return
 	if not _preferences_ready or not _preferences_can_edit() or _preferences_owner.is_empty() or _preferences_owner != _verified_preferences_identity():
 		return
 	var build := {"entity_id": _current_entity_id, "homunculus_id": _current_homunculus_id, "equip_1": _idx_to_id(_items, dd_item1), "equip_2": _idx_to_id(_items, dd_item2), "side_1": _idx_to_id(_items, dd_side1), "side_2": _idx_to_id(_items, dd_side2), "attack_tech": _idx_to_id(_atk_techs, dd_atktech), "defense_tech": _idx_to_id(_def_techs, dd_deftech)}
@@ -2209,6 +2233,7 @@ func _save_build_preferences() -> void:
 		_set_build_error("Could not save build preferences.")
 
 func _save_seal(which: String) -> bool:
+	if _expedition_preview: return false
 	if not _is_combat_hom(_current_homunculus_id):
 		_set_build_error(tr("LOADOUT_HOM_PENDING"))
 		return false
@@ -2480,6 +2505,7 @@ func _legacy_hom_fallback() -> String:
 	return str(_reg.get_homunculi().keys()[0])
 
 func _hom_status(id: String) -> String:
+	if _expedition_preview: return "owned"
 	var synced := not _hom_identity.is_empty() and _hom_identity == _verified_preferences_identity()
 	return HomProgress.collection_status(id, _reg != null and _reg.get_homunculi().has(id), _hom_progress, synced)
 

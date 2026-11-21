@@ -31,6 +31,7 @@ static var _debug_guardian_wins := {}
 static var _dungeon_context := {}
 static var _ranked_context := {}
 static var _expedition_context := {}
+static var _expedition_forfeit_notice := false
 
 static func go_to_expedition_loadout(player_id: String) -> void:
 	_expedition_context = {"player_id": player_id, "loadout": true}

@@ -326,6 +326,8 @@ EXPEDITION_EVENT_WARD_CONVERT,Shield converted,Escudo convertido
 EXPEDITION_EVENT_HOM_ENERGY_SIPHON,Homunculus energy siphoned,Energía de homúnculo absorbida
 EXPEDITION_EXIT,Exit expedition,Salir de la expedición
 EXPEDITION_EXIT_CONFIRM,Exit this expedition? The server will close the run and apply the exit cooldown.,¿Salir de esta expedición? El servidor cerrará la partida y aplicará el tiempo de espera de salida.
+EXPEDITION_RISK_WARNING,"Expeditions cannot be resumed. Leaving, closing the game, mobile sleep or losing connection ends your expedition permanently. Abandonment costs 1 mana and applies a 60-second cooldown. If heartbeats stop for 15 seconds, the server closes your run. Previously confirmed rewards are kept.","Las expediciones no se pueden reanudar. Salir, cerrar el juego, suspender el móvil o perder la conexión termina la expedición para siempre. Abandonar cuesta 1 de maná y aplica una espera de 60 segundos. Si los latidos se detienen durante 15 segundos, el servidor cierra la partida. Se conservan las recompensas confirmadas."
+EXPEDITION_FORFEITED,"Connection lost or expedition interrupted. This run is forfeited and cannot be resumed.","Se ha perdido la conexión o se ha interrumpido la expedición. La partida se ha perdido y no se puede reanudar."
 EXPEDITION_CONTINUE,Continue,Continuar
 EXPEDITION_CAPTURE,Capture,Capturar
 EXPEDITION_SKIP,Skip and continue,Omitir y continuar
