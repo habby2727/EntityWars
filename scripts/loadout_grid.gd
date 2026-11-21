@@ -1903,10 +1903,6 @@ func _on_save_gui_input(ev: InputEvent) -> void:
 			b.accept_event()
 
 func _on_play_pressed() -> void:
-	# Practice uses local simulation; expedition passive parity is not yet available.
-	if not _hunt_mode and not _dungeon_mode and (ranked_queue == null or not ranked_queue.selected) and _reg != null and not _reg.get_homunculi().has(_current_homunculus_id):
-		_set_build_error(tr("LOADOUT_HOM_PENDING"))
-		return
 	if not _is_combat_hom(_current_homunculus_id):
 		_set_build_error(tr("LOADOUT_HOM_PENDING"))
 		return
