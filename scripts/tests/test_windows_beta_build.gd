@@ -11,7 +11,7 @@ func _initialize() -> void:
 	assert(Endpoint.resolve_for(true, "http://localhost:9000", "http://127.0.0.1:9999") == "http://localhost:9000")
 	assert(Endpoint.resolve_for(false, local, "http://attacker.invalid") == release)
 	assert(Endpoint.resolve_for(false, "http://attacker.invalid", "") == release)
-	assert(ClientBuild.header() == "X-EntityWars-Client-Build: 5504")
+	assert(ClientBuild.header() == "X-EntityWars-Client-Build: 5507")
 	for path in ["res://scripts/ui/auth_screen.gd", "res://scripts/net/backend_client.gd", "res://scripts/combat.gd"]:
 		assert(FileAccess.get_file_as_string(path).contains('preload("res://scripts/net/backend_endpoint.gd").resolve('))
 	var client := FileAccess.get_file_as_string("res://scripts/net/backend_client.gd").replace("\r\n", "\n")

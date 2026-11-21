@@ -2,7 +2,11 @@
 import { buildTrustedCombatSetup, deterministicDraw } from "../solo_hunt_combat";
 import { homunculusCatalog } from "../homunculus_catalog";
 import { buildExpeditionEnemy, createExpeditionCombatState, resolveExpeditionTurn, resolveExpeditionInspiration, expeditionItemEffects } from "../expeditions_combat";
-import { expeditionVictoryTier } from "../expeditions_service";
+import { createExpeditionService, expeditionVictoryTier } from "../expeditions_service";
+import { Database } from "bun:sqlite";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { createHmac } from "node:crypto";
 import { expeditionSpellSupported, chooseDungeonNpcSpell } from "../dungeon_combat";
 import { expeditionEnemies, expeditionCaptures, expeditionDualTypeMultiplier } from "../expeditions_rules";
 import entities from "../../../data/entities.json";
@@ -18,6 +22,54 @@ const seed = new Uint8Array(32).fill(37);
 const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
 const setup = buildTrustedCombatSetup({player_id:"p",state_revision:1,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{},homunculus_progress:{honin:{owned:true,level:0,xp:0}}}, {entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:"honin",spell_ids:ids,mode:"attack"}, catalogs, {independentLoadout:true});
 const rng = (turn: number, draw: number) => deterministicDraw(seed, "battle", turn, draw);
+
+test("routes preserve floor identity and persist independent difficulty, including legacy runs", () => {
+  const db = new Database(":memory:");
+  const migrations = resolve(import.meta.dir, "../../migrations/sqlite");
+  for (const file of readdirSync(migrations).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(resolve(migrations, file), "utf8"));
+  const options = {db, secret:"route-test", catalogs, getPlayer:()=>({}), makeSetup:()=>setup, awardVictory:()=>{}, captureHomunculus:()=>({duplicate:false}), grantVictoryLoot:()=>({})};
+  let service = createExpeditionService(options);
+  const started = service.action("route-player", "start", {entity_id:"sulfur_01", weapon_ids:[null,null], homunculus_id:"honin", spell_ids:ids, mode:"attack", client_action_id:"start"}) as any;
+  const run = started.session.run_id, lease = started.lease;
+  const read = () => JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(run) as any).state_json);
+  const initial = read(); expect([initial.depth, initial.difficulty_depth]).toEqual([1, 1]);
+  const route = {...initial, phase:"ROUTE", depth:10, difficulty_depth:4};
+  let revision = 1;
+  for (const [direction, difficulty] of [["right",4],["left",5],["forward",6]] as const) {
+    db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(route),run);
+    const body = {run_id:run,expected_revision:revision,client_action_id:`advance-${direction}`,direction};
+    const advanced = service.action("route-player","advance",body,lease) as any;
+    const state = read();
+    expect([state.depth,state.difficulty_depth,advanced.session.depth]).toEqual([11,difficulty,11]);
+    expect(service.action("route-player","advance",body,lease)).toEqual(advanced);
+    expect(read()).toEqual(state);
+    service = createExpeditionService(options);
+    expect(service.state("route-player",lease).session).toEqual(advanced.session);
+    for (let i=0; i<2; i++) {
+      const choice=state.choices[i], cursor=state.enemy_cursor-2+i;
+      const expected=buildExpeditionEnemy(new Uint8Array(createHmac("sha256","route-test").update("expedition:"+run).digest()),`${run}:node:11:enemy:${cursor}`,11,choice.capturable,setup,catalogs,choice.entity_id,choice.homunculus_id,state.npc_item_level,difficulty);
+      expect(choice).toEqual(expected);
+    }
+    revision++;
+  }
+  const legacy = {...route}; delete (legacy as any).difficulty_depth;
+  db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(legacy),run);
+  const advanced = service.action("route-player","advance",{run_id:run,expected_revision:revision,client_action_id:"legacy",direction:"right"},lease) as any;
+  expect([read().depth,read().difficulty_depth]).toEqual([11,10]);
+  const selected = service.action("route-player","select",{run_id:run,expected_revision:advanced.session.revision,client_action_id:"select",choice:0},lease) as any;
+  const frozen=read(); expect(frozen.victory_tier).toBe(expeditionVictoryTier(10,frozen.selected,setup));
+  expect(selected.session.depth).toBe(11);
+  db.close();
+});
+
+test("enemy growth uses difficulty without changing floor or deterministic choices", () => {
+  const enemy = (depth:number,difficulty:number) => buildExpeditionEnemy(seed,"growth",depth,false,setup,catalogs,undefined,undefined,0,difficulty);
+  const first=enemy(11,1), stronger=enemy(11,31), oldCall=buildExpeditionEnemy(seed,"growth",11,false,setup,catalogs);
+  expect(oldCall).toEqual(enemy(11,11));
+  expect(first.floor).toBe(11); expect(stronger.floor).toBe(11);
+  expect([first.entity_id,first.homunculus_id,first.spell_ids,first.item_id]).toEqual([stronger.entity_id,stronger.homunculus_id,stronger.spell_ids,stronger.item_id]);
+  expect(stronger.hp).toBeGreaterThan(first.hp); expect(stronger.attack).toBeGreaterThan(first.attack); expect(stronger.defense).toBeGreaterThan(first.defense); expect(stronger.homunculus_level).toBeGreaterThan(first.homunculus_level);
+});
 const build = (key: string, depth = 1, capture = false) => buildExpeditionEnemy(seed, key, depth, capture, setup, catalogs);
 const simulate = (state: any, random = rng) => {
   const events: any[] = [];

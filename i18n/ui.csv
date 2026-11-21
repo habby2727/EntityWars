@@ -338,9 +338,9 @@ EXPEDITION_CAPTURE_FAILED,The homunculus resisted the Crystal.,El hom?nculo resi
 EXPEDITION_CAPTURE_SUCCESS,Homunculus captured,Homúnculo capturado
 EXPEDITION_DUPLICATE_XP,Duplicate homunculus: +20 XP,Homúnculo duplicado: +20 XP
 EXPEDITION_CRYSTAL_GAINED,Capture crystal gained,Cristal de captura obtenido
-EXPEDITION_DIRECTION_LEFT,Left,Izquierda
-EXPEDITION_DIRECTION_FORWARD,Forward,Adelante
-EXPEDITION_DIRECTION_RIGHT,Right,Derecha
+EXPEDITION_DIRECTION_LEFT,Diff. +1,Dific. +1
+EXPEDITION_DIRECTION_FORWARD,Diff. +2,Dific. +2
+EXPEDITION_DIRECTION_RIGHT,Diff. same,Dific. igual
 EXPEDITION_EVENT_COMBO_TRIGGER,Combo triggered,Combo activado
 EXPEDITION_EVENT_HOM_DOT,Homunculus damage,Daño del homúnculo
 EXPEDITION_EVENT_TRUE_ON_HIT,Bonus damage,Daño adicional

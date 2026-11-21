@@ -138,6 +138,21 @@ func _run() -> void:
 		inspector.set_phase(4)
 		await process_frame
 		assert(screen.phase_buttons.size() == 3 and screen.phase_buttons.all(func(button): return button.disabled))
+		var previous_locale := TranslationServer.get_locale()
+		for locale in ["en", "es"]:
+			TranslationServer.set_locale(locale)
+			inspector.set_phase(4)
+			await process_frame
+			var expected := ["Diff. +1", "Diff. +2", "Diff. same"] if locale == "en" else ["Dific. +1", "Dific. +2", "Dific. igual"]
+			for index in 3:
+				assert(screen.phase_buttons[index].text.ends_with(expected[index]))
+			for button in screen.phase_buttons:
+				assert(button.custom_minimum_size == Vector2(240, 150))
+				var font: Font = button.get_theme_font("font")
+				var font_size: int = button.get_theme_font_size("font_size")
+				for line in button.text.split("\n"):
+					assert(font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= button.size.x - 20)
+		TranslationServer.set_locale(previous_locale)
 		inspector.set_phase(5)
 		await process_frame
 		assert(screen.session.phase == "LOSS")

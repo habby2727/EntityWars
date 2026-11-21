@@ -43,8 +43,8 @@ function chooseNpcItem(seed: Uint8Array, key: string, setup: any, npcSpells: any
 }
 
 /** setup must be produced by buildTrustedCombatSetup from server-owned player data. */
-export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, depth: number, capturable: boolean, setup: any, catalogs: any, enemyId?: string, homId?: string, npcItemLevel = 0) {
-  if (!encounterKey || !Number.isSafeInteger(depth) || depth < 1 || typeof capturable !== "boolean" || !setup?.entity?.base_stats || !Array.isArray(setup.spells) || !Array.isArray(setup.spell_ids) || !Array.isArray(catalogs?.spells)) throw new Error("INVALID_EXPEDITION_SETUP");
+export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, depth: number, capturable: boolean, setup: any, catalogs: any, enemyId?: string, homId?: string, npcItemLevel = 0, difficultyDepth = depth) {
+  if (!encounterKey || !Number.isSafeInteger(depth) || depth < 1 || !Number.isSafeInteger(difficultyDepth) || difficultyDepth < 1 || typeof capturable !== "boolean" || !setup?.entity?.base_stats || !Array.isArray(setup.spells) || !Array.isArray(setup.spell_ids) || !Array.isArray(catalogs?.spells)) throw new Error("INVALID_EXPEDITION_SETUP");
   const draw = (label: string) => expeditionDraw(seed, JSON.stringify([encounterKey, depth, label]), 0);
   const enemy = enemyId === undefined ? expeditionEnemies[Math.floor(draw("enemy") * expeditionEnemies.length)] : expeditionEnemies.find(e => e.id === enemyId);
   if (!enemy) throw new Error("INVALID_EXPEDITION_ENEMY");
@@ -86,7 +86,7 @@ export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, dep
   const hp = base.hp + (bonus.hp ?? 0), attack = base.power + (bonus.atk ?? 0) + Math.trunc(weaponPower * factor), defense = base.guard + (bonus.def ?? 0) + Math.trunc(weaponGuard * factor);
   if (![hp, attack, defense].every(v => Number.isFinite(v) && v > 0)) throw new Error("INVALID_EXPEDITION_SETUP");
   const spellQuality = setup.spells.reduce((sum: number, s: any) => sum + (s.category === "attack" ? Math.min(1.5, s.power_mult * s.accuracy) : 0.65), 0) / 4;
-  const growth = 1 + Math.min(0.55, Math.log2(depth) * 0.035);
+  const growth = 1 + Math.min(0.55, Math.log2(difficultyDepth) * 0.035);
   const threat = (capturable ? 1.12 : 1) * growth;
   const personality = capturable ? "ALCHEMIST" : "OPPORTUNIST";
   const equipment = chooseNpcItem(seed, encounterKey, setup, selected, enemy.types, hom, personality, catalogs, npcItemLevel);
@@ -95,7 +95,7 @@ export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, dep
   const defenseBudget = Math.max(1, Math.round(defense * 0.82 * threat));
   const item_power_allocated = Math.trunc(equipment.item_effects.power_flat ?? 0);
   const item_guard_allocated = Math.trunc(equipment.item_effects.guard_flat ?? 0);
-  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((depth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map(s => s.id), npc_personality: personality };
+  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((difficultyDepth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map(s => s.id), npc_personality: personality };
 }
 
 export function createExpeditionCombatState(setup: any, enemy: any, catalogs: any, previousActiveSlot = 0) {
