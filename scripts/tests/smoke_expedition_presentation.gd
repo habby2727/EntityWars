@@ -93,6 +93,25 @@ func _run() -> void:
 		root.get_texture().get_image().save_png(capture_path)
 	dialog.queue_free()
 	await process_frame
+	if OS.get_environment("UI_ANDROID_PREVIEW") == "1":
+		var pressed_count := {"value": 0}
+		view.spell_buttons[0].disabled = false
+		view.spell_buttons[0].pressed.connect(func(): pressed_count.value += 1)
+		var touch := InputEventScreenTouch.new()
+		touch.index = 0
+		touch.position = view.spell_buttons[0].get_global_transform_with_canvas() * (view.spell_buttons[0].size * 0.5)
+		touch.pressed = true
+		root.push_input(touch, true)
+		await create_timer(0.65).timeout
+		assert(view._spell_touch_info_open)
+		assert(view.find_children("*", "AcceptDialog", true, false).size() == 1)
+		touch.pressed = false
+		root.push_input(touch, true)
+		assert(view.pending_hom_decision.is_empty() and pressed_count.value == 0)
+		view.spell_buttons[0].disabled = true
+		for info_dialog in view.find_children("*", "AcceptDialog", true, false): info_dialog.hide(); info_dialog.queue_free()
+		await process_frame
+		assert(not view._spell_touch_info_open)
 	var decision_host := DecisionHost.new()
 	root.add_child(decision_host)
 	view.host = decision_host

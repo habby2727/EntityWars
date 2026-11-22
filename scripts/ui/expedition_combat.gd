@@ -38,9 +38,42 @@ var log: RichTextLabel
 var animation_tweens := {}
 var animation_original := {}
 var displayed_weapon_slot := 0
+var _spell_touch_index := -1
+var _spell_touch_token := 0
+var _spell_touch_info_open := false
 
 func _android_ui() -> bool:
 	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
+func _input(event: InputEvent) -> void:
+	if not _android_ui(): return
+	if event is InputEventScreenDrag and event.index == _spell_touch_index and event.relative.length() > 8.0:
+		_spell_touch_token += 1
+		_spell_touch_index = -1
+	elif event is InputEventScreenTouch:
+		if event.pressed:
+			for button in spell_buttons + inspiration_buttons:
+				if not is_instance_valid(button) or not button.is_visible_in_tree(): continue
+				var local: Vector2 = button.get_global_transform_with_canvas().affine_inverse() * event.position
+				if Rect2(Vector2.ZERO, button.size).has_point(local):
+					_spell_touch_index = event.index
+					_spell_touch_token += 1
+					_show_spell_on_hold(button, _spell_touch_token)
+					break
+		elif event.index == _spell_touch_index:
+			_spell_touch_token += 1
+			_spell_touch_index = -1
+			if _spell_touch_info_open:
+				_spell_touch_info_open = false
+				get_viewport().set_input_as_handled()
+
+func _show_spell_on_hold(button: Button, token: int) -> void:
+	await get_tree().create_timer(0.55).timeout
+	if token != _spell_touch_token or not is_instance_valid(button) or not button.is_visible_in_tree(): return
+	var spell: Dictionary = button.get_meta("spell_info", {})
+	if spell.is_empty(): return
+	_spell_touch_info_open = true
+	_details(spell)
 
 func _exit_tree() -> void:
 	if is_instance_valid(registry): registry.free()
@@ -224,7 +257,7 @@ func _build() -> void:
 	hom_attack.add_theme_font_size_override("font_size", 18)
 	hom_attack.text = tr("COMBAT_ATTACK")
 	hom_attack.pressed.connect(_choose_hom.bind("attack"))
-	_place(hom_attack, Vector2(20, 780) if _android_ui() else Vector2(20, 788), Vector2(180, 80) if _android_ui() else Vector2(145, 55))
+	_place(hom_attack, Vector2(20, 810) if _android_ui() else Vector2(20, 788), Vector2(180, 80) if _android_ui() else Vector2(145, 55))
 	if _android_ui(): hom_attack.add_theme_font_size_override("font_size", 24)
 	hom_attack.hide()
 	hom_hold = Button.new()
@@ -234,7 +267,7 @@ func _build() -> void:
 	hom_hold.text = tr("COMBAT_HOLD")
 	hom_hold.tooltip_text = tr("COMBAT_HOLD_HINT")
 	hom_hold.pressed.connect(_choose_hom.bind("hold"))
-	_place(hom_hold, Vector2(210, 780) if _android_ui() else Vector2(170, 788), Vector2(180, 80) if _android_ui() else Vector2(150, 55))
+	_place(hom_hold, Vector2(210, 810) if _android_ui() else Vector2(170, 788), Vector2(180, 80) if _android_ui() else Vector2(150, 55))
 	if _android_ui(): hom_hold.add_theme_font_size_override("font_size", 24)
 	hom_hold.hide()
 	if bool(player.get("inspiration_pending", false)):
@@ -392,6 +425,7 @@ func _spell_button(spell: Dictionary, cooldown: int = 0) -> Button:
 	button.add_theme_color_override("font_disabled_color", Color(0.72, 0.75, 0.76))
 	button.custom_minimum_size = Vector2(230, 90)
 	var id := str(spell.get("id", ""))
+	button.set_meta("spell_info", spell)
 	button.text = "%s\n%s  |  %s%%  |  CD %d" % [GameLocalization.catalog("spell", id, "name", str(spell.get("name", id))), str(roundi(float(spell.get("power_mult", 0)) * 100)) + "%", roundi(float(spell.get("accuracy", 0)) * 100), cooldown]
 	button.tooltip_text = SpellView.detail(spell, "Equipped") if not spell.is_empty() else ""
 	button.gui_input.connect(func(event):
@@ -428,6 +462,12 @@ func _details(spell: Dictionary) -> void:
 	dialog.get_label().add_theme_font_size_override("font_size", 24)
 	add_child(dialog)
 	dialog.confirmed.connect(dialog.queue_free)
+	if _android_ui():
+		dialog.visibility_changed.connect(func():
+			if not dialog.visible:
+				_spell_touch_info_open = false
+				_spell_touch_index = -1
+				_spell_touch_token += 1)
 	dialog.popup_centered(Vector2i(700, 550))
 
 func _build_inspiration(main: VBoxContainer, player: Dictionary) -> void:
