@@ -1,0 +1,7 @@
+﻿# Forest and social request timing (F6B.2)
+
+Friend requests and Forest duel invitations have a 30-second pending window. A sender who cancels cannot send the same kind of request to the same recipient until the original window ends. A recipient's explicit rejection prevents that sender from sending the same kind to that recipient for 120 seconds from rejection. These limits are directional and independent for friendships and duels. Exact action-ID replays return the original response without resetting a deadline. A duel accepted within the response window retains its separate 180-second preparation deadline.
+
+`GET /social/state` and `GET /forest/duels/state` include `server_time` (Unix milliseconds) and a viewer-private, bounded `cooldowns` array of `{player_id,cooldown_until}` for outgoing requests. Pending social entries include `expires_at`; duel invitations already carry it. A successful request returns its deadline, and a cooldown error includes `cooldown_until` and `server_time`. Clients should derive countdowns from the server timestamp plus monotonic elapsed time and fetch state again after uncertain network responses. A new action ID is required after a definitive failure because idempotency replays that failure.
+
+Migration 0029 shortens pending records created by earlier versions to at most 30 seconds from creation. It does not change accepted duel preparation. Existing transport rate limits and pending-capacity limits still apply.

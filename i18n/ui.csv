@@ -418,3 +418,5 @@ SOCIAL_COOLDOWN,Request limit or cooldown reached.,Límite de solicitudes o tiem
 SOCIAL_FAILURE,Social service unavailable.,Servicio social no disponible.
 SOCIAL_RETRY,Connection uncertain. Retry the same action.,Conexión incierta. Reintenta la misma acción.
 SOCIAL_RETRY_BUTTON,Retry,Reintentar
+
+SOCIAL_COOLDOWN_SECONDS,Available in %d seconds,Disponible en %d segundos

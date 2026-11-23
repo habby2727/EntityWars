@@ -25,13 +25,13 @@ test('reservations are exclusive, private, idempotent and survive suspension unt
  expect(request(s,'a','missing','absent').status).toBe(404);
  expect(s.request('a',{target_player_id:'b',client_action_id:'disabled'},false).status).toBe(404);
  h.rooms.set('b','elsewhere');expect(request(s,'a','b','room').status).toBe(409);h.rooms.set('b','room');
- const first=request(s,'a','b','first');expect(first.data.invite).toMatchObject({challenger_id:'a',challenger_name:'Name a',recipient_id:'b',originating_zone:'room',status:'PENDING',expires_at:h.now()+45000});
+ const first=request(s,'a','b','first');expect(first.data.invite).toMatchObject({challenger_id:'a',challenger_name:'Name a',recipient_id:'b',originating_zone:'room',status:'PENDING',expires_at:h.now()+30000});
  expect(request(s,'a','b','first')).toEqual(first);
  expect(request(s,'a','c','first').data.error).toBe('ACTION_CONFLICT');
  expect(request(s,'b','a','cross').data.error).toBe('PLAYER_BUSY');
  expect(request(s,'c','b','busy').status).toBe(409);
  const id=first.data.invite.invite_id;
- expect(s.state('c').data).toEqual({player_id:'c',incoming:[],outgoing:[],accepted:[]});
+ expect(s.state('c').data).toMatchObject({player_id:'c',incoming:[],outgoing:[],accepted:[]});
  expect(respond(s,'c',id,true,'forged').status).toBe(404);
  expect(cancel(s,'b',id,'forged').status).toBe(404);
  h.rooms.set('a','other');expect(respond(s,'b',id,true,'moved').data.error).toBe('FOREST_ROOM_MISMATCH');h.rooms.set('a','room');
@@ -51,8 +51,10 @@ test('pending expiration, decline, cancel, PvP conflicts and notification limits
  h.advance(45000);expect(respond(s,'b',first,true,'too-late').data.error).toBe('INVITE_NOT_PENDING');
  let id=request(s,'a','b','two').data.invite.invite_id;
  expect(respond(s,'b',id,false,'decline').data.invite.status).toBe('DECLINED');
+ expect(request(s,'a','b','cooldown').data.error).toBe('DUEL_COOLDOWN'); h.advance(120000);
  id=request(s,'a','b','three').data.invite.invite_id;
  expect(cancel(s,'a',id,'cancel').data.invite.status).toBe('CANCELLED');
+ expect(request(s,'a','b','cancel-cooldown').data.error).toBe('DUEL_COOLDOWN'); h.advance(30000);
  h.db.query('INSERT INTO pvp_queue VALUES (?,?,?,?)').run('b',h.now(),h.now()+30000,'{}');
  expect(request(s,'a','b','queued').data.error).toBe('PLAYER_BUSY');
  h.db.query('DELETE FROM pvp_queue').run();
@@ -61,10 +63,10 @@ test('pending expiration, decline, cancel, PvP conflicts and notification limits
  expect(respond(s,'b',id,true,'queued-accept').data.error).toBe('PLAYER_BUSY');
  expect(h.db.query('SELECT count(*) AS n FROM pvp_queue').get()).toEqual({n:1});
  h.db.query('DELETE FROM pvp_queue').run();expect(cancel(s,'a',id,'cancel-four').status).toBe(200);
- // Five recent invitations into b include the expired one.
+ // Independent senders are not subject to a gameplay request limit.
  id=request(s,'c','b','fifth').data.invite.invite_id;
  expect(cancel(s,'c',id,'cancel-fifth').status).toBe(200);
- expect(request(s,'d','b','recipient-limit').data.error).toBe('DUEL_RATE_LIMIT');
+ expect(request(s,'d','b','recipient-limit').status).toBe(200);
  expect(h.db.query('SELECT count(*) AS n FROM pvp_matches').get()).toEqual({n:0});
  expect(h.db.query('SELECT count(*) AS n FROM pvp_ratings').get()).toEqual({n:0});
  h.db.close();
@@ -80,8 +82,7 @@ test('active PvP and sender rate limits do not change Ranked tables',()=>{
  for(let i=0;i<11;i++){
   const id=`x${i}`;h.db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}');h.rooms.set(id,'room');
   const result=request(s,'a',id,`send-${i}`);
-  if(i<10){expect(result.status).toBe(200);expect(cancel(s,'a',result.data.invite.invite_id,`cancel-${i}`).status).toBe(200);}
-  else expect(result.data.error).toBe('DUEL_RATE_LIMIT');
+  expect(result.status).toBe(200);expect(cancel(s,'a',result.data.invite.invite_id,`cancel-${i}`).status).toBe(200);
  }
  expect(h.db.query('SELECT count(*) AS n FROM pvp_matches').get()).toEqual({n:1});
  expect(h.db.query('SELECT count(*) AS n FROM pvp_ratings').get()).toEqual({n:0});

@@ -1,0 +1,34 @@
+﻿import {expect,test} from 'bun:test';
+import {Database} from 'bun:sqlite';
+import {readFileSync,readdirSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {createFriends} from '../social/friends';
+import {createForestDuels} from '../forest/duels';
+test('directional deadlines survive retries, rejection, cancellation and expiry',()=>{
+ const db=new Database(':memory:'), dir=resolve(import.meta.dir,'../../migrations/sqlite'); for(const f of readdirSync(dir).filter(f=>f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir,f),'utf8'));
+ for(const id of ['a','b']) db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}'); let now=1000000;
+ const f=createFriends(db,()=>now),d=createForestDuels(db,()=> 'room',()=>true,()=>now);
+ const sendFriend=(action:string)=>f.request('a',{target_player_id:'b',client_action_id:action});
+ let request=sendFriend('f1'); expect(request.data.expires_at).toBe(now+30000); now+=1000; expect(sendFriend('f1')).toEqual(request);
+ f.cancel('a',{request_id:request.data.request_id,client_action_id:'cancel'}); expect(sendFriend('f2').data).toMatchObject({cooldown_until:1030000,server_time:now});
+ now=1030000; request=sendFriend('f3'); expect(request.status).toBe(200); f.respond('b',{request_id:request.data.request_id,accept:false,client_action_id:'reject'});
+ expect(sendFriend('f4').data.cooldown_until).toBe(now+120000); expect(f.state('a').cooldowns).toMatchObject([{player_id:'b',cooldown_until:now+120000}]);
+ now+=120000; expect(sendFriend('f5').status).toBe(200); now+=30000; expect(sendFriend('f6').status).toBe(200);
+ const sendDuel=(action:string)=>d.request('a',{target_player_id:'b',client_action_id:action});
+ let invite=sendDuel('d1'); expect(invite.data.invite.expires_at).toBe(now+30000); d.cancel('a',{invite_id:invite.data.invite.invite_id,client_action_id:'dc'});
+ expect(sendDuel('d2').data.error).toBe('DUEL_COOLDOWN'); now+=30000; invite=sendDuel('d3'); expect(invite.status).toBe(200);
+ d.respond('b',{invite_id:invite.data.invite.invite_id,accept:false,client_action_id:'dr'}); expect(sendDuel('d4').data.cooldown_until).toBe(now+120000);
+ now+=120000; expect(sendDuel('d5').status).toBe(200); now+=30000; expect(sendDuel('d6').status).toBe(200); db.close();
+});
+test('migration clamps legacy pending invitations and preserves accepted preparation',()=>{
+ const db=new Database(':memory:'),dir=resolve(import.meta.dir,'../../migrations/sqlite');
+ for(const f of readdirSync(dir).filter(f=>f.endsWith('.sql') && f<'0029').sort()) db.exec(readFileSync(join(dir,f),'utf8'));
+ for(const id of ['a','b','c','d']) db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}');
+ db.query("INSERT INTO friend_requests VALUES ('f','a','b','a','b','PENDING',1000,1000,604801000)").run();
+ db.query("INSERT INTO forest_duel_invites VALUES ('d','a','b','room','PENDING',1000,1000,46000)").run();
+ db.query("INSERT INTO forest_duel_invites VALUES ('accepted','c','d','room','ACCEPTED',1000,1000,181000)").run();
+ db.exec(readFileSync(join(dir,'0029_social_cooldowns.sql'),'utf8'));
+ expect((db.query("SELECT expires_at FROM friend_requests WHERE request_id='f'").get() as any).expires_at).toBe(31000);
+ expect((db.query("SELECT expires_at FROM forest_duel_invites WHERE invite_id='d'").get() as any).expires_at).toBe(31000);
+ expect((db.query("SELECT expires_at FROM forest_duel_invites WHERE invite_id='accepted'").get() as any).expires_at).toBe(181000); db.close();
+});

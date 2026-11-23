@@ -6,6 +6,10 @@ signal mutation_finished(success: bool)
 var friends := {}
 var incoming: Array = []
 var outgoing: Array = []
+var cooldowns := {}
+var _server_time := 0
+var _server_ticks := 0
+var _cooldown_second := -1
 var enabled := false
 var error_key := ""
 var _identity := ""
@@ -43,6 +47,11 @@ func _process(_delta: float) -> void:
 		last_response_id = ""
 		_next_poll = 0
 		state_changed.emit()
+	if enabled and not cooldowns.is_empty():
+		var second := int(server_now() / 1000)
+		if second != _cooldown_second:
+			_cooldown_second = second
+			state_changed.emit()
 	if available() and not _poll_busy and Time.get_ticks_msec() >= _next_poll:
 		poll_now()
 
@@ -66,6 +75,9 @@ func _clear_state() -> void:
 	friends.clear()
 	incoming.clear()
 	outgoing.clear()
+	cooldowns.clear()
+	_server_time = 0
+	_server_ticks = 0
 	enabled = false
 	error_key = ""
 
@@ -136,6 +148,14 @@ func _apply_snapshot(data: Dictionary) -> bool:
 			next_friends[str(row.player_id)] = str(row.get("display_name", "")).left(100)
 	var next_incoming := _parse_requests(data.incoming, "requester", 100)
 	var next_outgoing := _parse_requests(data.outgoing, "recipient", 20)
+	var next_cooldowns := {}
+	if data.get("cooldowns") is Array and data.has("server_time"):
+		_server_time = int(data.server_time)
+		_server_ticks = Time.get_ticks_msec()
+		for row in data.cooldowns.slice(0, 200):
+			if row is Dictionary and _valid_id(row.get("player_id")):
+				next_cooldowns[str(row.player_id)] = int(row.get("cooldown_until", 0))
+	cooldowns = next_cooldowns
 	friends = next_friends
 	incoming = next_incoming
 	outgoing = next_outgoing
@@ -152,8 +172,14 @@ func _parse_requests(rows: Array, prefix: String, limit: int) -> Array:
 		if not row is Dictionary or not _valid_id(row.get("request_id")) or not _valid_id(row.get(prefix + "_id")) or seen.has(row.request_id):
 			continue
 		seen[row.request_id] = true
-		parsed.append({"request_id": row.request_id, prefix + "_id": row[prefix + "_id"], prefix + "_name": str(row.get(prefix + "_name", "")).left(100), "created_at": int(row.get("created_at", 0))})
+		parsed.append({"request_id": row.request_id, prefix + "_id": row[prefix + "_id"], prefix + "_name": str(row.get(prefix + "_name", "")).left(100), "created_at": int(row.get("created_at", 0)), "expires_at": int(row.get("expires_at", 0))})
 	return parsed
+
+func server_now() -> int:
+	return _server_time + Time.get_ticks_msec() - _server_ticks if _server_time > 0 else 0
+
+func cooldown_seconds(player_id: String) -> int:
+	return maxi(0, ceili(float(int(cooldowns.get(player_id, 0)) - server_now()) / 1000.0)) if _server_time > 0 else 0
 
 func incoming_for(player_id: String) -> Dictionary:
 	for row in incoming:

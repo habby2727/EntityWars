@@ -14,6 +14,8 @@ var last_seq := -1
 var _label: Label
 var _friend_glyph: Control
 var _friend_action: Button
+var _friend_mode := ""
+var _friend_callback := Callable()
 
 func setup(data: Dictionary) -> void:
 	_label = Label.new()
@@ -84,7 +86,17 @@ func set_friend_marker(value: bool) -> void:
 		var width := minf(_label.size.x, _label.get_theme_font("font").get_string_size(_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, _label.get_theme_font_size("font_size")).x)
 		_friend_glyph.position = Vector2(-width * 0.5 - 23, _label.position.y + 5)
 
-func set_friend_action(mode: String, callback: Callable) -> void:
+func set_friend_action(mode: String, callback: Callable, cooldown_seconds: int = 0) -> void:
+	if is_instance_valid(_friend_action) and mode == _friend_mode:
+		if callback != _friend_callback:
+			if _friend_callback.is_valid() and _friend_action.pressed.is_connected(_friend_callback): _friend_action.pressed.disconnect(_friend_callback)
+			_friend_callback = callback
+			if callback.is_valid(): _friend_action.pressed.connect(callback)
+		_friend_action.disabled = mode == "pending" or cooldown_seconds > 0 or SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
+		_friend_action.tooltip_text = tr("SOCIAL_COOLDOWN_SECONDS") % cooldown_seconds if cooldown_seconds > 0 else tr("SOCIAL_ADD" if mode == "add" else "SOCIAL_REVIEW")
+		return
+	_friend_mode = mode
+	_friend_callback = callback
 	if is_instance_valid(_friend_action):
 		_friend_action.queue_free()
 		_friend_action = null
@@ -97,8 +109,9 @@ func set_friend_action(mode: String, callback: Callable) -> void:
 	_friend_action.custom_minimum_size = Vector2(72, 72)
 	_friend_action.focus_mode = Control.FOCUS_NONE
 	_friend_action.tooltip_text = tr("SOCIAL_ADD" if mode == "add" else ("SOCIAL_CANCEL" if mode == "pending" else "SOCIAL_REVIEW"))
-	_friend_action.disabled = SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
-	_friend_action.pressed.connect(callback)
+	_friend_action.disabled = mode == "pending" or cooldown_seconds > 0 or SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
+	if cooldown_seconds > 0: _friend_action.tooltip_text = tr("SOCIAL_COOLDOWN_SECONDS") % cooldown_seconds
+	if callback.is_valid(): _friend_action.pressed.connect(callback)
 	add_child(_friend_action)
 	if mode == "add":
 		var glyph: Control = preload("res://scripts/ui/social_glyph.gd").new()

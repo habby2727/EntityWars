@@ -271,11 +271,15 @@ func _refresh_online_list() -> void:
 				action.pressed.connect(SocialClient._popup.open_request.bind(str(incoming.request_id)))
 			elif not outgoing.is_empty():
 				action.text = tr("SOCIAL_PENDING")
-				action.tooltip_text = tr("SOCIAL_CANCEL")
-				action.pressed.connect(SocialClient.cancel.bind(str(outgoing.request_id)))
+				action.disabled = true
+				action.tooltip_text = tr("SOCIAL_COOLDOWN_SECONDS") % SocialClient.cooldown_seconds(player_id)
 			else:
 				action.text = "+"
 				action.tooltip_text = tr("SOCIAL_ADD")
+				var remaining: int = SocialClient.cooldown_seconds(player_id)
+				if remaining > 0:
+					action.disabled = true
+					action.tooltip_text = tr("SOCIAL_COOLDOWN_SECONDS") % remaining
 				action.pressed.connect(SocialClient.request_friend.bind(player_id))
 			row.add_child(action)
 	_restore_online_scroll.call_deferred(old_scroll)

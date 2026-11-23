@@ -40,12 +40,14 @@ test('persistent requests, authorization, replay, expiry and viewer-specific onl
  const rejected = send(f, 'a', 'c', 'two').data.request_id;
  expect(f.respond('c', {request_id:rejected, accept:false, client_action_id:'reject'}).data.status).toBe('DECLINED');
  expect(send(f, 'a', 'c', 'cooldown').status).toBe(429);
- now += 86_400_001;
+ now += 120_000;
  const cancelled = send(f, 'a', 'c', 'three').data.request_id;
  expect(f.cancel('a', {request_id:cancelled, client_action_id:'cancel'}).data.status).toBe('CANCELLED');
  expect(f.respond('c', {request_id:cancelled, accept:true, client_action_id:'late'}).status).toBe(409);
+ expect(send(f, 'a', 'c', 'cancel-cooldown').status).toBe(429);
+ now += 30_000;
  const expired = send(f, 'a', 'c', 'four').data.request_id;
- now += 7 * 86_400_000;
+ now += 30_000;
  expect(f.state('c').incoming).toEqual([]);
  expect(f.respond('c', {request_id:expired, accept:true, client_action_id:'expired'}).status).toBe(409);
  const chat = createGlobalChat(db, () => now, false, f.friendIds);
@@ -58,12 +60,12 @@ test('persistent requests, authorization, replay, expiry and viewer-specific onl
  chat.close(); db.close();
 });
 
-test('request rate is durable and bounded', () => {
+test('pending requests are bounded', () => {
  const db = new Database(':memory:'); migrate(db);
- for (let i = 0; i < 12; i++) db.query('INSERT INTO players VALUES (?, ?, ?, 0)').run(String(i), String(i), '{}');
+ for (let i = 0; i < 22; i++) db.query('INSERT INTO players VALUES (?, ?, ?, 0)').run(String(i), String(i), '{}');
  const f = createFriends(db, () => 1000000);
- for (let i = 1; i <= 10; i++) expect(send(f, '0', String(i), String(i)).status).toBe(200);
- expect(send(createFriends(db, () => 1000000), '0', '11', '11').status).toBe(429);
+ for (let i = 1; i <= 20; i++) expect(send(f, '0', String(i), String(i)).status).toBe(200);
+ expect(send(createFriends(db, () => 1000000), '0', '21', '21').status).toBe(429);
  db.close();
 });
 

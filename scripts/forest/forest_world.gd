@@ -748,9 +748,9 @@ func _update_social_remotes() -> void:
 		if not incoming.is_empty():
 			avatar.set_friend_action("review", SocialClient._popup.open_request.bind(str(incoming.request_id)))
 		elif not outgoing.is_empty():
-			avatar.set_friend_action("pending", SocialClient.cancel.bind(str(outgoing.request_id)))
+			avatar.set_friend_action("pending", Callable(), SocialClient.cooldown_seconds(id))
 		else:
-			avatar.set_friend_action("add", SocialClient.request_friend.bind(id))
+			avatar.set_friend_action("add", SocialClient.request_friend.bind(id), SocialClient.cooldown_seconds(id))
 
 func _prepare_handoff(kind: String) -> void:
 	if _handoff_pending: return

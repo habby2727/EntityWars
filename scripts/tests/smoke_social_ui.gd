@@ -24,6 +24,13 @@ func _run() -> void:
 	var data := {"player_id":"self", "friends":[{"player_id":"friend", "display_name":"Friend"}], "incoming":[{"request_id":"r1", "requester_id":"alice", "requester_name":"Alice", "created_at":1}, {"request_id":"r1", "requester_id":"alice", "requester_name":"Alice", "created_at":1}], "outgoing":[{"request_id":"r2", "recipient_id":"bob", "recipient_name":"Bob", "created_at":2}]}
 	check(social._apply_snapshot(data) and social.friends.has("friend") and social.incoming.size() == 1 and social.outgoing_for("bob").request_id == "r2", "Snapshot validation or deduplication failed")
 	check(not social._apply_snapshot({"player_id":"other", "friends":[], "incoming":[], "outgoing":[]}), "Other account state accepted")
+	var timed := data.duplicate(true)
+	timed["server_time"] = 1000000
+	timed["cooldowns"] = [{"player_id":"bob", "cooldown_until":1030000}]
+	check(social._apply_snapshot(timed) and social.cooldown_seconds("bob") == 30, "Server deadline was not applied")
+	social._server_ticks -= 30000
+	check(social.cooldown_seconds("bob") == 0, "Cooldown did not expire from monotonic time")
+	social._apply_snapshot(data)
 	social._pending_path = "/social/friends/request"
 	social._pending_body = '{"client_action_id":"stable","target_player_id":"bob"}'
 	var exact_body: String = social._pending_body
@@ -86,6 +93,14 @@ func _run() -> void:
 	world._unhandled_input(click)
 	check(world._selected_remote == "alice" and is_instance_valid(world._remotes.alice._friend_action), "Remote click did not expose review action")
 	check(world._remotes.alice._friend_action.position.y < world._remotes.alice._label.position.y, "Action not above nickname")
+	var remote = world._remotes.alice
+	remote.set_friend_action("add", Callable(), 5)
+	var cooldown_button: Button = remote._friend_action
+	check(cooldown_button.disabled and cooldown_button.tooltip_text.contains("5"), "Cooldown did not disable the action or show its deadline")
+	remote.set_friend_action("add", Callable(), 0)
+	check(remote._friend_action == cooldown_button and not cooldown_button.disabled, "Cooldown refresh recreated or failed to re-enable action")
+	remote.set_friend_action("pending", Callable(), 10)
+	check(remote._friend_action.disabled, "Pending request remained interactive")
 	click.position = world._world.get_global_transform() * Vector2(50,50)
 	world._unhandled_input(click)
 	check(world._selected_remote.is_empty(), "Outside click did not deselect")
