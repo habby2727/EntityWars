@@ -48,7 +48,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
   if (typeof trustedSnapshot !== "function") throw new Error("PVP_OWNERSHIP_VERIFIER_REQUIRED");
   const expire = db.prepare("DELETE FROM pvp_queue WHERE expires_at <= ?");
   const queued = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id = ?");
-  const active = db.prepare("SELECT match_id FROM pvp_match_players WHERE player_id = ? AND active = 1");
+  const active = db.prepare("SELECT p.match_id, m.kind FROM pvp_match_players p JOIN pvp_matches m ON m.match_id=p.match_id WHERE p.player_id = ? AND p.active = 1");
   const first = db.prepare("SELECT q.player_id, q.queued_at, q.expires_at, q.snapshot_json FROM pvp_queue q WHERE q.player_id <> ? AND NOT EXISTS (SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=q.player_id AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?) ORDER BY q.queued_at, q.rowid LIMIT 1");
   const insert = db.prepare("INSERT INTO pvp_queue (player_id, queued_at, expires_at, snapshot_json) VALUES (?, ?, ?, ?)");
   const remove = db.prepare("DELETE FROM pvp_queue WHERE player_id = ?");
@@ -59,7 +59,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
       return db.transaction(() => {
         expire.run(clock());
         const found = queued.get(playerId) as any, current = active.get(playerId) as any;
-        return current ? { state: "MATCHED", match_id: current.match_id } : found ? { state: "QUEUED", joined_at: found.queued_at, expires_at: found.expires_at } : { state: "IDLE" };
+        return current ? (current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id }) : found ? { state: "QUEUED", joined_at: found.queued_at, expires_at: found.expires_at } : { state: "IDLE" };
       }).immediate();
     },
     cancel(playerId: string) {
@@ -67,7 +67,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
       return db.transaction(() => {
         expire.run(clock()); remove.run(playerId);
         const current = active.get(playerId) as any;
-        return current ? { state: "MATCHED", match_id: current.match_id } : { state: "IDLE" };
+        return current ? (current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id }) : { state: "IDLE" };
       }).immediate();
     },
     join(playerId: string, selection: unknown) {
@@ -75,7 +75,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
       return db.transaction(() => {
         const now = clock(); expire.run(now);
         const current = active.get(playerId) as any;
-        if (current) return { state: "MATCHED", match_id: current.match_id };
+        if (current) return current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id };
         db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now,now);
         db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
         if (db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(playerId,now)) throw new Error("PLAYER_BUSY");

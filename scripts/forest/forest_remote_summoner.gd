@@ -14,6 +14,7 @@ var last_seq := -1
 var _label: Label
 var _friend_glyph: Control
 var _friend_action: Button
+var _duel_action: Button
 var _friend_mode := ""
 var _friend_callback := Callable()
 
@@ -122,6 +123,28 @@ func set_friend_action(mode: String, callback: Callable, cooldown_seconds: int =
 	else:
 		_friend_action.text = tr("SOCIAL_PENDING" if mode == "pending" else "SOCIAL_REVIEW")
 		_friend_action.add_theme_font_size_override("font_size", 13)
+
+func set_duel_action(show_action: bool, callback: Callable = Callable(), cooldown_seconds: int = 0, pending: bool = false) -> void:
+	if not show_action:
+		if is_instance_valid(_duel_action): _duel_action.hide()
+		return
+	if not is_instance_valid(_duel_action):
+		_duel_action = Button.new()
+		_duel_action.name = "DuelAction"
+		_duel_action.position = Vector2(6, _label.position.y - 78)
+		_duel_action.size = Vector2(72, 72)
+		_duel_action.custom_minimum_size = Vector2(72, 72)
+		_duel_action.focus_mode = Control.FOCUS_NONE
+		add_child(_duel_action)
+		var glyph: Control = preload("res://scripts/ui/duel_swords.gd").new()
+		glyph.position = Vector2(20, 20)
+		glyph.size = Vector2(32, 32)
+		_duel_action.add_child(glyph)
+		if callback.is_valid(): _duel_action.pressed.connect(callback)
+	_duel_action.show()
+	_duel_action.disabled = pending or cooldown_seconds > 0 or DuelClient._mutation_busy or not DuelClient._pending_body.is_empty()
+	_duel_action.modulate = Color(0.55, 0.55, 0.55) if _duel_action.disabled else Color.WHITE
+	_duel_action.tooltip_text = tr("SOCIAL_COOLDOWN_SECONDS") % cooldown_seconds if cooldown_seconds > 0 else tr("DUEL_CHALLENGE")
 
 func _draw() -> void:
 	if _textures.is_empty():

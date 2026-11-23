@@ -131,5 +131,12 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
  async function sweep(){if(fenced || !canServe())return;prune(); await Promise.all([...active.values()].map(async s=>{if(s.checking)return;s.checking=true;try{if(!await authenticate(s.ws.data) && !fenced && canServe() && active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1008,'session ended');}}catch{if(!fenced && canServe() && active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1011,'authentication unavailable');}}finally{s.checking=false;}}));}
  function evict(playerId:string){if(fenced || !canServe())return;const s=active.get(playerId);if(s){remove(s,0);s.ws.close(1008,'session ended');}saved.delete(playerId);}
  function fence(){if(fenced)return;fenced=true;for(const s of active.values()){try{s.ws.close(1011,'service unavailable');}catch{}}active.clear();saved.clear();for(const room of rooms.values())room.clear();}
- return {open,message,roomOf(playerId:string):string|null {if(fenced || !canServe()) return null;const s=active.get(playerId);return s?.entered && rooms.get(s.state.zone_id)?.get(playerId)===s ? s.state.zone_id : null;},close(ws:Socket){if(fenced)return;const s=active.get(ws.data.playerId);if(s?.ws===ws)remove(s,120000);},sweep,flush,evict,fence};
+ function peerChat(playerId:string, message:{id:number;player_id:string;text:string;created_at:number}) {
+  if(fenced || !canServe() || message.player_id!==playerId || !Number.isSafeInteger(message.id) || !Number.isSafeInteger(message.created_at) || typeof message.text!=='string') return;
+  const session=active.get(playerId);
+  if(!session?.entered || rooms.get(session.state.zone_id)?.get(playerId)!==session) return;
+  const event={type:'peer_chat',player_id:playerId,message_id:message.id,text:message.text,created_at:message.created_at,expires_at:message.created_at+10_000,server_time:clock()};
+  send(session,event); broadcast(session,event);
+ }
+ return {open,message,peerChat,roomOf(playerId:string):string|null {if(fenced || !canServe()) return null;const s=active.get(playerId);return s?.entered && rooms.get(s.state.zone_id)?.get(playerId)===s ? s.state.zone_id : null;},close(ws:Socket){if(fenced)return;const s=active.get(ws.data.playerId);if(s?.ws===ws)remove(s,120000);},sweep,flush,evict,fence};
 }

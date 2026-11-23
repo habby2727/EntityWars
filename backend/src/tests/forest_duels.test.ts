@@ -117,6 +117,15 @@ test.skipIf(!redisBin)('authenticated HTTP and real Forest sockets revalidate ro
   expect((await post('/forest/duels/request',{target_player_id:b.id,client_action_id:'offline'},a.token)).status).toBe(409);
   const enter=async(account:any)=>{const ws=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${account.token}`,'X-EntityWars-Client-Build':'5509'}} as any);sockets.push(ws);await new Promise<void>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('welcome timeout')),4000);ws.onopen=()=>ws.send(JSON.stringify({v:1,type:'enter',summoner_id:'wizard'}));ws.onmessage=e=>{if(JSON.parse(String(e.data)).type==='welcome'){clearTimeout(timer);ok()}};ws.onerror=()=>fail(Error('socket error'));});return ws;};
   const aw=await enter(a);const bw=await enter(b);
+  const chatsA:any[]=[],chatsB:any[]=[];
+  aw.addEventListener('message',e=>{const m=JSON.parse(String(e.data));if(m.type==='peer_chat')chatsA.push(m);});
+  bw.addEventListener('message',e=>{const m=JSON.parse(String(e.data));if(m.type==='peer_chat')chatsB.push(m);});
+  const sent=await post('/chat/send',{client_message_id:'forest-chat',text:'hello forest'},a.token);expect(sent.status).toBe(200);
+  for(let i=0;i<30 && (!chatsA.length || !chatsB.length);i++) await Bun.sleep(50);
+  expect(chatsA).toHaveLength(1);expect(chatsB).toHaveLength(1);expect(chatsA[0]).toMatchObject({player_id:a.id,text:'hello forest'});
+  expect(chatsA[0].expires_at-chatsA[0].created_at).toBe(10000);
+  const replay=await post('/chat/send',{client_message_id:'forest-chat',text:'hello forest'},a.token);expect((await replay.json() as any).duplicate).toBe(true);
+  await Bun.sleep(100);expect(chatsA).toHaveLength(1);expect(chatsB).toHaveLength(1);
   const crossed=await Promise.all([
    post('/forest/duels/request',{target_player_id:b.id,client_action_id:'one',challenger_id:c.id,originating_zone:'fake'},a.token),
    post('/forest/duels/request',{target_player_id:a.id,client_action_id:'cross'},b.token)

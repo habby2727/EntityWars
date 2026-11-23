@@ -42,8 +42,45 @@ static var _hunt_loadout := {}
 static var _debug_guardian_wins := {}
 static var _dungeon_context := {}
 static var _ranked_context := {}
+static var _friendly_context := {}
 static var _expedition_context := {}
 static var _expedition_forfeit_notice := false
+
+static func begin_friendly_preparation(invite: Dictionary, zone_id: String, foot: Vector2, facing: int, recovery_match: String = "") -> void:
+	var gate := _connection_gate()
+	var tree := _get_tree()
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_FOREST_WORLD or not _forest_modes_safe():
+		return
+	var owner := _forest_verified_owner()
+	var id := str(invite.get("invite_id", ""))
+	if owner.is_empty() or id.is_empty() or str(invite.get("status", "")) != "ACCEPTED" or owner not in [str(invite.get("challenger_id", "")), str(invite.get("recipient_id", ""))]:
+		return
+	var context := {"verified_owner":owner, "summoner_id":forest_selected_summoner(), "zone_id":zone_id, "foot_position":foot, "facing":facing, "debug":false, "identity_generation":gate._generation}
+	if not _valid_forest_context(context): return
+	_forest_return = context
+	_forest_restore.clear()
+	_friendly_context = {"player_id":owner, "generation":gate._generation, "invite_id":id, "opponent":str(invite.get("recipient_name", "")) if owner == str(invite.get("challenger_id", "")) else str(invite.get("challenger_name", "")), "expires_at":int(invite.get("expires_at", 0))}
+	if recovery_match.is_empty():
+		_go_to(SCENE_LOADOUT, "FriendlyLoadout")
+	else:
+		go_to_friendly_combat(id, recovery_match)
+
+static func go_to_friendly_combat(invite_id: String, match_id: String) -> void:
+	if _connection_gate().blocked() or str(_friendly_context.get("invite_id", "")) != invite_id or str(_friendly_context.get("player_id", "")) != _forest_verified_owner() or int(_friendly_context.get("generation", -1)) != _connection_gate()._generation or match_id.is_empty(): return
+	_ranked_context = {"match_id":match_id, "kind":"friendly", "player_id":_forest_verified_owner()}
+	_go_to(SCENE_COMBAT, "FriendlyCombat")
+
+static func finish_friendly() -> void:
+	var duel := _get_tree().root.get_node_or_null("DuelClient")
+	if duel != null: duel.clear_recovery()
+	_ranked_context.clear()
+	_friendly_context.clear()
+	if forest_return_available():
+		_forest_restore = _forest_return.duplicate(true)
+		_forest_return.clear()
+		_go_to(SCENE_FOREST_WORLD, "ForestWorld")
+	else:
+		go_to_lab_hub()
 
 static func go_to_expedition_loadout(player_id: String) -> void:
 	_expedition_context = {"player_id": player_id, "loadout": true}

@@ -310,10 +310,15 @@ func _ready() -> void:
 	if not _hunt_mode and not _dungeon_mode and not _expedition_mode:
 		ranked_queue = preload("res://scripts/ui/ranked_queue.gd").new()
 		add_child(ranked_queue)
-		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "PRACTICE"
-		$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseLabel.text = "RANKED PvP"
+		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "" if ranked_queue.friendly else "PRACTICE"
+		$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseLabel.text = "" if ranked_queue.friendly else "RANKED PvP"
 		btn_seal_attack.set_pressed_no_signal(not ranked_queue.selected)
-	if not _hunt_mode and not _dungeon_mode and not _expedition_mode and not _expedition_preview:
+		if ranked_queue.friendly:
+			var back := $BackButton as Button
+			var original_back := Callable(back, "_on_pressed")
+			if back.pressed.is_connected(original_back): back.pressed.disconnect(original_back)
+			back.pressed.connect(ranked_queue._friendly_cancel)
+	if not _hunt_mode and not _dungeon_mode and not _expedition_mode and not _expedition_preview and not ranked_queue.friendly:
 		var forest_return = preload("res://scripts/ui/forest_return_button.gd").attach(self)
 		if forest_return != null:
 			forest_return.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -758,6 +763,9 @@ func _setup_spell_state() -> void:
 		_spell_synced = true
 		return
 	_spell_debug.reload()
+	if not SceneRouter._friendly_context.is_empty():
+		_spell_debug.unlock_all_buildings = false
+		_spell_debug.force_all_clickable = false
 	if _spell_debug.unlock_all_buildings and not _dungeon_mode and not _expedition_mode:
 		_spell_state = _spell_debug.load_lab_state()
 		_spell_synced = true

@@ -1701,6 +1701,9 @@ async function startServer(): Promise<void> {
 				if (req.method == "POST" && url.pathname == "/chat/send") {
 					const playerId = await requireAuth(req, ctx);
 					const result = globalChat.send(playerId, await readJson(req, config.maxBodyBytes));
+					if (result.status === 200 && result.data && "duplicate" in result.data && !result.data.duplicate && "message" in result.data && result.data.message) {
+						try { forest?.peerChat(playerId, result.data.message as any); } catch (error) { logError("forest chat notification failed", {error:String(error)}); }
+					}
 					return jsonResponse(result.data, result.status);
 				}
 

@@ -14,6 +14,7 @@ var _feedback_text: Label
 var _feedback_retry: Button
 var _shown := {}
 var _current := ""
+var _current_kind := "friend"
 var _identity := ""
 
 func _ready() -> void:
@@ -46,10 +47,10 @@ func _ready() -> void:
 	_decline = _button(row, "SOCIAL_DECLINE")
 	_dismiss = _button(row, "SOCIAL_LATER")
 	_retry = _button(row, "SOCIAL_RETRY_BUTTON")
-	_accept.pressed.connect(func(): SocialClient.respond(_current, true))
-	_decline.pressed.connect(func(): SocialClient.respond(_current, false))
+	_accept.pressed.connect(func(): _respond_current(true))
+	_decline.pressed.connect(func(): _respond_current(false))
 	_dismiss.pressed.connect(_dismiss_current)
-	_retry.pressed.connect(func(): SocialClient.retry_mutation())
+	_retry.pressed.connect(func(): DuelClient.retry_mutation() if _current_kind == "duel" else SocialClient.retry_mutation())
 	_feedback = PanelContainer.new()
 	_feedback.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_feedback.offset_left = 500
@@ -65,11 +66,13 @@ func _ready() -> void:
 	_feedback_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	feedback_row.add_child(_feedback_text)
 	_feedback_retry = _button(feedback_row, "SOCIAL_RETRY_BUTTON")
-	_feedback_retry.pressed.connect(func(): SocialClient.retry_mutation())
+	_feedback_retry.pressed.connect(func(): DuelClient.retry_mutation() if _current_kind == "duel" else SocialClient.retry_mutation())
 	_apply_social_fonts()
 	_feedback.hide()
 	SocialClient.state_changed.connect(_refresh)
 	SocialClient.mutation_finished.connect(_mutation_finished)
+	DuelClient.state_changed.connect(_refresh)
+	DuelClient.mutation_finished.connect(_duel_mutation_finished)
 	_panel.hide()
 
 func _notification(what: int) -> void:
@@ -93,7 +96,7 @@ func _button(parent: Control, key: String) -> Button:
 
 func _safe_scene() -> bool:
 	var scene := get_tree().current_scene
-	if not SocialClient.available() or not SocialClient.enabled or not is_instance_valid(scene):
+	if not SocialClient.available() or not (SocialClient.enabled or DuelClient.enabled) or not is_instance_valid(scene):
 		return false
 	if scene.has_method("auth_gate_screen") or scene.scene_file_path.to_lower().contains("loading") or scene.scene_file_path == SceneRouter.SCENE_COMBAT:
 		return false
@@ -118,14 +121,34 @@ func _process(_delta: float) -> void:
 	if _current.is_empty():
 		for request in SocialClient.incoming:
 			if not _shown.has(request.request_id):
+				_current_kind = "friend"
 				_current = request.request_id
 				_shown[_current] = true
 				break
+		if _current.is_empty():
+			for invite in DuelClient.incoming:
+				if invite is Dictionary and not _shown.has("duel:" + str(invite.get("invite_id", ""))) and int(invite.get("expires_at", 0)) > DuelClient.server_now():
+					_current_kind = "duel"
+					_current = str(invite.invite_id)
+					_shown["duel:" + _current] = true
+					break
 	_refresh()
 
+func _respond_current(accept: bool) -> void:
+	if _current_kind == "duel":
+		DuelClient.respond(_current, accept)
+	else:
+		SocialClient.respond(_current, accept)
+
+func _duel_mutation_finished(success: bool, action: String) -> void:
+	if success and action == "respond" and _current_kind == "duel":
+		_dismiss_current()
+
 func open_request(request_id: String) -> void:
+	if not _current.is_empty() and _current_kind == "duel": return
 	if not _safe_scene():
 		return
+	_current_kind = "friend"
 	_current = request_id
 	_shown[request_id] = true
 	_refresh()
@@ -143,6 +166,24 @@ func _refresh() -> void:
 		if is_instance_valid(_panel): _panel.hide()
 		return
 	var found := {}
+	if _current_kind == "duel":
+		for row in DuelClient.incoming:
+			if row is Dictionary and row.get("invite_id") == _current:
+				found = row
+				break
+		if found.is_empty() or int(found.get("expires_at", 0)) <= DuelClient.server_now():
+			_dismiss_current()
+			return
+		_message.text = tr("DUEL_CHALLENGE_MESSAGE") % str(found.get("challenger_name", ""))
+		_status.text = tr("DUEL_EXPIRES_SECONDS") % maxi(0, ceili(float(int(found.expires_at) - DuelClient.server_now()) / 1000.0))
+		SocialSpanishFont.apply(_message, _message.text)
+		SocialSpanishFont.apply(_status, _status.text)
+		_accept.disabled = DuelClient._mutation_busy or not DuelClient._pending_body.is_empty()
+		_decline.disabled = _accept.disabled
+		_retry.visible = not DuelClient._pending_body.is_empty()
+		_retry.disabled = DuelClient._mutation_busy
+		_panel.show()
+		return
 	for row in SocialClient.incoming:
 		if row.request_id == _current:
 			found = row

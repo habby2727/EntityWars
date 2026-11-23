@@ -420,3 +420,14 @@ SOCIAL_RETRY,Connection uncertain. Retry the same action.,Conexión incierta. Re
 SOCIAL_RETRY_BUTTON,Retry,Reintentar
 
 SOCIAL_COOLDOWN_SECONDS,Available in %d seconds,Disponible en %d segundos
+DUEL_CHALLENGE_MESSAGE,%s challenged you to a duel,%s te ha desafiado a un duelo
+DUEL_EXPIRES_SECONDS,Expires in %d seconds,Caduca en %d segundos
+DUEL_CHALLENGE,Challenge to a duel,Desafiar a un duelo
+DUEL_TITLE,FRIENDLY DUEL,DUELO AMISTOSO
+DUEL_READY,READY,LISTO
+DUEL_WAITING,Waiting for opponent,Esperando al rival
+DUEL_CONFIRMING,Confirming loadout,Confirmando equipo
+DUEL_YOU,You,T?
+DUEL_OPPONENT,Opponent,Rival
+DUEL_FORFEIT_CONFIRM,Leave this duel? This forfeits the match.,?Salir del duelo? Perder?s el combate.
+DUEL_RETURN_FOREST,Return to Forest,Volver al Bosque

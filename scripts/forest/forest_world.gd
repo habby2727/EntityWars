@@ -157,6 +157,9 @@ func _ready() -> void:
 	_resize_world()
 	_start_presence(selected)
 	SocialClient.state_changed.connect(_update_social_remotes)
+	DuelClient.state_changed.connect(_update_social_remotes)
+	DuelClient.accepted.connect(_on_duel_accepted)
+	DuelClient.match_started.connect(_on_duel_recover)
 
 func _setup_nameplate() -> void:
 	if ConnectionGate.debug_lab_navigation_allowed():
@@ -390,7 +393,7 @@ func _process(_delta: float) -> void:
 		for key in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 			moving = moving or Input.is_physical_key_pressed(key)
 		var chat_panel = GlobalChatClient._panel
-		if moving or _player.exit_pending or _player.transition_locked or _player.dialogue_locked or not SocialClient.available() or not SocialClient.enabled or SocialClient._popup._panel.visible or (is_instance_valid(chat_panel) and (chat_panel._panel.visible or chat_panel._online_panel.visible)):
+		if moving or _player.exit_pending or _player.transition_locked or _player.dialogue_locked or not SocialClient.available() or not (SocialClient.enabled or DuelClient.enabled) or SocialClient._popup._panel.visible or (is_instance_valid(chat_panel) and (chat_panel._panel.visible or chat_panel._online_panel.visible)):
 			_deselect_remote()
 		_safe_check_elapsed += _delta
 		if _safe_check_elapsed >= 0.5:
@@ -408,7 +411,10 @@ func _process(_delta: float) -> void:
 		if is_instance_valid(_presence) and _presence.entered and not _player.exit_pending and not _player.transition_locked and not _player.dialogue_locked and not _handoff_pending:
 			_presence.move(_player.position, _player.facing)
 		_player.joystick_vector = _joystick.vector
-		_talk_button.visible = not _dialogue.visible and (DisplayServer.is_touchscreen_available() or OS.has_feature("mobile")) and _nearest_npc() != null
+		var nearby_npc := _nearest_npc() if not _dialogue.visible and not _player.exit_pending and not _player.transition_locked and not _handoff_pending else null
+		for npc in _npcs:
+			npc.show_interaction_hint(npc == nearby_npc)
+		_talk_button.visible = nearby_npc != null and (DisplayServer.is_touchscreen_available() or OS.has_feature("mobile"))
 
 func _build_dialogue() -> void:
 	_talk_button = Button.new()
@@ -589,7 +595,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if clicked and not _dialogue.visible:
 		var point: Vector2 = _world.get_global_transform().affine_inverse() * event.position
 		_deselect_remote()
-		if SocialClient.enabled and SocialClient.available() and is_instance_valid(_presence) and _presence.entered and not _player.transition_locked:
+		if (SocialClient.enabled or DuelClient.enabled) and SocialClient.available() and is_instance_valid(_presence) and _presence.entered and not _player.transition_locked:
 			for id in _remotes:
 				var avatar: Node2D = _remotes[id]
 				if Rect2(-45, -130, 90, 130).has_point(point - avatar.position):
@@ -659,6 +665,7 @@ func _start_presence(selected: String) -> void:
 	_presence.peer_moved.connect(_on_peer_moved)
 	_presence.peer_cosmetic.connect(_on_peer_cosmetic)
 	_presence.peer_left.connect(_on_peer_left)
+	_presence.peer_chat.connect(_on_peer_chat)
 	_presence.disconnected.connect(_clear_remotes)
 	_presence.configure(_zones, selected)
 
@@ -708,6 +715,15 @@ func _on_peer_moved(id: String, sequence: int, point: Vector2, direction: int) -
 func _on_peer_cosmetic(id: String, cosmetic: String) -> void:
 	if _remotes.has(id): _remotes[id].set_cosmetic(cosmetic)
 
+func _on_peer_chat(id: String, message_id: int, message: String, created_at: int, expires_at: int, server_now: int) -> void:
+	var avatar: Node = _player if id == str(ConnectionGate.player_id) else _remotes.get(id)
+	if not is_instance_valid(avatar): return
+	var bubble = avatar.get_node_or_null("SpeechBubble")
+	if bubble == null:
+		bubble = preload("res://scripts/forest/forest_speech_bubble.gd").new()
+		avatar.add_child(bubble)
+	bubble.show_message(message_id, message, created_at, expires_at, server_now)
+
 func _on_peer_left(id: String) -> void:
 	if _selected_remote == id: _deselect_remote()
 	if _remotes.has(id):
@@ -718,6 +734,9 @@ func _on_peer_left(id: String) -> void:
 
 func _clear_remotes() -> void:
 	_deselect_remote()
+	if is_instance_valid(_player):
+		var bubble = _player.get_node_or_null("SpeechBubble")
+		if bubble != null: bubble.clear_message()
 	for avatar in _remotes.values():
 		if is_instance_valid(avatar):
 			if avatar.get_parent() != null: avatar.get_parent().remove_child(avatar)
@@ -731,6 +750,7 @@ func _clear_remotes() -> void:
 func _deselect_remote() -> void:
 	if not _selected_remote.is_empty() and _remotes.has(_selected_remote) and is_instance_valid(_remotes[_selected_remote]):
 		_remotes[_selected_remote].set_friend_action("", Callable())
+		_remotes[_selected_remote].set_duel_action(false)
 	_selected_remote = ""
 
 func _update_social_remotes() -> void:
@@ -740,6 +760,8 @@ func _update_social_remotes() -> void:
 		var is_friend: bool = SocialClient.enabled and SocialClient.friends.has(id)
 		avatar.set_friend_marker(is_friend)
 		if id != _selected_remote: continue
+		var pending_duel := not DuelClient.outgoing.is_empty() or not DuelClient.incoming.is_empty() or not DuelClient.accepted_invites.is_empty()
+		avatar.set_duel_action(DuelClient.enabled, DuelClient.request_duel.bind(id), DuelClient.cooldown_seconds(id), pending_duel)
 		if not SocialClient.enabled or is_friend:
 			avatar.set_friend_action("", Callable())
 			continue
@@ -751,6 +773,38 @@ func _update_social_remotes() -> void:
 			avatar.set_friend_action("pending", Callable(), SocialClient.cooldown_seconds(id))
 		else:
 			avatar.set_friend_action("add", SocialClient.request_friend.bind(id), SocialClient.cooldown_seconds(id))
+
+func _on_duel_recover(invite_id: String, match_id: String) -> void:
+	if _handoff_pending or not is_instance_valid(_presence) or not _presence.entered or not SceneRouter._forest_modes_safe():
+		DuelClient._reported_match = ""
+		return
+	var owner := str(ConnectionGate.player_id)
+	var generation: int = ConnectionGate._generation
+	_handoff_pending = true
+	_reset_touch()
+	_player.set_process(false)
+	var acknowledged: bool = await _presence.handoff("suspend")
+	if not is_inside_tree(): return
+	if acknowledged and owner == str(ConnectionGate.player_id) and generation == ConnectionGate._generation and invite_id == DuelClient._tracked_invite:
+		var invitation := {"invite_id":invite_id, "status":"ACCEPTED", "challenger_id":owner, "recipient_id":"", "expires_at":0}
+		SceneRouter.begin_friendly_preparation(invitation, str(_zones[_zone_index].id), _player.position, _player.facing, match_id)
+	if get_tree().current_scene == self: DuelClient._reported_match = ""
+	_resume_if_still_here()
+
+func _on_duel_accepted(invite: Dictionary) -> void:
+	if _handoff_pending or not is_instance_valid(_presence) or not _presence.entered or not SceneRouter._forest_modes_safe(): return
+	if _dialogue.visible or _player.exit_pending or _player.transition_locked: return
+	var owner := str(ConnectionGate.player_id)
+	var generation: int = ConnectionGate._generation
+	var invite_id := str(invite.get("invite_id", ""))
+	_handoff_pending = true
+	_reset_touch()
+	_player.set_process(false)
+	var acknowledged: bool = await _presence.handoff("suspend")
+	if not is_inside_tree(): return
+	if acknowledged and owner == str(ConnectionGate.player_id) and generation == ConnectionGate._generation and not DuelClient.accepted_invites.is_empty() and str(DuelClient.accepted_invites[0].get("invite_id", "")) == invite_id and int(invite.get("expires_at", 0)) > DuelClient.server_now():
+		SceneRouter.begin_friendly_preparation(invite, str(_zones[_zone_index].id), _player.position, _player.facing)
+	_resume_if_still_here()
 
 func _prepare_handoff(kind: String) -> void:
 	if _handoff_pending: return

@@ -22,6 +22,7 @@ test('friendly preparation starts one shared match with isolated settlement',()=
  expect(duels.ready('a',{invite_id:invite,selection,client_action_id:'ready-a'}).data.state).toBe('WAITING');
  const second=duels.ready('b',{invite_id:invite,selection,client_action_id:'ready-b'}),id=second.data.match_id; expect(second.data.state).toBe('STARTED');
  expect(duels.ready('b',{invite_id:invite,selection,client_action_id:'ready-b'})).toEqual(second);
+ expect(queue.state('a')).toEqual({state:'FRIENDLY_ACTIVE'}); expect(queue.join('a',selection)).toEqual({state:'FRIENDLY_ACTIVE'});
  expect(duels.state('a').data.started.match_id).toBe(id); expect(duels.state('b').data.started.match_id).toBe(id);
  expect((db.query('SELECT count(*) n FROM pvp_matches').get() as any).n).toBe(1);
  const services={db,queue,matches,chat,ranking},params=new URLSearchParams({match_id:id});

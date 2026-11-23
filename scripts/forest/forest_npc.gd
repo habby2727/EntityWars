@@ -18,6 +18,7 @@ var _speed := 0.0
 var _wait := 0.0
 var _bob := 0.0
 var _rng := RandomNumberGenerator.new()
+var _interaction_hint: PanelContainer
 
 func setup(data: Dictionary, area: PackedVector2Array, portals: Array, protected: Array[Vector2]) -> void:
 	npc_id = data.id
@@ -39,6 +40,30 @@ func setup(data: Dictionary, area: PackedVector2Array, portals: Array, protected
 		_bounds.append(cached[1])
 		max_height = maxi(max_height, cached[1].size.y)
 	_scale = 75.0 / maxf(1.0, max_height)
+	_interaction_hint = PanelContainer.new()
+	_interaction_hint.name = "InteractionHint"
+	_interaction_hint.position = Vector2(-43, -120)
+	_interaction_hint.size = Vector2(86, 30)
+	_interaction_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.09, 0.08, 0.95)
+	style.border_color = Color("bba66b")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	_interaction_hint.add_theme_stylebox_override("panel", style)
+	var label := Label.new()
+	label.text = "Press E"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 16)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_interaction_hint.add_child(label)
+	add_child(_interaction_hint)
+	_interaction_hint.hide()
+
+func show_interaction_hint(show_hint: bool) -> void:
+	if is_instance_valid(_interaction_hint):
+		_interaction_hint.visible = show_hint
 
 func _process(delta: float) -> void:
 	_bob += delta

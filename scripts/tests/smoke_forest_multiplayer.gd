@@ -61,13 +61,19 @@ func _run() -> void:
 	var snapshots: Array = []
 	var joins: Array = []
 	var moves: Array = []
+	var chats: Array = []
+	client.peer_chat.connect(func(id, message_id, text, created, expires, server_now): chats.append([id, message_id, text, created, expires, server_now]))
 	client.snapshot.connect(func(state, peers): snapshots.append([state, peers]))
 	client.peer_joined.connect(func(player): joins.append(player))
 	client.peer_moved.connect(func(id, seq, point, face): moves.append([id, seq, point, face]))
 	var self_state := {"player_id":"self", "display_name":"Server Self", "zone_id":"central_clearing", "x":960, "y":760, "facing":0, "summoner_id":"wizard"}
 	var peer := {"player_id":"peer", "display_name":"Server Peer", "zone_id":"central_clearing", "x":950, "y":760, "facing":3, "summoner_id":"witch"}
-	client._receive({"v":1,"type":"welcome","self":self_state,"peers":[peer]})
+	client._receive({"v":1,"type":"welcome","self":self_state,"peers":[peer],"server_time":100000})
 	check(client.entered and snapshots.size() == 1, "Valid welcome rejected")
+	client._receive({"v":1,"type":"peer_chat","player_id":"peer","message_id":1,"text":"hello","created_at":100000,"expires_at":110000,"server_time":100000})
+	client._receive({"v":1,"type":"peer_chat","player_id":"unknown","message_id":2,"text":"no","created_at":100000,"expires_at":110000,"server_time":100000})
+	client._receive({"v":1,"type":"peer_chat","player_id":"peer","message_id":3,"text":"old","created_at":80000,"expires_at":90000,"server_time":100000})
+	check(chats.size() == 1 and chats[0][0] == "peer", "Invalid or expired chat event accepted")
 	client._receive({"v":1,"type":"peer_move","player_id":"unknown","seq":1,"x":951,"y":760,"facing":1})
 	client._receive({"v":1,"type":"peer_move","player_id":"peer","seq":2,"x":951,"y":760,"facing":3})
 	client._receive({"v":1,"type":"peer_move","player_id":"peer","seq":1,"x":952,"y":760,"facing":1})

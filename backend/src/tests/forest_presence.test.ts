@@ -54,6 +54,12 @@ test('portal routing isolates peer snapshots and events',()=>{
  expect(b.events.at(-1)).toMatchObject({type:'peer_leave',player_id:'a'});
  b.events.length=0;h.advance(250);h.service.flush();expect(b.events).toEqual([]);a.send({type:'cosmetic',summoner_id:'witch'});a.send({type:'move',seq:++seq,x:960,y:870,facing:2});expect(b.events).toEqual([]);
  const c=h.connect('c');c.send({type:'enter',summoner_id:'witch'});expect(c.events[0].peers.map((p:any)=>p.player_id)).toEqual(['b']);
+ a.events.length=0;b.events.length=0;c.events.length=0;
+ h.service.peerChat('b',{id:1,player_id:'b',text:'hello',created_at:100000});
+ expect(b.events.at(-1)).toMatchObject({type:'peer_chat',player_id:'b',message_id:1,text:'hello',expires_at:110000});
+ expect(c.events.at(-1)).toMatchObject({type:'peer_chat',player_id:'b',message_id:1});expect(a.events).toEqual([]);
+ b.send({type:'peer_chat',player_id:'a',text:'forged'});expect(b.events.at(-1)).toMatchObject({type:'error',error:'UNKNOWN_TYPE'});expect(c.events).toHaveLength(1);
+ b.send({type:'suspend'});c.events.length=0;h.service.peerChat('b',{id:2,player_id:'b',text:'hidden',created_at:100000});expect(c.events).toEqual([]);
 });
 test('all ten directed portals follow the catalog',()=>{
  const h=harness(),a=h.connect('walker'),zones=loadCatalog();a.send({type:'enter',summoner_id:'wizard'});

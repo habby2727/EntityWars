@@ -7,6 +7,7 @@ signal peer_moved(player_id: String, seq: int, point: Vector2, facing: int)
 signal peer_cosmetic(player_id: String, summoner_id: String)
 signal peer_left(player_id: String)
 signal disconnected
+signal peer_chat(player_id: String, message_id: int, text: String, created_at: int, expires_at: int, server_now: int)
 
 const ClientBuild := preload("res://scripts/net/client_build.gd")
 const Player := preload("res://scripts/forest/forest_player.gd")
@@ -32,6 +33,10 @@ var _last_sent := 0
 var _welcome_deadline := 0
 var _portal_seq := 0
 var _last_correction := -1
+var _clock_server := 0
+var _clock_ticks := 0
+var _clock_guard := 0
+var _clock_request_at := 0
 
 func configure(catalog: Array, selected: String) -> void:
 	zones = catalog
@@ -104,6 +109,7 @@ func _process(_delta: float) -> void:
 		return
 	if not entered and _connect_at > 0:
 		_send({"type":"enter", "summoner_id":_summoner})
+		_clock_request_at = Time.get_ticks_msec()
 		_connect_at = 0
 		_ping_at = Time.get_ticks_msec()
 	if socket.get_available_packet_count() > 128:
@@ -123,7 +129,9 @@ func _process(_delta: float) -> void:
 		_drop()
 		return
 	if _pong_deadline == 0 and Time.get_ticks_msec() - _ping_at >= 20000:
-		if _send({"type":"ping"}): _pong_deadline = Time.get_ticks_msec() + 10000
+		if _send({"type":"ping"}):
+			_clock_request_at = Time.get_ticks_msec()
+			_pong_deadline = Time.get_ticks_msec() + 10000
 		_ping_at = Time.get_ticks_msec()
 
 func _send(message: Dictionary) -> bool:
@@ -199,6 +207,9 @@ func shutdown() -> void:
 	_peers.clear()
 
 func _drop(retry: bool = true) -> void:
+	_clock_server = 0
+	_clock_ticks = 0
+	_clock_request_at = 0
 	if socket != null:
 		socket.close()
 		socket = null
@@ -240,16 +251,24 @@ func _snapshot_peers(value, zone: String) -> bool:
 	_peers = found
 	return true
 
+func _sync_clock(value: Variant) -> void:
+	if not _integer(value, 1, 9007199254740991): return
+	_clock_server = int(value)
+	_clock_ticks = Time.get_ticks_msec()
+	_clock_guard = maxi(0, _clock_ticks - _clock_request_at) if _clock_request_at > 0 else 1000
+
 func _receive(m: Dictionary) -> void:
 	if not _matches() or m.get("v") != 1 or not m.get("type") is String:
 		return
 	match m.type:
 		"pong":
+			_sync_clock(m.get("server_time"))
 			_pong_deadline = 0
 		"welcome":
 			var self_state = m.get("self")
 			if entered or not self_state is Dictionary or not self_state.get("zone_id") is String or not _player(self_state, self_state.zone_id) or self_state.player_id != _owner or self_state.summoner_id != _summoner or not _snapshot_peers(m.get("peers"), self_state.zone_id):
 				return
+			_sync_clock(m.get("server_time"))
 			zone_id = self_state.zone_id
 			entered = true
 			_attempt = 0
@@ -286,6 +305,15 @@ func _receive(m: Dictionary) -> void:
 			var id = m.get("player_id")
 			if entered and id is String and _peers.has(id) and m.get("summoner_id") in Player.FILES:
 				peer_cosmetic.emit(id, m.summoner_id)
+		"peer_chat":
+			var id = m.get("player_id")
+			var text = m.get("text")
+			if not entered or not id is String or (id != _owner and not _peers.has(id)) or not text is String or text.is_empty() or text.length() > 200 or not _integer(m.get("message_id"), 1, 9007199254740991) or not _integer(m.get("created_at"), 1, 9007199254740991) or not _integer(m.get("expires_at"), 1, 9007199254740991) or int(m.expires_at) != int(m.created_at) + 10000 or _clock_server == 0:
+				return
+			var estimated_now := _clock_server + Time.get_ticks_msec() - _clock_ticks + _clock_guard
+			if _integer(m.get("server_time"), 1, 9007199254740991): estimated_now = maxi(estimated_now, int(m.server_time) + _clock_guard)
+			if estimated_now >= int(m.expires_at): return
+			peer_chat.emit(id, int(m.message_id), text, int(m.created_at), int(m.expires_at), estimated_now)
 		"peer_leave":
 			var id = m.get("player_id")
 			if entered and id is String and _peers.erase(id):

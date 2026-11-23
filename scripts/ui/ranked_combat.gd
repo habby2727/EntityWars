@@ -3,6 +3,8 @@ extends Node
 var host
 var backend: BackendClient
 var match_id := ""
+var friendly := false
+var match_prefix := "/pvp/match"
 var request_id := ""
 var chat_attempted := false
 var request_kind := ""
@@ -43,6 +45,8 @@ func _ready() -> void:
 	host = get_parent()
 	debug_visual = bool(SceneRouter._ranked_context.get("debug_visual", false)) and ConnectionGate.debug_lab_navigation_allowed()
 	match_id = str(SceneRouter._ranked_context.get("match_id", ""))
+	friendly = str(SceneRouter._ranked_context.get("kind", "ranked")) == "friendly"
+	if friendly: match_prefix = "/forest/duels/match"
 	header = Label.new()
 	header.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	header.offset_left = -250
@@ -98,7 +102,7 @@ func _ready() -> void:
 	host.spell_panel.hide()
 	host.switch_weapon_btn.disabled = true
 	host.ultra_button.disabled = true
-	host.confirm_popup.get_node("Panel/VBox/Body").text = "Leave this ranked match? This forfeits the match."
+	host.confirm_popup.get_node("Panel/VBox/Body").text = tr("DUEL_FORFEIT_CONFIRM") if friendly else "Leave this ranked match? This forfeits the match."
 	backend = BackendClient.new()
 	backend.base_url = host.backend_url
 	backend.auto_dev_login = false
@@ -214,7 +218,7 @@ func _send(method: String, path: String, body: Variant, kind: String, replay: bo
 	return true
 
 func _poll() -> void:
-	var url := "/pvp/match/state?match_id=%s&after=%d&chat_after=%d" % [match_id.uri_encode(), event_cursor, chat_cursor]
+	var url := match_prefix + "/state?match_id=%s&after=%d&chat_after=%d" % [match_id.uri_encode(), event_cursor, chat_cursor]
 	_send("GET", url, null, "state")
 
 func _process(delta: float) -> void:
@@ -250,7 +254,7 @@ func _process(delta: float) -> void:
 		timer_panel.show()
 		timer_label.text = "%02d:%02d" % [seconds / 60, seconds % 60]
 	if request_id.is_empty() and not chat_pending.is_empty() and pending.is_empty():
-		_send("POST", "/pvp/match/chat", chat_pending, "chat", chat_attempted)
+		_send("POST", match_prefix + "/chat", chat_pending, "chat", chat_attempted)
 	if request_id.is_empty() and next_poll <= 0.0:
 		next_poll = 3.0
 		_poll()
@@ -281,7 +285,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		next_poll = 0.0
 		refresh_controls()
 		return
-	if data.get("match_id", "") != match_id:
+	if data.get("match_id", "") != match_id or (friendly and data.get("kind", "") != "friendly"):
 		header.text = "Match unavailable"
 		return
 	state = data.duplicate(true)
@@ -392,8 +396,8 @@ func _render() -> void:
 	if host._battle_over and event_queue.is_empty() and not event_presenting and event_delay <= 0.0:
 		timer_panel.hide()
 		var result: Dictionary = state.get("result", {})
-		header.text = "%s  |  MP %+d" % [str(result.get("result", "draw")).to_upper(), int(result.get("mp_delta", 0))]
-		host.next_turn_btn.text = "Return"
+		header.text = str(result.get("result", "draw")).to_upper() if friendly else "%s  |  MP %+d" % [str(result.get("result", "draw")).to_upper(), int(result.get("mp_delta", 0))]
+		host.next_turn_btn.text = tr("DUEL_RETURN_FOREST") if friendly else "Return"
 		host.next_turn_btn.show()
 	else:
 		host.next_turn_btn.hide()
@@ -520,7 +524,7 @@ func _submit_decision(decision: Dictionary) -> void:
 	if (not request_id.is_empty() and request_kind not in ["state", "chat"]) or not pending.is_empty() or str(state.get("status", "")) != "ACTIVE":
 		return
 	pending = {"match_id": match_id, "client_action_id": backend._make_uuid(), "combat_revision": int(state.get("combat_revision", 0)), "decision": decision}
-	pending_path = "/pvp/match/decision"
+	pending_path = match_prefix + "/decision"
 	host._ultra_armed = false
 	if not _send("POST", pending_path, pending, "decision"):
 		next_poll = 0.0
@@ -557,7 +561,7 @@ func _send_chat() -> void:
 		chat_attempted = false
 	_select_log_tab(true)
 	if request_id.is_empty() and pending.is_empty():
-		_send("POST", "/pvp/match/chat", chat_pending, "chat", chat_attempted)
+		_send("POST", match_prefix + "/chat", chat_pending, "chat", chat_attempted)
 	chat_send.disabled = true
 
 func back() -> void:
@@ -578,7 +582,7 @@ func forfeit() -> void:
 		header.text = "Wait for the pending request before forfeiting"
 		return
 	pending = {"match_id": match_id, "client_action_id": backend._make_uuid()}
-	pending_path = "/pvp/match/forfeit"
+	pending_path = match_prefix + "/forfeit"
 	if not _send("POST", pending_path, pending, "forfeit"):
 		next_poll = 0.0
 	refresh_controls()
@@ -586,8 +590,11 @@ func forfeit() -> void:
 func return_to_loadout() -> void:
 	if str(state.get("status", "")) != "FINISHED":
 		return
-	SceneRouter._ranked_context.clear()
-	SceneRouter.go_to_loadout()
+	if friendly:
+		SceneRouter.finish_friendly()
+	else:
+		SceneRouter._ranked_context.clear()
+		SceneRouter.go_to_loadout()
 
 func _show_result_popup() -> void:
 	if result_popup_shown:
@@ -598,6 +605,8 @@ func _show_result_popup() -> void:
 	result_popup_shown = true
 	var outcome := str(result.get("result", "draw"))
 	var body: VBoxContainer = host._result_popup("VICTORY" if outcome == "win" else "DEFEAT" if outcome == "loss" else "DRAW")
+	if friendly:
+		return
 	var delta := int(result.get("mp_delta", 0))
 	var amount := Label.new()
 	amount.text = "%+d MP" % delta
