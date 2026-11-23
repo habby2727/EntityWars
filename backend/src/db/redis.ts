@@ -83,6 +83,16 @@ export async function releaseLock(key: string, token: string): Promise<boolean> 
 	}
 }
 
+// Renew only the lease held by this token; a timed-out command is treated as lost.
+export async function renewLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+	try {
+		const result = await redis.eval(`if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pexpire", KEYS[1], ARGV[2]) else return 0 end`, 1, `lock:${key}`, token, String(ttlMs));
+		return Number(result) === 1;
+	} catch {
+		return false;
+	}
+}
+
 export async function redisExample(): Promise<void> {
 	try {
 		if (!(await ensureRedisReady())) {

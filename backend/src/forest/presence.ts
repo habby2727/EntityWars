@@ -61,27 +61,30 @@ export function loadCatalog(path = resolve(import.meta.dir, "../../../data/stati
 type Socket = { send(data:string): number; close(code?:number, reason?:string): void; data: ForestData; getBufferedAmount(): number };
 export type ForestData = { kind: "forest"; playerId:string; displayName:string; token:string };
 type State = { player_id:string; display_name:string; zone_id:string; x:number; y:number; facing:number; summoner_id:string };
-type Session = { ws:Socket; state:State; entered:boolean; seq:number; at:number; credit:number; lastMove:number; lastCosmetic:number; rateAt:number; rate:number; malformed:number; checking:boolean };
+type Session = { ws:Socket; state:State; entered:boolean; seq:number; at:number; credit:number; lastMove:number; pendingMove: {seq:number; x:number; y:number; facing:number} | null; lastCosmetic:number; rateAt:number; rate:number; malformed:number; checking:boolean };
 type Saved = { state:State; expires:number };
 const cosmetics=new Set(['wizard','witch','cyberghost']);
-export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:ForestData)=>Promise<boolean>, clock:()=>number=Date.now) {
+export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:ForestData)=>Promise<boolean>, clock:()=>number=Date.now, canServe:()=>boolean=()=>true) {
  const rooms=new Map<string,Map<string,Session>>([...zones.keys()].map(id=>[id,new Map()]));
  const active=new Map<string,Session>(), saved=new Map<string,Saved>();
+ let fenced=false;
  const prune=()=>{const now=clock(); for(const [id,s] of saved) if(s.expires<=now) saved.delete(id);};
- const send=(s:Session,m:object)=>{try { if(s.ws.getBufferedAmount()>65536) { s.ws.close(1008,'slow client'); remove(s,120000); return; } if(s.ws.send(JSON.stringify({v:1,...m}))<0) {s.ws.close(1008,'slow client'); remove(s,120000);} } catch {remove(s,120000);} };
- const broadcast=(s:Session,m:object)=>{for(const peer of rooms.get(s.state.zone_id)!.values()) if(peer!==s) send(peer,m);};
+ const send=(s:Session,m:object)=>{if(fenced || !canServe())return;try { if(s.ws.getBufferedAmount()>65536) { s.ws.close(1008,'slow client'); remove(s,120000); return; } if(s.ws.send(JSON.stringify({v:1,...m}))<0) {s.ws.close(1008,'slow client'); remove(s,120000);} } catch {remove(s,120000);} };
+ const broadcast=(s:Session,m:object)=>{if(fenced || !canServe())return;for(const peer of rooms.get(s.state.zone_id)!.values()) if(peer!==s) send(peer,m);};
  const peers=(s:Session)=>[...rooms.get(s.state.zone_id)!.values()].filter(p=>p!==s).map(p=>({...p.state}));
- function remove(s:Session,ttl:number) { if(active.get(s.state.player_id)!==s) return; active.delete(s.state.player_id); if(s.entered){rooms.get(s.state.zone_id)!.delete(s.state.player_id); broadcast(s,{type:'peer_leave',player_id:s.state.player_id});} if(ttl){prune(); if(saved.size>=1024) saved.delete(saved.keys().next().value!); saved.set(s.state.player_id,{state:{...s.state},expires:clock()+ttl});} else saved.delete(s.state.player_id); }
+ function remove(s:Session,ttl:number) { if(fenced || !canServe() || active.get(s.state.player_id)!==s) return; active.delete(s.state.player_id); if(s.entered){rooms.get(s.state.zone_id)!.delete(s.state.player_id); broadcast(s,{type:'peer_leave',player_id:s.state.player_id});} if(ttl){prune(); if(saved.size>=1024) saved.delete(saved.keys().next().value!); saved.set(s.state.player_id,{state:{...s.state},expires:clock()+ttl});} else saved.delete(s.state.player_id); }
  const correction=(s:Session,seq:unknown,reason:string)=>send(s,{type:'correction',seq:Number.isSafeInteger(seq)?seq:0,zone_id:s.state.zone_id,x:s.state.x,y:s.state.y,facing:s.state.facing,reason});
  const validSeq=(n:unknown):n is number=>Number.isSafeInteger(n) && (n as number)>=0 && (n as number)<=2147483647;
  function open(ws:Socket) {
+  if(fenced || !canServe()){ws.close(1011,'service unavailable');return;}
   prune(); const old=active.get(ws.data.playerId); if(old){remove(old,120000); old.ws.close(1000,'replaced');}
   if(active.size>=512){ws.close(1013,'capacity');return;}
   const previous=saved.get(ws.data.playerId); saved.delete(ws.data.playerId);
   const state:State=previous ? {...previous.state,display_name:ws.data.displayName} : {player_id:ws.data.playerId,display_name:ws.data.displayName,zone_id:'central_clearing',x:960,y:760,facing:0,summoner_id:'wizard'};
-  active.set(state.player_id,{ws,state,entered:false,seq:-1,at:clock(),credit:24,lastMove:0,lastCosmetic:0,rateAt:clock(),rate:0,malformed:0,checking:false});
+  active.set(state.player_id,{ws,state,entered:false,seq:-1,at:clock(),credit:24,lastMove:0,pendingMove:null,lastCosmetic:0,rateAt:clock(),rate:0,malformed:0,checking:false});
  }
  function message(ws:Socket,raw:string|Buffer) {
+  if(fenced || !canServe())return;
   const s=active.get(ws.data.playerId); if(!s || s.ws!==ws)return;
   const now=clock(); if(now-s.rateAt>=1000){s.rateAt=now;s.rate=0;} if(++s.rate>30){ws.close(1008,'rate limit');remove(s,120000);return;}
   if(typeof raw!=='string' || Buffer.byteLength(raw)>2048){ws.close(1009,'invalid frame');remove(s,120000);return;}
@@ -106,17 +109,23 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
   const distance=Math.hypot(x-a[0],y-a[1]);
   if(distance>s.credit || !segmentInside(a,b,zone.polygon)){correction(s,m.seq,'INVALID_MOVEMENT');return;}
   if(m.type==='move'){
-   if(now-s.lastMove<200)return;
-   s.credit-=distance;s.state.x=x;s.state.y=y;s.state.facing=m.facing;s.lastMove=now;
-   broadcast(s,{type:'peer_move',player_id:s.state.player_id,seq:m.seq,x,y,facing:m.facing});return;
+   s.credit-=distance;s.state.x=x;s.state.y=y;s.state.facing=m.facing;
+   s.pendingMove={seq:m.seq,x,y,facing:m.facing};
+   if(now-s.lastMove>=200) flushSession(s,now);
+   return;
   }
   const p=zone.portals.find(p=>p.direction===m.direction);
   if(!p || x<p.corridor[0] || x>p.corridor[2] || y<p.corridor[1] || y>p.corridor[3] || !((p.direction==='north'&&y===0&&a[1]>y)||(p.direction==='south'&&y===1080&&a[1]<y)||(p.direction==='west'&&x===0&&a[0]>x)||(p.direction==='east'&&x===1920&&a[0]<x))){correction(s,m.seq,'INVALID_PORTAL');return;}
   const destination=rooms.get(p.destination)!; if(destination.size>=128){correction(s,m.seq,'ROOM_FULL');return;}
+  s.pendingMove=null;
   rooms.get(s.state.zone_id)!.delete(s.state.player_id);broadcast(s,{type:'peer_leave',player_id:s.state.player_id});
   s.state.zone_id=p.destination;[s.state.x,s.state.y]=p.arrival;s.credit=0;s.at=now;destination.set(s.state.player_id,s);
   send(s,{type:'zone',zone_id:s.state.zone_id,x:s.state.x,y:s.state.y,facing:s.state.facing,peers:peers(s)});if(active.get(s.state.player_id)===s) broadcast(s,{type:'peer_join',player:{...s.state}});
  }
- async function sweep(){prune(); await Promise.all([...active.values()].map(async s=>{if(s.checking)return;s.checking=true;try{if(!await authenticate(s.ws.data) && active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1008,'session ended');}}catch{if(active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1011,'authentication unavailable');}}finally{s.checking=false;}}));}
- return {open,message,close(ws:Socket){const s=active.get(ws.data.playerId);if(s?.ws===ws)remove(s,120000);},sweep};
+ function flushSession(s:Session,now:number){if(!s.pendingMove || !s.entered || now-s.lastMove<200)return;const move=s.pendingMove;s.pendingMove=null;s.lastMove=now;broadcast(s,{type:'peer_move',player_id:s.state.player_id,...move});}
+ function flush(){if(fenced || !canServe())return;const now=clock();for(const s of active.values())flushSession(s,now);}
+ async function sweep(){if(fenced || !canServe())return;prune(); await Promise.all([...active.values()].map(async s=>{if(s.checking)return;s.checking=true;try{if(!await authenticate(s.ws.data) && !fenced && canServe() && active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1008,'session ended');}}catch{if(!fenced && canServe() && active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1011,'authentication unavailable');}}finally{s.checking=false;}}));}
+ function evict(playerId:string){if(fenced || !canServe())return;const s=active.get(playerId);if(s){remove(s,0);s.ws.close(1008,'session ended');}saved.delete(playerId);}
+ function fence(){if(fenced)return;fenced=true;for(const s of active.values()){try{s.ws.close(1011,'service unavailable');}catch{}}active.clear();saved.clear();for(const room of rooms.values())room.clear();}
+ return {open,message,close(ws:Socket){if(fenced)return;const s=active.get(ws.data.playerId);if(s?.ws===ws)remove(s,120000);},sweep,flush,evict,fence};
 }

@@ -9,6 +9,8 @@ import { isRankedRoute, rankedAvailability } from "./pvp/availability";
 import { createPvpChat, createPvpMatches, createPvpQueue, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
 import { createPvpRanking } from "./pvp/ranking";
 import { createHash, createHmac } from "crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import defaultConfig from "./config/default";
@@ -26,7 +28,7 @@ import {
 import { AuthStorageUnavailableError } from "./auth/storage_error";
 import { checkIdle, checkRefreshIdle, idleEnabled, resetIdle, rotateRefreshIdle, touchIdle } from "./auth/idle";
 import { AccountStatusUnavailableError, isUserDisabled, pingPostgres, postgresExample, upsertUser } from "./db/postgres";
-import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
+import { acquireLock, renewLock, releaseLock, ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
 import { getJobQueueSize } from "./jobs/queue";
@@ -1273,16 +1275,77 @@ async function maybeRunExternalExamples(): Promise<void> {
 }
 
 async function startServer(): Promise<void> {
-	// Presence is process-local and requires a single-instance deployment.
 	const forestEnabled = Bun.env.FOREST_WS_ENABLED === "1";
-	if (forestEnabled && Bun.env.FOREST_WS_SINGLE_INSTANCE !== "1") throw new Error("FOREST_WS_SINGLE_INSTANCE=1 is required for forest presence");
 	const forestZones = loadCatalog(resolve(import.meta.dir, "..", "..", "data", "static", "forest_zones.json"));
+	const leaseKey = "forest:presence:leader", leaseTtl = 15000;
+	const acquiredAt = performance.now();
+	const leaseToken = forestEnabled ? await acquireLock(leaseKey, leaseTtl) : null;
+	// Fence well before Redis's 15-second expiry: renewal is due at four seconds,
+	// with at most two seconds for scheduling and a confirmed response.
+	if (forestEnabled && (!leaseToken || performance.now() - acquiredAt >= 6000)) throw new Error("Forest Redis lease unavailable");
+	let leaseDeadline = acquiredAt + 6000, leaseFenced = false, leaseRenewing = false;
 	const forest = forestEnabled ? createForestPresence(forestZones, async (data) => {
 		const request = new Request("http://localhost/forest/ws", { headers: { authorization: `Bearer ${data.token}` } });
 		return await requireAuth(request) === data.playerId;
-	}) : null;
-	if (forest) { const timer = setInterval(() => { void forest.sweep(); }, 30000); timer.unref(); }
+	}, Date.now, () => leaseValid()) : null;
+	function fenceLease(): void {
+		if (leaseFenced) return;
+		leaseFenced = true;
+		forest?.fence();
+		console.error("Forest lease lost; terminating process.");
+		process.exit(1);
+	}
+	function leaseValid(): boolean {
+		if (!forest || leaseFenced) return false;
+		if (performance.now() >= leaseDeadline) { fenceLease(); return false; }
+		return true;
+	}
+	if (forest && leaseToken) {
+		getRedis().on("error", fenceLease);
+		getRedis().on("close", fenceLease);
+		getRedis().on("end", fenceLease);
+		const watchdog = setInterval(() => { leaseValid(); }, 250); watchdog.unref();
+		const renewal = setInterval(() => {
+			if (!leaseValid() || leaseRenewing) return;
+			leaseRenewing = true;
+			const started = performance.now();
+			void renewLock(leaseKey, leaseToken, leaseTtl).then(ok => {
+				leaseRenewing = false;
+				if (!leaseValid() || !ok || performance.now() - started >= 4000) { fenceLease(); return; }
+				leaseDeadline = started + 6000;
+			}).catch(fenceLease);
+		}, 4000); renewal.unref();
+		const flush = setInterval(() => { if (leaseValid()) forest.flush(); }, 50); flush.unref();
+		const sweep = setInterval(() => { if (leaseValid()) void forest.sweep(); }, 30000); sweep.unref();
+		let stopping = false;
+		const shutdown = () => {
+			if (stopping) return; stopping = true; leaseFenced = true; forest.fence();
+			clearInterval(watchdog); clearInterval(renewal); clearInterval(flush); clearInterval(sweep);
+			void releaseLock(leaseKey, leaseToken).finally(() => process.exit(0));
+		};
+		process.once("SIGTERM", shutdown); process.once("SIGINT", shutdown);
+	}
+	// Resolve only the explicitly configured proxy, never arbitrary private peers.
+	const trustedProxy = Bun.env.FOREST_WS_TRUSTED_PROXY?.trim() || "";
+	let proxyAddresses = new Set<string>(), proxyRefreshAt = 0, proxyLookup: Promise<void> | null = null;
+	const normalizeIp = (ip: string) => ip.toLowerCase().startsWith("::ffff:") && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip.toLowerCase();
+	async function forestClientIp(req: Request, remote: string): Promise<string> {
+		const actual = normalizeIp(remote);
+		if (!trustedProxy) return actual;
+		if (Date.now() >= proxyRefreshAt) {
+			if (!proxyLookup) proxyLookup = (async () => {
+				try { proxyAddresses = new Set((await lookup(trustedProxy, { all: true })).map(a => normalizeIp(a.address))); }
+				catch { proxyAddresses.clear(); }
+				finally { proxyRefreshAt = Date.now() + 5000; }
+			})();
+			try { await proxyLookup; } finally { proxyLookup = null; }
+		}
+		if (!proxyAddresses.has(actual)) return actual;
+		const forwarded = (req.headers.get("x-real-ip") ?? "").trim();
+		return isIP(forwarded) ? normalizeIp(forwarded) : actual;
+	}
 	const handshakes = new Map<string, { start: number; count: number }>();
+	let handshakeWindow = Date.now(), handshakeTotal = 0;
 	void maybeRunExternalExamples();
 	startDiscordBridge(db, globalChat);
 	const huntMaintenance = setInterval(() => {
@@ -1314,8 +1377,13 @@ async function startServer(): Promise<void> {
 					const url = new URL(req.url);
 				if (url.pathname === "/forest/ws") {
 					if (!forest) return jsonResponse({ error: "WebSocket unavailable." }, 404);
+					if (!leaseValid()) return jsonResponse({ error: "WebSocket unavailable." }, 503);
 					if (req.method !== "GET" || req.headers.get("upgrade")?.toLowerCase() !== "websocket") return jsonResponse({ error: "Upgrade required" }, 426);
-					const now = Date.now(), ip = server.requestIP(req)?.address ?? "unknown";
+					const now = Date.now();
+					if (now - handshakeWindow >= 60000) { handshakeWindow = now; handshakeTotal = 0; }
+					if (++handshakeTotal > 2000) return jsonResponse({ error: "Rate limit" }, 429);
+					const ip = await forestClientIp(req, server.requestIP(req)?.address ?? "unknown");
+					if (!leaseValid()) return jsonResponse({ error: "WebSocket unavailable." }, 503);
 					for (const [key, value] of handshakes) if (now - value.start >= 60000) handshakes.delete(key);
 					let limit = handshakes.get(ip);
 					if (!limit) { if (handshakes.size >= 4096) return jsonResponse({ error: "Rate limit" }, 429); limit = { start: now, count: 0 }; handshakes.set(ip, limit); }
@@ -1325,6 +1393,7 @@ async function startServer(): Promise<void> {
 					const authorization = req.headers.get("authorization") ?? "";
 					if (!/^Bearer [^\s]+$/i.test(authorization)) throw new HttpError(401, "Missing auth token.");
 					const playerId = await requireAuth(req, ctx);
+					if (!leaseValid()) return jsonResponse({ error: "WebSocket unavailable." }, 503);
 					const player = getPlayerByIdStmt.get(playerId) as { display_name: string } | null;
 					if (!player || typeof player.display_name !== "string") throw new HttpError(401, "Player unavailable.");
 					const data: ForestData = { kind: "forest", playerId, displayName: player.display_name, token: authorization.slice(7) };
@@ -1501,9 +1570,12 @@ async function startServer(): Promise<void> {
 					if (!token) {
 						throw new HttpError(401, "Missing auth token.");
 					}
-					if (idleEnabled()) await requireAuth(req, ctx);
+					let forestPlayerId: string | null = null;
+					if (idleEnabled()) forestPlayerId = await requireAuth(req, ctx);
+					else if (forest) { try { forestPlayerId = await requireAuth(req, ctx); } catch { /* Preserve logout semantics. */ } }
 					await revokeSession(token);
 					await revokeAccessToken(token);
+					if (forestPlayerId && leaseValid()) forest?.evict(forestPlayerId);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 
@@ -3051,18 +3123,18 @@ async function startServer(): Promise<void> {
 			backpressureLimit: 65536,
 			closeOnBackpressureLimit: true,
 			open(ws) {
-				if (ws.data.kind === "forest") { forest?.open(ws as any); return; }
+				if (ws.data.kind === "forest") { if (leaseValid()) forest?.open(ws as any); else ws.close(1011, "service unavailable"); return; }
 				sockets.add(ws);
 				ws.send(JSON.stringify({ type: "hello", server_time: Date.now() }));
 			},
 			message(ws, message) {
-				if (ws.data.kind === "forest") { forest?.message(ws as any, message as any); return; }
+				if (ws.data.kind === "forest") { if (leaseValid()) forest?.message(ws as any, message as any); return; }
 				if (typeof message == "string" && message.toLowerCase() == "ping") {
 					ws.send("pong");
 				}
 			},
 			close(ws) {
-				if (ws.data.kind === "forest") { forest?.close(ws as any); return; }
+				if (ws.data.kind === "forest") { if (leaseValid()) forest?.close(ws as any); return; }
 				sockets.delete(ws);
 			}
 		}
