@@ -12,6 +12,18 @@ test('handoff acknowledgement follows committed removal and preserves TTL semant
  resumed.send({type:'leave'});expect(resumed.events.at(-1)).toEqual({v:1,type:'handoff_ack',kind:'leave'});
  const fresh=h.connect('a');fresh.send({type:'enter',summoner_id:'wizard'});expect(fresh.events[0].self.x).toBe(960);
 });
+test('disconnect and suspend have distinct expiry; old sockets cannot mutate a replacement',()=>{
+ const h=harness(),a=h.connect('a'),observer=h.connect('b');a.send({type:'enter',summoner_id:'wizard'});observer.send({type:'enter',summoner_id:'witch'});
+ h.advance(250);a.send({type:'move',seq:1,x:980,y:760,facing:1});h.service.close(a.ws);expect(observer.events.at(-1)).toMatchObject({type:'peer_leave',player_id:'a'});
+ h.advance(119999);const resumed=h.connect('a');resumed.send({type:'enter',summoner_id:'wizard'});expect(resumed.events[0].self.x).toBe(980);
+ a.send({type:'leave'});h.service.close(a.ws);expect(observer.events.at(-1).type).toBe('peer_join');
+ h.service.close(resumed.ws);h.advance(120001);const expired=h.connect('a');expired.send({type:'enter',summoner_id:'wizard'});expect(expired.events[0].self.x).toBe(960);
+ h.advance(250);expired.send({type:'move',seq:1,x:980,y:760,facing:1});expired.send({type:'suspend'});h.advance(900001);const after=h.connect('a');after.send({type:'enter',summoner_id:'wizard'});expect(after.events[0].self.x).toBe(960);
+});
+test('lease fence closes sessions and refuses subsequent messages',()=>{
+ const h=harness(),a=h.connect('a'),b=h.connect('b');a.send({type:'enter',summoner_id:'wizard'});b.send({type:'enter',summoner_id:'witch'});const before=b.events.length;
+ h.service.fence();a.send({type:'move',seq:1,x:960,y:760,facing:1});h.service.flush();expect(b.events).toHaveLength(before);
+});
 test('real Bun websocket sends welcome',async()=>{const service=createForestPresence(loadCatalog(),async()=>true);const server=Bun.serve({port:0,fetch(req,server){if(server.upgrade(req,{data:{kind:'forest',playerId:'a',displayName:'Alice',token:'x'}}))return;return new Response('',{status:400});},websocket:{open(ws){service.open(ws as any)},message(ws,m){service.message(ws as any,m as any)},close(ws){service.close(ws as any)}}});try{const ws=new WebSocket(`ws://127.0.0.1:${server.port}`);const result=await new Promise<any>((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('timeout')),2000);ws.onopen=()=>ws.send(JSON.stringify({v:1,type:'enter',summoner_id:'wizard'}));ws.onmessage=e=>{clearTimeout(timer);resolve(JSON.parse(String(e.data)));};ws.onerror=()=>reject(Error('socket error'));});expect(result.type).toBe('welcome');ws.close();}finally{server.stop(true);}});
 
 test('real websocket delivers handoff acknowledgement before close',async()=>{
@@ -140,7 +152,7 @@ test.skipIf(!redisBin)('Redis lease excludes other API processes, renews, recove
   redis.client.disconnect();redis.proc.kill();await redis.proc.exited;
   expect(await Promise.race([live.child.exited,Bun.sleep(7000).then(()=>null)])).toBe(1);
   const unavailable=await start();expect(await unavailable.child.exited).not.toBe(0);
-  const disabled=await start('0');expect(await ready(disabled.base)).toBe(true);
+  const disabled=await start('0');expect(await ready(disabled.base)).toBe(true);expect((await fetch(disabled.base+'/forest/ws',{headers:{Upgrade:'websocket'}})).status).toBe(404);
  }finally{for(const child of children){if(child.exitCode===null){child.kill();await child.exited;}}redis.client.disconnect();if(redis.proc.exitCode===null){redis.proc.kill();await redis.proc.exited;}for(let i=0;;i++){try{rmSync(dir,{recursive:true,force:true});break;}catch(e){if(i>=20)throw e;await Bun.sleep(250);}}}
 },60000);
 test.skipIf(!redisBin)('handshake limits trust only the configured proxy and retain per-client buckets',async()=>{

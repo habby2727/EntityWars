@@ -302,5 +302,16 @@ func _live_test(zones: Array, script, gate: Node, router) -> void:
 	check(moves.size() == previous_moves and joins.size() == previous_joins, "Presence or movement leaked across zones")
 	if third != null: third.close()
 	peer.close()
-	client.shutdown()
+	var acknowledged: bool = await client.handoff("suspend")
+	check(acknowledged and client.socket == null and not client.entered, "Live suspend handoff was not acknowledged and closed")
 	client.queue_free()
+	var resumed = script.new()
+	root.add_child(resumed)
+	resumed.configure(zones, "wizard")
+	deadline = Time.get_ticks_msec() + 7000
+	while not resumed.entered and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check(resumed.entered and resumed.zone_id == "arcane_sanctuary", "Live resume did not restore authoritative zone")
+	var left: bool = await resumed.handoff("leave")
+	check(left and resumed.socket == null and not resumed.entered, "Live leave handoff was not acknowledged and closed")
+	resumed.queue_free()

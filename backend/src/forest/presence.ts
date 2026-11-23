@@ -91,7 +91,12 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
   let m:any; try {m=JSON.parse(raw);} catch {if(++s.malformed>=3){ws.close(1008,'invalid message');remove(s,120000);} return;}
   if(!m || typeof m!=='object' || Array.isArray(m) || m.v!==1 || typeof m.type!=='string'){if(++s.malformed>=3){ws.close(1008,'invalid message');remove(s,120000);}return;}
   if(m.type==='ping'){send(s,{type:'pong',server_time:now});return;}
-  if(m.type==='leave' || m.type==='suspend'){const kind=m.type;remove(s,kind==='leave'?0:900000);send(s,{type:'handoff_ack',kind});ws.close(1000,kind==='leave'?'left':'suspended');return;}
+  if(m.type==='leave' || m.type==='suspend'){
+   const kind=m.type;remove(s,kind==='leave'?0:900000);send(s,{type:'handoff_ack',kind});
+   // Godot can discard unread data when it receives the close frame in the same poll.
+   // The client closes after the ACK; old clients still receive a bounded server close.
+   setTimeout(()=>{try{ws.close(1000,kind==='leave'?'left':'suspended');}catch{}},500).unref();return;
+  }
   if(m.type==='enter'){
    if(s.entered || !cosmetics.has(m.summoner_id)){send(s,{type:'error',error:'INVALID_ENTER'});return;}
    const room=rooms.get(s.state.zone_id)!; if(room.size>=128){send(s,{type:'error',error:'ROOM_FULL'});return;}
