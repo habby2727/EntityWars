@@ -85,8 +85,6 @@ func _connect_socket() -> void:
 
 func _process(_delta: float) -> void:
 	if _closing:
-		if socket != null:
-			socket.poll()
 		return
 	if socket != null and not _matches():
 		_drop(false)
@@ -135,7 +133,7 @@ func _send(message: Dictionary) -> bool:
 	return socket.send_text(JSON.stringify(message)) == OK
 
 func move(point: Vector2, facing: int, force: bool = false) -> bool:
-	if not entered or not point.is_finite() or facing not in [0, 1, 2, 3]:
+	if _closing or not entered or not point.is_finite() or facing not in [0, 1, 2, 3]:
 		return false
 	if point.distance_to(_last_point) < 0.1 and facing == _last_facing:
 		return true
@@ -154,7 +152,7 @@ func move(point: Vector2, facing: int, force: bool = false) -> bool:
 	return true
 
 func portal(direction: String, point: Vector2, foot: Vector2, facing: int) -> bool:
-	if not entered or direction not in ["north", "south", "east", "west"] or not point.is_finite():
+	if _closing or not entered or direction not in ["north", "south", "east", "west"] or not point.is_finite():
 		return false
 	if not move(foot, facing, true) or seq >= 2147483647:
 		return false
@@ -164,15 +162,32 @@ func portal(direction: String, point: Vector2, foot: Vector2, facing: int) -> bo
 	_portal_seq = seq
 	return true
 
-func handoff(kind: String) -> void:
-	if kind in ["leave", "suspend"] and entered:
-		_send({"type":kind})
-		if socket != null:
-			socket.poll()
+func handoff(kind: String) -> bool:
+	if _closing:
+		return false
+	var sent := kind in ["leave", "suspend"] and entered and _send({"type":kind})
 	_closing = true
 	entered = false
 	_peers.clear()
 	disconnected.emit()
+	var acknowledged := false
+	var deadline := Time.get_ticks_msec() + 1000
+	while sent and socket != null and _matches() and Time.get_ticks_msec() < deadline:
+		socket.poll()
+		if socket.get_available_packet_count() > 128:
+			break
+		for i in mini(socket.get_available_packet_count(), 32):
+			var packet := socket.get_packet()
+			if socket.was_string_packet() and packet.size() <= 65536:
+				var message = JSON.parse_string(packet.get_string_from_utf8())
+				if message is Dictionary and message.get("v") == 1 and message.get("type") == "handoff_ack" and message.get("kind") == kind:
+					acknowledged = true
+					break
+		if acknowledged or socket.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+			break
+		await get_tree().process_frame
+	shutdown()
+	return acknowledged
 
 func shutdown() -> void:
 	_closing = true
@@ -189,6 +204,7 @@ func _drop(retry: bool = true) -> void:
 		socket = null
 	entered = false
 	zone_id = ""
+	_portal_seq = 0
 	_peers.clear()
 	disconnected.emit()
 	_attempt = mini(_attempt + 1, 6) if retry else 0

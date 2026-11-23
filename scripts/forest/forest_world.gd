@@ -572,6 +572,7 @@ func _notification(what: int) -> void:
 			_refresh_nameplate()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _handoff_pending: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not _dialogue.visible:
 		var point: Vector2 = _world.get_global_transform().affine_inverse() * event.position
 		for npc in _npcs:
@@ -581,6 +582,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _handoff_pending: return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	var focus := get_viewport().gui_get_focus_owner()
@@ -599,7 +601,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if not OS.has_feature("editor"):
 		return
-	if event.keycode == KEY_F9:
+	if event.keycode == KEY_F9 and ConnectionGate.debug_lab_navigation_allowed() and (not is_instance_valid(_presence) or _presence.socket == null):
 		_transition_generation += 1
 		_player.exit_pending = false
 		_player.transition_locked = false
@@ -704,8 +706,7 @@ func _prepare_handoff(kind: String) -> void:
 	_reset_touch()
 	_player.set_process(false)
 	if is_instance_valid(_presence):
-		_presence.handoff(kind)
-		await get_tree().create_timer(0.12).timeout
+		await _presence.handoff(kind)
 
 func _resume_if_still_here() -> void:
 	if is_inside_tree() and get_tree().current_scene == self:

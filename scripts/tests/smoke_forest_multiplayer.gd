@@ -1,4 +1,5 @@
 extends SceneTree
+const ClientBuild := preload("res://scripts/net/client_build.gd")
 var failed := false
 func _initialize() -> void:
 	call_deferred("_run")
@@ -107,6 +108,18 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	check(scene._catalog_valid and scene._presence == null, "Editor debug must remain offline")
+	if OS.has_feature("editor"):
+		var f9 := InputEventKey.new()
+		f9.pressed = true
+		f9.keycode = KEY_F9
+		var before: int = scene._zone_index
+		scene._unhandled_key_input(f9)
+		check(scene._zone_index == (before + 1) % zones.size(), "Offline F9 did not cycle zone")
+		gate.debug_offline_enabled = false
+		before = scene._zone_index
+		scene._unhandled_key_input(f9)
+		check(scene._zone_index == before, "Online F9 changed authoritative zone")
+		gate.debug_offline_enabled = true
 	check(scene._set_zone(0, Vector2(960,760)), "Forest failed to load shared geometry")
 	scene._player.position = Vector2(800, 760)
 	scene._on_presence_snapshot(self_state, [peer])
@@ -213,8 +226,8 @@ func _live_test(zones: Array, script, gate: Node, router) -> void:
 		await process_frame
 	check(client.entered, "Godot client did not enter real backend")
 	var peer := WebSocketPeer.new()
-	peer.handshake_headers = PackedStringArray(["Authorization: Bearer " + peer_token, "X-EntityWars-Client-Build: 5509"])
-	var url: String = gate.base_url.replace("http://", "ws://") + "/forest/ws"
+	peer.handshake_headers = PackedStringArray(["Authorization: Bearer " + peer_token, ClientBuild.header()])
+	var url: String = gate.base_url.trim_suffix("/").replace("https://", "wss://").replace("http://", "ws://") + "/forest/ws"
 	check(peer.connect_to_url(url) == OK, "Peer could not connect")
 	while peer.get_ready_state() == WebSocketPeer.STATE_CONNECTING and Time.get_ticks_msec() < deadline:
 		peer.poll()
@@ -256,7 +269,7 @@ func _live_test(zones: Array, script, gate: Node, router) -> void:
 	var third: WebSocketPeer
 	if not third_token.is_empty():
 		third = WebSocketPeer.new()
-		third.handshake_headers = PackedStringArray(["Authorization: Bearer " + third_token, "X-EntityWars-Client-Build: 5509"])
+		third.handshake_headers = PackedStringArray(["Authorization: Bearer " + third_token, ClientBuild.header()])
 		check(third.connect_to_url(url) == OK, "Third client could not connect")
 		deadline = Time.get_ticks_msec() + 3000
 		while third.get_ready_state() == WebSocketPeer.STATE_CONNECTING and Time.get_ticks_msec() < deadline:
