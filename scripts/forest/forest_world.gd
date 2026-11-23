@@ -3,12 +3,16 @@ extends Control
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const Zones := preload("res://scripts/forest/forest_zones.gd")
 const ForestPlayer := preload("res://scripts/forest/forest_player.gd")
+const NPCs := preload("res://scripts/forest/forest_npcs.gd")
+const ForestNPC := preload("res://scripts/forest/forest_npc.gd")
 const Joystick := preload("res://scripts/forest/forest_touch_joystick.gd")
 const REFERENCE_SIZE := Vector2(1920, 1080)
 const PORTAL_LOCK_MS := 350
+const INTERACTION_DISTANCE := 145.0
 
 var _canvas: Control
 var _world: Node2D
+var _actors: Node2D
 var _background: Sprite2D
 var _player: Node2D
 var _joystick: Control
@@ -20,23 +24,33 @@ var _zone_index := 0
 var _show_geometry := false
 var _transition_until := 0
 var _transition_generation := 0
+var _npcs: Array[Node2D] = []
+var _talk_button: Button
+var _dialogue: PanelContainer
+var _dialogue_name: Label
+var _dialogue_text: Label
+var _talking_to: Node2D
 
 func _ready() -> void:
 	var selected := SceneRouter.forest_selected_summoner()
 	if selected not in ForestPlayer.FILES:
 		SceneRouter.go_to_lab_hub.call_deferred()
 		return
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var backdrop := ColorRect.new()
 	backdrop.color = Color.BLACK
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(backdrop)
 	var aspect := AspectRatioContainer.new()
 	aspect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	aspect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	aspect.ratio = 16.0 / 9.0
 	aspect.stretch_mode = AspectRatioContainer.STRETCH_FIT
 	add_child(aspect)
 	_canvas = Control.new()
 	_canvas.name = "Canvas"
+	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	aspect.add_child(_canvas)
 	_canvas.resized.connect(_resize_world)
 	_world = Node2D.new()
@@ -57,9 +71,13 @@ func _ready() -> void:
 	_portal_debug = Node2D.new()
 	_portal_debug.name = "PortalDebug"
 	_world.add_child(_portal_debug)
+	_actors = Node2D.new()
+	_actors.name = "Actors"
+	_actors.y_sort_enabled = true
+	_world.add_child(_actors)
 	_player = ForestPlayer.new()
 	_player.name = "Summoner"
-	_world.add_child(_player)
+	_actors.add_child(_player)
 	_player.setup(selected)
 	_player.exit_attempt.connect(_on_exit_attempt)
 	var leave := Button.new()
@@ -85,8 +103,11 @@ func _ready() -> void:
 	_debug_label.add_theme_font_size_override("font_size", 22)
 	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_debug_label)
+	_build_dialogue()
 	UIThemeFactory.apply_theme_to(self)
 	MenuArt.button(leave)
+	MenuArt.button(_talk_button)
+	MenuArt.button(_dialogue.get_node("Margin/Contents/Close"))
 	_set_zone(0)
 	_resize_world()
 
@@ -122,6 +143,8 @@ func _set_zone(index: int, arrival: Vector2 = Vector2.INF) -> bool:
 	_player.polygon = polygon
 	_player.position = spawn
 	_player.blocked_visible = false
+	_close_dialogue()
+	_spawn_npcs(zone)
 	_build_portal_debug(zone)
 	_refresh_debug()
 	return true
@@ -156,10 +179,10 @@ func _on_exit_attempt(direction: String, foot: Vector2, candidate: Vector2) -> v
 		return
 	var valid_crossing := false
 	match direction:
-		"north": valid_crossing = candidate.y <= 0.0 and candidate.y < foot.y and absf(candidate.x - foot.x) < 0.0001
-		"south": valid_crossing = candidate.y >= REFERENCE_SIZE.y and candidate.y > foot.y and absf(candidate.x - foot.x) < 0.0001
-		"west": valid_crossing = candidate.x <= 0.0 and candidate.x < foot.x and absf(candidate.y - foot.y) < 0.0001
-		"east": valid_crossing = candidate.x >= REFERENCE_SIZE.x and candidate.x > foot.x and absf(candidate.y - foot.y) < 0.0001
+		"north": valid_crossing = candidate.y <= 0.0 and candidate.y < foot.y and candidate.x >= 0.0 and candidate.x <= REFERENCE_SIZE.x
+		"south": valid_crossing = candidate.y >= REFERENCE_SIZE.y and candidate.y > foot.y and candidate.x >= 0.0 and candidate.x <= REFERENCE_SIZE.x
+		"west": valid_crossing = candidate.x <= 0.0 and candidate.x < foot.x and candidate.y >= 0.0 and candidate.y <= REFERENCE_SIZE.y
+		"east": valid_crossing = candidate.x >= REFERENCE_SIZE.x and candidate.x > foot.x and candidate.y >= 0.0 and candidate.y <= REFERENCE_SIZE.y
 	if not valid_crossing:
 		return
 	for portal in zone.get("portals", []):
@@ -210,9 +233,153 @@ func _process(_delta: float) -> void:
 		if _player.transition_locked and Time.get_ticks_msec() >= _transition_until:
 			_player.transition_locked = false
 		_player.joystick_vector = _joystick.vector
+		_talk_button.visible = not _dialogue.visible and (DisplayServer.is_touchscreen_available() or OS.has_feature("mobile")) and _nearest_npc() != null
+
+func _build_dialogue() -> void:
+	_talk_button = Button.new()
+	_talk_button.name = "TalkButton"
+	_talk_button.text = "FOREST_TALK"
+	_talk_button.anchor_left = 0.78
+	_talk_button.anchor_right = 0.97
+	_talk_button.anchor_top = 0.82
+	_talk_button.anchor_bottom = 0.91
+	_talk_button.add_theme_font_size_override("font_size", 24)
+	_talk_button.pressed.connect(_interact_nearest)
+	_canvas.add_child(_talk_button)
+	_dialogue = PanelContainer.new()
+	_dialogue.name = "Dialogue"
+	_dialogue.anchor_left = 0.27
+	_dialogue.anchor_right = 0.73
+	_dialogue.anchor_top = 0.65
+	_dialogue.anchor_bottom = 0.94
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color(0.025, 0.075, 0.075, 0.96)
+	panel.border_color = Color("9cb891")
+	panel.set_border_width_all(3)
+	panel.set_corner_radius_all(12)
+	_dialogue.add_theme_stylebox_override("panel", panel)
+	_canvas.add_child(_dialogue)
+	var margin := MarginContainer.new()
+	margin.name = "Margin"
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 18)
+	_dialogue.add_child(margin)
+	var contents := VBoxContainer.new()
+	contents.name = "Contents"
+	contents.add_theme_constant_override("separation", 8)
+	margin.add_child(contents)
+	_dialogue_name = Label.new()
+	_dialogue_name.name = "Title"
+	_dialogue_name.add_theme_font_size_override("font_size", 28)
+	contents.add_child(_dialogue_name)
+	_dialogue_text = Label.new()
+	_dialogue_text.name = "Text"
+	_dialogue_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dialogue_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_dialogue_text.add_theme_font_size_override("font_size", 22)
+	contents.add_child(_dialogue_text)
+	var close := Button.new()
+	close.name = "Close"
+	close.text = "FOREST_CLOSE"
+	close.custom_minimum_size = Vector2(200, 48)
+	close.size_flags_horizontal = Control.SIZE_SHRINK_END
+	close.add_theme_font_size_override("font_size", 22)
+	close.pressed.connect(_close_dialogue)
+	contents.add_child(close)
+	_dialogue.hide()
+
+func _spawn_npcs(zone: Dictionary) -> void:
+	for npc in _npcs:
+		_actors.remove_child(npc)
+		npc.queue_free()
+	_npcs.clear()
+	var protected: Array[Vector2] = [zone.spawn]
+	for source in Zones.ZONES:
+		for portal in source.portals:
+			if portal.destination == zone.id:
+				protected.append(portal.arrival)
+	for data in NPCs.NPCS:
+		if data.zone != zone.id:
+			continue
+		var npc := ForestNPC.new()
+		npc.name = data.id
+		_actors.add_child(npc)
+		npc.setup(data, _player.polygon, zone.portals, protected)
+		_npcs.append(npc)
+
+func _nearest_npc() -> Node2D:
+	var nearest: Node2D = null
+	var best := INTERACTION_DISTANCE
+	for npc in _npcs:
+		var distance: float = _player.position.distance_to(npc.position)
+		if distance <= best:
+			best = distance
+			nearest = npc
+	return nearest
+
+func _interact_nearest() -> void:
+	_open_dialogue(_nearest_npc())
+
+func _open_dialogue(npc: Node2D) -> void:
+	if npc == null or npc not in _npcs or _player.position.distance_to(npc.position) > INTERACTION_DISTANCE or _player.exit_pending or _player.transition_locked:
+		return
+	_close_dialogue()
+	_talking_to = npc
+	npc.paused = true
+	_player.dialogue_locked = true
+	_reset_touch()
+	_update_dialogue_text()
+	_dialogue.show()
+	_talk_button.hide()
+
+func _update_dialogue_text() -> void:
+	if is_instance_valid(_talking_to):
+		var key: String = str(_talking_to.npc_id).to_upper()
+		_dialogue_name.text = tr("FOREST_NPC_%s_NAME" % key)
+		_dialogue_text.text = tr("FOREST_NPC_%s_DIALOGUE" % key)
+
+func _close_dialogue() -> void:
+	if is_instance_valid(_dialogue) and _dialogue.visible and is_instance_valid(_joystick):
+		_reset_touch()
+	if is_instance_valid(_talking_to):
+		_talking_to.paused = false
+	_talking_to = null
+	if is_instance_valid(_dialogue):
+		_dialogue.hide()
+	if is_instance_valid(_player):
+		_player.dialogue_locked = false
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready():
+		_update_dialogue_text()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not _dialogue.visible:
+		var point: Vector2 = _world.get_global_transform().affine_inverse() * event.position
+		for npc in _npcs:
+			if npc.hit_test(point) and _player.position.distance_to(npc.position) <= INTERACTION_DISTANCE:
+				_open_dialogue(npc)
+				get_viewport().set_input_as_handled()
+				return
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if not OS.has_feature("editor") or not event is InputEventKey or not event.pressed or event.echo:
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return
+	if event.keycode == KEY_E or event.physical_keycode == KEY_E:
+		if _dialogue.visible:
+			_close_dialogue()
+		else:
+			_interact_nearest()
+		get_viewport().set_input_as_handled()
+		return
+	if event.keycode == KEY_ESCAPE and _dialogue.visible:
+		_close_dialogue()
+		get_viewport().set_input_as_handled()
+		return
+	if not OS.has_feature("editor"):
 		return
 	if event.keycode == KEY_F9:
 		_transition_generation += 1
