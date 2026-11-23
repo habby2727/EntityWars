@@ -4,6 +4,8 @@ const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const Zones := preload("res://scripts/forest/forest_zones.gd")
 const ForestPlayer := preload("res://scripts/forest/forest_player.gd")
 const NPCs := preload("res://scripts/forest/forest_npcs.gd")
+const Presence := preload("res://scripts/forest/forest_presence_client.gd")
+const Remote := preload("res://scripts/forest/forest_remote_summoner.gd")
 const ForestNPC := preload("res://scripts/forest/forest_npc.gd")
 const Joystick := preload("res://scripts/forest/forest_touch_joystick.gd")
 const REFERENCE_SIZE := Vector2(1920, 1080)
@@ -31,6 +33,8 @@ var _polygon_fill: Polygon2D
 var _polygon_line: Line2D
 var _portal_debug: Node2D
 var _debug_label: Label
+var _zones: Array = []
+var _catalog_valid := false
 var _zone_index := 0
 var _show_geometry := false
 var _transition_until := 0
@@ -49,8 +53,16 @@ var _name_generation := -1
 var _name_client_generation := -1
 var _safe_modes := false
 var _safe_check_elapsed := 0.0
+var _presence: Node
+var _remotes := {}
+var _portal_deadline := 0
+var _handoff_pending := false
 
 func _ready() -> void:
+	_zones = Zones.runtime_zones()
+	_catalog_valid = not _zones.is_empty()
+	if not _catalog_valid:
+		_zones = Zones.ZONES
 	var had_restore := not SceneRouter._forest_restore.is_empty()
 	var restore := SceneRouter.consume_forest_restore() if had_restore else {}
 	if had_restore and restore.is_empty():
@@ -113,7 +125,7 @@ func _ready() -> void:
 	leave.anchor_right = 0.20
 	leave.anchor_bottom = 0.09
 	leave.add_theme_font_size_override("font_size", 24)
-	leave.pressed.connect(SceneRouter.leave_forest)
+	leave.pressed.connect(_leave_forest)
 	_canvas.add_child(leave)
 	_build_mask_button()
 	_joystick = Joystick.new()
@@ -142,6 +154,7 @@ func _ready() -> void:
 	else:
 		_set_zone(0)
 	_resize_world()
+	_start_presence(selected)
 
 func _setup_nameplate() -> void:
 	if ConnectionGate.debug_lab_navigation_allowed():
@@ -218,12 +231,15 @@ func _build_mask_button() -> void:
 	_canvas.add_child(_mask_button)
 
 func forest_change_allowed(zone_id: String, foot: Vector2, facing: int) -> bool:
-	return is_instance_valid(_player) and not _player.exit_pending and not _player.transition_locked and not _player.dialogue_locked and not _dialogue.visible and zone_id == str(Zones.ZONES[_zone_index].id) and foot == _player.position and facing == _player.facing and not SceneRouter.forest_selected_summoner().is_empty() and SceneRouter._forest_modes_safe()
+	return is_instance_valid(_player) and not _player.exit_pending and not _player.transition_locked and not _player.dialogue_locked and not _dialogue.visible and zone_id == str(_zones[_zone_index].id) and foot == _player.position and facing == _player.facing and not SceneRouter.forest_selected_summoner().is_empty() and SceneRouter._forest_modes_safe()
 
 func _change_summoner() -> void:
-	if forest_change_allowed(str(Zones.ZONES[_zone_index].id), _player.position, _player.facing):
-		_reset_touch()
-		SceneRouter.change_summoner_from_forest(str(Zones.ZONES[_zone_index].id), _player.position, _player.facing)
+	if _handoff_pending: return
+	if forest_change_allowed(str(_zones[_zone_index].id), _player.position, _player.facing):
+		await _prepare_handoff("suspend")
+		if not is_inside_tree(): return
+		SceneRouter.change_summoner_from_forest(str(_zones[_zone_index].id), _player.position, _player.facing)
+		_resume_if_still_here()
 
 func _resize_world() -> void:
 	if is_instance_valid(_world):
@@ -231,21 +247,21 @@ func _resize_world() -> void:
 
 func _zone_index_for_id(zone_id: String) -> int:
 	var found := -1
-	for i in Zones.ZONES.size():
-		if str(Zones.ZONES[i].get("id", "")) == zone_id:
+	for i in _zones.size():
+		if str(_zones[i].get("id", "")) == zone_id:
 			if found != -1:
 				return -1
 			found = i
 	return found
 
 func _set_zone(index: int, arrival: Vector2 = Vector2.INF) -> bool:
-	if index < 0 or index >= Zones.ZONES.size():
+	if index < 0 or index >= _zones.size():
 		return false
-	var zone: Dictionary = Zones.ZONES[index]
+	var zone: Dictionary = _zones[index]
 	var polygon := PackedVector2Array(zone.get("polygon", []))
 	var spawn: Vector2 = zone.get("spawn", Vector2.INF) if arrival == Vector2.INF else arrival
 	var path := Zones.BACKGROUND_DIR + str(zone.get("image", ""))
-	if polygon.size() < 3 or not spawn.is_finite() or not Geometry2D.is_point_in_polygon(spawn, polygon) or not ResourceLoader.exists(path):
+	if not Zones.contains_point(polygon, spawn) or not ResourceLoader.exists(path):
 		return false
 	var texture := load(path) as Texture2D
 	if texture == null:
@@ -285,9 +301,9 @@ func _build_portal_debug(zone: Dictionary) -> void:
 		_portal_debug.add_child(label)
 
 func _on_exit_attempt(direction: String, foot: Vector2, candidate: Vector2) -> void:
-	if _player.exit_pending or _player.transition_locked or _zone_index < 0 or _zone_index >= Zones.ZONES.size():
+	if _player.exit_pending or _player.transition_locked or _zone_index < 0 or _zone_index >= _zones.size():
 		return
-	var zone: Dictionary = Zones.ZONES[_zone_index]
+	var zone: Dictionary = _zones[_zone_index]
 	var source_id := str(zone.get("id", ""))
 	if _zone_index_for_id(source_id) != _zone_index or foot.distance_to(_player.position) > 0.01 or not Geometry2D.is_point_in_polygon(foot, _player.polygon):
 		return
@@ -310,9 +326,32 @@ func _on_exit_attempt(direction: String, foot: Vector2, candidate: Vector2) -> v
 		var arrival = portal.get("arrival", null)
 		if target < 0 or destination_id == source_id or not arrival is Vector2:
 			return
-		var target_zone: Dictionary = Zones.ZONES[target]
+		var target_zone: Dictionary = _zones[target]
 		var target_polygon := PackedVector2Array(target_zone.get("polygon", []))
 		if not arrival.is_finite() or target_polygon.size() < 3 or not Geometry2D.is_point_in_polygon(arrival, target_polygon) or not ResourceLoader.exists(Zones.BACKGROUND_DIR + str(target_zone.get("image", ""))):
+			return
+		if is_instance_valid(_presence) and _presence.entered:
+			var delta := candidate - foot
+			var ratio := 0.0
+			match direction:
+				"north": ratio = -foot.y / delta.y
+				"south": ratio = (REFERENCE_SIZE.y - foot.y) / delta.y
+				"west": ratio = -foot.x / delta.x
+				"east": ratio = (REFERENCE_SIZE.x - foot.x) / delta.x
+			if ratio < 0.0 or ratio > 1.0:
+				return
+			var crossing := foot + delta * ratio
+			match direction:
+				"north": crossing.y = 0.0
+				"south": crossing.y = REFERENCE_SIZE.y
+				"west": crossing.x = 0.0
+				"east": crossing.x = REFERENCE_SIZE.x
+			if crossing.x < rect[0] or crossing.x > rect[2] or crossing.y < rect[1] or crossing.y > rect[3]:
+				return
+			if _presence.portal(direction, crossing, foot, _player.facing):
+				_player.exit_pending = true
+				_portal_deadline = Time.get_ticks_msec() + 3000
+				_reset_touch()
 			return
 		_player.exit_pending = true
 		_transition_generation += 1
@@ -320,7 +359,7 @@ func _on_exit_attempt(direction: String, foot: Vector2, candidate: Vector2) -> v
 		return
 
 func _complete_portal(generation: int, source_id: String, destination_id: String, arrival: Vector2, direction: String) -> void:
-	if generation != _transition_generation or not _player.exit_pending or str(Zones.ZONES[_zone_index].get("id", "")) != source_id:
+	if generation != _transition_generation or not _player.exit_pending or str(_zones[_zone_index].get("id", "")) != source_id:
 		return
 	var target := _zone_index_for_id(destination_id)
 	if not _set_zone(target, arrival):
@@ -352,6 +391,13 @@ func _process(_delta: float) -> void:
 		_refresh_nameplate()
 		if _player.transition_locked and Time.get_ticks_msec() >= _transition_until:
 			_player.transition_locked = false
+		if _portal_deadline > 0 and Time.get_ticks_msec() >= _portal_deadline:
+			_portal_deadline = 0
+			_player.exit_pending = false
+			_reset_touch()
+			if is_instance_valid(_presence): _presence._drop()
+		if is_instance_valid(_presence) and _presence.entered and not _player.exit_pending and not _player.transition_locked and not _player.dialogue_locked and not _handoff_pending:
+			_presence.move(_player.position, _player.facing)
 		_player.joystick_vector = _joystick.vector
 		_talk_button.visible = not _dialogue.visible and (DisplayServer.is_touchscreen_available() or OS.has_feature("mobile")) and _nearest_npc() != null
 
@@ -418,7 +464,7 @@ func _spawn_npcs(zone: Dictionary) -> void:
 		npc.queue_free()
 	_npcs.clear()
 	var protected: Array[Vector2] = [zone.spawn]
-	for source in Zones.ZONES:
+	for source in _zones:
 		for portal in source.portals:
 			if portal.destination == zone.id:
 				protected.append(portal.arrival)
@@ -483,7 +529,7 @@ func _build_npc_actions() -> void:
 func forest_action_allowed(action: String, zone_id: String, foot: Vector2, facing: int) -> bool:
 	if not _dialogue.visible or not is_instance_valid(_talking_to) or _talking_to not in _npcs or _player.exit_pending or _player.transition_locked:
 		return false
-	if zone_id != str(Zones.ZONES[_zone_index].id) or foot != _player.position or facing != _player.facing or foot.distance_to(_talking_to.position) > INTERACTION_DISTANCE:
+	if zone_id != str(_zones[_zone_index].id) or foot != _player.position or facing != _player.facing or foot.distance_to(_talking_to.position) > INTERACTION_DISTANCE:
 		return false
 	for data in NPCs.NPCS:
 		if data.id == _talking_to.npc_id and data.zone == zone_id:
@@ -491,7 +537,13 @@ func forest_action_allowed(action: String, zone_id: String, foot: Vector2, facin
 	return false
 
 func _open_npc_action(action: String) -> void:
-	SceneRouter.open_from_forest(action, str(Zones.ZONES[_zone_index].id), _player.position, _player.facing)
+	if _handoff_pending: return
+	if not forest_action_allowed(action, str(_zones[_zone_index].id), _player.position, _player.facing) or not SceneRouter._forest_modes_safe():
+		return
+	await _prepare_handoff("suspend")
+	if not is_inside_tree(): return
+	SceneRouter.open_from_forest(action, str(_zones[_zone_index].id), _player.position, _player.facing)
+	_resume_if_still_here()
 
 func _update_dialogue_text() -> void:
 	if is_instance_valid(_talking_to):
@@ -552,7 +604,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_player.exit_pending = false
 		_player.transition_locked = false
 		_reset_touch()
-		_set_zone((_zone_index + 1) % Zones.ZONES.size())
+		_set_zone((_zone_index + 1) % _zones.size())
 		get_viewport().set_input_as_handled()
 	elif event.keycode == KEY_F10:
 		_show_geometry = not _show_geometry
@@ -565,4 +617,112 @@ func _refresh_debug() -> void:
 	_portal_debug.visible = _polygon_fill.visible
 	_player.show_debug = _polygon_fill.visible
 	_debug_label.visible = _polygon_fill.visible
-	_debug_label.text = "%s  |  F9: zone  F10: geometry" % Zones.ZONES[_zone_index].id
+	_debug_label.text = "%s  |  F9: zone  F10: geometry" % _zones[_zone_index].id
+
+
+func _start_presence(selected: String) -> void:
+	if not _catalog_valid or ConnectionGate.debug_lab_navigation_allowed():
+		return
+	_presence = Presence.new()
+	# Continue checking identity while ConnectionGate temporarily disables a scene.
+	_presence.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(_presence)
+	_presence.snapshot.connect(_on_presence_snapshot)
+	_presence.correction.connect(_on_presence_correction)
+	_presence.peer_joined.connect(_on_peer_joined)
+	_presence.peer_moved.connect(_on_peer_moved)
+	_presence.peer_cosmetic.connect(_on_peer_cosmetic)
+	_presence.peer_left.connect(_on_peer_left)
+	_presence.disconnected.connect(_clear_remotes)
+	_presence.configure(_zones, selected)
+
+func _on_presence_snapshot(state: Dictionary, peers: Array) -> void:
+	var target := _zone_index_for_id(str(state.zone_id))
+	if not _set_zone(target, Vector2(state.x, state.y)):
+		_presence._drop()
+		return
+	_clear_remotes()
+	_player.facing = int(state.facing)
+	if state.has("display_name"):
+		_player.set_display_name(state.display_name)
+	_player.exit_pending = false
+	_portal_deadline = 0
+	_reset_touch()
+	_player.transition_locked = true
+	_transition_until = Time.get_ticks_msec() + PORTAL_LOCK_MS
+	for peer in peers:
+		_on_peer_joined(peer)
+
+func _on_presence_correction(state: Dictionary) -> void:
+	if str(_zones[_zone_index].id) != str(state.zone_id) and not _set_zone(_zone_index_for_id(str(state.zone_id)), Vector2(state.x, state.y)):
+		_presence._drop()
+		return
+	_player.position = Vector2(state.x, state.y)
+	_player.facing = int(state.facing)
+	_player.exit_pending = false
+	_portal_deadline = 0
+	_reset_touch()
+	_player.transition_locked = true
+	_transition_until = Time.get_ticks_msec() + PORTAL_LOCK_MS
+
+func _on_peer_joined(data: Dictionary) -> void:
+	var id: String = data.player_id
+	if _remotes.has(id) or id == ConnectionGate.player_id:
+		return
+	var avatar := Remote.new()
+	_actors.add_child(avatar)
+	avatar.setup(data)
+	_remotes[id] = avatar
+
+func _on_peer_moved(id: String, sequence: int, point: Vector2, direction: int) -> void:
+	if _remotes.has(id): _remotes[id].move_to(sequence, point, direction)
+
+func _on_peer_cosmetic(id: String, cosmetic: String) -> void:
+	if _remotes.has(id): _remotes[id].set_cosmetic(cosmetic)
+
+func _on_peer_left(id: String) -> void:
+	if _remotes.has(id):
+		var avatar: Node = _remotes[id]
+		_remotes.erase(id)
+		_actors.remove_child(avatar)
+		avatar.queue_free()
+
+func _clear_remotes() -> void:
+	for avatar in _remotes.values():
+		if is_instance_valid(avatar):
+			if avatar.get_parent() != null: avatar.get_parent().remove_child(avatar)
+			avatar.queue_free()
+	_remotes.clear()
+	if _portal_deadline > 0 and is_instance_valid(_joystick) and is_instance_valid(_player):
+		_reset_touch()
+	_portal_deadline = 0
+	if is_instance_valid(_player): _player.exit_pending = false
+
+func _prepare_handoff(kind: String) -> void:
+	if _handoff_pending: return
+	_handoff_pending = true
+	_reset_touch()
+	_player.set_process(false)
+	if is_instance_valid(_presence):
+		_presence.handoff(kind)
+		await get_tree().create_timer(0.12).timeout
+
+func _resume_if_still_here() -> void:
+	if is_inside_tree() and get_tree().current_scene == self:
+		_handoff_pending = false
+		_player.set_process(true)
+		if is_instance_valid(_presence):
+			_presence.shutdown()
+			_presence.queue_free()
+			_presence = null
+		_start_presence(SceneRouter.forest_selected_summoner())
+
+func _leave_forest() -> void:
+	if _handoff_pending: return
+	await _prepare_handoff("leave")
+	if not is_inside_tree(): return
+	SceneRouter.leave_forest()
+	_resume_if_still_here()
+
+func _exit_tree() -> void:
+	if is_instance_valid(_presence): _presence.shutdown()

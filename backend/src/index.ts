@@ -1547,13 +1547,20 @@ async function startServer(): Promise<void> {
 					const body = await readJson(req, config.maxBodyBytes);
 					const refreshToken =
 						typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
+					const accessToken = extractToken(req);
+					let forestPlayerId: string | null = null;
+					if (forest) {
+						const access = accessToken ? await getAccessToken(accessToken) : null;
+						const refresh = refreshToken ? await getRefreshToken(refreshToken) : null;
+						if (!access || !refresh || access.userId === refresh.userId) forestPlayerId = access?.userId ?? refresh?.userId ?? null;
+					}
 					if (refreshToken) {
 						await revokeRefreshToken(refreshToken);
 					}
-					const accessToken = extractToken(req);
 					if (accessToken) {
 						await revokeAccessToken(accessToken);
 					}
+					if (forestPlayerId && leaseValid()) forest?.evict(forestPlayerId);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 

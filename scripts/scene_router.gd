@@ -197,10 +197,10 @@ static func _valid_forest_context(context: Dictionary) -> bool:
 	var zone_id := str(context.get("zone_id", ""))
 	var count := 0
 	var inside := false
-	for zone in FOREST_ZONES.ZONES:
+	for zone in FOREST_ZONES.runtime_zones():
 		if zone.id == zone_id:
 			count += 1
-			inside = Geometry2D.is_point_in_polygon(position, PackedVector2Array(zone.polygon))
+			inside = FOREST_ZONES.contains_point(PackedVector2Array(zone.polygon), position)
 	return count == 1 and inside
 
 static func forest_return_available() -> bool:

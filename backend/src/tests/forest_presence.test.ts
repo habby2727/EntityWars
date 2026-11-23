@@ -137,3 +137,22 @@ test.skipIf(!redisBin)('handshake limits trust only the configured proxy and ret
   const direct=await start('127.0.0.2');for(let i=0;i<120;i++)expect(await hit(direct.base,`198.51.100.${i%250+1}`)).toBe(426);expect(await hit(direct.base,'203.0.113.1')).toBe(429);
  }finally{for(const child of children)if(child.exitCode===null){child.kill();await child.exited;}redis.client.disconnect();redis.proc.kill();await redis.proc.exited;for(let i=0;;i++){try{rmSync(dir,{recursive:true,force:true});break;}catch(e){if(i>=20)throw e;await Bun.sleep(250);}}}
 },60000);
+test.skipIf(!redisBin)('v1 logout evicts active and suspended forest state with access or refresh tokens',async()=>{
+ const redis=await startRedis(),dir=mkdtempSync(join(tmpdir(),'ew-forest-v1-')),dbPath=join(dir,'test.sqlite'),db=new Database(dbPath),migrations=resolve(import.meta.dir,'../../migrations/sqlite');
+ for(const f of readdirSync(migrations).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(join(migrations,f),'utf8'));db.close();
+ const port=await freePort(),base=`http://127.0.0.1:${port}`,server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env:{...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(port),DB_PATH:dbPath,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',PG_CONNECT_TIMEOUT_SECONDS:'1',REDIS_URL:`redis://127.0.0.1:${redis.port}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1'},stdout:'ignore',stderr:'ignore'});
+ const post=(path:string,data:any,token?:string)=>fetch(base+path,{method:'POST',headers:{'content-type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify(data)});
+ async function login(name:string){const r=await post('/v1/auth/login',{name});expect(r.status).toBe(200);return await r.json() as any;}
+ async function joinForest(token:string){const ws=new WebSocket(`ws://127.0.0.1:${port}/forest/ws`,{headers:{Authorization:`Bearer ${token}`,'X-EntityWars-Client-Build':'999999'}} as any);const events:any[]=[];const welcome=await new Promise<any>((done,fail)=>{ws.onopen=()=>ws.send(JSON.stringify({v:1,type:'enter',summoner_id:'wizard'}));ws.onmessage=e=>{const m=JSON.parse(String(e.data));events.push(m);if(m.type==='welcome')done(m);};ws.onerror=()=>fail(Error('socket failed'));});return {ws,welcome,events};}
+ try{let ok=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ok=true;break;}}catch{}await Bun.sleep(100);}expect(ok).toBe(true);
+  const alice=await login('V1Observer'), observer=await joinForest(alice.access_token);let bob=await login('V1ForestBob'), live=await joinForest(bob.access_token);
+  expect((await post('/v1/auth/logout',{refresh_token:bob.refresh_token},alice.access_token)).status).toBe(200);await Bun.sleep(150);expect(observer.events.filter((m:any)=>m.type==='peer_leave')).toHaveLength(0);
+  const left=new Promise<void>((done,fail)=>{const timeout=setTimeout(()=>fail(Error('logout did not broadcast leave')),3000);observer.ws.onmessage=e=>{const m=JSON.parse(String(e.data));if(m.type==='peer_leave'&&m.player_id===live.welcome.self.player_id){clearTimeout(timeout);done();}};});
+  expect((await post('/v1/auth/logout',{},bob.access_token)).status).toBe(200);await left;
+  bob=await login('V1ForestBob');live=await joinForest(bob.access_token);await Bun.sleep(300);live.ws.send(JSON.stringify({v:1,type:'move',seq:1,x:980,y:760,facing:1}));await Bun.sleep(100);
+  live.ws.send(JSON.stringify({v:1,type:'suspend'}));await new Promise<void>(done=>{live.ws.onclose=()=>done();});
+  expect((await post('/v1/auth/logout',{refresh_token:bob.refresh_token,player_id:observer.welcome.self.player_id})).status).toBe(200);expect(observer.ws.readyState).toBe(WebSocket.OPEN);
+  bob=await login('V1ForestBob');live=await joinForest(bob.access_token);expect(live.welcome.self).toMatchObject({zone_id:'central_clearing',x:960,y:760});
+  observer.ws.close();live.ws.close();
+ }finally{server.kill();await server.exited;redis.client.disconnect();redis.proc.kill();await redis.proc.exited;for(let i=0;;i++){try{rmSync(dir,{recursive:true,force:true});break;}catch(e){if(i>=20)throw e;await Bun.sleep(250);}}}
+},60000);
