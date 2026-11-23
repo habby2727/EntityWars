@@ -16,6 +16,7 @@ services:
       NODE_ENV: production
       BUN_ENV: production
       FOREST_WS_ENABLED: ${FOREST_WS_ENABLED:-0}
+      SOCIAL_ENABLED: ${SOCIAL_ENABLED:-0}
       FOREST_WS_TRUSTED_PROXY: caddy
       SESSION_TTL_SECONDS: "604800"
       MIN_CLIENT_BUILD: "5509"

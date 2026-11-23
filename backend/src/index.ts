@@ -3,6 +3,7 @@ import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp,
 import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
+import { createFriends } from "./social/friends";
 import { createForestPresence, loadCatalog, type ForestData } from "./forest/presence";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
@@ -317,7 +318,9 @@ for (let attempt = 0; ; attempt++) {
 		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
 	}
 }
-const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN);
+const socialEnabled = Bun.env.SOCIAL_ENABLED === "1";
+const friends = createFriends(db);
+const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN, socialEnabled ? friends.friendIds : undefined);
 let expeditionService: ReturnType<typeof createExpeditionService> | null = null;
 function getExpeditionService() {
 	if (expeditionService) return expeditionService;
@@ -690,6 +693,26 @@ function jsonResponse(data: unknown, status = 200): Response {
 		status,
 		headers: { "Content-Type": "application/json" }
 	});
+}
+
+async function readSocialJson(req: Request, limit: number): Promise<any> {
+	const reader = req.body?.getReader();
+	if (!reader) return {};
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for (;;) {
+		const { value, done } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > limit) { await reader.cancel(); throw new HttpError(413, "Body too large."); }
+		chunks.push(value);
+	}
+	if (!size) return {};
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+	try { return JSON.parse(new TextDecoder().decode(bytes)); }
+	catch { throw new HttpError(400, "Invalid JSON."); }
 }
 
 function getSchemaVersion(): string | null {
@@ -1623,6 +1646,22 @@ async function startServer(): Promise<void> {
 						insertActionStmt.run(playerId, id, "CHAT_RECONNECT", "{}", "{}", now);
 						return jsonResponse({ ok: true, duplicate: false });
 					}).immediate();
+				}
+
+				if (["/social/state", "/social/friends/request", "/social/friends/respond", "/social/friends/cancel"].includes(url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					if (!socialEnabled) return jsonResponse({ error: "SOCIAL_DISABLED" }, 503);
+					if (req.method === "GET" && url.pathname === "/social/state") return jsonResponse(friends.state(playerId));
+					if (req.method !== "POST" || url.pathname === "/social/state") return jsonResponse({ error: "Method not allowed." }, 405);
+					const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+					let result;
+					if (url.pathname === "/social/friends/request") {
+						const target = body?.target_player_id;
+						const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !(await isUserDisabled(target));
+						result = friends.request(playerId, body, available);
+					} else if (url.pathname === "/social/friends/respond") result = friends.respond(playerId, body);
+					else result = friends.cancel(playerId, body);
+					return jsonResponse(result.data, result.status);
 				}
 
 				if (req.method == "GET" && url.pathname == "/chat/state") {
