@@ -112,6 +112,17 @@ target = "main_menu"
 z_index = 50
 z_as_relative = true
 
+[node name="ForestButton" type="Button" parent="Aspect/Canvas/TopOverlay"]
+layout_mode = 1
+offset_left = 104.0
+offset_top = 6.0
+offset_right = 300.0
+offset_bottom = 40.0
+text = "FOREST_ENTER"
+focus_mode = 0
+theme_override_font_sizes/font_size = 14
+z_index = 50
+
 [node name="StructuresButton" type="Button" parent="Aspect/Canvas/TopOverlay"]
 layout_mode = 1
 anchors_preset = 2

@@ -3,6 +3,10 @@ class_name SceneRouter
 
 const SCENE_MAIN_MENU := "res://scenes/MainMenu.tscn"
 const SCENE_SETTINGS := "res://scenes/ui/Settings.tscn"
+const SCENE_SUMMONER_SELECTION := "res://scenes/ui/SummonerSelection.tscn"
+const SCENE_FOREST_WORLD := "res://scenes/forest/ForestWorld.tscn"
+const FOREST_SUMMONERS := ["wizard", "witch", "cyberghost"]
+const FOREST_PREFERENCES := "user://forest_summoners.cfg"
 const SCENE_LAB_HUB := "res://scenes/ui/LabHub.tscn"
 const SCENE_LAB_STRUCTURES := "res://scenes/ui/LabStructures.tscn"
 const SCENE_INVENTORY := "res://scenes/ui/Inventory.tscn"
@@ -16,6 +20,9 @@ const SCENE_WORLD_ZONE_CHAOS := "res://scenes/ui/WorldZoneChaos.tscn"
 const SCENE_COMBAT := "res://scenes/Combat.tscn"
 const SCENE_LOADOUT := "res://scenes/LoadoutGrid.tscn"
 const SCENE_TOP_PLAYERS := "res://scenes/ui/TopPlayers.tscn"
+
+static var _forest_summoner := ""
+static var _forest_owner := ""
 
 static var _next_lab_focus_id: String = ""
 static var _next_inventory_tab: String = ""
@@ -117,6 +124,56 @@ static func go_to_lab() -> void:
 static func go_to_lab_hub() -> void:
 	_go_to(SCENE_LAB_HUB, "LabHub")
 
+# ConnectionGate registers its identity only after BackendClient verifies server state.
+static func _forest_verified_owner() -> String:
+	var gate := _connection_gate()
+	if gate.blocked() or gate.debug_lab_navigation_allowed():
+		return ""
+	if str(gate.player_id).strip_edges().is_empty() or str(gate.token).strip_edges().is_empty():
+		return ""
+	return str(gate.player_id)
+
+static func _forest_access_allowed() -> bool:
+	return not _forest_verified_owner().is_empty() or _connection_gate().debug_lab_navigation_allowed()
+
+static func go_to_summoner_selection() -> void:
+	if not _forest_access_allowed():
+		return
+	_forest_summoner = ""
+	_forest_owner = _forest_verified_owner()
+	if not _forest_owner.is_empty():
+		var config := ConfigFile.new()
+		if config.load(FOREST_PREFERENCES) == OK:
+			var remembered := str(config.get_value("players", _forest_owner.sha256_text(), ""))
+			if remembered in FOREST_SUMMONERS:
+				_forest_summoner = remembered
+	_go_to(SCENE_SUMMONER_SELECTION, "SummonerSelection")
+
+static func forest_selected_summoner() -> String:
+	if not _forest_access_allowed() or _forest_owner != _forest_verified_owner():
+		return ""
+	return _forest_summoner if _forest_summoner in FOREST_SUMMONERS else ""
+
+static func enter_forest(summoner_id: String) -> void:
+	if summoner_id not in FOREST_SUMMONERS or not _forest_access_allowed():
+		return
+	var owner := _forest_verified_owner()
+	if owner != _forest_owner:
+		return
+	_forest_summoner = summoner_id
+	if not owner.is_empty():
+		var config := ConfigFile.new()
+		config.load(FOREST_PREFERENCES)
+		config.set_value("players", owner.sha256_text(), summoner_id)
+		if config.save(FOREST_PREFERENCES) != OK:
+			push_warning("Could not save forest summoner preference.")
+	_go_to(SCENE_FOREST_WORLD, "ForestWorld")
+
+static func leave_forest() -> void:
+	_forest_summoner = ""
+	_forest_owner = ""
+	go_to_lab_hub()
+
 static func go_to_lab_structures(building_id: String = "") -> void:
 	_next_lab_focus_id = building_id
 	_go_to(SCENE_LAB_STRUCTURES, "LabStructures")
@@ -188,7 +245,7 @@ static func go_to_top_players() -> void:
 	_go_to(SCENE_TOP_PLAYERS, "TopPlayers")
 
 static func _go_to(scene_path: String, label: String) -> void:
-	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_TRADE_HALL, SCENE_EXPEDITIONS, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL]
+	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_TRADE_HALL, SCENE_EXPEDITIONS, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL, SCENE_SUMMONER_SELECTION, SCENE_FOREST_WORLD]
 	if _connection_gate().debug_lab_navigation_allowed():
 		local_debug_scenes.append(SCENE_LOADOUT)
 		if bool(_ranked_context.get("debug_visual", false)):

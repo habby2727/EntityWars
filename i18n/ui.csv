@@ -368,3 +368,9 @@ EXPEDITION_REWARD_NORMAL,Normal victory,Victoria normal
 EXPEDITION_REWARD_DIFFICULT,Difficult victory,Victoria dif?cil
 EXPEDITION_REWARD_VERY_DIFFICULT,Very difficult victory,Victoria muy dif?cil
 EXPEDITION_REWARD_EXCEPTIONAL,Exceptional victory,Victoria excepcional
+
+FOREST_ENTER,Enter Forest,Entrar en el bosque
+FOREST_CHOOSE_SUMMONER,Choose your summoner,Elige tu invocador
+FOREST_SELECT,Select,Seleccionar
+FOREST_CONFIRM,Enter Forest,Entrar en el bosque
+FOREST_LEAVE,Leave Forest,Salir del bosque

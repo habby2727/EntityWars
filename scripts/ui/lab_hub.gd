@@ -109,7 +109,7 @@ func _ready() -> void:
 	_resolve_nodes()
 	_setup_background()
 	_connect_backend()
-	for button in [$Aspect/Canvas/TopOverlay/BackButton, _structures_button]:
+	for button in [$Aspect/Canvas/TopOverlay/BackButton, $Aspect/Canvas/TopOverlay/ForestButton, _structures_button]:
 		MenuArt.button(button)
 	_build_icons()
 	_build_resource_bar()
@@ -123,6 +123,7 @@ func _ready() -> void:
 	call_deferred("_layout_icons")
 
 func _resolve_nodes() -> void:
+	$Aspect/Canvas/TopOverlay/ForestButton.pressed.connect(SceneRouter.go_to_summoner_selection)
 	_backend = get_node_or_null(backend_path) as BackendClient
 	_canvas = get_node_or_null(canvas_path) as Control
 	_background = get_node_or_null(background_path) as TextureRect

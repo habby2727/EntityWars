@@ -1,0 +1,121 @@
+extends Control
+
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const SUMMONERS := {
+	"wizard": ["Arcane Wraith", "res://assets/forest/summoners/Wizard_front.png"],
+	"witch": ["Phantom Sorceress", "res://assets/forest/summoners/Witch_Front.png"],
+	"cyberghost": ["Cyberghost", "res://assets/forest/summoners/Cyberghost_Front.png"]
+}
+var _selected := ""
+var _cards := {}
+var _confirm: Button
+
+func _ready() -> void:
+	if not SceneRouter._forest_access_allowed():
+		SceneRouter.go_to_lab_hub.call_deferred()
+		return
+	_selected = SceneRouter.forest_selected_summoner()
+	var backdrop := ColorRect.new()
+	backdrop.color = Color("101c21")
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(backdrop)
+	var aspect := AspectRatioContainer.new()
+	aspect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	aspect.ratio = 16.0 / 9.0
+	aspect.stretch_mode = AspectRatioContainer.STRETCH_WIDTH_CONTROLS_HEIGHT
+	add_child(aspect)
+	var canvas := Control.new()
+	aspect.add_child(canvas)
+	var background := TextureRect.new()
+	background.texture = load("res://assets/forest/backgrounds/Central_Clearing.png")
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	background.modulate = Color(0.35, 0.45, 0.46, 1)
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	canvas.add_child(background)
+	var title := Label.new()
+	title.name = "Title"
+	title.text = "FOREST_CHOOSE_SUMMONER"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 46)
+	_set_rect(title, 0.1, 0.055, 0.9, 0.15)
+	canvas.add_child(title)
+	var row := HBoxContainer.new()
+	row.name = "Cards"
+	row.add_theme_constant_override("separation", 26)
+	_set_rect(row, 0.16, 0.18, 0.84, 0.78)
+	canvas.add_child(row)
+	for id in SUMMONERS:
+		var card := Button.new()
+		card.name = id
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.focus_mode = Control.FOCUS_ALL
+		card.pressed.connect(_select.bind(id))
+		row.add_child(card)
+		_cards[id] = card
+		var portrait := TextureRect.new()
+		portrait.texture = load(SUMMONERS[id][1])
+		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_set_rect(portrait, 0.07, 0.05, 0.93, 0.78)
+		card.add_child(portrait)
+		var label := Label.new()
+		label.name = "Name"
+		label.text = SUMMONERS[id][0]
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", 25)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_set_rect(label, 0.02, 0.78, 0.98, 0.89)
+		card.add_child(label)
+		var hint := Label.new()
+		hint.name = "Hint"
+		hint.text = "FOREST_SELECT"
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.add_theme_font_size_override("font_size", 19)
+		hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_set_rect(hint, 0.05, 0.90, 0.95, 0.98)
+		card.add_child(hint)
+	var back := Button.new()
+	back.text = "SETTINGS_BACK"
+	back.add_theme_font_size_override("font_size", 24)
+	_set_rect(back, 0.16, 0.83, 0.34, 0.91)
+	back.pressed.connect(SceneRouter.leave_forest)
+	canvas.add_child(back)
+	_confirm = Button.new()
+	_confirm.text = "FOREST_CONFIRM"
+	_confirm.add_theme_font_size_override("font_size", 24)
+	_set_rect(_confirm, 0.60, 0.83, 0.84, 0.91)
+	_confirm.pressed.connect(func(): SceneRouter.enter_forest(_selected))
+	canvas.add_child(_confirm)
+	UIThemeFactory.apply_theme_to(self)
+	MenuArt.button(back)
+	MenuArt.button(_confirm)
+	_refresh()
+
+func _set_rect(control: Control, left: float, top: float, right: float, bottom: float) -> void:
+	control.anchor_left = left
+	control.anchor_top = top
+	control.anchor_right = right
+	control.anchor_bottom = bottom
+
+func _select(id: String) -> void:
+	_selected = id
+	_refresh()
+
+func _refresh() -> void:
+	_confirm.disabled = _selected not in SUMMONERS
+	for id in _cards:
+		var card: Button = _cards[id]
+		var selected: bool = id == _selected
+		for state in ["normal", "hover", "pressed", "focus"]:
+			var style := StyleBoxFlat.new()
+			style.bg_color = Color(0.04, 0.09, 0.10, 0.91) if state == "normal" else Color(0.10, 0.19, 0.19, 0.95)
+			style.border_color = Color("e0ca80") if selected else Color("577c70")
+			style.set_border_width_all(5 if selected else 2)
+			style.set_corner_radius_all(16)
+			card.add_theme_stylebox_override(state, style)
+		(card.get_node("Hint") as Label).modulate = Color("f5df9b") if selected else Color("b4c5b9")
