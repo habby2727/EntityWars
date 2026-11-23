@@ -3,6 +3,7 @@ import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp,
 import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
+import { createForestPresence, loadCatalog, type ForestData } from "./forest/presence";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
 import { createPvpChat, createPvpMatches, createPvpQueue, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
@@ -1272,6 +1273,16 @@ async function maybeRunExternalExamples(): Promise<void> {
 }
 
 async function startServer(): Promise<void> {
+	// Presence is process-local and requires a single-instance deployment.
+	const forestEnabled = Bun.env.FOREST_WS_ENABLED === "1";
+	if (forestEnabled && Bun.env.FOREST_WS_SINGLE_INSTANCE !== "1") throw new Error("FOREST_WS_SINGLE_INSTANCE=1 is required for forest presence");
+	const forestZones = loadCatalog(resolve(import.meta.dir, "..", "..", "data", "static", "forest_zones.json"));
+	const forest = forestEnabled ? createForestPresence(forestZones, async (data) => {
+		const request = new Request("http://localhost/forest/ws", { headers: { authorization: `Bearer ${data.token}` } });
+		return await requireAuth(request) === data.playerId;
+	}) : null;
+	if (forest) { const timer = setInterval(() => { void forest.sweep(); }, 30000); timer.unref(); }
+	const handshakes = new Map<string, { start: number; count: number }>();
 	void maybeRunExternalExamples();
 	startDiscordBridge(db, globalChat);
 	const huntMaintenance = setInterval(() => {
@@ -1301,12 +1312,31 @@ async function startServer(): Promise<void> {
 			try {
 				const res = await (async () => {
 					const url = new URL(req.url);
+				if (url.pathname === "/forest/ws") {
+					if (!forest) return jsonResponse({ error: "WebSocket unavailable." }, 404);
+					if (req.method !== "GET" || req.headers.get("upgrade")?.toLowerCase() !== "websocket") return jsonResponse({ error: "Upgrade required" }, 426);
+					const now = Date.now(), ip = server.requestIP(req)?.address ?? "unknown";
+					for (const [key, value] of handshakes) if (now - value.start >= 60000) handshakes.delete(key);
+					let limit = handshakes.get(ip);
+					if (!limit) { if (handshakes.size >= 4096) return jsonResponse({ error: "Rate limit" }, 429); limit = { start: now, count: 0 }; handshakes.set(ip, limit); }
+					if (++limit.count > 120) return jsonResponse({ error: "Rate limit" }, 429);
+					const build = req.headers.get("X-EntityWars-Client-Build") ?? "";
+					if (!/^[1-9][0-9]*$/.test(build) || !Number.isSafeInteger(Number(build)) || Number(build) < config.minClientBuild) return jsonResponse({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: config.minClientBuild }, 426);
+					const authorization = req.headers.get("authorization") ?? "";
+					if (!/^Bearer [^\s]+$/i.test(authorization)) throw new HttpError(401, "Missing auth token.");
+					const playerId = await requireAuth(req, ctx);
+					const player = getPlayerByIdStmt.get(playerId) as { display_name: string } | null;
+					if (!player || typeof player.display_name !== "string") throw new HttpError(401, "Player unavailable.");
+					const data: ForestData = { kind: "forest", playerId, displayName: player.display_name, token: authorization.slice(7) };
+					if (server.upgrade(req, { data })) return;
+					return jsonResponse({ error: "Upgrade required" }, 426);
+				}
 				if (url.pathname == "/ws") {
 						const address = server.requestIP(req)?.address;
 						if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
 							return jsonResponse({ error: "WebSocket unavailable." }, 403);
 						}
-					const upgraded = server.upgrade(req, { data: { ip: getClientIp(req) } });
+					const upgraded = server.upgrade(req, { data: { kind: "debug", ip: getClientIp(req) } });
 					if (upgraded) {
 						return;
 					}
@@ -3017,16 +3047,22 @@ async function startServer(): Promise<void> {
 			}
 		},
 		websocket: {
+			maxPayloadLength: 65536,
+			backpressureLimit: 65536,
+			closeOnBackpressureLimit: true,
 			open(ws) {
+				if (ws.data.kind === "forest") { forest?.open(ws as any); return; }
 				sockets.add(ws);
 				ws.send(JSON.stringify({ type: "hello", server_time: Date.now() }));
 			},
 			message(ws, message) {
+				if (ws.data.kind === "forest") { forest?.message(ws as any, message as any); return; }
 				if (typeof message == "string" && message.toLowerCase() == "ping") {
 					ws.send("pong");
 				}
 			},
 			close(ws) {
+				if (ws.data.kind === "forest") { forest?.close(ws as any); return; }
 				sockets.delete(ws);
 			}
 		}
