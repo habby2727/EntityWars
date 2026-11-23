@@ -103,9 +103,17 @@ func _run() -> void:
 	world._on_peer_left("alice")
 	check(world._selected_remote.is_empty() and world._remotes.is_empty(), "Peer leave did not clear selection")
 	TranslationServer.set_locale("es")
+	await process_frame
+	await process_frame
 	check(TranslationServer.translate("SOCIAL_ACCEPT") == "Aceptar", "Spanish translation missing")
+	check(TranslationServer.translate("SOCIAL_ADD") == "Agregar amigo" and TranslationServer.translate("SOCIAL_LATER") == "Más tarde" and TranslationServer.translate("SOCIAL_COOLDOWN").begins_with("Límite") and TranslationServer.translate("SOCIAL_RETRY").contains("acción"), "Spanish social accents or wording incorrect")
+	var social_font: Font = social._popup._dismiss.get_theme_font("font")
+	check(social_font.resource_path.contains("Oldnewspapertypes") and social_font.has_char(0x00e1) and social_font.has_char(0x00ed) and social_font.has_char(0x00f3) and social_font.has_char(0x00f1), "Spanish social font lacks required glyphs")
 	TranslationServer.set_locale("en")
+	await process_frame
+	await process_frame
 	check(TranslationServer.translate("SOCIAL_ACCEPT") == "Accept", "English translation missing")
+	check(social._popup._dismiss.get_theme_font("font").resource_path.contains("Bakula"), "English social button did not restore Bakula")
 	social._identity = social._identity_key()
 	social._poll_completed(HTTPRequest.RESULT_SUCCESS, 503, PackedStringArray(), '{"error":"SOCIAL_DISABLED"}'.to_utf8_buffer(), social._epoch)
 	check(not social.enabled and social.friends.is_empty() and social.incoming.is_empty() and social._next_poll > Time.get_ticks_msec() + 50000, "Disabled state did not clear or back off")

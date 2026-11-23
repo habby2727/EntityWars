@@ -2,6 +2,7 @@ extends CanvasLayer
 
 const MenuArt = preload("res://scripts/ui/menu_art.gd")
 const SocialGlyph = preload("res://scripts/ui/social_glyph.gd")
+const SocialSpanishFont = preload("res://scripts/ui/social_spanish_font.gd")
 const DISCORD_INVITE := "https://discord.gg/W2mrgZ69r9"
 
 var _button: Button
@@ -217,6 +218,7 @@ func _refresh_online_list() -> void:
 			status.text = tr(SocialClient.error_key)
 			status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_online_list.add_child(status)
+			SocialSpanishFont.apply(status, status.text)
 		if not SocialClient._pending_body.is_empty():
 			var retry := Button.new()
 			retry.text = tr("SOCIAL_RETRY_BUTTON")
@@ -234,6 +236,7 @@ func _refresh_online_list() -> void:
 				request_button.custom_minimum_size.y = 68
 				request_button.pressed.connect(SocialClient._popup.open_request.bind(str(request.request_id)))
 				_online_list.add_child(request_button)
+				SocialSpanishFont.apply(request_button, request_button.text)
 	for player in GlobalChatClient.online_players:
 		if not player is Dictionary:
 			continue

@@ -50,6 +50,7 @@ test('portal routing isolates peer snapshots and events',()=>{
  h.advance(20);a.send({type:'move',seq:++seq,x:960,y:5,facing:2});
  h.advance(20);a.send({type:'portal',seq:++seq,direction:'north',crossing_x:960,crossing_y:0});
  expect(a.events.at(-1)).toMatchObject({type:'zone',zone_id:'arcane_sanctuary',peers:[]});
+ expect(h.service.roomOf('a')).toBe('arcane_sanctuary');expect(h.service.roomOf('b')).toBe('central_clearing');
  expect(b.events.at(-1)).toMatchObject({type:'peer_leave',player_id:'a'});
  b.events.length=0;h.advance(250);h.service.flush();expect(b.events).toEqual([]);a.send({type:'cosmetic',summoner_id:'witch'});a.send({type:'move',seq:++seq,x:960,y:870,facing:2});expect(b.events).toEqual([]);
  const c=h.connect('c');c.send({type:'enter',summoner_id:'witch'});expect(c.events[0].peers.map((p:any)=>p.player_id)).toEqual(['b']);

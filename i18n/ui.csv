@@ -406,15 +406,15 @@ FOREST_SUMMONER,Summoner,Invocador
 FOREST_CHANGE_SUMMONER,Change Summoner,Cambiar invocador
 
 SOCIAL_REQUEST_MESSAGE,%s sent you a friend request,%s te ha enviado una solicitud de amistad
-SOCIAL_ADD,Add friend,A?adir amigo
+SOCIAL_ADD,Add friend,Agregar amigo
 SOCIAL_ACCEPT,Accept,Aceptar
 SOCIAL_DECLINE,Decline,Rechazar
-SOCIAL_LATER,Later,M?s tarde
+SOCIAL_LATER,Later,Más tarde
 SOCIAL_PENDING,Pending,Pendiente
 SOCIAL_CANCEL,Cancel request,Cancelar solicitud
 SOCIAL_REVIEW,Review,Revisar
 SOCIAL_INCOMING,Friend requests,Solicitudes de amistad
-SOCIAL_COOLDOWN,Request limit or cooldown reached.,L?mite de solicitudes o tiempo de espera alcanzado.
+SOCIAL_COOLDOWN,Request limit or cooldown reached.,Límite de solicitudes o tiempo de espera alcanzado.
 SOCIAL_FAILURE,Social service unavailable.,Servicio social no disponible.
-SOCIAL_RETRY,Connection uncertain. Retry the same action.,Conexi?n incierta. Reintenta la misma acci?n.
+SOCIAL_RETRY,Connection uncertain. Retry the same action.,Conexión incierta. Reintenta la misma acción.
 SOCIAL_RETRY_BUTTON,Retry,Reintentar

@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const SocialSpanishFont := preload("res://scripts/ui/social_spanish_font.gd")
 var _panel: PanelContainer
 var _message: Label
 var _status: Label
@@ -65,10 +66,21 @@ func _ready() -> void:
 	feedback_row.add_child(_feedback_text)
 	_feedback_retry = _button(feedback_row, "SOCIAL_RETRY_BUTTON")
 	_feedback_retry.pressed.connect(func(): SocialClient.retry_mutation())
+	_apply_social_fonts()
 	_feedback.hide()
 	SocialClient.state_changed.connect(_refresh)
 	SocialClient.mutation_finished.connect(_mutation_finished)
 	_panel.hide()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready():
+		_apply_social_fonts()
+
+func _apply_social_fonts() -> void:
+	SocialSpanishFont.apply(_message, _message.text)
+	SocialSpanishFont.apply(_status, _status.text)
+	SocialSpanishFont.apply(_dismiss, tr("SOCIAL_LATER"))
+	SocialSpanishFont.apply(_feedback_text, _feedback_text.text)
 
 func _button(parent: Control, key: String) -> Button:
 	var button := Button.new()
@@ -100,6 +112,7 @@ func _process(_delta: float) -> void:
 		return
 	_feedback.visible = not SocialClient.error_key.is_empty()
 	_feedback_text.text = tr(SocialClient.error_key) if _feedback.visible else ""
+	SocialSpanishFont.apply(_feedback_text, _feedback_text.text)
 	_feedback_retry.visible = not SocialClient._pending_body.is_empty()
 	_feedback_retry.disabled = SocialClient._mutation_busy
 	if _current.is_empty():
@@ -139,6 +152,8 @@ func _refresh() -> void:
 		return
 	_message.text = tr("SOCIAL_REQUEST_MESSAGE") % str(found.requester_name)
 	_status.text = tr(SocialClient.error_key) if not SocialClient.error_key.is_empty() else ""
+	SocialSpanishFont.apply(_message, _message.text)
+	SocialSpanishFont.apply(_status, _status.text)
 	_accept.disabled = SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
 	_decline.disabled = _accept.disabled
 	_retry.visible = not SocialClient._pending_body.is_empty()

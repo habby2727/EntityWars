@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
 import { createFriends } from "./social/friends";
 import { createForestPresence, loadCatalog, type ForestData } from "./forest/presence";
+import { createForestDuels } from "./forest/duels";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
 import { createPvpChat, createPvpMatches, createPvpQueue, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
@@ -1323,6 +1324,7 @@ async function startServer(): Promise<void> {
 		if (performance.now() >= leaseDeadline) { fenceLease(); return false; }
 		return true;
 	}
+	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid());
 	if (forest && leaseToken) {
 		getRedis().on("error", fenceLease);
 		getRedis().on("close", fenceLease);
@@ -1646,6 +1648,26 @@ async function startServer(): Promise<void> {
 						insertActionStmt.run(playerId, id, "CHAT_RECONNECT", "{}", "{}", now);
 						return jsonResponse({ ok: true, duplicate: false });
 					}).immediate();
+				}
+
+				if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel"].includes(url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					if (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_DUELS_UNAVAILABLE"}, 503);
+					await applyRateLimit(ctx, {keyPrefix:"rl:forest-duels", windowSeconds:60, max:120, keyBy:"user", userId:playerId});
+					if (req.method === "GET" && url.pathname === "/forest/duels/state") { const result = duels.state(playerId); return jsonResponse(result.data, result.status); }
+					if (req.method !== "POST" || url.pathname === "/forest/duels/state") return jsonResponse({error:"METHOD_NOT_ALLOWED"}, 405);
+					const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+					let result;
+					if (url.pathname === "/forest/duels/request") {
+						const target = body?.target_player_id;
+						const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !(await isUserDisabled(target));
+						result = duels.request(playerId, body, available);
+					} else if (url.pathname === "/forest/duels/respond") {
+						const challenger = body?.accept === true ? duels.challengerFor(playerId, body?.invite_id) : null;
+						const available = !challenger || !(await isUserDisabled(challenger));
+						result = duels.respond(playerId, body, available);
+					} else result = duels.cancel(playerId, body);
+					return jsonResponse(result.data, result.status);
 				}
 
 				if (["/social/state", "/social/friends/request", "/social/friends/respond", "/social/friends/cancel"].includes(url.pathname)) {
