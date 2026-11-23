@@ -1,5 +1,7 @@
 extends Node2D
 
+signal exit_attempt(direction: String, foot: Vector2, candidate: Vector2)
+
 const SPEED := 220.0
 const MAX_STEP := 2.0
 const SUMMONER_DIR := "res://assets/forest/summoners/"
@@ -18,6 +20,8 @@ var blocked_point := Vector2.ZERO
 var blocked_visible := false
 var show_debug := false
 var _bob_time := 0.0
+var exit_pending := false
+var transition_locked := false
 
 func setup(summoner_id: String) -> void:
 	var max_height := 0
@@ -33,6 +37,9 @@ func setup(summoner_id: String) -> void:
 
 func _process(delta: float) -> void:
 	_bob_time += delta
+	if exit_pending or transition_locked:
+		queue_redraw()
+		return
 	var input := joystick_vector
 	var focus := get_viewport().gui_get_focus_owner()
 	if not (focus is LineEdit or focus is TextEdit):
@@ -58,7 +65,7 @@ func _update_facing(input: Vector2) -> void:
 		facing = 2 if input.y < 0.0 else 0
 
 func move_by(displacement: Vector2) -> void:
-	if polygon.size() < 3:
+	if polygon.size() < 3 or exit_pending or transition_locked:
 		return
 	var steps := maxi(1, ceili(displacement.length() / MAX_STEP))
 	var step := displacement / steps
@@ -68,6 +75,22 @@ func move_by(displacement: Vector2) -> void:
 		if Geometry2D.is_point_in_polygon(candidate, polygon):
 			position = candidate
 			continue
+		# Only an axial outward attempt at an image boundary can be a portal.
+		var direction := ""
+		if absf(displacement.y) < 0.0001:
+			if displacement.x < 0.0 and candidate.x <= 0.0:
+				direction = "west"
+			elif displacement.x > 0.0 and candidate.x >= 1920.0:
+				direction = "east"
+		elif absf(displacement.x) < 0.0001:
+			if displacement.y < 0.0 and candidate.y <= 0.0:
+				direction = "north"
+			elif displacement.y > 0.0 and candidate.y >= 1080.0:
+				direction = "south"
+		if not direction.is_empty():
+			exit_attempt.emit(direction, position, candidate)
+			if exit_pending:
+				return
 		blocked_point = candidate
 		blocked_visible = true
 		var along_x := position + Vector2(step.x, 0)
