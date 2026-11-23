@@ -35,6 +35,15 @@ test('real websocket delivers handoff acknowledgement before close',async()=>{
  }finally{server.stop(true);}
 });
 
+test('handoff fallback closes only the old socket after replacement',async()=>{
+ const service=createForestPresence(loadCatalog(),async()=>true);
+ const server=Bun.serve({port:0,fetch(req,server){if(server.upgrade(req,{data:{kind:'forest',playerId:'same',displayName:'Test',token:'x'}}))return;return new Response('',{status:400});},websocket:{open(ws){service.open(ws as any)},message(ws,m){service.message(ws as any,m as any)},close(ws){service.close(ws as any)}}});
+ const url=`ws://127.0.0.1:${server.port}`;let first:WebSocket|undefined,second:WebSocket|undefined;
+ const enter=()=>new Promise<WebSocket>((ok,fail)=>{const ws=new WebSocket(url),timer=setTimeout(()=>fail(Error('welcome timeout')),3000);ws.onopen=()=>ws.send(JSON.stringify({v:1,type:'enter',summoner_id:'wizard'}));ws.onmessage=e=>{if(JSON.parse(String(e.data)).type==='welcome'){clearTimeout(timer);ok(ws);}};ws.onerror=()=>fail(Error('socket error'));});
+ try{first=await enter();await new Promise<void>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('ack timeout')),3000);first!.onmessage=e=>{if(JSON.parse(String(e.data)).type==='handoff_ack'){clearTimeout(timer);ok();}};first!.send(JSON.stringify({v:1,type:'suspend'}));});second=await enter();await Bun.sleep(750);expect(second.readyState).toBe(WebSocket.OPEN);expect(first.readyState).toBe(WebSocket.CLOSED);let pong=false;second.onmessage=e=>{if(JSON.parse(String(e.data)).type==='pong')pong=true;};second.send(JSON.stringify({v:1,type:'ping'}));await Bun.sleep(100);expect(pong).toBe(true);
+ }finally{first?.close();second?.close();server.stop(true);}
+});
+
 test('portal routing isolates peer snapshots and events',()=>{
  const h=harness(),a=h.connect('a'),b=h.connect('b');a.send({type:'enter',summoner_id:'wizard'});b.send({type:'enter',summoner_id:'wizard'});
  let seq=0; for(let y=710;y>=10;y-=50){h.advance(250);a.send({type:'move',seq:++seq,x:960,y,facing:2});}

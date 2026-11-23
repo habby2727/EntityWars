@@ -1,0 +1,57 @@
+﻿import {Database} from 'bun:sqlite';
+import {mkdtempSync,readdirSync,rmSync,readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {createServer} from 'node:net';
+import {randomUUID,createHash} from 'node:crypto';
+import assert from 'node:assert/strict';
+import Redis from 'ioredis';
+import {loadCatalog,segmentInside} from '../forest/presence';
+// Isolated loopback only. Test-side SQLite players and Redis access records follow
+// seed_auth_token.ts. The API still performs its normal bearer authentication.
+const zones=loadCatalog(),ids=[...zones.keys()], backend=resolve(import.meta.dir,'../..');
+const secondsRequested=Number(Bun.env.FOREST_LOAD_SECONDS||30);assert(Number.isFinite(secondsRequested)&&secondsRequested>=1&&secondsRequested<=30,'FOREST_LOAD_SECONDS must be 1..30');
+const redisBin=Bun.env.FOREST_TEST_REDIS_SERVER||Bun.which('redis-server');if(!redisBin)throw Error('redis-server required');
+const sleep=(n:number)=>Bun.sleep(n);
+async function port():Promise<number>{return new Promise((ok,fail)=>{const s=createServer();s.on('error',fail);s.listen(0,'127.0.0.1',()=>{const n=(s.address() as any).port;s.close(()=>ok(n));});});}
+async function stats(pid:number){if(process.platform!=='win32')return null;const p=Bun.spawn(['powershell','-NoProfile','-Command',`Get-Process -Id ${pid} | Select-Object CPU,WorkingSet64,PeakWorkingSet64 | ConvertTo-Json -Compress`],{stdout:'pipe',stderr:'ignore'});const out=await new Response(p.stdout).text();if(await p.exited!==0)return null;return JSON.parse(out);}
+function route(from:string,to:string):string[]{const q:[string,string[]][]=[[from,[]]],seen=new Set([from]);while(q.length){const [id,path]=q.shift()!;if(id===to)return path;for(const p of zones.get(id)!.portals)if(!seen.has(p.destination)){seen.add(p.destination);q.push([p.destination,[...path,p.direction]]);}}throw Error('no route');}
+type Client={id:string,name:string,token:string,ws:WebSocket,zone:string,x:number,y:number,seq:number,peers:Set<string>,events:any[],closed:boolean};
+async function run(label:string,count:number,distributed:boolean){
+ const dir=mkdtempSync(join(tmpdir(),'forest-e2e-')),dbPath=join(dir,'test.sqlite'),db=new Database(dbPath),migrations=join(backend,'migrations/sqlite');
+ for(const f of readdirSync(migrations).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(join(migrations,f),'utf8'));
+ const records=Array.from({length:count},(_,i)=>({id:randomUUID(),name:`Load${i}`,token:randomUUID()})),now=Date.now();const stmt=db.prepare('INSERT INTO players (player_id,display_name,state_json,updated_at) VALUES (?,?,?,?)');for(const r of records)stmt.run(r.id,r.name,'{}',now);db.close();
+ const rp=await port(),ap=await port(),base=`http://127.0.0.1:${ap}`,redisProc=Bun.spawn([redisBin!,'--bind','127.0.0.1','--port',String(rp),'--save','','--appendonly','no'],{stdout:'ignore',stderr:'ignore'}),redis=new Redis(`redis://127.0.0.1:${rp}`,{lazyConnect:true,retryStrategy:()=>null,connectTimeout:300});redis.on('error',()=>{});
+ let server:any;const clients:Client[]=[],errors:string[]=[];const meter={sentBytes:0,recvBytes:0,deliveries:0,active:false,maxBuffered:0};const timestamps=new Map<string,number>(),delays:number[]=[];
+ try{
+  let connected=false;for(let i=0;i<50;i++){try{await redis.connect();connected=true;break}catch{await sleep(100)}}assert(connected,'redis unavailable');
+  const pipe=redis.pipeline();for(const r of records){const hash=createHash('sha256').update(r.token).digest('hex');pipe.set(`access:${r.token}`,JSON.stringify({userId:r.id,createdAt:now,expiresAt:now+900000}),'PX',900000);pipe.set(`idle:${hash}`,'1','EX',10800);pipe.set(`idle-initialized:${hash}`,'1','PX',900000);}await pipe.exec();
+  server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:backend,env:{...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(ap),DB_PATH:dbPath,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',SESSION_IDLE_ENABLED:'1'},stdout:'ignore',stderr:'ignore'});
+  let ready=false;for(let i=0;i<120;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await sleep(100)}assert(ready,'API unavailable');
+  assert.equal((await fetch(base+'/forest/ws',{headers:{Upgrade:'websocket','X-EntityWars-Client-Build':'5509',Authorization:'Bearer invalid'}})).status,401);
+  const byId=new Map(records.map(r=>[r.id,r]));
+  function send(c:Client,m:any){const raw=JSON.stringify({v:1,...m});if(meter.active){meter.sentBytes+=Buffer.byteLength(raw);if(m.type==='move')timestamps.set(`${c.id}:${m.seq}`,performance.now());}c.ws.send(raw);meter.maxBuffered=Math.max(meter.maxBuffered,c.ws.bufferedAmount);if(meter.maxBuffered>65536)errors.push('outbound buffer exceeded 64 KiB');}
+  function incoming(c:Client,m:any){
+   c.events.push(m);if(c.events.length>4)c.events.shift();
+   if(m.type==='welcome'||m.type==='zone'){const state=m.type==='welcome'?m.self:m;if(m.type==='welcome'&&(state.player_id!==c.id||state.display_name!==c.name))errors.push('server identity mismatch');c.zone=state.zone_id;c.x=state.x;c.y=state.y;c.peers=new Set();for(const p of m.peers){if(p.zone_id!==c.zone||!byId.has(p.player_id)||byId.get(p.player_id)!.name!==p.display_name||c.peers.has(p.player_id))errors.push('invalid snapshot peer');c.peers.add(p.player_id);}}
+   else if(m.type==='peer_join'){if(m.player.zone_id!==c.zone||c.peers.has(m.player.player_id)||byId.get(m.player.player_id)?.name!==m.player.display_name)errors.push('invalid peer join');c.peers.add(m.player.player_id);}
+   else if(m.type==='peer_leave'){if(!c.peers.delete(m.player_id))errors.push('unknown peer leave');}
+   else if(m.type==='peer_move'){if(!c.peers.has(m.player_id))errors.push('unknown peer move');if(meter.active){meter.deliveries++;const t=timestamps.get(`${m.player_id}:${m.seq}`);if(t!==undefined)delays.push(performance.now()-t);}}
+   else if(m.type==='correction'||m.type==='error')errors.push(`server ${m.type} ${m.reason||m.error}`);
+  }
+  async function connect(r:typeof records[number]){const ws=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${r.token}`,'X-EntityWars-Client-Build':'5509'}} as any),c:Client={...r,ws,zone:'',x:0,y:0,seq:0,peers:new Set(),events:[],closed:false};clients.push(c);
+   await new Promise<void>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('handshake timeout')),10000);ws.onopen=()=>send(c,{type:'enter',summoner_id:'wizard'});ws.onmessage=e=>{if(meter.active)meter.recvBytes+=Buffer.byteLength(String(e.data));const m=JSON.parse(String(e.data));incoming(c,m);if(m.type==='welcome'){clearTimeout(timer);ok();}};ws.onclose=()=>{c.closed=true};ws.onerror=()=>{clearTimeout(timer);fail(Error('handshake failed'))}});return c;}
+  await Promise.all(records.map(connect));
+  async function walk(c:Client,tx:number,ty:number){const ox=c.x,oy=c.y,n=Math.ceil(Math.hypot(tx-ox,ty-oy)/35);for(let i=1;i<=n;i++){await sleep(250);const x=ox+(tx-ox)*i/n,y=oy+(ty-oy)*i/n;send(c,{type:'move',seq:++c.seq,x,y,facing:0});c.x=x;c.y=y;}}
+  async function traverse(c:Client,dir:string){const z=zones.get(c.zone)!,p=z.portals.find(p=>p.direction===dir)!;await walk(c,...z.spawn);const [l,t,r,b]=p.corridor,bx=dir==='west'?0:dir==='east'?1920:(l+r)/2,by=dir==='north'?0:dir==='south'?1080:(t+b)/2;await walk(c,dir==='west'?10:dir==='east'?1910:bx,dir==='north'?10:dir==='south'?1070:by);await sleep(250);send(c,{type:'portal',seq:++c.seq,direction:dir,crossing_x:bx,crossing_y:by});const limit=Date.now()+4000;while(c.zone!==p.destination&&Date.now()<limit)await sleep(20);assert.equal(c.zone,p.destination,'portal timeout');}
+  if(distributed)await Promise.all(clients.map(async(c,i)=>{for(const dir of route(c.zone,ids[i%6]))await traverse(c,dir)}));
+  await sleep(500);assert.equal(errors.length,0,errors.slice(0,4).join(','));const occupancy=Object.fromEntries(ids.map(id=>[id,clients.filter(c=>c.zone===id).length]));
+  const beforeServer=await stats(server.pid),rssStart=process.memoryUsage().rss,start=performance.now();let steps=0,peakRunnerRss=rssStart;meter.active=true;
+  while(performance.now()-start<secondsRequested*1000){const t=performance.now();for(const c of clients){assert(!c.closed,'unexpected close');let dx=steps%8<4?5:-5;if(!segmentInside([c.x,c.y],[c.x+dx,c.y],zones.get(c.zone)!.polygon))dx=-dx;assert(segmentInside([c.x,c.y],[c.x+dx,c.y],zones.get(c.zone)!.polygon));c.x+=dx;send(c,{type:'move',seq:++c.seq,x:c.x,y:c.y,facing:dx>0?1:3});}steps++;peakRunnerRss=Math.max(peakRunnerRss,process.memoryUsage().rss);await sleep(Math.max(1,200-(performance.now()-t)));}
+  await sleep(500);meter.active=false;const seconds=(performance.now()-start)/1000;assert.equal(errors.length,0,errors.slice(0,4).join(','));assert.equal(clients.filter(c=>c.closed).length,0);assert(meter.sentBytes>0 && meter.recvBytes>0 && delays.length>0,'missing traffic measurements');delays.sort((a,b)=>a-b);const percentile=(p:number)=>delays.length?delays[Math.floor((delays.length-1)*p)]:null;
+  for(let i=0;i<5;i++){const old=clients[i],expected={zone:old.zone,x:old.x,y:old.y};old.ws.close();await sleep(100);const replacement=await connect(records.find(r=>r.id===old.id)!);assert.equal(replacement.zone,expected.zone,'reconnect zone mismatch');assert.equal(replacement.x,expected.x,'reconnect x mismatch');assert.equal(replacement.y,expected.y,'reconnect y mismatch');clients.splice(clients.indexOf(old),1);}
+  const witness=clients[clients.length-1];for(const c of clients)if(c!==witness)c.ws.close();await sleep(1000);assert.equal(witness.peers.size,0,'stale peer after disconnect');witness.ws.close();await sleep(200);assert.equal(errors.length,0,errors.slice(0,4).join(','));const afterServer=await stats(server.pid);
+  console.log(JSON.stringify({scenario:label,mode:'REAL authenticated loopback WebSockets; isolated Redis+SQLite',clients:count,successful_handshakes:count+5,failed_handshakes:0,occupancy,seconds,attempted_moves_per_s:steps*count/seconds,corrections:0,peer_move_deliveries_per_s:meter.deliveries/seconds,sent_bytes_per_s:meter.sentBytes/seconds,received_bytes_per_s:meter.recvBytes/seconds,message_delay_p50_ms:percentile(.5),message_delay_p95_ms:percentile(.95),latency_samples:delays.length,client_max_buffered_bytes:meter.maxBuffered,runner_rss_before:rssStart,runner_rss_peak_sampled:peakRunnerRss,runner_rss_after:process.memoryUsage().rss,server_rss_before:beforeServer?.WorkingSet64??null,server_rss_peak:afterServer?.PeakWorkingSet64??null,server_rss_after_teardown:afterServer?.WorkingSet64??null,server_cpu_seconds_delta:beforeServer&&afterServer?afterServer.CPU-beforeServer.CPU:null,reconnects:5,authoritative_resume_checks:5}));
+ }finally{for(const c of clients)try{c.ws.close()}catch{}if(server){server.kill();await server.exited}redis.disconnect();redisProc.kill();await redisProc.exited;for(let i=0;i<20;i++){try{rmSync(dir,{recursive:true,force:true});break}catch{await sleep(200)}}}
+}
+const scenario=Bun.env.FOREST_LOAD_SCENARIO||'all';if(scenario==='all'||scenario==='A')await run('A',50,true);if(scenario==='all'||scenario==='B')await run('B',100,true);if(scenario==='all'||scenario==='C')await run('C',50,false);

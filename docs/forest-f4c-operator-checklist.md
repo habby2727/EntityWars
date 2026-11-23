@@ -1,4 +1,4 @@
-Ã¯Â»Â¿# Forest multiplayer: operator checklist
+ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â»ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¿# Forest multiplayer: operator checklist
 
 Keep `FOREST_WS_ENABLED=0` until a separate activation decision. The default minimum build remains 5509; do not change it without a release plan.
 
@@ -20,7 +20,7 @@ Keep `FOREST_WS_ENABLED=0` until a separate activation decision. The default min
 
 ## F4C.1 local QA record
 
-The load runner is a deterministic **in-process simulation**, not authenticated WebSockets. It uses the production room service and catalog with fake sockets and a virtual clock; it does not start Redis or a database. Setup reaches rooms via validated walks and portals. It checks snapshots/events for room isolation, peer cleanup, and the 200 ms spacing of successive broadcasts. It does not measure network latency, socket backpressure, database writes or memory leaks. The in-process RSS includes both service and simulated clients; samples are not a process-isolated server peak. CPU covers setup, measured loop and teardown. The 30 virtual-second workloads take less than one real second and do not establish real-time capacity. D also advances the clock during portal walks, so its virtual interval is longer; accepted move rate counts only the regular workload, not the traversal moves, while delivered traffic includes traversals.
+The F4C.1 results in this section are the historical **pose-only** in-process simulation, not authenticated WebSockets or sustained movement. It uses the production room service and catalog with fake sockets and a virtual clock; it does not start Redis or a database. Setup reaches rooms via validated walks and portals. It checks snapshots/events for room isolation, peer cleanup, and the 200 ms spacing of successive broadcasts. It does not measure network latency, socket backpressure, database writes or memory leaks. The in-process RSS includes both service and simulated clients; samples are not a process-isolated server peak. CPU covers setup, measured loop and teardown. The 30 virtual-second workloads take less than one real second and do not establish real-time capacity. D also advances the clock during portal walks, so its virtual interval is longer; accepted move rate counts only the regular workload, not the traversal moves, while delivered traffic includes traversals.
 
 Example local run (Bun 1.3.8, Windows; RSS MiB, CPU milliseconds user/system):
 
@@ -42,3 +42,61 @@ Fault coverage status:
 - **NOT TESTED (manual):** visual desktop checks and Android touch, layout, background/foreground and network checks. Headless geometry tests do not establish visual or device correctness.
 
 Before activation, complete these pending tests, ship a compatible release client, and verify Android and network behavior on target devices. Keep credentials out of logs and artifacts. No activation or deployment was performed as part of this record.
+
+## F4C.2 ? local validation
+
+**Private controlled VPS test: NO-GO for now.** The local tests do not cover a real PostgreSQL disabled account, a real proxy/network interruption, full two-client portal/scene recovery, Android or release-client compatibility. Finish those checks and the private-smoke preparation above before reconsidering; this is not approval for public activation.
+
+Run from `backend`:
+
+- `bun run src/tests/forest_load.ts` ? in-process movement simulation, virtual clock.
+- `bun run src/tests/forest_load_e2e.ts` ? real loopback WebSockets, isolated test SQLite and Redis, normally three 30-second scenarios. Fixture players and Redis bearer records are generated locally as in `seed_auth_token.ts`; the API performs its ordinary auth and idle checks. Credentials are generated at runtime and are not logged.
+- `bun run src/tests/forest_transport_fixture.ts` ? Godot against an isolated fake transport, not an authenticated API.
+- `bun run src/tests/forest_two_godot_fixture.ts` ? two Godot processes using independent accounts plus a raw WebSocket peer against an isolated authenticated API.
+
+### Simulated actual movement
+
+The runner moves 5 pixels every 200 ms, changes direction within valid polygon segments, uses validated portal walks and confirms final positions on reconnect. Each test advances a virtual clock; these are **not network capacity measurements**. Values below are per virtual second; D includes extra virtual time for the ten portal walks, whose movement requests are excluded from the regular movement numerator.
+
+| Scenario | Clients | Virtual s | Regular move requests/s | Peer-move deliveries/s | Server-to-fake-client bytes/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Six rooms | 50 | 30 | 250 | 1,840 | 148,073 |
+| Six rooms | 100 | 30 | 500 | 7,840 | 631,555 |
+| One room | 50 | 30 | 250 | 12,250 | 980,980 |
+| Six rooms and ten reconnect/portal cycles | 50 | 101.5 | 73.9 | 575.3 | 46,998 |
+
+The runner checks corrections, 200 ms broadcast spacing, peer isolation/cleanup and saved state. CPU and RSS are printed by the runner and include the simulated clients; they are not server-only measurements.
+
+### Authenticated loopback movement
+
+The following is one run on Windows with Bun 1.3.8, the local API, Redis, SQLite, and clients on loopback. It sends valid 5-pixel moves around short in-polygon segments at a target 5 Hz. Measurements include a 500 ms drain period; movement counts are **attempts**, with zero server corrections and five final positions per scenario confirmed against authoritative reconnect welcomes. Latency is local client send to receipt of a corresponding peer event, including server coalescing and client scheduling; it is not Internet RTT. Bytes are JSON payload bytes, not TCP/TLS wire bandwidth.
+
+| Clients / rooms | Time s | Handshakes (including reconnects), failed | Attempted moves/s | Peer deliveries/s | Sent / received bytes/s | Peer delay p50 / p95 ms |
+| --- | ---: | --- | ---: | ---: | --- | --- |
+| 50 / six | 30.60 | 55, 0 | 240.2 | 1,617.9 | 13,854 / 183,918 | 11.1 / 192.2 |
+| 100 / six | 30.65 | 105, 0 | 473.0 | 6,811.0 | 27,274 / 774,126 | 37.6 / 209.6 |
+| 50 / one | 30.61 | 55, 0 | 238.5 | 10,561.7 | 13,655 / 1,196,215 | 95.3 / 219.3 |
+
+| Clients / rooms | API RSS before / process-lifetime peak / after client teardown MiB | API CPU seconds over measurement plus reconnections/teardown | Client outbound buffered peak |
+| --- | --- | ---: | ---: |
+| 50 / six | 191.2 / 199.4 / 188.8 | 3.58 | 0 bytes |
+| 100 / six | 194.4 / 207.5 / 188.4 | 7.30 | 0 bytes |
+| 50 / one | 198.6 / 202.7 / 196.0 | 10.42 | 0 bytes |
+
+Six-room occupancies were 9/9/8/8/8/8 and 17/17/17/17/16/16. All sessions connected using bearer tokens, five reconnected in each scenario, and a remaining witness observed all peers leave. Each target room was reached through validated walking and portal requests. The API peak is OS-reported over its process lifetime, including setup; after-teardown RSS is before API exit. The client buffer number is sampled immediately after sends; server-side queues, TCP backpressure and DB/Redis writes were not measured. This local test is not production or VPS capacity evidence. The real 50-client ten-reconnect/portal churn scenario remains NOT TESTED; only five reconnects per measured run and the simulated ten-cycle case were exercised.
+
+### Fault matrix
+
+| Fault | Status and limit |
+| --- | --- |
+| Immediate ACK, 400 ms delayed ACK, close before ACK, withheld ACK/stalled socket, duplicate handoff and generation change during handoff | PASSED in Godot against the isolated fake transport; the withheld ACK completes within the bounded deadline. Full menu navigation and a real transport proxy remain untested. |
+| Old delayed close after a replacement session | PASSED with two real Bun WebSockets against the room service; the replacement stays open and responds. Timer accumulation under sustained handoff churn is NOT TESTED. |
+| Two-minute disconnect, 15-minute suspend and leave | PASSED service tests with virtual time; no real 15-minute wait. |
+| Duplicate session, stale old socket, ten directed portals, corrections and room isolation | PASSED service tests; not all ten portals exercised by both Godot processes. |
+| Missing/invalid/expired token, 401/409/426/404, Redis lease fencing/outage, API restart and both logout paths | PASSED within the existing isolated tests, subject to their SQLite/test configuration. |
+| Delayed old-socket messages, identity change during handshake or pending portal, stalled/dropped actual TCP, API restart during portal, reconnect storm | NOT TESTED. |
+| Disabled-account 403 and mid-session sweep on real PostgreSQL | NOT TESTED: local PostgreSQL binaries and Docker daemon were unavailable. |
+| Two Godot accounts plus third peer | PASSED for reciprocal presence, server names, movement and cosmetic messages. Portal traversal, disconnect/rejoin and remote sprite duplication with both processes are NOT TESTED. |
+| Desktop visual and Android touch/device QA | NOT TESTED. |
+
+F4C.2 changes are limited to the movement simulation, new authenticated loopback/transport/two-process fixtures, an old-socket fallback-close regression test, and extensions to the existing Godot smoke. No product defect was reproduced and no gameplay, authentication semantics, production Compose, minimum build or Forest activation was changed. On a real desktop/device, manually check 1080p, 720p and a non-16:9 aspect ratio; joystick and touch NPC action, mask tooltip/accessibility and confirm/cancel, portals, nameplates, EN/ES, foreground/background and Wi-Fi interruption/recovery. Confirm the current release client matches the server protocol before any VPS smoke.

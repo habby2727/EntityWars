@@ -200,6 +200,10 @@ func _run() -> void:
 	await process_frame
 	if not OS.get_environment("FOREST_SMOKE_URL").is_empty():
 		await _live_test(zones, client_script, gate, router)
+	if not OS.get_environment("FOREST_FAULT_URL").is_empty():
+		await _handoff_fault_test(zones, client_script, gate, router)
+	if not OS.get_environment("FOREST_TWO_URL").is_empty():
+		await _two_client_test(zones, client_script, gate, router)
 	print("Forest multiplayer smoke: ", "FAILED" if failed else "passed")
 	quit(1 if failed else 0)
 
@@ -315,3 +319,83 @@ func _live_test(zones: Array, script, gate: Node, router) -> void:
 	var left: bool = await resumed.handoff("leave")
 	check(left and resumed.socket == null and not resumed.entered, "Live leave handoff was not acknowledged and closed")
 	resumed.queue_free()
+
+# Isolated controllable transport fixture; not an authenticated server test.
+func _collect_handoff(client, results: Array) -> void:
+	results.append(await client.handoff("suspend"))
+
+func _handoff_fault_test(zones: Array, script, gate: Node, router) -> void:
+	gate.debug_offline_enabled = false
+	gate.state = 0
+	gate.player_id = "fault-test"
+	gate.token = "fixture-only"
+	router._forest_owner = "fault-test"
+	router._forest_summoner = "wizard"
+	for mode in ["ack", "delayed", "closed", "withheld", "generation"]:
+		gate.base_url = OS.get_environment("FOREST_FAULT_URL") + "/" + mode
+		var client = script.new()
+		root.add_child(client)
+		client.configure(zones, "wizard")
+		var deadline := Time.get_ticks_msec() + 3000
+		while not client.entered and Time.get_ticks_msec() < deadline:
+			await process_frame
+		check(client.entered, "Fault fixture failed to welcome: " + mode)
+		var late_joins: Array = []
+		client.peer_joined.connect(func(player): late_joins.append(player))
+		var started := Time.get_ticks_msec()
+		var results: Array = []
+		_collect_handoff(client, results)
+		await process_frame
+		check(not await client.handoff("suspend"), "Duplicate handoff accepted: " + mode)
+		if mode == "generation": gate._generation += 1
+		deadline = started + 1400
+		while results.is_empty() and Time.get_ticks_msec() < deadline:
+			await process_frame
+		check(not results.is_empty(), "Handoff exceeded deadline: " + mode)
+		if not results.is_empty():
+			check(results[0] == (mode in ["ack", "delayed"]), "Unexpected handoff result: " + mode)
+			if mode == "withheld": check(Time.get_ticks_msec() - started >= 850, "Withheld ACK did not await deadline")
+		check(client.socket == null and not client.entered and client._peers.is_empty() and late_joins.is_empty(), "Handoff retained socket or peers: " + mode)
+		client.queue_free()
+		await process_frame
+
+# Runs in its own Godot process with a distinct account and ConnectionGate.
+func _two_client_test(zones: Array, script, gate: Node, router) -> void:
+	var identity := OS.get_environment("FOREST_TWO_ID")
+	var other := OS.get_environment("FOREST_TWO_OTHER")
+	var third := OS.get_environment("FOREST_TWO_THIRD")
+	gate.state = 0
+	gate.debug_offline_enabled = false
+	gate.player_id = identity
+	gate.token = OS.get_environment("FOREST_TWO_TOKEN")
+	gate.base_url = OS.get_environment("FOREST_TWO_URL")
+	router._forest_owner = identity
+	router._forest_summoner = "wizard"
+	var client = script.new()
+	root.add_child(client)
+	var peers := {}
+	var movement: Array = []
+	var cosmetics: Array = []
+	client.snapshot.connect(func(_state, entries):
+		peers.clear()
+		for entry in entries: peers[entry.player_id] = entry.display_name)
+	client.peer_joined.connect(func(entry): peers[entry.player_id] = entry.display_name)
+	client.peer_left.connect(func(id): peers.erase(id))
+	client.peer_moved.connect(func(id, _seq, _point, _facing): movement.append(id))
+	client.peer_cosmetic.connect(func(id, cosmetic): cosmetics.append([id, cosmetic]))
+	client.configure(zones, "wizard")
+	var deadline := Time.get_ticks_msec() + 12000
+	while (not client.entered or not peers.has(other) or not peers.has(third)) and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check(client.entered and peers.has(other) and peers.has(third), "Two Godot clients and third peer did not join")
+	check(str(peers.get(other, "")).begins_with("TwoGodot"), "Other Godot client name is not server identity")
+	if client.entered:
+		check(client.move(Vector2(970, 760), 1), "Two-client movement send failed")
+		check(client._send({"type":"cosmetic", "summoner_id":"witch"}), "Two-client cosmetic send failed")
+	deadline = Time.get_ticks_msec() + 5000
+	while (not movement.has(other) or not cosmetics.has([other, "witch"])) and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check(movement.has(other) and cosmetics.has([other, "witch"]), "Two Godot clients did not receive reciprocal movement and cosmetic")
+	await create_timer(1.0).timeout
+	client.shutdown()
+	client.queue_free()
