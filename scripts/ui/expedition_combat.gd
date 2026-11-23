@@ -99,6 +99,22 @@ func _fit_stage() -> void:
 	stage.scale = Vector2.ONE * factor
 	stage.position = Vector2((size.x - 1920.0 * factor) / 2.0, 0)
 
+func _style_hom_decision(button: Button) -> void:
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.0, 0.0, 0.0, 0.72)
+		style.border_color = Color("e7c85c") if state != "disabled" else Color("666666")
+		style.set_border_width_all(2 if state != "focus" else 3)
+		style.set_corner_radius_all(4)
+		button.add_theme_stylebox_override(state, style)
+	button.add_theme_color_override("font_color", Color("ffe283"))
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	button.add_theme_color_override("font_pressed_color", Color.WHITE)
+
+func _layout_spell_switch(panel: Control, button: Control) -> void:
+	if not is_instance_valid(panel) or not is_instance_valid(button): return
+	button.position = Vector2(panel.position.x + (panel.size.x - button.size.x) * 0.5, panel.position.y + panel.size.y + 12.0)
+
 func _build() -> void:
 	var state: Dictionary = session.get("combat_state", {})
 	var player: Dictionary = state.get("player", {})
@@ -250,10 +266,12 @@ func _build() -> void:
 	switch.pressed.connect(_switch.bind(other))
 	_place(switch, Vector2(760, 205) if _android_ui() else Vector2(760, 160), Vector2(400, 70) if _android_ui() else Vector2(400, 42))
 	if _android_ui(): switch.add_theme_font_size_override("font_size", 26)
+	panel.resized.connect(_layout_spell_switch.bind(panel, switch))
+	_layout_spell_switch.call_deferred(panel, switch)
 	controls.append(switch)
 	hom_attack = Button.new()
 	hom_attack.name = "HomAttack"
-	MenuArt.button(hom_attack)
+	_style_hom_decision(hom_attack)
 	hom_attack.add_theme_font_size_override("font_size", 18)
 	hom_attack.text = tr("COMBAT_ATTACK")
 	hom_attack.pressed.connect(_choose_hom.bind("attack"))
@@ -262,7 +280,7 @@ func _build() -> void:
 	hom_attack.hide()
 	hom_hold = Button.new()
 	hom_hold.name = "HomHold"
-	MenuArt.button(hom_hold)
+	_style_hom_decision(hom_hold)
 	hom_hold.add_theme_font_size_override("font_size", 18)
 	hom_hold.text = tr("COMBAT_HOLD")
 	hom_hold.tooltip_text = tr("COMBAT_HOLD_HINT")
@@ -438,7 +456,6 @@ func _spell_button(spell: Dictionary, cooldown: int = 0) -> Button:
 		style.set_corner_radius_all(3)
 		style.set_content_margin_all(4)
 		button.add_theme_stylebox_override(state, style)
-	if _android_ui(): MenuArt.button(button)
 	var types := [spell.get("primary_type"), spell.get("secondary_type")] if spell.get("type") == "hybrid" else [spell.get("type", "universal")]
 	for i in types.size():
 		var icon := TypeIcon.new()

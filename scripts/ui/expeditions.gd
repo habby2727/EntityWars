@@ -906,19 +906,20 @@ func _render_combat() -> void:
 
 func _render_terminal(won: bool) -> void:
 	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	body.add_child(center)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	if _android_ui():
 		var scroll := ScrollContainer.new()
+		scroll.name = "RewardScroll"
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		center.add_child(scroll)
-		scroll.add_child(box)
+		body.add_child(scroll)
+		scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(center)
 	else:
-		center.add_child(box)
+		body.add_child(center)
+		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.add_child(box)
 	capture_heading = _label(tr("EXPEDITION_VICTORY" if won else "EXPEDITION_DEFEAT"), 48)
 	box.add_child(capture_heading)
 	var candidate: Variant = session.get("capture_candidate")
