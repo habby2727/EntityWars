@@ -146,6 +146,9 @@ func _ready() -> void:
 	_debug.reload()
 	_resolve_nodes()
 	_setup_compact_navigation()
+	var forest_return = preload("res://scripts/ui/forest_return_button.gd").attach($Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow)
+	if forest_return != null:
+		forest_return.get_parent().move_child(forest_return, 1)
 	_setup_building_actions_layout()
 	_setup_section_scrolls()
 	_apply_ui_scale()
@@ -2086,3 +2089,6 @@ func _make_panel_style(tex: Texture2D) -> StyleBoxTexture:
 	sb.texture = tex
 	UIThemeFactory._configure_stylebox(sb)
 	return sb
+
+func forest_return_safe() -> bool:
+	return _pending_by_id.is_empty() and _pending_action_to_building.is_empty()

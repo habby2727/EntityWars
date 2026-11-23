@@ -208,6 +208,7 @@ func _build_ui() -> void:
 	MenuArt.button(back_button)
 	back_button.pressed.connect(SceneRouter.go_to_world_gate)
 	top.add_child(back_button)
+	preload("res://scripts/ui/forest_return_button.gd").attach(top)
 	status = Label.new()
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1037,3 +1038,12 @@ func _fit_video() -> void:
 	var factor := maxf(viewport.x / dimensions.x, viewport.y / dimensions.y)
 	video.size = dimensions * factor
 	video.position = (viewport - video.size) * 0.5
+
+func forest_return_safe() -> bool:
+	if not lease.is_empty() or not lease_run.is_empty() or not pending.is_empty() or not request.is_empty() or recovery_required or recovery_conflict or playing_events or heartbeat_in_flight or is_instance_valid(reward_popup) or forfeited or visual_debug:
+		return false
+	if not session.is_empty() and str(session.get("status", "")) != "LOSS":
+		return false
+	if _visual_debug_allowed() and backend == null:
+		return true
+	return not state_data.is_empty() and backend != null and not account_id.is_empty() and backend._verified_player_id == account_id and account_id == ConnectionGate.player_id and not backend.token.is_empty() and not ConnectionGate.blocked()

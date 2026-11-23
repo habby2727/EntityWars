@@ -313,6 +313,15 @@ func _ready() -> void:
 		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "PRACTICE"
 		$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseLabel.text = "RANKED PvP"
 		btn_seal_attack.set_pressed_no_signal(not ranked_queue.selected)
+	if not _hunt_mode and not _dungeon_mode and not _expedition_mode and not _expedition_preview:
+		var forest_return = preload("res://scripts/ui/forest_return_button.gd").attach(self)
+		if forest_return != null:
+			forest_return.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+			forest_return.offset_left = -460
+			forest_return.offset_right = -210
+			forest_return.offset_top = 12
+			forest_return.offset_bottom = 64
+			forest_return.z_index = 40
 	if not _hunt_mode and not _dungeon_mode:
 		_restore_build_preferences(_verified_preferences_identity())
 	_refresh_details()
@@ -2600,3 +2609,10 @@ func _revalidate_hom_selection() -> void:
 
 func _dungeon_exit_warning() -> void:
 	get_node("/root/ConnectionGate").dungeon_exit_warning()
+
+func forest_return_safe() -> bool:
+	if _hunt_mode or _dungeon_mode or _expedition_mode or _expedition_preview or not _spell_pending_id.is_empty() or not is_instance_valid(ranked_queue):
+		return false
+	if ranked_queue.queued or ranked_queue.cancel_requested or not ranked_queue.request_id.is_empty():
+		return false
+	return ConnectionGate.debug_lab_navigation_allowed() or ranked_queue.forest_idle_verified

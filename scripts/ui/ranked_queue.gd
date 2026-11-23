@@ -8,6 +8,7 @@ var request_id := ""
 var request_kind := ""
 var selected := false
 var queued := false
+var forest_idle_verified := false
 var cancel_requested := false
 var joined_at := 0
 var expires_at := 0
@@ -123,6 +124,7 @@ func _update_selected_labels() -> void:
 		debug_button.visible = selected and ConnectionGate.debug_lab_navigation_allowed()
 
 func _on_auth(_token: String) -> void:
+	forest_idle_verified = false
 	request_id = ""
 	request_kind = ""
 	synced = false
@@ -253,6 +255,7 @@ func _cancel() -> void:
 		info.text = "Connection unavailable. Retry."
 
 func _set_queued(value: bool) -> void:
+	if value: forest_idle_verified = false
 	if value and not queued:
 		var margin: Control = host.get_node("RootMargin")
 		margin_bottom_before = margin.offset_bottom
@@ -324,6 +327,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 	request_id = ""
 	request_kind = ""
 	if not ok:
+		forest_idle_verified = false
 		if str(data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED"]:
 			availability_blocked = true
 		if str(data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED"] or (int(data.get("http_status", 0)) >= 400 and int(data.get("http_status", 0)) < 500):
@@ -344,12 +348,15 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		var rank: Dictionary = data.get("player", {})
 		info.text = "%d MP · %s %s" % [int(rank.get("mp", 1000)), str(rank.get("league", "Copper")), str(rank.get("division", "IV"))]
 		return
+	forest_idle_verified = false
 	var state := str(data.get("state", ""))
 	if state == "MATCHED":
+		forest_idle_verified = false
 		var match_id := str(data.get("match_id", ""))
 		if not match_id.is_empty():
 			SceneRouter.go_to_ranked_combat(match_id)
 	elif state == "QUEUED":
+		forest_idle_verified = false
 		joined_at = int(data.get("joined_at", 0))
 		expires_at = int(data.get("expires_at", 0))
 		selected = true
@@ -361,6 +368,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		if cancel_requested:
 			_cancel()
 	elif state == "IDLE":
+		forest_idle_verified = true
 		var was_queued := queued
 		_set_queued(false)
 		if was_queued:

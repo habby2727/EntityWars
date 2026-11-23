@@ -377,20 +377,28 @@ FOREST_LEAVE,Leave Forest,Salir del bosque
 FOREST_TALK,Talk,Hablar
 FOREST_CLOSE,Close,Cerrar
 FOREST_NPC_SPECTRAL_LAMPLIGHTER_NAME,Spectral Lamplighter,Farolero espectral
-FOREST_NPC_SPECTRAL_LAMPLIGHTER_DIALOGUE,The forest has many paths. Follow the light when the trees grow quiet.,El bosque tiene muchos caminos. Sigue la luz cuando los ?rboles guarden silencio.
+FOREST_NPC_SPECTRAL_LAMPLIGHTER_DIALOGUE,The forest has many paths. Follow the light when the trees grow quiet.,El bosque tiene muchos caminos. Sigue la luz cuando los árboles guarden silencio.
 FOREST_NPC_MINOR_ASTRAL_STAG_NAME,Minor Astral Stag,Ciervo astral menor
 FOREST_NPC_MINOR_ASTRAL_STAG_DIALOGUE,A shimmer passes through the antlers. The stag watches the clearing in silence.,Un destello recorre su cornamenta. El ciervo observa el claro en silencio.
-FOREST_NPC_MOSS_RUIN_GUARDIAN_NAME,Moss Ruin Guardian,Guardi?n musgoso de las ruinas
-FOREST_NPC_MOSS_RUIN_GUARDIAN_DIALOGUE,Stone remembers the hands that shaped it. Moss keeps the oldest secrets.,La piedra recuerda las manos que le dieron forma. El musgo guarda los secretos m?s antiguos.
-FOREST_NPC_NEON_FUNGAL_MONK_NAME,Neon Fungal Monk,Monje f?ngico de ne?n
-FOREST_NPC_NEON_FUNGAL_MONK_DIALOGUE,Even the smallest spore can light a dark corner. Be patient and watch it grow.,Hasta la espora m?s peque?a puede iluminar un rinc?n oscuro. Ten paciencia y m?rala crecer.
+FOREST_NPC_MOSS_RUIN_GUARDIAN_NAME,Moss Ruin Guardian,Guardián musgoso de las ruinas
+FOREST_NPC_MOSS_RUIN_GUARDIAN_DIALOGUE,Stone remembers the hands that shaped it. Moss keeps the oldest secrets.,La piedra recuerda las manos que le dieron forma. El musgo guarda los secretos más antiguos.
+FOREST_NPC_NEON_FUNGAL_MONK_NAME,Neon Fungal Monk,Monje fúngico de neón
+FOREST_NPC_NEON_FUNGAL_MONK_DIALOGUE,Even the smallest spore can light a dark corner. Be patient and watch it grow.,Hasta la espora más pequeña puede iluminar un rincón oscuro. Ten paciencia y mírala crecer.
 FOREST_NPC_CRYSTAL_MEDUSA_NAME,Crystal Medusa,Medusa de cristal
 FOREST_NPC_CRYSTAL_MEDUSA_DIALOGUE,The crystals sing when a traveler draws near. Each note carries a distant echo.,Los cristales cantan cuando se acerca un viajero. Cada nota trae un eco lejano.
-FOREST_NPC_MYCELIAL_ORACLE_NAME,Mycelial Oracle,Or?culo micelial
-FOREST_NPC_MYCELIAL_ORACLE_DIALOGUE,Beneath the mist the roots share their stories. Listen long enough and they may share one with you.,Bajo la niebla las ra?ces comparten sus historias. Escucha con paciencia y quiz? te cuenten una.
+FOREST_NPC_MYCELIAL_ORACLE_NAME,Mycelial Oracle,Oráculo micelial
+FOREST_NPC_MYCELIAL_ORACLE_DIALOGUE,Beneath the mist the roots share their stories. Listen long enough and they may share one with you.,Bajo la niebla las raíces comparten sus historias. Escucha con paciencia y quizá te cuenten una.
 FOREST_NPC_UNDERBRUSH_EYE_NAME,Underbrush Eye,Ojo de la maleza
 FOREST_NPC_UNDERBRUSH_EYE_DIALOGUE,The eye blinks among the leaves. Something unseen rustles farther away.,El ojo parpadea entre las hojas. Algo invisible se mueve a lo lejos.
-FOREST_NPC_THRESHOLD_MASK_SPIRIT2_NAME,Threshold Mask Spirit,Esp?ritu de la m?scara del umbral
+FOREST_NPC_THRESHOLD_MASK_SPIRIT2_NAME,Threshold Mask Spirit,Espíritu de la máscara del umbral
 FOREST_NPC_THRESHOLD_MASK_SPIRIT2_DIALOGUE,Every threshold holds a memory. Tread softly before the sanctuary.,Cada umbral guarda un recuerdo. Camina con respeto ante el santuario.
 FOREST_NPC_BARK_WITCH_NAME,Bark Witch,Bruja de corteza
-FOREST_NPC_BARK_WITCH_DIALOGUE,The clearing holds echoes of old duels. The trees remember every challenger.,El claro conserva ecos de antiguos duelos. Los ?rboles recuerdan a cada rival.
+FOREST_NPC_BARK_WITCH_DIALOGUE,The clearing holds echoes of old duels. The trees remember every challenger.,El claro conserva ecos de antiguos duelos. Los árboles recuerdan a cada rival.
+FOREST_RETURN,Return to Forest,Volver al bosque
+FOREST_ACTION_FORGE,Open Forge,Abrir forja
+FOREST_ACTION_LAB,Research,Investigación
+FOREST_ACTION_EXPEDITIONS,Expeditions,Expediciones
+FOREST_ACTION_WORLD_GATE,World Gate,Portal del mundo
+FOREST_ACTION_RANKED,Loadout,Equipamiento
+FOREST_ACTION_GUIDE_INVENTORY,Inventory,Inventario
+FOREST_ACTION_GUIDE_TRADE,Trade Hall,Sala de comercio

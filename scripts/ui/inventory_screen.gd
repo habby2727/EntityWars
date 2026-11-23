@@ -72,6 +72,7 @@ func _ready() -> void:
 	_apply_panel_background()
 	_setup_inventory_layout()
 	_connect_buttons()
+	preload("res://scripts/ui/forest_return_button.gd").attach($Background/Margin/RootVBox/Header)
 	_return_to_lab = SceneRouter.consume_inventory_return_to_lab()
 	_entry_group.allow_unpress = false
 	_load_registry()
@@ -866,3 +867,6 @@ func _add_placeholder(container: Control) -> void:
 func _hom_status(entry: Dictionary) -> String:
 	var id := str(entry.get("id", ""))
 	return HomProgress.collection_status(id, _registry != null and _registry.get_homunculi().has(id), _hom_progress, _hom_progress_known)
+
+func forest_return_safe() -> bool:
+	return true

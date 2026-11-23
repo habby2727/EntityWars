@@ -30,8 +30,14 @@ var _dialogue: PanelContainer
 var _dialogue_name: Label
 var _dialogue_text: Label
 var _talking_to: Node2D
+var _action_row: HBoxContainer
 
 func _ready() -> void:
+	var had_restore := not SceneRouter._forest_restore.is_empty()
+	var restore := SceneRouter.consume_forest_restore() if had_restore else {}
+	if had_restore and restore.is_empty():
+		SceneRouter.go_to_lab_hub.call_deferred()
+		return
 	var selected := SceneRouter.forest_selected_summoner()
 	if selected not in ForestPlayer.FILES:
 		SceneRouter.go_to_lab_hub.call_deferred()
@@ -108,7 +114,13 @@ func _ready() -> void:
 	MenuArt.button(leave)
 	MenuArt.button(_talk_button)
 	MenuArt.button(_dialogue.get_node("Margin/Contents/Close"))
-	_set_zone(0)
+	if not restore.is_empty():
+		if not _set_zone(_zone_index_for_id(str(restore.zone_id)), restore.foot_position):
+			SceneRouter.go_to_lab_hub.call_deferred()
+			return
+		_player.facing = restore.facing
+	else:
+		_set_zone(0)
 	_resize_world()
 
 func _resize_world() -> void:
@@ -278,6 +290,10 @@ func _build_dialogue() -> void:
 	_dialogue_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_dialogue_text.add_theme_font_size_override("font_size", 22)
 	contents.add_child(_dialogue_text)
+	_action_row = HBoxContainer.new()
+	_action_row.name = "Actions"
+	_action_row.add_theme_constant_override("separation", 8)
+	contents.add_child(_action_row)
 	var close := Button.new()
 	close.name = "Close"
 	close.text = "FOREST_CLOSE"
@@ -329,8 +345,45 @@ func _open_dialogue(npc: Node2D) -> void:
 	_player.dialogue_locked = true
 	_reset_touch()
 	_update_dialogue_text()
+	_build_npc_actions()
 	_dialogue.show()
 	_talk_button.hide()
+
+func _build_npc_actions() -> void:
+	for child in _action_row.get_children():
+		_action_row.remove_child(child)
+		child.queue_free()
+	if not is_instance_valid(_talking_to):
+		return
+	var action := ""
+	for data in NPCs.NPCS:
+		if data.id == _talking_to.npc_id:
+			action = data.action_id
+			break
+	var options := ["guide_inventory", "guide_trade"] if action == "guide" else ([action] if action in ["forge", "lab", "expeditions", "world_gate", "ranked"] else [])
+	for option in options:
+		var button := Button.new()
+		button.name = "Action_" + option
+		button.text = "FOREST_ACTION_" + str(option).to_upper()
+		button.custom_minimum_size = Vector2(160, 48)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.add_theme_font_size_override("font_size", 19)
+		button.pressed.connect(_open_npc_action.bind(option))
+		_action_row.add_child(button)
+		MenuArt.button(button)
+
+func forest_action_allowed(action: String, zone_id: String, foot: Vector2, facing: int) -> bool:
+	if not _dialogue.visible or not is_instance_valid(_talking_to) or _talking_to not in _npcs or _player.exit_pending or _player.transition_locked:
+		return false
+	if zone_id != str(Zones.ZONES[_zone_index].id) or foot != _player.position or facing != _player.facing or foot.distance_to(_talking_to.position) > INTERACTION_DISTANCE:
+		return false
+	for data in NPCs.NPCS:
+		if data.id == _talking_to.npc_id and data.zone == zone_id:
+			return (data.action_id == "guide" and action in ["guide_inventory", "guide_trade"]) or (data.action_id == action and action in ["forge", "lab", "expeditions", "world_gate", "ranked"])
+	return false
+
+func _open_npc_action(action: String) -> void:
+	SceneRouter.open_from_forest(action, str(Zones.ZONES[_zone_index].id), _player.position, _player.facing)
 
 func _update_dialogue_text() -> void:
 	if is_instance_valid(_talking_to):

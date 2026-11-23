@@ -23,6 +23,10 @@ const SCENE_TOP_PLAYERS := "res://scenes/ui/TopPlayers.tscn"
 
 static var _forest_summoner := ""
 static var _forest_owner := ""
+static var _forest_return := {}
+static var _forest_restore := {}
+const FOREST_ZONES := preload("res://scripts/forest/forest_zones.gd")
+const FOREST_ACTIONS := ["forge", "lab", "expeditions", "world_gate", "ranked", "guide_inventory", "guide_trade"]
 
 static var _next_lab_focus_id: String = ""
 static var _next_inventory_tab: String = ""
@@ -113,6 +117,7 @@ static func consume_combat_seal_mode() -> String:
 	return mode
 
 static func go_to_main_menu() -> void:
+	_clear_forest_return()
 	_go_to(SCENE_MAIN_MENU, "MainMenu")
 
 static func go_to_settings() -> void:
@@ -137,6 +142,7 @@ static func _forest_access_allowed() -> bool:
 	return not _forest_verified_owner().is_empty() or _connection_gate().debug_lab_navigation_allowed()
 
 static func go_to_summoner_selection() -> void:
+	_clear_forest_return()
 	if not _forest_access_allowed():
 		return
 	_forest_summoner = ""
@@ -170,9 +176,114 @@ static func enter_forest(summoner_id: String) -> void:
 	_go_to(SCENE_FOREST_WORLD, "ForestWorld")
 
 static func leave_forest() -> void:
+	_clear_forest_return()
 	_forest_summoner = ""
 	_forest_owner = ""
 	go_to_lab_hub()
+
+static func _clear_forest_return() -> void:
+	_forest_return.clear()
+	_forest_restore.clear()
+
+static func _valid_forest_context(context: Dictionary) -> bool:
+	if context.is_empty() or str(context.get("summoner_id", "")) not in FOREST_SUMMONERS:
+		return false
+	var position = context.get("foot_position")
+	var facing = context.get("facing")
+	if not position is Vector2 or not position.is_finite() or not facing is int or facing not in [0, 1, 2, 3]:
+		return false
+	var zone_id := str(context.get("zone_id", ""))
+	var count := 0
+	var inside := false
+	for zone in FOREST_ZONES.ZONES:
+		if zone.id == zone_id:
+			count += 1
+			inside = Geometry2D.is_point_in_polygon(position, PackedVector2Array(zone.polygon))
+	return count == 1 and inside
+
+static func forest_return_available() -> bool:
+	if _forest_return.is_empty():
+		return false
+	var gate := _connection_gate()
+	var debug_mode: bool = gate.debug_lab_navigation_allowed()
+	var owner := str(_forest_return.get("verified_owner", ""))
+	if not _valid_forest_context(_forest_return) or str(_forest_return.get("summoner_id", "")) != _forest_summoner or owner != _forest_owner or _forest_return.get("identity_generation", -1) != gate._generation:
+		_clear_forest_return()
+		return false
+	if bool(_forest_return.get("debug", false)):
+		if not debug_mode:
+			_clear_forest_return()
+			return false
+	elif str(gate.player_id) != owner or str(gate.token).strip_edges().is_empty():
+		_clear_forest_return()
+		return false
+	if not _forest_access_allowed() or _forest_verified_owner() != owner:
+		return false
+	return true
+
+static func _forest_modes_safe() -> bool:
+	if _hunt_loadout_active or not _solo_hunt_context.is_empty() or not _dungeon_context.is_empty() or not _ranked_context.is_empty() or _expedition_forfeit_notice:
+		return false
+	# Returning from an unstarted loadout can leave only its owner in this context.
+	for key in _expedition_context:
+		if key != "player_id":
+			return false
+	if not _expedition_context.is_empty() and not _connection_gate().debug_lab_navigation_allowed() and str(_expedition_context.get("player_id", "")) != _forest_verified_owner():
+		return false
+	var gate := _connection_gate()
+	if int(gate._recovery_owner_id) != 0:
+		return false
+	if not _forest_verified_owner().is_empty():
+		var journal := preload("res://scripts/net/session_recovery_journal.gd").new()
+		if not journal.set_identity(_forest_verified_owner()) or not journal.load_entry().is_empty():
+			return false
+	return true
+
+static func forest_return_safe() -> bool:
+	if not forest_return_available() or not _forest_modes_safe():
+		return false
+	var tree := _get_tree()
+	var scene := tree.current_scene if tree != null else null
+	if not is_instance_valid(scene) or scene.scene_file_path not in [SCENE_LAB_STRUCTURES, SCENE_WORLD_GATE, SCENE_TRADE_HALL, SCENE_INVENTORY, SCENE_EXPEDITIONS, SCENE_LOADOUT]:
+		return false
+	return scene.has_method("forest_return_safe") and bool(scene.forest_return_safe())
+
+static func open_from_forest(action_id: String, zone_id: String, foot: Vector2, facing: int) -> void:
+	if action_id not in FOREST_ACTIONS or not _forest_access_allowed() or not _forest_modes_safe():
+		return
+	var tree := _get_tree()
+	var scene := tree.current_scene if tree != null else null
+	if not is_instance_valid(scene) or scene.scene_file_path != SCENE_FOREST_WORLD or not scene.forest_action_allowed(action_id, zone_id, foot, facing):
+		return
+	var summoner := forest_selected_summoner()
+	var owner := _forest_verified_owner()
+	var context := {"verified_owner": owner, "summoner_id": summoner, "zone_id": zone_id, "foot_position": foot, "facing": facing, "debug": _connection_gate().debug_lab_navigation_allowed(), "identity_generation": _connection_gate()._generation}
+	if summoner.is_empty() or not _valid_forest_context(context):
+		return
+	_forest_restore.clear()
+	_forest_return = context
+	match action_id:
+		"forge": go_to_lab_structures("build_forge")
+		"lab": go_to_lab_structures("arcane_archives")
+		"expeditions": go_to_expeditions()
+		"world_gate": go_to_world_gate()
+		"ranked": go_to_loadout()
+		"guide_inventory": go_to_inventory("", true)
+		"guide_trade": go_to_trade_hall()
+
+static func return_to_forest() -> void:
+	if not forest_return_safe():
+		return
+	_forest_restore = _forest_return.duplicate(true)
+	_forest_return.clear()
+	_go_to(SCENE_FOREST_WORLD, "ForestWorld")
+
+static func consume_forest_restore() -> Dictionary:
+	var result := _forest_restore.duplicate(true)
+	_forest_restore.clear()
+	if not _valid_forest_context(result) or not _forest_access_allowed() or _forest_verified_owner() != str(result.get("verified_owner", "")) or forest_selected_summoner() != str(result.get("summoner_id", "")) or bool(result.get("debug", false)) != _connection_gate().debug_lab_navigation_allowed() or result.get("identity_generation", -1) != _connection_gate()._generation:
+		return {}
+	return result
 
 static func go_to_lab_structures(building_id: String = "") -> void:
 	_next_lab_focus_id = building_id

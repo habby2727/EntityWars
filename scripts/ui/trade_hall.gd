@@ -113,6 +113,7 @@ func _ready() -> void:
 	_apply_trade_layout()
 	_connect_backend()
 	_connect_buttons()
+	preload("res://scripts/ui/forest_return_button.gd").attach($Background/Margin/RootVBox/Header)
 	_build_resource_options()
 	_build_npc_exchange()
 	_load_state()
@@ -1209,3 +1210,6 @@ func _resource_icon(id: String) -> TextureRect:
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture = _catalog.get_tex(id)
 	return icon
+
+func forest_return_safe() -> bool:
+	return not _busy and _api_queue.is_empty()
