@@ -55,6 +55,7 @@ var _safe_modes := false
 var _safe_check_elapsed := 0.0
 var _presence: Node
 var _remotes := {}
+var _selected_remote := ""
 var _portal_deadline := 0
 var _handoff_pending := false
 
@@ -155,6 +156,7 @@ func _ready() -> void:
 		_set_zone(0)
 	_resize_world()
 	_start_presence(selected)
+	SocialClient.state_changed.connect(_update_social_remotes)
 
 func _setup_nameplate() -> void:
 	if ConnectionGate.debug_lab_navigation_allowed():
@@ -267,6 +269,7 @@ func _set_zone(index: int, arrival: Vector2 = Vector2.INF) -> bool:
 	if texture == null:
 		return false
 	_zone_index = index
+	_deselect_remote()
 	_background.texture = texture
 	_polygon_fill.polygon = polygon
 	_polygon_line.points = polygon
@@ -383,6 +386,12 @@ func _reset_touch() -> void:
 
 func _process(_delta: float) -> void:
 	if is_instance_valid(_player) and is_instance_valid(_joystick):
+		var moving: bool = _joystick.vector.length_squared() > 0.0001
+		for key in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
+			moving = moving or Input.is_physical_key_pressed(key)
+		var chat_panel = GlobalChatClient._panel
+		if moving or _player.exit_pending or _player.transition_locked or _player.dialogue_locked or not SocialClient.available() or not SocialClient.enabled or SocialClient._popup._panel.visible or (is_instance_valid(chat_panel) and (chat_panel._panel.visible or chat_panel._online_panel.visible)):
+			_deselect_remote()
 		_safe_check_elapsed += _delta
 		if _safe_check_elapsed >= 0.5:
 			_safe_check_elapsed = 0.0
@@ -493,6 +502,7 @@ func _interact_nearest() -> void:
 func _open_dialogue(npc: Node2D) -> void:
 	if npc == null or npc not in _npcs or _player.position.distance_to(npc.position) > INTERACTION_DISTANCE or _player.exit_pending or _player.transition_locked:
 		return
+	_deselect_remote()
 	_close_dialogue()
 	_talking_to = npc
 	npc.paused = true
@@ -573,8 +583,20 @@ func _notification(what: int) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _handoff_pending: return
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not _dialogue.visible:
+	if event is InputEventScreenDrag:
+		_deselect_remote()
+	var clicked: bool = (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed) or (event is InputEventScreenTouch and event.pressed)
+	if clicked and not _dialogue.visible:
 		var point: Vector2 = _world.get_global_transform().affine_inverse() * event.position
+		_deselect_remote()
+		if SocialClient.enabled and SocialClient.available() and is_instance_valid(_presence) and _presence.entered and not _player.transition_locked:
+			for id in _remotes:
+				var avatar: Node2D = _remotes[id]
+				if Rect2(-45, -130, 90, 130).has_point(point - avatar.position):
+					_selected_remote = id
+					_update_social_remotes()
+					get_viewport().set_input_as_handled()
+					return
 		for npc in _npcs:
 			if npc.hit_test(point) and _player.position.distance_to(npc.position) <= INTERACTION_DISTANCE:
 				_open_dialogue(npc)
@@ -585,6 +607,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if _handoff_pending: return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
+	if event.keycode in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT] or event.physical_keycode in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
+		_deselect_remote()
 	var focus := get_viewport().gui_get_focus_owner()
 	if focus is LineEdit or focus is TextEdit:
 		return
@@ -656,6 +680,7 @@ func _on_presence_snapshot(state: Dictionary, peers: Array) -> void:
 		_on_peer_joined(peer)
 
 func _on_presence_correction(state: Dictionary) -> void:
+	_deselect_remote()
 	if str(_zones[_zone_index].id) != str(state.zone_id) and not _set_zone(_zone_index_for_id(str(state.zone_id)), Vector2(state.x, state.y)):
 		_presence._drop()
 		return
@@ -675,6 +700,7 @@ func _on_peer_joined(data: Dictionary) -> void:
 	_actors.add_child(avatar)
 	avatar.setup(data)
 	_remotes[id] = avatar
+	_update_social_remotes()
 
 func _on_peer_moved(id: String, sequence: int, point: Vector2, direction: int) -> void:
 	if _remotes.has(id): _remotes[id].move_to(sequence, point, direction)
@@ -683,6 +709,7 @@ func _on_peer_cosmetic(id: String, cosmetic: String) -> void:
 	if _remotes.has(id): _remotes[id].set_cosmetic(cosmetic)
 
 func _on_peer_left(id: String) -> void:
+	if _selected_remote == id: _deselect_remote()
 	if _remotes.has(id):
 		var avatar: Node = _remotes[id]
 		_remotes.erase(id)
@@ -690,6 +717,7 @@ func _on_peer_left(id: String) -> void:
 		avatar.queue_free()
 
 func _clear_remotes() -> void:
+	_deselect_remote()
 	for avatar in _remotes.values():
 		if is_instance_valid(avatar):
 			if avatar.get_parent() != null: avatar.get_parent().remove_child(avatar)
@@ -699,6 +727,30 @@ func _clear_remotes() -> void:
 		_reset_touch()
 	_portal_deadline = 0
 	if is_instance_valid(_player): _player.exit_pending = false
+
+func _deselect_remote() -> void:
+	if not _selected_remote.is_empty() and _remotes.has(_selected_remote) and is_instance_valid(_remotes[_selected_remote]):
+		_remotes[_selected_remote].set_friend_action("", Callable())
+	_selected_remote = ""
+
+func _update_social_remotes() -> void:
+	for id in _remotes:
+		var avatar = _remotes[id]
+		if not is_instance_valid(avatar): continue
+		var is_friend: bool = SocialClient.enabled and SocialClient.friends.has(id)
+		avatar.set_friend_marker(is_friend)
+		if id != _selected_remote: continue
+		if not SocialClient.enabled or is_friend:
+			avatar.set_friend_action("", Callable())
+			continue
+		var incoming: Dictionary = SocialClient.incoming_for(id)
+		var outgoing: Dictionary = SocialClient.outgoing_for(id)
+		if not incoming.is_empty():
+			avatar.set_friend_action("review", SocialClient._popup.open_request.bind(str(incoming.request_id)))
+		elif not outgoing.is_empty():
+			avatar.set_friend_action("pending", SocialClient.cancel.bind(str(outgoing.request_id)))
+		else:
+			avatar.set_friend_action("add", SocialClient.request_friend.bind(id))
 
 func _prepare_handoff(kind: String) -> void:
 	if _handoff_pending: return

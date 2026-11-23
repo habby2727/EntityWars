@@ -12,6 +12,8 @@ var _target := Vector2.ZERO
 var _elapsed := 0.2
 var last_seq := -1
 var _label: Label
+var _friend_glyph: Control
+var _friend_action: Button
 
 func setup(data: Dictionary) -> void:
 	_label = Label.new()
@@ -71,6 +73,42 @@ func _process(delta: float) -> void:
 	_elapsed = minf(_elapsed + delta, 0.2)
 	position = _from.lerp(_target, _elapsed / 0.2)
 	queue_redraw()
+
+func set_friend_marker(value: bool) -> void:
+	if value and not is_instance_valid(_friend_glyph):
+		_friend_glyph = preload("res://scripts/ui/social_glyph.gd").new()
+		_friend_glyph.size = Vector2(20, 20)
+		add_child(_friend_glyph)
+	if is_instance_valid(_friend_glyph):
+		_friend_glyph.visible = value
+		var width := minf(_label.size.x, _label.get_theme_font("font").get_string_size(_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, _label.get_theme_font_size("font_size")).x)
+		_friend_glyph.position = Vector2(-width * 0.5 - 23, _label.position.y + 5)
+
+func set_friend_action(mode: String, callback: Callable) -> void:
+	if is_instance_valid(_friend_action):
+		_friend_action.queue_free()
+		_friend_action = null
+	if mode.is_empty():
+		return
+	_friend_action = Button.new()
+	_friend_action.name = "FriendAction"
+	_friend_action.position = Vector2(-78, _label.position.y - 78)
+	_friend_action.size = Vector2(72, 72)
+	_friend_action.custom_minimum_size = Vector2(72, 72)
+	_friend_action.focus_mode = Control.FOCUS_NONE
+	_friend_action.tooltip_text = tr("SOCIAL_ADD" if mode == "add" else ("SOCIAL_CANCEL" if mode == "pending" else "SOCIAL_REVIEW"))
+	_friend_action.disabled = SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
+	_friend_action.pressed.connect(callback)
+	add_child(_friend_action)
+	if mode == "add":
+		var glyph: Control = preload("res://scripts/ui/social_glyph.gd").new()
+		glyph.plus = true
+		glyph.position = Vector2(22, 22)
+		glyph.size = Vector2(28, 28)
+		_friend_action.add_child(glyph)
+	else:
+		_friend_action.text = tr("SOCIAL_PENDING" if mode == "pending" else "SOCIAL_REVIEW")
+		_friend_action.add_theme_font_size_override("font_size", 13)
 
 func _draw() -> void:
 	if _textures.is_empty():
