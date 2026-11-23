@@ -402,3 +402,5 @@ FOREST_ACTION_WORLD_GATE,World Gate,Portal del mundo
 FOREST_ACTION_RANKED,Loadout,Equipamiento
 FOREST_ACTION_GUIDE_INVENTORY,Inventory,Inventario
 FOREST_ACTION_GUIDE_TRADE,Trade Hall,Sala de comercio
+FOREST_SUMMONER,Summoner,Invocador
+FOREST_CHANGE_SUMMONER,Change Summoner,Cambiar invocador

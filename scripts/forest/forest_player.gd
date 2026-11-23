@@ -24,6 +24,8 @@ var exit_pending := false
 var transition_locked := false
 var dialogue_locked := false
 var _held_keys: Array[int] = []
+var _display_name := ""
+var _nameplate: Label
 
 const KEY_DIRECTIONS := {KEY_W: Vector2.UP, KEY_UP: Vector2.UP, KEY_S: Vector2.DOWN, KEY_DOWN: Vector2.DOWN, KEY_A: Vector2.LEFT, KEY_LEFT: Vector2.LEFT, KEY_D: Vector2.RIGHT, KEY_RIGHT: Vector2.RIGHT}
 
@@ -52,7 +54,32 @@ func setup(summoner_id: String) -> void:
 		max_height = maxi(max_height, rect.size.y)
 	# A single scale for all directions keeps each character's proportions stable.
 	sprite_scale = 120.0 / maxf(1.0, max_height)
+	if not is_instance_valid(_nameplate):
+		_nameplate = Label.new()
+		_nameplate.name = "Nameplate"
+		_nameplate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_nameplate.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		_nameplate.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_nameplate.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_nameplate.clip_text = true
+		_nameplate.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		_nameplate.add_theme_font_size_override("font_size", 22)
+		_nameplate.add_theme_color_override("font_color", Color.WHITE)
+		_nameplate.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		_nameplate.add_theme_constant_override("outline_size", 4)
+		add_child(_nameplate)
+	_nameplate.position = Vector2(-150, -max_height * sprite_scale - 44)
+	_nameplate.size = Vector2(300, 30)
+	_nameplate.text = _display_name
+	_nameplate.visible = not _display_name.is_empty()
 	queue_redraw()
+
+# Retains the full value; the label clips visually without parsing markup.
+func set_display_name(value: String) -> void:
+	_display_name = value
+	if is_instance_valid(_nameplate):
+		_nameplate.text = value
+		_nameplate.visible = not value.is_empty()
 
 func _process(delta: float) -> void:
 	_bob_time += delta

@@ -25,6 +25,7 @@ static var _forest_summoner := ""
 static var _forest_owner := ""
 static var _forest_return := {}
 static var _forest_restore := {}
+static var _forest_change := {}
 const FOREST_ZONES := preload("res://scripts/forest/forest_zones.gd")
 const FOREST_ACTIONS := ["forge", "lab", "expeditions", "world_gate", "ranked", "guide_inventory", "guide_trade"]
 
@@ -184,6 +185,7 @@ static func leave_forest() -> void:
 static func _clear_forest_return() -> void:
 	_forest_return.clear()
 	_forest_restore.clear()
+	_forest_change.clear()
 
 static func _valid_forest_context(context: Dictionary) -> bool:
 	if context.is_empty() or str(context.get("summoner_id", "")) not in FOREST_SUMMONERS:
@@ -284,6 +286,59 @@ static func consume_forest_restore() -> Dictionary:
 	if not _valid_forest_context(result) or not _forest_access_allowed() or _forest_verified_owner() != str(result.get("verified_owner", "")) or forest_selected_summoner() != str(result.get("summoner_id", "")) or bool(result.get("debug", false)) != _connection_gate().debug_lab_navigation_allowed() or result.get("identity_generation", -1) != _connection_gate()._generation:
 		return {}
 	return result
+
+static func forest_change_available() -> bool:
+	if _forest_change.is_empty():
+		return false
+	var gate := _connection_gate()
+	var owner := str(_forest_change.get("verified_owner", ""))
+	if not _valid_forest_context(_forest_change) or str(_forest_change.get("summoner_id", "")) != _forest_summoner or owner != _forest_owner or _forest_change.get("identity_generation", -1) != gate._generation or bool(_forest_change.get("debug", false)) != gate.debug_lab_navigation_allowed():
+		_forest_change.clear()
+		return false
+	if not gate.debug_lab_navigation_allowed() and (str(gate.player_id) != owner or str(gate.token).strip_edges().is_empty()):
+		_forest_change.clear()
+		return false
+	return _forest_access_allowed() and _forest_verified_owner() == owner and _forest_modes_safe()
+
+static func change_summoner_from_forest(zone_id: String, foot: Vector2, facing: int) -> void:
+	if not _forest_access_allowed() or not _forest_modes_safe() or not _forest_change.is_empty():
+		return
+	var tree := _get_tree()
+	var scene := tree.current_scene if tree != null else null
+	if not is_instance_valid(scene) or scene.scene_file_path != SCENE_FOREST_WORLD or not scene.forest_change_allowed(zone_id, foot, facing):
+		return
+	var context := {"verified_owner": _forest_verified_owner(), "summoner_id": forest_selected_summoner(), "zone_id": zone_id, "foot_position": foot, "facing": facing, "debug": _connection_gate().debug_lab_navigation_allowed(), "identity_generation": _connection_gate()._generation}
+	if not _valid_forest_context(context):
+		return
+	_forest_change = context
+	_go_to(SCENE_SUMMONER_SELECTION, "SummonerSelection")
+
+static func finish_forest_change(summoner_id: String, confirmed: bool) -> void:
+	if not forest_change_available():
+		return
+	var tree := _get_tree()
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_SUMMONER_SELECTION:
+		return
+	var selected := summoner_id if confirmed else str(_forest_change.summoner_id)
+	if selected not in FOREST_SUMMONERS:
+		return
+	var owner := _forest_verified_owner()
+	if confirmed and not owner.is_empty():
+		var config := ConfigFile.new()
+		var err := config.load(FOREST_PREFERENCES)
+		if err != OK and err != ERR_FILE_NOT_FOUND:
+			push_warning("Could not read forest summoner preference.")
+			return
+		config.set_value("players", owner.sha256_text(), selected)
+		if config.save(FOREST_PREFERENCES) != OK:
+			push_warning("Could not save forest summoner preference.")
+			return
+	var restore := _forest_change.duplicate(true)
+	restore.summoner_id = selected
+	_forest_summoner = selected
+	_forest_change.clear()
+	_forest_restore = restore
+	_go_to(SCENE_FOREST_WORLD, "ForestWorld")
 
 static func go_to_lab_structures(building_id: String = "") -> void:
 	_next_lab_focus_id = building_id

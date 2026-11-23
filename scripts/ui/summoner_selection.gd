@@ -9,9 +9,17 @@ const SUMMONERS := {
 var _selected := ""
 var _cards := {}
 var _confirm: Button
+var _change_mode := false
+var _change_check_elapsed := 0.0
 
 func _ready() -> void:
+	_change_mode = not SceneRouter._forest_change.is_empty()
 	if not SceneRouter._forest_access_allowed():
+		if _change_mode:
+			SceneRouter.forest_change_available()
+		SceneRouter.go_to_lab_hub.call_deferred()
+		return
+	if _change_mode and not SceneRouter.forest_change_available():
 		SceneRouter.go_to_lab_hub.call_deferred()
 		return
 	_selected = SceneRouter.forest_selected_summoner()
@@ -83,18 +91,47 @@ func _ready() -> void:
 	back.text = "SETTINGS_BACK"
 	back.add_theme_font_size_override("font_size", 24)
 	_set_rect(back, 0.16, 0.83, 0.34, 0.91)
-	back.pressed.connect(SceneRouter.leave_forest)
+	back.pressed.connect(_cancel_selection)
 	canvas.add_child(back)
 	_confirm = Button.new()
-	_confirm.text = "FOREST_CONFIRM"
+	_confirm.text = "UI_CONFIRM" if _change_mode else "FOREST_CONFIRM"
 	_confirm.add_theme_font_size_override("font_size", 24)
 	_set_rect(_confirm, 0.60, 0.83, 0.84, 0.91)
-	_confirm.pressed.connect(func(): SceneRouter.enter_forest(_selected))
+	_confirm.pressed.connect(_confirm_selection)
 	canvas.add_child(_confirm)
 	UIThemeFactory.apply_theme_to(self)
 	MenuArt.button(back)
 	MenuArt.button(_confirm)
 	_refresh()
+
+func _cancel_selection() -> void:
+	if _change_mode:
+		SceneRouter.finish_forest_change("", false)
+	else:
+		SceneRouter.leave_forest()
+
+func _confirm_selection() -> void:
+	if _change_mode:
+		SceneRouter.finish_forest_change(_selected, true)
+	else:
+		SceneRouter.enter_forest(_selected)
+
+func _process(delta: float) -> void:
+	if not _change_mode:
+		return
+	if not is_instance_valid(_confirm):
+		if SceneRouter._forest_access_allowed():
+			SceneRouter._forest_change.clear()
+			SceneRouter.go_to_lab_hub.call_deferred()
+		return
+	_change_check_elapsed += delta
+	if _change_check_elapsed < 0.25:
+		return
+	_change_check_elapsed = 0.0
+	var available := SceneRouter.forest_change_available()
+	_confirm.disabled = _selected not in SUMMONERS or not available
+	if not available and SceneRouter._forest_change.is_empty() and SceneRouter._forest_access_allowed():
+		SceneRouter.go_to_lab_hub.call_deferred()
 
 func _set_rect(control: Control, left: float, top: float, right: float, bottom: float) -> void:
 	control.anchor_left = left
