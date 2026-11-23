@@ -25,19 +25,33 @@ export function trustedPvpSnapshot(playerId: string, selection: any, state: any,
   return { player_id: playerId, entity_id: entity.id, weapon_ids: [...weapons], homunculus_id: selection.homunculus_id, spell_ids: [...ids], item_progress: structuredClone(state.item_progress ?? {}), homunculus_progress: structuredClone(state.homunculus_progress ?? {}), spell_progress: structuredClone(state.spell_progress ?? {}) };
 }
 
+/** Called within the caller's immediate transaction with server-validated snapshots. */
+export function createSharedPvpMatch(db: Database, catalogs: PvpCatalogs, a: PvpSnapshot, b: PvpSnapshot, now: number, kind: "ranked" | "friendly", inviteId: string | null = null) {
+  if (a.player_id === b.player_id || "error" in createPvpFighter(a, catalogs) || "error" in createPvpFighter(b, catalogs)) throw new Error("UNTRUSTED_SETUP");
+  const [left, right] = randomInt(2) === 0 ? [a,b] : [b,a];
+  const combat = createPvpCombatState(left, right, catalogs);
+  if ("error" in combat) throw new Error(combat.error);
+  const id = randomUUID(), season = pvpSeason(now);
+  const rankings = createPvpRanking(db, () => now);
+  const leftRating = kind === "ranked" ? rankings.ensure(season, left.player_id, now).rating : null;
+  const rightRating = kind === "ranked" ? rankings.ensure(season, right.player_id, now).rating : null;
+  db.query("INSERT INTO pvp_matches (match_id,status,created_at,updated_at,revision,combat_state_json,season,decision_deadline,kind,invite_id) VALUES (?,'ACTIVE',?,?,1,?,?,?,?,?)").run(id,now,now,JSON.stringify(combat),kind === "ranked" ? season : null,now+PVP_TURN_TIMEOUT_MS,kind,inviteId);
+  const member = db.query("INSERT INTO pvp_match_players (match_id,player_id,side,snapshot_json,active,last_seen_at,start_rating) VALUES (?,?,?,?,1,?,?)");
+  member.run(id,left.player_id,"LEFT",JSON.stringify(left),now,leftRating);
+  member.run(id,right.player_id,"RIGHT",JSON.stringify(right),now,rightRating);
+  return id;
+}
+
 /** The caller must authenticate the user and construct a snapshot from authoritative
  * storage. Never pass a client-supplied snapshot to this service. */
 export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnapshot: (playerId: string, selection: unknown) => PvpSnapshot | null, clock: () => number = Date.now) {
   if (typeof trustedSnapshot !== "function") throw new Error("PVP_OWNERSHIP_VERIFIER_REQUIRED");
-  const rankings = createPvpRanking(db, clock);
   const expire = db.prepare("DELETE FROM pvp_queue WHERE expires_at <= ?");
   const queued = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id = ?");
   const active = db.prepare("SELECT match_id FROM pvp_match_players WHERE player_id = ? AND active = 1");
-  const first = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id <> ? ORDER BY queued_at, rowid LIMIT 1");
+  const first = db.prepare("SELECT q.player_id, q.queued_at, q.expires_at, q.snapshot_json FROM pvp_queue q WHERE q.player_id <> ? AND NOT EXISTS (SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=q.player_id AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?) ORDER BY q.queued_at, q.rowid LIMIT 1");
   const insert = db.prepare("INSERT INTO pvp_queue (player_id, queued_at, expires_at, snapshot_json) VALUES (?, ?, ?, ?)");
   const remove = db.prepare("DELETE FROM pvp_queue WHERE player_id = ?");
-  const match = db.prepare("INSERT INTO pvp_matches (match_id, status, created_at, updated_at, revision, combat_state_json, season, decision_deadline) VALUES (?, 'ACTIVE', ?, ?, 1, ?, ?, ?)");
-  const member = db.prepare("INSERT INTO pvp_match_players (match_id, player_id, side, snapshot_json, active, last_seen_at, start_rating) VALUES (?, ?, ?, ?, 1, ?, ?)");
   const validId = (id: string) => typeof id === "string" && id.length > 0 && id.length <= 256;
   return {
     state(playerId: string) {
@@ -62,6 +76,9 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
         const now = clock(); expire.run(now);
         const current = active.get(playerId) as any;
         if (current) return { state: "MATCHED", match_id: current.match_id };
+        db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now,now);
+        db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
+        if (db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(playerId,now)) throw new Error("PLAYER_BUSY");
         const previous = queued.get(playerId) as any;
         if (previous) {
           if (JSON.stringify(JSON.parse(previous.snapshot_json).selection) !== JSON.stringify(selection)) throw new Error("QUEUE_CONFLICT");
@@ -69,24 +86,15 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
         }
         const snapshot = trustedSnapshot(playerId, selection);
         if (!snapshot || snapshot.player_id !== playerId || "error" in createPvpFighter(snapshot, catalogs)) throw new Error("UNTRUSTED_SETUP");
-        let opponent = first.get(playerId) as any, other: PvpSnapshot | null = null;
+        let opponent = first.get(playerId,now) as any, other: PvpSnapshot | null = null;
         while (opponent) {
           const stored = JSON.parse(opponent.snapshot_json);
           other = stored.snapshot ?? null;
           if (other && other.player_id === opponent.player_id && other.player_id !== playerId && !("error" in createPvpFighter(other, catalogs))) break;
-          remove.run(opponent.player_id); opponent = first.get(playerId) as any;
+          remove.run(opponent.player_id); opponent = first.get(playerId,now) as any;
         }
         if (!opponent || !other) { insert.run(playerId, now, now + 3_600_000, JSON.stringify({selection, snapshot})); return { state: "QUEUED", joined_at: now, expires_at: now + 3_600_000 }; }
-        const [left, right] = randomInt(2) === 0 ? [snapshot, other] : [other, snapshot];
-        const combat = createPvpCombatState(left, right, catalogs);
-        if ("error" in combat) throw new Error(combat.error);
-        const id = randomUUID();
-        const season = pvpSeason(now);
-        const leftRating = rankings.ensure(season, left.player_id, now).rating;
-        const rightRating = rankings.ensure(season, right.player_id, now).rating;
-        match.run(id, now, now, JSON.stringify(combat), season, now + PVP_TURN_TIMEOUT_MS);
-        member.run(id, left.player_id, "LEFT", JSON.stringify(left), now, leftRating);
-        member.run(id, right.player_id, "RIGHT", JSON.stringify(right), now, rightRating);
+        const id = createSharedPvpMatch(db,catalogs,snapshot,other,now,"ranked");
         remove.run(other.player_id);
         return { state: "MATCHED", match_id: id };
       }).immediate();
@@ -112,9 +120,16 @@ export function settlePvpMatch(db: Database, matchId: string, winner: "left" | "
   if (typeof matchId !== "string" || !matchId || !["left", "right", "draw"].includes(winner)) throw new Error("INVALID_RESULT");
   const currentSeason = pvpSeason(now);
   return db.transaction(() => {
-    const match = db.query("SELECT status, season, result_json FROM pvp_matches WHERE match_id = ?").get(matchId) as any;
+    const match = db.query("SELECT status, season, result_json, kind FROM pvp_matches WHERE match_id = ?").get(matchId) as any;
     if (!match) throw new Error("MATCH_NOT_FOUND");
     if (match.status === "FINISHED") { const prior = JSON.parse(match.result_json); if (prior.result !== winner) throw new Error("RESULT_CONFLICT"); return prior; }
+    if (match.kind === "friendly") {
+      const result = {result: winner};
+      db.query("UPDATE pvp_matches SET status='FINISHED', result_json=?, settled_at=?, updated_at=?, revision=revision+1 WHERE match_id=? AND status='ACTIVE'").run(JSON.stringify(result),now,now,matchId);
+      db.query("UPDATE pvp_match_players SET active=0 WHERE match_id=?").run(matchId);
+      return result;
+    }
+    if (match.kind !== "ranked") throw new Error("INVALID_MATCH_KIND");
     const rows = db.query("SELECT player_id, side, start_rating FROM pvp_match_players WHERE match_id = ?").all(matchId) as any[];
     const left = rows.find(r => r.side === "LEFT"), right = rows.find(r => r.side === "RIGHT");
     if (rows.length !== 2 || !left || !right || ![left.start_rating, right.start_rating].every(n => Number.isSafeInteger(n) && n >= 0) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(match.season ?? "")) throw new Error("INVALID_MATCH_STATE");
@@ -198,9 +213,9 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
     };
     const finished = row.result_json ? JSON.parse(row.result_json) : null;
     const total = finished?.totals?.[viewer];
-    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...(Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {}) } : null;
+    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...(row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...(Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {}) } : {}) } : null;
     const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
-    return { match_id: row.match_id, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizeEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
+    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizeEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
   };
   const advance = (row: any, now: number, timeout: boolean) => {
     let state = parse(row); const entries = members(row.match_id), choices = pending.all(row.match_id,row.revision) as any[];
@@ -244,8 +259,8 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
     }).immediate();
   };
   return {
-    locate(player: string) {
-      const row = db.query("SELECT m.match_id FROM pvp_match_players p JOIN pvp_matches m ON m.match_id = p.match_id WHERE p.player_id = ? ORDER BY p.active DESC, m.created_at DESC, m.match_id DESC LIMIT 1").get(player) as any;
+    locate(player: string, kind = "ranked") {
+      const row = db.query("SELECT m.match_id FROM pvp_match_players p JOIN pvp_matches m ON m.match_id = p.match_id WHERE p.player_id = ? AND m.kind=? ORDER BY p.active DESC, m.created_at DESC, m.match_id DESC LIMIT 1").get(player,kind) as any;
       return row?.match_id ?? null;
     },
     sweep() {
@@ -279,13 +294,15 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
 }
 
 /** Route adapter; all callers must authenticate before dispatch. */
-export function dispatchPvpRequest(services: {db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>}, player: string, method: string, path: string, body: any, query: URLSearchParams) {
+export function dispatchPvpRequest(services: {db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>}, player: string, method: string, path: string, body: any, query: URLSearchParams, kind: "ranked" | "friendly" = "ranked") {
   const {db,queue,matches,chat,ranking}=services;
+  if (kind === "friendly") path = path.replace("/forest/duels/match/", "/pvp/match/");
+  const authorize = (id: string) => { if (!db.query("SELECT 1 FROM pvp_matches m JOIN pvp_match_players p ON p.match_id=m.match_id WHERE m.match_id=? AND m.kind=? AND p.player_id=?").get(id,kind,player)) throw new Error("MATCH_NOT_FOUND"); };
   const fields = (v: any, allowed: string[]) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every(k=>allowed.includes(k));
   const cursor = () => { const raw=query.get("after") ?? "0"; if (!/^\d+$/.test(raw)) throw new Error("INVALID_CURSOR"); const value=Number(raw); if (!Number.isSafeInteger(value)) throw new Error("INVALID_CURSOR"); return value; };
   if (method === "GET" && path === "/pvp/queue/state") return queue.state(player);
   if (method === "GET" && path === "/pvp/leaderboard") { if (query.getAll("season").length > 1) throw new Error("INVALID_SEASON"); return ranking.leaderboard(player, query.get("season")); }
-  if (method === "GET" && path === "/pvp/match/state") { const id=query.get("match_id") ?? matches.locate(player); if (!id) return {match:null}; const raw=query.get("chat_after") ?? "0", chatAfter=Number(raw); if (!/^\d+$/.test(raw) || !Number.isSafeInteger(chatAfter)) throw new Error("INVALID_CURSOR"); return { ...matches.state(id,player,cursor()), chat: chat.list(id,player,chatAfter) }; }
+  if (method === "GET" && path === "/pvp/match/state") { const id=query.get("match_id") ?? matches.locate(player,kind); if (!id) return {match:null}; authorize(id); const raw=query.get("chat_after") ?? "0", chatAfter=Number(raw); if (!/^\d+$/.test(raw) || !Number.isSafeInteger(chatAfter)) throw new Error("INVALID_CURSOR"); return { ...matches.state(id,player,cursor()), chat: chat.list(id,player,chatAfter) }; }
   if (method === "POST" && path === "/pvp/queue/join") {
     if (!fields(body,["client_action_id","selection"])) throw new Error("INVALID_REQUEST");
     return queueAction(db,player,body.client_action_id,{kind:"queue_join",selection:body.selection},()=>queue.join(player,body.selection));
@@ -296,15 +313,15 @@ export function dispatchPvpRequest(services: {db: Database; queue: ReturnType<ty
   }
   if (method === "POST" && path === "/pvp/match/decision") {
     if (!fields(body,["match_id","client_action_id","combat_revision","decision"]) || typeof body.match_id !== "string") throw new Error("INVALID_REQUEST");
-    return matches.decide(body.match_id,player,body.client_action_id,body.combat_revision,body.decision);
+    authorize(body.match_id); return matches.decide(body.match_id,player,body.client_action_id,body.combat_revision,body.decision);
   }
   if (method === "POST" && path === "/pvp/match/forfeit") {
     if (!fields(body,["match_id","client_action_id"]) || typeof body.match_id !== "string") throw new Error("INVALID_REQUEST");
-    return matches.forfeit(body.match_id,player,body.client_action_id);
+    authorize(body.match_id); return matches.forfeit(body.match_id,player,body.client_action_id);
   }
   if (method === "POST" && path === "/pvp/match/chat") {
     if (!fields(body,["match_id","client_message_id","text"]) || typeof body.match_id !== "string") throw new Error("INVALID_REQUEST");
-    const sent=chat.send(body.match_id,player,body.client_message_id,body.text);
+    authorize(body.match_id); const sent=chat.send(body.match_id,player,body.client_message_id,body.text);
     return {message:sent.message,duplicate:sent.duplicate};
   }
   throw new Error("UNKNOWN_ROUTE");

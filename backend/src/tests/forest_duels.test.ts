@@ -105,7 +105,7 @@ test.skipIf(!redisBin)('authenticated HTTP and real Forest sockets revalidate ro
  let server:any;const sockets:WebSocket[]=[];
  try {
   let ready=false;for(let i=0;i<50;i++){try{await redis.connect();ready=true;break}catch{}await Bun.sleep(100)}expect(ready).toBe(true);
-  const env={...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(port),DB_PATH:path,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_DUELS_ENABLED:'1',PVP_ENABLED:'0',LOGIN_RATE_LIMIT_MAX:'100'};
+  const env={...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(port),DB_PATH:path,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_DUELS_ENABLED:'1',PVP_ENABLED:'0',PVP_RNG_SECRET:'test-secret-with-at-least-32-characters',LOGIN_RATE_LIMIT_MAX:'100'};
   server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env,stdout:'ignore',stderr:'ignore'});
   const base=`http://127.0.0.1:${port}`;ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}expect(ready).toBe(true);
   const post=(url:string,body:any,token?:string)=>fetch(base+url,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify(body)});
@@ -127,7 +127,15 @@ test.skipIf(!redisBin)('authenticated HTTP and real Forest sockets revalidate ro
   const accepted=await post('/forest/duels/respond',{invite_id:created.invite.invite_id,accept:true,client_action_id:'accept'},recipient.token);expect(accepted.status).toBe(200);
   await new Promise<void>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('suspend timeout')),3000);challengerSocket.onmessage=e=>{if(JSON.parse(String(e.data)).type==='handoff_ack'){clearTimeout(timer);ok()}};challengerSocket.send(JSON.stringify({v:1,type:'suspend'}));});
   const after:any=await (await state(challenger.token)).json();expect(after.accepted[0].invite_id).toBe(created.invite.invite_id);
-  expect((await post('/forest/duels/cancel',{invite_id:created.invite.invite_id,client_action_id:'cancel'},challenger.token)).status).toBe(200);
+  const spells=JSON.parse(readFileSync(resolve(import.meta.dir,'../../../data/spells.json'),'utf8')).spells.filter((s:any)=>s.type==='sulfur').map((s:any)=>s.id);
+  const selection={entity_id:'sulfur_01',weapon_ids:[null,null],homunculus_id:null,spell_ids:spells,mode:'attack'}, invite_id=created.invite.invite_id;
+  const results=await Promise.all([post('/forest/duels/ready',{invite_id,selection,client_action_id:'ready-a'},challenger.token),post('/forest/duels/ready',{invite_id,selection,client_action_id:'ready-b'},recipient.token)]);
+  expect(results.map(r=>r.status)).toEqual([200,200]); const payloads:any[]=await Promise.all(results.map(r=>r.json())); expect(payloads.map(x=>x.state).sort()).toEqual(['STARTED','WAITING']);
+  const recovered:any=await (await state(challenger.token)).json(), match=recovered.started.match_id; expect(match).toBe(payloads.find(x=>x.match_id).match_id);
+  expect((await fetch(base+'/forest/duels/match/state?match_id='+match,{headers:{Authorization:`Bearer ${c.token}`}})).status).toBe(404);
+  const battle:any=await (await fetch(base+'/forest/duels/match/state?match_id='+match,{headers:{Authorization:`Bearer ${challenger.token}`}})).json();expect(battle.kind).toBe('friendly');
+  expect((await post('/forest/duels/cancel',{invite_id,client_action_id:'cancel'},challenger.token)).status).toBe(409);
+  expect((await post('/forest/duels/match/forfeit',{match_id:match,client_action_id:'forfeit'},challenger.token)).status).toBe(200);
   expect((await post('/forest/duels/request',{target_player_id:challenger.id,client_action_id:'suspended'},recipient.token)).status).toBe(409);
   const secondaryPort=await freePort();
   const secondary=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env:{...env,PORT:String(secondaryPort),FOREST_WS_ENABLED:'0'},stdout:'ignore',stderr:'ignore'});

@@ -10,7 +10,7 @@ const snapshot = (player_id: string) => ({player_id,entity_id:"sulfur_01",weapon
 
 test("0.61h targeted audit: queued server snapshot stays frozen when progression changes", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  const states: Record<string,any> = {a:{player_id:"a",item_progress:{bismuth_talisman:{level:0}},homunculus_progress:{},spell_progress:{}},b:{player_id:"b",item_progress:{},homunculus_progress:{},spell_progress:{}}};
  const selection={entity_id:"sulfur_01",weapon_ids:["bismuth_talisman",null],homunculus_id:null,spell_ids:snapshot("a").spell_ids,mode:"attack"};
@@ -28,7 +28,7 @@ test("0.61h targeted audit: queued server snapshot stays frozen when progression
 
 test("0.61h targeted audit: resolved status is public to both viewers without private state", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>100); queue.join("a",{}); const match=(queue.join("b",{}) as any).match_id;
  const row=db.query("SELECT combat_state_json FROM pvp_matches WHERE match_id = ?").get(match) as any, state=JSON.parse(row.combat_state_json);
@@ -70,7 +70,7 @@ test("queue is persistent, FIFO, exclusive, expires and cancels idempotently", (
  const db = new Database(":memory:");
  db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
  db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite/0011_pvp.sql"),"utf8"));
- for (const name of ["0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for (const name of ["0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for (const id of ["a","b","c"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,(id)=>id === "c" ? null : snapshot(id),()=>now);
  expect(queue.join("a",{})).toEqual({state:"QUEUED",joined_at:100,expires_at:3600100});
@@ -91,7 +91,7 @@ test("queue is persistent, FIFO, exclusive, expires and cancels idempotently", (
 
 test("a match crossing UTC month end settles without changing either season", () => {
  const db = new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for (const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=Date.UTC(2026,0,31,23,59,30); const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now);
  queue.join("a",{}); const match=queue.join("b",{}) as any;
@@ -104,7 +104,7 @@ test("a match crossing UTC month end settles without changing either season", ()
 
 test("match chat is private, rate limited and idempotent", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b","c"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now);
  queue.join("a",{}); const match=(queue.join("b",{}) as any).match_id; const chat=createPvpChat(db,()=>now);
@@ -121,7 +121,7 @@ test("match chat is private, rate limited and idempotent", () => {
 
 test("private simultaneous decisions resolve once, preserve revisions and enforce access", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b","c"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now); queue.join("a",{});
  const match=(queue.join("b",{}) as any).match_id, service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);
@@ -148,7 +148,7 @@ test("private simultaneous decisions resolve once, preserve revisions and enforc
 
 test("missing decisions forfeit and pending Inspiration auto-declines on timeout", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now); queue.join("a",{});
  let id=(queue.join("b",{}) as any).match_id; const service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);

@@ -8,8 +8,9 @@ import { createForestPresence, loadCatalog, type ForestData } from "./forest/pre
 import { createForestDuels } from "./forest/duels";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
-import { createPvpChat, createPvpMatches, createPvpQueue, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
+import { createPvpChat, createPvpMatches, createPvpQueue, createSharedPvpMatch, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
 import { createPvpRanking } from "./pvp/ranking";
+import { createPvpFighter } from "./pvp/combat";
 import { createHash, createHmac } from "crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -361,7 +362,7 @@ function getExpeditionService() {
 	} });
 	return expeditionService;
 }
-let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking> } | null = null;
+let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>; snapshot: (id:string,selection:unknown)=>any; startFriendly: (a:any,b:any,now:number,invite:string)=>string } | null = null;
 function getRankedServices() {
 	if (rankedServices) return rankedServices;
 	const secret = Bun.env.PVP_RNG_SECRET;
@@ -370,7 +371,8 @@ function getRankedServices() {
 	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
 	if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance) throw new Error("PVP_CATALOG_UNAVAILABLE");
 	const matches = createPvpMatches(db, new TextEncoder().encode(secret));
-	rankedServices = { db, matches, queue: createPvpQueue(db, catalogs, (id, selection) => trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs)), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+	const snapshot = (id:string, selection:unknown) => { const value=trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs); return value && !("error" in createPvpFighter(value,catalogs)) ? value : null; };
+	rankedServices = { db, matches, snapshot, startFriendly: (a,b,now,invite) => createSharedPvpMatch(db,catalogs,a,b,now,"friendly",invite), queue: createPvpQueue(db, catalogs, snapshot), chat: createPvpChat(db), ranking: createPvpRanking(db) };
 	const timer = setInterval(() => { try { matches.sweep(); } catch (error) { logError("pvp deadline sweep failed", { error: String(error) }); } }, 1000);
 	timer.unref();
 	return rankedServices;
@@ -1324,7 +1326,7 @@ async function startServer(): Promise<void> {
 		if (performance.now() >= leaseDeadline) { fenceLease(); return false; }
 		return true;
 	}
-	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid());
+	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite); } });
 	if (forest && leaseToken) {
 		getRedis().on("error", fenceLease);
 		getRedis().on("close", fenceLease);
@@ -1611,20 +1613,22 @@ async function startServer(): Promise<void> {
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 
-				if (isRankedRoute(req.method, url.pathname)) {
+				if (isRankedRoute(req.method, url.pathname) || (req.method === "GET" && url.pathname === "/forest/duels/match/state") || (req.method === "POST" && ["/forest/duels/match/decision","/forest/duels/match/forfeit","/forest/duels/match/chat"].includes(url.pathname))) {
+                    const friendly = url.pathname.startsWith("/forest/duels/");
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
-					if (Bun.env.PVP_ENABLED !== "1") { const result = rankedAvailability(Bun.env); return jsonResponse(result.data, result.status); }
+					if (friendly && (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid())) return jsonResponse({error:"FOREST_DUELS_UNAVAILABLE"},503);
+					if (!friendly && Bun.env.PVP_ENABLED !== "1") { const result = rankedAvailability(Bun.env); return jsonResponse(result.data, result.status); }
 					try {
 						const services = getRankedServices();
 						if (!services) return jsonResponse({ error: "PVP_SECRET_REQUIRED" }, 503);
 						const body = req.method === "POST" ? await readJson(req, config.maxBodyBytes) : undefined;
-						return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams));
+						return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams, friendly ? "friendly" : "ranked"));
 					} catch (error) {
 						const code = error instanceof Error ? error.message : "PVP_UNAVAILABLE";
 						if (code === "MATCH_NOT_FOUND") return jsonResponse({ error: code }, 404);
 						if (code === "CHAT_RATE_LIMIT") return jsonResponse({ error: code }, 429);
-						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT"].includes(code)) return jsonResponse({ error: code }, 409);
+						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT", "PLAYER_BUSY"].includes(code)) return jsonResponse({ error: code }, 409);
 						if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code)) return jsonResponse({ error: code }, 400);
 						logError("pvp request failed", { error: String(error) }); return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
 					}
@@ -1650,7 +1654,7 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
-				if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel"].includes(url.pathname)) {
+				if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel", "/forest/duels/ready"].includes(url.pathname)) {
 					const playerId = await requireAuth(req, ctx);
 					if (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_DUELS_UNAVAILABLE"}, 503);
 					await applyRateLimit(ctx, {keyPrefix:"rl:forest-duels", windowSeconds:60, max:120, keyBy:"user", userId:playerId});
@@ -1666,7 +1670,12 @@ async function startServer(): Promise<void> {
 						const challenger = body?.accept === true ? duels.challengerFor(playerId, body?.invite_id) : null;
 						const available = !challenger || !(await isUserDisabled(challenger));
 						result = duels.respond(playerId, body, available);
-					} else result = duels.cancel(playerId, body);
+					} else if (url.pathname === "/forest/duels/ready") {
+                        if (!getRankedServices()) return jsonResponse({error:"PVP_SECRET_REQUIRED"},503);
+                        const participants = duels.participants(body?.invite_id);
+                        const available = (await Promise.all(participants.map(id=>isUserDisabled(id)))).every(disabled=>!disabled);
+                        result = duels.ready(playerId,body,available);
+                    } else result = duels.cancel(playerId, body);
 					return jsonResponse(result.data, result.status);
 				}
 
