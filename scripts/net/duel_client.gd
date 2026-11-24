@@ -43,6 +43,33 @@ func available() -> bool:
 func _identity_key() -> String:
 	return JSON.stringify([ConnectionGate.player_id, ConnectionGate.token, ConnectionGate.base_url, ConnectionGate._generation])
 
+func reset_for_logout() -> void:
+	_epoch += 1
+	_reset_requests()
+	_identity = ""
+	enabled = false
+	incoming.clear()
+	outgoing.clear()
+	accepted_invites.clear()
+	started.clear()
+	cooldowns.clear()
+	error_key = ""
+	_server_time = 0
+	_server_ticks = 0
+	_last_second = -1
+	_next_retry = 0
+	_pending_path = ""
+	_pending_body = ""
+	_action_owner = ""
+	_action_base = ""
+	_tracked_invite = ""
+	_verify_match = ""
+	_verify_invite = ""
+	_reported_match = ""
+	_reported_invite = ""
+	_next_poll = 0
+	state_changed.emit()
+
 func _reset_requests() -> void:
 	for node in [_poll, _mutation]:
 		if is_instance_valid(node):

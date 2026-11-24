@@ -14,8 +14,11 @@ func _run() -> void:
 	avatar.add_child(bubble)
 	bubble.show_message(1, "[b]plain[/b]", 1000, 11000, 2000)
 	await process_frame
+	await process_frame
 	assert(bubble.visible and bubble._label.text == "[b]plain[/b]" and bubble.mouse_filter == Control.MOUSE_FILTER_IGNORE)
+	assert(bubble.size.x == 300 and bubble.size.y >= 30 and bubble._label.size.y >= bubble._label.get_theme_font("font").get_height(22), "Bubble must give the text visible height")
 	var original_y: float = bubble.position.y
+	var single_line_height: float = bubble.size.y
 	var action := Button.new()
 	action.name = "DuelAction"
 	action.position.y = -240
@@ -25,9 +28,21 @@ func _run() -> void:
 	var original_deadline: int = bubble._deadline_ticks
 	bubble.show_message(1, "duplicate", 1000, 11000, 3000)
 	assert(bubble._label.text == "[b]plain[/b]" and bubble._deadline_ticks == original_deadline)
-	bubble.show_message(2, "new", 2000, 12000, 4000)
-	assert(bubble._label.text == "new")
-	bubble.show_message(3, "expired", 3000, 13000, 13000)
+	var long_text := "Hola, esto es un mensaje largo con acentos y varias palabras que debe ocupar varias líneas visibles sobre el jugador."
+	bubble.show_message(2, long_text, 2000, 12000, 4000)
+	await process_frame
+	await process_frame
+	assert(bubble._label.text == long_text and bubble.size.y > single_line_height and bubble._label.get_line_count() > 1, "Long messages must wrap and expand the bubble")
+	assert(bubble.position.y + bubble.size.y < action.position.y, "Bubble must remain above player actions")
+	bubble.show_message(3, "W".repeat(120), 3000, 13000, 4000)
+	await process_frame
+	await process_frame
+	assert(bubble._label.get_line_count() > 1 and bubble._label.size.y >= mini(bubble._label.get_line_count(), 8) * bubble._label.get_theme_font("font").get_height(22), "Long words must also fit the wrapped lines")
+	bubble.show_message(4, "new", 4000, 14000, 5000)
+	await process_frame
+	await process_frame
+	assert(bubble._label.text == "new" and bubble.size.y == single_line_height, "Bubble must shrink for a shorter message")
+	bubble.show_message(5, "expired", 5000, 15000, 15000)
 	assert(bubble._label.text == "new")
 	bubble._deadline_ticks = Time.get_ticks_msec()
 	bubble._process(0.0)

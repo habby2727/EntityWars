@@ -1,5 +1,6 @@
 extends Control
 
+const ResourceBars := preload("res://scripts/ui/lab_resource_bars.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const Zones := preload("res://scripts/forest/forest_zones.gd")
 const ForestPlayer := preload("res://scripts/forest/forest_player.gd")
@@ -22,6 +23,9 @@ class MaskButton extends Button:
 		draw_colored_polygon(PackedVector2Array([c + Vector2(14,-5), c + Vector2(5,-7), c + Vector2(6,0), c + Vector2(12,0)]), Color("172b2c"))
 		draw_line(c + Vector2(-5,9), c + Vector2(5,9), Color("4c6558"), 2.0, true)
 
+
+var _resource_catalog := AssetCatalog.new()
+var _resource_rows := {}
 
 var _canvas: Control
 var _world: Node2D
@@ -121,13 +125,22 @@ func _ready() -> void:
 	var leave := Button.new()
 	leave.name = "LeaveButton"
 	leave.text = "FOREST_LEAVE"
-	leave.anchor_left = 0.02
-	leave.anchor_top = 0.025
-	leave.anchor_right = 0.20
-	leave.anchor_bottom = 0.09
-	leave.add_theme_font_size_override("font_size", 24)
+	leave.anchor_left = 0.5
+	leave.anchor_right = 0.5
+	leave.offset_left = -86
+	leave.offset_right = 86
+	leave.offset_top = 20
+	leave.offset_bottom = 55
+	leave.add_theme_font_size_override("font_size", 20)
 	leave.pressed.connect(_leave_forest)
 	_canvas.add_child(leave)
+	var resources := VBoxContainer.new()
+	resources.name = "ForestResourceBars"
+	resources.position = Vector2(20, 20)
+	resources.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_canvas.add_child(resources)
+	_resource_rows = ResourceBars.build(resources, _resource_catalog, true, -10)
+	ResourceBars.update(_resource_rows, {})
 	_build_mask_button()
 	_joystick = Joystick.new()
 	_joystick.name = "TouchJoystick"
@@ -180,6 +193,7 @@ func _clear_verified_name() -> void:
 	_verified_name = ""
 	_name_generation = -1
 	_name_client_generation = -1
+	ResourceBars.update(_resource_rows, {})
 	if is_instance_valid(_player):
 		_player.set_display_name("")
 
@@ -191,6 +205,7 @@ func _on_name_state(state: Dictionary) -> void:
 	if value.strip_edges().is_empty():
 		_clear_verified_name()
 		return
+	ResourceBars.update(_resource_rows, state)
 	_verified_name = value
 	_name_generation = ConnectionGate._generation
 	_name_client_generation = _name_backend._session_generation
@@ -832,4 +847,5 @@ func _leave_forest() -> void:
 	_resume_if_still_here()
 
 func _exit_tree() -> void:
+	_resource_catalog.free()
 	if is_instance_valid(_presence): _presence.shutdown()

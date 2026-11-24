@@ -84,6 +84,10 @@ layout_mode = 2
 disabled = true
 text = "SETTINGS_SOUND_SOON"
 
+[node name="Logout" type="Button" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "SETTINGS_LOGOUT"
+
 [node name="Back" type="Button" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
 text = "SETTINGS_BACK"

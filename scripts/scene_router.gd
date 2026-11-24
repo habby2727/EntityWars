@@ -45,6 +45,28 @@ static var _ranked_context := {}
 static var _friendly_context := {}
 static var _expedition_context := {}
 static var _expedition_forfeit_notice := false
+static var logout_notice := ""
+
+static func clear_account_context() -> void:
+	_clear_forest_return()
+	_forest_summoner = ""
+	_forest_owner = ""
+	_next_lab_focus_id = ""
+	_next_inventory_tab = ""
+	_inventory_return_to_lab = false
+	_next_world_zone_id = ""
+	_next_world_boss_id = ""
+	_combat_seal_mode = "attack"
+	_world_encounter_return.clear()
+	_solo_hunt_context.clear()
+	_hunt_loadout_active = false
+	_hunt_loadout.clear()
+	_debug_guardian_wins.clear()
+	_dungeon_context.clear()
+	_ranked_context.clear()
+	_friendly_context.clear()
+	_expedition_context.clear()
+	_expedition_forfeit_notice = false
 
 static func begin_friendly_preparation(invite: Dictionary, zone_id: String, foot: Vector2, facing: int, recovery_match: String = "") -> void:
 	var gate := _connection_gate()

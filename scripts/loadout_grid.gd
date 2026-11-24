@@ -1,5 +1,21 @@
 extends Control
 
+class HomTooltipButton extends Button:
+	func _make_custom_tooltip(for_text: String) -> Object:
+		var panel := PanelContainer.new()
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.04, 0.04, 0.05, 0.97)
+		style.set_content_margin_all(12)
+		panel.add_theme_stylebox_override("panel", style)
+		var label := Label.new()
+		label.text = for_text
+		label.custom_minimum_size.x = 360
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.add_theme_color_override("font_color", Color.WHITE)
+		panel.add_child(label)
+		return panel
+
+
 ## Loadout screen (Attack/Defense seals).
 ## Nodes are resolved by explicit scene paths to avoid %UniqueName shorthand.
 
@@ -1421,7 +1437,7 @@ func _build_cards() -> void:
 
 func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) -> Control:
 	# Simple self-contained card to avoid theme/scene inconsistencies.
-	var b := Button.new()
+	var b: Button = HomTooltipButton.new() if p_kind == "homunculus" else Button.new()
 	b.custom_minimum_size = Vector2(150, 150) if p_kind == "homunculus" else Vector2(170, 200)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER

@@ -130,6 +130,111 @@ func sign_in_again() -> void:
 	get_tree().current_scene = auth
 	_layer.hide()
 
+# Explicit sign-out must not abandon a server action that needs reconciliation.
+func explicit_logout_safe() -> bool:
+	if is_instance_valid(_suspended_scene) or _recovery_owner_id != 0:
+		return false
+	if not SceneRouter._forest_modes_safe() or not SceneRouter._friendly_context.is_empty():
+		return false
+	if not DuelClient._tracked_invite.is_empty() or not DuelClient._pending_body.is_empty() or DuelClient._mutation_busy:
+		return false
+	if not SocialClient._pending_body.is_empty() or SocialClient._mutation_busy:
+		return false
+	var directory := DirAccess.open("user://")
+	if directory == null:
+		return false
+	for filename in directory.get_files():
+		if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
+			return false
+		if player_id.is_empty() and filename.begins_with("pending_actions_") and filename.ends_with(".json"):
+			if not _logout_queue_empty("user://" + filename):
+				return false
+	if not player_id.is_empty():
+		var queue_path := "user://pending_actions_%s.json" % player_id.sha256_text()
+		if not _logout_queue_empty(queue_path):
+			return false
+	var duel_config := ConfigFile.new()
+	if FileAccess.file_exists(DuelClient.RECOVERY_FILE):
+		if duel_config.load(DuelClient.RECOVERY_FILE) != OK:
+			return false
+		if player_id.is_empty():
+			if duel_config.has_section("players"):
+				for key in duel_config.get_section_keys("players"):
+					if not str(duel_config.get_value("players", key, "")).is_empty():
+						return false
+			if duel_config.has_section("pending") and not duel_config.get_section_keys("pending").is_empty():
+				return false
+		else:
+			var key: String = DuelClient._recovery_key()
+			if not str(duel_config.get_value("players", key, "")).is_empty() or duel_config.has_section_key("pending", key):
+				return false
+	for client in get_tree().get_nodes_in_group("backend_session_clients"):
+		if not client._in_flight.is_empty() or not client._api_in_flight.is_empty() or client._pending.size() > 0:
+			return false
+	return true
+
+func _logout_queue_empty(path: String) -> bool:
+	if not FileAccess.file_exists(path):
+		return true
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return false
+	var data: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	return data is Dictionary and data.get("actions") is Array and data.actions.is_empty()
+
+func explicit_logout_reset() -> void:
+	var update_required := state == State.UPDATE_REQUIRED
+	_generation += 1
+	_timer.stop()
+	_dungeon_timer.stop()
+	_announcement_timer.stop()
+	_http.cancel_request()
+	_dungeon_http.cancel_request()
+	_announcement_http.cancel_request()
+	_http.request_completed.disconnect(_on_check_completed)
+	_dungeon_http.request_completed.disconnect(_dungeon_heartbeat_completed)
+	_announcement_http.request_completed.disconnect(_announcement_completed)
+	_http.queue_free()
+	_dungeon_http.queue_free()
+	_announcement_http.queue_free()
+	_http = HTTPRequest.new()
+	_http.max_redirects = 0
+	_http.timeout = 8.0
+	add_child(_http)
+	_http.request_completed.connect(_on_check_completed)
+	_dungeon_http = HTTPRequest.new()
+	_dungeon_http.timeout = 8.0
+	add_child(_dungeon_http)
+	_dungeon_http.request_completed.connect(_dungeon_heartbeat_completed)
+	_announcement_http = HTTPRequest.new()
+	_announcement_http.timeout = 8.0
+	add_child(_announcement_http)
+	_announcement_http.request_completed.connect(_announcement_completed)
+	_announcement_events.clear()
+	_checking = false
+	_player_verified = false
+	_identity_mismatch = false
+	_recovery_owner_id = 0
+	_loadout_session_requested = false
+	_loadout_session_verified = false
+	_journal_checked = false
+	_explicit_login_pending = false
+	_dungeon_return_after_disconnect = false
+	debug_offline_enabled = false
+	player_id = ""
+	token = ""
+	base_url = ""
+	state = State.UPDATE_REQUIRED if update_required else State.CONNECTED
+	if not update_required:
+		_layer.hide()
+	for client in get_tree().get_nodes_in_group("backend_session_clients"):
+		client._invalidate_external_session()
+	GlobalChatClient.reset_for_logout()
+	SocialClient.reset_for_logout()
+	DuelClient.reset_for_logout()
+	SceneRouter.clear_account_context()
+
 func resume_after_sign_in(identity: String, new_token: String) -> bool:
 	if not is_instance_valid(_suspended_scene):
 		return true

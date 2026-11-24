@@ -81,6 +81,22 @@ func _clear_state() -> void:
 	enabled = false
 	error_key = ""
 
+func reset_for_logout() -> void:
+	_epoch += 1
+	_reset_requests()
+	_clear_state()
+	_identity = ""
+	_pending_path = ""
+	_pending_body = ""
+	last_response_id = ""
+	_next_poll = 0
+	if is_instance_valid(_popup):
+		_popup._panel.hide()
+		_popup._feedback.hide()
+		_popup._shown.clear()
+		_popup._current = ""
+	state_changed.emit()
+
 func _headers() -> PackedStringArray:
 	return PackedStringArray(["Authorization: Bearer " + ConnectionGate.token, "Content-Type: application/json", preload("res://scripts/net/client_build.gd").header()])
 
@@ -98,8 +114,6 @@ func poll_now() -> void:
 	_poll_busy = true
 	if _poll.request(ConnectionGate.base_url + "/social/state", _headers()) != OK:
 		_poll_busy = false
-		error_key = "SOCIAL_FAILURE"
-		state_changed.emit()
 
 func _auth_response(result: int, code: int, data: Variant) -> bool:
 	if result != HTTPRequest.RESULT_SUCCESS:
@@ -132,11 +146,7 @@ func _poll_completed(result: int, code: int, _headers_in: PackedStringArray, bod
 		state_changed.emit()
 		return
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or not data is Dictionary or not _apply_snapshot(data):
-		error_key = "SOCIAL_FAILURE"
-		state_changed.emit()
 		return
-	if _pending_body.is_empty() and error_key == "SOCIAL_FAILURE":
-		error_key = ""
 	state_changed.emit()
 
 func _apply_snapshot(data: Dictionary) -> bool:

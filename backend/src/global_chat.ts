@@ -28,6 +28,9 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 				const player = db.query("SELECT display_name FROM players WHERE player_id = ?").get(playerId) as { display_name: string } | null;
 				if (!player) throw new Error("Player unavailable for announcement.");
 				const now = clock();
+				const previous = db.query("SELECT announced_at FROM global_chat_announcements WHERE player_id = ?").get(playerId) as { announced_at: number } | null;
+				if (previous && now - previous.announced_at < 20 * 60_000) return false;
+				db.query("INSERT INTO global_chat_announcements (player_id, announced_at) VALUES (?, ?) ON CONFLICT(player_id) DO UPDATE SET announced_at = excluded.announced_at").run(playerId, now);
 				const text = `${registered ? 'Welcome' : 'Welcome back'}, ${player.display_name}!`;
 				const inserted = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, source) VALUES (?, ?, ?, ?, 'Entity Wars', 'system')")
 					.run('', crypto.randomUUID(), text, now);
@@ -36,6 +39,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 					db.query('DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)').run();
 				}
 				prune.run();
+				return true;
 			}).immediate();
 		},
 		close() { messages.finalize(); existing.finalize(); insert.finalize(); prune.finalize(); profile.finalize(); },

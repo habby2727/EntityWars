@@ -260,28 +260,15 @@ func _refresh_online_list() -> void:
 		username.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(username)
 		var player_id := str(player.get("player_id", ""))
-		if SocialClient.enabled and not player_id.is_empty() and player_id != ConnectionGate.player_id and not bool(player.get("is_friend", false)) and not SocialClient.friends.has(player_id):
-			var action := Button.new()
-			action.custom_minimum_size = Vector2(72, 68)
-			action.disabled = SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
+		if SocialClient.enabled and not player_id.is_empty():
 			var incoming := SocialClient.incoming_for(player_id)
-			var outgoing := SocialClient.outgoing_for(player_id)
 			if not incoming.is_empty():
+				var action := Button.new()
+				action.custom_minimum_size = Vector2(72, 68)
+				action.disabled = SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
 				action.text = tr("SOCIAL_REVIEW")
 				action.pressed.connect(SocialClient._popup.open_request.bind(str(incoming.request_id)))
-			elif not outgoing.is_empty():
-				action.text = tr("SOCIAL_PENDING")
-				action.disabled = true
-				action.tooltip_text = tr("SOCIAL_COOLDOWN_SECONDS") % SocialClient.cooldown_seconds(player_id)
-			else:
-				action.text = "+"
-				action.tooltip_text = tr("SOCIAL_ADD")
-				var remaining: int = SocialClient.cooldown_seconds(player_id)
-				if remaining > 0:
-					action.disabled = true
-					action.tooltip_text = tr("SOCIAL_COOLDOWN_SECONDS") % remaining
-				action.pressed.connect(SocialClient.request_friend.bind(player_id))
-			row.add_child(action)
+				row.add_child(action)
 	_restore_online_scroll.call_deferred(old_scroll)
 
 func _refresh_social() -> void:

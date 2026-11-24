@@ -41,6 +41,12 @@ SETTINGS_APPLY,Apply,Aplicar
 SETTINGS_YES,Yes,Sí
 SETTINGS_NO,No,No
 SETTINGS_BACK,Back,Volver
+SETTINGS_LOGOUT,Log out,Cerrar sesión
+SETTINGS_LOGOUT_CONFIRM,Log out of this account?,¿Cerrar la sesión de esta cuenta?
+SETTINGS_LOGOUT_CANCEL,Cancel,Cancelar
+SETTINGS_LOGOUT_RECOVERY,"Finish or recover the active session and pending actions before logging out.","Termina o recupera la sesión activa y las acciones pendientes antes de cerrar sesión."
+SETTINGS_LOGOUT_STORAGE_ERROR,"Could not remove saved credentials. Please try again.","No se han podido eliminar las credenciales guardadas. Inténtalo de nuevo."
+AUTH_LOGOUT_UNCONFIRMED,"Signed out on this device. Server sign-out could not be confirmed.","Sesión cerrada en este dispositivo. No se ha podido confirmar el cierre en el servidor."
 SETTINGS_MUSIC_SOON,Music (Coming Soon),Música (próximamente)
 SETTINGS_SOUND_SOON,Sound (Coming Soon),Sonido (próximamente)
 SETTINGS_DISPLAY_PENDING,Press Apply to change display mode.,Pulsa Aplicar para cambiar el modo de pantalla.
@@ -373,7 +379,7 @@ FOREST_ENTER,Enter Forest,Entrar en el bosque
 FOREST_CHOOSE_SUMMONER,Choose your summoner,Elige tu invocador
 FOREST_SELECT,Select,Seleccionar
 FOREST_CONFIRM,Enter Forest,Entrar en el bosque
-FOREST_LEAVE,Leave Forest,Salir del bosque
+FOREST_LEAVE,Exit,Salir
 FOREST_TALK,Talk,Hablar
 FOREST_CLOSE,Close,Cerrar
 FOREST_NPC_SPECTRAL_LAMPLIGHTER_NAME,Spectral Lamplighter,Farolero espectral
