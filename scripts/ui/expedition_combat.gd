@@ -61,6 +61,7 @@ var displayed_weapon_slot := 0
 var retained_status_icons: Array = []
 
 func _exit_tree() -> void:
+	for sprite in [player_sprite, enemy_sprite, player_hom_sprite, enemy_hom_sprite]: CombatVFX.clear(sprite)
 	if is_instance_valid(registry): registry.free()
 
 func configure(scene: Control, data: Dictionary, retained_icons: Array = []) -> void:
@@ -248,7 +249,7 @@ func _build() -> void:
 	controls.append(switch)
 	hom_attack = Button.new()
 	hom_attack.name = "HomAttack"
-	MenuArt.button(hom_attack)
+	_style_hom_action(hom_attack)
 	hom_attack.add_theme_font_size_override("font_size", 18)
 	hom_attack.text = tr("COMBAT_ATTACK")
 	hom_attack.pressed.connect(_choose_hom.bind("attack"))
@@ -256,7 +257,7 @@ func _build() -> void:
 	hom_attack.hide()
 	hom_hold = Button.new()
 	hom_hold.name = "HomHold"
-	MenuArt.button(hom_hold)
+	_style_hom_action(hom_hold)
 	hom_hold.add_theme_font_size_override("font_size", 18)
 	hom_hold.text = tr("COMBAT_HOLD")
 	hom_hold.tooltip_text = tr("COMBAT_HOLD_HINT")
@@ -267,6 +268,15 @@ func _build() -> void:
 		var offers := VBoxContainer.new()
 		_place(offers, Vector2(580, 300), Vector2(760, 180))
 		_build_inspiration(offers, player)
+
+func _style_hom_action(button: Button) -> void:
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.45, 0.36, 0.025, 0.82) if state in ["hover", "pressed", "focus"] else Color(0.25, 0.20, 0.025, 0.78)
+		style.border_color = Color("ffe13d")
+		style.set_border_width_all(3)
+		style.set_corner_radius_all(6)
+		button.add_theme_stylebox_override(state, style)
 
 func _add_ground_shadow(sprite: TextureRect, is_hom: bool, enemy: bool) -> void:
 	if sprite.texture == null: return
@@ -390,12 +400,7 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 		_place(meter, Vector2(1670 if enemy else 30, 690), Vector2(240, 90))
 		meter.scale = Vector2(0.9, 0.9)
 		var hom_name := GameLocalization.catalog("homunculus", hom_id, "name", str(hom.get("name", hom_id)))
-		var hom_passive: Variant = hom.get("passive", {})
-		var passive_name := ""
-		if hom_passive is Dictionary and hom_passive.get("name") is Dictionary:
-			passive_name = str(hom_passive.name.get(TranslationServer.get_locale().substr(0, 2), hom_passive.name.get("en", "")))
-		meter.set_fighter({"hom_name":hom_name, "hom_energy":clampi(int(fighter.get("hom_energy", 0)), 0, 6)})
-		meter.set_expedition_type(str(hom.get("type", fighter.get("hom_type", ""))), passive_name)
+		meter.set_fighter({"hom_name":hom_name, "hom_data":hom, "hom_energy":clampi(int(fighter.get("hom_energy", 0)), 0, 6)})
 		meter.size = Vector2(190, 90)
 
 func _update_hp(hp: ProgressBar) -> void:
@@ -615,14 +620,13 @@ func _animate_event(event: Dictionary) -> void:
 	if kind == "spell" and actor in ["player", "npc"]:
 		var spell: Dictionary = registry.get_spell_by_id(str(event.get("spell_id", "")))
 		var sprite := player_sprite if actor == "player" else enemy_sprite
-		if str(spell.get("category", "")) == "attack":
+		if str(spell.get("category", "")) == "attack" or str(event.get("spell_id", "")) == "basic_attack":
 			_animate_lunge(sprite, 20.0 if actor == "player" else -20.0)
 			if bool(event.get("hit", false)):
 				var source: Dictionary = session.get("combat_state", {}).get(actor, {})
-				var types: Array = source.get("expedition_types", [])
-				CombatVFX.hit(enemy_sprite if actor == "player" else player_sprite, str(types[0]) if not types.is_empty() else str(source.get("type", "")))
+				CombatVFX.hit_fighter(enemy_sprite if actor == "player" else player_sprite, source)
 		else: _animate_pulse(sprite, Color(0.68, 0.85, 1.0))
-	elif kind == "hom_passive" and actor in ["player", "npc"]:
+	elif kind == "hom_passive" and event.has("effects") and actor in ["player", "npc"]:
 		CombatVFX.passive(player_hom_sprite if actor == "player" else enemy_hom_sprite, player_sprite if actor == "player" else enemy_sprite)
 	elif kind in ["hom_attack", "hom_miss"] and actor in ["player", "npc"]:
 		_animate_lunge(player_hom_sprite if actor == "player" else enemy_hom_sprite, 14.0 if actor == "player" else -14.0)
@@ -644,6 +648,7 @@ func _animate_event(event: Dictionary) -> void:
 			_animate_pulse(sprite, Color(0.68, 1.0, 0.75))
 
 func _event_delay(kind: String) -> float:
+	if kind == "hom_passive": return 0.7
 	if kind in ["spell", "hom_attack", "hom_miss", "damage", "heal", "evade", "miss", "switch"]:
 		return 0.65
 	if kind in ["poison", "hom_dot", "true_on_hit", "dot_true", "delayed_damage", "reflect", "ward_convert", "recoil", "status_applied", "hom_passive"]:

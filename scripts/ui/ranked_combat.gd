@@ -540,8 +540,8 @@ func _present_event(source: Dictionary, animate: bool = true) -> void:
 	var target := str(event.get("target", ""))
 	if str(event.get("kind", "")) == "hom_passive" and event.has("effects"):
 		var hom: Dictionary = host._reg.get_homunculus_collection().get(str(event.get("hom_id", "")), {}) if host._reg else {}
+		if animate and not bool(source.get("_initial_snapshot", false)) and actor in ["player", "enemy"]: CombatVFX.passive(host.player_hom if actor == "player" else host.enemy_hom, host.player_entity if actor == "player" else host.enemy_entity)
 		if not hom.is_empty():
-			if animate and actor in ["player", "enemy"]: CombatVFX.passive(host.player_hom if actor == "player" else host.enemy_hom, host.player_entity if actor == "player" else host.enemy_entity)
 			host._log_presenter.append(host.log_box, int(event.get("turn", 0)), host._log_presenter.passive_message(event, hom), {"category":"homunculus"})
 			return
 	if target not in ["player", "enemy"] and event.has("hp") and actor in ["player", "enemy"]:
@@ -571,11 +571,11 @@ func _present_event(source: Dictionary, animate: bool = true) -> void:
 	var bar: ProgressBar = host.player_hp if target == "player" else host.enemy_hp
 	var sprite: Control = host.player_entity if target == "player" else host.enemy_entity
 	var kind := str(event.get("kind", ""))
-	if kind == "damage" and source.has("spell_id") and actor in ["player", "enemy"] and target in ["player", "enemy"]:
+	if kind == "damage" and source.has("spell_id") and str(source.get("source", "")) != "pending_drain" and int(source.get("actual_damage", source.get("damage", 0))) > 0 and actor in ["player", "enemy"] and target in ["player", "enemy"] and actor != target:
 		var spell: Dictionary = host._reg.get_spell_by_id(str(source.spell_id)) if host._reg else {}
 		if spell.get("category") == "attack":
 			var caster: Dictionary = host.player if actor == "player" else host.enemy
-			CombatVFX.hit(sprite, str(caster.get("type", "")))
+			CombatVFX.hit_fighter(sprite, caster)
 	var before := int(bar.value)
 	var after := before
 	if source.has("hp"):

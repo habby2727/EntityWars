@@ -623,7 +623,7 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 			var real_hunt := not _hunt_selected.is_empty() and (actor_id == str(_hunt_selected.get("id", "")) or not online_guardian.is_empty())
 			if real_hunt:
 				_hunt_guardian_id = online_guardian
-			_preview_status.text = ("Boss Hunt: %s\nUnverified preview: no rewards." % str(entry.get("name", actor_id))) if real_hunt else ("Unverified debug preview: %s\n%s" % [str(entry.get("name", actor_id)), "Locked: " + ", ".join(required) if main and not required.is_empty() else "No rewards or persistent victories."])
+			_preview_status.text = ("Boss Hunt: %s\nUnverified preview: no rewards." % str(entry.get("name", actor_id))) if real_hunt else ("Unverified debug preview: %s\n%s" % [str(entry.get("name", actor_id)), "Locked: defeat %d guardians." % required.size() if main and not required.is_empty() else "No rewards or persistent victories."])
 			_preview_status.visible = true
 			_boss_picker.visible = false
 			_boss_hp.visible = false
@@ -1211,9 +1211,6 @@ func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> voi
 	var active := _active_hunt_matches("")
 	var unlocked := bool(_hunt_progress.get("boss_unlocked", false)) if verified else false
 	_preview_status.text = "%s\nGuardians: %d/%d defeated%s" % [str(boss.get("name", "Boss")), int(_hunt_progress.get("defeated_count", 0)) if verified else 0, int(_hunt_progress.get("total_count", 0)) if verified else 0, "" if verified else "\nChecking guardian progress..."]
-	if verified:
-		for guardian in _hunt_progress.get("guardians", []):
-			_preview_status.text += "\n%s — %s — %s" % [str(guardian.get("name", "Guardian")), str(guardian.get("tier", "")).capitalize(), "Defeated" if bool(guardian.get("defeated", false)) else "Available"]
 	if verified:
 		_preview_status.text += "\n" + tr("HUNT_WINDOW_EXPLANATION")
 	_preview_status.visible = true

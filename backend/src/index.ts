@@ -1732,7 +1732,7 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
-				if (["/forest/quests", "/forest/quests/accept", "/forest/quests/claim"].includes(url.pathname)) {
+				if (["/forest/quests", "/forest/quests/accept", "/forest/quests/claim", "/forest/quests/cancel"].includes(url.pathname)) {
 					const playerId=await requireAuth(req,ctx);
 					if (!forest || !leaseValid()) return jsonResponse({error:"FOREST_QUESTS_UNAVAILABLE"},503);
 					if (!forestQuests && req.method==="GET" && url.pathname==="/forest/quests") return jsonResponse({quest:null,server_time_unix_ms:Date.now()});
@@ -1740,7 +1740,7 @@ async function startServer(): Promise<void> {
 					await applyRateLimit(ctx,{keyPrefix:"rl:forest-quests",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
 					if (req.method==="GET" && url.pathname==="/forest/quests") return jsonResponse(forestQuests.get(playerId));
 					if (req.method!=="POST" || url.pathname==="/forest/quests") return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
-					return jsonResponse(forestQuests.action(playerId,url.pathname.endsWith("/accept") ? "accept" : "claim",await readSocialJson(req,Math.min(config.maxBodyBytes,4096))));
+					return jsonResponse(forestQuests.action(playerId,url.pathname.endsWith("/accept") ? "accept" : url.pathname.endsWith("/cancel") ? "cancel" : "claim",await readSocialJson(req,Math.min(config.maxBodyBytes,4096))));
 				}
 				if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel", "/forest/duels/ready"].includes(url.pathname)) {
 					const playerId = await requireAuth(req, ctx);

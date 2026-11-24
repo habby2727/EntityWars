@@ -33,6 +33,7 @@ AUTH_RECOVERY_REQUIRED,Sign in with the account that owns the unfinished session
 MENU_COMBAT,COMBAT,COMBATE
 MENU_INVENTORY,INVENTORY,INVENTARIO
 MENU_LABORATORY,LABORATORY,LABORATORIO
+HOM_ATTACK_SUMMARY,Attack: 40% Power at 3 energy; 60% at 6. Type affects damage.,Ataque: 40% de potencia con 3 de energía; 60% con 6. El tipo afecta al daño.
 LAB_MENU,Menu,Menú
 MENU_SETTINGS,SETTINGS,AJUSTES
 SETTINGS_TITLE,SETTINGS,AJUSTES
@@ -511,3 +512,13 @@ FOREST_QUEST_RESOURCE_ESSENCE,essence,esencia
 FOREST_QUEST_RESOURCE_CORE,core,núcleo
 FOREST_QUEST_RESOURCE_ARCANE_SHARD,arcane shard,fragmento arcano
 FOREST_QUEST_STORAGE_FULL,Free storage space before claiming.,Libera espacio de almacenamiento antes de reclamar.
+
+FOREST_QUEST_CANCEL,Cancel Active Mission,Cancelar misión activa
+FOREST_QUEST_CANCEL_CONFIRM,Cancel this mission? All progress will be lost and this NPC will be unavailable for 3 hours.,¿Cancelar esta misión? Perderás todo el progreso y este PNJ no estará disponible durante 3 horas.
+FOREST_QUEST_COOLDOWN,Available again in %s,Disponible de nuevo en %s
+FOREST_QUEST_ACTIVE_ELSEWHERE,Active mission in %s,Misión activa en %s
+FOREST_QUEST_SECONDS,%d seconds,%d segundos
+FOREST_QUEST_HOURS_MINUTES,%dh %02dm,%dh %02dm
+FOREST_QUEST_ACTIVE_EXISTS,You already have an active mission.,Ya tienes una misión activa.
+FOREST_QUEST_CANCEL_COOLDOWN,This NPC is on cooldown.,Este PNJ está en espera.
+FOREST_QUEST_UNAVAILABLE,This mission is no longer available.,Esta misión ya no está disponible.

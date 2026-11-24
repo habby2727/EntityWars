@@ -581,12 +581,16 @@ func _dungeon_present_events(events: Array, owner: String, generation: int, run_
 		var kind := str(event.get("kind", ""))
 		var actor := str(event.get("actor", ""))
 		var target := str(event.get("side", event.get("target", "")))
-		if kind == "hom_passive" and event.has("effects") and _reg:
-			var passive_hom: Dictionary = _reg.get_homunculus_collection().get(str(event.get("hom_id", "")), {})
+		if kind == "hom_passive" and event.has("effects"):
+			if actor in ["player", "npc"]: CombatVFX.passive(player_hom if actor == "player" else enemy_hom, player_entity if actor == "player" else enemy_entity)
+			var passive_hom: Dictionary = _reg.get_homunculus_collection().get(str(event.get("hom_id", "")), {}) if _reg else {}
 			if not passive_hom.is_empty():
-				if actor in ["player", "npc"]: CombatVFX.passive(player_hom if actor == "player" else enemy_hom, player_entity if actor == "player" else enemy_entity)
 				_append_combat_log(_log_presenter.passive_message(event, passive_hom), {"category":"homunculus"})
-				continue
+			else:
+				_append_combat_log("Homunculus passive activated.", {"category":"homunculus"})
+			await get_tree().create_timer(0.65).timeout
+			if not _dungeon_playback_valid(owner, generation, run_id, action_id, revision, playback_epoch): return
+			continue
 		if target not in ["player", "npc"] and actor in ["player", "npc"] and kind in ["damage", "hom_attack", "true_on_hit", "dot_true", "hom_dot", "delayed_damage"]:
 			target = "npc" if actor == "player" else "player"
 		elif target not in ["player", "npc"] and event.has("hp") and actor in ["player", "npc"]:
@@ -597,13 +601,12 @@ func _dungeon_present_events(events: Array, owner: String, generation: int, run_
 		var fighter: Dictionary = view.get(actor_id, {})
 		var actor_sprite: Control = player_entity if actor_id == "player" else enemy_entity
 		var target_sprite: Control = player_entity if target == "player" else enemy_entity
-		if kind == "spell":
-			var action_spell: Dictionary = _reg.get_spell_by_id(str(event.get("spell_id", "")))
-			if str(action_spell.get("category", "")) == "attack":
+		if kind == "spell" and actor_id in ["player", "npc"]:
+			var action_spell: Dictionary = _reg.get_spell_by_id(str(event.get("spell_id", ""))) if _reg else {}
+			if str(action_spell.get("category", "")) == "attack" or str(event.get("spell_id", "")) == "basic_attack":
 				_animate_lunge(actor_sprite, 20.0 if actor_id == "player" else -20.0, true)
 				if bool(event.get("hit", false)):
-					var primary_types: Array = fighter.get("expedition_types", [])
-					CombatVFX.hit(enemy_entity if actor_id == "player" else player_entity, str(primary_types[0]) if not primary_types.is_empty() else str(fighter.get("type", "")))
+					CombatVFX.hit_fighter(enemy_entity if actor_id == "player" else player_entity, fighter)
 				if not bool(event.get("hit", true)):
 					_animate_lunge(enemy_entity if actor_id == "player" else player_entity, 8.0 if actor_id == "player" else -8.0, false)
 			else:
@@ -844,8 +847,8 @@ func _dungeon_render() -> void:
 		pair[0].set_fighter(0, status_fighter)
 	_player_hom_status.visible = not ph.is_empty()
 	_enemy_hom_status.visible = not nh.is_empty()
-	_player_hom_status.call("set_fighter", {"hom_name": str(ph.get("name", "")), "hom_energy": int(p.get("hom_energy", 0)), "hom_spent": false})
-	_enemy_hom_status.call("set_fighter", {"hom_name": str(nh.get("name", "")), "hom_energy": int(n.get("hom_energy", 0)), "hom_spent": false})
+	_player_hom_status.call("set_fighter", {"hom_name": str(ph.get("name", "")), "hom_data": ph, "hom_energy": int(p.get("hom_energy", 0)), "hom_spent": false})
+	_enemy_hom_status.call("set_fighter", {"hom_name": str(nh.get("name", "")), "hom_data": nh, "hom_energy": int(n.get("hom_energy", 0)), "hom_spent": false})
 	_player_inspiration.show()
 	_enemy_inspiration.show()
 	_player_inspiration.call("set_fighter", {"inspiration": int(p.get("inspiration", 0)), "inspiration_used_this_battle": bool(p.get("inspiration_used", false))})
@@ -1560,13 +1563,14 @@ func _log_online_spell(spell_id: String, player_cast: bool) -> void:
 
 func _log_online_hunt_event(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
-	if kind == "hom_passive" and event.has("effects") and _reg:
-		var passive_hom: Dictionary = _reg.get_homunculus_collection().get(str(event.get("hom_id", "")), {})
+	if kind == "hom_passive" and event.has("effects"):
+		if str(event.get("actor", "")) == "player": CombatVFX.passive(player_hom, player_entity)
+		var passive_hom: Dictionary = _reg.get_homunculus_collection().get(str(event.get("hom_id", "")), {}) if _reg else {}
 		if not passive_hom.is_empty():
-			var passive_actor := str(event.get("actor", ""))
-			if passive_actor == "player": CombatVFX.passive(player_hom, player_entity)
 			_append_combat_log(_log_presenter.passive_message(event, passive_hom), {"category":"homunculus"})
-			return
+		else:
+			_append_combat_log("Homunculus passive activated.", {"category":"homunculus"})
+		return
 	if kind in ["status_snapshot", "boss_intent", "combat_terminal"]:
 		return
 	if kind == "boss_special_cast":
@@ -1611,11 +1615,25 @@ func _log_online_hunt_event(event: Dictionary) -> void:
 				if str(minion.get("id", "")) == target:
 					actual = maxi(0, int(minion.get("hp", 0)) - int(event.hp))
 					break
+		var committed := int(event.get("actual_damage", damage)) > 0
+		var direct := kind == "damage" and str(event.get("source", "")) != "pending_drain" and committed
+		var combat: Dictionary = _online_hunt_session.get("combat_state", {})
+		var source: Dictionary = combat.get("player" if is_player else "boss", {})
+		if direct and is_player:
+			var spell: Dictionary = _reg.get_spell_by_id(str(event.get("spell_id", ""))) if _reg else {}
+			direct = str(spell.get("category", "")) == "attack" and (target == "boss" or minion_index >= 0)
+		elif direct and actor != "boss":
+			direct = false
+			for minion in combat.get("minions", []):
+				if str(minion.get("id", "")) == actor:
+					source = minion.duplicate()
+					if str(source.get("element_type", "")).is_empty(): source["element_type"] = str(combat.get("boss", {}).get("type", ""))
+					direct = target == "player"
+					break
+		elif direct:
+			direct = target == "player"
+		if direct: CombatVFX.hit_fighter(target_sprite, source)
 		if actual > 0:
-			if kind == "damage" and event.has("spell_id") and _reg and _reg.get_spell_by_id(str(event.spell_id)).get("category") == "attack":
-				var combat: Dictionary = _online_hunt_session.get("combat_state", {})
-				var source: Dictionary = combat.get("player" if is_player else "boss", {})
-				CombatVFX.hit(target_sprite, str(source.get("type", "")))
 			_animate_hit(target_sprite, actual, int(hp_bar.max_value))
 			_show_damage_number(target_sprite, actual)
 	elif kind in ["heal", "status_applied"]:
@@ -1751,7 +1769,7 @@ func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool
 	if not hom_id.is_empty():
 		player_hom.texture = _load_preview_tex(hom_id, "homunculus", str(hom.get("name", "")))
 	_player_hom_status.visible = not hom_id.is_empty()
-	_player_hom_status.call("set_fighter", {"hom_name": str(hom.get("name", hom_id)), "hom_energy": int(p.get("homunculus_energy", 0)), "hom_spent": bool(p.get("homunculus_spent", false))})
+	_player_hom_status.call("set_fighter", {"hom_name": str(hom.get("name", hom_id)), "hom_data": hom, "hom_energy": int(p.get("homunculus_energy", 0)), "hom_spent": bool(p.get("homunculus_spent", false))})
 	enemy_hom.hide()
 	enemy_item1.hide()
 	enemy_item2.hide()
@@ -4534,7 +4552,10 @@ func _attack_entity(attacker: Dictionary, defender: Dictionary, power_mult: floa
 		defender.hp = max(0, defender.hp - dmg)
 		if actual_damage > 0:
 			_fire_expedition_passive(defender, attacker, "damage_received")
-		if spell_attack and not context.is_empty(): CombatVFX.hit(_fighter_sprite(defender), str(attacker.get("type", "")))
+		if spell_attack and actual_damage > 0:
+			var source := attacker
+			if _solo_boss_mode and str(attacker.get("type", "")).is_empty(): source = enemy
+			CombatVFX.hit_fighter(_fighter_sprite(defender), source)
 		if boss_prevented > 0:
 			var before_heal := int(defender.hp)
 			defender.hp = mini(int(defender.max_hp), int(defender.hp) + _strategic_heal(defender, floori(boss_prevented * float(_solo_def.shield_heal_ratio))))
@@ -5166,8 +5187,8 @@ func _fire_expedition_passive(fighter: Dictionary, target: Dictionary, event: St
 				applied.append({"kind":"poison", "target":opponent_side, "amount":int(target.status.poison) - before, "unit":"turns", "duration":"instant"})
 	if not applied.is_empty():
 		var passive_hom: Dictionary = fighter.get("hom_data", {})
+		CombatVFX.passive(player_hom if is_same(fighter, player) else enemy_hom, _fighter_sprite(fighter))
 		if not passive_hom.is_empty():
-			CombatVFX.passive(player_hom if is_same(fighter, player) else enemy_hom, _fighter_sprite(fighter))
 			_append_combat_log(_log_presenter.passive_message({"actor":actor_side, "effects":applied, "show_heal":true}, passive_hom), {"category":"homunculus"})
 
 func _hom_advantage_bonus(fighter: Dictionary) -> float:
@@ -5657,6 +5678,13 @@ func _append_combat_log(msg: String, event: Dictionary = {}) -> void:
 func _fighter_sprite(fighter: Dictionary, homunculus: bool = false) -> Control:
 	if is_same(fighter, player):
 		return player_hom if homunculus else player_entity
+	if not homunculus:
+		var visible_index := 0
+		for minion in _solo_minions:
+			if is_same(minion, fighter):
+				if visible_index < _solo_minion_views.size(): return _solo_minion_views[visible_index]
+				break
+			if int(minion.get("hp", 0)) > 0: visible_index += 1
 	return enemy_hom if homunculus else enemy_entity
 
 func _begin_animation(node: Control) -> Tween:

@@ -63,6 +63,10 @@ var _selected_remote := ""
 var _portal_deadline := 0
 var _handoff_pending := false
 var _quest := {}
+var _quest_active = null
+var _quest_can_accept := false
+var _quest_cooldown := 0
+var _quest_error := ""
 var _quest_catalog := []
 var _quest_request := ""
 var _quest_request_kind := ""
@@ -318,6 +322,7 @@ func _set_zone(index: int, arrival: Vector2 = Vector2.INF) -> bool:
 	_zone_index = index
 	_quest_zone_generation += 1
 	_quest = {}
+	_quest_error = ""
 	_deselect_remote()
 	_background.texture = texture
 	_polygon_fill.polygon = polygon
@@ -329,6 +334,7 @@ func _set_zone(index: int, arrival: Vector2 = Vector2.INF) -> bool:
 	_spawn_npcs(zone)
 	_build_portal_debug(zone)
 	_refresh_debug()
+	_fetch_quest.call_deferred()
 	return true
 
 func _build_portal_debug(zone: Dictionary) -> void:
@@ -434,7 +440,7 @@ func _reset_touch() -> void:
 	_player.joystick_vector = Vector2.ZERO
 
 func _process(_delta: float) -> void:
-	if is_instance_valid(_talking_to) and str(_talking_to.npc_id).begins_with("quest_") and str(_quest.get("state", "")) == "ACTIVE":
+	if is_instance_valid(_talking_to) and str(_talking_to.npc_id).begins_with("quest_") and str(_quest.get("state", "")) in ["ACTIVE", "OFFERED"]:
 		_update_dialogue_text()
 	if is_instance_valid(_player) and is_instance_valid(_joystick):
 		var moving: bool = _joystick.vector.length_squared() > 0.0001
@@ -576,11 +582,16 @@ func _build_npc_actions() -> void:
 	if not is_instance_valid(_talking_to):
 		return
 	if str(_talking_to.npc_id).begins_with("quest_"):
-		if str(_quest.get("state", "")) in ["OFFERED", "COMPLETED"]:
+		var state := str(_quest.get("state", ""))
+		if state in ["OFFERED", "ACTIVE", "COMPLETED"]:
 			var quest_button := Button.new()
-			quest_button.text = "FOREST_QUEST_ACCEPT" if _quest.state == "OFFERED" else "FOREST_QUEST_CLAIM"
-			quest_button.disabled = not _quest_request.is_empty()
-			quest_button.pressed.connect(_quest_submit)
+			var kind := "accept" if state == "OFFERED" else ("cancel" if state == "ACTIVE" else "claim")
+			quest_button.text = "FOREST_QUEST_" + kind.to_upper()
+			quest_button.disabled = not _quest_request.is_empty() or (kind == "accept" and not _quest_can_accept)
+			if kind == "cancel":
+				quest_button.pressed.connect(_confirm_quest_cancel)
+			else:
+				quest_button.pressed.connect(_quest_submit.bind(kind))
 			_action_row.add_child(quest_button)
 			MenuArt.button(quest_button)
 		return
@@ -628,20 +639,46 @@ func _update_dialogue_text() -> void:
 			var state := str(_quest.get("state", ""))
 			var details := ""
 			if state == "OFFERED":
-				var hours: int = {"easy":4, "medium":8, "hard":12}.get(str(_quest.get("difficulty", "")), 0)
-				details = tr("FOREST_QUEST_" + str(_quest.get("difficulty", "")).to_upper()) + " — " + (tr("FOREST_QUEST_DURATION") % hours) + " — " + tr("FOREST_QUEST_MYSTERY")
+				var elapsed := maxi(0, Time.get_ticks_msec() - _quest_tick)
+				var duration := maxi(0, mini(int(_quest.get("available_duration_ms", 0)), int(_quest.get("expires_at", 0)) - _quest_server_time - elapsed))
+				details = tr("FOREST_QUEST_" + str(_quest.get("difficulty", "")).to_upper()) + " — " + _quest_format_time(duration) + " — " + tr("FOREST_QUEST_MYSTERY")
+				var now := _quest_server_time + elapsed
+				if _quest_cooldown > now:
+					details += "\n" + (tr("FOREST_QUEST_COOLDOWN") % _quest_format_time(_quest_cooldown - now))
+				elif _quest_active is Dictionary:
+					details += "\n" + (tr("FOREST_QUEST_ACTIVE_ELSEWHERE") % str(_quest_active.get("zone", "")))
 			elif state == "ACTIVE":
 				var remaining := maxi(0, int(_quest.get("expires_at", 0)) - (_quest_server_time + Time.get_ticks_msec() - _quest_tick))
-				details = "%s/%s — %dh %02dm" % [int(_quest.get("progress", 0)), int(_quest.get("target", 0)), remaining / 3600000, (remaining / 60000) % 60]
+				details = "%s/%s — %s" % [int(_quest.get("progress", 0)), int(_quest.get("target", 0)), _quest_format_time(remaining)]
 			elif state == "COMPLETED":
 				var reward: Dictionary = _quest.get("reward", {})
 				for resource in reward:
 					details = "%s %s" % [reward[resource], tr("FOREST_QUEST_RESOURCE_" + str(resource).to_upper())]
-			_dialogue_text.text = objective + "\n" + details
+			_dialogue_text.text = objective + "\n" + details + ("\n" + _quest_error if not _quest_error.is_empty() else "")
 			return
 		var key: String = str(_talking_to.npc_id).to_upper()
 		_dialogue_name.text = tr("FOREST_NPC_%s_NAME" % key)
 		_dialogue_text.text = tr("FOREST_NPC_%s_DIALOGUE" % key)
+
+func _quest_format_time(ms: int) -> String:
+	var seconds := int(ceil(float(ms) / 1000.0))
+	if seconds < 60:
+		return tr("FOREST_QUEST_SECONDS") % seconds
+	return tr("FOREST_QUEST_HOURS_MINUTES") % [seconds / 3600, (seconds % 3600) / 60]
+
+func _confirm_quest_cancel() -> void:
+	var quest_id := str(_quest.get("quest_id", ""))
+	var owner := str(ConnectionGate.player_id)
+	var generation := int(ConnectionGate._generation)
+	var dialog := ConfirmationDialog.new()
+	dialog.dialog_text = tr("FOREST_QUEST_CANCEL_CONFIRM")
+	add_child(dialog)
+	dialog.confirmed.connect(func():
+		if str(_quest.get("quest_id", "")) == quest_id and owner == str(ConnectionGate.player_id) and generation == int(ConnectionGate._generation) and is_instance_valid(_talking_to) and str(_talking_to.npc_id) == str(_quest.get("npc_id", "")):
+			_quest_submit("cancel")
+		dialog.queue_free())
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered()
 
 func _close_dialogue() -> void:
 	if is_instance_valid(_dialogue) and _dialogue.visible and is_instance_valid(_joystick):
@@ -958,6 +995,8 @@ func _fetch_quest() -> void:
 	_quest_request_kind = "get"
 	_quest_request_client_generation = _name_backend._session_generation
 	_quest_request = _name_backend.request_api("GET", "/forest/quests", null)
+	if is_instance_valid(_talking_to):
+		_build_npc_actions()
 
 func _sync_quest_pending_identity() -> void:
 	if not is_instance_valid(_name_backend):
@@ -972,6 +1011,10 @@ func _sync_quest_pending_identity() -> void:
 
 func _clear_quest() -> void:
 	_quest = {}
+	_quest_active = null
+	_quest_can_accept = false
+	_quest_cooldown = 0
+	_quest_error = ""
 	_quest_zone_generation += 1
 	if is_instance_valid(_quest_timer):
 		_quest_timer.stop()
@@ -982,10 +1025,10 @@ func _clear_quest() -> void:
 			_npcs.erase(npc)
 			npc.queue_free()
 
-func _quest_submit() -> void:
-	if not _quest_request.is_empty() or str(_quest.get("state", "")) not in ["OFFERED", "COMPLETED"]:
+func _quest_submit(kind: String) -> void:
+	var expected := {"accept":"OFFERED", "cancel":"ACTIVE", "claim":"COMPLETED"}
+	if not _quest_request.is_empty() or not expected.has(kind) or str(_quest.get("state", "")) != expected[kind]:
 		return
-	var kind := "accept" if str(_quest.get("state", "")) == "OFFERED" else "claim"
 	_sync_quest_pending_identity()
 	var quest_id := str(_quest.quest_id)
 	var key := JSON.stringify([kind, quest_id, str(ConnectionGate.player_id), str(_name_backend.base_url)])
@@ -1019,18 +1062,25 @@ func _on_quest_response(request_id: String, ok: bool, data: Dictionary) -> void:
 		_fetch_quest()
 		return
 	if not ok:
+		var error := str(data.get("error", ""))
+		if error in ["QUEST_ACTIVE_EXISTS", "QUEST_CANCEL_COOLDOWN", "QUEST_UNAVAILABLE"]:
+			_quest_error = tr("FOREST_" + error)
+			_fetch_quest()
 		if str(data.get("error", "")) == "QUEST_STORAGE_FULL" and is_instance_valid(_dialogue_text):
 			_dialogue_text.text = tr("FOREST_QUEST_STORAGE_FULL")
 		_build_npc_actions()
 		return
-	if kind == "claim":
-		_quest.state = "CLAIMED"
-		_build_npc_actions()
-		_name_backend.refresh_state()
+	if kind != "get":
+		_quest_error = ""
+		if kind == "claim":
+			_name_backend.refresh_state()
 		_fetch_quest()
 		return
 	_quest_server_time = int(data.get("server_time_unix_ms", 0))
 	_quest_tick = Time.get_ticks_msec()
+	_quest_active = data.get("active_quest")
+	_quest_can_accept = bool(data.get("can_accept", false))
+	_quest_cooldown = int(data.get("cooldown_until", 0))
 	var value = data.get("quest")
 	_quest = value if value is Dictionary else {}
 	for npc in _npcs.duplicate():
@@ -1056,7 +1106,12 @@ func _on_quest_response(request_id: String, ok: bool, data: Dictionary) -> void:
 		_update_dialogue_text()
 		_build_npc_actions()
 	var next_day := (int(_quest_server_time / 86400000) + 1) * 86400000
-	var deadline := int(_quest.get("expires_at", next_day))
+	var deadlines: Array = [next_day, _quest_cooldown]
+	if _quest_active is Dictionary:
+		deadlines.append(int(_quest_active.get("expires_at", 0)))
 	if str(_quest.get("state", "")) == "COMPLETED":
-		deadline = int(_quest.get("completed_at", _quest_server_time)) + 86400000
-	_quest_timer.start(maxf(0.1, float(mini(next_day, deadline) - _quest_server_time) / 1000.0 + 0.1))
+		deadlines.append(int(_quest.get("completed_at", 0)) + 86400000)
+	for deadline in deadlines:
+		if int(deadline) > _quest_server_time:
+			next_day = mini(next_day, int(deadline))
+	_quest_timer.start(maxf(0.1, float(next_day - _quest_server_time) / 1000.0 + 0.1))
