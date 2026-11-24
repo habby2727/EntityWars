@@ -1,7 +1,10 @@
-﻿extends Node
+extends Node
 
 const SETTINGS_PATH := "user://settings.cfg"
 
+const PracticeRecovery := preload("res://scripts/net/practice_recovery.gd")
+var practice_recovery := {}
+var practice_checked := false
 var host
 var backend: BackendClient
 var request_id := ""
@@ -147,6 +150,8 @@ func _update_selected_labels() -> void:
 		debug_button.visible = selected and ConnectionGate.debug_lab_navigation_allowed()
 
 func _on_auth(_token: String) -> void:
+	practice_recovery = {}
+	practice_checked = false
 	forest_idle_verified = false
 	request_id = ""
 	request_kind = ""
@@ -157,7 +162,7 @@ func _on_auth(_token: String) -> void:
 		info.text = "Reconnect to recover queue"
 
 func _on_identity(state: Dictionary) -> void:
-	if state.is_empty() or str(state.get("player_id", "")) != backend._verified_player_id:
+	if state.is_empty() or str(state.get("player_id", "")) != backend._verified_player_id or backend._verified_player_id != str(ConnectionGate.player_id) or str(backend.base_url).strip_edges().trim_suffix("/") != str(ConnectionGate.base_url).strip_edges().trim_suffix("/"):
 		return
 	server_state = state.duplicate(true)
 	synced = true
@@ -201,11 +206,11 @@ func _send(method: String, path: String, body: Variant, kind: String) -> bool:
 	request_kind = kind
 	return true
 
-func _join() -> void:
+func _join(practice: bool = false) -> void:
 	if friendly and not DuelClient._pending_body.is_empty():
 		DuelClient.retry_mutation()
 		return
-	if not selected or queued:
+	if (not selected and not practice) or queued:
 		return
 	if not synced:
 		info.text = "Sign in and wait for Ranked connection"
@@ -262,6 +267,20 @@ func _join() -> void:
 		info.text = tr("LOADOUT_HOM_PENDING")
 		return
 	var selection := {"entity_id": entity, "weapon_ids": [null if a.is_empty() else a, null if b.is_empty() else b], "homunculus_id": null if hom.is_empty() else hom, "spell_ids": spells.duplicate(), "mode": "attack"}
+	if practice:
+		if not practice_checked or not practice_recovery.is_empty():
+			info.text = tr("PRACTICE_RECOVERING")
+			next_poll = 0.0
+			return
+		practice_recovery = {"body": {"client_action_id": backend._make_uuid(), "selection": selection}, "created_at": int(Time.get_unix_time_from_system())}
+		if not PracticeRecovery.write(practice_recovery):
+			practice_recovery = {}
+			info.text = tr("PRACTICE_RECOVERY_ERROR")
+			return
+		if not _send("POST", "/practice/start", practice_recovery.body, "practice_start"):
+			info.text = tr("PRACTICE_RECOVERING")
+			next_poll = 0.0
+		return
 	if friendly:
 		if str(SceneRouter._friendly_context.get("player_id", "")) != str(ConnectionGate.player_id) or int(SceneRouter._friendly_context.get("generation", -1)) != ConnectionGate._generation:
 			info.text = tr("SOCIAL_FAILURE")
@@ -385,6 +404,18 @@ func _process(delta: float) -> void:
 	if queued and joined_at > 0:
 		var seconds := clampi(int(Time.get_unix_time_from_system()) - int(joined_at / 1000), 0, 3600)
 		host.btn_play.text = "Searching... %02d:%02d" % [seconds / 60, seconds % 60]
+	if synced and request_id.is_empty() and next_poll <= 0.0 and (not practice_checked or not practice_recovery.is_empty()):
+		next_poll = 3.0
+		if not practice_checked:
+			practice_recovery = PracticeRecovery.read()
+			if practice_recovery.has("error"):
+				info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+		var match_id := str(practice_recovery.get("match_id", ""))
+		var path := "/practice/match/state"
+		if not match_id.is_empty(): path += "?match_id=" + match_id.uri_encode()
+		_send("GET", path, null, "practice_state")
+		return
 	if synced and not availability_blocked and request_id.is_empty() and next_poll <= 0.0:
 		next_poll = 3.0
 		if rating_needed and selected and not queued:
@@ -398,6 +429,40 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 	var kind := request_kind
 	request_id = ""
 	request_kind = ""
+	if kind in ["practice_start", "practice_state"]:
+		if not ok:
+			var code := int(data.get("http_status", 0))
+			if kind == "practice_state" and code == 404 and not str(practice_recovery.get("match_id", "")).is_empty():
+				if PracticeRecovery.write({}):
+					practice_recovery = {}
+					practice_checked = false
+					next_poll = 0.0
+				return
+			if kind == "practice_start" and code >= 400 and code < 500:
+				if PracticeRecovery.write({}): practice_recovery = {}
+			info.text = tr("PRACTICE_RECOVERING")
+			next_poll = 3.0
+			return
+		var match_id := str(data.get("match_id", ""))
+		if not match_id.is_empty():
+			practice_recovery = {"match_id": match_id}
+			if not PracticeRecovery.write(practice_recovery):
+				info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+			SceneRouter.go_to_practice_combat(match_id, backend._verified_player_id)
+			return
+		practice_checked = true
+		if practice_recovery.get("body") is Dictionary:
+			var age := int(Time.get_unix_time_from_system()) - int(practice_recovery.get("created_at", 0))
+			if age < 0:
+				info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+			if age > 6 * 86400:
+				if PracticeRecovery.write({}): practice_recovery = {}
+				else: info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+			_send("POST", "/practice/start", practice_recovery.body, "practice_start")
+		return
 	if not ok:
 		forest_idle_verified = false
 		if str(data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED"]:

@@ -1,9 +1,10 @@
+import { activePractice } from "../practice_service";
 import { combatHomunculusAllowed } from "../homunculus_catalog";
 import type { Database } from "bun:sqlite";
 import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { createPvpCombatState, createPvpFighter, validatePvpDecision, resolvePvpExchange, resolvePvpInspiration, type PvpSide, type PvpCatalogs, type PvpSnapshot } from "./combat";
 import { createPvpRanking, pvpRank, pvpRatingDelta, pvpSeason } from "./ranking";
-import { publicCombatStatus, publicIncomingDrains } from "../public_combat_status";
+import { sanitizePvpEvent, projectPvpFighter } from "./projection";
 
 const PVP_TURN_TIMEOUT_MS = 90_000;
 
@@ -88,6 +89,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
           if (JSON.stringify(stored.selection) !== JSON.stringify(selection) || (stored.playback_protocol ?? 0) !== (playbackProtocol ?? 0)) throw new Error("QUEUE_CONFLICT");
           return { state: "QUEUED", joined_at: previous.queued_at, expires_at: previous.expires_at };
         }
+        if (activePractice(db,playerId,now)) throw new Error("PLAYER_BUSY");
         const snapshot = trustedSnapshot(playerId, selection);
         if (!snapshot || snapshot.player_id !== playerId || "error" in createPvpFighter(snapshot, catalogs)) throw new Error("UNTRUSTED_SETUP");
         let opponent = first.get(playerId,now) as any, other: PvpSnapshot | null = null;
@@ -208,37 +210,14 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
     const n = (db.query("SELECT COALESCE(MAX(seq),0)+1 n FROM pvp_events WHERE match_id = ?").get(id) as any).n;
     db.query("INSERT INTO pvp_events (match_id, seq, kind, visibility, payload_json, created_at) VALUES (?, ?, ?, 'public', ?, ?)").run(id,n,String(entry.kind ?? "event"),JSON.stringify(entry),now);
   };
-  const sanitizeEvent = (entry: any, viewer: PvpSide, seq: number) => {
-    const rel = (v: any) => v === viewer ? "player" : (v === "left" || v === "right") ? "enemy" : undefined;
-    const out: any = { id: seq, kind: entry.kind, turn: entry.turn };
-    for (const key of ["category","verb","suffix","spell_id","spell_name","show_spell_link","effectiveness","actor_kind","damage","actual_damage","amount","hp","status","value","previous","remaining","boosted","result"]) if (["string","number","boolean"].includes(typeof entry[key]) || entry[key] === null) out[key] = entry[key];
-    if (entry.side) out.actor = rel(entry.side);
-    if (entry.target_side) out.target = rel(entry.target_side);
-    if (entry.kind === "poison") { out.source = rel(entry.source) ?? null; out.victim = rel(entry.victim); }
-    if (entry.kind === "hom_passive") {
-      out.actor = rel(entry.actor);
-      out.target = rel(entry.target);
-      for (const key of ["hom_id", "passive_id", "trigger"]) if (typeof entry[key] === "string") out[key] = entry[key];
-      if (Array.isArray(entry.effects)) out.effects = entry.effects.filter((effect: any) => effect && ["left", "right"].includes(effect.target) && typeof effect.kind === "string" && typeof effect.amount === "number" && Number.isFinite(effect.amount)).map((effect: any) => ({kind: effect.kind, target: rel(effect.target), amount: effect.amount, unit: effect.unit, duration: effect.duration, remaining: effect.remaining}));
-    }
-    if (["left","right"].includes(entry.result)) out.result = rel(entry.result);
-    return out;
-  };
   const dto = (row: any, viewerId: string, after: number) => {
     const state = parse(row), viewer = row.side.toLowerCase() as PvpSide, rival: PvpSide = viewer === "left" ? "right" : "left", entries = members(row.match_id), decisions = pending.all(row.match_id,row.revision) as any[];
-    const present = (side: PvpSide) => {
-      const f = state.fighters[side], identity = entries.find(e => e.side.toLowerCase() === side);
-      const status: any = {}, statusView = publicCombatStatus(f, state.turn);
-      for (const k of ["poison","stun","shield_pct","atk_boost","vuln_pct","atk_down","hom_stun","reflect_pct","tempo_bonus","focus_next","misalign_next","poison_on_reflect"]) if (typeof statusView.status[k] === "number") status[k] = statusView.status[k];
-      if (f.status?.hybrid_mark) status.hybrid_mark = { owner: f.status.hybrid_mark.owner === viewer ? "player" : "enemy", remaining: f.status.hybrid_mark.remaining };
-      const delayed_damage = (state.strategic_delayed ?? []).filter((entry: any) => entry.target === side).map((entry: any) => ({ amount: entry.amount, due_turn: entry.due_turn }));
-      return { player_id: identity.player_id, display_name: identity.display_name, entity_id: f.id, name: f.name, type: f.type, hp: f.hp, max_hp: f.max_hp, atk: f.atk, def: f.def, status, defense_presentation: statusView.defense_presentation, persistent_statuses: statusView.persistent_statuses, passive_modifiers: statusView.passive_modifiers, pending_drain: publicIncomingDrains(state, side), spell_neutralize_active: f.spell_neutralize_active, spell_neutralize_pending: f.spell_neutralize_pending, delayed_damage, active_weapon_slot: f.active_weapon_slot, weapon_ids: f.weapons.map((weapon: any) => weapon?.id ?? null), hom_id: f.hom_id, hom_name: f.hom_name, hom_energy: f.hom_energy, hom_max_energy: f.hom_max_energy, hom_ready_at: f.hom_ready_at, hom_spent: f.hom_spent, ultra_used: f.ultra_used, inspiration: f.inspiration, inspiration_pending: !!f.inspiration_pending, inspiration_used_this_battle: !!f.inspiration_used_this_battle, ...(f.strategic_trap ? {trap: {value:f.strategic_trap.value, expires_turn:f.strategic_trap.expires_turn}} : {}), ...(f.strategic_heal_suppression ? {heal_suppression: {expires_turn:f.strategic_heal_suppression.expires_turn}} : {}), ...(side === viewer ? { spell_ids: [...f.spell_ids], spell_cooldowns: {...f.spell_cooldowns}, inspiration_offers: f.inspiration_pending ? [...f.inspiration_offers] : [] } : {}) };
-    };
+    const present = (side: PvpSide) => projectPvpFighter(state, side, viewer, entries.find(e => e.side.toLowerCase() === side));
     const finished = row.result_json ? JSON.parse(row.result_json) : null;
     const total = finished?.totals?.[viewer];
     const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...(finished.result === viewer && finished.xp ? {homunculus_xp: finished.xp} : {}), ...(row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...(Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {}) } : {}) } : null;
     const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
-    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, ...(row.playback_protocol === 1 ? {phase:row.phase, server_time:clock(), playback_revision:row.phase === "PLAYBACK" ? row.revision : null, playback_until:row.phase === "PLAYBACK" ? row.decision_deadline : null, playback_event_end:row.playback_event_end} : {}), turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizeEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
+    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, ...(row.playback_protocol === 1 ? {phase:row.phase, server_time:clock(), playback_revision:row.phase === "PLAYBACK" ? row.revision : null, playback_until:row.phase === "PLAYBACK" ? row.decision_deadline : null, playback_event_end:row.playback_event_end} : {}), turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizePvpEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
   };
   const advance = (row: any, now: number, timeout: boolean) => {
     const eventStart = (db.query("SELECT COALESCE(MAX(seq),0) n FROM pvp_events WHERE match_id=?").get(row.match_id) as any).n;

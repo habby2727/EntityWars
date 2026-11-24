@@ -469,3 +469,12 @@ PASSIVE_LEGACY_NAME,Synergy,Sinergia
 PASSIVE_EFFECT_REFLECT_PCT,reflection,reflejo
 PASSIVE_DURATION_UNTIL_CONSUMED,until consumed,hasta consumirse
 STATUS_BOSS_SHIELD_BURNED,Boss shield is suppressed by burn; its duration continues.,La quemadura anula el escudo del jefe; su duración continúa.
+
+PRACTICE_FORFEIT_CONFIRM,Leave Practice? This forfeits the match.,?Salir del entrenamiento? Abandonar?s el combate.
+PRACTICE_RECOVERING,Recovering Practice connection?,Recuperando la conexi?n del entrenamiento?
+PRACTICE_RECOVERY_ERROR,Practice recovery could not be saved.,No se pudo guardar la recuperaci?n del entrenamiento.
+PRACTICE_CONNECTING,Connecting to Practice?,Conectando con el entrenamiento?
+PRACTICE_WIN,Victory,Victoria
+PRACTICE_LOSS,Defeat,Derrota
+PRACTICE_DRAW,Draw,Empate
+PRACTICE_RETURN,Return,Volver

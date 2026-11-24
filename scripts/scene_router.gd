@@ -130,6 +130,12 @@ static func go_to_ranked_combat(match_id: String) -> void:
 	_ranked_context = {"match_id": match_id}
 	_go_to(SCENE_COMBAT, "Combat")
 
+static func go_to_practice_combat(match_id: String, owner: String) -> void:
+	if _connection_gate().blocked() or owner.is_empty() or owner != str(_connection_gate().player_id):
+		return
+	_ranked_context = {"match_id": match_id, "kind": "practice", "player_id": owner, "base_url": str(_connection_gate().base_url)}
+	_go_to(SCENE_COMBAT, "Combat")
+
 static func go_to_debug_ranked_combat() -> void:
 	if not _connection_gate().debug_lab_navigation_allowed():
 		return

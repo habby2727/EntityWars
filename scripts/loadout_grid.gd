@@ -1981,6 +1981,9 @@ func _on_play_pressed() -> void:
 		SceneRouter._hunt_loadout_active = false
 		SceneRouter.go_to_combat()
 		return
+	if ranked_queue != null and not str(ConnectionGate.token).is_empty() and not ConnectionGate.debug_lab_navigation_allowed():
+		ranked_queue._join(true)
+		return
 	SceneRouter.set_combat_seal_mode(_mode)
 	if ResourceLoader.exists("res://scenes/Combat.tscn"):
 		get_tree().change_scene_to_file("res://scenes/Combat.tscn")

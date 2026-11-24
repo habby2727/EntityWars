@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const RecoveryJournal := preload("res://scripts/net/session_recovery_journal.gd")
@@ -152,6 +152,14 @@ func explicit_logout_safe() -> bool:
 	if not player_id.is_empty():
 		var queue_path := "user://pending_actions_%s.json" % player_id.sha256_text()
 		if not _logout_queue_empty(queue_path):
+			return false
+	var practice_config := ConfigFile.new()
+	var practice_file := "user://practice_recovery.cfg"
+	if FileAccess.file_exists(practice_file):
+		if practice_config.load(practice_file) != OK: return false
+		if player_id.is_empty():
+			if practice_config.has_section("players") and not practice_config.get_section_keys("players").is_empty(): return false
+		elif practice_config.has_section_key("players", preload("res://scripts/net/practice_recovery.gd").key()):
 			return false
 	var duel_config := ConfigFile.new()
 	if FileAccess.file_exists(DuelClient.RECOVERY_FILE):

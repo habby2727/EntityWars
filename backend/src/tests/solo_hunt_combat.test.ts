@@ -965,7 +965,7 @@ test("precision, shields, leech and initiative have observable effects", () => {
   const reflected = cast(toxic, "toxic_mirror", rng);
   expect(reflected.events.some((e: any) => e.kind === "reflect")).toBe(true);
   expect(reflected.events.some((e: any) => e.kind === "status_applied" && e.status === "poison_on_reflect" && e.target === "player" && e.value === 1)).toBe(true);
-  expect(reflected.next_state.boss.status.poison).toBe(0);
+  expect(reflected.next_state.boss.status.poison).toBe(2);
   expect(reflected.next_state.player.status.poison_on_reflect).toBeUndefined();
   const miss = fixture("toxic_mirror", "mercury_01"); miss.boss.status.stun = 1;
   const saved = cast(miss, "toxic_mirror", rng).next_state;

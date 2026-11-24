@@ -6,6 +6,7 @@ var host
 var backend: BackendClient
 var match_id := ""
 var friendly := false
+var practice := false
 var match_prefix := "/pvp/match"
 var request_id := ""
 var chat_attempted := false
@@ -56,6 +57,8 @@ func _ready() -> void:
 	match_id = str(SceneRouter._ranked_context.get("match_id", ""))
 	friendly = str(SceneRouter._ranked_context.get("kind", "ranked")) == "friendly"
 	if friendly: match_prefix = "/forest/duels/match"
+	practice = str(SceneRouter._ranked_context.get("kind", "")) == "practice"
+	if practice: match_prefix = "/practice/match"
 	header = Label.new()
 	header.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	header.offset_left = -250
@@ -67,7 +70,7 @@ func _ready() -> void:
 	header.add_theme_constant_override("outline_size", 3)
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	header.text = "Connecting to Ranked..."
+	header.text = tr("PRACTICE_CONNECTING") if practice else "Connecting to Ranked..."
 	host.add_child(header)
 	timer_panel = PanelContainer.new()
 	timer_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -111,7 +114,7 @@ func _ready() -> void:
 	host.spell_panel.hide()
 	host.switch_weapon_btn.disabled = true
 	host.ultra_button.disabled = true
-	host.confirm_popup.get_node("Panel/VBox/Body").text = tr("DUEL_FORFEIT_CONFIRM") if friendly else "Leave this ranked match? This forfeits the match."
+	host.confirm_popup.get_node("Panel/VBox/Body").text = tr("PRACTICE_FORFEIT_CONFIRM") if practice else tr("DUEL_FORFEIT_CONFIRM") if friendly else "Leave this ranked match? This forfeits the match."
 	backend = BackendClient.new()
 	backend.base_url = host.backend_url
 	backend.auto_dev_login = false
@@ -121,6 +124,17 @@ func _ready() -> void:
 	add_child(backend)
 
 func _setup_chat() -> void:
+	if practice:
+		chat_input = LineEdit.new()
+		chat_send = Button.new()
+		chat_log = RichTextLabel.new()
+		add_child(chat_input)
+		add_child(chat_send)
+		add_child(chat_log)
+		chat_input.hide()
+		chat_send.hide()
+		chat_log.hide()
+		return
 	host.log_box.offset_top += 40
 	host.log_box.offset_bottom = -144
 	chat_log = RichTextLabel.new()
@@ -220,7 +234,7 @@ func _on_auth_changed(_token: String) -> void:
 	refresh_controls()
 
 func _send(method: String, path: String, body: Variant, kind: String, replay: bool = false) -> bool:
-	if not request_id.is_empty() or backend.token.is_empty() or backend._verified_player_id.is_empty():
+	if not request_id.is_empty() or backend.token.is_empty() or backend._verified_player_id.is_empty() or (practice and (backend._verified_player_id != str(SceneRouter._ranked_context.get("player_id", "")) or str(ConnectionGate.base_url) != str(SceneRouter._ranked_context.get("base_url", "")))):
 		return false
 	request_id = backend.request_api(method, path, body, false, false, replay)
 	if request_id.is_empty():
@@ -268,7 +282,7 @@ func _process(delta: float) -> void:
 		highlights_shown = true
 		host._show_highlights()
 		_show_result_popup()
-	if not state.is_empty() and str(state.get("status", "")) == "ACTIVE":
+	if not practice and not state.is_empty() and str(state.get("status", "")) == "ACTIVE":
 		var now_ms := _server_now() if server_time_ms > 0 else int(Time.get_unix_time_from_system() * 1000.0)
 		var seconds := maxi(0, ceili(float(int(state.get("deadline", 0)) - now_ms) / 1000.0))
 		timer_panel.show()
@@ -317,7 +331,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		next_poll = 0.0
 		refresh_controls()
 		return
-	if data.get("match_id", "") != match_id or (friendly and data.get("kind", "") != "friendly"):
+	if data.get("match_id", "") != match_id or (friendly and data.get("kind", "") != "friendly") or (practice and data.get("kind", "") != "practice"):
 		header.text = "Match unavailable"
 		return
 	if kind == "state":
@@ -468,8 +482,8 @@ func _render() -> void:
 	if host._battle_over and event_queue.is_empty() and not event_presenting and event_delay <= 0.0:
 		timer_panel.hide()
 		var result: Dictionary = state.get("result", {})
-		header.text = str(result.get("result", "draw")).to_upper() if friendly else "%s  |  MP %+d" % [str(result.get("result", "draw")).to_upper(), int(result.get("mp_delta", 0))]
-		host.next_turn_btn.text = tr("DUEL_RETURN_FOREST") if friendly else "Return"
+		header.text = tr("PRACTICE_" + str(result.get("result", "draw")).to_upper()) if practice else str(result.get("result", "draw")).to_upper() if friendly else "%s  |  MP %+d" % [str(result.get("result", "draw")).to_upper(), int(result.get("mp_delta", 0))]
+		host.next_turn_btn.text = tr("PRACTICE_RETURN") if practice else tr("DUEL_RETURN_FOREST") if friendly else "Return"
 		host.next_turn_btn.show()
 	else:
 		host.next_turn_btn.hide()
@@ -655,6 +669,7 @@ func _send_chat() -> void:
 	chat_send.disabled = true
 
 func back() -> void:
+	if practice and playback_busy(): return
 	if debug_visual:
 		SceneRouter._ranked_context.clear()
 		SceneRouter.go_to_loadout()
@@ -665,6 +680,7 @@ func back() -> void:
 		host.confirm_popup.popup_centered(Vector2i(600, 240))
 
 func forfeit() -> void:
+	if practice and playback_busy(): return
 	if str(state.get("status", "")) == "FINISHED":
 		return_to_loadout()
 		return
@@ -683,6 +699,9 @@ func return_to_loadout() -> void:
 	if friendly:
 		SceneRouter.finish_friendly()
 	else:
+		if practice and not preload("res://scripts/net/practice_recovery.gd").write({}):
+			header.text = tr("PRACTICE_RECOVERY_ERROR")
+			return
 		SceneRouter._ranked_context.clear()
 		SceneRouter.go_to_loadout()
 
@@ -694,7 +713,8 @@ func _show_result_popup() -> void:
 		return
 	result_popup_shown = true
 	var outcome := str(result.get("result", "draw"))
-	var body: VBoxContainer = host._result_popup("VICTORY" if outcome == "win" else "DEFEAT" if outcome == "loss" else "DRAW")
+	var title := tr("PRACTICE_" + outcome.to_upper()) if practice else "VICTORY" if outcome == "win" else "DEFEAT" if outcome == "loss" else "DRAW"
+	var body: VBoxContainer = host._result_popup(title)
 	var xp: Dictionary = result.get("homunculus_xp", {})
 	if not xp.is_empty():
 		var xp_label := Label.new()
@@ -703,7 +723,7 @@ func _show_result_popup() -> void:
 			xp_label.text += "\n" + (tr("PVP_HOM_LEVEL_UP") % int(xp.get("level_after", 0)))
 		xp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		body.add_child(xp_label)
-	if friendly:
+	if friendly or practice:
 		return
 	var delta := int(result.get("mp_delta", 0))
 	var amount := Label.new()

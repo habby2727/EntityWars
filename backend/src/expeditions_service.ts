@@ -1,3 +1,4 @@
+import { activePractice } from "./practice_service";
 ﻿import type { Database } from "bun:sqlite";
 import { createHmac, randomBytes } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
@@ -210,6 +211,7 @@ export function createExpeditionService(options: Options) {
       if (live?.status === "ACTIVE" && live.revision >= EXPEDITION_MAX_REVISION && action !== "exit") { abandon(live,now); return {limitReached:true}; }
       let row: any, state: any, events: any[] = [];
       if (action === "start") {
+        if (activePractice(db,playerId,now)) fail(409,"Practice is active.");
         if (cooldown(playerId, now)>0) fail(409,"Expedition exit cooldown active.");
         if (db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId)) fail(409,"An active expedition already exists.");
         if (balance(playerId,now).mana < 1) fail(409,"Not enough expedition mana.");

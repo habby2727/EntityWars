@@ -1,3 +1,4 @@
+import { createPracticeService, activePractice } from "./practice_service";
 import { ownsHomunculus, combatHomunculusAllowed, legacyHomunculusIds, expeditionHomunculusIds, buildHomunculusCombatCatalog, homunculusCatalog } from "./homunculus_catalog";
 import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp, PVE_VICTORY_XP, type HomunculusProgress } from "./homunculus_experience";
 import * as missions from "./world_missions";
@@ -233,7 +234,7 @@ function normalizeHomunculusProgress(value: unknown): Record<string, HomunculusP
 	return normalizeProgress(progress, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
 }
 
-function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number, pvp = false): {homunculus_id:string; xp_granted:number; level_before:number; level_after:number} | undefined {
+function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number, pvp = false, maxXp = PVE_VICTORY_XP): {homunculus_id:string; xp_granted:number; level_before:number; level_after:number} | undefined {
 	if (!loadoutJson) return;
 	let selection: any;
 	try { selection = JSON.parse(loadoutJson); } catch { throw new HttpError(409, "Invalid stored loadout."); }
@@ -246,7 +247,7 @@ function awardHomunculusVictory(playerId: string, loadoutJson: string | null, no
 	if (!player) throw new HttpError(409, "Invalid player state.");
 	if (!combatHomunculusAllowed(player.homunculus_progress, id)) { if (pvp) return; throw new HttpError(409, "Homunculus is not available for combat."); }
 	const current = player.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
-	const amount = pvp ? Math.min(PVE_VICTORY_XP, Math.max(0, xpThreshold(10) - current.xp)) : PVE_VICTORY_XP;
+	const amount = pvp ? Math.min(maxXp, Math.max(0, xpThreshold(10) - current.xp)) : PVE_VICTORY_XP;
 	player.homunculus_progress[id] = grantXp(current, amount);
 	player.updated_at = now;
 	if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
@@ -366,7 +367,7 @@ function getExpeditionService() {
 	} });
 	return expeditionService;
 }
-let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>; snapshot: (id:string,selection:unknown)=>any; startFriendly: (a:any,b:any,now:number,invite:string,playbackProtocol?:number)=>string } | null = null;
+let rankedServices: { practice: ReturnType<typeof createPracticeService>; db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>; snapshot: (id:string,selection:unknown)=>any; startFriendly: (a:any,b:any,now:number,invite:string,playbackProtocol?:number)=>string } | null = null;
 function getRankedServices() {
 	if (rankedServices) return rankedServices;
 	const secret = Bun.env.PVP_RNG_SECRET;
@@ -376,9 +377,12 @@ function getRankedServices() {
 	if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance) throw new Error("PVP_CATALOG_UNAVAILABLE");
 	const matches = createPvpMatches(db, new TextEncoder().encode(secret), Date.now, (id,snapshot,now) => awardHomunculusVictory(id,snapshot,now,true));
 	const snapshot = (id:string, selection:unknown) => { const value=trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs); return value && !("error" in createPvpFighter(value,catalogs)) ? value : null; };
-	rankedServices = { db, matches, snapshot, startFriendly: (a,b,now,invite,protocol) => createSharedPvpMatch(db,catalogs,a,b,now,"friendly",invite,protocol), queue: createPvpQueue(db, catalogs, snapshot), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+	const practice = createPracticeService(db, catalogs, new TextEncoder().encode(secret), snapshot, (id, saved, now, amount) => awardHomunculusVictory(id, saved, now, true, amount));
+	rankedServices = { db, matches, snapshot, practice, startFriendly: (a,b,now,invite,protocol) => createSharedPvpMatch(db,catalogs,a,b,now,"friendly",invite,protocol), queue: createPvpQueue(db, catalogs, snapshot), chat: createPvpChat(db), ranking: createPvpRanking(db) };
 	const timer = setInterval(() => { try { matches.sweep(); } catch (error) { logError("pvp deadline sweep failed", { error: String(error) }); } }, 1000);
 	timer.unref();
+	const practiceTimer = setInterval(() => { try { practice.sweep(); } catch (error) { logError("practice cleanup failed", { error: String(error) }); } }, 60_000);
+	practiceTimer.unref();
 	return rankedServices;
 }
 const getPlayerByIdStmt = db.prepare(
@@ -1617,6 +1621,32 @@ async function startServer(): Promise<void> {
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 
+				if ((req.method === "POST" && ["/practice/start","/practice/match/decision","/practice/match/forfeit"].includes(url.pathname)) || (req.method === "GET" && url.pathname === "/practice/match/state")) {
+                    const playerId = await requireAuth(req, ctx);
+                    await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+                    try {
+                        const service = getRankedServices()?.practice;
+                        if (!service) return jsonResponse({error:"PVP_SECRET_REQUIRED"},503);
+                        if (req.method === "GET") {
+                            const raw=url.searchParams.get("after") ?? "0";
+                            if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error("INVALID_CURSOR");
+                            return jsonResponse(service.state(playerId,url.searchParams.get("match_id"),Number(raw)));
+                        }
+                        const body=await readJson(req,config.maxBodyBytes);
+                        const fields=(allowed:string[]) => body && typeof body==='object' && !Array.isArray(body) && Object.keys(body).every(k=>allowed.includes(k));
+                        if (url.pathname==='/practice/start') { if (!fields(['client_action_id','selection'])) throw new Error('INVALID_REQUEST'); return jsonResponse(service.start(playerId,body.client_action_id,body.selection)); }
+                        if (url.pathname==='/practice/match/decision') { if (!fields(['match_id','client_action_id','combat_revision','decision']) || typeof body.match_id!=='string') throw new Error('INVALID_REQUEST'); return jsonResponse(service.decide(playerId,body.match_id,body.client_action_id,body.combat_revision,body.decision)); }
+                        if (!fields(['match_id','client_action_id']) || typeof body.match_id!=='string') throw new Error('INVALID_REQUEST');
+                        return jsonResponse(service.forfeit(playerId,body.match_id,body.client_action_id));
+                    } catch (error) {
+                        const code=error instanceof Error ? error.message : 'PRACTICE_UNAVAILABLE';
+                        if (code==='MATCH_NOT_FOUND') return jsonResponse({error:code},404);
+                        if (['PLAYER_BUSY','ACTION_CONFLICT','STALE_REVISION','MATCH_FINISHED','ACTION_LIMIT'].includes(code)) return jsonResponse({error:code},409);
+                        if (['INVALID_REQUEST','INVALID_CURSOR','INVALID_ACTION_ID','INVALID_DECISION','UNTRUSTED_SETUP'].includes(code)) return jsonResponse({error:code},400);
+                        logError('practice request failed',{error:String(error)}); return jsonResponse({error:'PRACTICE_UNAVAILABLE'},503);
+                    }
+                }
+
 				if (isRankedRoute(req.method, url.pathname) || (req.method === "GET" && url.pathname === "/forest/duels/match/state") || (req.method === "POST" && ["/forest/duels/match/decision","/forest/duels/match/playback_ack","/forest/duels/match/forfeit","/forest/duels/match/chat"].includes(url.pathname))) {
                     const friendly = url.pathname.startsWith("/forest/duels/");
 					const playerId = await requireAuth(req, ctx);
@@ -2721,6 +2751,7 @@ async function startServer(): Promise<void> {
 						let runId: string;
 						let spellProgress: unknown;
 						if (start) {
+							if (activePractice(db,playerId,now)) throw new HttpError(409, "Practice is active.");
 							const state = ensurePlayerState(playerId);
 							if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
 							db.query("UPDATE dungeon_runs SET status = 'ABANDONED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE'").run(now, playerId);
@@ -3028,6 +3059,7 @@ async function startServer(): Promise<void> {
 						let row: SoloHuntRow;
 						let replacedSessionId: string | null = null;
 						if (start) {
+							if (activePractice(db,playerId,now)) throw new HttpError(409, "Practice is active.");
 							const schedule = soloBossSchedule(now);
 							const globalEvent = requestedGlobal ? db.query("SELECT * FROM global_boss_events WHERE event_id = ? AND status = 'ACTIVE'").get(requestedGlobal) as any : null;
 							if (requestedGlobal && (!globalEvent || (payload as any).guardian_id !== undefined)) throw new HttpError(409, "Global event unavailable.");

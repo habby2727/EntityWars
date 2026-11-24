@@ -1,3 +1,4 @@
+import { activePractice } from "../practice_service";
 import type { Database } from 'bun:sqlite';
 import type { PvpSnapshot } from '../pvp/combat';
 
@@ -101,6 +102,7 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
     const invitation = row(body.invite_id);
     if (!invitation || ![invitation.challenger_id,invitation.recipient_id].includes(player)) return fail(404,'INVITE_UNAVAILABLE');
     if (invitation.status === 'STARTED') { const old=db.query('SELECT selection_json,playback_protocol FROM forest_duel_ready WHERE invite_id=? AND player_id=?').get(body.invite_id,player) as any; if (!old || old.selection_json!==JSON.stringify(body.selection) || old.playback_protocol !== (body.playback_protocol ?? 0)) return fail(409,'READY_CONFLICT'); const found=db.query('SELECT match_id FROM pvp_matches WHERE invite_id=?').get(body.invite_id) as any; return {status:200,data:{state:'STARTED',match_id:found.match_id}}; }
+    if (activePractice(db,invitation.challenger_id,now) || activePractice(db,invitation.recipient_id,now)) return fail(409,'PLAYER_BUSY');
     if (invitation.status !== 'ACCEPTED') return fail(409,'INVITE_NOT_ACTIVE');
     if (!available) return fail(404,'PLAYER_UNAVAILABLE');
     if (busyPvp(invitation.challenger_id,now) || busyPvp(invitation.recipient_id,now)) return fail(409,'PLAYER_BUSY');
