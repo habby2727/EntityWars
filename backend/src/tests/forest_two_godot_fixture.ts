@@ -1,12 +1,42 @@
-﻿import {Database} from 'bun:sqlite';import {mkdtempSync,readdirSync,rmSync,readFileSync} from 'node:fs';import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import {createServer} from 'node:net';import {randomUUID,createHash} from 'node:crypto';import Redis from 'ioredis';import assert from 'node:assert/strict';
-// Three isolated fixture identities; two independent Godot processes use normal bearer auth.
+﻿import {Database} from 'bun:sqlite';
+import {mkdtempSync,readdirSync,rmSync,readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {createServer} from 'node:net';
+import {randomUUID,createHash} from 'node:crypto';
+import Redis from 'ioredis';
+import assert from 'node:assert/strict';
+
 async function port():Promise<number>{return new Promise((ok,fail)=>{const s=createServer();s.on('error',fail);s.listen(0,'127.0.0.1',()=>{const p=(s.address() as any).port;s.close(()=>ok(p));});});}
-const backend=resolve(import.meta.dir,'../..'),root=resolve(backend,'..'),dir=mkdtempSync(join(tmpdir(),'forest-two-')),dbPath=join(dir,'db.sqlite'),db=new Database(dbPath),now=Date.now(),records=Array.from({length:3},(_,i)=>({id:randomUUID(),token:randomUUID(),name:`TwoGodot${i}`}));
-for(const f of readdirSync(join(backend,'migrations/sqlite')).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(join(backend,'migrations/sqlite',f),'utf8'));const insert=db.prepare('INSERT INTO players (player_id,display_name,state_json,updated_at) VALUES (?,?,?,?)');for(const r of records)insert.run(r.id,r.name,'{}',now);db.close();
-const rp=await port(),ap=await port(),base=`http://127.0.0.1:${ap}`,redisBin=Bun.env.FOREST_TEST_REDIS_SERVER||Bun.which('redis-server');assert(redisBin,'redis-server required');const redisProc=Bun.spawn([redisBin,'--bind','127.0.0.1','--port',String(rp),'--save','','--appendonly','no'],{stdout:'ignore',stderr:'ignore'}),redis=new Redis(`redis://127.0.0.1:${rp}`,{lazyConnect:true,retryStrategy:()=>null});redis.on('error',()=>{});let server:any,third:WebSocket|undefined;const godots:any[]=[];
-try{let ready=false;for(let i=0;i<50;i++){try{await redis.connect();ready=true;break}catch{await Bun.sleep(100)}}assert(ready);const pipe=redis.pipeline();for(const r of records){const h=createHash('sha256').update(r.token).digest('hex');pipe.set(`access:${r.token}`,JSON.stringify({userId:r.id,createdAt:now,expiresAt:now+120000}),'PX',120000);pipe.set(`idle:${h}`,'1','EX',10800);pipe.set(`idle-initialized:${h}`,'1','PX',120000);}await pipe.exec();server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:backend,env:{...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(ap),DB_PATH:dbPath,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_DUELS_ENABLED:process.env.FOREST_DUEL_TEST==='1'?'1':'0',PVP_ENABLED:'0',PVP_RNG_SECRET:'friendly-fixture-secret-at-least-32-bytes',SESSION_IDLE_ENABLED:'1'},stdout:'ignore',stderr:'ignore'});
- ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}assert(ready,'API unavailable');
- third=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${records[2].token}`,'X-EntityWars-Client-Build':'5509'}} as any);await new Promise<void>((ok,fail)=>{const t=setTimeout(()=>fail(Error('third peer timeout')),5000);third!.onopen=()=>third!.send(JSON.stringify({v:1,type:'enter',summoner_id:'cyberghost'}));third!.onmessage=e=>{if(JSON.parse(String(e.data)).type==='welcome'){clearTimeout(t);ok();}};third!.onerror=()=>fail(Error('third peer failed'));});
- const exe=Bun.env.GODOT_BIN||join(Bun.env.USERPROFILE||'','Desktop','Godot_v4.6.exe');for(let i=0;i<2;i++){const log=join(dir,`godot${i}.log`);godots.push({log,proc:Bun.spawn([exe,'--headless','--path',root,'--log-file',log,'--script',process.env.FOREST_DUEL_TEST==='1'?'res://scripts/tests/smoke_friendly_http.gd':'res://scripts/tests/smoke_forest_multiplayer.gd'],{cwd:root,env:{...process.env,FOREST_SMOKE_URL:'',FOREST_FAULT_URL:'',FOREST_TWO_URL:base,FOREST_TWO_ID:records[i].id,FOREST_TWO_TOKEN:records[i].token,FOREST_TWO_OTHER:records[1-i].id,FOREST_TWO_THIRD:records[2].id,FOREST_DUEL_ROLE:String(i)},stdout:'ignore',stderr:'ignore'})});}
- let timer:any;const exits=await Promise.race([Promise.all(godots.map(g=>g.proc.exited)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('two Godot clients timeout')),60000);})]);clearTimeout(timer);const logs=godots.map(g=>readFileSync(g.log,'utf8'));for(const log of logs)console.log(log);assert.deepEqual(exits,[0,0]);if(process.env.FOREST_DUEL_TEST==='1'){const ids=logs.map(log=>/FRIENDLY_HTTP_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Friendly participants received different matches');}console.log('Two independently authenticated Godot clients and third WebSocket: passed');
-}finally{third?.close();for(const g of godots)if(g.proc.exitCode===null){g.proc.kill();await g.proc.exited}if(server){server.kill();await server.exited}redis.disconnect();redisProc.kill();await redisProc.exited;for(let i=0;i<20;i++){try{rmSync(dir,{recursive:true,force:true});break}catch{await Bun.sleep(200)}}}
+const backend=resolve(import.meta.dir,'../..'),root=resolve(backend,'..'),dir=mkdtempSync(join(tmpdir(),'forest-two-')),dbPath=join(dir,'db.sqlite'),db=new Database(dbPath),now=Date.now();
+const records=Array.from({length:3},(_,i)=>({id:randomUUID(),token:randomUUID(),name:`TwoGodot${i}`}));
+for(const f of readdirSync(join(backend,'migrations/sqlite')).filter(f=>f.endsWith('.sql')).sort()) db.exec(readFileSync(join(backend,'migrations/sqlite',f),'utf8'));
+const insert=db.prepare('INSERT INTO players (player_id,display_name,state_json,updated_at) VALUES (?,?,?,?)');for(const r of records) insert.run(r.id,r.name,'{}',now);db.close();
+const rp=await port(),ap=await port(),base=`http://127.0.0.1:${ap}`,redisBin=Bun.env.FOREST_TEST_REDIS_SERVER||Bun.which('redis-server');assert(redisBin,'redis-server required');
+const redisProc=Bun.spawn([redisBin,'--bind','127.0.0.1','--port',String(rp),'--save','','--appendonly','no'],{stdout:'ignore',stderr:'ignore'});
+const redis=new Redis(`redis://127.0.0.1:${rp}`,{lazyConnect:true,retryStrategy:()=>null});redis.on('error',()=>{});
+let server:any,third:WebSocket|undefined,success=false;const godots:{log:string;proc:ReturnType<typeof Bun.spawn>}[]=[];
+const serverLog=join(dir,'server.log'),serverErr=join(dir,'server-error.log');
+const scrub=(value:string)=>{for(const r of records){value=value.split(r.token).join('[REDACTED]');value=value.split(createHash('sha256').update(r.token).digest('hex')).join('[REDACTED]');}return value;};
+try {
+ let ready=false;for(let i=0;i<50;i++){try{await redis.connect();ready=true;break}catch{await Bun.sleep(100)}}assert(ready,'Redis startup failed');
+ const pipe=redis.pipeline();for(const r of records){const h=createHash('sha256').update(r.token).digest('hex');pipe.set(`access:${r.token}`,JSON.stringify({userId:r.id,createdAt:now,expiresAt:now+120000}),'PX',120000);pipe.set(`idle:${h}`,'1','EX',10800);pipe.set(`idle-initialized:${h}`,'1','PX',120000);}await pipe.exec();
+ server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:backend,env:{...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(ap),DB_PATH:dbPath,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_DUELS_ENABLED:process.env.FOREST_DUEL_TEST==='1'?'1':'0',PVP_ENABLED:'0',PVP_RNG_SECRET:'friendly-fixture-secret-at-least-32-bytes',SESSION_IDLE_ENABLED:'1'},stdout:Bun.file(serverLog),stderr:Bun.file(serverErr)});
+ ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}assert(ready,'API startup failed');
+ third=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${records[2].token}`,'X-EntityWars-Client-Build':'5509'}} as any);
+ await new Promise<void>((ok,fail)=>{const t=setTimeout(()=>fail(Error('third peer welcome timeout')),5000);third!.onopen=()=>third!.send(JSON.stringify({v:1,type:'enter',summoner_id:'cyberghost'}));third!.onmessage=e=>{if(JSON.parse(String(e.data)).type==='welcome'){clearTimeout(t);ok();}};third!.onerror=()=>fail(Error('third peer socket error'));third!.onclose=e=>{if(e.code!==1000)fail(Error(`third peer closed: ${e.code} ${e.reason}`));};});
+ const exe=Bun.env.GODOT_BIN||join(Bun.env.USERPROFILE||'','Desktop','Godot_v4.6.exe');
+ for(let i=0;i<2;i++){
+  const log=join(dir,`godot${i}.log`),profile=join(dir,`profile${i}`);mkdirSync(profile,{recursive:true});
+  const env={...process.env,APPDATA:profile,XDG_DATA_HOME:profile,FOREST_TEST_PROFILE:profile,FOREST_SMOKE_URL:'',FOREST_FAULT_URL:'',FOREST_TWO_URL:base,FOREST_TWO_ID:records[i].id,FOREST_TWO_TOKEN:records[i].token,FOREST_TWO_OTHER:records[1-i].id,FOREST_TWO_THIRD:records[2].id,FOREST_DUEL_ROLE:String(i)};
+  godots.push({log,proc:Bun.spawn([exe,'--headless','--path',root,'--log-file',log,'--script',process.env.FOREST_DUEL_TEST==='1'?'res://scripts/tests/smoke_friendly_http.gd':'res://scripts/tests/smoke_forest_multiplayer.gd'],{cwd:root,env,stdout:'ignore',stderr:'ignore'})});
+ }
+ let timer:any;const exits=await Promise.race([Promise.all(godots.map(g=>g.proc.exited)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('overall client timeout; inspect last phase in retained logs')),60000);})]);clearTimeout(timer);
+ const logs=godots.map(g=>scrub(readFileSync(g.log,'utf8')));for(const log of logs)console.log(log);assert.deepEqual(exits,[0,0]);
+ if(process.env.FOREST_DUEL_TEST==='1'){const ids=logs.map(log=>/FRIENDLY_HTTP_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Friendly participants received different matches');}
+ success=true;console.log('Two authenticated clients with separate profiles and third WebSocket: passed');
+} finally {
+ third?.close();for(const g of godots)if(g.proc.exitCode===null){g.proc.kill();await g.proc.exited}if(server){server.kill();await server.exited}redis.disconnect();redisProc.kill();await redisProc.exited;
+ if(!success){for(const path of [serverLog,serverErr,...godots.map(g=>g.log)])try{writeFileSync(path,scrub(readFileSync(path,'utf8')));}catch{} console.error(`Fixture failed; sanitized diagnostic logs retained in ${dir}`);}
+ else for(let i=0;i<20;i++){try{rmSync(dir,{recursive:true,force:true});break}catch{await Bun.sleep(200)}}
+}

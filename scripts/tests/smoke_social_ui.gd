@@ -44,6 +44,17 @@ func _run() -> void:
 	current_scene = safe
 	social._popup._process(0)
 	check(social._popup._current == "r1" and social._popup._panel.visible, "Incoming popup not shown")
+	var duel = root.get_node("DuelClient")
+	duel.enabled = true
+	duel._server_time = 1000000
+	duel._server_ticks = Time.get_ticks_msec()
+	duel.incoming = [{"invite_id":"duel1", "challenger_name":"Bob", "expires_at":1030000}]
+	social._popup._process(0)
+	check(social._popup._current == "duel1" and social._popup._current_kind == "duel", "Duel did not preempt friend popup")
+	duel.incoming.clear()
+	social._popup._process(0)
+	social._popup._process(0)
+	check(social._popup._current == "r1", "Deferred friend popup did not resume")
 	social._popup._dismiss_current()
 	social._popup._process(0)
 	check(social._popup._current.is_empty(), "Dismissed request reopened")

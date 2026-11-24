@@ -2,7 +2,7 @@
 
 F6B.1 extends this contract; see [friendly combat handoff](forest-f6b-friendly-combat-contract.md) for READY, STARTED, cancellation and match routes.
 
-All routes require the existing authenticated session and client build header. Enable `FOREST_DUELS_ENABLED=1` only on the active Forest lease owner, with Forest enabled. Otherwise the routes return `503 {"error":"FOREST_DUELS_UNAVAILABLE"}`. No Ranked flag or PvP secret is required for invitations.
+All routes require the existing authenticated session and client build header. Enable `FOREST_DUELS_ENABLED=1` only on the active Forest lease owner, with Forest enabled. Otherwise the routes return `503 {"error":"FOREST_DUELS_UNAVAILABLE"}`. The Ranked flag is not required. Sending, declining, and cancelling invitations do not require a PvP secret; accepting an invitation requires usable combat infrastructure and returns `503 PVP_SECRET_REQUIRED` if unavailable.
 
 * `GET /forest/duels/state` returns `{player_id, incoming: Invite[], outgoing: Invite[], accepted: Invite[]}` for the authenticated player. At most one record is returned across these lists. Pending records appear only in the appropriate incoming or outgoing list; accepted records appear in `accepted` for both participants. Names come from the server's player records.
 * `POST /forest/duels/request` takes `{target_player_id, client_action_id}`. Both participants must have entered active sockets in the same authoritative room and be free of unexpired Ranked queue entries and active PvP matches.

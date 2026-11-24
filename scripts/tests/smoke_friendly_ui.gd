@@ -12,6 +12,25 @@ func _run() -> void:
 	var duel = root.get_node("DuelClient")
 	duel.set_process(false)
 	duel._identity = duel._identity_key()
+	var first_key: String = duel._recovery_key()
+	gate.base_url = "http://127.0.0.1:2"
+	assert(duel._recovery_key() != first_key)
+	gate.base_url = "http://127.0.0.1:1"
+	gate.player_id = "other-account"
+	assert(duel._recovery_key() != first_key)
+	gate.player_id = "friendly-test"
+	duel._save_recovery("invite")
+	duel._pending_path = "/forest/duels/ready"
+	duel._pending_body = '{"invite_id":"invite","selection":{},"client_action_id":"stable"}'
+	duel._save_pending()
+	duel._pending_path = ""
+	duel._pending_body = ""
+	gate._generation += 1
+	duel._process(0)
+	assert(duel._tracked_invite == "invite" and duel._pending_body.contains("stable"))
+	duel._pending_path = ""
+	duel._pending_body = ""
+	duel._save_pending()
 	duel._action_owner = gate.player_id
 	duel._action_base = gate.base_url
 	duel._pending_path = "/forest/duels/ready"

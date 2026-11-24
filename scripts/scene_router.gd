@@ -65,6 +65,22 @@ static func begin_friendly_preparation(invite: Dictionary, zone_id: String, foot
 	else:
 		go_to_friendly_combat(id, recovery_match)
 
+# Only a server-confirmed invitation or active match may enter here. The caller
+# has already bound the invitation to this account and backend URL.
+static func recover_friendly_after_startup(invite: Dictionary, match_id: String = "") -> bool:
+	var tree := _get_tree()
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_MAIN_MENU or not _forest_modes_safe(): return false
+	var owner := _forest_verified_owner()
+	var id := str(invite.get("invite_id", ""))
+	if owner.is_empty() or id.is_empty() or not _friendly_context.is_empty(): return false
+	if match_id.is_empty() and (str(invite.get("status", "")) != "ACCEPTED" or owner not in [str(invite.get("challenger_id", "")), str(invite.get("recipient_id", ""))]): return false
+	_friendly_context = {"player_id":owner, "generation":_connection_gate()._generation, "invite_id":id, "opponent":str(invite.get("recipient_name", "")) if owner == str(invite.get("challenger_id", "")) else str(invite.get("challenger_name", "")), "expires_at":int(invite.get("expires_at", 0))}
+	if match_id.is_empty():
+		_go_to(SCENE_LOADOUT, "FriendlyLoadoutRecovery")
+	else:
+		go_to_friendly_combat(id, match_id)
+	return true
+
 static func go_to_friendly_combat(invite_id: String, match_id: String) -> void:
 	if _connection_gate().blocked() or str(_friendly_context.get("invite_id", "")) != invite_id or str(_friendly_context.get("player_id", "")) != _forest_verified_owner() or int(_friendly_context.get("generation", -1)) != _connection_gate()._generation or match_id.is_empty(): return
 	_ranked_context = {"match_id":match_id, "kind":"friendly", "player_id":_forest_verified_owner()}

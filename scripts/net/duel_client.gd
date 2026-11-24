@@ -80,7 +80,17 @@ func _process(_delta: float) -> void:
 		if available():
 			var config := ConfigFile.new()
 			if config.load(RECOVERY_FILE) == OK:
-				_tracked_invite = str(config.get_value("players", str(ConnectionGate.player_id).sha256_text(), ""))
+				_tracked_invite = str(config.get_value("players", _recovery_key(), ""))
+				if _pending_body.is_empty():
+					var pending: Variant = config.get_value("pending", _recovery_key(), {})
+					if pending is Dictionary and str(pending.get("path", "")) == "/forest/duels/ready" and not _tracked_invite.is_empty():
+						var saved_body: String = str(pending.get("body", ""))
+						var parsed: Variant = JSON.parse_string(saved_body)
+						if parsed is Dictionary and str(parsed.get("invite_id", "")) == _tracked_invite and parsed.get("selection") is Dictionary and not str(parsed.get("client_action_id", "")).is_empty():
+							_pending_path = "/forest/duels/ready"
+							_pending_body = saved_body
+							_action_owner = str(ConnectionGate.player_id)
+							_action_base = str(ConnectionGate.base_url)
 		_reported_invite = ""
 		_reported_match = ""
 		_verify_match = ""
@@ -91,10 +101,13 @@ func _process(_delta: float) -> void:
 		if second != _last_second:
 			_last_second = second
 			state_changed.emit()
-	if available() and not _pending_body.is_empty() and not _mutation_busy and Time.get_ticks_msec() >= _next_retry:
-		retry_mutation()
 	var scene := get_tree().current_scene
-	var active_scene := is_instance_valid(scene) and scene.scene_file_path in [SceneRouter.SCENE_FOREST_WORLD, SceneRouter.SCENE_LOADOUT]
+	var forest_scene := is_instance_valid(scene) and scene.scene_file_path == SceneRouter.SCENE_FOREST_WORLD
+	var friendly_loadout := is_instance_valid(scene) and scene.scene_file_path == SceneRouter.SCENE_LOADOUT and str(SceneRouter._friendly_context.get("player_id", "")) == str(ConnectionGate.player_id) and not SceneRouter._friendly_context.is_empty()
+	var startup_recovery := is_instance_valid(scene) and scene.scene_file_path == SceneRouter.SCENE_MAIN_MENU and not _tracked_invite.is_empty() and SceneRouter._forest_modes_safe()
+	var active_scene := forest_scene or friendly_loadout or startup_recovery
+	if available() and active_scene and not _pending_body.is_empty() and not _mutation_busy and Time.get_ticks_msec() >= _next_retry:
+		retry_mutation()
 	if available() and active_scene and not _poll_busy and Time.get_ticks_msec() >= _next_poll:
 		poll_now()
 
@@ -139,9 +152,13 @@ func _poll_completed(result: int, code: int, _headers_in: PackedStringArray, bod
 		if str(data.get("match_id", "")) == match_id and str(data.get("kind", "")) == "friendly" and _tracked_invite == invite_id:
 			if str(data.get("status", "")) == "FINISHED":
 				clear_recovery()
-			elif str(data.get("status", "")) == "ACTIVE" and _reported_match != match_id and not match_started.get_connections().is_empty():
-				_reported_match = match_id
-				match_started.emit(invite_id, match_id)
+			elif str(data.get("status", "")) == "ACTIVE" and _reported_match != match_id:
+				var scene := get_tree().current_scene
+				if is_instance_valid(scene) and scene.scene_file_path == SceneRouter.SCENE_MAIN_MENU:
+					if SceneRouter.recover_friendly_after_startup({"invite_id":invite_id}, match_id): _reported_match = match_id
+				elif not match_started.get_connections().is_empty():
+					_reported_match = match_id
+					match_started.emit(invite_id, match_id)
 		return
 	if str(data.get("player_id", "")) != ConnectionGate.player_id or not data.get("incoming") is Array or not data.get("outgoing") is Array or not data.get("accepted") is Array:
 		return
@@ -162,10 +179,14 @@ func _poll_completed(result: int, code: int, _headers_in: PackedStringArray, bod
 		var invite: Dictionary = accepted_invites[0]
 		var invite_id := str(invite.get("invite_id", ""))
 		if not invite_id.is_empty() and int(invite.get("expires_at", 0)) > server_now() :
-			_reported_invite = invite_id
-			_tracked_invite = invite_id
-			_save_recovery(invite_id)
-			accepted.emit(invite)
+			var scene := get_tree().current_scene
+			if is_instance_valid(scene) and scene.scene_file_path == SceneRouter.SCENE_MAIN_MENU:
+				if _tracked_invite == invite_id: SceneRouter.recover_friendly_after_startup(invite)
+			else:
+				_reported_invite = invite_id
+				_tracked_invite = invite_id
+				_save_recovery(invite_id)
+				accepted.emit(invite)
 	if not _tracked_invite.is_empty() and accepted_invites.is_empty() and str(started.get("invite_id", "")) != _tracked_invite:
 		clear_recovery()
 	if not _tracked_invite.is_empty() and str(started.get("invite_id", "")) == _tracked_invite:
@@ -177,16 +198,33 @@ func _poll_completed(result: int, code: int, _headers_in: PackedStringArray, bod
 				_poll_busy = false
 				_verify_match = ""
 
-func _save_recovery(invite_id: String) -> void:
-	if str(ConnectionGate.player_id).is_empty(): return
+func _recovery_key() -> String:
+	return JSON.stringify([str(ConnectionGate.base_url).strip_edges().trim_suffix("/"), str(ConnectionGate.player_id)]).sha256_text()
+
+func _save_pending() -> void:
+	if str(ConnectionGate.player_id).is_empty() or str(ConnectionGate.base_url).strip_edges().is_empty(): return
 	var config := ConfigFile.new()
 	config.load(RECOVERY_FILE)
-	config.set_value("players", str(ConnectionGate.player_id).sha256_text(), invite_id)
+	if _pending_path == "/forest/duels/ready" and not _pending_body.is_empty():
+		config.set_value("pending", _recovery_key(), {"path":_pending_path,"body":_pending_body})
+	else:
+		config.erase_section_key("pending", _recovery_key())
+	if config.save(RECOVERY_FILE) != OK: push_warning("Unable to save duel action recovery")
+
+func _save_recovery(invite_id: String) -> void:
+	if str(ConnectionGate.player_id).is_empty() or str(ConnectionGate.base_url).strip_edges().is_empty(): return
+	var config := ConfigFile.new()
+	config.load(RECOVERY_FILE)
+	config.set_value("players", _recovery_key(), invite_id)
 	if config.save(RECOVERY_FILE) != OK: push_warning("Unable to save duel recovery identifier")
 
 func clear_recovery() -> void:
 	_tracked_invite = ""
 	_reported_match = ""
+	if _pending_path == "/forest/duels/ready" and not _mutation_busy:
+		_pending_path = ""
+		_pending_body = ""
+		_save_pending()
 	_save_recovery("")
 
 func request_duel(player_id: String) -> bool:
@@ -209,6 +247,7 @@ func _start_mutation(path: String, body: Dictionary) -> bool:
 	_pending_body = JSON.stringify(body)
 	_action_owner = str(ConnectionGate.player_id)
 	_action_base = str(ConnectionGate.base_url)
+	_save_pending()
 	return retry_mutation()
 
 func retry_mutation() -> bool:
@@ -235,6 +274,7 @@ func _mutation_completed(result: int, code: int, _headers_in: PackedStringArray,
 	if code == 503 and data is Dictionary and data.get("error") == "PVP_SECRET_REQUIRED":
 		_pending_body = ""
 		_pending_path = ""
+		_save_pending()
 		error_key = "PVP_SECRET_REQUIRED"
 		mutation_finished.emit(false, action)
 		state_changed.emit()
@@ -247,6 +287,7 @@ func _mutation_completed(result: int, code: int, _headers_in: PackedStringArray,
 		return
 	_pending_body = ""
 	_pending_path = ""
+	_save_pending()
 	_action_owner = ""
 	_action_base = ""
 	if code == 200 and action == "cancel": clear_recovery()

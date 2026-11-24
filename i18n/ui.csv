@@ -431,3 +431,4 @@ DUEL_YOU,You,T?
 DUEL_OPPONENT,Opponent,Rival
 DUEL_FORFEIT_CONFIRM,Leave this duel? This forfeits the match.,?Salir del duelo? Perder?s el combate.
 DUEL_RETURN_FOREST,Return to Forest,Volver al Bosque
+DUEL_UNAVAILABLE,Friendly duels are unavailable,Los duelos amistosos no est?n disponibles

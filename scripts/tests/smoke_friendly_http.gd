@@ -4,6 +4,11 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	var expected_profile := OS.get_environment("FOREST_TEST_PROFILE").replace("\\", "/").to_lower()
+	if expected_profile.is_empty() or not OS.get_user_data_dir().replace("\\", "/").to_lower().begins_with(expected_profile):
+		_fail("Godot user profile is not isolated")
+		return
+	print("PHASE startup profile_isolated")
 	var gate = root.get_node("ConnectionGate")
 	var duel = root.get_node("DuelClient")
 	gate.state = gate.State.CONNECTED
@@ -21,6 +26,8 @@ func _run() -> void:
 	if not is_instance_valid(world._presence) or not world._presence.entered or not duel.enabled:
 		_fail("Forest or duel service unavailable")
 		return
+	print("PHASE entered")
+	deadline = Time.get_ticks_msec() + 15000
 	var other := OS.get_environment("FOREST_TWO_OTHER")
 	if OS.get_environment("FOREST_DUEL_ROLE") == "0":
 		while not world._remotes.has(other) and Time.get_ticks_msec() < deadline: await create_timer(0.1).timeout
@@ -56,6 +63,8 @@ func _run() -> void:
 		if not duel.error_key.is_empty():
 			_fail("Reverse challenge failed: " + duel.error_key)
 			return
+	print("PHASE invitation")
+	deadline = Time.get_ticks_msec() + 15000
 	while (not is_instance_valid(current_scene) or current_scene.scene_file_path != SceneRouter.SCENE_LOADOUT) and Time.get_ticks_msec() < deadline: await create_timer(0.1).timeout
 	if not is_instance_valid(current_scene) or current_scene.scene_file_path != SceneRouter.SCENE_LOADOUT:
 		_fail("Friendly loadout not opened")
@@ -63,6 +72,8 @@ func _run() -> void:
 	if not current_scene.ranked_queue.friendly:
 		_fail("Wrong loadout mode")
 		return
+	print("PHASE loadout")
+	deadline = Time.get_ticks_msec() + 15000
 	var loadout = current_scene
 	for backend in [loadout._spell_backend, loadout.ranked_queue.backend]:
 		backend._invalidate_session()
@@ -85,6 +96,8 @@ func _run() -> void:
 	if not current_scene._ranked_controller.friendly:
 		_fail("Wrong combat mode")
 		return
+	print("PHASE combat")
+	deadline = Time.get_ticks_msec() + 20000
 	var controller = current_scene._ranked_controller
 	var match_id: String = SceneRouter._ranked_context.match_id
 	controller.backend._invalidate_session()
@@ -95,6 +108,13 @@ func _run() -> void:
 		await create_timer(0.1).timeout
 	if controller.backend._verified_player_id != gate.player_id or str(controller.state.get("status", "")) != "ACTIVE":
 		_fail("Friendly combat did not recover authenticated state: verified=%s expected=%s status=%s gate=%s header=%s" % [controller.backend._verified_player_id, gate.player_id, str(controller.state.get("status", "")), gate.state, controller.header.text])
+		return
+	if OS.get_environment("FOREST_DUEL_ROLE") == "0":
+		controller.chat_input.text = "fixture duel chat"
+		controller._send_chat()
+	while controller.chat_cursor == 0 and Time.get_ticks_msec() < deadline: await create_timer(0.1).timeout
+	if controller.chat_cursor == 0 or not controller.chat_log.get_parsed_text().contains("fixture duel chat"):
+		_fail("Friendly match chat not delivered")
 		return
 	controller._submit_decision({"turn":1,"spell_id":controller.state.player.spell_ids[0]})
 	while int(controller.state.get("combat_revision", 0)) < 2 and Time.get_ticks_msec() < deadline:
@@ -109,6 +129,8 @@ func _run() -> void:
 	if str(controller.state.get("status", "")) != "FINISHED" or controller.state.get("result", {}).has("mp_delta"):
 		_fail("Friendly forfeit or result failed")
 		return
+	print("PHASE finished")
+	deadline = Time.get_ticks_msec() + 10000
 	controller.return_to_loadout()
 	while (not is_instance_valid(current_scene) or current_scene.scene_file_path != SceneRouter.SCENE_FOREST_WORLD) and Time.get_ticks_msec() < deadline: await create_timer(0.1).timeout
 	if not is_instance_valid(current_scene) or current_scene.scene_file_path != SceneRouter.SCENE_FOREST_WORLD:

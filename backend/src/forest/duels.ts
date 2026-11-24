@@ -6,7 +6,7 @@ const validId = (v: unknown): v is string => typeof v === 'string' && v.length >
 type Result = {status: number; data: any};
 const fail = (status: number, error: string): Result => ({status, data: {error}});
 
-export function createForestDuels(db: Database, roomOf: (id: string) => string | null, canServe: () => boolean, clock: () => number = Date.now, combat?: {snapshot: (id:string, selection:unknown)=>PvpSnapshot|null; start: (a:PvpSnapshot,b:PvpSnapshot,now:number,inviteId:string)=>string}) {
+export function createForestDuels(db: Database, roomOf: (id: string) => string | null, canServe: () => boolean, clock: () => number = Date.now, combat?: {snapshot: (id:string, selection:unknown)=>PvpSnapshot|null; start: (a:PvpSnapshot,b:PvpSnapshot,now:number,inviteId:string)=>string}, combatAvailable: () => boolean = () => true) {
  const expire = (now: number) => {
   db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now, now);
   db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
@@ -83,6 +83,7 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
     if (!invitation || invitation.recipient_id!==player) return fail(404,'INVITE_UNAVAILABLE');
     if (invitation.status!=='PENDING') return fail(409,'INVITE_NOT_PENDING');
     if (body.accept) {
+     if (!combatAvailable()) return fail(503,'PVP_SECRET_REQUIRED');
      if (!challengerAvailable) return fail(404,'PLAYER_UNAVAILABLE');
      if (roomOf(player)!==invitation.originating_zone || roomOf(invitation.challenger_id)!==invitation.originating_zone) return fail(409,'FOREST_ROOM_MISMATCH');
      if (busyPvp(player,now) || busyPvp(invitation.challenger_id,now)) return fail(409,'PLAYER_BUSY');

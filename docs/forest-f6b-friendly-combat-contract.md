@@ -1,6 +1,6 @@
 ﻿# Friendly duels: F6B.1 client handoff
 
-All routes use the existing authenticated session and client-build requirements. Forest duels and the active Forest lease must be available; READY and match routes also require a valid `PVP_RNG_SECRET` of at least 32 UTF-8 bytes. `PVP_ENABLED` controls Ranked routes only. Feature defaults remain disabled.
+All routes use the existing authenticated session and client-build requirements. Forest duels and the active Forest lease must be available; Acceptance, READY and match routes also require a valid `PVP_RNG_SECRET` of at least 32 UTF-8 bytes. `PVP_ENABLED` controls Ranked routes only. Feature defaults remain disabled.
 
 After an invitation is accepted, suspend Forest presence and open the existing loadout. Both participants choose their own setup. Socket presence is no longer required during preparation. The accepted invitation expires at its server-provided `expires_at`; READY never extends it.
 

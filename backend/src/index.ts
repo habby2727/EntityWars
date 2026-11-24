@@ -1326,7 +1326,7 @@ async function startServer(): Promise<void> {
 		if (performance.now() >= leaseDeadline) { fenceLease(); return false; }
 		return true;
 	}
-	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite); } });
+	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite); } }, () => { try { return !!getRankedServices(); } catch { return false; } });
 	if (forest && leaseToken) {
 		getRedis().on("error", fenceLease);
 		getRedis().on("close", fenceLease);

@@ -3863,13 +3863,13 @@ var require_browser = __commonJS((exports, module) => {
       } else {
         exports.storage.removeItem("debug");
       }
-    } catch (error) {}
+    } catch (error2) {}
   }
   function load2() {
     let r;
     try {
       r = exports.storage.getItem("debug") || exports.storage.getItem("DEBUG");
-    } catch (error) {}
+    } catch (error2) {}
     if (!r && typeof process !== "undefined" && "env" in process) {
       r = process.env.DEBUG;
     }
@@ -3878,15 +3878,15 @@ var require_browser = __commonJS((exports, module) => {
   function localstorage() {
     try {
       return localStorage;
-    } catch (error) {}
+    } catch (error2) {}
   }
   module.exports = require_common()(exports);
   var { formatters } = module.exports;
   formatters.j = function(v) {
     try {
       return JSON.stringify(v);
-    } catch (error) {
-      return "[UnexpectedJSONParseError]: " + error.message;
+    } catch (error2) {
+      return "[UnexpectedJSONParseError]: " + error2.message;
     }
   };
 });
@@ -3985,7 +3985,7 @@ var require_node = __commonJS((exports, module) => {
         221
       ];
     }
-  } catch (error) {}
+  } catch (error2) {}
   exports.inspectOpts = Object.keys(process.env).filter((key) => {
     return /^debug_/i.test(key);
   }).reduce((obj, key) => {
@@ -4407,7 +4407,7 @@ var require_utils2 = __commonJS((exports) => {
     return String(arg);
   }
   exports.toArg = toArg;
-  function optimizeErrorStack(error, friendlyStack, filterPath) {
+  function optimizeErrorStack(error2, friendlyStack, filterPath) {
     const stacks = friendlyStack.split(`
 `);
     let lines = "";
@@ -4421,12 +4421,12 @@ var require_utils2 = __commonJS((exports) => {
       lines += `
 ` + stacks[j];
     }
-    if (error.stack) {
-      const pos = error.stack.indexOf(`
+    if (error2.stack) {
+      const pos = error2.stack.indexOf(`
 `);
-      error.stack = error.stack.slice(0, pos) + lines;
+      error2.stack = error2.stack.slice(0, pos) + lines;
     }
-    return error;
+    return error2;
   }
   exports.optimizeErrorStack = optimizeErrorStack;
   function parseURL(url) {
@@ -4787,7 +4787,7 @@ $` + Buffer.byteLength(this.name) + `\r
       }
     }
     initPromise() {
-      const promise = new Promise((resolve, reject) => {
+      const promise = new Promise((resolve2, reject) => {
         if (!this.transformed) {
           this.transformed = true;
           const transformer = Command._transformer.argument[this.name];
@@ -4796,7 +4796,7 @@ $` + Buffer.byteLength(this.name) + `\r
           }
           this.stringifyArguments();
         }
-        this.resolve = this._convertValue(resolve);
+        this.resolve = this._convertValue(resolve2);
         this.reject = (err) => {
           this._clearTimers();
           if (this.errorStack) {
@@ -4823,11 +4823,11 @@ $` + Buffer.byteLength(this.name) + `\r
       }
       return this.keys;
     }
-    _convertValue(resolve) {
+    _convertValue(resolve2) {
       return (value) => {
         try {
           this._clearTimers();
-          resolve(this.transformReply(value));
+          resolve2(this.transformReply(value));
           this.isResolved = true;
         } catch (err) {
           this.reject(err);
@@ -5101,13 +5101,13 @@ var require_autoPipelining = __commonJS((exports) => {
     if (client.isCluster && !client.slots.length) {
       if (client.status === "wait")
         client.connect().catch(lodash_1.noop);
-      return (0, standard_as_callback_1.default)(new Promise(function(resolve, reject) {
+      return (0, standard_as_callback_1.default)(new Promise(function(resolve2, reject) {
         client.delayUntilReady((err) => {
           if (err) {
             reject(err);
             return;
           }
-          executeWithAutoPipelining(client, functionName, commandName, args, null).then(resolve, reject);
+          executeWithAutoPipelining(client, functionName, commandName, args, null).then(resolve2, reject);
         });
       }), callback);
     }
@@ -5124,13 +5124,13 @@ var require_autoPipelining = __commonJS((exports) => {
       pipeline[exports.kExec] = true;
       setImmediate(executeAutoPipeline, client, slotKey);
     }
-    const autoPipelinePromise = new Promise(function(resolve, reject) {
+    const autoPipelinePromise = new Promise(function(resolve2, reject) {
       pipeline[exports.kCallbacks].push(function(err, value) {
         if (err) {
           reject(err);
           return;
         }
-        resolve(value);
+        resolve2(value);
       });
       if (functionName === "call") {
         args.unshift(commandName);
@@ -5337,8 +5337,8 @@ var require_Pipeline = __commonJS((exports) => {
         this[name] = redis[name];
         this[name + "Buffer"] = redis[name + "Buffer"];
       });
-      this.promise = new Promise((resolve, reject) => {
-        this.resolve = resolve;
+      this.promise = new Promise((resolve2, reject) => {
+        this.resolve = resolve2;
         this.reject = reject;
       });
       const _this = this;
@@ -5371,18 +5371,18 @@ var require_Pipeline = __commonJS((exports) => {
         let retriable = true;
         let commonError;
         for (let i = 0;i < this._result.length; ++i) {
-          const error = this._result[i][0];
+          const error2 = this._result[i][0];
           const command = this._queue[i];
-          if (error) {
-            if (command.name === "exec" && error.message === "EXECABORT Transaction discarded because of previous errors.") {
+          if (error2) {
+            if (command.name === "exec" && error2.message === "EXECABORT Transaction discarded because of previous errors.") {
               continue;
             }
             if (!commonError) {
               commonError = {
-                name: error.name,
-                message: error.message
+                name: error2.name,
+                message: error2.message
               };
-            } else if (commonError.name !== error.name || commonError.message !== error.message) {
+            } else if (commonError.name !== error2.name || commonError.message !== error2.message) {
               retriable = false;
               break;
             }
@@ -5462,8 +5462,8 @@ var require_Pipeline = __commonJS((exports) => {
       command.pipelineIndex = position;
       command.promise.then((result) => {
         this.fillResult([null, result], position);
-      }).catch((error) => {
-        this.fillResult([error], position);
+      }).catch((error2) => {
+        this.fillResult([error2], position);
       });
       this._queue.push(command);
       return this;
@@ -5630,13 +5630,13 @@ var require_transaction = __commonJS((exports) => {
         if (this.isCluster && !this.redis.slots.length) {
           if (this.redis.status === "wait")
             this.redis.connect().catch(utils_1.noop);
-          return (0, standard_as_callback_1.default)(new Promise((resolve, reject) => {
+          return (0, standard_as_callback_1.default)(new Promise((resolve2, reject) => {
             this.redis.delayUntilReady((err) => {
               if (err) {
                 reject(err);
                 return;
               }
-              this.exec(pipeline).then(resolve, reject);
+              this.exec(pipeline).then(resolve2, reject);
             });
           }), callback);
         }
@@ -6077,8 +6077,8 @@ var require_ConnectionPool = __commonJS((exports) => {
           }
         });
         this.emit("+node", redis, key);
-        redis.on("error", function(error) {
-          this.emit("nodeError", error, key);
+        redis.on("error", function(error2) {
+          this.emit("nodeError", error2, key);
         });
       }
       return redis;
@@ -6527,8 +6527,8 @@ var require_ShardedSubscriber = __commonJS((exports) => {
         this.started = false;
         this.emitter.emit("-node", this.instance, this.nodeKey);
       };
-      this.onError = (error) => {
-        this.emitter.emit("nodeError", error, this.nodeKey);
+      this.onError = (error2) => {
+        this.emitter.emit("nodeError", error2, this.nodeKey);
       };
       this.onMoved = () => {
         this.emitter.emit("moved");
@@ -6614,7 +6614,7 @@ var require_ClusterSubscriberGroup = __commonJS((exports) => {
       this.failedAttemptsByNode = new Map;
       this.isResetting = false;
       this.pendingReset = null;
-      this.handleSubscriberConnectFailed = (error, nodeKey) => {
+      this.handleSubscriberConnectFailed = (error2, nodeKey) => {
         const currentAttempts = this.failedAttemptsByNode.get(nodeKey) || 0;
         const failedAttempts = currentAttempts + 1;
         this.failedAttemptsByNode.set(nodeKey, failedAttempts);
@@ -6625,7 +6625,7 @@ var require_ClusterSubscriberGroup = __commonJS((exports) => {
         debug("Failed to connect subscriber for %s. Refreshing slots in %dms", nodeKey, delay);
         this.subscriberGroupEmitter.emit("subscriberConnectFailed", {
           delay,
-          error
+          error: error2
         });
       };
       this.handleSubscriberConnectSucceeded = (nodeKey) => {
@@ -6727,8 +6727,8 @@ var require_ClusterSubscriberGroup = __commonJS((exports) => {
           this.shardedSubscribers.set(nodeKey, sub);
           startPromises.push(sub.start().then(() => {
             this.handleSubscriberConnectSucceeded(nodeKey);
-          }).catch((error) => {
-            this.handleSubscriberConnectFailed(error, nodeKey);
+          }).catch((error2) => {
+            this.handleSubscriberConnectFailed(error2, nodeKey);
           }));
           this.subscriberGroupEmitter.emit("+subscriber");
         }
@@ -6872,8 +6872,8 @@ var require_cluster = __commonJS((exports) => {
       this.connectionPool.on("drain", () => {
         this.setStatus("close");
       });
-      this.connectionPool.on("nodeError", (error, key) => {
-        this.emit("node error", error, key);
+      this.connectionPool.on("nodeError", (error2, key) => {
+        this.emit("node error", error2, key);
       });
       this.subscriber = new ClusterSubscriber_1.default(this.connectionPool, this);
       if (this.options.scripts) {
@@ -6890,7 +6890,7 @@ var require_cluster = __commonJS((exports) => {
       }
     }
     connect() {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve2, reject) => {
         if (this.status === "connecting" || this.status === "connect" || this.status === "ready") {
           reject(new Error("Redis is already connecting/connected"));
           return;
@@ -6919,7 +6919,7 @@ var require_cluster = __commonJS((exports) => {
             this.retryAttempts = 0;
             this.executeOfflineCommands();
             this.resetNodesRefreshInterval();
-            resolve();
+            resolve2();
           };
           let closeListener = undefined;
           const refreshListener = () => {
@@ -6928,9 +6928,9 @@ var require_cluster = __commonJS((exports) => {
             this.manuallyClosing = false;
             this.setStatus("connect");
             if (this.options.enableReadyCheck) {
-              this.readyCheck((err, fail) => {
-                if (err || fail) {
-                  debug("Ready check failed (%s). Reconnecting...", err || fail);
+              this.readyCheck((err, fail2) => {
+                if (err || fail2) {
+                  debug("Ready check failed (%s). Reconnecting...", err || fail2);
                   if (this.status === "connect") {
                     this.disconnect(true);
                   }
@@ -6943,10 +6943,10 @@ var require_cluster = __commonJS((exports) => {
             }
           };
           closeListener = () => {
-            const error = new Error("None of startup nodes is available");
+            const error2 = new Error("None of startup nodes is available");
             this.removeListener("refresh", refreshListener);
-            this.invokeReadyDelayedCallbacks(error);
-            reject(error);
+            this.invokeReadyDelayedCallbacks(error2);
+            reject(error2);
           };
           this.once("refresh", refreshListener);
           this.once("close", closeListener);
@@ -7052,10 +7052,10 @@ var require_cluster = __commonJS((exports) => {
       }
       this.isRefreshing = true;
       const _this = this;
-      const wrapper = (error) => {
+      const wrapper = (error2) => {
         this.isRefreshing = false;
         for (const callback2 of this._refreshSlotsCacheCallbacks) {
-          callback2(error);
+          callback2(error2);
         }
         this._refreshSlotsCacheCallbacks = [];
       };
@@ -7063,8 +7063,8 @@ var require_cluster = __commonJS((exports) => {
       let lastNodeError = null;
       function tryNode(index) {
         if (index === nodes.length) {
-          const error = new ClusterAllFailedError_1.default(ClusterAllFailedError_1.default.defaultMessage, lastNodeError);
-          return wrapper(error);
+          const error2 = new ClusterAllFailedError_1.default(ClusterAllFailedError_1.default.defaultMessage, lastNodeError);
+          return wrapper(error2);
         }
         const node = nodes[index];
         const key = `${node.options.host}:${node.options.port}`;
@@ -7253,17 +7253,17 @@ var require_cluster = __commonJS((exports) => {
     zscanBufferStream(key, options) {
       return this.createScanStream("zscanBuffer", { key, options });
     }
-    handleError(error, ttl, handlers) {
+    handleError(error2, ttl, handlers) {
       if (typeof ttl.value === "undefined") {
         ttl.value = this.options.maxRedirections;
       } else {
         ttl.value -= 1;
       }
       if (ttl.value <= 0) {
-        handlers.maxRedirections(new Error("Too many Cluster redirections. Last error: " + error));
+        handlers.maxRedirections(new Error("Too many Cluster redirections. Last error: " + error2));
         return;
       }
-      const errv = error.message.split(" ");
+      const errv = error2.message.split(" ");
       if (errv[0] === "MOVED") {
         const timeout = this.options.retryDelayOnMoved;
         if (timeout && typeof timeout === "number") {
@@ -7282,7 +7282,7 @@ var require_cluster = __commonJS((exports) => {
           timeout: this.options.retryDelayOnClusterDown,
           callback: this.refreshSlotsCache.bind(this)
         });
-      } else if (error.message === utils_1.CONNECTION_CLOSED_ERROR_MSG && this.options.retryDelayOnFailover > 0 && this.status === "ready") {
+      } else if (error2.message === utils_1.CONNECTION_CLOSED_ERROR_MSG && this.options.retryDelayOnFailover > 0 && this.status === "ready") {
         this.delayQueue.push("failover", handlers.connectionClosed, {
           timeout: this.options.retryDelayOnFailover,
           callback: this.refreshSlotsCache.bind(this)
@@ -7347,10 +7347,10 @@ var require_cluster = __commonJS((exports) => {
         this.flushQueue(new Error("None of startup nodes is available"));
       }
     }
-    flushQueue(error) {
+    flushQueue(error2) {
       let item;
       while (item = this.offlineQueue.shift()) {
-        item.command.reject(error);
+        item.command.reject(error2);
       }
     }
     executeOfflineCommands() {
@@ -7479,7 +7479,7 @@ var require_cluster = __commonJS((exports) => {
       });
     }
     resolveSrv(hostname) {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve2, reject) => {
         this.options.resolveSrv(hostname, (err, records) => {
           if (err) {
             return reject(err);
@@ -7493,7 +7493,7 @@ var require_cluster = __commonJS((exports) => {
             if (!group.records.length) {
               sortedKeys.shift();
             }
-            self.dnsLookup(record2.name).then((host) => resolve({
+            self.dnsLookup(record2.name).then((host) => resolve2({
               host,
               port: record2.port
             }), tryFirstOne);
@@ -7503,14 +7503,14 @@ var require_cluster = __commonJS((exports) => {
       });
     }
     dnsLookup(hostname) {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve2, reject) => {
         this.options.dnsLookup(hostname, (err, address) => {
           if (err) {
             debug("failed to resolve hostname %s to IP: %s", hostname, err.message);
             reject(err);
           } else {
             debug("resolved hostname %s to IP %s", hostname, address);
-            resolve(address);
+            resolve2(address);
           }
         });
       });
@@ -7558,8 +7558,8 @@ var require_cluster = __commonJS((exports) => {
         this.emit("-node", redis, nodeKey);
         this.refreshSlotsCache(refreshSlotsCacheCallback);
       });
-      this.subscriberGroupEmitter.on("subscriberConnectFailed", ({ delay, error }) => {
-        this.emit("error", error);
+      this.subscriberGroupEmitter.on("subscriberConnectFailed", ({ delay, error: error2 }) => {
+        this.emit("error", error2);
         setTimeout(() => {
           this.refreshSlotsCache(refreshSlotsCacheCallback);
         }, delay);
@@ -7573,8 +7573,8 @@ var require_cluster = __commonJS((exports) => {
       this.subscriberGroupEmitter.on("+subscriber", () => {
         this.emit("+subscriber");
       });
-      this.subscriberGroupEmitter.on("nodeError", (error, nodeKey) => {
-        this.emit("nodeError", error, nodeKey);
+      this.subscriberGroupEmitter.on("nodeError", (error2, nodeKey) => {
+        this.emit("nodeError", error2, nodeKey);
       });
       this.subscriberGroupEmitter.on("subscribersReady", () => {
         this.emit("subscribersReady");
@@ -7657,7 +7657,7 @@ var require_StandaloneConnector = __commonJS((exports) => {
       if (options.tls) {
         Object.assign(connectionOptions, options.tls);
       }
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve2, reject) => {
         process.nextTick(() => {
           if (!this.connecting) {
             reject(new Error(utils_1.CONNECTION_CLOSED_ERROR_MSG));
@@ -7676,7 +7676,7 @@ var require_StandaloneConnector = __commonJS((exports) => {
           this.stream.once("error", (err) => {
             this.firstError = err;
           });
-          resolve(this.stream);
+          resolve2(this.stream);
         });
       });
     }
@@ -7825,21 +7825,21 @@ var require_SentinelConnector = __commonJS((exports) => {
             errorMsg += ` Last error: ${lastError.message}`;
           }
           debug(errorMsg);
-          const error = new Error(errorMsg);
+          const error2 = new Error(errorMsg);
           if (typeof retryDelay === "number") {
-            eventEmitter("error", error);
-            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+            eventEmitter("error", error2);
+            await new Promise((resolve2) => setTimeout(resolve2, retryDelay));
             return connectToNext();
           } else {
-            throw error;
+            throw error2;
           }
         }
         let resolved = null;
         let err = null;
         try {
           resolved = await this.resolve(endpoint.value);
-        } catch (error) {
-          err = error;
+        } catch (error2) {
+          err = error2;
         }
         if (!this.connecting) {
           throw new Error(utils_1.CONNECTION_CLOSED_ERROR_MSG);
@@ -8636,8 +8636,8 @@ var require_DataHandler = __commonJS((exports) => {
       const item = this.redis.commandQueue.shift();
       if (!item) {
         const message = "Command queue state error. If you can reproduce this, please report it.";
-        const error = new Error(message + (reply instanceof Error ? ` Last error: ${reply.message}` : ` Last reply: ${reply.toString()}`));
-        this.redis.emit("error", error);
+        const error2 = new Error(message + (reply instanceof Error ? ` Last error: ${reply.message}` : ` Last reply: ${reply.toString()}`));
+        this.redis.emit("error", error2);
         return null;
       }
       return item;
@@ -8861,9 +8861,9 @@ var require_event_handler = __commonJS((exports) => {
   }
   exports.closeHandler = closeHandler;
   function errorHandler(self) {
-    return function(error) {
-      debug("error: %s", error);
-      self.silentEmit("error", error);
+    return function(error2) {
+      debug("error: %s", error2);
+      self.silentEmit("error", error2);
     };
   }
   exports.errorHandler = errorHandler;
@@ -8872,7 +8872,7 @@ var require_event_handler = __commonJS((exports) => {
       self.setStatus("ready");
       self.retryAttempts = 0;
       if (self.options.monitor) {
-        self.call("monitor").then(() => self.setStatus("monitoring"), (error) => self.emit("error", error));
+        self.call("monitor").then(() => self.setStatus("monitoring"), (error2) => self.emit("error", error2));
         const { sendCommand } = self;
         self.sendCommand = function(command) {
           if (Command_1.default.checkFlag("VALID_IN_MONITOR_MODE", command.name)) {
@@ -9072,7 +9072,7 @@ var require_Redis = __commonJS((exports) => {
       return queued;
     }
     connect(callback) {
-      const promise = new Promise((resolve, reject) => {
+      const promise = new Promise((resolve2, reject) => {
         if (this.status === "connecting" || this.status === "connect" || this.status === "ready") {
           reject(new Error("Redis is already connecting/connected"));
           return;
@@ -9151,7 +9151,7 @@ var require_Redis = __commonJS((exports) => {
           }
           const connectionReadyHandler = function() {
             _this.removeListener("close", connectionCloseHandler);
-            resolve();
+            resolve2();
           };
           var connectionCloseHandler = function() {
             _this.removeListener("ready", connectionReadyHandler);
@@ -9192,10 +9192,10 @@ var require_Redis = __commonJS((exports) => {
         monitor: true,
         lazyConnect: false
       });
-      return (0, standard_as_callback_1.default)(new Promise(function(resolve, reject) {
+      return (0, standard_as_callback_1.default)(new Promise(function(resolve2, reject) {
         monitorInstance.once("error", reject);
         monitorInstance.once("monitoring", function() {
-          resolve(monitorInstance);
+          resolve2(monitorInstance);
         });
       }), callback);
     }
@@ -9351,14 +9351,14 @@ var require_Redis = __commonJS((exports) => {
       return this.createScanStream("zscanBuffer", { key, options });
     }
     silentEmit(eventName, arg) {
-      let error;
+      let error2;
       if (eventName === "error") {
-        error = arg;
+        error2 = arg;
         if (this.status === "end") {
           return;
         }
         if (this.manuallyClosing) {
-          if (error instanceof Error && (error.message === utils_1.CONNECTION_CLOSED_ERROR_MSG || error.syscall === "connect" || error.syscall === "read")) {
+          if (error2 instanceof Error && (error2.message === utils_1.CONNECTION_CLOSED_ERROR_MSG || error2.syscall === "connect" || error2.syscall === "read")) {
             return;
           }
         }
@@ -9366,8 +9366,8 @@ var require_Redis = __commonJS((exports) => {
       if (this.listeners(eventName).length > 0) {
         return this.emit.apply(this, arguments);
       }
-      if (error && error instanceof Error) {
-        console.error("[ioredis] Unhandled error event:", error.stack);
+      if (error2 && error2 instanceof Error) {
+        console.error("[ioredis] Unhandled error event:", error2.stack);
       }
       return false;
     }
@@ -9474,7 +9474,7 @@ var require_Redis = __commonJS((exports) => {
         ...options
       });
     }
-    flushQueue(error, options) {
+    flushQueue(error2, options) {
       options = (0, lodash_1.defaults)({}, options, {
         offlineQueue: true,
         commandQueue: true
@@ -9482,7 +9482,7 @@ var require_Redis = __commonJS((exports) => {
       let item;
       if (options.offlineQueue) {
         while (item = this.offlineQueue.shift()) {
-          item.command.reject(error);
+          item.command.reject(error2);
         }
       }
       if (options.commandQueue) {
@@ -9491,7 +9491,7 @@ var require_Redis = __commonJS((exports) => {
             this.stream.removeAllListeners("data");
           }
           while (item = this.commandQueue.shift()) {
-            item.command.reject(error);
+            item.command.reject(error2);
           }
         }
       }
@@ -11034,7 +11034,7 @@ class ExpiringMap {
 }
 
 // src/global_chat.ts
-function createGlobalChat(db, clock = Date.now, bridgeEnabled = false) {
+function createGlobalChat(db, clock = Date.now, bridgeEnabled = false, friendIds = () => []) {
   const presence = new Map;
   const lastSend = new ExpiringMap;
   const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
@@ -11103,7 +11103,8 @@ function createGlobalChat(db, clock = Date.now, bridgeEnabled = false) {
       const rows = messages.all().reverse();
       const ids = [...new Set([...presence.keys(), ...rows.filter((row) => row.source === "game").map((row) => row.player_id)])];
       const profiles = new Map(profile.all(season, JSON.stringify(ids)).map((row) => [row.player_id, { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) }]));
-      const online_players = Array.from(presence.keys(), (id) => profiles.get(id)).filter((row) => row !== undefined).sort((a, b) => a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
+      const friends = new Set(friendIds(playerId));
+      const online_players = Array.from(presence.keys(), (id) => profiles.get(id)).filter((row) => row !== undefined).map((row) => ({ ...row, is_friend: friends.has(row.player_id) })).sort((a, b) => Number(b.is_friend) - Number(a.is_friend) || a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
       return { messages: rows.map((row) => ({ ...row, league: row.source !== "game" ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
     },
     send(playerId, body) {
@@ -11131,6 +11132,671 @@ function createGlobalChat(db, clock = Date.now, bridgeEnabled = false) {
         lastSend.set(playerId, now, now + 2000, now);
         return { status: 200, data: { message, duplicate: false } };
       }).immediate();
+    }
+  };
+}
+
+// src/social/friends.ts
+var PENDING_MS = 30000;
+var REJECT_MS = 120000;
+var validId = (value) => typeof value === "string" && value.length > 0 && value.length <= 128 && value.trim() === value && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+var error = (status, message) => ({ status, data: { error: message } });
+function createFriends(db, clock = Date.now) {
+  const expire = (now) => db.query("UPDATE friend_requests SET status = 'CANCELLED', updated_at = ? WHERE status = 'PENDING' AND expires_at <= ?").run(now, now);
+  const friendIds = (id) => db.query("SELECT CASE WHEN player_low = ? THEN player_high ELSE player_low END AS id FROM friendships WHERE player_low = ? OR player_high = ?").all(id, id, id).map((row) => row.id);
+  const mutate = (player, body, type, payload, action) => {
+    if (!validId(body?.client_action_id))
+      return error(400, "Invalid client_action_id.");
+    const serialized = JSON.stringify(payload);
+    return db.transaction(() => {
+      const prior = db.query("SELECT action_type, payload_json, status_code, result_json FROM social_actions WHERE player_id = ? AND client_action_id = ?").get(player, body.client_action_id);
+      if (prior)
+        return prior.action_type === type && prior.payload_json === serialized ? { status: prior.status_code, data: JSON.parse(prior.result_json) } : error(409, "Action ID already used.");
+      const now = clock();
+      expire(now);
+      const result = action(now);
+      db.query("INSERT INTO social_actions VALUES (?, ?, ?, ?, ?, ?, ?)").run(player, body.client_action_id, type, serialized, result.status, JSON.stringify(result.data), now);
+      return result;
+    }).immediate();
+  };
+  return {
+    friendIds,
+    state(player) {
+      return db.transaction(() => {
+        const now = clock();
+        expire(now);
+        const friends = db.query(`SELECT p.player_id, p.display_name FROM friendships f JOIN players p ON p.player_id = CASE WHEN f.player_low = ? THEN f.player_high ELSE f.player_low END WHERE f.player_low = ? OR f.player_high = ? ORDER BY p.display_name, p.player_id LIMIT 200`).all(player, player, player);
+        const incoming = db.query(`SELECT r.request_id, r.requester_id, p.display_name AS requester_name, r.created_at, r.expires_at FROM friend_requests r JOIN players p ON p.player_id = r.requester_id WHERE r.recipient_id = ? AND r.status = 'PENDING' ORDER BY r.created_at, r.request_id LIMIT 100`).all(player);
+        const outgoing = db.query(`SELECT r.request_id, r.recipient_id, p.display_name AS recipient_name, r.created_at, r.expires_at FROM friend_requests r JOIN players p ON p.player_id = r.recipient_id WHERE r.requester_id = ? AND r.status = 'PENDING' ORDER BY r.created_at, r.request_id LIMIT 20`).all(player);
+        const cooldowns = db.query(`SELECT recipient_id AS player_id, MAX(CASE WHEN status='DECLINED' THEN updated_at + ? WHEN status IN ('PENDING','CANCELLED') THEN created_at + ? ELSE 0 END) AS cooldown_until FROM friend_requests WHERE requester_id=? AND ((status='DECLINED' AND updated_at + ?>?) OR (status IN ('PENDING','CANCELLED') AND created_at + ?>?)) GROUP BY recipient_id ORDER BY cooldown_until DESC LIMIT 200`).all(REJECT_MS, PENDING_MS, player, REJECT_MS, now, PENDING_MS, now);
+        return { player_id: player, friends, incoming, outgoing, cooldowns, server_time: now };
+      }).immediate();
+    },
+    request(player, body, targetAvailable = true) {
+      if (!validId(body?.target_player_id))
+        return error(400, "Invalid target_player_id.");
+      const target = body.target_player_id;
+      return mutate(player, body, "request", { target_player_id: target }, (now) => {
+        if (player === target)
+          return error(400, "Cannot friend yourself.");
+        if (!targetAvailable || !db.query("SELECT 1 FROM players WHERE player_id = ?").get(target))
+          return error(404, "Target unavailable.");
+        const [low, high] = [player, target].sort();
+        if (db.query("SELECT 1 FROM friendships WHERE player_low = ? AND player_high = ?").get(low, high))
+          return error(409, "Already friends.");
+        const pending = db.query("SELECT expires_at FROM friend_requests WHERE pair_low = ? AND pair_high = ? AND status = 'PENDING'").get(low, high);
+        if (pending)
+          return { status: 409, data: { error: "Request already pending.", expires_at: pending.expires_at, cooldown_until: pending.expires_at, server_time: now } };
+        const cooldown = db.query("SELECT COALESCE(MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED') THEN created_at+? ELSE 0 END),0) deadline FROM friend_requests WHERE requester_id=? AND recipient_id=?").get(REJECT_MS, PENDING_MS, player, target).deadline;
+        if (cooldown > now)
+          return { status: 429, data: { error: "Target cooldown active.", cooldown_until: cooldown, server_time: now } };
+        const count = (sql, ...args) => db.query(sql).get(...args).n;
+        if (count("SELECT count(*) AS n FROM friend_requests WHERE requester_id = ? AND status = 'PENDING'", player) >= 20 || count("SELECT count(*) AS n FROM friend_requests WHERE recipient_id = ? AND status = 'PENDING'", target) >= 100 || friendIds(player).length >= 200 || friendIds(target).length >= 200)
+          return error(429, "Friend request limit reached.");
+        const request_id = crypto.randomUUID();
+        db.query("INSERT INTO friend_requests VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)").run(request_id, player, target, low, high, now, now, now + PENDING_MS);
+        return { status: 200, data: { request_id, status: "PENDING", expires_at: now + PENDING_MS, cooldown_until: now + PENDING_MS, server_time: now } };
+      });
+    },
+    respond(player, body) {
+      if (!validId(body?.request_id) || typeof body?.accept !== "boolean")
+        return error(400, "Invalid request_id or accept.");
+      return mutate(player, body, "respond", { request_id: body.request_id, accept: body.accept }, (now) => {
+        const row = db.query("SELECT * FROM friend_requests WHERE request_id = ? AND recipient_id = ?").get(body.request_id, player);
+        if (!row)
+          return error(404, "Request unavailable.");
+        if (row.status !== "PENDING")
+          return error(409, "Request is no longer pending.");
+        if (body.accept && (friendIds(row.requester_id).length >= 200 || friendIds(player).length >= 200))
+          return error(429, "Friend limit reached.");
+        const status = body.accept ? "ACCEPTED" : "DECLINED";
+        if (body.accept)
+          db.query("INSERT INTO friendships VALUES (?, ?, ?)").run(row.pair_low, row.pair_high, now);
+        db.query("UPDATE friend_requests SET status = ?, updated_at = ? WHERE request_id = ?").run(status, now, row.request_id);
+        return { status: 200, data: { request_id: row.request_id, status, ...body.accept ? {} : { cooldown_until: now + REJECT_MS }, server_time: now } };
+      });
+    },
+    cancel(player, body) {
+      if (!validId(body?.request_id))
+        return error(400, "Invalid request_id.");
+      return mutate(player, body, "cancel", { request_id: body.request_id }, (now) => {
+        const row = db.query("SELECT status, created_at FROM friend_requests WHERE request_id = ? AND requester_id = ?").get(body.request_id, player);
+        if (!row)
+          return error(404, "Request unavailable.");
+        if (row.status !== "PENDING")
+          return error(409, "Request is no longer pending.");
+        db.query("UPDATE friend_requests SET status = 'CANCELLED', updated_at = ? WHERE request_id = ?").run(now, body.request_id);
+        return { status: 200, data: { request_id: body.request_id, status: "CANCELLED", cooldown_until: row.created_at + PENDING_MS, server_time: now } };
+      });
+    }
+  };
+}
+
+// src/forest/presence.ts
+import { readFileSync } from "fs";
+import { resolve } from "path";
+var opposite = { north: "south", south: "north", east: "west", west: "east" };
+var finitePoint = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+var cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+function inside(p, poly) {
+  let hit = false;
+  for (let i = 0, j = poly.length - 1;i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i];
+    if (Math.abs(cross(a, b, p)) < 0.0000001 && p[0] >= Math.min(a[0], b[0]) - 0.0000001 && p[0] <= Math.max(a[0], b[0]) + 0.0000001 && p[1] >= Math.min(a[1], b[1]) - 0.0000001 && p[1] <= Math.max(a[1], b[1]) + 0.0000001)
+      return true;
+    if (a[1] > p[1] !== b[1] > p[1] && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0])
+      hit = !hit;
+  }
+  return hit;
+}
+function segmentInside(a, b, poly) {
+  if (!inside(a, poly) || !inside(b, poly))
+    return false;
+  const dx = b[0] - a[0], dy = b[1] - a[1], ts = [0, 1];
+  for (let i = 0;i < poly.length; i++) {
+    const c = poly[i], d = poly[(i + 1) % poly.length], ex = d[0] - c[0], ey = d[1] - c[1], den = dx * ey - dy * ex;
+    if (Math.abs(den) < 0.0000000001)
+      continue;
+    const t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / den, u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / den;
+    if (t > 0 && t < 1 && u >= 0 && u <= 1)
+      ts.push(t);
+  }
+  ts.sort((x, y) => x - y);
+  return ts.slice(1).every((t, i) => {
+    const m = (t + ts[i]) / 2;
+    return inside([a[0] + dx * m, a[1] + dy * m], poly);
+  });
+}
+function validateCatalog(c) {
+  if (!c || c.version !== 1 || c.width !== 1920 || c.height !== 1080 || !Array.isArray(c.zones) || c.zones.length !== 6)
+    throw Error("Invalid forest catalog");
+  const zones = new Map;
+  for (const z of c.zones) {
+    if (!z || typeof z.id !== "string" || !/^[a-z_]+$/.test(z.id) || zones.has(z.id) || !Array.isArray(z.polygon) || z.polygon.length < 3 || z.polygon.length > 100 || !z.polygon.every((p) => finitePoint(p) && p[0] >= 0 && p[0] <= 1920 && p[1] >= 0 && p[1] <= 1080) || !finitePoint(z.spawn) || !inside(z.spawn, z.polygon) || !Array.isArray(z.portals))
+      throw Error("Invalid forest zone");
+    let area = 0;
+    for (let i = 0;i < z.polygon.length; i++) {
+      const a = z.polygon[i], b = z.polygon[(i + 1) % z.polygon.length];
+      if (a[0] === b[0] && a[1] === b[1])
+        throw Error("Invalid polygon");
+      area += a[0] * b[1] - b[0] * a[1];
+    }
+    if (Math.abs(area) < 1)
+      throw Error("Invalid polygon");
+    for (let i = 0;i < z.polygon.length; i++)
+      for (let j = i + 1;j < z.polygon.length; j++) {
+        if (j === i + 1 || i === 0 && j === z.polygon.length - 1)
+          continue;
+        const a = z.polygon[i], b = z.polygon[(i + 1) % z.polygon.length], c2 = z.polygon[j], d = z.polygon[(j + 1) % z.polygon.length];
+        const ab1 = cross(a, b, c2), ab2 = cross(a, b, d), cd1 = cross(c2, d, a), cd2 = cross(c2, d, b);
+        if (ab1 * ab2 <= 0 && cd1 * cd2 <= 0 && Math.max(Math.min(a[0], b[0]), Math.min(c2[0], d[0])) <= Math.min(Math.max(a[0], b[0]), Math.max(c2[0], d[0])) && Math.max(Math.min(a[1], b[1]), Math.min(c2[1], d[1])) <= Math.min(Math.max(a[1], b[1]), Math.max(c2[1], d[1])))
+          throw Error("Self-intersecting forest polygon");
+      }
+    zones.set(z.id, z);
+  }
+  let count = 0;
+  for (const z of zones.values()) {
+    const dirs = new Set;
+    for (const p of z.portals) {
+      const dest = zones.get(p.destination), dir = p.direction;
+      if (!Object.hasOwn(opposite, dir) || p.id !== dir || dirs.has(dir) || !Array.isArray(p.corridor) || p.corridor.length !== 4 || !p.corridor.every(Number.isFinite) || p.corridor[0] < 0 || p.corridor[1] < 0 || p.corridor[2] > 1920 || p.corridor[3] > 1080 || p.corridor[0] >= p.corridor[2] || p.corridor[1] >= p.corridor[3] || !dest || !finitePoint(p.arrival) || !inside(p.arrival, dest.polygon) || !dest.portals.some((q) => q.destination === z.id && q.direction === opposite[dir]))
+        throw Error("Invalid forest portal");
+      if (dir === "north" && p.corridor[1] !== 0 || dir === "south" && p.corridor[3] !== 1080 || dir === "west" && p.corridor[0] !== 0 || dir === "east" && p.corridor[2] !== 1920)
+        throw Error("Invalid portal boundary");
+      dirs.add(dir);
+      count++;
+    }
+  }
+  if (count !== 10 || !zones.has("central_clearing") || !inside([960, 760], zones.get("central_clearing").polygon))
+    throw Error("Invalid forest graph");
+  return zones;
+}
+function loadCatalog(path = resolve(import.meta.dir, "../../../data/static/forest_zones.json")) {
+  return validateCatalog(JSON.parse(readFileSync(path, "utf8")));
+}
+var cosmetics = new Set(["wizard", "witch", "cyberghost"]);
+function createForestPresence(zones, authenticate, clock = Date.now, canServe = () => true) {
+  const rooms = new Map([...zones.keys()].map((id) => [id, new Map]));
+  const active2 = new Map, saved = new Map;
+  let fenced = false;
+  const prune = () => {
+    const now = clock();
+    for (const [id, s] of saved)
+      if (s.expires <= now)
+        saved.delete(id);
+  };
+  const send = (s, m) => {
+    if (fenced || !canServe())
+      return;
+    try {
+      if (s.ws.getBufferedAmount() > 65536) {
+        s.ws.close(1008, "slow client");
+        remove(s, 120000);
+        return;
+      }
+      if (s.ws.send(JSON.stringify({ v: 1, ...m })) < 0) {
+        s.ws.close(1008, "slow client");
+        remove(s, 120000);
+      }
+    } catch {
+      remove(s, 120000);
+    }
+  };
+  const broadcast = (s, m) => {
+    if (fenced || !canServe())
+      return;
+    for (const peer of rooms.get(s.state.zone_id).values())
+      if (peer !== s)
+        send(peer, m);
+  };
+  const peers = (s) => [...rooms.get(s.state.zone_id).values()].filter((p) => p !== s).map((p) => ({ ...p.state }));
+  function remove(s, ttl) {
+    if (fenced || !canServe() || active2.get(s.state.player_id) !== s)
+      return;
+    active2.delete(s.state.player_id);
+    if (s.entered) {
+      rooms.get(s.state.zone_id).delete(s.state.player_id);
+      broadcast(s, { type: "peer_leave", player_id: s.state.player_id });
+    }
+    if (ttl) {
+      prune();
+      if (saved.size >= 1024)
+        saved.delete(saved.keys().next().value);
+      saved.set(s.state.player_id, { state: { ...s.state }, expires: clock() + ttl });
+    } else
+      saved.delete(s.state.player_id);
+  }
+  const correction = (s, seq, reason) => send(s, { type: "correction", seq: Number.isSafeInteger(seq) ? seq : 0, zone_id: s.state.zone_id, x: s.state.x, y: s.state.y, facing: s.state.facing, reason });
+  const validSeq = (n) => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647;
+  function open(ws) {
+    if (fenced || !canServe()) {
+      ws.close(1011, "service unavailable");
+      return;
+    }
+    prune();
+    const old = active2.get(ws.data.playerId);
+    if (old) {
+      remove(old, 120000);
+      old.ws.close(1000, "replaced");
+    }
+    if (active2.size >= 512) {
+      ws.close(1013, "capacity");
+      return;
+    }
+    const previous = saved.get(ws.data.playerId);
+    saved.delete(ws.data.playerId);
+    const state = previous ? { ...previous.state, display_name: ws.data.displayName } : { player_id: ws.data.playerId, display_name: ws.data.displayName, zone_id: "central_clearing", x: 960, y: 760, facing: 0, summoner_id: "wizard" };
+    active2.set(state.player_id, { ws, state, entered: false, seq: -1, at: clock(), credit: 24, lastMove: 0, pendingMove: null, lastCosmetic: 0, rateAt: clock(), rate: 0, malformed: 0, checking: false });
+  }
+  function message(ws, raw) {
+    if (fenced || !canServe())
+      return;
+    const s = active2.get(ws.data.playerId);
+    if (!s || s.ws !== ws)
+      return;
+    const now = clock();
+    if (now - s.rateAt >= 1000) {
+      s.rateAt = now;
+      s.rate = 0;
+    }
+    if (++s.rate > 30) {
+      ws.close(1008, "rate limit");
+      remove(s, 120000);
+      return;
+    }
+    if (typeof raw !== "string" || Buffer.byteLength(raw) > 2048) {
+      ws.close(1009, "invalid frame");
+      remove(s, 120000);
+      return;
+    }
+    let m;
+    try {
+      m = JSON.parse(raw);
+    } catch {
+      if (++s.malformed >= 3) {
+        ws.close(1008, "invalid message");
+        remove(s, 120000);
+      }
+      return;
+    }
+    if (!m || typeof m !== "object" || Array.isArray(m) || m.v !== 1 || typeof m.type !== "string") {
+      if (++s.malformed >= 3) {
+        ws.close(1008, "invalid message");
+        remove(s, 120000);
+      }
+      return;
+    }
+    if (m.type === "ping") {
+      send(s, { type: "pong", server_time: now });
+      return;
+    }
+    if (m.type === "leave" || m.type === "suspend") {
+      const kind = m.type;
+      remove(s, kind === "leave" ? 0 : 900000);
+      send(s, { type: "handoff_ack", kind });
+      setTimeout(() => {
+        try {
+          ws.close(1000, kind === "leave" ? "left" : "suspended");
+        } catch {}
+      }, 500).unref();
+      return;
+    }
+    if (m.type === "enter") {
+      if (s.entered || !cosmetics.has(m.summoner_id)) {
+        send(s, { type: "error", error: "INVALID_ENTER" });
+        return;
+      }
+      const room = rooms.get(s.state.zone_id);
+      if (room.size >= 128) {
+        send(s, { type: "error", error: "ROOM_FULL" });
+        return;
+      }
+      s.state.summoner_id = m.summoner_id;
+      s.entered = true;
+      s.at = now;
+      room.set(s.state.player_id, s);
+      send(s, { type: "welcome", self: { ...s.state }, peers: peers(s), server_time: now });
+      if (active2.get(s.state.player_id) === s)
+        broadcast(s, { type: "peer_join", player: { ...s.state } });
+      return;
+    }
+    if (!s.entered) {
+      send(s, { type: "error", error: "ENTER_REQUIRED" });
+      return;
+    }
+    if (m.type === "cosmetic") {
+      if (!cosmetics.has(m.summoner_id)) {
+        send(s, { type: "error", error: "INVALID_COSMETIC" });
+        return;
+      }
+      if (now - s.lastCosmetic >= 200 && s.state.summoner_id !== m.summoner_id) {
+        s.lastCosmetic = now;
+        s.state.summoner_id = m.summoner_id;
+        broadcast(s, { type: "peer_cosmetic", player_id: s.state.player_id, summoner_id: m.summoner_id });
+      }
+      return;
+    }
+    if (m.type !== "move" && m.type !== "portal") {
+      send(s, { type: "error", error: "UNKNOWN_TYPE" });
+      return;
+    }
+    if (!validSeq(m.seq) || m.seq <= s.seq) {
+      correction(s, m.seq, "INVALID_SEQ");
+      return;
+    }
+    s.seq = m.seq;
+    const x = m.type === "move" ? m.x : m.crossing_x, y = m.type === "move" ? m.y : m.crossing_y;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1920 || y < 0 || y > 1080 || m.type === "move" && (!Number.isInteger(m.facing) || m.facing < 0 || m.facing > 3)) {
+      correction(s, m.seq, "INVALID_POSITION");
+      return;
+    }
+    const a = [s.state.x, s.state.y], b = [x, y], zone = zones.get(s.state.zone_id);
+    s.credit = Math.min(79, s.credit + Math.max(0, now - s.at) * 0.22);
+    s.at = now;
+    const distance = Math.hypot(x - a[0], y - a[1]);
+    if (distance > s.credit || !segmentInside(a, b, zone.polygon)) {
+      correction(s, m.seq, "INVALID_MOVEMENT");
+      return;
+    }
+    if (m.type === "move") {
+      s.credit -= distance;
+      s.state.x = x;
+      s.state.y = y;
+      s.state.facing = m.facing;
+      s.pendingMove = { seq: m.seq, x, y, facing: m.facing };
+      if (now - s.lastMove >= 200)
+        flushSession(s, now);
+      return;
+    }
+    const p = zone.portals.find((p2) => p2.direction === m.direction);
+    if (!p || x < p.corridor[0] || x > p.corridor[2] || y < p.corridor[1] || y > p.corridor[3] || !(p.direction === "north" && y === 0 && a[1] > y || p.direction === "south" && y === 1080 && a[1] < y || p.direction === "west" && x === 0 && a[0] > x || p.direction === "east" && x === 1920 && a[0] < x)) {
+      correction(s, m.seq, "INVALID_PORTAL");
+      return;
+    }
+    const destination = rooms.get(p.destination);
+    if (destination.size >= 128) {
+      correction(s, m.seq, "ROOM_FULL");
+      return;
+    }
+    s.pendingMove = null;
+    rooms.get(s.state.zone_id).delete(s.state.player_id);
+    broadcast(s, { type: "peer_leave", player_id: s.state.player_id });
+    s.state.zone_id = p.destination;
+    [s.state.x, s.state.y] = p.arrival;
+    s.credit = 0;
+    s.at = now;
+    destination.set(s.state.player_id, s);
+    send(s, { type: "zone", zone_id: s.state.zone_id, x: s.state.x, y: s.state.y, facing: s.state.facing, peers: peers(s) });
+    if (active2.get(s.state.player_id) === s)
+      broadcast(s, { type: "peer_join", player: { ...s.state } });
+  }
+  function flushSession(s, now) {
+    if (!s.pendingMove || !s.entered || now - s.lastMove < 200)
+      return;
+    const move = s.pendingMove;
+    s.pendingMove = null;
+    s.lastMove = now;
+    broadcast(s, { type: "peer_move", player_id: s.state.player_id, ...move });
+  }
+  function flush() {
+    if (fenced || !canServe())
+      return;
+    const now = clock();
+    for (const s of active2.values())
+      flushSession(s, now);
+  }
+  async function sweep() {
+    if (fenced || !canServe())
+      return;
+    prune();
+    await Promise.all([...active2.values()].map(async (s) => {
+      if (s.checking)
+        return;
+      s.checking = true;
+      try {
+        if (!await authenticate(s.ws.data) && !fenced && canServe() && active2.get(s.state.player_id) === s) {
+          remove(s, 0);
+          s.ws.close(1008, "session ended");
+        }
+      } catch {
+        if (!fenced && canServe() && active2.get(s.state.player_id) === s) {
+          remove(s, 0);
+          s.ws.close(1011, "authentication unavailable");
+        }
+      } finally {
+        s.checking = false;
+      }
+    }));
+  }
+  function evict(playerId) {
+    if (fenced || !canServe())
+      return;
+    const s = active2.get(playerId);
+    if (s) {
+      remove(s, 0);
+      s.ws.close(1008, "session ended");
+    }
+    saved.delete(playerId);
+  }
+  function fence() {
+    if (fenced)
+      return;
+    fenced = true;
+    for (const s of active2.values()) {
+      try {
+        s.ws.close(1011, "service unavailable");
+      } catch {}
+    }
+    active2.clear();
+    saved.clear();
+    for (const room of rooms.values())
+      room.clear();
+  }
+  function peerChat(playerId, message2) {
+    if (fenced || !canServe() || message2.player_id !== playerId || !Number.isSafeInteger(message2.id) || !Number.isSafeInteger(message2.created_at) || typeof message2.text !== "string")
+      return;
+    const session = active2.get(playerId);
+    if (!session?.entered || rooms.get(session.state.zone_id)?.get(playerId) !== session)
+      return;
+    const event = { type: "peer_chat", player_id: playerId, message_id: message2.id, text: message2.text, created_at: message2.created_at, expires_at: message2.created_at + 1e4, server_time: clock() };
+    send(session, event);
+    broadcast(session, event);
+  }
+  return { open, message, peerChat, roomOf(playerId) {
+    if (fenced || !canServe())
+      return null;
+    const s = active2.get(playerId);
+    return s?.entered && rooms.get(s.state.zone_id)?.get(playerId) === s ? s.state.zone_id : null;
+  }, close(ws) {
+    if (fenced)
+      return;
+    const s = active2.get(ws.data.playerId);
+    if (s?.ws === ws)
+      remove(s, 120000);
+  }, sweep, flush, evict, fence };
+}
+
+// src/forest/duels.ts
+var PENDING_MS2 = 30000;
+var REJECT_MS2 = 120000;
+var PREPARING_MS = 180000;
+var RETENTION_MS = 7 * 86400000;
+var validId2 = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
+var fail = (status, error2) => ({ status, data: { error: error2 } });
+function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, combatAvailable = () => true) {
+  const expire = (now) => {
+    db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now, now);
+    db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
+  };
+  const clean = (now) => {
+    expire(now);
+    db.query("DELETE FROM forest_duel_actions WHERE created_at <= ?").run(now - RETENTION_MS);
+    db.query("DELETE FROM forest_duel_invites WHERE status IN ('DECLINED','CANCELLED','EXPIRED') AND updated_at <= ?").run(now - RETENTION_MS);
+  };
+  const row = (id) => db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE i.invite_id=?`).get(id);
+  const busyPvp = (id, now) => !!db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>? UNION ALL SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1 LIMIT 1").get(id, now, id);
+  const reserved = (id) => !!db.query("SELECT 1 FROM forest_duel_reservations WHERE player_id=?").get(id);
+  const mutate = (player, body, type, payload, run) => {
+    if (!canServe())
+      return fail(503, "FOREST_DUELS_UNAVAILABLE");
+    if (!validId2(body?.client_action_id))
+      return fail(400, "INVALID_ACTION_ID");
+    const json = JSON.stringify(payload);
+    return db.transaction(() => {
+      if (!canServe())
+        return fail(503, "FOREST_DUELS_UNAVAILABLE");
+      const now = clock();
+      clean(now);
+      const prior = db.query("SELECT * FROM forest_duel_actions WHERE player_id=? AND client_action_id=?").get(player, body.client_action_id);
+      if (prior)
+        return prior.action_type === type && prior.payload_json === json ? { status: prior.status_code, data: JSON.parse(prior.result_json) } : fail(409, "ACTION_CONFLICT");
+      const count = db.query("SELECT count(*) AS n FROM forest_duel_actions WHERE player_id=?").get(player);
+      if (count.n >= 500)
+        return fail(429, "ACTION_LIMIT");
+      const result = run(now);
+      db.query("INSERT INTO forest_duel_actions VALUES (?,?,?,?,?,?,?)").run(player, body.client_action_id, type, json, result.status, JSON.stringify(result.data), now);
+      return result;
+    }).immediate();
+  };
+  const unlock = (id) => db.query("DELETE FROM forest_duel_reservations WHERE invite_id=?").run(id);
+  return {
+    participants(inviteId) {
+      if (!validId2(inviteId))
+        return [];
+      const i = db.query("SELECT challenger_id,recipient_id FROM forest_duel_invites WHERE invite_id=?").get(inviteId);
+      return i ? [i.challenger_id, i.recipient_id] : [];
+    },
+    challengerFor(recipient, inviteId) {
+      if (!validId2(inviteId))
+        return null;
+      const found = db.query("SELECT challenger_id FROM forest_duel_invites WHERE invite_id=? AND recipient_id=? AND status='PENDING'").get(inviteId, recipient);
+      return found?.challenger_id ?? null;
+    },
+    state(player) {
+      if (!canServe())
+        return fail(503, "FOREST_DUELS_UNAVAILABLE");
+      return db.transaction(() => {
+        if (!canServe())
+          return fail(503, "FOREST_DUELS_UNAVAILABLE");
+        const now = clock();
+        clean(now);
+        const records = db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE (i.challenger_id=? OR i.recipient_id=?) AND i.status IN ('PENDING','ACCEPTED') ORDER BY i.created_at, i.invite_id LIMIT 1`).all(player, player);
+        const started = db.query("SELECT i.invite_id,m.match_id FROM forest_duel_invites i JOIN pvp_matches m ON m.invite_id=i.invite_id WHERE (i.challenger_id=? OR i.recipient_id=?) AND i.status='STARTED' ORDER BY i.updated_at DESC LIMIT 1").get(player, player);
+        for (const record2 of records.filter((r) => r.status === "ACCEPTED")) {
+          const ready = db.query("SELECT player_id FROM forest_duel_ready WHERE invite_id=?").all(record2.invite_id);
+          record2.ready = { player: ready.some((x) => x.player_id === player), enemy: ready.some((x) => x.player_id !== player) };
+        }
+        const cooldowns = db.query("SELECT recipient_id AS player_id, MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED','EXPIRED') THEN created_at+? ELSE 0 END) AS cooldown_until FROM forest_duel_invites WHERE challenger_id=? AND ((status='DECLINED' AND updated_at+?>?) OR (status IN ('PENDING','CANCELLED','EXPIRED') AND created_at+?>?)) GROUP BY recipient_id ORDER BY cooldown_until DESC LIMIT 200").all(REJECT_MS2, PENDING_MS2, player, REJECT_MS2, now, PENDING_MS2, now);
+        return { status: 200, data: { ...started ? { started } : {}, player_id: player, server_time: now, cooldowns, incoming: records.filter((r) => r.status === "PENDING" && r.recipient_id === player), outgoing: records.filter((r) => r.status === "PENDING" && r.challenger_id === player), accepted: records.filter((r) => r.status === "ACCEPTED") } };
+      }).immediate();
+    },
+    request(player, body, targetAvailable = true) {
+      if (!validId2(body?.target_player_id))
+        return fail(400, "INVALID_TARGET");
+      const target = body.target_player_id;
+      return mutate(player, body, "request", { target_player_id: target }, (now) => {
+        if (player === target)
+          return fail(400, "SELF_DUEL");
+        if (!targetAvailable || !db.query("SELECT 1 FROM players WHERE player_id=?").get(target) || !db.query("SELECT 1 FROM players WHERE player_id=?").get(player))
+          return fail(404, "PLAYER_UNAVAILABLE");
+        const cooldown = db.query("SELECT COALESCE(MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED','EXPIRED') THEN created_at+? ELSE 0 END),0) deadline FROM forest_duel_invites WHERE challenger_id=? AND recipient_id=?").get(REJECT_MS2, PENDING_MS2, player, target).deadline;
+        if (cooldown > now)
+          return { status: 429, data: { error: "DUEL_COOLDOWN", cooldown_until: cooldown, server_time: now } };
+        const zone = roomOf(player);
+        if (!zone || roomOf(target) !== zone)
+          return fail(409, "FOREST_ROOM_MISMATCH");
+        if (reserved(player) || reserved(target) || busyPvp(player, now) || busyPvp(target, now))
+          return fail(409, "PLAYER_BUSY");
+        const id = crypto.randomUUID();
+        db.query("INSERT INTO forest_duel_invites VALUES (?,?,?,?,'PENDING',?,?,?)").run(id, player, target, zone, now, now, now + PENDING_MS2);
+        const reserve = db.query("INSERT INTO forest_duel_reservations VALUES (?,?)");
+        reserve.run(player, id);
+        reserve.run(target, id);
+        return { status: 200, data: { invite: row(id), cooldown_until: now + PENDING_MS2, server_time: now } };
+      });
+    },
+    respond(player, body, challengerAvailable = true) {
+      if (!validId2(body?.invite_id) || typeof body?.accept !== "boolean")
+        return fail(400, "INVALID_REQUEST");
+      return mutate(player, body, "respond", { invite_id: body.invite_id, accept: body.accept }, (now) => {
+        const invitation = row(body.invite_id);
+        if (!invitation || invitation.recipient_id !== player)
+          return fail(404, "INVITE_UNAVAILABLE");
+        if (invitation.status !== "PENDING")
+          return fail(409, "INVITE_NOT_PENDING");
+        if (body.accept) {
+          if (!combatAvailable())
+            return fail(503, "PVP_SECRET_REQUIRED");
+          if (!challengerAvailable)
+            return fail(404, "PLAYER_UNAVAILABLE");
+          if (roomOf(player) !== invitation.originating_zone || roomOf(invitation.challenger_id) !== invitation.originating_zone)
+            return fail(409, "FOREST_ROOM_MISMATCH");
+          if (busyPvp(player, now) || busyPvp(invitation.challenger_id, now))
+            return fail(409, "PLAYER_BUSY");
+          db.query("UPDATE forest_duel_invites SET status='ACCEPTED', updated_at=?, expires_at=? WHERE invite_id=?").run(now, now + PREPARING_MS, body.invite_id);
+        } else {
+          db.query("UPDATE forest_duel_invites SET status='DECLINED', updated_at=? WHERE invite_id=?").run(now, body.invite_id);
+          unlock(body.invite_id);
+        }
+        return { status: 200, data: { invite: row(body.invite_id), ...body.accept ? {} : { cooldown_until: now + REJECT_MS2 }, server_time: now } };
+      });
+    },
+    ready(player, body, available = true) {
+      if (!validId2(body?.invite_id) || !body || Object.keys(body).some((k) => !["invite_id", "selection", "client_action_id"].includes(k)))
+        return fail(400, "INVALID_REQUEST");
+      if (!combat)
+        return fail(503, "PVP_SECRET_REQUIRED");
+      return mutate(player, body, "ready", { invite_id: body.invite_id, selection: body.selection }, (now) => {
+        const invitation = row(body.invite_id);
+        if (!invitation || ![invitation.challenger_id, invitation.recipient_id].includes(player))
+          return fail(404, "INVITE_UNAVAILABLE");
+        if (invitation.status === "STARTED") {
+          const found = db.query("SELECT match_id FROM pvp_matches WHERE invite_id=?").get(body.invite_id);
+          return { status: 200, data: { state: "STARTED", match_id: found.match_id } };
+        }
+        if (invitation.status !== "ACCEPTED")
+          return fail(409, "INVITE_NOT_ACTIVE");
+        if (!available)
+          return fail(404, "PLAYER_UNAVAILABLE");
+        if (busyPvp(invitation.challenger_id, now) || busyPvp(invitation.recipient_id, now))
+          return fail(409, "PLAYER_BUSY");
+        const reservations = db.query("SELECT player_id FROM forest_duel_reservations WHERE invite_id=?").all(body.invite_id);
+        if (reservations.length !== 2 || ![invitation.challenger_id, invitation.recipient_id].every((id) => reservations.some((r) => r.player_id === id)))
+          return fail(409, "INVITE_NOT_ACTIVE");
+        const old = db.query("SELECT selection_json FROM forest_duel_ready WHERE invite_id=? AND player_id=?").get(body.invite_id, player);
+        if (old && old.selection_json !== JSON.stringify(body.selection))
+          return fail(409, "READY_CONFLICT");
+        if (!old) {
+          const snapshot2 = combat.snapshot(player, body.selection);
+          if (!snapshot2 || snapshot2.player_id !== player)
+            return fail(400, "UNTRUSTED_SETUP");
+          db.query("INSERT INTO forest_duel_ready VALUES (?,?,?,?)").run(body.invite_id, player, JSON.stringify(snapshot2), JSON.stringify(body.selection));
+        }
+        const ready = db.query("SELECT player_id,snapshot_json FROM forest_duel_ready WHERE invite_id=?").all(body.invite_id);
+        if (ready.length < 2)
+          return { status: 200, data: { state: "WAITING", invite_id: body.invite_id } };
+        const a = ready.find((r) => r.player_id === invitation.challenger_id), b = ready.find((r) => r.player_id === invitation.recipient_id);
+        if (!a || !b)
+          throw new Error("INVALID_READY_STATE");
+        const matchId = combat.start(JSON.parse(a.snapshot_json), JSON.parse(b.snapshot_json), now, body.invite_id);
+        db.query("UPDATE forest_duel_invites SET status='STARTED',updated_at=? WHERE invite_id=? AND status='ACCEPTED'").run(now, body.invite_id);
+        unlock(body.invite_id);
+        return { status: 200, data: { state: "STARTED", match_id: matchId } };
+      });
+    },
+    cancel(player, body) {
+      if (!validId2(body?.invite_id))
+        return fail(400, "INVALID_REQUEST");
+      return mutate(player, body, "cancel", { invite_id: body.invite_id }, (now) => {
+        const invitation = row(body.invite_id);
+        if (!invitation || invitation.challenger_id !== player && !(invitation.recipient_id === player && invitation.status === "ACCEPTED"))
+          return fail(404, "INVITE_UNAVAILABLE");
+        if (!["PENDING", "ACCEPTED"].includes(invitation.status))
+          return fail(409, "INVITE_NOT_ACTIVE");
+        db.query("UPDATE forest_duel_invites SET status='CANCELLED', updated_at=? WHERE invite_id=?").run(now, body.invite_id);
+        unlock(body.invite_id);
+        return { status: 200, data: { invite: row(body.invite_id), cooldown_until: invitation.created_at + PENDING_MS2, server_time: now } };
+      });
     }
   };
 }
@@ -11572,23 +12238,24 @@ var expeditionCaptures = (() => {
   });
 })();
 function regenerateExpeditionMana(pool, now) {
-  if (!pool || !Number.isSafeInteger(pool.mana) || pool.mana < 0 || pool.mana > EXPEDITION_MANA_CAP || !Number.isSafeInteger(pool.regen_at) || pool.regen_at < 0 || !Number.isSafeInteger(now) || now < 0 || pool.mana < EXPEDITION_MANA_CAP && pool.regen_at === 0)
+  if (!pool || typeof pool.mana !== "number" || !Number.isSafeInteger(pool.mana * 10) || pool.mana < 0 || pool.mana > EXPEDITION_MANA_CAP || !Number.isSafeInteger(pool.regen_at) || pool.regen_at < 0 || !Number.isSafeInteger(now) || now < 0 || pool.mana < EXPEDITION_MANA_CAP && pool.regen_at === 0)
     throw new Error("INVALID_EXPEDITION_MANA");
   if (pool.mana === EXPEDITION_MANA_CAP)
     return { mana: pool.mana, regen_at: 0 };
   if (now < pool.regen_at)
     return { ...pool };
   const ticks = Math.floor((now - pool.regen_at) / EXPEDITION_MANA_INTERVAL_MS) + 1;
-  const mana = Math.min(EXPEDITION_MANA_CAP, pool.mana + ticks);
+  const mana = Math.min(EXPEDITION_MANA_CAP * 10, Math.round(pool.mana * 10) + ticks * 10) / 10;
   return { mana, regen_at: mana === EXPEDITION_MANA_CAP ? 0 : pool.regen_at + ticks * EXPEDITION_MANA_INTERVAL_MS };
 }
 function changeExpeditionMana(pool, delta, now) {
-  if (delta !== -1 && delta !== 1)
+  if (typeof delta !== "number" || !Number.isSafeInteger(delta * 10) || !(delta === 1 || delta < 0 && delta >= -1))
     throw new Error("INVALID_EXPEDITION_MANA_CHANGE");
   const current = regenerateExpeditionMana(pool, now);
-  if (delta === -1 && current.mana === 0)
+  const tenths = Math.round(current.mana * 10) + Math.round(delta * 10);
+  if (tenths < 0)
     throw new Error("EXPEDITION_MANA_EMPTY");
-  const mana = Math.min(EXPEDITION_MANA_CAP, current.mana + delta);
+  const mana = Math.min(EXPEDITION_MANA_CAP * 10, tenths) / 10;
   return { mana, regen_at: mana === EXPEDITION_MANA_CAP ? 0 : current.mana === EXPEDITION_MANA_CAP ? now + EXPEDITION_MANA_INTERVAL_MS : current.regen_at };
 }
 function expeditionCaptureChance(rarity) {
@@ -12871,10 +13538,10 @@ function resolveCombatTurn(state, decision, rng) {
       }
     if (next.hom_id && !next.hom_spent)
       next.hom_energy = Math.min(6, next.hom_energy + 1);
-  } catch (error) {
-    if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC")
+  } catch (error2) {
+    if (error2 instanceof Error && error2.message === "UNSUPPORTED_MECHANIC")
       return { error: "UNSUPPORTED_MECHANIC" };
-    throw error;
+    throw error2;
   }
   if (next.player.expedition_passive)
     next.player.expedition_passive = finishPassiveExchange(next.player.expedition_passive);
@@ -14039,48 +14706,66 @@ function trustedPvpSnapshot(playerId, selection, state, catalogs) {
     return null;
   return { player_id: playerId, entity_id: entity.id, weapon_ids: [...weapons], homunculus_id: selection.homunculus_id, spell_ids: [...ids], item_progress: structuredClone(state.item_progress ?? {}), homunculus_progress: structuredClone(state.homunculus_progress ?? {}), spell_progress: structuredClone(state.spell_progress ?? {}) };
 }
+function createSharedPvpMatch(db, catalogs, a, b, now, kind, inviteId = null) {
+  if (a.player_id === b.player_id || "error" in createPvpFighter(a, catalogs) || "error" in createPvpFighter(b, catalogs))
+    throw new Error("UNTRUSTED_SETUP");
+  const [left, right] = randomInt(2) === 0 ? [a, b] : [b, a];
+  const combat = createPvpCombatState(left, right, catalogs);
+  if ("error" in combat)
+    throw new Error(combat.error);
+  const id = randomUUID(), season = pvpSeason(now);
+  const rankings = createPvpRanking(db, () => now);
+  const leftRating = kind === "ranked" ? rankings.ensure(season, left.player_id, now).rating : null;
+  const rightRating = kind === "ranked" ? rankings.ensure(season, right.player_id, now).rating : null;
+  db.query("INSERT INTO pvp_matches (match_id,status,created_at,updated_at,revision,combat_state_json,season,decision_deadline,kind,invite_id) VALUES (?,'ACTIVE',?,?,1,?,?,?,?,?)").run(id, now, now, JSON.stringify(combat), kind === "ranked" ? season : null, now + PVP_TURN_TIMEOUT_MS, kind, inviteId);
+  const member = db.query("INSERT INTO pvp_match_players (match_id,player_id,side,snapshot_json,active,last_seen_at,start_rating) VALUES (?,?,?,?,1,?,?)");
+  member.run(id, left.player_id, "LEFT", JSON.stringify(left), now, leftRating);
+  member.run(id, right.player_id, "RIGHT", JSON.stringify(right), now, rightRating);
+  return id;
+}
 function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
   if (typeof trustedSnapshot !== "function")
     throw new Error("PVP_OWNERSHIP_VERIFIER_REQUIRED");
-  const rankings = createPvpRanking(db, clock);
   const expire = db.prepare("DELETE FROM pvp_queue WHERE expires_at <= ?");
   const queued = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id = ?");
-  const active2 = db.prepare("SELECT match_id FROM pvp_match_players WHERE player_id = ? AND active = 1");
-  const first = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id <> ? ORDER BY queued_at, rowid LIMIT 1");
+  const active2 = db.prepare("SELECT p.match_id, m.kind FROM pvp_match_players p JOIN pvp_matches m ON m.match_id=p.match_id WHERE p.player_id = ? AND p.active = 1");
+  const first = db.prepare("SELECT q.player_id, q.queued_at, q.expires_at, q.snapshot_json FROM pvp_queue q WHERE q.player_id <> ? AND NOT EXISTS (SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=q.player_id AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?) ORDER BY q.queued_at, q.rowid LIMIT 1");
   const insert = db.prepare("INSERT INTO pvp_queue (player_id, queued_at, expires_at, snapshot_json) VALUES (?, ?, ?, ?)");
   const remove = db.prepare("DELETE FROM pvp_queue WHERE player_id = ?");
-  const match = db.prepare("INSERT INTO pvp_matches (match_id, status, created_at, updated_at, revision, combat_state_json, season, decision_deadline) VALUES (?, 'ACTIVE', ?, ?, 1, ?, ?, ?)");
-  const member = db.prepare("INSERT INTO pvp_match_players (match_id, player_id, side, snapshot_json, active, last_seen_at, start_rating) VALUES (?, ?, ?, ?, 1, ?, ?)");
-  const validId = (id) => typeof id === "string" && id.length > 0 && id.length <= 256;
+  const validId3 = (id) => typeof id === "string" && id.length > 0 && id.length <= 256;
   return {
     state(playerId) {
-      if (!validId(playerId))
+      if (!validId3(playerId))
         throw new Error("INVALID_PLAYER");
       return db.transaction(() => {
         expire.run(clock());
         const found = queued.get(playerId), current = active2.get(playerId);
-        return current ? { state: "MATCHED", match_id: current.match_id } : found ? { state: "QUEUED", joined_at: found.queued_at, expires_at: found.expires_at } : { state: "IDLE" };
+        return current ? current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id } : found ? { state: "QUEUED", joined_at: found.queued_at, expires_at: found.expires_at } : { state: "IDLE" };
       }).immediate();
     },
     cancel(playerId) {
-      if (!validId(playerId))
+      if (!validId3(playerId))
         throw new Error("INVALID_PLAYER");
       return db.transaction(() => {
         expire.run(clock());
         remove.run(playerId);
         const current = active2.get(playerId);
-        return current ? { state: "MATCHED", match_id: current.match_id } : { state: "IDLE" };
+        return current ? current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id } : { state: "IDLE" };
       }).immediate();
     },
     join(playerId, selection) {
-      if (!validId(playerId))
+      if (!validId3(playerId))
         throw new Error("INVALID_PLAYER");
       return db.transaction(() => {
         const now = clock();
         expire.run(now);
         const current = active2.get(playerId);
         if (current)
-          return { state: "MATCHED", match_id: current.match_id };
+          return current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id };
+        db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now, now);
+        db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
+        if (db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(playerId, now))
+          throw new Error("PLAYER_BUSY");
         const previous = queued.get(playerId);
         if (previous) {
           if (JSON.stringify(JSON.parse(previous.snapshot_json).selection) !== JSON.stringify(selection))
@@ -14090,30 +14775,20 @@ function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
         const snapshot2 = trustedSnapshot(playerId, selection);
         if (!snapshot2 || snapshot2.player_id !== playerId || "error" in createPvpFighter(snapshot2, catalogs))
           throw new Error("UNTRUSTED_SETUP");
-        let opponent = first.get(playerId), other = null;
+        let opponent = first.get(playerId, now), other = null;
         while (opponent) {
           const stored = JSON.parse(opponent.snapshot_json);
           other = stored.snapshot ?? null;
           if (other && other.player_id === opponent.player_id && other.player_id !== playerId && !("error" in createPvpFighter(other, catalogs)))
             break;
           remove.run(opponent.player_id);
-          opponent = first.get(playerId);
+          opponent = first.get(playerId, now);
         }
         if (!opponent || !other) {
           insert.run(playerId, now, now + 3600000, JSON.stringify({ selection, snapshot: snapshot2 }));
           return { state: "QUEUED", joined_at: now, expires_at: now + 3600000 };
         }
-        const [left, right] = randomInt(2) === 0 ? [snapshot2, other] : [other, snapshot2];
-        const combat = createPvpCombatState(left, right, catalogs);
-        if ("error" in combat)
-          throw new Error(combat.error);
-        const id = randomUUID();
-        const season = pvpSeason(now);
-        const leftRating = rankings.ensure(season, left.player_id, now).rating;
-        const rightRating = rankings.ensure(season, right.player_id, now).rating;
-        match.run(id, now, now, JSON.stringify(combat), season, now + PVP_TURN_TIMEOUT_MS);
-        member.run(id, left.player_id, "LEFT", JSON.stringify(left), now, leftRating);
-        member.run(id, right.player_id, "RIGHT", JSON.stringify(right), now, rightRating);
+        const id = createSharedPvpMatch(db, catalogs, snapshot2, other, now, "ranked");
         remove.run(other.player_id);
         return { state: "MATCHED", match_id: id };
       }).immediate();
@@ -14141,7 +14816,7 @@ function settlePvpMatch(db, matchId, winner, now) {
     throw new Error("INVALID_RESULT");
   const currentSeason = pvpSeason(now);
   return db.transaction(() => {
-    const match = db.query("SELECT status, season, result_json FROM pvp_matches WHERE match_id = ?").get(matchId);
+    const match = db.query("SELECT status, season, result_json, kind FROM pvp_matches WHERE match_id = ?").get(matchId);
     if (!match)
       throw new Error("MATCH_NOT_FOUND");
     if (match.status === "FINISHED") {
@@ -14150,6 +14825,14 @@ function settlePvpMatch(db, matchId, winner, now) {
         throw new Error("RESULT_CONFLICT");
       return prior;
     }
+    if (match.kind === "friendly") {
+      const result2 = { result: winner };
+      db.query("UPDATE pvp_matches SET status='FINISHED', result_json=?, settled_at=?, updated_at=?, revision=revision+1 WHERE match_id=? AND status='ACTIVE'").run(JSON.stringify(result2), now, now, matchId);
+      db.query("UPDATE pvp_match_players SET active=0 WHERE match_id=?").run(matchId);
+      return result2;
+    }
+    if (match.kind !== "ranked")
+      throw new Error("INVALID_MATCH_KIND");
     const rows = db.query("SELECT player_id, side, start_rating FROM pvp_match_players WHERE match_id = ?").all(matchId);
     const left = rows.find((r) => r.side === "LEFT"), right = rows.find((r) => r.side === "RIGHT");
     if (rows.length !== 2 || !left || !right || ![left.start_rating, right.start_rating].every((n) => Number.isSafeInteger(n) && n >= 0) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(match.season ?? ""))
@@ -14252,9 +14935,9 @@ function createPvpMatches(db, secret, clock = Date.now) {
     };
     const finished = row.result_json ? JSON.parse(row.result_json) : null;
     const total = finished?.totals?.[viewer];
-    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {} } : null;
+    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {} } : {} } : null;
     const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
-    return { match_id: row.match_id, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some((d) => d.player_id === viewerId), enemy: decisions.some((d) => d.player_id !== viewerId) }, result, events: eventRows.all(row.match_id, after).map((e) => sanitizeEvent(JSON.parse(e.payload_json), viewer, e.seq)) };
+    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some((d) => d.player_id === viewerId), enemy: decisions.some((d) => d.player_id !== viewerId) }, result, events: eventRows.all(row.match_id, after).map((e) => sanitizeEvent(JSON.parse(e.payload_json), viewer, e.seq)) };
   };
   const advance = (row, now, timeout) => {
     let state = parse(row);
@@ -14335,8 +15018,8 @@ function createPvpMatches(db, secret, clock = Date.now) {
     }).immediate();
   };
   return {
-    locate(player) {
-      const row = db.query("SELECT m.match_id FROM pvp_match_players p JOIN pvp_matches m ON m.match_id = p.match_id WHERE p.player_id = ? ORDER BY p.active DESC, m.created_at DESC, m.match_id DESC LIMIT 1").get(player);
+    locate(player, kind = "ranked") {
+      const row = db.query("SELECT m.match_id FROM pvp_match_players p JOIN pvp_matches m ON m.match_id = p.match_id WHERE p.player_id = ? AND m.kind=? ORDER BY p.active DESC, m.created_at DESC, m.match_id DESC LIMIT 1").get(player, kind);
       return row?.match_id ?? null;
     },
     sweep() {
@@ -14385,8 +15068,14 @@ function createPvpMatches(db, secret, clock = Date.now) {
     }
   };
 }
-function dispatchPvpRequest(services, player, method, path, body, query) {
+function dispatchPvpRequest(services, player, method, path, body, query, kind = "ranked") {
   const { db, queue, matches, chat, ranking } = services;
+  if (kind === "friendly")
+    path = path.replace("/forest/duels/match/", "/pvp/match/");
+  const authorize = (id) => {
+    if (!db.query("SELECT 1 FROM pvp_matches m JOIN pvp_match_players p ON p.match_id=m.match_id WHERE m.match_id=? AND m.kind=? AND p.player_id=?").get(id, kind, player))
+      throw new Error("MATCH_NOT_FOUND");
+  };
   const fields = (v, allowed) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => allowed.includes(k));
   const cursor = () => {
     const raw = query.get("after") ?? "0";
@@ -14405,9 +15094,10 @@ function dispatchPvpRequest(services, player, method, path, body, query) {
     return ranking.leaderboard(player, query.get("season"));
   }
   if (method === "GET" && path === "/pvp/match/state") {
-    const id = query.get("match_id") ?? matches.locate(player);
+    const id = query.get("match_id") ?? matches.locate(player, kind);
     if (!id)
       return { match: null };
+    authorize(id);
     const raw = query.get("chat_after") ?? "0", chatAfter = Number(raw);
     if (!/^\d+$/.test(raw) || !Number.isSafeInteger(chatAfter))
       throw new Error("INVALID_CURSOR");
@@ -14426,16 +15116,19 @@ function dispatchPvpRequest(services, player, method, path, body, query) {
   if (method === "POST" && path === "/pvp/match/decision") {
     if (!fields(body, ["match_id", "client_action_id", "combat_revision", "decision"]) || typeof body.match_id !== "string")
       throw new Error("INVALID_REQUEST");
+    authorize(body.match_id);
     return matches.decide(body.match_id, player, body.client_action_id, body.combat_revision, body.decision);
   }
   if (method === "POST" && path === "/pvp/match/forfeit") {
     if (!fields(body, ["match_id", "client_action_id"]) || typeof body.match_id !== "string")
       throw new Error("INVALID_REQUEST");
+    authorize(body.match_id);
     return matches.forfeit(body.match_id, player, body.client_action_id);
   }
   if (method === "POST" && path === "/pvp/match/chat") {
     if (!fields(body, ["match_id", "client_message_id", "text"]) || typeof body.match_id !== "string")
       throw new Error("INVALID_REQUEST");
+    authorize(body.match_id);
     const sent = chat.send(body.match_id, player, body.client_message_id, body.text);
     return { message: sent.message, duplicate: sent.duplicate };
   }
@@ -14444,8 +15137,10 @@ function dispatchPvpRequest(services, player, method, path, body, query) {
 
 // src/index.ts
 import { createHash as createHash3, createHmac as createHmac7 } from "crypto";
-import { existsSync, mkdirSync, readFileSync as readFileSync2 } from "fs";
-import { dirname, resolve as resolve2 } from "path";
+import { lookup } from "dns/promises";
+import { isIP } from "net";
+import { existsSync, mkdirSync, readFileSync as readFileSync3 } from "fs";
+import { dirname, resolve as resolve3 } from "path";
 
 // src/config/default.ts
 var default_default = {
@@ -14528,6 +15223,43 @@ async function pingRedis() {
     }
     const res = await redis.ping();
     return res == "PONG";
+  } catch {
+    return false;
+  }
+}
+async function acquireLock(key, ttlMs) {
+  const token = crypto.randomUUID();
+  try {
+    if (!await ensureRedisReady()) {
+      return null;
+    }
+    const result = await redis.set(`lock:${key}`, token, "PX", ttlMs, "NX");
+    return result == "OK" ? token : null;
+  } catch (err) {
+    console.warn("[redis] lock acquire failed", err);
+    return null;
+  }
+}
+async function releaseLock(key, token) {
+  const script = `
+		if redis.call("get", KEYS[1]) == ARGV[1] then
+			return redis.call("del", KEYS[1])
+		else
+			return 0
+		end
+	`;
+  try {
+    const result = await redis.eval(script, 1, `lock:${key}`, token);
+    return Number(result) > 0;
+  } catch (err) {
+    console.warn("[redis] lock release failed", err);
+    return false;
+  }
+}
+async function renewLock(key, token, ttlMs) {
+  try {
+    const result = await redis.eval(`if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pexpire", KEYS[1], ARGV[2]) else return 0 end`, 1, `lock:${key}`, token, String(ttlMs));
+    return Number(result) === 1;
   } catch {
     return false;
   }
@@ -14860,9 +15592,9 @@ var CLOSE = {};
 
 class Query extends Promise {
   constructor(strings, args, handler, canceller, options = {}) {
-    let resolve, reject;
+    let resolve2, reject;
     super((a, b) => {
-      resolve = a;
+      resolve2 = a;
       reject = b;
     });
     this.tagged = Array.isArray(strings.raw);
@@ -14873,7 +15605,7 @@ class Query extends Promise {
     this.options = options;
     this.state = null;
     this.statement = null;
-    this.resolve = (x) => (this.active = false, resolve(x));
+    this.resolve = (x) => (this.active = false, resolve2(x));
     this.reject = (x) => (this.active = false, reject(x));
     this.active = false;
     this.cancelled = null;
@@ -14921,12 +15653,12 @@ class Query extends Promise {
           if (this.executed && !this.active)
             return { done: true };
           prev && prev();
-          const promise = new Promise((resolve, reject) => {
+          const promise = new Promise((resolve2, reject) => {
             this.cursorFn = (value) => {
-              resolve({ value, done: false });
+              resolve2({ value, done: false });
               return new Promise((r) => prev = r);
             };
-            this.resolve = () => (this.active = false, resolve({ done: true }));
+            this.resolve = () => (this.active = false, resolve2({ done: true }));
             this.reject = (x) => (this.active = false, reject(x));
           });
           this.execute();
@@ -15006,31 +15738,31 @@ var Errors = {
 };
 function connection(x, options, socket) {
   const { host, port } = socket || options;
-  const error = Object.assign(new Error("write " + x + " " + (options.path || host + ":" + port)), {
+  const error2 = Object.assign(new Error("write " + x + " " + (options.path || host + ":" + port)), {
     code: x,
     errno: x,
     address: options.path || host
   }, options.path ? {} : { port });
-  Error.captureStackTrace(error, connection);
-  return error;
+  Error.captureStackTrace(error2, connection);
+  return error2;
 }
 function postgres(x) {
-  const error = new PostgresError(x);
-  Error.captureStackTrace(error, postgres);
-  return error;
+  const error2 = new PostgresError(x);
+  Error.captureStackTrace(error2, postgres);
+  return error2;
 }
 function generic(code, message) {
-  const error = Object.assign(new Error(code + ": " + message), { code });
-  Error.captureStackTrace(error, generic);
-  return error;
+  const error2 = Object.assign(new Error(code + ": " + message), { code });
+  Error.captureStackTrace(error2, generic);
+  return error2;
 }
 function notSupported(x) {
-  const error = Object.assign(new Error(x + " (B) is not supported"), {
+  const error2 = Object.assign(new Error(x + " (B) is not supported"), {
     code: "MESSAGE_NOT_SUPPORTED",
     name: x
   });
-  Error.captureStackTrace(error, notSupported);
-  return error;
+  Error.captureStackTrace(error2, notSupported);
+  return error2;
 }
 
 // node_modules/postgres/src/types.js
@@ -15319,7 +16051,7 @@ import net from "net";
 import tls from "tls";
 import crypto2 from "crypto";
 import Stream from "stream";
-import { performance } from "perf_hooks";
+import { performance as performance2 } from "perf_hooks";
 
 // node_modules/postgres/src/result.js
 class Result extends Array {
@@ -15514,22 +16246,22 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     try {
       x = options.socket ? await Promise.resolve(options.socket(options)) : new net.Socket;
     } catch (e) {
-      error(e);
+      error2(e);
       return;
     }
-    x.on("error", error);
+    x.on("error", error2);
     x.on("close", closed);
     x.on("drain", drain);
     return x;
   }
-  async function cancel({ pid, secret }, resolve, reject) {
+  async function cancel({ pid, secret }, resolve2, reject) {
     try {
       cancelMessage = bytes_default().i32(16).i32(80877102).i32(pid).i32(secret).end(16);
       await connect();
       socket.once("error", reject);
-      socket.once("close", resolve);
-    } catch (error2) {
-      reject(error2);
+      socket.once("close", resolve2);
+    } catch (error3) {
+      reject(error3);
     }
   }
   function execute(q) {
@@ -15544,9 +16276,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       query ? sent.push(q) : (query = q, query.active = true);
       build(q);
       return write(toBuffer(q)) && !q.describeFirst && !q.cursorFn && sent.length < max_pipeline && (!q.options.onexecute || q.options.onexecute(connection2));
-    } catch (error2) {
+    } catch (error3) {
       sent.length === 0 && write(Sync);
-      errored(error2);
+      errored(error3);
       return true;
     }
   }
@@ -15625,7 +16357,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     socket.removeAllListeners();
     socket = tls.connect(options2);
     socket.on("secureConnect", connected);
-    socket.on("error", error);
+    socket.on("error", error2);
     socket.on("close", closed);
     socket.on("drain", drain);
   }
@@ -15677,7 +16409,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     hostIndex = (hostIndex + 1) % port.length;
   }
   function reconnect() {
-    setTimeout(connect, closedTime ? Math.max(0, closedTime + delay - performance.now()) : 0);
+    setTimeout(connect, closedTime ? Math.max(0, closedTime + delay - performance2.now()) : 0);
   }
   function connected() {
     try {
@@ -15691,10 +16423,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       const s = StartupMessage();
       write(s);
     } catch (err) {
-      error(err);
+      error2(err);
     }
   }
-  function error(err) {
+  function error2(err) {
     if (connection2.queue === queues.connecting && options.host[retries + 1])
       return;
     errored(err);
@@ -15727,7 +16459,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   function terminate() {
     terminated = true;
     if (stream || query || initial || sent.length)
-      error(Errors.connection("CONNECTION_DESTROYED", options));
+      error2(Errors.connection("CONNECTION_DESTROYED", options));
     clearImmediate(nextWriteTimer);
     if (socket) {
       socket.removeListener("data", data);
@@ -15750,8 +16482,8 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     socket = null;
     if (initial)
       return reconnect();
-    !hadError && (query || sent.length) && error(Errors.connection("CONNECTION_CLOSED", options, socket));
-    closedTime = performance.now();
+    !hadError && (query || sent.length) && error2(Errors.connection("CONNECTION_CLOSED", options, socket));
+    closedTime = performance2.now();
     hadError && options.shared.retries++;
     delay = (typeof backoff === "function" ? backoff(options.shared.retries) : backoff) * 1000;
     onclose(connection2, Errors.connection("CONNECTION_CLOSED", options, socket));
@@ -15974,9 +16706,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       errored(Errors.postgres(parseError(x)));
     }
   }
-  function retry(q, error2) {
+  function retry(q, error3) {
     delete statements[q.signature];
-    q.retried = error2;
+    q.retried = error3;
     execute(q);
   }
   function NotificationResponse(x) {
@@ -16007,9 +16739,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       write(chunk2, encoding, callback) {
         socket.write(bytes_default().d().raw(chunk2).end(), callback);
       },
-      destroy(error2, callback) {
-        callback(error2);
-        socket.write(bytes_default().f().str(error2 + bytes_default.N).end());
+      destroy(error3, callback) {
+        callback(error3);
+        socket.write(bytes_default().f().str(error3 + bytes_default.N).end());
         stream = null;
       },
       final(callback) {
@@ -16037,9 +16769,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       write(chunk2, encoding, callback) {
         socket.write(bytes_default().d().raw(chunk2).end(), callback);
       },
-      destroy(error2, callback) {
-        callback(error2);
-        socket.write(bytes_default().f().str(error2 + bytes_default.N).end());
+      destroy(error3, callback) {
+        callback(error3);
+        socket.write(bytes_default().f().str(error3 + bytes_default.N).end());
         stream = null;
       },
       final(callback) {
@@ -16115,15 +16847,15 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   }
 }
 function parseError(x) {
-  const error = {};
+  const error2 = {};
   let start = 5;
   for (let i = 5;i < x.length - 1; i++) {
     if (x[i] === 0) {
-      error[errorFields[x[start]]] = x.toString("utf8", start + 1, i);
+      error2[errorFields[x[start]]] = x.toString("utf8", start + 1, i);
       start = i + 1;
     }
   }
-  return error;
+  return error2;
 }
 function md5(x) {
   return crypto2.createHash("md5").update(x).digest("hex");
@@ -16230,10 +16962,10 @@ function Subscribe(postgres2, options) {
       lsn: Buffer.concat(x.consistent_point.split("/").map((x2) => Buffer.from(("00000000" + x2).slice(-8), "hex")))
     };
     stream2.on("data", data);
-    stream2.on("error", error);
+    stream2.on("error", error2);
     stream2.on("close", sql2.close);
     return { stream: stream2, state: xs.state };
-    function error(e) {
+    function error2(e) {
       console.error("Unexpected error during logical streaming - reconnecting", e);
     }
     function data(x2) {
@@ -16360,7 +17092,7 @@ function parseEvent(x) {
 // node_modules/postgres/src/large.js
 import Stream2 from "stream";
 function largeObject(sql, oid, mode = 131072 | 262144) {
-  return new Promise(async (resolve, reject) => {
+  return new Promise(async (resolve2, reject) => {
     await sql.begin(async (sql2) => {
       let finish;
       !oid && ([{ oid }] = await sql2`select lo_creat(-1) as oid`);
@@ -16386,7 +17118,7 @@ function largeObject(sql, oid, mode = 131072 | 262144) {
           ) seek
         `
       };
-      resolve(lo);
+      resolve2(lo);
       return new Promise(async (r) => finish = r);
       async function readable({
         highWaterMark = 2048 * 8,
@@ -16558,8 +17290,8 @@ function Postgres(a, b2) {
   }
   async function reserve() {
     const queue = queue_default();
-    const c = open.length ? open.shift() : await new Promise((resolve, reject) => {
-      const query = { reserve: resolve, reject };
+    const c = open.length ? open.shift() : await new Promise((resolve2, reject) => {
+      const query = { reserve: resolve2, reject };
       queries.push(query);
       closed.length && connect(closed.shift(), query);
     });
@@ -16586,8 +17318,8 @@ function Postgres(a, b2) {
         scope(connection2, fn),
         new Promise((_, reject) => connection2.onclose = reject)
       ]);
-    } catch (error) {
-      throw error;
+    } catch (error2) {
+      throw error2;
     }
     async function scope(c, fn2, name) {
       const sql2 = Sql(handler2);
@@ -16596,9 +17328,9 @@ function Postgres(a, b2) {
       let uncaughtError, result;
       name && await sql2`savepoint ${sql2(name)}`;
       try {
-        result = await new Promise((resolve, reject) => {
+        result = await new Promise((resolve2, reject) => {
           const x = fn2(sql2);
-          Promise.resolve(Array.isArray(x) ? Promise.all(x) : x).then(resolve, reject);
+          Promise.resolve(Array.isArray(x) ? Promise.all(x) : x).then(resolve2, reject);
         });
         if (uncaughtError)
           throw uncaughtError;
@@ -16655,8 +17387,8 @@ function Postgres(a, b2) {
     return c.execute(query) ? move(c, busy) : move(c, full);
   }
   function cancel(query) {
-    return new Promise((resolve, reject) => {
-      query.state ? query.active ? connection_default(options).cancel(query.state, resolve, reject) : query.cancelled = { resolve, reject } : (queries.remove(query), query.cancelled = true, query.reject(Errors.generic("57014", "canceling statement due to user request")), resolve());
+    return new Promise((resolve2, reject) => {
+      query.state ? query.active ? connection_default(options).cancel(query.state, resolve2, reject) : query.cancelled = { resolve: resolve2, reject } : (queries.remove(query), query.cancelled = true, query.reject(Errors.generic("57014", "canceling statement due to user request")), resolve2());
     });
   }
   async function end({ timeout = null } = {}) {
@@ -16672,11 +17404,11 @@ function Postgres(a, b2) {
   async function close() {
     await Promise.all(connections.map((c) => c.end()));
   }
-  async function destroy(resolve) {
+  async function destroy(resolve2) {
     await Promise.all(connections.map((c) => c.terminate()));
     while (queries.length)
       queries.shift().reject(Errors.connection("CONNECTION_DESTROYED", options));
-    resolve();
+    resolve2();
   }
   function connect(c, query) {
     move(c, connecting);
@@ -17145,9 +17877,9 @@ function maintainSoloHunts(db, now) {
     }
     db.exec("COMMIT");
     return { expired, compacted };
-  } catch (error) {
+  } catch (error2) {
     db.exec("ROLLBACK");
-    throw error;
+    throw error2;
   }
 }
 
@@ -17202,14 +17934,14 @@ function snapshotMetrics() {
 }
 
 // src/spell_research.ts
-import { readFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync as readFileSync2 } from "fs";
+import { resolve as resolve2 } from "path";
 function readCatalog(file, key2) {
   try {
-    const data = JSON.parse(readFileSync(resolve(import.meta.dir, "..", "..", "data", file), "utf8"));
+    const data = JSON.parse(readFileSync2(resolve2(import.meta.dir, "..", "..", "data", file), "utf8"));
     return Array.isArray(data[key2]) ? data[key2] : [];
-  } catch (error) {
-    console.warn(`[spells] Cannot load ${file}`, error);
+  } catch (error2) {
+    console.warn(`[spells] Cannot load ${file}`, error2);
     return [];
   }
 }
@@ -17519,7 +18251,7 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, targ
   const estimate = (s) => {
     const relation = context.types?.effectiveness?.[s.type]?.[target.type] ?? 1;
     let typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
-    if (context.personality && s.type === "hybrid") {
+    if (s.type === "hybrid") {
       const factor = (type) => {
         const value = context.types?.effectiveness?.[type]?.[target.type] ?? 1;
         return value > 1 ? 1.25 : value < 1 ? 0.8 : 1;
@@ -18629,10 +19361,10 @@ function buildExpeditionEnemy(seed, encounterKey, depth, capturable, setup, cata
   const personality = capturable ? "ALCHEMIST" : "OPPORTUNIST";
   const equipment = chooseNpcItem(seed, encounterKey, setup, selected, enemy.types, hom, personality, catalogs, npcItemLevel);
   const attackBudget = Math.max(1, Math.round(attack * (0.6 + Math.min(0.15, spellQuality * 0.1)) * threat));
-  const defenseBudget = Math.max(1, Math.round(defense * 0.82 * threat));
+  const defenseBudget = Math.min(1e5, Math.max(1, Math.round(defense * 0.82 * threat)) + Math.min(26, 2 * (difficultyDepth - 1)));
   const item_power_allocated = Math.trunc(equipment.item_effects.power_flat ?? 0);
   const item_guard_allocated = Math.trunc(equipment.item_effects.guard_flat ?? 0);
-  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((difficultyDepth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map((s) => s.id), npc_personality: personality };
+  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((difficultyDepth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth) + Math.min(40, (difficultyDepth - 1) * 5)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map((s) => s.id), npc_personality: personality };
 }
 function createExpeditionCombatState(setup, enemy, catalogs, previousActiveSlot = 0) {
   if (enemy?.combat_mode !== "expedition")
@@ -18732,14 +19464,14 @@ class ExpeditionError extends Error {
     this.status = status;
   }
 }
-var fail = (status, message) => {
+var fail2 = (status, message) => {
   throw new ExpeditionError(status, message);
 };
 var canonical = (v) => Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}` : JSON.stringify(v) ?? "null";
 var replayPrefix = "gz1:";
 var readReplay = (value) => JSON.parse(value.startsWith(replayPrefix) ? gunzipSync2(Buffer.from(value.slice(replayPrefix.length), "base64")).toString("utf8") : value);
 var EXPEDITION_REPLAY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-var EXPEDITION_LEASE_EXPIRY_MS = 15000;
+var EXPEDITION_LEASE_EXPIRY_MS = 240000;
 var EXPEDITION_MAX_REVISION = 1e4;
 function maintainExpeditionReplays(db, now) {
   return db.transaction(() => {
@@ -18876,12 +19608,16 @@ function createExpeditionService(options) {
       return;
     const pool = balance(row.player_id, closedAt);
     if (pool.mana > 0)
-      saveBalance(row.player_id, { ...changeExpeditionMana(pool, -1, closedAt), crystals: pool.crystals });
+      saveBalance(row.player_id, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), closedAt), crystals: pool.crystals });
     db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(row.player_id, closedAt + EXPEDITION_EXIT_COOLDOWN_MS);
   };
+  const purchaseWindow = (playerId, now) => {
+    const row = db.query("SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM action_log WHERE player_id=? AND action_type='EXPEDITION_BUY_MANA' AND created_at>?").get(playerId, now - 86400000);
+    return { remaining: Math.max(0, 12 - row.count), next: row.count >= 12 ? row.oldest + 86400000 : null };
+  };
   const response = (playerId, now, row, state2, events2) => {
-    const pool = balance(playerId, now);
-    return { session: row && state2 ? publicSession(row, state2) : null, mana: pool.mana, crystals: pool.crystals, next_regeneration_at: pool.regen_at || null, remaining_cooldown_ms: cooldown(playerId, now), server_time_unix_ms: now, ...events2 ? { events: events2.map(publicEvent) } : {} };
+    const pool = balance(playerId, now), purchases = purchaseWindow(playerId, now);
+    return { session: row && state2 ? publicSession(row, state2) : null, mana: pool.mana, crystals: pool.crystals, mana_purchases_remaining: purchases.remaining, next_mana_purchase_at: purchases.next, next_regeneration_at: pool.regen_at || null, remaining_cooldown_ms: cooldown(playerId, now), server_time_unix_ms: now, ...events2 ? { events: events2.map(publicEvent) } : {} };
   };
   const makeNode = (state2, setup, runId, seed) => {
     const background = expeditionBackgroundAt(seed, runId, state2.background_cursor++);
@@ -18897,16 +19633,16 @@ function createExpeditionService(options) {
   };
   const validAction = (action2, body) => {
     if (!body || typeof body !== "object" || Array.isArray(body))
-      fail(400, "Invalid expedition action.");
+      fail2(400, "Invalid expedition action.");
     const start = action2 === "start";
     const fields = start ? ["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"] : ["run_id", "expected_revision", ...action2 === "select" ? ["choice"] : action2 === "advance" ? ["direction"] : ["turn", "inspiration"].includes(action2) ? ["decision"] : []];
     if (Object.keys(body).some((k) => !["client_action_id", ...fields].includes(k)) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64)
-      fail(400, "Invalid expedition action.");
+      fail2(400, "Invalid expedition action.");
     if (start) {
       if (typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || typeof body.homunculus_id === "string" && !!body.homunculus_id) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id) => typeof id !== "string" || !id) || !["attack", "defense"].includes(body.mode))
-        fail(400, "Invalid expedition loadout.");
+        fail2(400, "Invalid expedition loadout.");
     } else if (typeof body.run_id !== "string" || !body.run_id || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || action2 === "select" && ![0, 1].includes(body.choice) || action2 === "advance" && !["left", "forward", "right"].includes(body.direction) || ["turn", "inspiration"].includes(action2) && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))
-      fail(400, "Invalid expedition action.");
+      fail2(400, "Invalid expedition action.");
   };
   function state(playerId, lease) {
     return db.transaction(() => {
@@ -18920,7 +19656,7 @@ function createExpeditionService(options) {
   }
   function heartbeat(playerId, lease, body) {
     if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).join(",") !== "run_id" || typeof body.run_id !== "string" || !body.run_id)
-      fail(400, "Invalid expedition heartbeat.");
+      fail2(400, "Invalid expedition heartbeat.");
     const result = db.transaction(() => {
       const now = Date.now(), row = db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
       if (!row || row.status !== "ACTIVE")
@@ -18933,7 +19669,7 @@ function createExpeditionService(options) {
       return { server_time_unix_ms: now, expires_at: now + EXPEDITION_LEASE_EXPIRY_MS };
     }).immediate();
     if (!result)
-      fail(409, "Expedition lease expired or unavailable.");
+      fail2(409, "Expedition lease expired or unavailable.");
     return result;
   }
   function expireLeases(now = Date.now()) {
@@ -18945,8 +19681,8 @@ function createExpeditionService(options) {
     }).immediate();
   }
   function action(playerId, action2, body, lease) {
-    if (!["start", "select", "turn", "inspiration", "capture", "skip", "advance", "exit"].includes(action2))
-      fail(404, "Unknown expedition action.");
+    if (!["start", "select", "turn", "inspiration", "capture", "skip", "advance", "exit", "buy_mana"].includes(action2))
+      fail2(404, "Unknown expedition action.");
     validAction(action2, body);
     const actionId = body.client_action_id.trim(), actionType = `EXPEDITION_${action2.toUpperCase()}`, payload = { ...body };
     delete payload.client_action_id;
@@ -18960,14 +19696,14 @@ function createExpeditionService(options) {
       const prior = db.query("SELECT action_type,payload_json,result_state_json FROM action_log WHERE player_id=? AND client_action_id=?").get(playerId, actionId);
       if (prior) {
         if (prior.action_type !== actionType || canonical(JSON.parse(prior.payload_json)) !== canonical(payload))
-          fail(409, "Action ID already used with different content.");
+          fail2(409, "Action ID already used with different content.");
         if (!prior.result_state_json)
-          fail(409, "Expedition action no longer available.");
+          fail2(409, "Expedition action no longer available.");
         const replay = readReplay(prior.result_state_json);
         const replayRun = replay?.session?.run_id ?? body.run_id;
         const replayRow = replayRun ? db.query("SELECT status,lease_hash FROM expedition_runs WHERE run_id=? AND player_id=?").get(replayRun, playerId) : null;
         if (replayRow?.status !== "ACTIVE" && !(action2 === "exit" && replayRow?.status === "EXIT" && typeof lease === "string" && replayRow.lease_hash === leaseHash(lease)))
-          fail(409, "Expedition action no longer available.");
+          fail2(409, "Expedition action no longer available.");
         return action2 === "start" ? { ...replay, lease } : replay;
       }
       if (live?.status === "ACTIVE" && live.revision >= EXPEDITION_MAX_REVISION && action2 !== "exit") {
@@ -18977,17 +19713,17 @@ function createExpeditionService(options) {
       let row, state2, events2 = [];
       if (action2 === "start") {
         if (cooldown(playerId, now) > 0)
-          fail(409, "Expedition exit cooldown active.");
+          fail2(409, "Expedition exit cooldown active.");
         if (db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId))
-          fail(409, "An active expedition already exists.");
+          fail2(409, "An active expedition already exists.");
         if (balance(playerId, now).mana < 1)
-          fail(409, "Not enough expedition mana.");
+          fail2(409, "Not enough expedition mana.");
         const player = options.getPlayer(playerId);
         const snapshot2 = { state_revision: player.state_revision, item_progress: player.item_progress ?? {}, homunculus_progress: player.homunculus_progress ?? {}, spell_progress: player.spell_progress ?? {}, research_flags: player.research_flags ?? {} };
         const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
         const setup = options.makeSetup(playerId, snapshot2, selection);
         if (setup?.error)
-          fail(400, "Invalid or unsupported expedition loadout.");
+          fail2(400, "Invalid or unsupported expedition loadout.");
         const runId = crypto.randomUUID(), newLease = randomBytes(32).toString("hex");
         state2 = { phase: "EXPLORE", depth: 1, difficulty_depth: 1, enemy_cursor: 0, background_cursor: 0, npc_item_level: Math.max(0, ...selection.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, snapshot2.item_progress?.[id]?.level ?? 0)))) };
         makeNode(state2, setup, runId, seedFor(runId));
@@ -18996,14 +19732,24 @@ function createExpeditionService(options) {
       } else {
         row = db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
         if (!row)
-          fail(404, "Expedition not found.");
+          fail2(404, "Expedition not found.");
         if (row.status !== "ACTIVE" || row.revision !== body.expected_revision)
-          fail(409, "Expedition unavailable or stale.");
+          fail2(409, "Expedition unavailable or stale.");
         state2 = JSON.parse(row.state_json);
         const seed = seedFor(row.run_id);
-        if (action2 === "select") {
+        if (action2 === "buy_mana") {
+          const pool = balance(playerId, now);
+          if (pool.mana > EXPEDITION_MANA_CAP - 1)
+            fail2(400, "Expedition mana is full.");
+          if (purchaseWindow(playerId, now).remaining < 1)
+            fail2(400, "Expedition mana purchase limit reached.");
+          options.spendManaEssence(playerId, actionId, now);
+          saveBalance(playerId, { ...changeExpeditionMana(pool, 1, now), crystals: pool.crystals });
+        } else if (action2 === "select") {
+          if (balance(playerId, now).mana < 0.1)
+            fail2(400, "Not enough expedition mana.");
           if (state2.phase !== "EXPLORE")
-            fail(409, "Enemy selection unavailable.");
+            fail2(409, "Enemy selection unavailable.");
           let selected = state2.choices[body.choice];
           const setup = JSON.parse(row.setup_json);
           if (!selected.item_id) {
@@ -19015,7 +19761,7 @@ function createExpeditionService(options) {
           }
           const combat = createExpeditionCombatState(setup, selected, catalogs);
           if (combat.error)
-            fail(409, "Expedition combat unavailable.");
+            fail2(409, "Expedition combat unavailable.");
           state2.victory_tier = expeditionVictoryTier(state2.difficulty_depth ?? state2.depth, selected, setup);
           state2.victory_reward = null;
           state2.phase = "COMBAT";
@@ -19025,15 +19771,19 @@ function createExpeditionService(options) {
           state2.log = [];
         } else if (action2 === "turn" || action2 === "inspiration") {
           if (state2.phase !== "COMBAT")
-            fail(409, "Expedition combat unavailable.");
+            fail2(409, "Expedition combat unavailable.");
           const draw = (turn, count) => deterministicDraw(seed, `${row.run_id}:${state2.depth}`, turn, count);
           const result2 = action2 === "turn" ? resolveExpeditionTurn(state2.combat, body.decision, draw) : resolveExpeditionInspiration(state2.combat, body.decision, draw);
           if (result2.error)
-            fail(400, result2.error);
+            fail2(400, result2.error);
           state2.combat = result2.next_state;
           events2 = result2.events;
           state2.log.push(...events2);
           if (state2.combat.terminal_result === "WIN") {
+            const pool = balance(playerId, now);
+            if (pool.mana < 0.1)
+              fail2(400, "Not enough expedition mana.");
+            saveBalance(playerId, { ...changeExpeditionMana(pool, -0.1, now), crystals: pool.crystals });
             state2.phase = "REWARD";
             state2.candidate = state2.selected.capturable ? expeditionCaptures.find((h) => h.id === state2.selected.homunculus_id) : null;
             state2.capture_attempts = 0;
@@ -19046,20 +19796,21 @@ function createExpeditionService(options) {
             state2.victory_reward = { reward_id: rewardId, tier, grants };
           } else if (state2.combat.terminal_result === "LOSS") {
             const pool = balance(playerId, now);
-            saveBalance(playerId, { ...changeExpeditionMana(pool, -1, now), crystals: pool.crystals });
+            if (pool.mana > 0)
+              saveBalance(playerId, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), now), crystals: pool.crystals });
             state2.phase = "LOSS";
             row.status = "LOSS";
           }
         } else if (action2 === "capture") {
           const attempts = state2.capture_attempts ?? 0;
           if (state2.phase !== "REWARD" || !state2.selected?.capturable || !state2.candidate || state2.capture_closed === true || !Number.isInteger(attempts) || attempts < 0 || attempts >= 3)
-            fail(409, "Capture unavailable.");
+            fail2(409, "Capture unavailable.");
           const candidate = expeditionCaptures.find((h) => h.id === state2.candidate.id);
           if (!candidate || candidate.id !== state2.selected.homunculus_id || candidate.rarity !== state2.candidate.rarity || candidate.preview_texture !== state2.candidate.preview_texture)
-            fail(409, "Invalid capture candidate.");
+            fail2(409, "Invalid capture candidate.");
           const pool = balance(playerId, now);
           if (pool.crystals < 1)
-            fail(409, "Not enough capture crystals.");
+            fail2(409, "Not enough capture crystals.");
           const attempt = attempts + 1;
           const success = expeditionDraw(seed, JSON.stringify(["capture", row.run_id, state2.depth, candidate.id]), attempt - 1) < expeditionCaptureChance(candidate.rarity);
           saveBalance(playerId, { ...pool, crystals: pool.crystals - 1 });
@@ -19071,7 +19822,7 @@ function createExpeditionService(options) {
           events2 = [event];
         } else if (action2 === "skip") {
           if (state2.phase !== "REWARD")
-            fail(409, "Reward decision unavailable.");
+            fail2(409, "Reward decision unavailable.");
           state2.phase = "ROUTE";
           state2.combat = null;
           state2.log = [];
@@ -19080,7 +19831,7 @@ function createExpeditionService(options) {
         } else if (action2 === "advance") {
           const difficultyDepth = (state2.difficulty_depth ?? state2.depth) + (body.direction === "left" ? 1 : body.direction === "forward" ? 2 : 0);
           if (state2.phase !== "ROUTE" || !Number.isSafeInteger(state2.depth + 1) || !Number.isSafeInteger(difficultyDepth))
-            fail(409, "Route unavailable.");
+            fail2(409, "Route unavailable.");
           const pool = balance(playerId, now);
           const granted = pool.crystals < EXPEDITION_CRYSTAL_CAP && expeditionDraw(seed, JSON.stringify(["crystal-drop", row.run_id, state2.depth]), 0) < 0.5;
           if (granted)
@@ -19099,7 +19850,7 @@ function createExpeditionService(options) {
         } else {
           const pool = balance(playerId, now);
           if (pool.mana > 0)
-            saveBalance(playerId, { ...changeExpeditionMana(pool, -1, now), crystals: pool.crystals });
+            saveBalance(playerId, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), now), crystals: pool.crystals });
           db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(playerId, now + EXPEDITION_EXIT_COOLDOWN_MS);
           row.status = "EXIT";
         }
@@ -19108,16 +19859,17 @@ function createExpeditionService(options) {
         const terminal = row.status !== "ACTIVE";
         const updated = db.query("UPDATE expedition_runs SET status=?,revision=?,snapshot_json=CASE WHEN ? THEN NULL ELSE snapshot_json END,loadout_json=CASE WHEN ? THEN NULL ELSE loadout_json END,setup_json=CASE WHEN ? THEN NULL ELSE setup_json END,state_json=?,updated_at=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND revision=?").run(row.status, row.revision, terminal ? 1 : 0, terminal ? 1 : 0, terminal ? 1 : 0, terminal ? null : JSON.stringify(state2), now, terminal ? now : null, row.run_id, playerId, oldRevision);
         if (updated.changes !== 1)
-          fail(409, "Expedition changed.");
+          fail2(409, "Expedition changed.");
       }
+      db.query("INSERT INTO action_log(player_id,client_action_id,action_type,payload_json,result_state_json,created_at,expedition_run_id) VALUES(?,?,?,?,NULL,?,?)").run(playerId, actionId, actionType, JSON.stringify(payload), now, row.run_id);
       const result = response(playerId, now, row.status === "EXIT" ? null : row, row.status === "EXIT" ? null : state2, events2);
-      db.query("INSERT INTO action_log(player_id,client_action_id,action_type,payload_json,result_state_json,created_at,expedition_run_id) VALUES(?,?,?,?,?,?,?)").run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(result), now, row.run_id);
+      db.query("UPDATE action_log SET result_state_json=? WHERE player_id=? AND client_action_id=?").run(JSON.stringify(result), playerId, actionId);
       return action2 === "start" ? { ...result, lease: row.newLease } : result;
     }).immediate();
     if (outcome.leaseRejected)
-      fail(409, "Expedition lease expired or unavailable.");
+      fail2(409, "Expedition lease expired or unavailable.");
     if (outcome.limitReached)
-      fail(409, "Expedition action limit reached.");
+      fail2(409, "Expedition action limit reached.");
     return outcome;
   }
   return { state, action, heartbeat, expireLeases };
@@ -19323,13 +20075,15 @@ for (let attempt = 0;; attempt++) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
   }
 }
-var globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN);
+var socialEnabled = Bun.env.SOCIAL_ENABLED === "1";
+var friends = createFriends(db);
+var globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN, socialEnabled ? friends.friendIds : undefined);
 var expeditionService = null;
 function getExpeditionService() {
   if (expeditionService)
     return expeditionService;
-  const dataDir = resolve2(import.meta.dir, "..", "..", "data");
-  const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+  const dataDir = resolve3(import.meta.dir, "..", "..", "data");
+  const catalogs = { entities: readJsonFile(resolve3(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve3(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve3(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve3(dataDir, "types.json")), mutations: readJsonFile(resolve3(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve3(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
   expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
     const row = getPlayerByIdStmt.get(playerId);
     if (!row)
@@ -19354,6 +20108,26 @@ function getExpeditionService() {
       throw new HttpError(409, "Player unavailable.");
     auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "EXPEDITION_VICTORY", rewardId, now);
     return credited;
+  }, spendManaEssence: (playerId, actionId, now) => {
+    const row = getPlayerByIdStmt.get(playerId);
+    if (!row)
+      throw new HttpError(404, "Player not found.");
+    let player;
+    try {
+      player = JSON.parse(row.state_json);
+    } catch {
+      throw new HttpError(409, "Invalid player state.");
+    }
+    if (!player?.wallet || !Number.isSafeInteger(player.wallet.essence) || player.wallet.essence < 0)
+      throw new HttpError(409, "Invalid player wallet.");
+    if (player.wallet.essence < 300)
+      throw new HttpError(400, "Insufficient essence.");
+    const before = { ...player.wallet };
+    player.wallet.essence -= 300;
+    player.updated_at = now;
+    if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1)
+      throw new HttpError(409, "Player unavailable.");
+    auditWalletMutation(playerId, computeWalletDelta(before, player.wallet), "EXPEDITION_BUY_MANA", actionId, now);
   }, captureHomunculus: captureExpeditionHomunculus, makeSetup: (playerId, snapshot2, selection) => {
     if (selection.homunculus_id && !ownsHomunculus(snapshot2.homunculus_progress, selection.homunculus_id))
       return { error: "UNTRUSTED_SETUP" };
@@ -19368,17 +20142,21 @@ function getRankedServices() {
   const secret = Bun.env.PVP_RNG_SECRET;
   if (!secret || new TextEncoder().encode(secret).length < 32)
     return null;
-  const dataDir = resolve2(import.meta.dir, "..", "..", "data");
-  const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance };
+  const dataDir = resolve3(import.meta.dir, "..", "..", "data");
+  const catalogs = { entities: readJsonFile(resolve3(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve3(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve3(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve3(dataDir, "types.json")), mutations: readJsonFile(resolve3(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve3(dataDir, "static", "balance.json"))?.balance };
   if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance)
     throw new Error("PVP_CATALOG_UNAVAILABLE");
   const matches = createPvpMatches(db, new TextEncoder().encode(secret));
-  rankedServices = { db, matches, queue: createPvpQueue(db, catalogs, (id, selection) => trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs)), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+  const snapshot2 = (id, selection) => {
+    const value = trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs);
+    return value && !("error" in createPvpFighter(value, catalogs)) ? value : null;
+  };
+  rankedServices = { db, matches, snapshot: snapshot2, startFriendly: (a, b2, now, invite) => createSharedPvpMatch(db, catalogs, a, b2, now, "friendly", invite), queue: createPvpQueue(db, catalogs, snapshot2), chat: createPvpChat(db), ranking: createPvpRanking(db) };
   const timer2 = setInterval(() => {
     try {
       matches.sweep();
-    } catch (error) {
-      logError("pvp deadline sweep failed", { error: String(error) });
+    } catch (error2) {
+      logError("pvp deadline sweep failed", { error: String(error2) });
     }
   }, 1000);
   timer2.unref();
@@ -19388,8 +20166,8 @@ var getPlayerByIdStmt = db.prepare("SELECT player_id, display_name, state_json, 
 if (Bun.env.PVP_ENABLED === "1") {
   try {
     getRankedServices();
-  } catch (error) {
-    logError("pvp initialization failed", { error: String(error) });
+  } catch (error2) {
+    logError("pvp initialization failed", { error: String(error2) });
   }
 }
 var getPlayerByNameStmt = db.prepare("SELECT player_id, display_name, state_json, updated_at FROM players WHERE display_name = ?");
@@ -19458,7 +20236,7 @@ function developmentLoginAllowed(address, origin) {
   if (Bun.env.DEV_DOCKER_LOCAL_LOGIN !== "1")
     return false;
   try {
-    for (const line of readFileSync2("/proc/net/route", "utf8").split(`
+    for (const line of readFileSync3("/proc/net/route", "utf8").split(`
 `).slice(1)) {
       const fields = line.trim().split(/\s+/);
       if (fields[1] !== "00000000" || !/^[0-9A-Fa-f]{8}$/.test(fields[2] ?? ""))
@@ -19516,7 +20294,7 @@ function parseCorsOrigins() {
   return raw.split(",").map((value) => value.trim()).filter((value) => value.length > 0);
 }
 function ensureDbPath(path) {
-  const resolved = resolve2(process.cwd(), path);
+  const resolved = resolve3(process.cwd(), path);
   const dir = dirname(resolved);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -19640,6 +20418,37 @@ function jsonResponse(data, status = 200) {
     headers: { "Content-Type": "application/json" }
   });
 }
+async function readSocialJson(req, limit) {
+  const reader = req.body?.getReader();
+  if (!reader)
+    return {};
+  const chunks = [];
+  let size2 = 0;
+  for (;; ) {
+    const { value, done } = await reader.read();
+    if (done)
+      break;
+    size2 += value.byteLength;
+    if (size2 > limit) {
+      await reader.cancel();
+      throw new HttpError(413, "Body too large.");
+    }
+    chunks.push(value);
+  }
+  if (!size2)
+    return {};
+  const bytes = new Uint8Array(size2);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new HttpError(400, "Invalid JSON.");
+  }
+}
 function getSchemaVersion() {
   try {
     const row = db.query("SELECT id FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").get();
@@ -19708,14 +20517,14 @@ async function metricsResponse() {
     job_queue_size: queueSize
   });
 }
-function stateResponse(state, ok = true, error, status = 200) {
+function stateResponse(state, ok = true, error2, status = 200) {
   const current = getPlayerByIdStmt.get(state.player_id);
   const authoritative = current ? safeParseState(current.state_json, state.player_id, state.display_name ?? "") ?? state : state;
   return jsonResponse({
     ok,
     server_time_unix_ms: Date.now(),
     updated_player_state: { ...authoritative, wallet_capacities: walletCapacities(authoritative) },
-    error: error ?? null
+    error: error2 ?? null
   }, status);
 }
 function stateResponseExtra(state, extra = {}) {
@@ -20225,16 +21034,16 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     return { state: next };
   }
   if (actionType == "START_SPELL_RESEARCH") {
-    const error = startSpellResearch(next, payload, now, staticData.resources, staticData.balance, isBoostActive(runtime, "fast_spells", now) ? experimentEffect("fast_spells", "spell_time_mult", 0.85) : 1);
-    return error ? { state: next, error } : { state: next };
+    const error2 = startSpellResearch(next, payload, now, staticData.resources, staticData.balance, isBoostActive(runtime, "fast_spells", now) ? experimentEffect("fast_spells", "spell_time_mult", 0.85) : 1);
+    return error2 ? { state: next, error: error2 } : { state: next };
   }
   if (actionType == "SET_SPELL_LOADOUT") {
-    const error = setSpellLoadout(next, payload);
-    return error ? { state: next, error } : { state: next };
+    const error2 = setSpellLoadout(next, payload);
+    return error2 ? { state: next, error: error2 } : { state: next };
   }
   if (actionType == "CLAIM_SPELL_RESEARCH") {
-    const error = claimSpellResearch(next, payload, now);
-    return error ? { state: next, error } : { state: next };
+    const error2 = claimSpellResearch(next, payload, now);
+    return error2 ? { state: next, error: error2 } : { state: next };
   }
   if (actionType == "CLAIM_RESEARCH" || actionType == "COMPLETE_RESEARCH") {
     return applyClaimResearch(next, payload, now);
@@ -20258,23 +21067,144 @@ async function maybeRunExternalExamples() {
   }
 }
 async function startServer() {
+  const forestEnabled = Bun.env.FOREST_WS_ENABLED === "1";
+  const forestZones = loadCatalog(resolve3(import.meta.dir, "..", "..", "data", "static", "forest_zones.json"));
+  const leaseKey = "forest:presence:leader", leaseTtl = 15000;
+  const acquiredAt = performance.now();
+  const leaseToken = forestEnabled ? await acquireLock(leaseKey, leaseTtl) : null;
+  if (forestEnabled && (!leaseToken || performance.now() - acquiredAt >= 6000))
+    throw new Error("Forest Redis lease unavailable");
+  let leaseDeadline = acquiredAt + 6000, leaseFenced = false, leaseRenewing = false;
+  const forest = forestEnabled ? createForestPresence(forestZones, async (data) => {
+    const request = new Request("http://localhost/forest/ws", { headers: { authorization: `Bearer ${data.token}` } });
+    return await requireAuth(request) === data.playerId;
+  }, Date.now, () => leaseValid()) : null;
+  function fenceLease() {
+    if (leaseFenced)
+      return;
+    leaseFenced = true;
+    forest?.fence();
+    console.error("Forest lease lost; terminating process.");
+    process.exit(1);
+  }
+  function leaseValid() {
+    if (!forest || leaseFenced)
+      return false;
+    if (performance.now() >= leaseDeadline) {
+      fenceLease();
+      return false;
+    }
+    return true;
+  }
+  const duels = createForestDuels(db, (id) => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id, selection) => getRankedServices()?.snapshot(id, selection) ?? null, start: (a, b2, now, invite) => {
+    const service = getRankedServices();
+    if (!service)
+      throw new Error("PVP_SECRET_REQUIRED");
+    return service.startFriendly(a, b2, now, invite);
+  } }, () => {
+    try {
+      return !!getRankedServices();
+    } catch {
+      return false;
+    }
+  });
+  if (forest && leaseToken) {
+    getRedis().on("error", fenceLease);
+    getRedis().on("close", fenceLease);
+    getRedis().on("end", fenceLease);
+    const watchdog = setInterval(() => {
+      leaseValid();
+    }, 250);
+    watchdog.unref();
+    const renewal = setInterval(() => {
+      if (!leaseValid() || leaseRenewing)
+        return;
+      leaseRenewing = true;
+      const started = performance.now();
+      renewLock(leaseKey, leaseToken, leaseTtl).then((ok) => {
+        leaseRenewing = false;
+        if (!leaseValid() || !ok || performance.now() - started >= 4000) {
+          fenceLease();
+          return;
+        }
+        leaseDeadline = started + 6000;
+      }).catch(fenceLease);
+    }, 4000);
+    renewal.unref();
+    const flush = setInterval(() => {
+      if (leaseValid())
+        forest.flush();
+    }, 50);
+    flush.unref();
+    const sweep = setInterval(() => {
+      if (leaseValid())
+        forest.sweep();
+    }, 30000);
+    sweep.unref();
+    let stopping = false;
+    const shutdown = () => {
+      if (stopping)
+        return;
+      stopping = true;
+      leaseFenced = true;
+      forest.fence();
+      clearInterval(watchdog);
+      clearInterval(renewal);
+      clearInterval(flush);
+      clearInterval(sweep);
+      releaseLock(leaseKey, leaseToken).finally(() => process.exit(0));
+    };
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
+  }
+  const trustedProxy = Bun.env.FOREST_WS_TRUSTED_PROXY?.trim() || "";
+  let proxyAddresses = new Set, proxyRefreshAt = 0, proxyLookup = null;
+  const normalizeIp = (ip) => ip.toLowerCase().startsWith("::ffff:") && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip.toLowerCase();
+  async function forestClientIp(req, remote) {
+    const actual = normalizeIp(remote);
+    if (!trustedProxy)
+      return actual;
+    if (Date.now() >= proxyRefreshAt) {
+      if (!proxyLookup)
+        proxyLookup = (async () => {
+          try {
+            proxyAddresses = new Set((await lookup(trustedProxy, { all: true })).map((a) => normalizeIp(a.address)));
+          } catch {
+            proxyAddresses.clear();
+          } finally {
+            proxyRefreshAt = Date.now() + 5000;
+          }
+        })();
+      try {
+        await proxyLookup;
+      } finally {
+        proxyLookup = null;
+      }
+    }
+    if (!proxyAddresses.has(actual))
+      return actual;
+    const forwarded = (req.headers.get("x-real-ip") ?? "").trim();
+    return isIP(forwarded) ? normalizeIp(forwarded) : actual;
+  }
+  const handshakes = new Map;
+  let handshakeWindow = Date.now(), handshakeTotal = 0;
   maybeRunExternalExamples();
   startDiscordBridge(db, globalChat);
   const huntMaintenance = setInterval(() => {
     try {
       maintainSoloHunts(db, Date.now());
-    } catch (error) {
-      logError("solo hunt maintenance failed", { error: String(error) });
+    } catch (error2) {
+      logError("solo hunt maintenance failed", { error: String(error2) });
     }
     try {
       maintainExpeditionReplays(db, Date.now());
-    } catch (error) {
-      logError("expedition replay maintenance failed", { error: String(error) });
+    } catch (error2) {
+      logError("expedition replay maintenance failed", { error: String(error2) });
     }
     try {
       getExpeditionService().expireLeases();
-    } catch (error) {
-      logError("expedition lease maintenance failed", { error: String(error) });
+    } catch (error2) {
+      logError("expedition lease maintenance failed", { error: String(error2) });
     }
   }, 60000);
   huntMaintenance.unref();
@@ -20299,12 +21229,58 @@ async function startServer() {
       try {
         const res = await (async () => {
           const url = new URL(req.url);
+          if (url.pathname === "/forest/ws") {
+            if (!forest)
+              return jsonResponse({ error: "WebSocket unavailable." }, 404);
+            if (!leaseValid())
+              return jsonResponse({ error: "WebSocket unavailable." }, 503);
+            if (req.method !== "GET" || req.headers.get("upgrade")?.toLowerCase() !== "websocket")
+              return jsonResponse({ error: "Upgrade required" }, 426);
+            const now = Date.now();
+            if (now - handshakeWindow >= 60000) {
+              handshakeWindow = now;
+              handshakeTotal = 0;
+            }
+            if (++handshakeTotal > 2000)
+              return jsonResponse({ error: "Rate limit" }, 429);
+            const ip = await forestClientIp(req, server2.requestIP(req)?.address ?? "unknown");
+            if (!leaseValid())
+              return jsonResponse({ error: "WebSocket unavailable." }, 503);
+            for (const [key2, value] of handshakes)
+              if (now - value.start >= 60000)
+                handshakes.delete(key2);
+            let limit = handshakes.get(ip);
+            if (!limit) {
+              if (handshakes.size >= 4096)
+                return jsonResponse({ error: "Rate limit" }, 429);
+              limit = { start: now, count: 0 };
+              handshakes.set(ip, limit);
+            }
+            if (++limit.count > 120)
+              return jsonResponse({ error: "Rate limit" }, 429);
+            const build = req.headers.get("X-EntityWars-Client-Build") ?? "";
+            if (!/^[1-9][0-9]*$/.test(build) || !Number.isSafeInteger(Number(build)) || Number(build) < config.minClientBuild)
+              return jsonResponse({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: config.minClientBuild }, 426);
+            const authorization = req.headers.get("authorization") ?? "";
+            if (!/^Bearer [^\s]+$/i.test(authorization))
+              throw new HttpError(401, "Missing auth token.");
+            const playerId = await requireAuth(req, ctx);
+            if (!leaseValid())
+              return jsonResponse({ error: "WebSocket unavailable." }, 503);
+            const player = getPlayerByIdStmt.get(playerId);
+            if (!player || typeof player.display_name !== "string")
+              throw new HttpError(401, "Player unavailable.");
+            const data = { kind: "forest", playerId, displayName: player.display_name, token: authorization.slice(7) };
+            if (server2.upgrade(req, { data }))
+              return;
+            return jsonResponse({ error: "Upgrade required" }, 426);
+          }
           if (url.pathname == "/ws") {
             const address = server2.requestIP(req)?.address;
             if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
               return jsonResponse({ error: "WebSocket unavailable." }, 403);
             }
-            const upgraded = server2.upgrade(req, { data: { ip: getClientIp(req) } });
+            const upgraded = server2.upgrade(req, { data: { kind: "debug", ip: getClientIp(req) } });
             if (upgraded) {
               return;
             }
@@ -20443,13 +21419,22 @@ async function startServer() {
               await requireAuth(req, ctx);
             const body = await readJson(req, config.maxBodyBytes);
             const refreshToken = typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
+            const accessToken = extractToken(req);
+            let forestPlayerId = null;
+            if (forest) {
+              const access = accessToken ? await getAccessToken(accessToken) : null;
+              const refresh = refreshToken ? await getRefreshToken(refreshToken) : null;
+              if (!access || !refresh || access.userId === refresh.userId)
+                forestPlayerId = access?.userId ?? refresh?.userId ?? null;
+            }
             if (refreshToken) {
               await revokeRefreshToken(refreshToken);
             }
-            const accessToken = extractToken(req);
             if (accessToken) {
               await revokeAccessToken(accessToken);
             }
+            if (forestPlayerId && leaseValid())
+              forest?.evict(forestPlayerId);
             return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
           }
           if (req.method == "POST" && url.pathname == "/auth/reconnect") {
@@ -20465,16 +21450,27 @@ async function startServer() {
             if (!token) {
               throw new HttpError(401, "Missing auth token.");
             }
+            let forestPlayerId = null;
             if (idleEnabled())
-              await requireAuth(req, ctx);
+              forestPlayerId = await requireAuth(req, ctx);
+            else if (forest) {
+              try {
+                forestPlayerId = await requireAuth(req, ctx);
+              } catch {}
+            }
             await revokeSession(token);
             await revokeAccessToken(token);
+            if (forestPlayerId && leaseValid())
+              forest?.evict(forestPlayerId);
             return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
           }
-          if (isRankedRoute(req.method, url.pathname)) {
+          if (isRankedRoute(req.method, url.pathname) || req.method === "GET" && url.pathname === "/forest/duels/match/state" || req.method === "POST" && ["/forest/duels/match/decision", "/forest/duels/match/forfeit", "/forest/duels/match/chat"].includes(url.pathname)) {
+            const friendly = url.pathname.startsWith("/forest/duels/");
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
-            if (Bun.env.PVP_ENABLED !== "1") {
+            if (friendly && (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid()))
+              return jsonResponse({ error: "FOREST_DUELS_UNAVAILABLE" }, 503);
+            if (!friendly && Bun.env.PVP_ENABLED !== "1") {
               const result = rankedAvailability(Bun.env);
               return jsonResponse(result.data, result.status);
             }
@@ -20483,18 +21479,18 @@ async function startServer() {
               if (!services)
                 return jsonResponse({ error: "PVP_SECRET_REQUIRED" }, 503);
               const body = req.method === "POST" ? await readJson(req, config.maxBodyBytes) : undefined;
-              return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams));
-            } catch (error) {
-              const code = error instanceof Error ? error.message : "PVP_UNAVAILABLE";
+              return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams, friendly ? "friendly" : "ranked"));
+            } catch (error2) {
+              const code = error2 instanceof Error ? error2.message : "PVP_UNAVAILABLE";
               if (code === "MATCH_NOT_FOUND")
                 return jsonResponse({ error: code }, 404);
               if (code === "CHAT_RATE_LIMIT")
                 return jsonResponse({ error: code }, 429);
-              if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT"].includes(code))
+              if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT", "PLAYER_BUSY"].includes(code))
                 return jsonResponse({ error: code }, 409);
               if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code))
                 return jsonResponse({ error: code }, 400);
-              logError("pvp request failed", { error: String(error) });
+              logError("pvp request failed", { error: String(error2) });
               return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
             }
           }
@@ -20520,12 +21516,70 @@ async function startServer() {
               return jsonResponse({ ok: true, duplicate: false });
             }).immediate();
           }
+          if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel", "/forest/duels/ready"].includes(url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            if (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid())
+              return jsonResponse({ error: "FOREST_DUELS_UNAVAILABLE" }, 503);
+            await applyRateLimit(ctx, { keyPrefix: "rl:forest-duels", windowSeconds: 60, max: 120, keyBy: "user", userId: playerId });
+            if (req.method === "GET" && url.pathname === "/forest/duels/state") {
+              const result2 = duels.state(playerId);
+              return jsonResponse(result2.data, result2.status);
+            }
+            if (req.method !== "POST" || url.pathname === "/forest/duels/state")
+              return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
+            const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+            let result;
+            if (url.pathname === "/forest/duels/request") {
+              const target = body?.target_player_id;
+              const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !await isUserDisabled(target);
+              result = duels.request(playerId, body, available);
+            } else if (url.pathname === "/forest/duels/respond") {
+              const challenger = body?.accept === true ? duels.challengerFor(playerId, body?.invite_id) : null;
+              const available = !challenger || !await isUserDisabled(challenger);
+              result = duels.respond(playerId, body, available);
+            } else if (url.pathname === "/forest/duels/ready") {
+              if (!getRankedServices())
+                return jsonResponse({ error: "PVP_SECRET_REQUIRED" }, 503);
+              const participants = duels.participants(body?.invite_id);
+              const available = (await Promise.all(participants.map((id) => isUserDisabled(id)))).every((disabled) => !disabled);
+              result = duels.ready(playerId, body, available);
+            } else
+              result = duels.cancel(playerId, body);
+            return jsonResponse(result.data, result.status);
+          }
+          if (["/social/state", "/social/friends/request", "/social/friends/respond", "/social/friends/cancel"].includes(url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            if (!socialEnabled)
+              return jsonResponse({ error: "SOCIAL_DISABLED" }, 503);
+            if (req.method === "GET" && url.pathname === "/social/state")
+              return jsonResponse(friends.state(playerId));
+            if (req.method !== "POST" || url.pathname === "/social/state")
+              return jsonResponse({ error: "Method not allowed." }, 405);
+            const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+            let result;
+            if (url.pathname === "/social/friends/request") {
+              const target = body?.target_player_id;
+              const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !await isUserDisabled(target);
+              result = friends.request(playerId, body, available);
+            } else if (url.pathname === "/social/friends/respond")
+              result = friends.respond(playerId, body);
+            else
+              result = friends.cancel(playerId, body);
+            return jsonResponse(result.data, result.status);
+          }
           if (req.method == "GET" && url.pathname == "/chat/state") {
             return jsonResponse(globalChat.state(await requireAuth(req, ctx)));
           }
           if (req.method == "POST" && url.pathname == "/chat/send") {
             const playerId = await requireAuth(req, ctx);
             const result = globalChat.send(playerId, await readJson(req, config.maxBodyBytes));
+            if (result.status === 200 && result.data && "duplicate" in result.data && !result.data.duplicate && "message" in result.data && result.data.message) {
+              try {
+                forest?.peerChat(playerId, result.data.message);
+              } catch (error2) {
+                logError("forest chat notification failed", { error: String(error2) });
+              }
+            }
             return jsonResponse(result.data, result.status);
           }
           if (url.pathname == "/player/state") {
@@ -21238,10 +22292,10 @@ async function startServer() {
                 throw new HttpError(403, "Dedicated Dungeon debug account required.");
               const state = ensurePlayerState(playerId);
               const before = JSON.stringify(state);
-              const dataDir = resolve2(import.meta.dir, "..", "..", "data");
-              const entities2 = readJsonFile(resolve2(dataDir, "entities.json"))?.entities;
-              const spells2 = readJsonFile(resolve2(dataDir, "spells.json"))?.spells;
-              const items = readJsonFile(resolve2(dataDir, "items.json"))?.items;
+              const dataDir = resolve3(import.meta.dir, "..", "..", "data");
+              const entities2 = readJsonFile(resolve3(dataDir, "entities.json"))?.entities;
+              const spells2 = readJsonFile(resolve3(dataDir, "spells.json"))?.spells;
+              const items = readJsonFile(resolve3(dataDir, "items.json"))?.items;
               if (!Array.isArray(entities2) || !Array.isArray(spells2) || !Array.isArray(items))
                 throw new HttpError(503, "Dungeon debug catalogs unavailable.");
               state.lab.hqLevel = Math.max(4, state.lab.hqLevel);
@@ -21279,7 +22333,7 @@ async function startServer() {
             const body = await readJson(req, config.maxBodyBytes);
             return jsonResponse(getExpeditionService().heartbeat(playerId, req.headers.get("x-expedition-lease"), body));
           }
-          if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|capture|skip|advance|exit)$/.test(url.pathname)) {
+          if (req.method === "POST" && /^\/expeditions\/(start|select|turn|inspiration|capture|skip|advance|exit|buy_mana)$/.test(url.pathname)) {
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:action", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
             const body = await readJson(req, config.maxBodyBytes);
@@ -21307,8 +22361,8 @@ async function startServer() {
             const actionId = body.client_action_id.trim();
             const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
             const payload = { run_id: body.run_id, ...selection };
-            const dataDir = resolve2(import.meta.dir, "..", "..", "data");
-            const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+            const dataDir = resolve3(import.meta.dir, "..", "..", "data");
+            const catalogs = { entities: readJsonFile(resolve3(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve3(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve3(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve3(dataDir, "types.json")), mutations: readJsonFile(resolve3(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve3(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
             return db.transaction(() => {
               const now = Date.now();
               const liveRun = db.query("SELECT status, expires_at FROM dungeon_runs WHERE run_id = ? AND player_id = ?").get(body.run_id, playerId);
@@ -21384,7 +22438,7 @@ async function startServer() {
                 throw new HttpError(409, "Dungeon run unavailable or stale.");
               const current = JSON.parse(row.combat_state_json), seed = createHmac7("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
               if ((isTurn || isInspiration) && current.inspiration_catalog_version !== 2) {
-                const spells2 = readJsonFile(resolve2(import.meta.dir, "..", "..", "data", "spells.json"))?.spells;
+                const spells2 = readJsonFile(resolve3(import.meta.dir, "..", "..", "data", "spells.json"))?.spells;
                 if (!hydrateDungeonInspiration(current, spells2))
                   throw new HttpError(409, "Dungeon Inspiration catalog unavailable.");
               }
@@ -21420,8 +22474,8 @@ async function startServer() {
                   throw new HttpError(409, "Floor not cleared.");
                 if (cleared >= 1000)
                   throw new HttpError(409, "Dungeon difficulty limit reached.");
-                const dataDir = resolve2(import.meta.dir, "..", "..", "data");
-                const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
+                const dataDir = resolve3(import.meta.dir, "..", "..", "data");
+                const catalogs = { entities: readJsonFile(resolve3(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve3(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve3(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve3(dataDir, "types.json")), mutations: readJsonFile(resolve3(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve3(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
                 let base;
                 try {
                   base = dungeonPreviousBase(current, catalogs.homunculi);
@@ -21818,8 +22872,8 @@ async function startServer() {
             const actionId = body.client_action_id.trim();
             const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
             const payload = { session_id: body.session_id, ...selection };
-            const dataDir = resolve2(import.meta.dir, "..", "..", "data");
-            const catalogs = { entities: readJsonFile(resolve2(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve2(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve2(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve2(dataDir, "types.json")), mutations: readJsonFile(resolve2(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve2(dataDir, "static", "balance.json"))?.balance };
+            const dataDir = resolve3(import.meta.dir, "..", "..", "data");
+            const catalogs = { entities: readJsonFile(resolve3(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve3(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve3(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve3(dataDir, "types.json")), mutations: readJsonFile(resolve3(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve3(dataDir, "static", "balance.json"))?.balance };
             db.transaction(() => expireSoloHunts(playerId, Date.now())).immediate();
             return db.transaction(() => {
               const now = Date.now();
@@ -22046,13 +23100,13 @@ async function startServer() {
           }
           return jsonResponse({ error: "Not found" }, 404);
         })();
-        if (idleEnabled() && res && ctx.userId && req.method === "POST" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
+        if (idleEnabled() && res && ctx.userId && req.method === "POST" && ctx.path !== "/expeditions/heartbeat" && !ctx.path.startsWith("/auth/") && !ctx.path.startsWith("/v1/auth/") && req.headers.get("X-EntityWars-Replay") !== "1" && res.status >= 200 && res.status < 300) {
           const data = await res.clone().json().catch(() => null);
           if (data && data.ok !== false && data.duplicate !== true) {
             try {
               await touchIdle(extractToken(req));
-            } catch (error) {
-              logError("idle activity update failed after action", { req_id: ctx.requestId, error: String(error) });
+            } catch (error2) {
+              logError("idle activity update failed after action", { req_id: ctx.requestId, error: String(error2) });
             }
           }
         }
@@ -22085,16 +23139,36 @@ async function startServer() {
       }
     },
     websocket: {
+      maxPayloadLength: 65536,
+      backpressureLimit: 65536,
+      closeOnBackpressureLimit: true,
       open(ws) {
+        if (ws.data.kind === "forest") {
+          if (leaseValid())
+            forest?.open(ws);
+          else
+            ws.close(1011, "service unavailable");
+          return;
+        }
         sockets.add(ws);
         ws.send(JSON.stringify({ type: "hello", server_time: Date.now() }));
       },
       message(ws, message) {
+        if (ws.data.kind === "forest") {
+          if (leaseValid())
+            forest?.message(ws, message);
+          return;
+        }
         if (typeof message == "string" && message.toLowerCase() == "ping") {
           ws.send("pong");
         }
       },
       close(ws) {
+        if (ws.data.kind === "forest") {
+          if (leaseValid())
+            forest?.close(ws);
+          return;
+        }
         sockets.delete(ws);
       }
     }
@@ -22102,22 +23176,22 @@ async function startServer() {
   console.log(`Backend listening on http://${config.host}:${config.port}`);
 }
 function loadStaticData() {
-  const staticDir = resolve2(import.meta.dir, "..", "..", "data", "static");
-  const entitiesRaw = JSON.parse(readFileSync2(resolve2(staticDir, "..", "entities.json"), "utf8"));
-  const itemsRaw = JSON.parse(readFileSync2(resolve2(staticDir, "..", "items.json"), "utf8"));
-  const diskHomunculi = buildHomunculusCombatCatalog(JSON.parse(readFileSync2(resolve2(staticDir, "..", "homunculi.json"), "utf8")), JSON.parse(readFileSync2(resolve2(staticDir, "expedition_homunculi.json"), "utf8")));
+  const staticDir = resolve3(import.meta.dir, "..", "..", "data", "static");
+  const entitiesRaw = JSON.parse(readFileSync3(resolve3(staticDir, "..", "entities.json"), "utf8"));
+  const itemsRaw = JSON.parse(readFileSync3(resolve3(staticDir, "..", "items.json"), "utf8"));
+  const diskHomunculi = buildHomunculusCombatCatalog(JSON.parse(readFileSync3(resolve3(staticDir, "..", "homunculi.json"), "utf8")), JSON.parse(readFileSync3(resolve3(staticDir, "expedition_homunculi.json"), "utf8")));
   if (JSON.stringify(diskHomunculi) !== JSON.stringify(homunculusCatalog()))
     throw new Error("Homunculus catalog differs from the validated server build.");
-  const mutationsRaw = JSON.parse(readFileSync2(resolve2(staticDir, "mutations.json"), "utf8"));
+  const mutationsRaw = JSON.parse(readFileSync3(resolve3(staticDir, "mutations.json"), "utf8"));
   const itemIds = new Set((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).map((item) => item.id).filter((id) => typeof id === "string"));
   const itemRarities = Object.fromEntries((Array.isArray(itemsRaw.items) ? itemsRaw.items : []).filter((item) => typeof item.id === "string" && typeof item.rarity === "string").map((item) => [item.id, item.rarity]));
-  const resources = loadResourceIds(resolve2(staticDir, "resources.json"));
-  const buildingsData = loadBuildings(resolve2(staticDir, "buildings.json"));
-  const balance = loadBalance(resolve2(staticDir, "balance.json"));
-  const researchData = loadResearch(resolve2(staticDir, "research.json"));
-  const zones = loadZones(resolve2(staticDir, "zones.json"));
-  const bosses = loadBosses(resolve2(staticDir, "bosses.json"));
-  const soloBosses = loadSoloBossCatalog(resolve2(staticDir, "solo_bosses.json"), resolve2(staticDir, "..", "spells.json"));
+  const resources = loadResourceIds(resolve3(staticDir, "resources.json"));
+  const buildingsData = loadBuildings(resolve3(staticDir, "buildings.json"));
+  const balance = loadBalance(resolve3(staticDir, "balance.json"));
+  const researchData = loadResearch(resolve3(staticDir, "research.json"));
+  const zones = loadZones(resolve3(staticDir, "zones.json"));
+  const bosses = loadBosses(resolve3(staticDir, "bosses.json"));
+  const soloBosses = loadSoloBossCatalog(resolve3(staticDir, "solo_bosses.json"), resolve3(staticDir, "..", "spells.json"));
   if (!Array.isArray(entitiesRaw.entities) || Object.keys(SOLO_HUNT_BOSS_ENTITIES).length !== soloBosses.bosses.length || soloBosses.bosses.some((boss) => !entitiesRaw.entities.some((entity) => entity.id === SOLO_HUNT_BOSS_ENTITIES[boss.id])))
     throw new Error("Invalid solo boss entity mapping.");
   const soloBossEntityTypes = Object.fromEntries(soloBosses.bosses.map((boss) => [boss.id, entitiesRaw.entities.find((entity) => entity.id === SOLO_HUNT_BOSS_ENTITIES[boss.id]).type]));
@@ -22698,7 +23772,7 @@ function readJsonFile(path) {
       console.error(`Static data missing: ${path}`);
       return null;
     }
-    const raw = readFileSync2(path, "utf8");
+    const raw = readFileSync3(path, "utf8");
     return JSON.parse(raw);
   } catch (err) {
     console.error(`Failed to read JSON: ${path}`, err);
@@ -23331,9 +24405,9 @@ function getWalletInvariantError(wallet) {
   return null;
 }
 function assertWalletInvariant(wallet) {
-  const error = getWalletInvariantError(wallet);
-  if (error) {
-    throw new HttpError(400, error);
+  const error2 = getWalletInvariantError(wallet);
+  if (error2) {
+    throw new HttpError(400, error2);
   }
 }
 function getSuspiciousAmountThreshold() {
@@ -23397,7 +24471,7 @@ var HQ_RULES = {
   trade_hall: { unlock: 1, max: 10, cap_per_hq: 1 },
   world_gate: { unlock: 1, max: 10, cap_per_hq: 1 }
 };
-var experimentCatalog = readJsonFile(resolve2(import.meta.dir, "..", "..", "data", "static", "experiments.json"));
+var experimentCatalog = readJsonFile(resolve3(import.meta.dir, "..", "..", "data", "static", "experiments.json"));
 var EXPERIMENTS = Object.fromEntries((Array.isArray(experimentCatalog?.experiments) ? experimentCatalog.experiments : []).filter((entry) => typeof entry?.id === "string").map((entry) => [entry.id, entry]));
 function experimentEffect(id, key2, fallback) {
   const value = EXPERIMENTS[id]?.effect?.[key2];

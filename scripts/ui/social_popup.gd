@@ -118,6 +118,18 @@ func _process(_delta: float) -> void:
 	SocialSpanishFont.apply(_feedback_text, _feedback_text.text)
 	_feedback_retry.visible = not SocialClient._pending_body.is_empty()
 	_feedback_retry.disabled = SocialClient._mutation_busy
+	var next_duel := {}
+	for invite in DuelClient.incoming:
+		if invite is Dictionary and not _shown.has("duel:" + str(invite.get("invite_id", ""))) and int(invite.get("expires_at", 0)) > DuelClient.server_now():
+			next_duel = invite
+			break
+	if not next_duel.is_empty() and not _current.is_empty() and _current_kind == "friend":
+		_shown.erase(_current)
+		_current = ""
+	if _current.is_empty() and not next_duel.is_empty():
+		_current_kind = "duel"
+		_current = str(next_duel.invite_id)
+		_shown["duel:" + _current] = true
 	if _current.is_empty():
 		for request in SocialClient.incoming:
 			if not _shown.has(request.request_id):
@@ -125,13 +137,6 @@ func _process(_delta: float) -> void:
 				_current = request.request_id
 				_shown[_current] = true
 				break
-		if _current.is_empty():
-			for invite in DuelClient.incoming:
-				if invite is Dictionary and not _shown.has("duel:" + str(invite.get("invite_id", ""))) and int(invite.get("expires_at", 0)) > DuelClient.server_now():
-					_current_kind = "duel"
-					_current = str(invite.invite_id)
-					_shown["duel:" + _current] = true
-					break
 	_refresh()
 
 func _respond_current(accept: bool) -> void:
@@ -175,7 +180,7 @@ func _refresh() -> void:
 			_dismiss_current()
 			return
 		_message.text = tr("DUEL_CHALLENGE_MESSAGE") % str(found.get("challenger_name", ""))
-		_status.text = tr("DUEL_EXPIRES_SECONDS") % maxi(0, ceili(float(int(found.expires_at) - DuelClient.server_now()) / 1000.0))
+		_status.text = tr("DUEL_UNAVAILABLE") if DuelClient.error_key == "PVP_SECRET_REQUIRED" else tr("DUEL_EXPIRES_SECONDS") % maxi(0, ceili(float(int(found.expires_at) - DuelClient.server_now()) / 1000.0))
 		SocialSpanishFont.apply(_message, _message.text)
 		SocialSpanishFont.apply(_status, _status.text)
 		_accept.disabled = DuelClient._mutation_busy or not DuelClient._pending_body.is_empty()
