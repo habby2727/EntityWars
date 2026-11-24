@@ -273,13 +273,16 @@ func _process(delta: float) -> void:
 		var seconds := maxi(0, ceili(float(int(state.get("deadline", 0)) - now_ms) / 1000.0))
 		timer_panel.show()
 		timer_label.text = tr("PVP_RESOLVING") if str(state.get("phase", "")) == "PLAYBACK" else "%02d:%02d" % [seconds / 60, seconds % 60]
-	if request_id.is_empty() and str(state.get("status", "")) == "ACTIVE" and str(state.get("phase", "")) == "PLAYBACK":
+	if request_id.is_empty() and bool(get_meta("ack_refresh", false)) and next_poll <= 0.0:
+		next_poll = 3.0
+		_poll()
+	if request_id.is_empty() and not bool(get_meta("ack_refresh", false)) and Time.get_ticks_msec() >= int(get_meta("ack_retry_at", 0)) and str(state.get("status", "")) == "ACTIVE" and str(state.get("phase", "")) == "PLAYBACK":
 		var revision := int(state.get("playback_revision", 0))
 		if event_cursor < int(state.get("playback_event_end", 0)):
 			next_poll = 0.0
 		elif revision > 0 and revision != acknowledged_revision and event_queue.is_empty() and not event_presenting and event_delay <= 0.0 and not hp_reconcile_pending and not battle_reset_pending:
 			_send("POST", match_prefix + "/playback_ack", {"match_id": match_id, "playback_revision": revision}, "ack")
-	if request_id.is_empty() and not chat_pending.is_empty() and pending.is_empty():
+	if request_id.is_empty() and not bool(get_meta("ack_refresh", false)) and not chat_pending.is_empty() and pending.is_empty():
 		_send("POST", match_prefix + "/chat", chat_pending, "chat", chat_attempted)
 	if request_id.is_empty() and next_poll <= 0.0:
 		next_poll = 3.0
@@ -294,14 +297,15 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 	request_kind = ""
 	if not ok:
 		if kind == "ack":
-			next_poll = 0.0
+			set_meta("ack_refresh", true)
+			set_meta("ack_retry_at", Time.get_ticks_msec() + 3000)
 		if kind != "ack" and int(data.get("http_status", 0)) >= 400 and int(data.get("http_status", 0)) < 500:
 			pending.clear()
 			pending_path = ""
 			if kind == "chat":
 				chat_pending.clear()
 		header.text = "Connection error — recovering match"
-		next_poll = 1.0
+		next_poll = 3.0 if bool(get_meta("ack_refresh", false)) else 1.0
 		refresh_controls()
 		return
 	if kind == "chat":
@@ -316,14 +320,20 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 	if data.get("match_id", "") != match_id or (friendly and data.get("kind", "") != "friendly"):
 		header.text = "Match unavailable"
 		return
+	if kind == "state":
+		set_meta("ack_refresh", false)
 	if kind == "ack":
 		acknowledged_revision = int(state.get("playback_revision", 0))
 	if data.has("server_time"):
 		server_time_ticks = Time.get_ticks_msec()
 		server_time_ms = int(data.server_time) + int(maxi(0, server_time_ticks - request_started_ticks) / 2)
 	var incoming: Array = data.get("events", [])
+	var unseen_count := 0
+	for entry in incoming:
+		if entry is Dictionary and int(entry.get("id", 0)) > event_cursor:
+			unseen_count += 1
 	var expired_playback := str(state.get("phase", "")) == "PLAYBACK" and str(data.get("phase", "")) == "DECISION" and server_time_ms >= int(state.get("playback_until", 0))
-	if expired_playback or (not received_snapshot and not incoming.is_empty()) or incoming.size() > 25:
+	if expired_playback or (not received_snapshot and unseen_count > 0) or unseen_count > 25:
 		catching_up = true
 		_catch_up()
 	received_snapshot = true

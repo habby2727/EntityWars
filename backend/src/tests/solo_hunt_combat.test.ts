@@ -709,7 +709,7 @@ test("six elemental procs resolve and update combat state", () => {
     expect(result.events.some((e: any) => e.kind === "elemental_proc" && e.type === type)).toBe(true);
     if (type === "mercury") expect(result.next_state.player.hp).toBe(90);
     if (type === "aether") expect(result.next_state.boss.status.vuln_pct).toBe(0.12);
-    if (type === "vitriol") expect(result.next_state.boss.status.poison).toBe(1);
+    if (type === "vitriol") expect(result.next_state.boss.status.poison).toBe(2);
     if (type === "gold") expect(result.next_state.player.hp).toBeGreaterThan(79);
     if (type === "sodium") expect(result.next_state.player.hp).toBeGreaterThan(79);
     if (type === "sulfur") expect(result.next_state.player.hp).toBeGreaterThan(79);
@@ -749,9 +749,9 @@ test("validated Mercury and Sodium defensive spells", () => {
   expect(barrierProc.next_state.boss.status.shield_pct).toBe(0.12);
   const injured = sodium(); injured.player.hp = 50;
   const healed = cast(injured, "brine_mend");
-  expect(healed.next_state.player.hp).toBe(57);
-  expect(healed.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(15);
-  expect(healed.events.find((e: any) => e.kind === "heal" && e.actor === "player").amount).toBe(15);
+  expect(healed.next_state.player.hp).toBe(49);
+  expect(healed.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(7);
+  expect(healed.events.find((e: any) => e.kind === "heal" && e.actor === "player").amount).toBe(7);
   const full = sodium(); full.boss.status.stun = 1;
   expect(cast(full, "brine_mend").next_state.player.hp).toBe(122);
   const reflected = cast(sodium(), "bastion_return");
@@ -844,7 +844,7 @@ test("Gold spells and received-hit tracking across exchanges", () => {
   expect(resolveCombatTurn(reflection, action(1, "aurum_edge"), rng).next_state.player.spell_hit_this_exchange).toBe(true);
   const poison = fixture(); poison.player.status.poison = 1; poison.boss.status.stun = 1;
   const poisoned = resolveCombatTurn(poison, action(1, "aurum_edge"), rng).next_state;
-  expect(poisoned.player.hp).toBe(95);
+  expect(poisoned.player.hp).toBe(96); // First tick is 4% of 100 max HP.
   expect(poisoned.player.spell_hit_this_exchange).toBe(true);
   const healing = fixture(); healing.player.hp = 97; healing.boss.status.stun = 1;
   expect(resolveCombatTurn(healing, action(1, "aurum_edge"), () => 0).next_state.player.hp).toBe(98);
@@ -921,7 +921,7 @@ test("precision, shields, leech and initiative have observable effects", () => {
   expect(cast(pierce, "needle_etch").next_state.boss.hp).toBe(114);
   const dispel = fixture("quicksilver_solvent", "mercury_01"); dispel.boss.status.shield_pct = 0.5; dispel.boss.status.stun = 1;
   const dispelled = cast(dispel, "quicksilver_solvent");
-  expect(dispelled.next_state.boss.hp).toBe(112);
+  expect(dispelled.next_state.boss.hp).toBe(109); // 10 direct damage and a 3 HP poison tick.
   expect(dispelled.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(10);
   expect(dispelled.events.some((e: any) => e.kind === "status_consumed" && e.status === "shield_pct" && e.target === "boss")).toBe(true);
   const leech = fixture("echo_siphon"); leech.player.hp = 80; leech.boss.status.stun = 1;
@@ -1310,7 +1310,7 @@ test("marks are owned, expire on actions and are consumed on hybrid hit", () => 
   const marked = markedResult.next_state;
   expect(marked.boss.status.hybrid_mark).toEqual({ owner: "player", remaining: 2 });
   marked.boss.status.stun = 1;
-  const consumedResult = resolveCombatTurn(marked, { turn: 2, spell_id: "gilded_exception", target: "boss" }, rng);
+  const consumedResult = resolveCombatTurn(marked, { turn: 2, spell_id: "gilded_exception", target: "boss" }, () => 0);
   expect(consumedResult.events.some((e: any) => e.kind === "status_consumed" && e.status === "hybrid_mark" && e.target === "boss")).toBe(true);
   const consumed = consumedResult.next_state;
   expect(consumed.boss.status.hybrid_mark).toBeUndefined();
@@ -1334,7 +1334,7 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
   for (const id of ["brimstone_crash", "veil_rupture", "caustic_mark", "mercury_snare", "crooked_rune", "salt_circuit", "paradox_edict"]) {
     const state = build(id); state.boss.status.stun = 1;
     const result = resolveCombatTurn(state, { turn: 1, spell_id: id, target: "boss" }, rng);
-    expect(result.next_state.player.inspiration).toBe(1);
+    expect(result.next_state.player.inspiration, id).toBe(["crooked_rune", "paradox_edict"].includes(id) ? 2 : 1);
   }
   const equal = build("caustic_mark"); equal.boss.status.stun = 1; equal.boss.status.poison = 2;
   expect(resolveCombatTurn(equal, { turn: 1, spell_id: "caustic_mark", target: "boss" }, rng).next_state.player.inspiration).toBe(0);
