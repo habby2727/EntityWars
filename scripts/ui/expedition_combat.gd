@@ -48,6 +48,8 @@ var decline_button: Button
 var hom_attack: Button
 var hom_hold: Button
 var pending_hom_decision := {}
+var _hom_action_style: StyleBoxFlat
+var _hom_action_pulse: Tween
 var player_sprite: TextureRect
 var player_hom_sprite: TextureRect
 var enemy_sprite: TextureRect
@@ -270,13 +272,15 @@ func _build() -> void:
 		_build_inspiration(offers, player)
 
 func _style_hom_action(button: Button) -> void:
-	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
-		var style := StyleBoxFlat.new()
-		style.bg_color = Color(0.45, 0.36, 0.025, 0.82) if state in ["hover", "pressed", "focus"] else Color(0.25, 0.20, 0.025, 0.78)
-		style.border_color = Color("ffe13d")
-		style.set_border_width_all(3)
-		style.set_corner_radius_all(6)
-		button.add_theme_stylebox_override(state, style)
+	if _hom_action_style == null:
+		_hom_action_style = StyleBoxFlat.new()
+		_hom_action_style.bg_color = Color(0.25, 0.20, 0.025, 0.78)
+		_hom_action_style.border_color = Color("ffe13d")
+		_hom_action_style.set_border_width_all(3)
+		_hom_action_style.set_corner_radius_all(6)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		button.add_theme_stylebox_override(state, _hom_action_style)
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 
 func _add_ground_shadow(sprite: TextureRect, is_hom: bool, enemy: bool) -> void:
 	if sprite.texture == null: return
@@ -494,6 +498,9 @@ func _cast(id: String) -> void:
 		pending_hom_decision = decision
 		hom_attack.show()
 		hom_hold.show()
+		_hom_action_pulse = create_tween().set_loops()
+		_hom_action_pulse.tween_property(_hom_action_style, "bg_color", Color(0.8, 0.64, 0.04, 0.88), 0.55)
+		_hom_action_pulse.tween_property(_hom_action_style, "bg_color", Color(0.25, 0.20, 0.025, 0.78), 0.55)
 		hom_hold.grab_focus()
 	else:
 		host.send_combat_decision("turn", decision)
@@ -511,6 +518,11 @@ func _switch(slot: int) -> void:
 	host.send_combat_decision("turn", {"turn":int(session.get("combat_state", {}).get("turn", 0)) + 1, "switch_slot":slot})
 
 func lock_controls() -> void:
+	if is_instance_valid(_hom_action_pulse):
+		_hom_action_pulse.kill()
+		_hom_action_pulse = null
+	if _hom_action_style != null:
+		_hom_action_style.bg_color = Color(0.25, 0.20, 0.025, 0.78)
 	pending_hom_decision.clear()
 	if is_instance_valid(hom_attack): hom_attack.hide()
 	if is_instance_valid(hom_hold): hom_hold.hide()

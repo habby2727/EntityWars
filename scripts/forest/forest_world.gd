@@ -671,7 +671,20 @@ func _confirm_quest_cancel() -> void:
 	var owner := str(ConnectionGate.player_id)
 	var generation := int(ConnectionGate._generation)
 	var dialog := ConfirmationDialog.new()
+	dialog.borderless = true
+	dialog.transparent = true
+	dialog.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
+	dialog.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
+	var panel := _dialogue.get_theme_stylebox("panel").duplicate() as StyleBox
+	panel.content_margin_left = 24
+	panel.content_margin_right = 24
+	panel.content_margin_top = 24
+	panel.content_margin_bottom = 24
+	dialog.add_theme_stylebox_override("panel", panel)
 	dialog.dialog_text = tr("FOREST_QUEST_CANCEL_CONFIRM")
+	dialog.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	MenuArt.button(dialog.get_ok_button())
+	MenuArt.button(dialog.get_cancel_button())
 	add_child(dialog)
 	dialog.confirmed.connect(func():
 		if str(_quest.get("quest_id", "")) == quest_id and owner == str(ConnectionGate.player_id) and generation == int(ConnectionGate._generation) and is_instance_valid(_talking_to) and str(_talking_to.npc_id) == str(_quest.get("npc_id", "")):
