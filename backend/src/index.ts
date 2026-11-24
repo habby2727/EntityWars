@@ -1,3 +1,9 @@
+import { createSpectatorService } from "./spectator_service";
+import { createSpectatorAdapters } from "./spectator_adapters";
+import { spectatableActivities } from "./spectator_discovery";
+import { recordSpectatorEvents } from "./spectator_events";
+import { installSpectatorStartGuard, endSpectatingForStart, spectatorNames } from "./spectator_guard";
+import { publicExpeditionCombat } from "./expeditions_service";
 import { createPracticeService, activePractice } from "./practice_service";
 import { ownsHomunculus, combatHomunculusAllowed, legacyHomunculusIds, expeditionHomunculusIds, buildHomunculusCombatCatalog, homunculusCatalog } from "./homunculus_catalog";
 import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp, PVE_VICTORY_XP, type HomunculusProgress } from "./homunculus_experience";
@@ -327,7 +333,14 @@ for (let attempt = 0; ; attempt++) {
 }
 const socialEnabled = Bun.env.SOCIAL_ENABLED === "1";
 const friends = createFriends(db);
-const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN, socialEnabled ? friends.friendIds : undefined);
+const spectatorEnabled = Bun.env.SPECTATOR_ENABLED === "1";
+let spectatorService: ReturnType<typeof createSpectatorService> | null = null;
+const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN, socialEnabled ? friends.friendIds : undefined, spectatorEnabled ? (ids, now) => spectatableActivities(db, ids, now) : undefined, spectatorEnabled ? id => spectatorService?.namesForTarget(id) ?? [] : undefined);
+if (spectatorEnabled) {
+ const adapters=createSpectatorAdapters(db,{dungeon:publicDungeonCombat,hunt:publicHuntCombat,expedition:publicExpeditionCombat});
+ spectatorService=createSpectatorService({db,online:id=>globalChat.isOnline(id),enabledAccount:async id=>!!getPlayerByIdStmt.get(id) && !(await isUserDisabled(id)),...adapters});
+ installSpectatorStartGuard(id=>spectatorService?.endViewer(id),id=>spectatorService?.namesForTarget(id) ?? []);
+}
 let expeditionService: ReturnType<typeof createExpeditionService> | null = null;
 function getExpeditionService() {
 	if (expeditionService) return expeditionService;
@@ -1584,7 +1597,7 @@ async function startServer(): Promise<void> {
 						typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
 					const accessToken = extractToken(req);
 					let forestPlayerId: string | null = null;
-					if (forest) {
+					if (forest || spectatorService) {
 						const access = accessToken ? await getAccessToken(accessToken) : null;
 						const refresh = refreshToken ? await getRefreshToken(refreshToken) : null;
 						if (!access || !refresh || access.userId === refresh.userId) forestPlayerId = access?.userId ?? refresh?.userId ?? null;
@@ -1595,6 +1608,7 @@ async function startServer(): Promise<void> {
 					if (accessToken) {
 						await revokeAccessToken(accessToken);
 					}
+					if (forestPlayerId) spectatorService?.endForPlayer(forestPlayerId);
 					if (forestPlayerId && leaseValid()) forest?.evict(forestPlayerId);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
@@ -1614,12 +1628,26 @@ async function startServer(): Promise<void> {
 					}
 					let forestPlayerId: string | null = null;
 					if (idleEnabled()) forestPlayerId = await requireAuth(req, ctx);
-					else if (forest) { try { forestPlayerId = await requireAuth(req, ctx); } catch { /* Preserve logout semantics. */ } }
+					else if (forest || spectatorService) { try { forestPlayerId = await requireAuth(req, ctx); } catch { /* Preserve logout semantics. */ } }
 					await revokeSession(token);
 					await revokeAccessToken(token);
+					if (forestPlayerId) spectatorService?.endForPlayer(forestPlayerId);
 					if (forestPlayerId && leaseValid()) forest?.evict(forestPlayerId);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
+
+				if ((req.method === "POST" && ["/spectator/start","/spectator/leave"].includes(url.pathname)) || (req.method === "GET" && url.pathname === "/spectator/state")) {
+                    const viewer = await requireAuth(req,ctx);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:pvp",windowSeconds:EXPENSIVE_RATE_WINDOW,max:EXPENSIVE_RATE_MAX,keyBy:"user",userId:viewer});
+                    if (!spectatorService) return jsonResponse({error:"SPECTATOR_DISABLED"},503);
+                    try {
+                        if (req.method === "GET") { const raw=url.searchParams.get('after') ?? '0'; if (!/^\d+$/.test(raw)) throw new Error('INVALID_REQUEST'); return jsonResponse(await spectatorService.state(viewer,url.searchParams.get('observation_id') ?? '',Number(raw))); }
+                        const body=await readJson(req,config.maxBodyBytes);
+                        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('INVALID_REQUEST');
+                        if (url.pathname === '/spectator/start') {if(Object.keys(body).some(k=>k!=='target_player_id'))throw new Error('INVALID_REQUEST');return jsonResponse(await spectatorService.start(viewer,body.target_player_id));}
+                        if(Object.keys(body).some(k=>k!=='observation_id'))throw new Error('INVALID_REQUEST');return jsonResponse(spectatorService.leave(viewer,body.observation_id));
+                    } catch(error) {const code=error instanceof Error?error.message:'SPECTATOR_UNAVAILABLE';if(['INVALID_REQUEST','INVALID_TARGET'].includes(code))return jsonResponse({error:code},400);if(code==='OBSERVATION_NOT_FOUND')return jsonResponse({error:code},404);if(['SPECTATOR_UNAVAILABLE','SPECTATOR_CAPACITY','OBSERVATION_CLOSED'].includes(code))return jsonResponse({error:code},409);logError('spectator request failed',{error:String(error)});return jsonResponse({error:'SPECTATOR_UNAVAILABLE'},503);}
+                }
 
 				if ((req.method === "POST" && ["/practice/start","/practice/match/decision","/practice/match/forfeit"].includes(url.pathname)) || (req.method === "GET" && url.pathname === "/practice/match/state")) {
                     const playerId = await requireAuth(req, ctx);
@@ -2630,7 +2658,7 @@ async function startServer(): Promise<void> {
 						combat.elite_trait_used = false;
 						combat.tactics_enabled = tacticsEnabled;
 						if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
-						const response = { run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
+						const response = { ...spectatorNames(playerId), run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
 						insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
@@ -2703,7 +2731,12 @@ async function startServer(): Promise<void> {
 						}
 						if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
 						if (isTurn && combat.terminal_result === "WIN" && cleared === combat.floor && row.cleared_floor < cleared) awardHomunculusVictory(playerId, row.loadout_json, now);
-						const response = { run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };
+						if (spectatorEnabled && (isTurn || isInspiration)) recordSpectatorEvents(db,"dungeon",row.run_id,String(current.floor),row.combat_revision+1,events,now);
+						if (spectatorEnabled && combat.terminal_result && (isTurn || isInspiration)) {
+							db.query("INSERT OR REPLACE INTO spectator_final_combats(mode,session_id,encounter,combat_json,created_at) VALUES ('dungeon',?,?,?,?)").run(row.run_id,String(current.floor),JSON.stringify(combat),now);
+							db.query("DELETE FROM spectator_final_combats WHERE rowid IN (SELECT rowid FROM spectator_final_combats WHERE created_at<? ORDER BY created_at LIMIT 50)").run(now-86_400_000);
+						}
+						const response = { ...spectatorNames(playerId), run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };
 						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
@@ -2716,7 +2749,7 @@ async function startServer(): Promise<void> {
 						const runId = url.searchParams.get("run_id");
 						const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision";
 						const session = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : null) ?? null;
-						return jsonResponse({ session, server_time_unix_ms: now });
+						return jsonResponse({ ...spectatorNames(playerId), session, server_time_unix_ms: now });
 					}).immediate();
 				}
 				if (req.method == "POST" && url.pathname == "/dungeon/heartbeat") {
@@ -2753,6 +2786,7 @@ async function startServer(): Promise<void> {
 						let runId: string;
 						let spellProgress: unknown;
 						if (start) {
+							endSpectatingForStart(playerId);
 							if (activePractice(db,playerId,now)) throw new HttpError(409, "Practice is active.");
 							const state = ensurePlayerState(playerId);
 							if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
@@ -2951,6 +2985,7 @@ async function startServer(): Promise<void> {
 							db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
 						}
 						const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId) as SoloHuntRow;
+						if (spectatorEnabled) recordSpectatorEvents(db,"hunt",row.session_id,"0",row.combat_revision+1,[...(typeof body.decision.spell_id === "string" ? [{kind:"player_cast",actor:"player",spell_id:body.decision.spell_id,turn:result.next_state.turn}] : []),...result.events],now);
 						const response = { ...soloHuntResponse(current), events: result.events };
 						insertActionStmt.run(playerId, actionId, "SOLO_HUNT_TURN", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
@@ -2985,6 +3020,7 @@ async function startServer(): Promise<void> {
 						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
 						const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId) as SoloHuntRow;
 						if (!row.global_event_id && !row.guardian_id && body.decision.kind === "choose") missions.record(db,playerId,now,{guardian:false,choose:true,session:row.session_id});
+						if (spectatorEnabled && result.events.length) recordSpectatorEvents(db,"hunt",row.session_id,"0",row.combat_revision+1,result.events,now);
 						const response = soloHuntResponse(current);
 						insertActionStmt.run(playerId, actionId, "SOLO_HUNT_INSPIRATION", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
@@ -3061,6 +3097,7 @@ async function startServer(): Promise<void> {
 						let row: SoloHuntRow;
 						let replacedSessionId: string | null = null;
 						if (start) {
+							endSpectatingForStart(playerId);
 							if (activePractice(db,playerId,now)) throw new HttpError(409, "Practice is active.");
 							const schedule = soloBossSchedule(now);
 							const globalEvent = requestedGlobal ? db.query("SELECT * FROM global_boss_events WHERE event_id = ? AND status = 'ACTIVE'").get(requestedGlobal) as any : null;
@@ -3407,7 +3444,7 @@ function publicHuntCombat(state: any) {
 }
 
 function soloHuntResponse(row: SoloHuntRow) {
-	return { ...(row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}), session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(readHuntCombat(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
+	return { ...spectatorNames(row.player_id), ...(row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}), session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(readHuntCombat(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
 }
 
 function globalBossStatus(eventId: string, playerId: string) {

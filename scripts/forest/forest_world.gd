@@ -837,6 +837,21 @@ func _on_duel_accepted(invite: Dictionary) -> void:
 		SceneRouter.begin_friendly_preparation(invite, str(_zones[_zone_index].id), _player.position, _player.facing)
 	_resume_if_still_here()
 
+func spectator_handoff(context: Dictionary) -> void:
+	if _handoff_pending or not is_instance_valid(_presence) or not _presence.entered or not SceneRouter._forest_modes_safe(): return
+	var owner := str(ConnectionGate.player_id)
+	var generation := int(ConnectionGate._generation)
+	_handoff_pending = true
+	_reset_touch()
+	_player.set_process(false)
+	var acknowledged: bool = await _presence.handoff("suspend")
+	if not is_inside_tree(): return
+	if acknowledged and owner == str(ConnectionGate.player_id) and generation == int(ConnectionGate._generation):
+		SceneRouter._forest_return = {"verified_owner":owner, "summoner_id":SceneRouter.forest_selected_summoner(), "zone_id":str(_zones[_zone_index].id), "foot_position":_player.position, "facing":_player.facing, "debug":false, "identity_generation":generation}
+		SceneRouter.begin_spectating(context)
+		if SceneRouter._spectator_context.is_empty(): SceneRouter._clear_forest_return()
+	_resume_if_still_here()
+
 func _prepare_handoff(kind: String) -> void:
 	if _handoff_pending: return
 	_handoff_pending = true

@@ -480,3 +480,11 @@ PRACTICE_DRAW,Draw,Empate
 PRACTICE_RETURN,Return,Volver
 
 FOREST_FIGHTING,Fighting,Combatiendo
+
+SPECTATE,Spectate,Observar
+SPECTATING,Spectating %s,Observando a %s
+SPECTATOR_UNAVAILABLE,Combat unavailable.,Combate no disponible.
+SPECTATOR_ENDED,Observation ended.,La observación ha terminado.
+SPECTATOR_CONNECTION,Connection unavailable.,Conexión no disponible.
+SPECTATOR_LEAVE,Leave spectating,Dejar de observar
+SPECTATOR_VIEWERS,Spectators,Espectadores

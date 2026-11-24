@@ -3,7 +3,7 @@ import { pvpRank, pvpSeason } from "./pvp/ranking";
 import { ExpiringMap } from "./expiring_map";
 
 // Message text is plain text. Consumers must render it as text, never HTML or BBCode.
-export function createGlobalChat(db: Database, clock: () => number = Date.now, bridgeEnabled = false, friendIds: (playerId: string) => string[] = () => []) {
+export function createGlobalChat(db: Database, clock: () => number = Date.now, bridgeEnabled = false, friendIds: (playerId: string) => string[] = () => [], activity?: (ids:string[], now:number)=>Map<string,string>, observers?: (id:string)=>string[]) {
 	const presence = new Map<string, number>();
 	const lastSend = new ExpiringMap<number>();
 	const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
@@ -23,6 +23,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 	}
 	return {
 		onlineCount,
+		isOnline(id:string) { const seen=presence.get(id); return seen !== undefined && clock()-seen < 45_000; },
 		announceLogin(playerId: string, registered: boolean) {
 			return db.transaction(() => {
 				const player = db.query("SELECT display_name FROM players WHERE player_id = ?").get(playerId) as { display_name: string } | null;
@@ -66,10 +67,11 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 			const ids = [...new Set([...presence.keys(), ...rows.filter(row => row.source === 'game').map(row => row.player_id)])];
 			const profiles = new Map((profile.all(season, JSON.stringify(ids)) as { player_id: string; username: string; rating: number | null }[]).map(row => [row.player_id, { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) }]));
 			const friends = new Set(friendIds(playerId));
+			const activities = activity ? activity([...presence.keys()].filter(id=>friends.has(id)),now) : new Map<string,string>();
 			const online_players = Array.from(presence.keys(), id => profiles.get(id)).filter(row => row !== undefined)
-				.map(row => ({ ...row, is_friend: friends.has(row.player_id) }))
+				.map(row => ({ ...row, is_friend: friends.has(row.player_id), ...(activities.has(row.player_id) ? {spectatable_activity:activities.get(row.player_id)} : {}) }))
 				.sort((a, b) => Number(b.is_friend) - Number(a.is_friend) || a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
-			return { messages: rows.map(row => ({ ...row, league: row.source !== 'game' ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
+			return { ...(observers ? {spectators:observers(playerId)} : {}), messages: rows.map(row => ({ ...row, league: row.source !== 'game' ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
 		},
 		send(playerId: string, body: any) {
 			const text = body?.text;

@@ -1,3 +1,4 @@
+import { endSpectatingForStart, spectatorNames } from "./spectator_guard";
 import { activePractice } from "./practice_service";
 ﻿import type { Database } from "bun:sqlite";
 import { createHmac, randomBytes } from "node:crypto";
@@ -107,12 +108,12 @@ const publicEvent = (event: any) => {
   if (event?.kind === "inspiration_chosen" && event.actor === "npc") { const { spell_id, slot, ...visible } = event; return visible; }
   return event;
 };
-function publicCombat(combat: any) {
+export function publicExpeditionCombat(combat: any) {
   const { spell_ids, original_spell_ids, cooldowns, inspiration_offers, temporary_spell_id, temporary_replaced_slot, ...npc } = combat.npc;
   return { player: { ...combat.player, ...publicCombatStatus(combat.player, combat.turn), pending_drain: publicIncomingDrains(combat, "player") }, npc: { ...npc, ...publicCombatStatus(npc, combat.turn), pending_drain: publicIncomingDrains(combat, "npc") }, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((w: any) => ({id:w.id})), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 function publicSession(row: any, state: any) {
-  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e: any, choice: number) => ({ choice, id:e.entity_id, name:e.name, types:e.types, preview_texture:e.preview_texture, capturable:e.capturable })) : [], ...(state.combat && state.phase !== "REWARD" ? {combat_state:publicCombat(state.combat), battle_log:state.log.map(publicEvent)} : {}), ...(state.phase === "REWARD" ? {reward_homunculus: (() => { const h = expeditionCaptures.find(h => h.id === state.selected?.homunculus_id); return h ? {id:h.id,name:h.name,type:h.type,preview_texture:h.preview_texture,combat_texture:h.combat_texture} : null; })(), capture_candidate: state.candidate ? { id:state.candidate.id, name:state.candidate.name, type:state.candidate.type, rarity:state.candidate.rarity, preview_texture:state.candidate.preview_texture } : null, capture_attempts:state.capture_attempts ?? 0, capture_attempts_remaining:state.capture_closed === true ? 0 : Math.max(0, 3-(state.capture_attempts ?? 0)), capture_closed:state.capture_closed === true, ...(state.victory_reward ? {victory_reward:state.victory_reward} : {})} : {}), ...(state.latest_reward ? {latest_reward:state.latest_reward} : {}), ...(state.phase === "ROUTE" ? { directions:["left","forward","right"], allowed_directions:(state.consecutive_right ?? 0) >= 3 ? ["left","forward"] : ["left","forward","right"], consecutive_right:state.consecutive_right ?? 0, last_direction:state.last_direction ?? null } : {}) };
+  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e: any, choice: number) => ({ choice, id:e.entity_id, name:e.name, types:e.types, preview_texture:e.preview_texture, capturable:e.capturable })) : [], ...(state.combat && state.phase !== "REWARD" ? {combat_state:publicExpeditionCombat(state.combat), battle_log:state.log.map(publicEvent)} : {}), ...(state.phase === "REWARD" ? {reward_homunculus: (() => { const h = expeditionCaptures.find(h => h.id === state.selected?.homunculus_id); return h ? {id:h.id,name:h.name,type:h.type,preview_texture:h.preview_texture,combat_texture:h.combat_texture} : null; })(), capture_candidate: state.candidate ? { id:state.candidate.id, name:state.candidate.name, type:state.candidate.type, rarity:state.candidate.rarity, preview_texture:state.candidate.preview_texture } : null, capture_attempts:state.capture_attempts ?? 0, capture_attempts_remaining:state.capture_closed === true ? 0 : Math.max(0, 3-(state.capture_attempts ?? 0)), capture_closed:state.capture_closed === true, ...(state.victory_reward ? {victory_reward:state.victory_reward} : {})} : {}), ...(state.latest_reward ? {latest_reward:state.latest_reward} : {}), ...(state.phase === "ROUTE" ? { directions:["left","forward","right"], allowed_directions:(state.consecutive_right ?? 0) >= 3 ? ["left","forward"] : ["left","forward","right"], consecutive_right:state.consecutive_right ?? 0, last_direction:state.last_direction ?? null } : {}) };
 }
 
 type Options = { db: Database; secret: string; catalogs: any; getPlayer: (playerId: string) => any; makeSetup: (playerId: string, snapshot: any, selection: any) => any; awardVictory: (playerId: string, loadoutJson: string, now: number) => void; grantVictoryLoot: (playerId: string, grants: Record<string, number>, rewardId: string, now: number) => Record<string, number>; spendManaEssence: (playerId: string, actionId: string, now: number) => void; captureHomunculus: (playerId: string, id: string, now: number) => { duplicate: boolean } };
@@ -147,7 +148,7 @@ export function createExpeditionService(options: Options) {
     const row = db.query("SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM action_log WHERE player_id=? AND action_type='EXPEDITION_BUY_MANA' AND created_at>?").get(playerId,now-86400000) as any;
     return {remaining:Math.max(0,12-row.count), next:row.count >= 12 ? row.oldest + 86400000 : null};
   };
-  const response = (playerId: string, now: number, row?: any, state?: any, events?: any[]) => { const pool=balance(playerId,now), purchases=purchaseWindow(playerId,now); return { session: row && state ? publicSession(row, state) : null, mana:pool.mana, crystals:pool.crystals, mana_purchases_remaining:purchases.remaining, next_mana_purchase_at:purchases.next, next_regeneration_at:pool.regen_at || null, remaining_cooldown_ms:cooldown(playerId, now), server_time_unix_ms:now, ...(events ? {events:events.map(publicEvent)} : {}) }; };
+  const response = (playerId: string, now: number, row?: any, state?: any, events?: any[]) => { const pool=balance(playerId,now), purchases=purchaseWindow(playerId,now); return { ...spectatorNames(playerId), session: row && state ? publicSession(row, state) : null, mana:pool.mana, crystals:pool.crystals, mana_purchases_remaining:purchases.remaining, next_mana_purchase_at:purchases.next, next_regeneration_at:pool.regen_at || null, remaining_cooldown_ms:cooldown(playerId, now), server_time_unix_ms:now, ...(events ? {events:events.map(publicEvent)} : {}) }; };
   const makeNode = (state: any, setup: any, runId: string, seed: Uint8Array) => {
     const background = expeditionBackgroundAt(seed, runId, state.background_cursor++);
     const choices = [0,1].map(() => {
@@ -211,6 +212,7 @@ export function createExpeditionService(options: Options) {
       if (live?.status === "ACTIVE" && live.revision >= EXPEDITION_MAX_REVISION && action !== "exit") { abandon(live,now); return {limitReached:true}; }
       let row: any, state: any, events: any[] = [];
       if (action === "start") {
+        endSpectatingForStart(playerId);
         if (activePractice(db,playerId,now)) fail(409,"Practice is active.");
         if (cooldown(playerId, now)>0) fail(409,"Expedition exit cooldown active.");
         if (db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId)) fail(409,"An active expedition already exists.");
@@ -259,6 +261,10 @@ export function createExpeditionService(options: Options) {
           const result=action === "turn" ? resolveExpeditionTurn(state.combat,body.decision,draw) : resolveExpeditionInspiration(state.combat,body.decision,draw);
           if (result.error) fail(400,result.error);
           state.combat=result.next_state; events=result.events; state.log.push(...events);
+          if (Bun.env.SPECTATOR_ENABLED === "1" && state.combat.terminal_result) {
+            db.query("INSERT OR REPLACE INTO spectator_final_combats(mode,session_id,encounter,combat_json,created_at) VALUES ('expedition',?,?,?,?)").run(row.run_id,String(state.depth),JSON.stringify({combat:state.combat,log:state.log.slice(-512),log_base:Math.max(0,state.log.length-512),depth:state.depth,background:state.background,frozen_spells:JSON.parse(row.loadout_json)?.spell_ids}),now);
+            db.query("DELETE FROM spectator_final_combats WHERE rowid IN (SELECT rowid FROM spectator_final_combats WHERE created_at<? ORDER BY created_at LIMIT 50)").run(now-86_400_000);
+          }
           if (state.combat.terminal_result === "WIN") {
             const pool=balance(playerId,now);
             if (pool.mana < 0.1) fail(400,"Not enough expedition mana.");

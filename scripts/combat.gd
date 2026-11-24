@@ -125,6 +125,8 @@ var _dungeon_encounter_log_key := ""
 var _dungeon_encounter_details := {}
 static var _dungeon_last_brief_key := ""
 var _dungeon_seen_actions := {}
+var _spectator_readonly := false
+var _spectator_controller: Node
 var _dungeon_playing_events := false
 var _gate_epoch := 0
 var _gate_session_verified := false
@@ -264,6 +266,7 @@ var _next_turn_action := ""
 @onready var confirm_leave: Button = $ConfirmLeave/Panel/VBox/Buttons/LeaveButton
 
 func _ready() -> void:
+	_spectator_readonly = not SceneRouter._spectator_context.is_empty()
 	backend_url = preload("res://scripts/net/backend_endpoint.gd").resolve(backend_url)
 	player_entity.flip_h = false
 	player_hom.flip_h = false
@@ -281,6 +284,10 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_align_enemy_hom_to_circle, CONNECT_DEFERRED)
 	call_deferred("_align_enemy_hom_to_circle")
 	_setup_combat_labels()
+	var spectator_indicator := preload("res://scripts/ui/spectator_indicator.gd").new()
+	$PlayerPanel.add_child(spectator_indicator)
+	spectator_indicator.position = Vector2(20, 125)
+	spectator_indicator.visible = false
 	_setup_aligned_health_panels()
 	_setup_inspiration_ui()
 	_configure_tooltip_text()
@@ -471,6 +478,7 @@ func _dungeon_show_retry(message: String) -> void:
 	_dungeon_refresh_controls()
 
 func _dungeon_send_pending() -> void:
+	if _spectator_readonly: return
 	if _dungeon_pending.is_empty() or not _dungeon_request.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
 		return
 	_dungeon_kind = str(_dungeon_pending.get("kind", ""))
@@ -480,6 +488,7 @@ func _dungeon_send_pending() -> void:
 	_dungeon_refresh_controls()
 
 func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if ok and not _spectator_readonly and not request_id.is_empty() and request_id == _dungeon_request and _combat_backend != null and _combat_backend._verified_player_id == _dungeon_identity and _dungeon_identity == str(ConnectionGate.player_id): GlobalChatClient.apply_combat_spectators(data)
 	if request_id.is_empty() or request_id != _dungeon_request:
 		return
 	_dungeon_request = ""
@@ -557,6 +566,8 @@ func _dungeon_on_response(request_id: String, ok: bool, data: Dictionary) -> voi
 		_dungeon_recover()
 
 func _dungeon_playback_valid(owner: String, generation: int, run_id: String, action_id: String, revision: int, playback_epoch: int) -> bool:
+	if _spectator_readonly:
+		return is_instance_valid(_spectator_controller) and _spectator_controller.valid_playback(owner, generation, action_id, playback_epoch)
 	return is_inside_tree() and playback_epoch == _gate_epoch and _combat_backend != null and _combat_backend._session_generation == generation and _combat_backend._verified_player_id == owner and not owner.is_empty() and str(SceneRouter._dungeon_context.get("run_id", "")) == run_id and str(_dungeon_pending.get("payload", {}).get("client_action_id", "")) == action_id and int(_dungeon_pending.get("payload", {}).get("expected_revision", -1)) + 1 == revision and int(_dungeon_session.get("combat_revision", 0)) <= revision
 
 func _dungeon_present_events(events: Array, owner: String, generation: int, run_id: String, action_id: String, revision: int, playback_epoch: int) -> void:
@@ -910,6 +921,12 @@ func _dungeon_render() -> void:
 		var slot_icon: TextureRect = [player_item1, player_item2][i]
 		_set_item_icon(slot_icon, _find_by_id(_items, weapon_id))
 		slot_icon.modulate.a = 1.0 if i + 1 == active_slot else 0.5
+	if _spectator_readonly:
+		for button in spell_buttons: button.disabled = true
+		switch_weapon_btn.disabled = true
+		ultra_button.disabled = true
+		next_turn_btn.hide()
+		return
 	var phase := str(_dungeon_session.get("phase", "COMBAT"))
 	if phase == "FLOOR_CLEARED":
 		_log_immediate(tr("DUNGEON_FLOOR_CLEARED") % [floor_id, int(p.hp), int(p.max_hp)])
@@ -1033,6 +1050,7 @@ func _refresh_dungeon_blessing() -> void:
 	_blessing_panel.show()
 
 func _choose_dungeon_blessing(index: int) -> void:
+	if _spectator_readonly: return
 	var blessing: Variant = _dungeon_session.get("combat_state", {}).get("blessing")
 	if not blessing is Dictionary or not bool(blessing.get("pending", false)) or index < 0 or index >= blessing.get("offers", []).size() or not _dungeon_synchronized or not _dungeon_request.is_empty() or not _dungeon_pending.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity:
 		return
@@ -1080,6 +1098,7 @@ func _refresh_dungeon_inspiration() -> void:
 	_inspiration_panel.show()
 
 func _send_dungeon_inspiration(decision: Dictionary) -> void:
+	if _spectator_readonly: return
 	var p: Dictionary = _dungeon_session.get("combat_state", {}).get("player", {})
 	if not _dungeon_synchronized or _dungeon_playing_events or not _dungeon_pending.is_empty() or not _dungeon_request.is_empty() or _combat_backend == null or _combat_backend._verified_player_id != _dungeon_identity or not bool(p.get("inspiration_pending", false)):
 		return
@@ -1097,6 +1116,15 @@ func _layout_dungeon_floor_header() -> void:
 	_dungeon_floor_label.size = Vector2(spell_panel.size.x, 26)
 
 func _begin_combat_initialization() -> void:
+	if _spectator_readonly:
+		var mode := str(SceneRouter._spectator_context.get("mode", ""))
+		if mode in ["ranked", "friendly", "practice"]:
+			_ranked_controller = preload("res://scripts/ui/ranked_combat.gd").new()
+			add_child(_ranked_controller)
+		else:
+			_spectator_controller = preload("res://scripts/ui/spectator_combat.gd").new()
+			add_child(_spectator_controller)
+		return
 	if bool(SceneRouter._ranked_context.get("debug_visual", false)) and ConnectionGate.debug_lab_navigation_allowed():
 		_combat_debug = true
 		var debug := DebugFlags.new()
@@ -1252,6 +1280,7 @@ func _on_online_hunt_identity(state: Dictionary) -> void:
 			_combat_wait_timer.start(10.0)
 
 func _on_online_hunt_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if ok and not _spectator_readonly and not request_id.is_empty() and request_id in [_online_hunt_request, _online_turn_request, _solo_forfeit_request] and _combat_backend != null and _combat_backend._verified_player_id == _combat_identity and _combat_identity == str(ConnectionGate.player_id): GlobalChatClient.apply_combat_spectators(data)
 	if not request_id.is_empty() and request_id == _solo_forfeit_request:
 		_solo_forfeit_request = ""
 		if _connection_gate().blocked() and not _gate_session_verified:
@@ -1452,6 +1481,9 @@ func _online_playback_valid(generation: int, session_id: String, action_id: Stri
 	return is_inside_tree() and playback_epoch == _gate_epoch and not _online_identity_invalid and _combat_backend != null and _combat_backend._session_generation == generation and not _combat_identity.is_empty() and _combat_backend._verified_player_id == _combat_identity and str(_solo_context.get("session_id", "")) == session_id and str(_online_turn_payload.get("client_action_id", "")) == action_id and _online_hunt_revision == revision
 
 func connection_gate_lost() -> void:
+	if _spectator_readonly:
+		SpectatorClient.pause_for_recovery()
+		return
 	_gate_epoch += 1
 	_gate_session_verified = false
 	_online_presenting_events = false
@@ -1466,6 +1498,9 @@ func connection_gate_lost() -> void:
 		_dungeon_refresh_controls()
 
 func connection_gate_recover() -> void:
+	if _spectator_readonly:
+		if SpectatorClient.recover_after_gate(): _connection_gate().recovery_completed()
+		return
 	if not _connection_gate().blocked() or not _connection_gate()._player_verified:
 		return
 	if _combat_backend == null:
@@ -1639,6 +1674,7 @@ func _present_online_terminal() -> void:
 	next_turn_btn.show()
 
 func _send_online_pending_turn() -> void:
+	if _spectator_readonly: return
 	if _online_identity_invalid or _online_turn_payload.is_empty() or not _online_turn_request.is_empty() or not _online_hunt_request.is_empty() or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity or _combat_backend.token.is_empty():
 		_online_turn_unresolved()
 		return
@@ -1663,7 +1699,7 @@ func _render_online_hunt(session: Dictionary, preserve_hp: bool = false) -> bool
 	if int(p.get("max_hp", 0)) <= 0 or int(b.get("max_hp", 0)) <= 0 or str(loadout.get("entity_id", "")).is_empty():
 		return false
 	if _online_hunt_info == null:
-		_apply_world_combat_visuals(str(_solo_context.get("visual_zone_id", "")))
+		_apply_world_combat_visuals(str(SceneRouter._spectator_context.get("visual_zone_id", "")) if _spectator_readonly else str(_solo_context.get("visual_zone_id", "")))
 		_create_solo_panel()
 		_online_hunt_info = Label.new()
 		_online_hunt_info.name = "OnlineHuntInfo"
@@ -1865,6 +1901,7 @@ func _refresh_online_inspiration() -> void:
 	_inspiration_panel.show()
 
 func _send_online_inspiration(decision: Dictionary) -> void:
+	if _spectator_readonly: return
 	if _online_identity_invalid or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity or _combat_backend.token.is_empty() or not _online_turn_payload.is_empty() or not _online_hom_payload.is_empty() or not _online_turn_request.is_empty() or not _online_hunt_request.is_empty() or str(_online_hunt_session.get("status", "")) != "ACTIVE" or int(_online_hunt_session.get("combat_revision", 0)) != _online_hunt_revision:
 		return
 	var inspiration: Dictionary = _online_hunt_session.get("combat_state", {}).get("inspiration", {})
@@ -2029,6 +2066,9 @@ func _apply_world_combat_visuals(zone_id: String) -> void:
 	_align_health_panels()
 
 func _on_back_pressed() -> void:
+	if _spectator_readonly:
+		SceneRouter.finish_spectating()
+		return
 	if _ranked_controller:
 		_ranked_controller.back()
 		return
@@ -2051,6 +2091,7 @@ func _on_confirm_stay() -> void:
 		confirm_popup.hide()
 
 func _on_confirm_leave() -> void:
+	if _spectator_readonly: return
 	if confirm_popup:
 		confirm_popup.hide()
 	if _ranked_controller:
@@ -2089,6 +2130,7 @@ func _online_hunt_exit(confirmed: bool) -> void:
 		_on_online_hunt_identity({"player_id": _combat_identity})
 
 func _request_solo_forfeit() -> void:
+	if _spectator_readonly: return
 	if not _solo_forfeit_request.is_empty():
 		return
 	if _online_hunt_guard and (_online_presenting_events or not _online_turn_payload.is_empty() or not _online_hom_payload.is_empty() or not _online_turn_request.is_empty() or not _online_hunt_request.is_empty() or _online_hunt_session.is_empty()):
@@ -2362,7 +2404,7 @@ func _create_solo_minion_views() -> void:
 		portrait.size = Vector2(110, 106)
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		view.add_child(portrait)
-		if _online_hunt_guard:
+		if _online_hunt_guard or (_spectator_readonly and str(SceneRouter._spectator_context.get("mode", "")) == "hunt"):
 			view.mouse_filter = Control.MOUSE_FILTER_STOP
 			view.tooltip_text = "Inspect minion (no combat action)"
 			view.gui_input.connect(_on_online_minion_input.bind(i))
@@ -2395,7 +2437,7 @@ func _update_solo_minion_views() -> void:
 	for minion in _solo_minions:
 		if int(minion.get("hp", 0)) > 0:
 			alive.append(minion)
-	if _online_hunt_guard:
+	if _online_hunt_guard or (_spectator_readonly and str(SceneRouter._spectator_context.get("mode", "")) == "hunt"):
 		_online_visible_minions.clear()
 		for minion in alive:
 			_online_visible_minions.append(str(minion.get("id", "")))
@@ -2408,7 +2450,7 @@ func _update_solo_minion_views() -> void:
 			continue
 		var x := (enemy_entity.size.x - view.size.x) * 0.5
 		var y := enemy_entity.size.y + 72.0
-		if _online_hunt_guard:
+		if _online_hunt_guard or (_spectator_readonly and str(SceneRouter._spectator_context.get("mode", "")) == "hunt"):
 			x = -view.size.x + 10.0 if i == 0 else enemy_entity.size.x - 10.0
 			y = enemy_entity.size.y - view.size.y
 		elif alive.size() > 1:
@@ -2416,11 +2458,12 @@ func _update_solo_minion_views() -> void:
 		view.position = Vector2(x, y)
 		var fill := view.get_node("HP/Fill") as ColorRect
 		fill.size.x = 90.0 * clampf(float(alive[i].hp) / maxf(1.0, float(alive[i].max_hp)), 0.0, 1.0)
-		if _online_hunt_guard:
+		if _online_hunt_guard or (_spectator_readonly and str(SceneRouter._spectator_context.get("mode", "")) == "hunt"):
 			var marker := view.get_node("Selection") as Label
-			marker.text = "TARGET" if str(alive[i].get("id", "")) == _online_inspected_minion else ""
+			marker.text = "TARGET" if not _spectator_readonly and str(alive[i].get("id", "")) == _online_inspected_minion else ""
 
 func _on_online_minion_input(event: InputEvent, index: int) -> void:
+	if _spectator_readonly: return
 	if not _online_hunt_guard or not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT or not event.pressed or index < 0 or index >= _online_visible_minions.size():
 		return
 	_online_inspected_minion = _online_visible_minions[index]
@@ -3234,6 +3277,7 @@ func _finish_inspiration_exchange() -> void:
 	_update_ui()
 
 func _choose_inspiration(index: int) -> void:
+	if _spectator_readonly: return
 	if _ranked_controller:
 		_ranked_controller.choose_inspiration(index)
 		return
@@ -3255,6 +3299,7 @@ func _choose_inspiration(index: int) -> void:
 	_refresh_spell_buttons()
 
 func _on_inspiration_cancel() -> void:
+	if _spectator_readonly: return
 	if _ranked_controller:
 		_ranked_controller.decline_inspiration()
 		return
@@ -3381,6 +3426,9 @@ func _notification(what: int) -> void:
 			turn_label.set_meta("localized_cleared_text", turn_label.text)
 
 func _on_next_turn() -> void:
+	if _spectator_readonly:
+		SceneRouter.finish_spectating()
+		return
 	if _ranked_controller:
 		_ranked_controller.return_to_loadout()
 		return
@@ -3421,6 +3469,7 @@ func _on_next_turn() -> void:
 		get_tree().change_scene_to_file("res://scenes/LoadoutGrid.tscn")
 
 func _on_spell_chosen(index: int) -> void:
+	if _spectator_readonly: return
 	if _ranked_controller:
 		_ranked_controller.spell(index)
 		return
@@ -3473,6 +3522,7 @@ func _ultra_available(fighter: Dictionary) -> bool:
 	return not _solo_boss_mode and _battle_index == 3 and _player_wins == 1 and _enemy_wins == 1 and not _sudden_death and not bool(fighter.get("ultra_used", false))
 
 func _on_ultra_toggled(armed: bool) -> void:
+	if _spectator_readonly: return
 	_ultra_armed = armed and _ultra_available(player) and not _resolving_exchange and not _processing_steps and not _inspiration_panel.visible and _pending_hom_action.is_empty()
 	if _ranked_controller and not _ranked_controller.can_submit():
 		_ultra_armed = false
@@ -3493,6 +3543,7 @@ func _commit_ultra(fighter: Dictionary, action: Dictionary) -> void:
 	_append_combat_log("", _combat_event(fighter, "inspiration", " activates ULTRATURN x2; consumed for this battle.", {}))
 
 func _on_switch_weapon() -> void:
+	if _spectator_readonly: return
 	if _ranked_controller:
 		_ranked_controller.switch_weapon()
 		return
@@ -3524,6 +3575,7 @@ func _hom_ready(fighter: Dictionary) -> bool:
 	return not bool(fighter.get("hom_spent", true)) and int(fighter.get("hom_energy", 0)) >= int(fighter.get("hom_ready_at", 3))
 
 func _queue_combat_action(action: Dictionary) -> void:
+	if _spectator_readonly: return
 	if _online_hunt_guard:
 		return
 	if not _pending_hom_action.is_empty():
@@ -3539,6 +3591,7 @@ func _queue_combat_action(action: Dictionary) -> void:
 	await _start_weapon_exchange(action)
 
 func _on_hom_choice(choice: String) -> void:
+	if _spectator_readonly: return
 	if _ranked_controller:
 		_ranked_controller.hom_choice(choice)
 		return
@@ -4804,6 +4857,7 @@ func _record_spell_damage(spell: Dictionary, amount: int) -> void:
 		_spell_damage_totals[spell_name] = int(_spell_damage_totals.get(spell_name, 0)) + amount
 
 func _show_unverified_reward_status() -> void:
+	if _spectator_readonly: return
 	if _verified_combat_match_id.is_empty() or _combat_debug or _combat_session_invalid or _combat_backend == null or _combat_identity.is_empty() or _combat_backend._verified_player_id != _combat_identity:
 		_set_reward_status("Rewards unavailable: online combat verification required.")
 		return

@@ -360,6 +360,7 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 	icons.set_boss_effects(true, extra)
 	icons.set_fighter(0, {"status":normalized, "persistent_statuses":fighter.get("persistent_statuses", {}), "defense_presentation":fighter.get("defense_presentation", {}), "passive_modifiers":fighter.get("passive_modifiers", []), "pending_drain":fighter.get("pending_drain", []), "spell_neutralize_active":fighter.get("spell_neutralize_active", 0), "spell_neutralize_pending":fighter.get("spell_neutralize_pending", 0)})
 	var inspiration := Inspiration.new()
+	inspiration.name = "EnemyInspiration" if enemy else "PlayerInspiration"
 	_place(inspiration, Vector2(x, 725), Vector2(200, 26))
 	inspiration.set_fighter({"inspiration":fighter.get("inspiration", 0), "inspiration_used_this_battle":fighter.get("inspiration_used", false)})
 	if not hom_id.is_empty() and not hom_path.is_empty():
@@ -457,6 +458,7 @@ func _build_inspiration(main: VBoxContainer, player: Dictionary) -> void:
 	controls.append(decline)
 
 func _cast(id: String) -> void:
+	if is_instance_valid(host) and bool(host.get("spectator_mode")): return
 	if not pending_hom_decision.is_empty(): return
 	var state: Dictionary = session.get("combat_state", {})
 	var player: Dictionary = state.get("player", {})
@@ -471,6 +473,7 @@ func _cast(id: String) -> void:
 		host.send_combat_decision("turn", decision)
 
 func _choose_hom(choice: String) -> void:
+	if is_instance_valid(host) and bool(host.get("spectator_mode")): return
 	if pending_hom_decision.is_empty() or choice not in ["attack", "hold"]: return
 	var decision := pending_hom_decision.duplicate(true)
 	decision.hom_action = choice
@@ -478,6 +481,7 @@ func _choose_hom(choice: String) -> void:
 	host.send_combat_decision("turn", decision)
 
 func _switch(slot: int) -> void:
+	if is_instance_valid(host) and bool(host.get("spectator_mode")): return
 	host.send_combat_decision("turn", {"turn":int(session.get("combat_state", {}).get("turn", 0)) + 1, "switch_slot":slot})
 
 func lock_controls() -> void:
@@ -652,6 +656,57 @@ func _show_damage_number(sprite: Control, damage: int) -> void:
 	tween.tween_property(label, "position:y", label.position.y - 50.0, 2.0)
 	tween.tween_property(label, "modulate:a", 0.0, 2.0)
 	tween.chain().tween_callback(label.queue_free)
+
+func _spectator_status_effects(fighter: Dictionary, state: Dictionary, side: String) -> Array:
+	var effects: Array = []
+	for delayed in state.get("strategic_delayed", []):
+		if str(delayed.get("target", "")) == side: effects.append({"icon":"hourglass", "label":str(delayed.get("amount", 0)), "tooltip":tr("STATUS_DELAYED_DETAIL") % [int(delayed.get("amount", 0)), int(delayed.get("due_turn", 0))]})
+	for field in ["strategic_trap", "strategic_heal_suppression"]:
+		if fighter.has(field):
+			var remaining := maxi(0, int(fighter[field].get("expires_turn", 0)) - int(state.get("turn", 0)))
+			var description := tr("STATUS_TRAP_DETAIL") % [roundi(float(fighter[field].get("value", 0)) * 100), remaining] if field == "strategic_trap" else tr("STATUS_HEAL_SUPPRESSION_DETAIL") % remaining
+			effects.append({"icon":"trap" if field == "strategic_trap" else "heal_block", "label":"%dT" % remaining, "tooltip":description})
+	var current: Variant = state.get("physical_anomaly")
+	if current is Dictionary and not current.is_empty():
+		var affinity := str(fighter.get("type", ""))
+		var modifier := 15 if affinity == str(current.get("favored_type", "")) else -15 if affinity == str(current.get("weakened_type", "")) else 0
+		if modifier != 0: effects.append({"icon":"type", "label":("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip":tr("ANOMALY_TOOLTIP_GAIN") % [GameLocalization.catalog("type", str(current.get("favored_type", "")), "name", str(current.get("favored_type", "")).capitalize()), GameLocalization.catalog("type", str(current.get("weakened_type", "")), "name", str(current.get("weakened_type", "")).capitalize()), int(current.get("remaining_exchanges", 0))]})
+	return effects
+
+func apply_spectator_snapshot(data: Dictionary) -> void:
+	if not is_instance_valid(host) or not bool(host.get("spectator_mode")): return
+	session = data.duplicate(true)
+	var combat: Dictionary = session.get("combat_state", {})
+	for pair in [[player_hp, "player", "PlayerStatus"], [enemy_hp, "npc", "EnemyStatus"]]:
+		var fighter: Dictionary = combat.get(pair[1], {})
+		if is_instance_valid(pair[0]):
+			pair[0].max_value = maxi(1, int(fighter.get("max_hp", 1)))
+			pair[0].value = int(fighter.get("hp", 0))
+			_update_hp(pair[0])
+		var icon = stage.get_node_or_null(pair[2])
+		if icon != null:
+			var normalized: Dictionary = fighter.get("status", {}).duplicate(true)
+			for aliases in [["shield", "shield_pct"], ["reflect", "reflect_pct"], ["vuln", "vuln_pct"]]: normalized[aliases[1]] = normalized.get(aliases[0], normalized.get(aliases[1], 0))
+			var view := fighter.duplicate(true)
+			view["status"] = normalized
+			icon.set_boss_effects(true, _spectator_status_effects(fighter, combat, str(pair[1])))
+			icon.set_fighter(0, view)
+		var inspiration = stage.get_node_or_null("PlayerInspiration" if pair[1] == "player" else "EnemyInspiration")
+		if inspiration != null: inspiration.set_fighter({"inspiration":fighter.get("inspiration", 0), "inspiration_used_this_battle":fighter.get("inspiration_used", false)})
+		var meter = stage.get_node_or_null("PlayerHomunculusMeter" if pair[1] == "player" else "EnemyHomunculusMeter")
+		if meter != null: meter.set_fighter({"hom_name":str(fighter.get("hom_name", fighter.get("hom_id", ""))), "hom_energy":int(fighter.get("hom_energy", 0)), "hom_spent":bool(fighter.get("hom_spent", false))})
+	displayed_weapon_slot = int(combat.get("active_weapon_slot", 0))
+	for index in weapon_buttons.size():
+		if weapon_buttons[index].get_child_count() > 0:
+			weapon_buttons[index].get_child(0).modulate = Color.WHITE if index + 1 == displayed_weapon_slot else Color(0.6, 0.6, 0.6)
+	var player: Dictionary = combat.get("player", {})
+	var ids: Array = player.get("spell_ids", [])
+	for i in mini(spell_buttons.size(), ids.size()):
+		var id := str(ids[i])
+		var spell: Dictionary = registry.get_spell_by_id(id)
+		var cooldown := int(player.get("cooldowns", {}).get(id, 0))
+		spell_buttons[i].text = "%s\n%s  |  %s%%  |  CD %d" % [GameLocalization.catalog("spell", id, "name", str(spell.get("name", id))), str(roundi(float(spell.get("power_mult", 0)) * 100)) + "%", roundi(float(spell.get("accuracy", 0)) * 100), cooldown]
+	lock_controls()
 
 func present_events(events: Array, epoch: int) -> void:
 	lock_controls()

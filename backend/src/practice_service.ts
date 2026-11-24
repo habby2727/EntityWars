@@ -1,3 +1,4 @@
+import { endSpectatingForStart, spectatorNames } from "./spectator_guard";
 import type { Database } from "bun:sqlite";
 import { createHmac, randomUUID } from "node:crypto";
 import { createPvpCombatState, createPvpFighter, resolvePvpExchange, resolvePvpInspiration, validatePvpDecision, type PvpCatalogs, type PvpSnapshot } from "./pvp/combat";
@@ -10,7 +11,7 @@ const IDLE = 60 * 60_000, RETENTION = 7 * 86_400_000, MAX_REVISION = 500;
 export function activePractice(db: Database, player: string, now: number): boolean {
   return !!db.query("SELECT 1 FROM practice_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now);
 }
-function otherCombat(db: Database, player: string, now: number): boolean {
+export function otherCombat(db: Database, player: string, now: number): boolean {
   return !!(db.query("SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1").get(player)
     || db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>?").get(player,now)
     || db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(player,now)
@@ -33,7 +34,7 @@ export function createPracticeService(db: Database, catalogs: PvpCatalogs, secre
   const dto = (row:any, after=0) => {
     const s=JSON.parse(row.combat_json), outcome=row.result_json ? JSON.parse(row.result_json) : null;
     const anomaly=s.physical_anomaly ? (({id,favored_type,weakened_type,remaining_exchanges}:any)=>({id,favored_type,weakened_type,remaining_exchanges}))(s.physical_anomaly) : null;
-    return {match_id:row.match_id,kind:'practice',status:row.status,combat_revision:row.revision,deadline:null,turn:s.turn,round:s.round,battle_index:s.battle_index,sudden_death:s.sudden_death,physical_anomaly:anomaly,score:{player:s.wins.left,enemy:s.wins.right},player:projectPvpFighter(s,'left','left',{player_id:row.player_id,display_name:s.fighters.left.name}),enemy:projectPvpFighter(s,'right','left',{player_id:'practice_npc',display_name:s.fighters.right.name}),ready:{player:false,enemy:false},result:outcome,events:(db.query('SELECT seq,payload_json FROM practice_events WHERE match_id=? AND seq>? ORDER BY seq LIMIT 500').all(row.match_id,after) as any[]).map(e=>sanitizePvpEvent(JSON.parse(e.payload_json),'left',e.seq))};
+    return {...spectatorNames(row.player_id),match_id:row.match_id,kind:'practice',status:row.status,combat_revision:row.revision,deadline:null,turn:s.turn,round:s.round,battle_index:s.battle_index,sudden_death:s.sudden_death,physical_anomaly:anomaly,score:{player:s.wins.left,enemy:s.wins.right},player:projectPvpFighter(s,'left','left',{player_id:row.player_id,display_name:s.fighters.left.name}),enemy:projectPvpFighter(s,'right','left',{player_id:'practice_npc',display_name:s.fighters.right.name}),ready:{player:false,enemy:false},result:outcome,events:(db.query('SELECT seq,payload_json FROM practice_events WHERE match_id=? AND seq>? ORDER BY seq LIMIT 500').all(row.match_id,after) as any[]).map(e=>sanitizePvpEvent(JSON.parse(e.payload_json),'left',e.seq))};
   };
   const writeEvents = (id:string, events:any[]) => { let seq=(db.query('SELECT COALESCE(MAX(seq),0) n FROM practice_events WHERE match_id=?').get(id) as any).n; const ins=db.query('INSERT INTO practice_events VALUES (?,?,?)'); for (const e of events) ins.run(id,++seq,JSON.stringify(e)); };
   const npc = (id:string):PvpSnapshot => {
@@ -63,6 +64,7 @@ export function createPracticeService(db: Database, catalogs: PvpCatalogs, secre
   };
   return {
     start(player:string, actionId:string, selection:any) { return transact(player,actionId,{kind:'start',selection},now=>{
+      endSpectatingForStart(player);
       if (activePractice(db,player,now) || otherCombat(db,player,now)) throw new Error('PLAYER_BUSY');
       const own=snapshot(player,selection); if (!own || own.player_id!==player) throw new Error('UNTRUSTED_SETUP');
       const id=randomUUID(), state=createPvpCombatState(own,npc(id),catalogs); if ('error' in state) throw new Error(state.error);

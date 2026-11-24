@@ -1,3 +1,4 @@
+import { endSpectatingForStart, spectatorNames } from "../spectator_guard";
 import { activePractice } from "../practice_service";
 import { combatHomunculusAllowed } from "../homunculus_catalog";
 import type { Database } from "bun:sqlite";
@@ -89,6 +90,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
           if (JSON.stringify(stored.selection) !== JSON.stringify(selection) || (stored.playback_protocol ?? 0) !== (playbackProtocol ?? 0)) throw new Error("QUEUE_CONFLICT");
           return { state: "QUEUED", joined_at: previous.queued_at, expires_at: previous.expires_at };
         }
+        endSpectatingForStart(playerId);
         if (activePractice(db,playerId,now)) throw new Error("PLAYER_BUSY");
         const snapshot = trustedSnapshot(playerId, selection);
         if (!snapshot || snapshot.player_id !== playerId || "error" in createPvpFighter(snapshot, catalogs)) throw new Error("UNTRUSTED_SETUP");
@@ -217,7 +219,7 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
     const total = finished?.totals?.[viewer];
     const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...(finished.result === viewer && finished.xp ? {homunculus_xp: finished.xp} : {}), ...(row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...(Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {}) } : {}) } : null;
     const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
-    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, ...(row.playback_protocol === 1 ? {phase:row.phase, server_time:clock(), playback_revision:row.phase === "PLAYBACK" ? row.revision : null, playback_until:row.phase === "PLAYBACK" ? row.decision_deadline : null, playback_event_end:row.playback_event_end} : {}), turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizePvpEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
+    return { ...spectatorNames(viewerId), match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, ...(row.playback_protocol === 1 ? {phase:row.phase, server_time:clock(), playback_revision:row.phase === "PLAYBACK" ? row.revision : null, playback_until:row.phase === "PLAYBACK" ? row.decision_deadline : null, playback_event_end:row.playback_event_end} : {}), turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizePvpEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
   };
   const advance = (row: any, now: number, timeout: boolean) => {
     const eventStart = (db.query("SELECT COALESCE(MAX(seq),0) n FROM pvp_events WHERE match_id=?").get(row.match_id) as any).n;

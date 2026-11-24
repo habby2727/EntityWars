@@ -4,6 +4,9 @@ const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const Recovery := preload("res://scripts/net/expedition_recovery.gd")
 const SeenRewards := preload("res://scripts/net/expedition_rewards_seen.gd")
 const BACKGROUNDS := "res://assets/entities/expeditions/backgrounds/"
+var spectator_mode := false
+var spectator_events: Array = []
+var spectator_latest := {}
 var backend: BackendClient
 var account_id := ""
 var request := ""
@@ -62,6 +65,22 @@ func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, clampf(minf(get_viewport_rect().size.x / 1920.0, get_viewport_rect().size.y / 1080.0), 0.65, 1.0))
 	$Background.hide()
 	_build_ui()
+	spectator_mode = str(SceneRouter._spectator_context.get("mode", "")) == "expedition"
+	if spectator_mode:
+		back_button.pressed.disconnect(SceneRouter.go_to_world_gate)
+		back_button.pressed.connect(SceneRouter.finish_spectating)
+		back_button.text = tr("SPECTATOR_LEAVE")
+		status.text = tr("SPECTATING") % str(SceneRouter._spectator_context.get("username", ""))
+		mana_bar.get_parent().hide()
+		crystal_bar.get_parent().hide()
+		retry.hide()
+		exit_button.hide()
+		SpectatorClient.updated.connect(_spectator_update)
+		SpectatorClient.failed.connect(_spectator_failure)
+		SpectatorClient.ready_to_observe()
+		return
+	var observer_indicator := preload("res://scripts/ui/spectator_indicator.gd").new()
+	content.add_child(observer_indicator)
 	Recovery.clear_legacy()
 	if _visual_debug_allowed():
 		status.text = "VISUAL DEBUG · OFFLINE"
@@ -316,6 +335,7 @@ func _stop_lease() -> void:
 	if is_instance_valid(heartbeat_http): heartbeat_http.cancel_request()
 
 func _forfeit() -> void:
+	if spectator_mode: return
 	if forfeited: return
 	forfeited = true
 	_stop_lease()
@@ -337,6 +357,9 @@ func _forfeit() -> void:
 	retry.disabled = true
 
 func connection_gate_lost() -> void:
+	if spectator_mode:
+		SpectatorClient.pause_for_recovery()
+		return
 	if lease.is_empty() and pending.is_empty(): return
 	recovery_required = true
 	playback_epoch += 1
@@ -345,7 +368,13 @@ func connection_gate_lost() -> void:
 	if is_instance_valid(combat_view): combat_view.lock_controls()
 	_update_controls()
 
+func connection_gate_recover() -> void:
+	if spectator_mode:
+		if SpectatorClient.recover_after_gate(): ConnectionGate.recovery_completed()
+	else: ConnectionGate.recovery_completed()
+
 func _heartbeat() -> void:
+	if spectator_mode: return
 	if lease.is_empty() or forfeited or heartbeat_in_flight: return
 	var gate = get_node("/root/ConnectionGate")
 	if backend == null or backend.token != lease_token or (gate.blocked() and gate.state != gate.State.RECONNECTING): return
@@ -409,6 +438,7 @@ func _identity_changed(state: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	if video.is_playing(): _fit_video()
+	if spectator_mode: return
 	if visual_debug:
 		if not _visual_debug_allowed():
 			visual_debug = false
@@ -437,6 +467,7 @@ func _process(delta: float) -> void:
 	if not state_data.is_empty(): _update_status()
 
 func _refresh() -> void:
+	if spectator_mode: return
 	if visual_debug or backend == null: return
 	if recovery_conflict or playing_events or is_instance_valid(reward_popup) or account_id.is_empty() or backend._verified_player_id != account_id or not request.is_empty(): return
 	if get_node("/root/ConnectionGate").blocked(): return
@@ -461,6 +492,7 @@ func _refresh() -> void:
 		_update_controls()
 
 func _completed(id: String, ok: bool, data: Dictionary) -> void:
+	if ok and not spectator_mode and id == request and not id.is_empty() and backend != null and backend._verified_player_id == account_id and account_id == str(ConnectionGate.player_id): GlobalChatClient.apply_combat_spectators(data)
 	if id != request or id.is_empty(): return
 	request = ""
 	if account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty():
@@ -599,6 +631,7 @@ func _valid_action_response(received: Variant) -> bool:
 	return str(received.get("run_id", "")) == str(payload.get("run_id", "")) and int(received.get("revision", 0)) == int(payload.get("expected_revision", 0)) + 1
 
 func send_combat_decision(kind: String, decision: Dictionary) -> void:
+	if spectator_mode: return
 	if visual_debug: return
 	if kind not in ["turn", "inspiration"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("phase", "")) != "COMBAT": return
 	var combat: Dictionary = session.get("combat_state", {})
@@ -625,10 +658,12 @@ func _update_controls() -> void:
 		if is_instance_valid(button): button.disabled = busy or bool(button.get_meta("unavailable", false))
 
 func _confirm_exit() -> void:
+	if spectator_mode: return
 	if exit_button.disabled or not exit_button.visible: return
 	exit_confirmation.popup_centered(Vector2i(750, 300))
 
 func _send_phase_action(kind: String, direction: String = "") -> void:
+	if spectator_mode: return
 	if visual_debug: return
 	if kind not in ["capture", "skip", "advance", "exit", "buy_mana"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or is_instance_valid(reward_popup) or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("status", "")) != "ACTIVE": return
 	var phase := str(session.get("phase", ""))
@@ -888,6 +923,7 @@ func _render_choices() -> void:
 	_update_controls()
 
 func _select(index: int) -> void:
+	if spectator_mode: return
 	if visual_debug: return
 	if backend == null or recovery_required or account_id.is_empty() or not request.is_empty() or not pending.is_empty() or account_id != backend._verified_player_id or str(session.get("phase", "")) != "EXPLORE": return
 	var payload := {"run_id": str(session.get("run_id", "")), "expected_revision": int(session.get("revision", 0)), "choice": index, "client_action_id": backend._make_uuid()}
@@ -898,6 +934,47 @@ func _select(index: int) -> void:
 	if request.is_empty():
 		recovery_required = true
 		message.text = tr("EXPEDITION_CONNECTION")
+
+func _spectator_failure(key: String) -> void:
+	if spectator_mode and is_instance_valid(status): status.text = tr(key)
+
+func _spectator_update(data: Dictionary, initial: bool) -> void:
+	if not spectator_mode or SceneRouter._spectator_context.is_empty(): return
+	spectator_latest = data.get("snapshot", {}).duplicate(true)
+	var events: Array = data.get("events", [])
+	if initial:
+		session = spectator_latest.duplicate(true)
+		session["battle_log"] = events
+		_set_background(str(session.get("background_key", "")))
+		_render_combat()
+		combat_view.lock_controls()
+		return
+	if bool(data.get("cursor_reset", false)) or spectator_events.size() + events.size() > 50:
+		playback_epoch += 1
+		spectator_events.clear()
+		playing_events = false
+		_spectator_reconcile()
+		return
+	spectator_events.append_array(events)
+	if not playing_events: _spectator_play()
+
+func _spectator_play() -> void:
+	if playing_events or not is_instance_valid(combat_view): return
+	playing_events = true
+	var current := playback_epoch
+	while not spectator_events.is_empty() and is_inside_tree() and current == playback_epoch:
+		var event: Dictionary = spectator_events.pop_front()
+		await combat_view.present_events([event], current)
+	if current == playback_epoch:
+		playing_events = false
+		_spectator_reconcile()
+
+func _spectator_reconcile() -> void:
+	if not is_instance_valid(combat_view) or spectator_latest.is_empty(): return
+	session = spectator_latest.duplicate(true)
+	var outcome := str(session.get("combat_state", {}).get("terminal_result", ""))
+	if outcome in ["WIN", "LOSS"]: status.text = (tr("SPECTATING") % str(SceneRouter._spectator_context.get("username", ""))) + "  |  " + tr("EXPEDITION_VICTORY" if outcome == "WIN" else "EXPEDITION_DEFEAT")
+	combat_view.apply_spectator_snapshot(session)
 
 func _render_combat(retained_icons: Array = []) -> void:
 	combat_view = preload("res://scripts/ui/expedition_combat.gd").new()

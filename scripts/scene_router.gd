@@ -42,6 +42,7 @@ static var _hunt_loadout := {}
 static var _debug_guardian_wins := {}
 static var _dungeon_context := {}
 static var _ranked_context := {}
+static var _spectator_context := {}
 static var _friendly_context := {}
 static var _expedition_context := {}
 static var _expedition_forfeit_notice := false
@@ -64,6 +65,7 @@ static func clear_account_context() -> void:
 	_debug_guardian_wins.clear()
 	_dungeon_context.clear()
 	_ranked_context.clear()
+	_spectator_context.clear()
 	_friendly_context.clear()
 	_expedition_context.clear()
 	_expedition_forfeit_notice = false
@@ -123,6 +125,28 @@ static func finish_friendly() -> void:
 static func go_to_expedition_loadout(player_id: String) -> void:
 	_expedition_context = {"player_id": player_id, "loadout": true}
 	_go_to(SCENE_LOADOUT, "LoadoutGrid")
+
+static func begin_spectating(context: Dictionary) -> void:
+	var gate := _connection_gate()
+	if gate.blocked() or str(context.get("player_id", "")) != str(gate.player_id) or int(context.get("generation", -1)) != int(gate._generation) or not _forest_modes_safe(): return
+	_spectator_context = context.duplicate(true)
+	_go_to(SCENE_EXPEDITIONS if context.get("mode") == "expedition" else SCENE_COMBAT, "Spectator")
+
+static func finish_spectating() -> void:
+	if _spectator_context.is_empty():
+		SpectatorClient.leave()
+		go_to_lab_hub()
+		return
+	var origin := str(_spectator_context.get("origin", ""))
+	SpectatorClient.leave()
+	_spectator_context.clear()
+	if forest_return_available():
+		_forest_restore = _forest_return.duplicate(true)
+		_forest_return.clear()
+		_go_to(SCENE_FOREST_WORLD, "ForestWorld")
+	elif not origin.is_empty() and ResourceLoader.exists(origin):
+		_go_to(origin, "SpectatorReturn")
+	else: go_to_lab_hub()
 
 static func go_to_ranked_combat(match_id: String) -> void:
 	if _connection_gate().blocked():
@@ -305,7 +329,7 @@ static func forest_return_available() -> bool:
 	return true
 
 static func _forest_modes_safe() -> bool:
-	if _hunt_loadout_active or not _solo_hunt_context.is_empty() or not _dungeon_context.is_empty() or not _ranked_context.is_empty() or _expedition_forfeit_notice:
+	if not _spectator_context.is_empty() or _hunt_loadout_active or not _solo_hunt_context.is_empty() or not _dungeon_context.is_empty() or not _ranked_context.is_empty() or _expedition_forfeit_notice:
 		return false
 	# Returning from an unstarted loadout can leave only its owner in this context.
 	for key in _expedition_context:

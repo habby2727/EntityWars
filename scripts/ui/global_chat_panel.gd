@@ -22,6 +22,7 @@ var _toggle_row: HBoxContainer
 var _disclosure: Label
 
 func _ready() -> void:
+	SpectatorClient.failed.connect(func(key): if is_instance_valid(_status): _status.text = tr(key))
 	layer = 40
 	var anchor := Control.new()
 	anchor.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -261,6 +262,16 @@ func _refresh_online_list() -> void:
 		username.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(username)
 		var player_id := str(player.get("player_id", ""))
+		if bool(player.get("is_friend", false)) and player.get("spectatable_activity") in ["ranked", "friendly", "practice", "hunt", "dungeon", "expedition"]:
+			var eye := Button.new()
+			eye.custom_minimum_size = Vector2(46, 46)
+			eye.tooltip_text = tr("SPECTATE")
+			var glyph: Control = preload("res://scripts/ui/spectator_eye.gd").new()
+			glyph.position = Vector2(10, 10)
+			glyph.size = Vector2(26, 26)
+			eye.add_child(glyph)
+			eye.pressed.connect(SpectatorClient.start.bind(player_id, str(player.get("username", ""))))
+			row.add_child(eye)
 		if SocialClient.enabled and not player_id.is_empty():
 			var incoming := SocialClient.incoming_for(player_id)
 			if not incoming.is_empty():

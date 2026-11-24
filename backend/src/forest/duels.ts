@@ -1,3 +1,4 @@
+import { endSpectatingForStart } from "../spectator_guard";
 import { activePractice } from "../practice_service";
 import type { Database } from 'bun:sqlite';
 import type { PvpSnapshot } from '../pvp/combat';
@@ -111,6 +112,7 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
     const old=db.query('SELECT selection_json,playback_protocol FROM forest_duel_ready WHERE invite_id=? AND player_id=?').get(body.invite_id,player) as any;
     if (old && (old.selection_json!==JSON.stringify(body.selection) || old.playback_protocol !== (body.playback_protocol ?? 0))) return fail(409,'READY_CONFLICT');
     if (!old) {
+     endSpectatingForStart(player);
      const snapshot=combat.snapshot(player,body.selection);
      if (!snapshot || snapshot.player_id!==player) return fail(400,'UNTRUSTED_SETUP');
      db.query('INSERT INTO forest_duel_ready (invite_id,player_id,snapshot_json,selection_json,playback_protocol) VALUES (?,?,?,?,?)').run(body.invite_id,player,JSON.stringify(snapshot),JSON.stringify(body.selection),body.playback_protocol ?? 0);
