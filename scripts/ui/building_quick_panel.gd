@@ -52,15 +52,16 @@ var _fresh_state := false
 var _health_id := ""
 var _refresh_id := ""
 var _message := ""
+var _layout_queued := false
 
 func _ready() -> void:
 	var margin := $Margin as MarginContainer
-	var scroll := $Margin/Scroll as ScrollContainer
+	var content := $Margin/Scroll as VBoxContainer
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 4)
 	margin.add_child(layout)
-	scroll.reparent(layout)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.reparent(layout)
+	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	for action in [_upgrade, _collect, _manage]:
 		action.reparent(layout)
 		action.custom_minimum_size.y = 50
@@ -71,6 +72,7 @@ func _ready() -> void:
 	_collect.pressed.connect(_on_collect)
 	_manage.pressed.connect(_on_manage)
 	_timer.timeout.connect(_probe_health)
+	minimum_size_changed.connect(_queue_panel_layout)
 	get_parent().resized.connect(_layout_panel)
 	_lab_canvas.resized.connect(_layout_panel)
 	_layout_panel()
@@ -83,6 +85,8 @@ func _sync_blocker() -> void:
 	_blocker.visible = visible
 
 func setup(backend: BackendClient, db: StaticDB, catalog: AssetCatalog, state: Dictionary, debug: DebugFlags) -> void:
+	# The shared theme sets an artwork aspect-ratio minimum, which prevents resizing.
+	custom_minimum_size = Vector2.ZERO
 	_backend = backend
 	_db = db
 	_catalog = catalog
@@ -115,8 +119,16 @@ func show_building(building_id: String) -> void:
 	_layout_panel()
 	_refresh()
 	show()
+	_queue_panel_layout()
+
+func _queue_panel_layout() -> void:
+	if _layout_queued:
+		return
+	_layout_queued = true
+	_layout_panel.call_deferred()
 
 func _layout_panel() -> void:
+	_layout_queued = false
 	var canvas_transform = get_parent().get_global_transform().affine_inverse() * _lab_canvas.get_global_transform()
 	var content_rect := Rect2(Vector2.ZERO, _lab_canvas.size)
 	var background := _lab_canvas.get_node_or_null("Background") as TextureRect
@@ -133,12 +145,13 @@ func _layout_panel() -> void:
 	var available: Vector2 = canvas_transform * content_rect.end - origin
 	if available.x <= 0 or available.y <= 0:
 		return
-	var panel_scale := 0.75
-	var panel_width = min(780.0, max(0.0, (available.x - 24.0) / panel_scale))
-	var panel_height = min(800.0, max(0.0, (available.y - 60.0) / panel_scale))
-	scale = Vector2.ONE * panel_scale
-	size = Vector2(panel_width, panel_height)
-	position = origin + Vector2(available.x - panel_width * panel_scale - 12.0, 48.0)
+	var panel_width := minf(780.0, maxf(0.0, (available.x - 24.0) / 0.75))
+	var minimum := get_combined_minimum_size()
+	var panel_height := maxf(800.0, minimum.y)
+	var panel_scale := minf(0.75, minf((available.x - 24.0) / maxf(panel_width, minimum.x), (available.y - 32.0) / panel_height))
+	scale = Vector2.ONE * maxf(panel_scale, 0.01)
+	size = Vector2(maxf(panel_width, minimum.x), panel_height)
+	position = origin + Vector2(available.x - size.x * scale.x - 12.0, maxf(16.0, (available.y - size.y * scale.y) * 0.5))
 
 func _apply_art() -> void:
 	add_theme_stylebox_override("panel", _stretch_art(load("res://assets/ui/new-elements/marco-horizontal-popup-grande.png")))
@@ -230,6 +243,8 @@ func _refresh() -> void:
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.texture = _catalog.get_tex(resource_id) if _catalog.has(resource_id) else null
 		var label := Label.new()
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.add_theme_font_size_override("font_size", 20)
 		var resource = _db.get_resource(resource_id)
 		label.text = "%s: %s / %s" % [GameLocalization.catalog("resource", str(resource_id), "name", str(resource.get("display_name", resource.get("name", resource_id)))), available, amount]

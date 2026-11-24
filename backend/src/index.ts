@@ -233,7 +233,7 @@ function normalizeHomunculusProgress(value: unknown): Record<string, HomunculusP
 	return normalizeProgress(progress, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
 }
 
-function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number): void {
+function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number, pvp = false): {homunculus_id:string; xp_granted:number; level_before:number; level_after:number} | undefined {
 	if (!loadoutJson) return;
 	let selection: any;
 	try { selection = JSON.parse(loadoutJson); } catch { throw new HttpError(409, "Invalid stored loadout."); }
@@ -244,11 +244,13 @@ function awardHomunculusVictory(playerId: string, loadoutJson: string | null, no
 	if (!row) throw new HttpError(404, "Player not found.");
 	const player = safeParseState(row.state_json, playerId, row.display_name);
 	if (!player) throw new HttpError(409, "Invalid player state.");
-	if (!combatHomunculusAllowed(player.homunculus_progress, id)) throw new HttpError(409, "Homunculus is not available for combat.");
+	if (!combatHomunculusAllowed(player.homunculus_progress, id)) { if (pvp) return; throw new HttpError(409, "Homunculus is not available for combat."); }
 	const current = player.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
-	player.homunculus_progress[id] = grantXp(current, PVE_VICTORY_XP);
+	const amount = pvp ? Math.min(PVE_VICTORY_XP, Math.max(0, xpThreshold(10) - current.xp)) : PVE_VICTORY_XP;
+	player.homunculus_progress[id] = grantXp(current, amount);
 	player.updated_at = now;
 	if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+	return {homunculus_id:id, xp_granted:amount, level_before:current.level, level_after:player.homunculus_progress[id].level};
 }
 
 function captureExpeditionHomunculus(playerId: string, id: string, now: number): { duplicate: boolean } {
@@ -364,7 +366,7 @@ function getExpeditionService() {
 	} });
 	return expeditionService;
 }
-let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>; snapshot: (id:string,selection:unknown)=>any; startFriendly: (a:any,b:any,now:number,invite:string)=>string } | null = null;
+let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>; snapshot: (id:string,selection:unknown)=>any; startFriendly: (a:any,b:any,now:number,invite:string,playbackProtocol?:number)=>string } | null = null;
 function getRankedServices() {
 	if (rankedServices) return rankedServices;
 	const secret = Bun.env.PVP_RNG_SECRET;
@@ -372,9 +374,9 @@ function getRankedServices() {
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
 	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
 	if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance) throw new Error("PVP_CATALOG_UNAVAILABLE");
-	const matches = createPvpMatches(db, new TextEncoder().encode(secret));
+	const matches = createPvpMatches(db, new TextEncoder().encode(secret), Date.now, (id,snapshot,now) => awardHomunculusVictory(id,snapshot,now,true));
 	const snapshot = (id:string, selection:unknown) => { const value=trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs); return value && !("error" in createPvpFighter(value,catalogs)) ? value : null; };
-	rankedServices = { db, matches, snapshot, startFriendly: (a,b,now,invite) => createSharedPvpMatch(db,catalogs,a,b,now,"friendly",invite), queue: createPvpQueue(db, catalogs, snapshot), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+	rankedServices = { db, matches, snapshot, startFriendly: (a,b,now,invite,protocol) => createSharedPvpMatch(db,catalogs,a,b,now,"friendly",invite,protocol), queue: createPvpQueue(db, catalogs, snapshot), chat: createPvpChat(db), ranking: createPvpRanking(db) };
 	const timer = setInterval(() => { try { matches.sweep(); } catch (error) { logError("pvp deadline sweep failed", { error: String(error) }); } }, 1000);
 	timer.unref();
 	return rankedServices;
@@ -1328,7 +1330,7 @@ async function startServer(): Promise<void> {
 		if (performance.now() >= leaseDeadline) { fenceLease(); return false; }
 		return true;
 	}
-	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite); } }, () => { try { return !!getRankedServices(); } catch { return false; } });
+	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite,protocol) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite,protocol); } }, () => { try { return !!getRankedServices(); } catch { return false; } });
 	if (forest && leaseToken) {
 		getRedis().on("error", fenceLease);
 		getRedis().on("close", fenceLease);
@@ -1615,7 +1617,7 @@ async function startServer(): Promise<void> {
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 
-				if (isRankedRoute(req.method, url.pathname) || (req.method === "GET" && url.pathname === "/forest/duels/match/state") || (req.method === "POST" && ["/forest/duels/match/decision","/forest/duels/match/forfeit","/forest/duels/match/chat"].includes(url.pathname))) {
+				if (isRankedRoute(req.method, url.pathname) || (req.method === "GET" && url.pathname === "/forest/duels/match/state") || (req.method === "POST" && ["/forest/duels/match/decision","/forest/duels/match/playback_ack","/forest/duels/match/forfeit","/forest/duels/match/chat"].includes(url.pathname))) {
                     const friendly = url.pathname.startsWith("/forest/duels/");
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
@@ -1630,7 +1632,7 @@ async function startServer(): Promise<void> {
 						const code = error instanceof Error ? error.message : "PVP_UNAVAILABLE";
 						if (code === "MATCH_NOT_FOUND") return jsonResponse({ error: code }, 404);
 						if (code === "CHAT_RATE_LIMIT") return jsonResponse({ error: code }, 429);
-						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT", "PLAYER_BUSY"].includes(code)) return jsonResponse({ error: code }, 409);
+						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "PLAYBACK_PENDING", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT", "PLAYER_BUSY"].includes(code)) return jsonResponse({ error: code }, 409);
 						if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code)) return jsonResponse({ error: code }, 400);
 						logError("pvp request failed", { error: String(error) }); return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
 					}

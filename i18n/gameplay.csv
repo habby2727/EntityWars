@@ -48,7 +48,7 @@ ANOMALY_TOOLTIP_GAIN,Physical Anomaly: %s gains 15%% and %s loses 15%% direct sp
 ANOMALY_REPLACES,Physical Anomaly: %s replaces the previous anomaly.,Anomalía física: %s sustituye la anomalía anterior.
 COMBAT_PLAYER,Player,Jugador
 COMBAT_ENTITY,Entity,Entidad
-COMBAT_FAMILIAR,Homunculus,Familiar
+COMBAT_FAMILIAR,Homunculus,Homúnculo
 COMBAT_BUILD,Build,Equipo
 COMBAT_HOLD,Hold,Conservar
 COMBAT_HOLD_HINT,Keep homunculus energy.,Conserva la energía del homúnculo.
@@ -195,3 +195,7 @@ MISSION_DESC_WEEKLY_INSPIRATION,Choose an Inspiration spell in 3 different Solo 
 
 WORLD_COMMON_HUNT,Common Hunt,Caza Común
 WORLD_ANCIENT_HUNT,Ancient Hunt,Caza Ancestral
+
+PVP_RESOLVING,Resolving turn...,Resolviendo turno...
+PVP_HOM_XP,Homunculus: +%d XP,Homúnculo: +%d XP
+PVP_HOM_LEVEL_UP,Level up! Level %d,¡Sube de nivel! Nivel %d

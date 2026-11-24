@@ -682,7 +682,7 @@ func _unconfigured(title: String, tabs: Array) -> void:
 func _catalog(homunculi: bool) -> void:
 	var title := Label.new()
 	title.text = "VAT_CATALOG" if homunculi else "FORGE_CATALOG"
-	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_font_size_override("font_size", 18 if homunculi else 14)
 	if not homunculi:
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(title)
@@ -695,21 +695,14 @@ func _catalog(homunculi: bool) -> void:
 		var center := HBoxContainer.new()
 		center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		add_child(center)
-		var left_space := Control.new()
-		left_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		center.add_child(left_space)
-		row.custom_minimum_size.x = 1050
-		row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		center.add_child(row)
-		var right_space := Control.new()
-		right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		center.add_child(right_space)
 	var entries: Dictionary = _registry.get_homunculus_collection() if homunculi else _registry.get_items()
 	var list := ItemList.new()
 	list.name = "LocalizationCatalogItems"
 	list.set_meta("catalog_kind", "homunculus" if homunculi else "item")
 	list.custom_minimum_size = Vector2(220, 150)
-	list.add_theme_font_size_override("font_size", 19)
+	list.add_theme_font_size_override("font_size", 19 if homunculi else 13)
 	var list_bg := StyleBoxFlat.new()
 	list_bg.bg_color = Color(0.02, 0.08, 0.08, 0.94)
 	list.add_theme_stylebox_override("panel", list_bg)
@@ -739,7 +732,7 @@ func _catalog(homunculi: bool) -> void:
 	var heading := Label.new()
 	heading.name = "LocalizationCatalogHeading"
 	heading.set_meta("localization_body_font", true)
-	heading.add_theme_font_size_override("font_size", 18)
+	heading.add_theme_font_size_override("font_size", 18 if homunculi else 14)
 	if not homunculi:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.add_child(heading)
@@ -751,7 +744,7 @@ func _catalog(homunculi: bool) -> void:
 	details.add_child(stats_area)
 	var preview_center := CenterContainer.new()
 	preview_center.name = "PreviewSlot"
-	preview_center.custom_minimum_size = Vector2(150, 150) if homunculi else Vector2(190, 190)
+	preview_center.custom_minimum_size = Vector2(150, 150)
 	if homunculi:
 		catalog_column.add_child(preview_center)
 		catalog_column.move_child(preview_center, 0)
@@ -778,7 +771,7 @@ func _catalog(homunculi: bool) -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	stats_area.add_child(scroll)
 	var info := Label.new()
-	info.add_theme_font_size_override("font_size", 19)
+	info.add_theme_font_size_override("font_size", 19 if homunculi else 12)
 	if not homunculi:
 		_forge_info = info
 	else:
@@ -884,10 +877,12 @@ func _catalog(homunculi: bool) -> void:
 		_fusion_button.pressed.connect(_request_fusion)
 		fusion_row.add_child(_fusion_button)
 		_fusion_info = Label.new()
+		_fusion_info.add_theme_font_size_override("font_size", 12)
 		_fusion_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_fusion_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		details.add_child(_fusion_info)
 		_forge_status = Label.new()
+		_forge_status.add_theme_font_size_override("font_size", 12)
 		_forge_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_forge_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		details.add_child(_forge_status)
@@ -1030,7 +1025,7 @@ func _update_forge_button() -> void:
 		var base: Dictionary = helper.effective_item(item, {_forge_item: {"level": 0}})
 		var level_one: Dictionary = helper.effective_item(item, {_forge_item: {"level": 1}})
 		var level_two: Dictionary = helper.effective_item(item, {_forge_item: {"level": 2}})
-		_forge_info.text = tr("FORGE_INFO").replace("\\n", "\n") % [GameLocalization.catalog("item", _forge_item, "desc", str(item.get("desc", ""))), GameLocalization.catalog("specialization", specialization if specialization != "" else "none", "name", specialization.capitalize() if specialization != "" else "None"), maxi(0, level - allocated), "\n".join(trait_lines), _format_values(base.get("effects", {})).replace("\n", ", "), _format_values(level_one.get("effects", {})).replace("\n", ", "), _format_values(level_two.get("effects", {})).replace("\n", ", "), _format_values(current.get("effects", {})).replace("\n", ", "), _format_values(next.get("effects", {})).replace("\n", ", ")]
+		_forge_info.text = tr("FORGE_INFO").replace("\\n", "\n") % [GameLocalization.catalog("item", _forge_item, "desc", str(item.get("desc", ""))), GameLocalization.catalog("specialization", specialization if specialization != "" else "none", "name", specialization.capitalize() if specialization != "" else "None"), maxi(0, level - allocated), (" | " + " | ".join(trait_lines)) if not trait_lines.is_empty() else "", _format_values(base.get("effects", {})).replace("\n", ", "), _format_values(level_one.get("effects", {})).replace("\n", ", "), _format_values(level_two.get("effects", {})).replace("\n", ", "), _format_values(current.get("effects", {})).replace("\n", ", "), _format_values(next.get("effects", {})).replace("\n", ", ")]
 	var forge_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("build_forge", {}).get("level", 0))
 	var cost := maxi(0, _forge_base_cost + level * _forge_cost_per_level)
 	var essence := int(_forge_state.get("wallet", {}).get("essence", 0))

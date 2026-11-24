@@ -67,6 +67,8 @@ var _spell_server_offset_ms := 0
 var _spell_state_synced := false
 var _spell_filter := "All"
 var _spell_info: Control
+var _spell_info_panel: PanelContainer
+var _spell_info_layout_queued := false
 var _spell_info_title: Label
 var _spell_info_text: Label
 var _specialized_panel
@@ -721,13 +723,13 @@ func _build_spell_info() -> void:
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_spell_info.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_spell_info.add_child(center)
 	var panel := PanelContainer.new()
+	_spell_info_panel = panel
 	panel.custom_minimum_size = Vector2(650, 400)
 	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
-	center.add_child(panel)
+	_spell_info.add_child(panel)
+	panel.minimum_size_changed.connect(_queue_spell_info_layout)
+	_spell_info.resized.connect(_queue_spell_info_layout)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 12)
 	panel.add_child(content)
@@ -746,20 +748,38 @@ func _build_spell_info() -> void:
 	MenuArt.button(close)
 	close.pressed.connect(_spell_info.hide)
 	header.add_child(close)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	content.add_child(scroll)
 	_spell_info_text = Label.new()
 	_spell_info_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	scroll.add_child(_spell_info_text)
+	content.add_child(_spell_info_text)
+
+func _queue_spell_info_layout() -> void:
+	if _spell_info_layout_queued:
+		return
+	_spell_info_layout_queued = true
+	_layout_spell_info.call_deferred()
+
+func _layout_spell_info() -> void:
+	_spell_info_layout_queued = false
+	if not is_instance_valid(_spell_info_panel) or not _spell_info.visible:
+		return
+	var available := _spell_info.size - Vector2(48, 48)
+	if available.x <= 0 or available.y <= 0:
+		return
+	var minimum := _spell_info_panel.get_combined_minimum_size()
+	var width := maxf(minimum.x, minf(1100.0, available.x))
+	var height := maxf(400.0, minimum.y)
+	var factor := minf(1.0, minf(available.x / width, available.y / height))
+	_spell_info_panel.scale = Vector2.ONE * factor
+	_spell_info_panel.size = Vector2(width, height)
+	_spell_info_panel.position = (_spell_info.size - _spell_info_panel.size * factor) * 0.5
 
 func _show_spell_info(spell: Dictionary) -> void:
 	_spell_info.set_meta("spell", spell)
 	_spell_info_title.text = GameLocalization.catalog("spell", str(spell.get("id", "")), "name", str(spell.get("name", "")))
 	_spell_info_text.text = SpellView.detail(spell, "Research")
 	_spell_info.show()
+	_queue_spell_info_layout()
 
 func _spell_entity_id() -> String:
 	if _spell_entity_selector == null or _spell_entity_selector.selected < 0:

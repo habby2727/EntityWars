@@ -264,7 +264,7 @@ func cancel(invite_id: String) -> bool:
 	return _start_mutation("/forest/duels/cancel", {"invite_id":invite_id})
 
 func submit_ready(invite_id: String, selection: Dictionary) -> bool:
-	return _start_mutation("/forest/duels/ready", {"invite_id":invite_id,"selection":selection})
+	return _start_mutation("/forest/duels/ready", {"invite_id":invite_id,"selection":selection,"playback_protocol":1})
 
 func _start_mutation(path: String, body: Dictionary) -> bool:
 	if not available() or not enabled or _mutation_busy or not _pending_body.is_empty():

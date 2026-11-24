@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createPvpChat, createPvpMatches, createPvpQueue, pvpRandom, settlePvpMatch, trustedPvpSnapshot } from "../pvp/service";
+import { createPvpChat, createPvpMatches, createPvpQueue, createSharedPvpMatch, pvpRandom, settlePvpMatch, trustedPvpSnapshot } from "../pvp/service";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir,"../../../data",name),"utf8"));
 const catalogs = {entities:read("entities.json").entities,items:read("items.json").items,spells:read("spells.json").spells,homunculi:read("homunculi.json").homunculi,types:read("types.json"),mutations:read("static/mutations.json").mutations,balance:read("static/balance.json").balance};
@@ -10,7 +10,7 @@ const snapshot = (player_id: string) => ({player_id,entity_id:"sulfur_01",weapon
 
 test("0.61h targeted audit: queued server snapshot stays frozen when progression changes", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  const states: Record<string,any> = {a:{player_id:"a",item_progress:{bismuth_talisman:{level:0}},homunculus_progress:{},spell_progress:{}},b:{player_id:"b",item_progress:{},homunculus_progress:{},spell_progress:{}}};
  const selection={entity_id:"sulfur_01",weapon_ids:["bismuth_talisman",null],homunculus_id:null,spell_ids:snapshot("a").spell_ids,mode:"attack"};
@@ -28,7 +28,7 @@ test("0.61h targeted audit: queued server snapshot stays frozen when progression
 
 test("0.61h targeted audit: resolved status is public to both viewers without private state", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>100); queue.join("a",{}); const match=(queue.join("b",{}) as any).match_id;
  const row=db.query("SELECT combat_state_json FROM pvp_matches WHERE match_id = ?").get(match) as any, state=JSON.parse(row.combat_state_json);
@@ -70,7 +70,7 @@ test("queue is persistent, FIFO, exclusive, expires and cancels idempotently", (
  const db = new Database(":memory:");
  db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
  db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite/0011_pvp.sql"),"utf8"));
- for (const name of ["0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for (const name of ["0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for (const id of ["a","b","c"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,(id)=>id === "c" ? null : snapshot(id),()=>now);
  expect(queue.join("a",{})).toEqual({state:"QUEUED",joined_at:100,expires_at:3600100});
@@ -91,7 +91,7 @@ test("queue is persistent, FIFO, exclusive, expires and cancels idempotently", (
 
 test("a match crossing UTC month end settles without changing either season", () => {
  const db = new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for (const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=Date.UTC(2026,0,31,23,59,30); const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now);
  queue.join("a",{}); const match=queue.join("b",{}) as any;
@@ -104,7 +104,7 @@ test("a match crossing UTC month end settles without changing either season", ()
 
 test("match chat is private, rate limited and idempotent", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for (const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b","c"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now);
  queue.join("a",{}); const match=(queue.join("b",{}) as any).match_id; const chat=createPvpChat(db,()=>now);
@@ -121,7 +121,7 @@ test("match chat is private, rate limited and idempotent", () => {
 
 test("private simultaneous decisions resolve once, preserve revisions and enforce access", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b","c"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now); queue.join("a",{});
  const match=(queue.join("b",{}) as any).match_id, service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);
@@ -148,7 +148,7 @@ test("private simultaneous decisions resolve once, preserve revisions and enforc
 
 test("missing decisions forfeit and pending Inspiration auto-declines on timeout", () => {
  const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
  for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?, ?)").run(id,id);
  let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now); queue.join("a",{});
  let id=(queue.join("b",{}) as any).match_id; const service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);
@@ -165,4 +165,43 @@ test("missing decisions forfeit and pending Inspiration auto-declines on timeout
  expect(service.state(id,"a").enemy.inspiration_offers).toBeUndefined();
  now+=90_000; const after=service.state(id,"a"); expect(after.status).toBe("ACTIVE"); expect(after.turn).toBe(0); expect(after.player.inspiration_pending).toBe(false); expect(after.enemy.inspiration_pending).toBe(false); expect(after.combat_revision).toBe(2);
  db.close();
+});
+
+test("playback waits for both ACKs or expiry, preserving revision and a full decision window", () => {
+ const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?,?)").run(id,id);
+ let now=100; const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now), service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now);
+ queue.join("a",{},1); const id=(queue.join("b",{},1) as any).match_id;
+ const decision={turn:1,spell_id:"cinder_fist"}; service.decide(id,"a","a1",1,decision);
+ const resolved=service.decide(id,"b","b1",1,decision); expect(resolved.phase).toBe("PLAYBACK"); expect(resolved.playback_event_end).toBeGreaterThan(0);
+ expect(()=>service.decide(id,"a","early",2,{turn:2,spell_id:"cinder_fist"})).toThrow("PLAYBACK_PENDING");
+ expect(service.ack(id,"a",2).phase).toBe("PLAYBACK"); expect(service.ack(id,"a",2).phase).toBe("PLAYBACK");
+ now+=1000; const opened=service.ack(id,"b",2); expect(opened.phase).toBe("DECISION"); expect(opened.combat_revision).toBe(2); expect(opened.deadline).toBe(now+60_000);
+ expect(()=>service.ack(id,"a",1)).toThrow("STALE_REVISION");
+ service.decide(id,"a","a2",2,{turn:2,spell_id:"cinder_fist"}); const second=service.decide(id,"b","b2",2,{turn:2,spell_id:"cinder_fist"});
+ expect(second.phase).toBe("PLAYBACK"); expect(()=>service.ack(id,"a",2)).toThrow("STALE_REVISION"); expect(service.state(id,"a").phase).toBe("PLAYBACK"); expect(()=>service.ack(id,"outsider",3)).toThrow("MATCH_NOT_FOUND"); now=second.playback_until; service.sweep(); const fallback=service.state(id,"a");
+ expect(fallback.phase).toBe("DECISION"); expect(fallback.combat_revision).toBe(3); expect(fallback.deadline).toBe(now+60_000);
+ expect(()=>service.ack(id,"a",2)).toThrow("STALE_REVISION");
+ service.forfeit(id,"a","end"); queue.join("a",{},1); const mixed=(queue.join("b",{}) as any).match_id;
+ expect(service.state(mixed,"a").phase).toBeUndefined(); expect(service.state(mixed,"a").deadline).toBe(now+90_000); db.close();
+});
+
+test("terminal rewards are once-only, exclude forfeits and timeouts, and cap friendly wins per UTC day", () => {
+ const db=new Database(":memory:"); db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
+ for(const name of ["0011_pvp.sql","0012_pvp_seasons.sql","0013_pvp_match_data.sql","0027_forest_duels.sql","0028_friendly_pvp.sql","0030_pvp_playback_xp.sql"]) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",name),"utf8"));
+ for(const id of ["a","b"]) db.query("INSERT INTO players VALUES (?,?)").run(id,id);
+ let now=100; let grants=0; const reward=(player:string, frozen:string)=>{expect(JSON.parse(frozen).player_id).toBe(player); grants++; return {xp_granted:20,level_before:1,level_after:1};};
+ const queue=createPvpQueue(db,catalogs,id=>snapshot(id),()=>now), service=createPvpMatches(db,new Uint8Array(32).fill(7),()=>now,reward);
+ queue.join("a",{}); let id=(queue.join("b",{}) as any).match_id;
+ const raw=db.query("SELECT combat_state_json FROM pvp_matches WHERE match_id=?").get(id) as any, state=JSON.parse(raw.combat_state_json);
+ state.wins.left=1; state.fighters.right.hp=1; state.fighters.left.hp=state.fighters.left.max_hp;
+ db.query("UPDATE pvp_matches SET combat_state_json=? WHERE match_id=?").run(JSON.stringify(state),id);
+ service.decide(id,"a","award-a",1,{turn:1,spell_id:"cinder_fist"}); const final=service.decide(id,"b","award-b",1,{turn:1,spell_id:"cinder_fist"});
+ expect(final.status).toBe("FINISHED"); expect(grants).toBe(1); const views=[service.state(id,"a"),service.state(id,"b")]; expect(views.find(v=>v.result?.result==='win')?.result?.homunculus_xp?.xp_granted).toBe(20); expect(views.find(v=>v.result?.result==='loss')?.result?.homunculus_xp).toBeUndefined(); service.decide(id,"b","award-b",1,{turn:1,spell_id:"cinder_fist"}); expect(grants).toBe(1);
+ queue.join("a",{}); id=(queue.join("b",{}) as any).match_id; service.forfeit(id,"a","give-up"); expect(grants).toBe(1);
+ queue.join("a",{}); id=(queue.join("b",{}) as any).match_id; now+=90_000; service.state(id,"a"); expect(grants).toBe(1);
+ const friendlyWin=(n:number)=>{ const invite=`invite-${n}`; db.query("INSERT INTO forest_duel_invites VALUES (?,'a','b','room','STARTED',?,?,?)").run(invite,now,now,now+1000); const match=createSharedPvpMatch(db,catalogs,snapshot("a"),snapshot("b"),now,"friendly",invite); const side=(db.query("SELECT side FROM pvp_match_players WHERE match_id=? AND player_id='a'").get(match) as any).side.toLowerCase(); settlePvpMatch(db,match,side,now,reward); };
+ for(let i=0;i<4;i++) friendlyWin(i);
+ expect(grants).toBe(4); now+=86_400_000; friendlyWin(4); expect(grants).toBe(5); db.close();
 });

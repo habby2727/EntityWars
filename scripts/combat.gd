@@ -3474,6 +3474,8 @@ func _ultra_available(fighter: Dictionary) -> bool:
 
 func _on_ultra_toggled(armed: bool) -> void:
 	_ultra_armed = armed and _ultra_available(player) and not _resolving_exchange and not _processing_steps and not _inspiration_panel.visible and _pending_hom_action.is_empty()
+	if _ranked_controller and not _ranked_controller.can_submit():
+		_ultra_armed = false
 	_refresh_spell_buttons()
 	if _ranked_controller:
 		_ranked_controller.refresh_controls()

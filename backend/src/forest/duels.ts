@@ -6,7 +6,7 @@ const validId = (v: unknown): v is string => typeof v === 'string' && v.length >
 type Result = {status: number; data: any};
 const fail = (status: number, error: string): Result => ({status, data: {error}});
 
-export function createForestDuels(db: Database, roomOf: (id: string) => string | null, canServe: () => boolean, clock: () => number = Date.now, combat?: {snapshot: (id:string, selection:unknown)=>PvpSnapshot|null; start: (a:PvpSnapshot,b:PvpSnapshot,now:number,inviteId:string)=>string}, combatAvailable: () => boolean = () => true) {
+export function createForestDuels(db: Database, roomOf: (id: string) => string | null, canServe: () => boolean, clock: () => number = Date.now, combat?: {snapshot: (id:string, selection:unknown)=>PvpSnapshot|null; start: (a:PvpSnapshot,b:PvpSnapshot,now:number,inviteId:string,playbackProtocol?:number)=>string}, combatAvailable: () => boolean = () => true) {
  const expire = (now: number) => {
   db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now, now);
   db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
@@ -95,29 +95,29 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
    });
   },
   ready(player:string, body:any, available = true):Result {
-   if (!validId(body?.invite_id) || !body || Object.keys(body).some(k=>!['invite_id','selection','client_action_id'].includes(k))) return fail(400,'INVALID_REQUEST');
+   if (!validId(body?.invite_id) || !body || Object.keys(body).some(k=>!['invite_id','selection','client_action_id','playback_protocol'].includes(k)) || (body.playback_protocol !== undefined && body.playback_protocol !== 1)) return fail(400,'INVALID_REQUEST');
    if (!combat) return fail(503,'PVP_SECRET_REQUIRED');
-   return mutate(player,body,'ready',{invite_id:body.invite_id,selection:body.selection},now=>{
+   return mutate(player,body,'ready',{invite_id:body.invite_id,selection:body.selection,...(body.playback_protocol === undefined ? {} : {playback_protocol:body.playback_protocol})},now=>{
     const invitation = row(body.invite_id);
     if (!invitation || ![invitation.challenger_id,invitation.recipient_id].includes(player)) return fail(404,'INVITE_UNAVAILABLE');
-    if (invitation.status === 'STARTED') { const found=db.query('SELECT match_id FROM pvp_matches WHERE invite_id=?').get(body.invite_id) as any; return {status:200,data:{state:'STARTED',match_id:found.match_id}}; }
+    if (invitation.status === 'STARTED') { const old=db.query('SELECT selection_json,playback_protocol FROM forest_duel_ready WHERE invite_id=? AND player_id=?').get(body.invite_id,player) as any; if (!old || old.selection_json!==JSON.stringify(body.selection) || old.playback_protocol !== (body.playback_protocol ?? 0)) return fail(409,'READY_CONFLICT'); const found=db.query('SELECT match_id FROM pvp_matches WHERE invite_id=?').get(body.invite_id) as any; return {status:200,data:{state:'STARTED',match_id:found.match_id}}; }
     if (invitation.status !== 'ACCEPTED') return fail(409,'INVITE_NOT_ACTIVE');
     if (!available) return fail(404,'PLAYER_UNAVAILABLE');
     if (busyPvp(invitation.challenger_id,now) || busyPvp(invitation.recipient_id,now)) return fail(409,'PLAYER_BUSY');
     const reservations=db.query('SELECT player_id FROM forest_duel_reservations WHERE invite_id=?').all(body.invite_id) as any[];
     if (reservations.length!==2 || ![invitation.challenger_id,invitation.recipient_id].every(id=>reservations.some(r=>r.player_id===id))) return fail(409,'INVITE_NOT_ACTIVE');
-    const old=db.query('SELECT selection_json FROM forest_duel_ready WHERE invite_id=? AND player_id=?').get(body.invite_id,player) as any;
-    if (old && old.selection_json!==JSON.stringify(body.selection)) return fail(409,'READY_CONFLICT');
+    const old=db.query('SELECT selection_json,playback_protocol FROM forest_duel_ready WHERE invite_id=? AND player_id=?').get(body.invite_id,player) as any;
+    if (old && (old.selection_json!==JSON.stringify(body.selection) || old.playback_protocol !== (body.playback_protocol ?? 0))) return fail(409,'READY_CONFLICT');
     if (!old) {
      const snapshot=combat.snapshot(player,body.selection);
      if (!snapshot || snapshot.player_id!==player) return fail(400,'UNTRUSTED_SETUP');
-     db.query('INSERT INTO forest_duel_ready VALUES (?,?,?,?)').run(body.invite_id,player,JSON.stringify(snapshot),JSON.stringify(body.selection));
+     db.query('INSERT INTO forest_duel_ready (invite_id,player_id,snapshot_json,selection_json,playback_protocol) VALUES (?,?,?,?,?)').run(body.invite_id,player,JSON.stringify(snapshot),JSON.stringify(body.selection),body.playback_protocol ?? 0);
     }
-    const ready=db.query('SELECT player_id,snapshot_json FROM forest_duel_ready WHERE invite_id=?').all(body.invite_id) as any[];
+    const ready=db.query('SELECT player_id,snapshot_json,playback_protocol FROM forest_duel_ready WHERE invite_id=?').all(body.invite_id) as any[];
     if (ready.length<2) return {status:200,data:{state:'WAITING',invite_id:body.invite_id}};
     const a=ready.find(r=>r.player_id===invitation.challenger_id),b=ready.find(r=>r.player_id===invitation.recipient_id);
     if (!a || !b) throw new Error('INVALID_READY_STATE');
-    const matchId=combat.start(JSON.parse(a.snapshot_json),JSON.parse(b.snapshot_json),now,body.invite_id);
+    const matchId=combat.start(JSON.parse(a.snapshot_json),JSON.parse(b.snapshot_json),now,body.invite_id,a.playback_protocol === 1 && b.playback_protocol === 1 ? 1 : 0);
     db.query("UPDATE forest_duel_invites SET status='STARTED',updated_at=? WHERE invite_id=? AND status='ACCEPTED'").run(now,body.invite_id);
     unlock(body.invite_id);
     return {status:200,data:{state:'STARTED',match_id:matchId}};

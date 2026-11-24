@@ -140,21 +140,21 @@ SPELL_ASHEN_PATENT_DESC,Steals a buff and boosts attack.,Roba una mejora y aumen
 SPELL_DEBT_BOMB_NAME,Debt Bomb,Bomba de deuda
 SPELL_DEBT_BOMB_DESC,Deals delayed damage but leaves the caster vulnerable.,Inflige daño diferido pero deja vulnerable al lanzador.
 HOMUNCULUS_CINDER_NAME,Cinder,Cinder
-HOMUNCULUS_CINDER_DESC,Sulfur-leaning familiar. Adds a burst of Power.,Familiar afín al azufre. Otorga un impulso de potencia.
+HOMUNCULUS_CINDER_DESC,Sulfur-leaning familiar. Adds a burst of Power.,Homúnculo afín al azufre. Otorga un impulso de potencia.
 HOMUNCULUS_SILPHIDE_NAME,Silphide,Silphide
-HOMUNCULUS_SILPHIDE_DESC,Mercury familiar. Adds Tempo and slight evasion (reduces incoming).,Familiar de mercurio. Aumenta el ritmo y aporta una ligera evasión que reduce el daño recibido.
+HOMUNCULUS_SILPHIDE_DESC,Mercury familiar. Adds Tempo and slight evasion (reduces incoming).,Homúnculo de mercurio. Aumenta el ritmo y aporta una ligera evasión que reduce el daño recibido.
 HOMUNCULUS_SODIUM_NAME,Sodi,Sodi
-HOMUNCULUS_SODIUM_DESC,Sodium familiar. Adds Guard and stabilizes extremes.,Familiar de sodio. Aumenta la defensa y suaviza los extremos.
+HOMUNCULUS_SODIUM_DESC,Sodium familiar. Adds Guard and stabilizes extremes.,Homúnculo de sodio. Aumenta la defensa y suaviza los extremos.
 HOMUNCULUS_DRAKON_NAME,Drakon,Drakon
-HOMUNCULUS_DRAKON_DESC,Aether familiar. Tweaks rules: raises type advantage slightly for you.,Familiar de éter. Aumenta ligeramente tu ventaja de tipo.
+HOMUNCULUS_DRAKON_DESC,Aether familiar. Tweaks rules: raises type advantage slightly for you.,Homúnculo de éter. Aumenta ligeramente tu ventaja de tipo.
 HOMUNCULUS_PYRITC_NAME,Pyro,Pyro
-HOMUNCULUS_PYRITC_DESC,Vitriol familiar. Adds corrosion each round.,Familiar de vitriolo. Añade corrosión en cada ronda.
+HOMUNCULUS_PYRITC_DESC,Vitriol familiar. Adds corrosion each round.,Homúnculo de vitriolo. Añade corrosión en cada ronda.
 HOMUNCULUS_CHIMERA_NAME,Chimera,Chimera
-HOMUNCULUS_CHIMERA_DESC,Gold familiar. Adds reflect and discipline.,Familiar de oro. Aporta reflejo y disciplina.
+HOMUNCULUS_CHIMERA_DESC,Gold familiar. Adds reflect and discipline.,Homúnculo de oro. Aporta reflejo y disciplina.
 HOMUNCULUS_NIGHTY_NAME,Nighty,Nighty
-HOMUNCULUS_NIGHTY_DESC,Build-oriented familiar. Improves item effects slightly.,Familiar centrado en el equipo. Mejora ligeramente los efectos de los objetos.
+HOMUNCULUS_NIGHTY_DESC,Build-oriented familiar. Improves item effects slightly.,Homúnculo centrado en el equipo. Mejora ligeramente los efectos de los objetos.
 HOMUNCULUS_MOTHY_NAME,Mothy,Mothy
-HOMUNCULUS_MOTHY_DESC,Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).,Familiar antitáctico. Reduce ligeramente ambos multiplicadores de tipo y los acerca a la neutralidad.
+HOMUNCULUS_MOTHY_DESC,Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).,Homúnculo antitáctico. Reduce ligeramente ambos multiplicadores de tipo y los acerca a la neutralidad.
 TECHNIQUE_ASSAULT_SIGIL_NAME,Assault Sigil,Sello de asalto
 TECHNIQUE_ASSAULT_SIGIL_DESC,"Round 1 burst: +Power, but lower Guard overall.","Explosión en la primera ronda: más potencia, pero menos defensa general."
 TECHNIQUE_PIERCING_RUNE_NAME,Piercing Rune,Runa perforante

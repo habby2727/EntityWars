@@ -126,7 +126,7 @@ func _ready() -> void:
 func _make_selected_label(seal: BaseButton) -> Label:
 	var label := Label.new()
 	label.text = "SELECTED"
-	label.add_theme_font_override("font", preload("res://assets/fonts/old-newspaper-types-font/Oldnewspapertypes-449D.ttf"))
+	label.add_theme_font_override("font", preload("res://assets/fonts/MedievalFont/JimNightshade-Regular.ttf"))
 	label.add_theme_font_size_override("font_size", 18)
 	label.add_theme_color_override("font_color", Color.WHITE)
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
@@ -271,7 +271,7 @@ func _join() -> void:
 		else:
 			info.text = tr("SOCIAL_RETRY")
 		return
-	if _send("POST", "/pvp/queue/join", {"client_action_id": backend._make_uuid(), "selection": selection}, "join"):
+	if _send("POST", "/pvp/queue/join", {"client_action_id": backend._make_uuid(), "selection": selection, "playback_protocol": 1}, "join"):
 		joined_at = 0
 		_set_queued(true)
 		info.text = "Joining queue..."

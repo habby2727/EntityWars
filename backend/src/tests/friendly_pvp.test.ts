@@ -7,6 +7,20 @@ import {createPvpQueue,createSharedPvpMatch,createPvpMatches,createPvpChat,dispa
 import {createPvpRanking} from '../pvp/ranking';
 const read=(n:string)=>JSON.parse(readFileSync(resolve(import.meta.dir,'../../../data',n),'utf8'));
 const catalogs={entities:read('entities.json').entities,items:read('items.json').items,spells:read('spells.json').spells,homunculi:read('homunculi.json').homunculi,types:read('types.json'),mutations:read('static/mutations.json').mutations,balance:read('static/balance.json').balance};
+test('friendly READY negotiates playback only when both participants support it',()=>{
+ const db=new Database(':memory:'),dir=resolve(import.meta.dir,'../../migrations/sqlite'); for(const f of readdirSync(dir).filter(f=>f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir,f),'utf8'));
+ for(const id of ['a','b']) db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}'); let now=1000000;
+ const snapshot=(id:string,selection:unknown)=>trustedPvpSnapshot(id,selection,{player_id:id,item_progress:{},homunculus_progress:{},spell_progress:{}},catalogs);
+ const duels=createForestDuels(db,()=> 'room',()=>true,()=>now,{snapshot,start:(a,b,t,i,p)=>createSharedPvpMatch(db,catalogs,a,b,t,'friendly',i,p)});
+ const selection={entity_id:'sulfur_01',weapon_ids:[null,null],homunculus_id:null,spell_ids:catalogs.spells.filter((s:any)=>s.type==='sulfur').map((s:any)=>s.id),mode:'attack'};
+ const start=(n:number,bProtocol:boolean)=>{const invite=duels.request('a',{target_player_id:'b',client_action_id:`request-${n}`}).data.invite.invite_id; duels.respond('b',{invite_id:invite,accept:true,client_action_id:`accept-${n}`});
+  const first={invite_id:invite,selection,client_action_id:`ready-a-${n}`,playback_protocol:1}; expect(duels.ready('a',first).data.state).toBe('WAITING');
+  expect(duels.ready('a',{...first,client_action_id:`changed-${n}`,playback_protocol:undefined}).data.error).toBe('READY_CONFLICT');
+  const result=duels.ready('b',{invite_id:invite,selection,client_action_id:`ready-b-${n}`,...(bProtocol?{playback_protocol:1}:{})});
+  const match=result.data.match_id; expect((db.query('SELECT playback_protocol FROM pvp_matches WHERE match_id=?').get(match) as any).playback_protocol).toBe(bProtocol?1:0);
+  const service=createPvpMatches(db,new Uint8Array(32).fill(1),()=>now); service.forfeit(match,'a',`end-${n}`); now+=200000; };
+ start(1,true); start(2,false); db.close();
+});
 test('friendly preparation starts one shared match with isolated settlement',()=>{
  const db=new Database(':memory:'),dir=resolve(import.meta.dir,'../../migrations/sqlite'); for(const f of readdirSync(dir).filter(f=>f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir,f),'utf8'));
  for(const id of ['a','b','c']) db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}');

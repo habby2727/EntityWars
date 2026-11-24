@@ -134,7 +134,7 @@ func _run() -> void:
 	check(TranslationServer.translate("SOCIAL_ACCEPT") == "Aceptar", "Spanish translation missing")
 	check(TranslationServer.translate("SOCIAL_ADD") == "Agregar amigo" and TranslationServer.translate("SOCIAL_LATER") == "Más tarde" and TranslationServer.translate("SOCIAL_COOLDOWN").begins_with("Límite") and TranslationServer.translate("SOCIAL_RETRY").contains("acción"), "Spanish social accents or wording incorrect")
 	var social_font: Font = social._popup._dismiss.get_theme_font("font")
-	check(social_font.resource_path.contains("Oldnewspapertypes") and social_font.has_char(0x00e1) and social_font.has_char(0x00ed) and social_font.has_char(0x00f3) and social_font.has_char(0x00f1), "Spanish social font lacks required glyphs")
+	check(social_font.resource_path.contains("MedievalSharp") and social_font.has_char(0x00e1) and social_font.has_char(0x00ed) and social_font.has_char(0x00f3) and social_font.has_char(0x00f1), "Spanish social font lacks required glyphs")
 	TranslationServer.set_locale("en")
 	await process_frame
 	await process_frame

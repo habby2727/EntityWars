@@ -2,7 +2,7 @@ extends Control
 
 signal effect_clicked(description: String)
 
-const STATUS_FONT := preload("res://assets/fonts/old-newspaper-types-font/Oldnewspapertypes-449D.ttf")
+const STATUS_FONT := preload("res://assets/fonts/MedievalSharp/MedievalSharp-Regular.ttf")
 const SLOT := 48.0
 const ROW_HEIGHT := 64.0
 const DEFINITIONS := [

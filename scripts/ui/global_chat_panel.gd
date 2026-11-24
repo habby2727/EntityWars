@@ -58,6 +58,7 @@ func _ready() -> void:
 	# The project typography applies deferred; use the platform emoji font for this glyph.
 	_set_emoji_font.call_deferred()
 	_panel = PanelContainer.new()
+	_panel.set_meta("global_chat_font", true)
 	_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_panel.offset_left = -540
 	_panel.offset_top = -375

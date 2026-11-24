@@ -27,7 +27,7 @@ export function trustedPvpSnapshot(playerId: string, selection: any, state: any,
 }
 
 /** Called within the caller's immediate transaction with server-validated snapshots. */
-export function createSharedPvpMatch(db: Database, catalogs: PvpCatalogs, a: PvpSnapshot, b: PvpSnapshot, now: number, kind: "ranked" | "friendly", inviteId: string | null = null) {
+export function createSharedPvpMatch(db: Database, catalogs: PvpCatalogs, a: PvpSnapshot, b: PvpSnapshot, now: number, kind: "ranked" | "friendly", inviteId: string | null = null, playbackProtocol = 0) {
   if (a.player_id === b.player_id || "error" in createPvpFighter(a, catalogs) || "error" in createPvpFighter(b, catalogs)) throw new Error("UNTRUSTED_SETUP");
   const [left, right] = randomInt(2) === 0 ? [a,b] : [b,a];
   const combat = createPvpCombatState(left, right, catalogs);
@@ -37,6 +37,7 @@ export function createSharedPvpMatch(db: Database, catalogs: PvpCatalogs, a: Pvp
   const leftRating = kind === "ranked" ? rankings.ensure(season, left.player_id, now).rating : null;
   const rightRating = kind === "ranked" ? rankings.ensure(season, right.player_id, now).rating : null;
   db.query("INSERT INTO pvp_matches (match_id,status,created_at,updated_at,revision,combat_state_json,season,decision_deadline,kind,invite_id) VALUES (?,'ACTIVE',?,?,1,?,?,?,?,?)").run(id,now,now,JSON.stringify(combat),kind === "ranked" ? season : null,now+PVP_TURN_TIMEOUT_MS,kind,inviteId);
+  if (playbackProtocol === 1) db.query("UPDATE pvp_matches SET playback_protocol=1, decision_deadline=? WHERE match_id=?").run(now+60_000,id);
   const member = db.query("INSERT INTO pvp_match_players (match_id,player_id,side,snapshot_json,active,last_seen_at,start_rating) VALUES (?,?,?,?,1,?,?)");
   member.run(id,left.player_id,"LEFT",JSON.stringify(left),now,leftRating);
   member.run(id,right.player_id,"RIGHT",JSON.stringify(right),now,rightRating);
@@ -71,8 +72,9 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
         return current ? (current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id }) : { state: "IDLE" };
       }).immediate();
     },
-    join(playerId: string, selection: unknown) {
+    join(playerId: string, selection: unknown, playbackProtocol?: number) {
       if (!validId(playerId)) throw new Error("INVALID_PLAYER");
+      if (playbackProtocol !== undefined && playbackProtocol !== 1) throw new Error("INVALID_REQUEST");
       return db.transaction(() => {
         const now = clock(); expire.run(now);
         const current = active.get(playerId) as any;
@@ -82,7 +84,8 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
         if (db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(playerId,now)) throw new Error("PLAYER_BUSY");
         const previous = queued.get(playerId) as any;
         if (previous) {
-          if (JSON.stringify(JSON.parse(previous.snapshot_json).selection) !== JSON.stringify(selection)) throw new Error("QUEUE_CONFLICT");
+          const stored = JSON.parse(previous.snapshot_json);
+          if (JSON.stringify(stored.selection) !== JSON.stringify(selection) || (stored.playback_protocol ?? 0) !== (playbackProtocol ?? 0)) throw new Error("QUEUE_CONFLICT");
           return { state: "QUEUED", joined_at: previous.queued_at, expires_at: previous.expires_at };
         }
         const snapshot = trustedSnapshot(playerId, selection);
@@ -94,8 +97,8 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
           if (other && other.player_id === opponent.player_id && other.player_id !== playerId && !("error" in createPvpFighter(other, catalogs))) break;
           remove.run(opponent.player_id); opponent = first.get(playerId,now) as any;
         }
-        if (!opponent || !other) { insert.run(playerId, now, now + 3_600_000, JSON.stringify({selection, snapshot})); return { state: "QUEUED", joined_at: now, expires_at: now + 3_600_000 }; }
-        const id = createSharedPvpMatch(db,catalogs,snapshot,other,now,"ranked");
+        if (!opponent || !other) { insert.run(playerId, now, now + 3_600_000, JSON.stringify({selection, snapshot, ...(playbackProtocol === 1 ? {playback_protocol:1} : {})})); return { state: "QUEUED", joined_at: now, expires_at: now + 3_600_000 }; }
+        const id = createSharedPvpMatch(db,catalogs,snapshot,other,now,"ranked",null,playbackProtocol === 1 && JSON.parse(opponent.snapshot_json).playback_protocol === 1 ? 1 : 0);
         remove.run(other.player_id);
         return { state: "MATCHED", match_id: id };
       }).immediate();
@@ -117,15 +120,27 @@ export function queueAction(db: Database, player: string, clientId: string, requ
 
 /** Internal settlement primitive. Caller must derive the result from trusted combat
  * or timeout/forfeit processing, never from an HTTP request body. */
-export function settlePvpMatch(db: Database, matchId: string, winner: "left" | "right" | "draw", now: number) {
+export function settlePvpMatch(db: Database, matchId: string, winner: "left" | "right" | "draw", now: number, reward?: (playerId:string, snapshotJson:string, now:number)=>any) {
   if (typeof matchId !== "string" || !matchId || !["left", "right", "draw"].includes(winner)) throw new Error("INVALID_RESULT");
   const currentSeason = pvpSeason(now);
   return db.transaction(() => {
     const match = db.query("SELECT status, season, result_json, kind FROM pvp_matches WHERE match_id = ?").get(matchId) as any;
     if (!match) throw new Error("MATCH_NOT_FOUND");
     if (match.status === "FINISHED") { const prior = JSON.parse(match.result_json); if (prior.result !== winner) throw new Error("RESULT_CONFLICT"); return prior; }
+    let xp: any = null;
+    if (reward && winner !== "draw") {
+      const participants = db.query("SELECT player_id,side,snapshot_json FROM pvp_match_players WHERE match_id=?").all(matchId) as any[];
+      const victor = participants.find(p=>p.side.toLowerCase()===winner), opponent = participants.find(p=>p.side.toLowerCase()!==winner);
+      if (!victor || !opponent) throw new Error("INVALID_MATCH_STATE");
+      const day = Math.floor(now / 86_400_000) * 86_400_000;
+      const count = match.kind === "friendly" ? (db.query("SELECT count(*) n FROM pvp_xp_rewards r JOIN pvp_matches m ON m.match_id=r.match_id WHERE r.winner_id=? AND r.opponent_id=? AND r.rewarded_at>=? AND r.rewarded_at<? AND m.kind='friendly'").get(victor.player_id,opponent.player_id,day,day+86_400_000) as any).n : 0;
+      if (match.kind !== "friendly" || count < 3) {
+        xp = reward(victor.player_id,victor.snapshot_json,now);
+        if (xp && xp.xp_granted > 0) db.query("INSERT INTO pvp_xp_rewards VALUES (?,?,?,?)").run(matchId,victor.player_id,opponent.player_id,now);
+      }
+    }
     if (match.kind === "friendly") {
-      const result = {result: winner};
+      const result = {result: winner, ...(xp ? {xp} : {})};
       db.query("UPDATE pvp_matches SET status='FINISHED', result_json=?, settled_at=?, updated_at=?, revision=revision+1 WHERE match_id=? AND status='ACTIVE'").run(JSON.stringify(result),now,now,matchId);
       db.query("UPDATE pvp_match_players SET active=0 WHERE match_id=?").run(matchId);
       return result;
@@ -141,7 +156,7 @@ export function settlePvpMatch(db: Database, matchId: string, winner: "left" | "
     }
     const currentRating = db.query("SELECT rating FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
     const totals = { left: (currentRating.get(currentSeason, left.player_id) as any)?.rating ?? 1000, right: (currentRating.get(currentSeason, right.player_id) as any)?.rating ?? 1000 };
-    const result = { result: winner, season: match.season, deltas: { left: ld, right: rd }, totals };
+    const result = { result: winner, season: match.season, deltas: { left: ld, right: rd }, totals, ...(xp ? {xp} : {}) };
     db.query("UPDATE pvp_matches SET status = 'FINISHED', result_json = ?, settled_at = ?, updated_at = ?, revision = revision + 1 WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(result),now,now,matchId);
     db.query("UPDATE pvp_match_players SET active = 0 WHERE match_id = ?").run(matchId);
     return result;
@@ -178,7 +193,7 @@ export function createPvpChat(db: Database, clock: () => number = Date.now) {
 }
 
 /** Server-only match coordinator. Every method requires a previously authenticated player ID. */
-export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => number = Date.now) {
+export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => number = Date.now, reward?: (playerId:string, snapshotJson:string, now:number)=>any) {
   if (!(secret instanceof Uint8Array) || secret.length < 32) throw new Error("PVP_SECRET_REQUIRED");
   const get = db.prepare("SELECT m.*, p.side FROM pvp_matches m JOIN pvp_match_players p ON p.match_id = m.match_id WHERE m.match_id = ? AND p.player_id = ?");
   const pending = db.prepare("SELECT player_id, decision_json FROM pvp_decisions WHERE match_id = ? AND revision = ?");
@@ -221,11 +236,12 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
     };
     const finished = row.result_json ? JSON.parse(row.result_json) : null;
     const total = finished?.totals?.[viewer];
-    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...(row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...(Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {}) } : {}) } : null;
+    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...(finished.result === viewer && finished.xp ? {homunculus_xp: finished.xp} : {}), ...(row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...(Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {}) } : {}) } : null;
     const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
-    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizeEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
+    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, ...(row.playback_protocol === 1 ? {phase:row.phase, server_time:clock(), playback_revision:row.phase === "PLAYBACK" ? row.revision : null, playback_until:row.phase === "PLAYBACK" ? row.decision_deadline : null, playback_event_end:row.playback_event_end} : {}), turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some(d => d.player_id === viewerId), enemy: decisions.some(d => d.player_id !== viewerId) }, result, events: (eventRows.all(row.match_id,after) as any[]).map(e => sanitizeEvent(JSON.parse(e.payload_json),viewer,e.seq)) };
   };
   const advance = (row: any, now: number, timeout: boolean) => {
+    const eventStart = (db.query("SELECT COALESCE(MAX(seq),0) n FROM pvp_events WHERE match_id=?").get(row.match_id) as any).n;
     let state = parse(row); const entries = members(row.match_id), choices = pending.all(row.match_id,row.revision) as any[];
     const bySide: any = {}; for (const c of choices) { const m = entries.find(e => e.player_id === c.player_id); if (m) bySide[m.side.toLowerCase()] = JSON.parse(c.decision_json); }
     const inspiration = sides.filter(side => state.fighters[side].inspiration_pending);
@@ -248,17 +264,20 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
       if ("error" in out) throw new Error(out.error);
       state = out.state; for (const e of out.events) event(row.match_id,e,now);
     }
-    db.query("UPDATE pvp_matches SET combat_state_json = ?, revision = revision + 1, updated_at = ?, decision_deadline = ? WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(state),now,now+PVP_TURN_TIMEOUT_MS,row.match_id);
-    if (state.match_result) settlePvpMatch(db,row.match_id,state.match_result,now);
+    const end = (db.query("SELECT COALESCE(MAX(seq),0) n FROM pvp_events WHERE match_id=?").get(row.match_id) as any).n;
+    const playback = row.playback_protocol === 1 && !state.match_result;
+    const deadline = playback ? now + Math.min(45_000, (end-eventStart)*1350 + 6000) : now + (row.playback_protocol === 1 ? 60_000 : PVP_TURN_TIMEOUT_MS);
+    db.query("UPDATE pvp_matches SET combat_state_json = ?, revision = revision + 1, updated_at = ?, decision_deadline = ?, phase=?, playback_event_end=? WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(state),now,deadline,playback ? "PLAYBACK" : "DECISION",end,row.match_id);
+    if (state.match_result) settlePvpMatch(db,row.match_id,state.match_result,now,timeout ? undefined : reward);
   };
-  const checkTimeout = (row: any, now: number) => { if (row.status === "ACTIVE" && row.decision_deadline <= now) advance(row,now,true); };
+  const checkTimeout = (row: any, now: number) => { if (row.status === "ACTIVE" && row.decision_deadline <= now) { if (row.phase === "PLAYBACK") db.query("UPDATE pvp_matches SET phase='DECISION', decision_deadline=?, updated_at=? WHERE match_id=?").run(now+60_000,now,row.match_id); else advance(row,now,true); } };
   const lookup = (id: string, player: string) => { const row = get.get(id,player) as any; if (!row) throw new Error("MATCH_NOT_FOUND"); return row; };
   const transactAction = (id: string, player: string, clientId: string, request: any, fn: (row: any, now: number) => void) => {
     if (typeof clientId !== "string" || !clientId.trim() || clientId.length > 64 || /[\u0000-\u001f\u007f-\u009f]/u.test(clientId)) throw new Error("INVALID_ACTION_ID");
     return db.transaction(() => {
       let row = lookup(id,player); const body = JSON.stringify({match_id:id,...request}), old = action.get(player,clientId) as any;
       if (old) { if (old.request_json !== body) throw new Error("ACTION_CONFLICT"); return JSON.parse(old.response_json); }
-      const now = clock(), timedOut = row.status === "ACTIVE" && row.decision_deadline <= now;
+      const now = clock(), timedOut = row.status === "ACTIVE" && row.phase !== "PLAYBACK" && row.decision_deadline <= now;
       checkTimeout(row,now); row = lookup(id,player);
       if (!timedOut) { if (row.status !== "ACTIVE") throw new Error("MATCH_FINISHED"); fn(row,now); row = lookup(id,player); }
       const response = dto(row,player,0);
@@ -282,6 +301,7 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
     state(id: string, player: string, after = 0) { if (!Number.isSafeInteger(after) || after < 0) throw new Error("INVALID_CURSOR"); return db.transaction(() => { const row = lookup(id,player); checkTimeout(row,clock()); return dto(lookup(id,player),player,after); }).immediate(); },
     decide(id: string, player: string, clientId: string, revision: number, decision: any) {
       return transactAction(id,player,clientId,{kind:"decision",revision,decision},(row,now) => {
+        if (row.phase === "PLAYBACK") throw new Error("PLAYBACK_PENDING");
         if (!Number.isSafeInteger(revision) || revision !== row.revision) throw new Error("STALE_REVISION");
         const state = parse(row), side = row.side.toLowerCase() as PvpSide;
         if (state.fighters.left.inspiration_pending || state.fighters.right.inspiration_pending) {
@@ -292,6 +312,19 @@ export function createPvpMatches(db: Database, secret: Uint8Array, clock: () => 
         db.query("INSERT INTO pvp_decisions (match_id, player_id, revision, client_action_id, decision_json, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(id,player,row.revision,clientId,JSON.stringify(decision),now);
         advance(row,now,false);
       });
+    },
+    ack(id: string, player: string, revision: number) {
+      if (!Number.isSafeInteger(revision) || revision < 1) throw new Error("INVALID_REQUEST");
+      return db.transaction(() => {
+        const now=clock(); let row=lookup(id,player); checkTimeout(row,now); row=lookup(id,player);
+        if (row.playback_protocol !== 1 || row.revision !== revision) throw new Error("STALE_REVISION");
+        if (row.status === "ACTIVE" && row.phase === "PLAYBACK") {
+          db.query("UPDATE pvp_match_players SET playback_ack_revision=? WHERE match_id=? AND player_id=?").run(revision,id,player);
+          const count=(db.query("SELECT count(*) n FROM pvp_match_players WHERE match_id=? AND playback_ack_revision=?").get(id,revision) as any).n;
+          if (count === 2) db.query("UPDATE pvp_matches SET phase='DECISION', decision_deadline=?, updated_at=? WHERE match_id=?").run(now+60_000,now,id);
+        }
+        return dto(lookup(id,player),player,0);
+      }).immediate();
     },
     forfeit(id: string, player: string, clientId: string) {
       return transactAction(id,player,clientId,{kind:"forfeit"},(row,now) => {
@@ -312,8 +345,8 @@ export function dispatchPvpRequest(services: {db: Database; queue: ReturnType<ty
   if (method === "GET" && path === "/pvp/leaderboard") { if (query.getAll("season").length > 1) throw new Error("INVALID_SEASON"); return ranking.leaderboard(player, query.get("season")); }
   if (method === "GET" && path === "/pvp/match/state") { const id=query.get("match_id") ?? matches.locate(player,kind); if (!id) return {match:null}; authorize(id); const raw=query.get("chat_after") ?? "0", chatAfter=Number(raw); if (!/^\d+$/.test(raw) || !Number.isSafeInteger(chatAfter)) throw new Error("INVALID_CURSOR"); return { ...matches.state(id,player,cursor()), chat: chat.list(id,player,chatAfter) }; }
   if (method === "POST" && path === "/pvp/queue/join") {
-    if (!fields(body,["client_action_id","selection"])) throw new Error("INVALID_REQUEST");
-    return queueAction(db,player,body.client_action_id,{kind:"queue_join",selection:body.selection},()=>queue.join(player,body.selection));
+    if (!fields(body,["client_action_id","selection","playback_protocol"])) throw new Error("INVALID_REQUEST");
+    return queueAction(db,player,body.client_action_id,{kind:"queue_join",selection:body.selection,...(body.playback_protocol === undefined ? {} : {playback_protocol:body.playback_protocol})},()=>queue.join(player,body.selection,body.playback_protocol));
   }
   if (method === "POST" && path === "/pvp/queue/cancel") {
     if (!fields(body,["client_action_id"])) throw new Error("INVALID_REQUEST");
@@ -322,6 +355,10 @@ export function dispatchPvpRequest(services: {db: Database; queue: ReturnType<ty
   if (method === "POST" && path === "/pvp/match/decision") {
     if (!fields(body,["match_id","client_action_id","combat_revision","decision"]) || typeof body.match_id !== "string") throw new Error("INVALID_REQUEST");
     authorize(body.match_id); return matches.decide(body.match_id,player,body.client_action_id,body.combat_revision,body.decision);
+  }
+  if (method === "POST" && path === "/pvp/match/playback_ack") {
+    if (!fields(body,["match_id","playback_revision"]) || typeof body.match_id !== "string") throw new Error("INVALID_REQUEST");
+    authorize(body.match_id); return matches.ack(body.match_id,player,body.playback_revision);
   }
   if (method === "POST" && path === "/pvp/match/forfeit") {
     if (!fields(body,["match_id","client_action_id"]) || typeof body.match_id !== "string") throw new Error("INVALID_REQUEST");

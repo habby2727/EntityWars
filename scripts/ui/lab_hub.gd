@@ -188,6 +188,7 @@ func _build_icons() -> void:
 			button.texture_pressed = icon_tex
 		else:
 			var label := Label.new()
+			label.set_meta("medieval_sharp_font", true)
 			label.text = _get_building_display_name(building_id)
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER

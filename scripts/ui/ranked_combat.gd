@@ -42,6 +42,13 @@ var hp_reconcile_pending := false
 var highlights_shown := false
 var result_popup_shown := false
 var debug_visual := false
+var server_time_ms := 0
+var server_time_ticks := 0
+var request_started_ticks := 0
+var acknowledged_revision := 0
+var received_snapshot := false
+var catching_up := false
+var settlement_refreshed := false
 
 func _ready() -> void:
 	host = get_parent()
@@ -203,6 +210,10 @@ func _on_identity(data: Dictionary) -> void:
 func _on_auth_changed(_token: String) -> void:
 	request_id = ""
 	request_kind = ""
+	received_snapshot = false
+	acknowledged_revision = 0
+	server_time_ms = 0
+	_catch_up()
 	header.text = "Reconnect to recover this match"
 	state.clear()
 	timer_panel.hide()
@@ -214,6 +225,7 @@ func _send(method: String, path: String, body: Variant, kind: String, replay: bo
 	request_id = backend.request_api(method, path, body, false, false, replay)
 	if request_id.is_empty():
 		return false
+	request_started_ticks = Time.get_ticks_msec()
 	if kind == "chat":
 		chat_attempted = true
 	request_kind = kind
@@ -228,6 +240,11 @@ func _process(delta: float) -> void:
 		return
 	next_poll -= delta
 	event_delay -= delta
+	if str(state.get("phase", "")) == "PLAYBACK" and server_time_ms > 0 and _server_now() >= int(state.get("playback_until", 0)) and (not event_queue.is_empty() or event_presenting or hp_reconcile_pending):
+		catching_up = true
+		_catch_up()
+		_render()
+		next_poll = 0.0
 	if event_presenting:
 		hp_animation_elapsed = minf(HP_ANIMATION_SECONDS, hp_animation_elapsed + delta)
 		var value := lerpf(hp_animation_from, hp_animation_to, hp_animation_elapsed / HP_ANIMATION_SECONDS)
@@ -246,15 +263,22 @@ func _process(delta: float) -> void:
 		_apply_battle_reset()
 		hp_reconcile_pending = false
 		_render()
-	if str(state.get("status", "")) == "FINISHED" and event_queue.is_empty() and not event_presenting and event_delay <= 0.0 and not highlights_shown:
+	if str(state.get("status", "")) == "FINISHED" and event_cursor >= int(state.get("playback_event_end", 0)) and not catching_up and event_queue.is_empty() and not event_presenting and event_delay <= 0.0 and not highlights_shown:
 		_render()
 		highlights_shown = true
 		host._show_highlights()
 		_show_result_popup()
 	if not state.is_empty() and str(state.get("status", "")) == "ACTIVE":
-		var seconds := maxi(0, ceili(float(state.get("deadline", 0)) / 1000.0 - Time.get_unix_time_from_system()))
+		var now_ms := _server_now() if server_time_ms > 0 else int(Time.get_unix_time_from_system() * 1000.0)
+		var seconds := maxi(0, ceili(float(int(state.get("deadline", 0)) - now_ms) / 1000.0))
 		timer_panel.show()
-		timer_label.text = "%02d:%02d" % [seconds / 60, seconds % 60]
+		timer_label.text = tr("PVP_RESOLVING") if str(state.get("phase", "")) == "PLAYBACK" else "%02d:%02d" % [seconds / 60, seconds % 60]
+	if request_id.is_empty() and str(state.get("status", "")) == "ACTIVE" and str(state.get("phase", "")) == "PLAYBACK":
+		var revision := int(state.get("playback_revision", 0))
+		if event_cursor < int(state.get("playback_event_end", 0)):
+			next_poll = 0.0
+		elif revision > 0 and revision != acknowledged_revision and event_queue.is_empty() and not event_presenting and event_delay <= 0.0 and not hp_reconcile_pending and not battle_reset_pending:
+			_send("POST", match_prefix + "/playback_ack", {"match_id": match_id, "playback_revision": revision}, "ack")
 	if request_id.is_empty() and not chat_pending.is_empty() and pending.is_empty():
 		_send("POST", match_prefix + "/chat", chat_pending, "chat", chat_attempted)
 	if request_id.is_empty() and next_poll <= 0.0:
@@ -269,7 +293,9 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 	request_id = ""
 	request_kind = ""
 	if not ok:
-		if int(data.get("http_status", 0)) >= 400 and int(data.get("http_status", 0)) < 500:
+		if kind == "ack":
+			next_poll = 0.0
+		if kind != "ack" and int(data.get("http_status", 0)) >= 400 and int(data.get("http_status", 0)) < 500:
 			pending.clear()
 			pending_path = ""
 			if kind == "chat":
@@ -290,6 +316,17 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 	if data.get("match_id", "") != match_id or (friendly and data.get("kind", "") != "friendly"):
 		header.text = "Match unavailable"
 		return
+	if kind == "ack":
+		acknowledged_revision = int(state.get("playback_revision", 0))
+	if data.has("server_time"):
+		server_time_ticks = Time.get_ticks_msec()
+		server_time_ms = int(data.server_time) + int(maxi(0, server_time_ticks - request_started_ticks) / 2)
+	var incoming: Array = data.get("events", [])
+	var expired_playback := str(state.get("phase", "")) == "PLAYBACK" and str(data.get("phase", "")) == "DECISION" and server_time_ms >= int(state.get("playback_until", 0))
+	if expired_playback or (not received_snapshot and not incoming.is_empty()) or incoming.size() > 25:
+		catching_up = true
+		_catch_up()
+	received_snapshot = true
 	state = data.duplicate(true)
 	if str(state.get("status", "")) == "ACTIVE":
 		header.text = ""
@@ -303,6 +340,24 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		elif not pending_path.is_empty():
 			_send("POST", pending_path, pending, "forfeit" if pending_path.ends_with("forfeit") else "decision", true)
 	_render()
+	if event_cursor < int(state.get("playback_event_end", 0)) or incoming.size() >= 500:
+		next_poll = 0.0
+	else:
+		catching_up = false
+	if str(state.get("status", "")) == "FINISHED" and not settlement_refreshed:
+		settlement_refreshed = true
+		backend.call_deferred("refresh_state")
+
+func _server_now() -> int:
+	return server_time_ms + Time.get_ticks_msec() - server_time_ticks
+
+func _catch_up() -> void:
+	event_queue.clear()
+	event_presenting = false
+	event_delay = 0.0
+	hp_reconcile_pending = false
+	battle_reset_pending = false
+	hp_initialized = false
 
 func _fighter(data: Dictionary) -> Dictionary:
 	var fighter := data.duplicate(true)
@@ -348,6 +403,8 @@ func _render() -> void:
 		if not event is Dictionary or int(event.get("id", 0)) <= event_cursor:
 			continue
 		event_cursor = int(event.id)
+		if catching_up:
+			continue
 		var queued: Dictionary = event.duplicate(true)
 		queued["_initial_snapshot"] = not hp_initialized
 		if str(event.get("kind", "")) == "battle_result" and not queued["_initial_snapshot"]:
@@ -355,6 +412,9 @@ func _render() -> void:
 			queued["_battle_reset"] = not next_is_match
 		event_queue.append(queued)
 		hp_reconcile_pending = true
+	if playback_busy():
+		choice.clear()
+		host.hom_decision.hide()
 	var preserve_hp := hp_initialized and (event_presenting or not event_queue.is_empty() or event_delay > 0.0)
 	var old_player_hp: float = host.player_hp.value
 	var old_enemy_hp: float = host.enemy_hp.value
@@ -484,22 +544,29 @@ func _apply_battle_reset() -> void:
 		host._set_display_hp(host.player_hp, int(host.player_hp.max_value))
 		host._set_display_hp(host.enemy_hp, int(host.enemy_hp.max_value))
 
+func playback_busy() -> bool:
+	return str(state.get("phase", "")) == "PLAYBACK" or not event_queue.is_empty() or event_presenting or event_delay > 0.0 or hp_reconcile_pending or battle_reset_pending
+
+func can_submit() -> bool:
+	return not playback_busy() and not state.is_empty() and str(state.get("status", "")) == "ACTIVE" and not bool(state.get("ready", {}).get("player", false)) and pending.is_empty() and (request_id.is_empty() or request_kind in ["state", "chat"])
+
 func refresh_controls() -> void:
 	if host == null:
 		return
+	host._refresh_spell_buttons()
 	var action_request := not request_id.is_empty() and request_kind not in ["state", "chat"]
-	var locked := state.is_empty() or str(state.get("status", "")) != "ACTIVE" or bool(state.get("ready", {}).get("player", false)) or action_request or not pending.is_empty() or not choice.is_empty() or bool(state.get("player", {}).get("inspiration_pending", false)) or bool(state.get("enemy", {}).get("inspiration_pending", false))
+	var locked := not can_submit() or not choice.is_empty() or bool(state.get("player", {}).get("inspiration_pending", false)) or bool(state.get("enemy", {}).get("inspiration_pending", false))
 	for button in host.spell_buttons:
 		button.disabled = button.disabled or locked
 	host.switch_weapon_btn.disabled = host.switch_weapon_btn.disabled or locked
 	host.ultra_button.disabled = host.ultra_button.disabled or locked
-	var inspiration_locked := state.is_empty() or str(state.get("status", "")) != "ACTIVE" or not bool(state.get("player", {}).get("inspiration_pending", false)) or bool(state.get("ready", {}).get("player", false)) or action_request or not pending.is_empty() or not choice.is_empty()
+	var inspiration_locked := not can_submit() or not bool(state.get("player", {}).get("inspiration_pending", false)) or action_request or not choice.is_empty()
 	for card in host._inspiration_cards:
 		card.disabled = inspiration_locked
 	(host._inspiration_panel.get_node("Content/Cancel") as Button).disabled = inspiration_locked
 
 func spell(index: int) -> void:
-	if index < 0 or index >= host.spell_buttons.size() or host.spell_buttons[index].disabled:
+	if not can_submit() or index < 0 or index >= host.spell_buttons.size() or host.spell_buttons[index].disabled:
 		return
 	var ids: Array = state.get("player", {}).get("spell_ids", [])
 	if index >= ids.size():
@@ -508,13 +575,13 @@ func spell(index: int) -> void:
 	_queue_action(decision)
 
 func switch_weapon() -> void:
-	if host.switch_weapon_btn.disabled:
+	if not can_submit() or host.switch_weapon_btn.disabled:
 		return
 	var slot := 2 if int(state.player.get("active_weapon_slot", 1)) == 1 else 1
 	_queue_action({"turn": int(state.get("turn", 0)) + 1, "switch_slot": slot})
 
 func _queue_action(decision: Dictionary) -> void:
-	if (not request_id.is_empty() and request_kind not in ["state", "chat"]) or not pending.is_empty():
+	if not can_submit():
 		return
 	if host._hom_ready(host.player):
 		choice = decision
@@ -525,7 +592,7 @@ func _queue_action(decision: Dictionary) -> void:
 		_submit_decision(decision)
 
 func hom_choice(action: String) -> void:
-	if choice.is_empty() or action not in ["hold", "attack", "sacrifice"]:
+	if not can_submit() or choice.is_empty() or action not in ["hold", "attack", "sacrifice"]:
 		return
 	choice["hom_action"] = action
 	var decision := choice.duplicate(true)
@@ -534,7 +601,7 @@ func hom_choice(action: String) -> void:
 	_submit_decision(decision)
 
 func _submit_decision(decision: Dictionary) -> void:
-	if (not request_id.is_empty() and request_kind not in ["state", "chat"]) or not pending.is_empty() or str(state.get("status", "")) != "ACTIVE":
+	if not can_submit():
 		return
 	pending = {"match_id": match_id, "client_action_id": backend._make_uuid(), "combat_revision": int(state.get("combat_revision", 0)), "decision": decision}
 	pending_path = match_prefix + "/decision"
@@ -546,7 +613,7 @@ func _submit_decision(decision: Dictionary) -> void:
 func _refresh_inspiration() -> void:
 	var p: Dictionary = state.get("player", {})
 	var offers: Array = p.get("inspiration_offers", [])
-	if str(state.get("status", "")) != "ACTIVE" or not bool(p.get("inspiration_pending", false)) or bool(state.get("ready", {}).get("player", false)) or offers.size() != 3:
+	if playback_busy() or str(state.get("status", "")) != "ACTIVE" or not bool(p.get("inspiration_pending", false)) or bool(state.get("ready", {}).get("player", false)) or offers.size() != 3:
 		host._inspiration_panel.hide()
 		return
 	host._inspiration_options.clear()
@@ -559,11 +626,11 @@ func _refresh_inspiration() -> void:
 	host._inspiration_panel.show()
 
 func choose_inspiration(index: int) -> void:
-	if index >= 0 and index < host._inspiration_options.size() and not host._inspiration_cards[index].disabled:
+	if can_submit() and index >= 0 and index < host._inspiration_options.size() and not host._inspiration_cards[index].disabled:
 		_submit_decision({"kind": "choose", "spell_id": str(host._inspiration_options[index].get("id", ""))})
 
 func decline_inspiration() -> void:
-	if not (host._inspiration_panel.get_node("Content/Cancel") as Button).disabled:
+	if can_submit() and not (host._inspiration_panel.get_node("Content/Cancel") as Button).disabled:
 		_submit_decision({"kind": "decline"})
 
 func _send_chat() -> void:
@@ -618,6 +685,14 @@ func _show_result_popup() -> void:
 	result_popup_shown = true
 	var outcome := str(result.get("result", "draw"))
 	var body: VBoxContainer = host._result_popup("VICTORY" if outcome == "win" else "DEFEAT" if outcome == "loss" else "DRAW")
+	var xp: Dictionary = result.get("homunculus_xp", {})
+	if not xp.is_empty():
+		var xp_label := Label.new()
+		xp_label.text = tr("PVP_HOM_XP") % int(xp.get("xp_granted", 0))
+		if int(xp.get("level_after", 0)) > int(xp.get("level_before", 0)):
+			xp_label.text += "\n" + (tr("PVP_HOM_LEVEL_UP") % int(xp.get("level_after", 0)))
+		xp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		body.add_child(xp_label)
 	if friendly:
 		return
 	var delta := int(result.get("mp_delta", 0))
