@@ -251,7 +251,10 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     db.query("UPDATE solo_hunt_sessions SET combat_state_json = ? WHERE session_id = ?").run(JSON.stringify(lossState), lossId);
     let lossResult: any;
     for (let turn = 1; turn <= 10; turn++) {
-      const response = await request("/world/boss-hunts/turn", { session_id: lossId, client_action_id: `loss-${turn}`, expected_revision: turn, decision: { turn, spell_id: "cinder_fist", target: "boss", hom_action: "hold" } }, a.data.token);
+      const current = JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id = ?").get(lossId) as any).combat_state_json);
+      const target = current.minions.find((minion: any) => minion.hp > 0)?.id ?? "boss";
+      const response = await request("/world/boss-hunts/turn", { session_id: lossId, client_action_id: `loss-${turn}`, expected_revision: turn, decision: { turn, spell_id: "cinder_fist", target, hom_action: "hold" } }, a.data.token);
+      if (response.status !== 200) console.error("Guardian forced-loss turn rejected:", JSON.stringify({ turn, response }));
       expect(response.status).toBe(200);
       lossResult = response.data;
       if (lossResult.status === "VERIFIED_LOSS") break;

@@ -331,7 +331,7 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 	icons.name = "EnemyStatus" if enemy else "PlayerStatus"
 	_place(icons, Vector2(1280 if enemy else 40, 40), Vector2(600, 64))
 	var normalized: Dictionary = fighter.get("status", {}).duplicate(true)
-	for pair in [["shield", "shield_pct"], ["reflect", "reflect_pct"], ["vuln", "vuln_pct"]]: normalized[pair[1]] = normalized.get(pair[0], 0)
+	for pair in [["shield", "shield_pct"], ["reflect", "reflect_pct"], ["vuln", "vuln_pct"]]: normalized[pair[1]] = normalized.get(pair[0], normalized.get(pair[1], 0))
 	var extra := []
 	for delayed in state.get("strategic_delayed", []):
 		if str(delayed.get("target", "")) == ("npc" if enemy else "player"): extra.append({"icon":"hourglass", "label":str(delayed.get("amount", 0)), "tooltip":tr("EXPEDITION_DELAYED") % int(delayed.get("due_turn", 0))})

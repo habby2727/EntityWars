@@ -19142,8 +19142,8 @@ function resolveDungeonTurn(state, decision, rng) {
     if (fighter2.hp > 0 && fighter2.status.poison > 0) {
       let tick = 3;
       if (fighter2 === next.player && next.blessing?.selected === "toxin_ward") {
-        const b2 = next.blessing, mitigation = 3 * Math.min(50, 20 + 5 * (b2.tier - 1)) + b2.poison_remainder;
-        const prevented = Math.min(2, Math.floor(mitigation / 100));
+        const b2 = next.blessing, mitigation = tick * Math.min(50, 20 + 5 * (b2.tier - 1)) + b2.poison_remainder;
+        const prevented = Math.min(Math.max(0, tick - 1), Math.floor(mitigation / 100));
         b2.poison_remainder = mitigation % 100;
         tick -= prevented;
       }
