@@ -22,12 +22,8 @@ func load_entry() -> Dictionary:
 	if _path.is_empty():
 		return {"error": "identity_required"}
 	if not FileAccess.file_exists(_path):
-		var directory := DirAccess.open("user://")
-		if directory == null:
+		if DirAccess.open("user://") == null:
 			return {"error": "journal_unreadable"}
-		for filename in directory.get_files():
-			if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
-				return {"error": "journal_owner_mismatch"}
 		return {}
 	var file := FileAccess.open(_path, FileAccess.READ)
 	if file == null or file.get_length() > 65536:

@@ -20,8 +20,16 @@ func _run() -> void:
 	var legacy := FileAccess.open(legacy_path, FileAccess.WRITE)
 	legacy.store_string(JSON.stringify(dungeon))
 	legacy.close()
+	get_root().get_node("ConnectionGate").player_id = "owner"
 	get_root().get_node("ConnectionGate")._discard_legacy_dungeon_journals()
 	assert(not FileAccess.file_exists(legacy_path))
+	var foreign_path := "user://session_recovery_%s.json" % "other".sha256_text()
+	var foreign := FileAccess.open(foreign_path, FileAccess.WRITE)
+	foreign.store_string(JSON.stringify({"mode":"dungeon", "player_id":"other"}))
+	foreign.close()
+	get_root().get_node("ConnectionGate")._discard_legacy_dungeon_journals()
+	assert(FileAccess.file_exists(foreign_path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(foreign_path))
 	var entry := {"version": 1, "mode": "hunt", "player_id": "owner", "session_id": "session", "context": {"hunt_id": "hunt"}, "pending_kind": "turn", "payload": {"session_id": "session", "client_action_id": "action", "expected_revision": 1, "decision": {"turn": 1, "spell_id": "spell"}}}
 	assert(journal.save_entry(entry))
 	var loaded := journal.load_entry()
@@ -32,7 +40,8 @@ func _run() -> void:
 	wrong.player_id = "other"
 	assert(not journal.save_entry(wrong))
 	assert(journal.set_identity("other"))
-	assert(journal.load_entry().get("error") == "journal_owner_mismatch")
+	assert(journal.load_entry().is_empty())
+	assert(FileAccess.file_exists(legacy_path))
 	assert(journal.set_identity("owner"))
 	wrong = entry.duplicate(true)
 	wrong.payload["token"] = "secret"

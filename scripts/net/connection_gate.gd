@@ -144,7 +144,7 @@ func explicit_logout_safe() -> bool:
 	if directory == null:
 		return false
 	for filename in directory.get_files():
-		if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
+		if filename.begins_with("session_recovery_") and filename.ends_with(".json") and _journal_belongs_or_unknown(filename):
 			return false
 		if player_id.is_empty() and filename.begins_with("pending_actions_") and filename.ends_with(".json"):
 			if not _logout_queue_empty("user://" + filename):
@@ -172,6 +172,10 @@ func explicit_logout_safe() -> bool:
 		if not client._in_flight.is_empty() or not client._api_in_flight.is_empty() or client._pending.size() > 0:
 			return false
 	return true
+
+func _journal_belongs_or_unknown(filename: String) -> bool:
+	var hash := filename.trim_prefix("session_recovery_").trim_suffix(".json")
+	return player_id.is_empty() or hash.length() != 64 or not hash.is_valid_hex_number(false) or hash == player_id.sha256_text()
 
 func _logout_queue_empty(path: String) -> bool:
 	if not FileAccess.file_exists(path):
@@ -264,7 +268,7 @@ func begin_explicit_login() -> bool:
 	_explicit_login_pending = true
 	var session_active := not SceneRouter._solo_hunt_context.is_empty() or not SceneRouter._dungeon_context.is_empty() or _recovery_owner_id != 0
 	for filename in directory.get_files():
-		if filename.begins_with("session_recovery_") and filename.ends_with(".json"):
+		if filename.begins_with("session_recovery_") and filename.ends_with(".json") and _journal_belongs_or_unknown(filename):
 			session_active = true
 	if not session_active and not is_instance_valid(_suspended_scene):
 		player_id = ""
@@ -738,7 +742,7 @@ func _discard_legacy_dungeon_journals() -> void:
 	var directory := DirAccess.open("user://")
 	if directory == null: return
 	for filename in directory.get_files():
-		if not filename.begins_with("session_recovery_") or not filename.ends_with(".json"): continue
+		if player_id.is_empty() or filename != "session_recovery_%s.json" % player_id.sha256_text(): continue
 		var path := "user://" + filename
 		var file := FileAccess.open(path, FileAccess.READ)
 		if file == null or file.get_length() > 65536: continue

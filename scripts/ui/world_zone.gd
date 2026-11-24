@@ -103,6 +103,8 @@ var _hunt_wants_schedule := false
 var _hunt_wants_session := false
 var _hunt_wants_guardians := false
 var _hunt_pending_start_payload: Dictionary = {}
+var _hunt_start_queued := false
+var _hunt_suspended_starts: Dictionary = {}
 var _hunt_active: Dictionary = {}
 var _hunt_session_checked := false
 var _common_cooldown_until := 0
@@ -636,7 +638,7 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 				var unlocked := not online_guardian.is_empty() or bool(_hunt_progress.get("boss_unlocked", false))
 				if not verified:
 					call_deferred("_request_guardian_progress")
-				_hunt_fight.disabled = not verified or _backend.token.is_empty() or (not active and (not unlocked or (online_guardian.is_empty() and not (bool(_hunt_selected.get("available", false)) or bool(_hunt_progress.get("personal_boss_available", false))))))
+				_hunt_fight.disabled = not verified or _backend.token.is_empty() or (not active and (not unlocked or (online_guardian.is_empty() and not (bool(_hunt_selected.get("available", false)) or bool(_hunt_progress.get("personal_boss_available", false)) or _has_pending_hunt_start()))))
 				var reason := "" if not _hunt_fight.disabled else ("Progress unavailable; retry." if not verified else ("Defeat all guardians first." if not unlocked else tr("HUNT_WINDOW_EXPLANATION")))
 				_preview_status.text = "%s\n%s\nGuardians: %d/%d defeated%s" % [str(entry.get("name", "Boss")), "Special Boss" if online_guardian.is_empty() else "Guardian of " + str(_hunt_selected.get("name", "Boss")) + " — " + tier.capitalize(), int(_hunt_progress.get("defeated_count", 0)), int(_hunt_progress.get("total_count", 0)), "\n" + reason if not reason.is_empty() else ""]
 				_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
@@ -977,7 +979,16 @@ func _hunt_action_context_key() -> String:
 	var global_id := str(_hunt_selected.get("global_event_id", ""))
 	if not global_id.is_empty():
 		return _get_zone_id() + ":" + global_id
-	return "%s:%s:%s:%d:%s" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, _hunt_rotation, str(_hunt_selected.get("appearance_id", ""))]
+	return "%s:%s:%s:%s" % [_get_zone_id(), str(_hunt_selected.get("id", "")), _hunt_guardian_id, str(_hunt_selected.get("appearance_id", ""))]
+
+func _has_pending_hunt_start() -> bool:
+	if _backend == null or _backend._verified_player_id.is_empty():
+		return false
+	var owner := _backend._verified_player_id
+	if not _hunt_pending_start_payload.is_empty():
+		return _hunt_action_owner == owner and _hunt_action_key == _hunt_action_context_key()
+	var saved: Dictionary = _hunt_suspended_starts.get(owner, {})
+	return not saved.is_empty() and str(saved.get("key", "")) == _hunt_action_context_key()
 
 func _request_global_boss() -> void:
 	_global_poll_timer = 0.0
@@ -1073,13 +1084,13 @@ func _open_global_boss() -> void:
 func _drain_hunt_requests() -> void:
 	if not is_inside_tree() or not is_instance_valid(_backend) or not _backend.is_inside_tree() or _backend.token.is_empty():
 		return
-	if not _hunt_pending_start_payload.is_empty():
+	if _hunt_start_queued and not _hunt_pending_start_payload.is_empty() and not _hunt_requests.values().has("start"):
 		var current_key := _hunt_action_context_key()
 		if _hunt_action_owner != _backend._verified_player_id or _hunt_action_key != current_key:
 			return
 		var start_id := _backend.request_api("POST", "/world/boss-hunts/start", _hunt_pending_start_payload.duplicate(true), false)
 		if not start_id.is_empty():
-			_hunt_pending_start_payload.clear()
+			_hunt_start_queued = false
 			_hunt_requests[start_id] = "start"
 			_hunt_fight.disabled = true
 			_preview_status.text = "Starting encounter..."
@@ -1212,7 +1223,7 @@ func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> voi
 	_boss_open.visible = false
 	_debug_fight.visible = false
 	_hunt_fight.visible = true
-	_hunt_fight.disabled = not verified or _backend == null or _backend.token.is_empty() or (not active and (not unlocked or not (bool(boss.get("available", false)) or bool(_hunt_progress.get("personal_boss_available", false)))))
+	_hunt_fight.disabled = not verified or _backend == null or _backend.token.is_empty() or (not active and (not unlocked or not (bool(boss.get("available", false)) or bool(_hunt_progress.get("personal_boss_available", false)) or _has_pending_hunt_start())))
 	if _hunt_fight.disabled and verified:
 		_preview_status.text += "\n" + ("Connect and sign in to fight." if _backend == null or _backend.token.is_empty() else ("Defeat all guardians first." if not unlocked else tr("HUNT_WINDOW_EXPLANATION")))
 	_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
@@ -1224,6 +1235,21 @@ func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> voi
 
 func _start_map_hunt() -> void:
 	if _backend == null or _backend.token.is_empty() or _backend._verified_player_id.is_empty():
+		return
+	var owner := _backend._verified_player_id
+	if _hunt_pending_start_payload.is_empty() and _hunt_suspended_starts.has(owner):
+		var saved: Dictionary = _hunt_suspended_starts[owner]
+		_hunt_pending_start_payload = saved.payload.duplicate(true)
+		_hunt_action_id = str(saved.id)
+		_hunt_action_key = str(saved.key)
+		_hunt_action_owner = owner
+		_hunt_suspended_starts.erase(owner)
+	if not _hunt_pending_start_payload.is_empty():
+		if _hunt_action_owner != _backend._verified_player_id or _hunt_action_key != _hunt_action_context_key():
+			_preview_status.text = "Previous request unresolved. Retry the same encounter."
+			return
+		_hunt_start_queued = true
+		_drain_hunt_requests()
 		return
 	if not _hunt_active.is_empty() and _hunt_active_owner == _backend._verified_player_id and int(_hunt_active.get("expires_at", 0)) > _backend.get_server_time_unix_ms() and _active_hunt_matches(_hunt_guardian_id):
 		_enter_map_hunt(_hunt_active)
@@ -1262,6 +1288,7 @@ func _start_map_hunt() -> void:
 	if not _hunt_guardian_id.is_empty():
 		payload["guardian_id"] = _hunt_guardian_id
 	_hunt_pending_start_payload = payload.duplicate(true)
+	_hunt_start_queued = true
 	_hunt_fight.disabled = true
 	_preview_status.text = "Waiting to start encounter..."
 	_drain_hunt_requests()
@@ -1431,6 +1458,8 @@ func _start_debug_hunt() -> void:
 
 
 func _on_auth_changed(token: String) -> void:
+	if not _hunt_pending_start_payload.is_empty() and not _hunt_action_owner.is_empty():
+		_hunt_suspended_starts[_hunt_action_owner] = {"payload": _hunt_pending_start_payload.duplicate(true), "id": _hunt_action_id, "key": _hunt_action_key}
 	_global_event.clear()
 	_global_wants_refresh = false
 	_global_request_owner = ""
@@ -1465,6 +1494,7 @@ func _on_auth_changed(token: String) -> void:
 	_hunt_wants_guardians = false
 	_hunt_requests.clear()
 	_hunt_pending_start_payload.clear()
+	_hunt_start_queued = false
 	if not _hunt_selected.is_empty():
 		_clear_guardian_preview()
 		_hunt_selected.clear()
@@ -1587,7 +1617,9 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 			return
 		if not ok:
 			if kind == "start":
-				if str(data.get("error", "")) != "network_error":
+				if int(data.get("http_status", 0)) >= 400 and int(data.get("http_status", 0)) < 500 and int(data.get("http_status", 0)) not in [401, 408, 429]:
+					_hunt_pending_start_payload.clear()
+					_hunt_start_queued = false
 					_hunt_action_id = ""
 					_hunt_action_key = ""
 					_hunt_action_owner = ""
@@ -1675,6 +1707,8 @@ func _on_api_completed(_request_id: String, ok: bool, data: Dictionary) -> void:
 				var current_key := _hunt_action_context_key()
 				if _hunt_action_owner.is_empty() or _hunt_action_owner != _backend._verified_player_id:
 					return
+				_hunt_pending_start_payload.clear()
+				_hunt_start_queued = false
 				if _hunt_action_key != current_key:
 					_hunt_active = data.duplicate(true)
 					_hunt_active_owner = _hunt_action_owner

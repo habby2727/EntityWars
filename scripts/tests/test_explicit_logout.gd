@@ -58,6 +58,13 @@ func _run() -> void:
 	assert(not gate.explicit_logout_safe())
 	client._pending.clear_identity()
 	assert(gate.explicit_logout_safe())
+	var foreign_path := "user://session_recovery_%s.json" % "account-b".sha256_text()
+	var foreign := FileAccess.open(foreign_path, FileAccess.WRITE)
+	foreign.store_string("foreign journal")
+	foreign.close()
+	assert(gate.explicit_logout_safe())
+	assert(FileAccess.file_exists(foreign_path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(foreign_path))
 	chat.messages = [{"text":"private-a"}]
 	social.friends = {"friend-a":"Alice"}
 	duel.incoming = [{"id":"private-a"}]

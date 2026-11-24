@@ -418,3 +418,31 @@ test("zone reroll and guardians survive backend restart", async () => {
     rmSync(directory, { recursive: true, force: true });
   }
 }, 30000);
+
+
+test("committed personal start replays unchanged after rotation and server restart", async () => {
+  const socket = Bun.serve({port:0,hostname:"127.0.0.1",fetch:()=>new Response()}); const port=socket.port; socket.stop();
+  const directory=mkdtempSync(join(tmpdir(),"ew-hunt-rotation-replay-")), dbPath=join(directory,"test.sqlite"), db=new Database(dbPath);
+  for(const f of readdirSync(resolve(import.meta.dir,"../../migrations/sqlite")).filter(f=>f.endsWith(".sql")).sort()) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",f),"utf8"));
+  const clockOffset=Math.floor(Date.now()/900000)*900000+120000-Date.now();
+  const env={...process.env,DB_PATH:dbPath,NODE_ENV:"development",BUN_ENV:"development",HOST:"127.0.0.1",PORT:String(port),DATABASE_URL:"postgres://x:x@127.0.0.1:1/test",REDIS_URL:"redis://127.0.0.1:1",AUTH_ACCOUNT_TIMEOUT_MS:"100",TEST_CLOCK_OFFSET:String(clockOffset),WORLD_SECRET:"isolated-rotation-test",LOGIN_RATE_LIMIT_MAX:"100"};
+  const spawn=()=>Bun.spawn([process.execPath,"-e","const n=Date.now.bind(Date); Date.now=()=>n()+Number(process.env.TEST_CLOCK_OFFSET); await import('./src/index.ts');"],{cwd:resolve(import.meta.dir,"../.."),env,stdout:"ignore",stderr:"ignore"});
+  let server=spawn(); const base=`http://127.0.0.1:${port}`;
+  const request=async(path:string, body?:any, token?:string)=>{const r=await fetch(base+path,{method:body===undefined?"GET":"POST",headers:{"content-type":"application/json",...(token?{authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json() as any};};
+  const ready=async()=>{for(let i=0;i<100;i++){try{if((await request("/health")).status===200)return;}catch{} await Bun.sleep(100);}throw Error("server not ready");};
+  try {
+    await ready(); let user=(await request("/auth/dev_login",{name:"rotation_replay_isolated"})).data;
+    const schedule=(await request("/world/boss-hunts")).data;
+    const hunt="hunt_mythic", zone="zone_chaos";
+    const guardians=(await request(`/world/boss-hunts/guardians?zone_id=${zone}&hunt_id=${hunt}`,undefined,user.token)).data.guardians;
+    for(const g of guardians) db.query("INSERT INTO solo_guardian_victories (player_id,zone_id,parent_hunt_id,guardian_id,session_id,defeated_at) VALUES (?,?,?,?,?,?)").run(user.player_id,zone,hunt,g.guardian_id,crypto.randomUUID(),Date.now());
+    const payload={client_action_id:"rotation-replay",hunt_id:hunt,rotation_key:schedule.rotation_key,zone_id:zone};
+    const committed=await request("/world/boss-hunts/start",payload,user.token); expect(committed.status).toBe(200);
+    server.kill(); await server.exited; env.TEST_CLOCK_OFFSET=String(clockOffset+900000); server=spawn(); await ready();
+    user=(await request("/auth/dev_login",{name:"rotation_replay_isolated"})).data;
+    expect((await request("/world/boss-hunts")).data.rotation_key).not.toBe(schedule.rotation_key);
+    const replay=await request("/world/boss-hunts/start",payload,user.token);
+    expect(replay.status).toBe(200); expect(replay.data).toMatchObject({session_id:committed.data.session_id,duplicate:true});
+    expect((db.query("SELECT COUNT(*) n FROM solo_hunt_sessions WHERE player_id=?").get(user.player_id) as any).n).toBe(1);
+  } finally {server.kill(); await server.exited; db.close(); rmSync(directory,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
+},30000);
