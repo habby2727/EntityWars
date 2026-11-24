@@ -58,8 +58,14 @@ func _load_spells(path: String) -> void:
 			push_warning("DataRegistry: Invalid spell statistics: %s" % id)
 			return
 		for effect in spell.effects:
-			if not effect is Dictionary or effect.get("kind") not in ["vuln", "atk_boost", "atk_down", "shield", "hom_stun", "heal", "reflect", "type_neutralize", "poison", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "shield_by_order", "ward_dispel", "poison_on_reflect", "physical_anomaly", "delayed_damage", "debuff_transfer", "buff_steal", "cooldown_jam", "counter_trap", "ward_convert", "heal_suppression", "hom_energy_siphon"] or effect.get("target") not in ["self", "enemy"] or not (effect.get("value") is int or effect.get("value") is float) or (effect.value < 0 and effect.kind != "tempo_shift"):
+			if not effect is Dictionary or effect.get("kind") not in ["burn", "lethargy", "vuln", "atk_boost", "atk_down", "shield", "hom_stun", "heal", "reflect", "type_neutralize", "poison", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "shield_by_order", "ward_dispel", "poison_on_reflect", "physical_anomaly", "delayed_damage", "debuff_transfer", "buff_steal", "cooldown_jam", "counter_trap", "ward_convert", "heal_suppression", "hom_energy_siphon"] or effect.get("target") not in ["self", "enemy"] or not (effect.get("value") is int or effect.get("value") is float) or (effect.value < 0 and effect.kind != "tempo_shift"):
 				push_warning("DataRegistry: Invalid spell effect: %s" % id)
+				return
+			if effect.has("chance") and (not (effect.chance is int or effect.chance is float) or not is_finite(float(effect.chance)) or float(effect.chance) < 0.0 or float(effect.chance) > 1.0):
+				push_warning("DataRegistry: Invalid effect chance: %s" % id)
+				return
+			if effect.kind in ["burn", "lethargy"] and (effect.target != "enemy" or effect.value != 1 or not effect.has("chance")):
+				push_warning("DataRegistry: Invalid persistent effect: %s" % id)
 				return
 			if effect.kind == "physical_anomaly" and (spell_type != "universal" or spell.category != "support" or power != 0 or effect.target != "self" or effect.value != 1 or not counts.has(effect.get("favored_type")) or not counts.has(effect.get("weakened_type")) or effect.favored_type == effect.weakened_type or effect.get("outgoing_bonus") != 0.15 or effect.get("outgoing_penalty") != 0.15 or effect.get("duration_exchanges") != 3):
 				push_warning("DataRegistry: Invalid physical anomaly: %s" % id)

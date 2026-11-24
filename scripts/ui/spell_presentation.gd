@@ -35,6 +35,16 @@ static func detail(spell: Dictionary, state: String) -> String:
 	var text := str(TranslationServer.translate("SPELL_DETAIL_HEADER")).replace("\\n", "\n") % [affinity(spell), Localization.catalog("spell_category", category, "name", category.capitalize()), state_label(state), power, int(round(float(spell.get("accuracy", 0)) * 100)), int(spell.get("cooldown_turns", 0)), description]
 	var effects: Array[String] = []
 	for effect in spell.get("effects", []):
+		var effect_kind := str(effect.get("kind", ""))
+		if effect_kind in ["poison", "burn", "lethargy"]:
+			var key := "SPELL_EFFECT_" + effect_kind.to_upper()
+			var explanation := str(TranslationServer.translate(key))
+			if effect.has("chance"): explanation += " " + str(TranslationServer.translate("SPELL_EFFECT_CHANCE")) % roundi(float(effect.chance) * 100.0)
+			effects.append(explanation)
+			continue
+		if effect_kind == "life_leech" and str(spell.get("id", "")) == "brine_mend":
+			effects.append(str(TranslationServer.translate("SPELL_EFFECT_BRINE")))
+			continue
 		if effect.get("kind") == "physical_anomaly":
 			if TranslationServer.get_locale() == "es":
 				effects.append("Anomalía física — %s\n%s +15%% | %s -15%% de daño directo de hechizos\nDura 3 intercambios y afecta a ambos combatientes.\nUn nuevo lanzamiento sustituye la anomalía. No afecta al veneno ni al daño de homúnculos.\nPrecisión 100%% | Espera 4" % [Localization.catalog("spell", str(spell.get("id", "")), "name", str(spell.get("name", ""))), _type_label(str(effect.get("favored_type", ""))), _type_label(str(effect.get("weakened_type", "")))])

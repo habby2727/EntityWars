@@ -1,5 +1,7 @@
 extends Node
 
+const CombatVFX := preload("res://scripts/ui/combat_vfx.gd")
+
 var host
 var backend: BackendClient
 var match_id := ""
@@ -327,14 +329,14 @@ func _strategic_effects(fighter: Dictionary) -> Array:
 	for delayed in fighter.get("delayed_damage", []):
 		var amount := int(delayed.get("amount", 0))
 		var due_turn := int(delayed.get("due_turn", 0))
-		effects.append({"icon": "hourglass", "label": str(amount), "tooltip": "Delayed damage: %d at the end of exchange %d." % [amount, due_turn]})
+		effects.append({"icon": "hourglass", "label": str(amount), "tooltip": tr("STATUS_DELAYED_DETAIL") % [amount, due_turn]})
 	if fighter.has("strategic_trap"):
 		var trap: Dictionary = fighter.strategic_trap
 		var remaining := maxi(0, int(trap.get("expires_turn", 0)) - int(state.get("turn", 0)))
-		effects.append({"icon": "trap", "label": "%dT" % remaining, "tooltip": "Counter trap: %d%% of direct damage; %d exchanges remaining." % [roundi(float(trap.get("value", 0)) * 100), remaining]})
+		effects.append({"icon": "trap", "label": "%dT" % remaining, "tooltip": tr("STATUS_TRAP_DETAIL") % [roundi(float(trap.get("value", 0)) * 100), remaining]})
 	if fighter.has("strategic_heal_suppression"):
 		var remaining := maxi(0, int(fighter.strategic_heal_suppression.get("expires_turn", 0)) - int(state.get("turn", 0)))
-		effects.append({"icon": "heal_block", "label": "%dT" % remaining, "tooltip": "Healing reduced by 50%%; %d exchanges remaining." % remaining})
+		effects.append({"icon": "heal_block", "label": "%dT" % remaining, "tooltip": tr("STATUS_HEAL_SUPPRESSION_DETAIL") % remaining})
 	return effects
 
 func _render() -> void:
@@ -420,6 +422,12 @@ func _present_event(source: Dictionary) -> void:
 	var event := source.duplicate(true)
 	var actor := str(event.get("actor", ""))
 	var target := str(event.get("target", ""))
+	if str(event.get("kind", "")) == "hom_passive" and event.has("effects"):
+		var hom: Dictionary = host._reg.get_homunculus_collection().get(str(event.get("hom_id", "")), {}) if host._reg else {}
+		if not hom.is_empty():
+			if actor in ["player", "enemy"]: CombatVFX.passive(host.player_hom if actor == "player" else host.enemy_hom, host.player_entity if actor == "player" else host.enemy_entity)
+			host._log_presenter.append(host.log_box, int(event.get("turn", 0)), host._log_presenter.passive_message(event, hom), {"category":"homunculus"})
+			return
 	if target not in ["player", "enemy"] and event.has("hp") and actor in ["player", "enemy"]:
 		target = actor
 	if actor in ["player", "enemy"]:
@@ -446,6 +454,11 @@ func _present_event(source: Dictionary) -> void:
 	var bar: ProgressBar = host.player_hp if target == "player" else host.enemy_hp
 	var sprite: Control = host.player_entity if target == "player" else host.enemy_entity
 	var kind := str(event.get("kind", ""))
+	if kind == "damage" and source.has("spell_id") and actor in ["player", "enemy"] and target in ["player", "enemy"]:
+		var spell: Dictionary = host._reg.get_spell_by_id(str(source.spell_id)) if host._reg else {}
+		if spell.get("category") == "attack":
+			var caster: Dictionary = host.player if actor == "player" else host.enemy
+			CombatVFX.hit(sprite, str(caster.get("type", "")))
 	var before := int(bar.value)
 	var after := before
 	if source.has("hp"):

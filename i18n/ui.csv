@@ -164,7 +164,7 @@ SPELL_CRYSTAL_RAM_DESC,A reliable crystalline charge.,Una carga cristalina fiabl
 SPELL_SALT_BARRIER_NAME,Salt Barrier,Barrera de sal
 SPELL_SALT_BARRIER_DESC,Grants a 24% shield and 50% reflection for two exchanges.,Otorga un escudo del 24% y un reflejo del 50% durante dos intercambios.
 SPELL_BRINE_MEND_NAME,Brine Mend,Curación salina
-SPELL_BRINE_MEND_DESC,"Drains up to 15 HP from the enemy, healing the user for the health actually drained.","Drena hasta 15 PV del rival y cura al usuario la cantidad realmente drenada."
+SPELL_BRINE_MEND_DESC,Drains 6% of current enemy HP now and after the next exchange; heals for the actual damage.,Drena un 6% de los PV actuales del rival ahora y tras el próximo turno; cura el daño real.
 SPELL_BASTION_RETURN_NAME,Bastion Return,Respuesta del bastión
 SPELL_BASTION_RETURN_DESC,Grants the user 18% damage reflection.,Otorga al usuario un 18% de reflejo de daño.
 SPELL_RIFT_TOUCH_NAME,Rift Touch,Toque de grieta
@@ -178,7 +178,7 @@ SPELL_PARADOX_FOLD_DESC,Halves type advantages and disadvantages for the next ex
 SPELL_ETCHING_FANG_NAME,Etching Fang,Colmillo grabador
 SPELL_ETCHING_FANG_DESC,A reliable corrosive strike.,Un golpe corrosivo fiable.
 SPELL_CAUSTIC_MARK_NAME,Caustic Mark,Marca cáustica
-SPELL_CAUSTIC_MARK_DESC,Poisons the enemy for two turns.,Envenena al enemigo durante dos turnos.
+SPELL_CAUSTIC_MARK_DESC,Poisons the enemy for three escalating ticks.,Envenena al enemigo durante tres efectos de daño crecientes.
 SPELL_BITTER_HAZE_NAME,Bitter Haze,Bruma amarga
 SPELL_BITTER_HAZE_DESC,Reduces enemy attack by 16%.,Reduce un 16% el ataque enemigo.
 SPELL_ROT_HARVEST_NAME,Rot Harvest,Cosecha de podredumbre
@@ -441,3 +441,31 @@ DUEL_UNAVAILABLE,Friendly duels are unavailable,Los duelos amistosos no est?n di
 
 EXPEDITION_RIGHT_LIMIT,Choose left or forward after three consecutive right turns.,Elige izquierda o recto tras tres giros consecutivos a la derecha.
 HUNT_WINDOW_EXPLANATION,Defeat all guardians to earn a first victory opportunity outside the rotation. After victory rematches follow the rotation.,Derrota a todos los guardianes para conseguir una oportunidad hasta tu primera victoria fuera de la rotación. Tras la victoria las revanchas siguen la rotación.
+PASSIVE_EFFECT_POWER_FLAT,power,potencia
+PASSIVE_EFFECT_GUARD_FLAT,guard,defensa
+PASSIVE_EFFECT_TEMPO_FLAT,tempo,ritmo
+PASSIVE_EFFECT_ACCURACY_PCT,accuracy,precisión
+PASSIVE_EFFECT_EVASION_PCT,evasion,evasión
+PASSIVE_EFFECT_POISON,poison turns,turnos de veneno
+PASSIVE_DURATION_CURRENT_ATTACK,for this attack,para este ataque
+PASSIVE_DURATION_CURRENT_EXCHANGE,for this exchange,durante este turno
+PASSIVE_DURATION_NEXT_EXCHANGE,for the next exchange,durante el próximo turno
+PASSIVE_TARGET_OPPONENT,on opponent,al rival
+PASSIVE_EFFECT_HEAL,HP restored,PV recuperados
+SPELL_EFFECT_POISON,Poison: three ticks of 2.5% then 5% then 6% of maximum HP.,"Veneno: tres efectos de daño del 2,5%, 5% y 6% de los PV máximos."
+SPELL_EFFECT_BURN,Burn: suppresses shield and reflection for the next two exchanges.,Quemadura: anula escudo y reflejo durante los dos próximos turnos.
+SPELL_EFFECT_LETHARGY,Lethargy: reduces spell accuracy by 15 percentage points for the next two exchanges.,Letargo: reduce la precisión de hechizos 15 puntos durante los dos próximos turnos.
+SPELL_EFFECT_CHANCE,Chance on hit: %d%%.,Probabilidad al golpear: %d%%.
+SPELL_EFFECT_BRINE,Drain: 6% of current HP now and at the end of the next exchange.,Drenaje: 6% de los PV actuales ahora y al final del próximo turno.
+STATUS_POISON_STAGES,Poison: next stage %d of 3 deals %s%% of maximum HP; %d ticks remaining.,Veneno: la siguiente fase %d de 3 inflige el %s%% de los PV máximos; quedan %d efectos de daño.
+STATUS_BURN_DETAIL,Burn suppresses shields and reflection; %d exchanges remaining.,Quemadura: anula escudos y reflejo; quedan %d turnos.
+STATUS_LETHARGY_DETAIL,Lethargy reduces spell accuracy by 15 percentage points; %d exchanges remaining.,Letargo: reduce la precisión de hechizos 15 puntos; quedan %d turnos.
+STATUS_DRAIN_DETAIL,Brine drain deals 6% of current HP after %d exchange.,El drenaje salino inflige un 6% de los PV actuales tras %d turno.
+STATUS_DEFENSE_DURATION,Timed defense: %d exchanges remaining.,Defensa temporal: quedan %d turnos.
+STATUS_DELAYED_DETAIL,Delayed damage: %d HP at the end of exchange %d.,Daño diferido: %d PV al final del turno %d.
+STATUS_TRAP_DETAIL,"Counter trap returns %d%% of damage, capped at 20%% of attacker HP; %d exchanges remaining.","La trampa devuelve un %d%% del daño, hasta un 20%% de los PV del atacante; quedan %d turnos."
+STATUS_HEAL_SUPPRESSION_DETAIL,Healing is reduced by 50%%; %d exchanges remaining.,La curación se reduce un 50%%; quedan %d turnos.
+PASSIVE_LEGACY_NAME,Synergy,Sinergia
+PASSIVE_EFFECT_REFLECT_PCT,reflection,reflejo
+PASSIVE_DURATION_UNTIL_CONSUMED,until consumed,hasta consumirse
+STATUS_BOSS_SHIELD_BURNED,Boss shield is suppressed by burn; its duration continues.,La quemadura anula el escudo del jefe; su duración continúa.

@@ -7,6 +7,7 @@ const HomStatus := preload("res://scripts/ui/combat_hom_status.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const LogPresenter := preload("res://scripts/ui/combat_log_presenter.gd")
+const CombatVFX := preload("res://scripts/ui/combat_vfx.gd")
 
 class GroundShadow extends Control:
 	func _draw() -> void:
@@ -38,15 +39,26 @@ var log: RichTextLabel
 var animation_tweens := {}
 var animation_original := {}
 var displayed_weapon_slot := 0
+var retained_status_icons: Array = []
 
 func _exit_tree() -> void:
 	if is_instance_valid(registry): registry.free()
 
-func configure(scene: Control, data: Dictionary) -> void:
+func configure(scene: Control, data: Dictionary, retained_icons: Array = []) -> void:
 	host = scene
 	session = data.duplicate(true)
+	retained_status_icons = retained_icons
 	registry = preload("res://scripts/data_registry.gd").new()
 	_build()
+
+func take_status_icons() -> Array:
+	var result: Array = []
+	for icon_name in ["PlayerStatus", "EnemyStatus"]:
+		var icon := stage.get_node_or_null(icon_name)
+		if icon == null: return []
+		result.append(icon)
+	for icon in result: stage.remove_child(icon)
+	return result
 
 const ITEM_ICONS := {"bismuth_talisman":"talisman_bismuth.png", "wind_amulet":"wind_amulet.png", "saltstone_charm":"saltstone_charm.png", "mirror_sigel":"mirror.png", "vitriol_vial":"vitriol.png", "gilded_scale":"gilded_scale.png", "mercury_lens":"mercury_lens.png", "aether_knot":"aether_knot.png"}
 var stage: Control
@@ -327,33 +339,26 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp.add_child(hp_label)
 	_update_hp(hp)
-	var icons := StatusIcons.new()
+	var icons: Variant = retained_status_icons[1 if enemy else 0] if retained_status_icons.size() == 2 else StatusIcons.new()
 	icons.name = "EnemyStatus" if enemy else "PlayerStatus"
 	_place(icons, Vector2(1280 if enemy else 40, 40), Vector2(600, 64))
 	var normalized: Dictionary = fighter.get("status", {}).duplicate(true)
 	for pair in [["shield", "shield_pct"], ["reflect", "reflect_pct"], ["vuln", "vuln_pct"]]: normalized[pair[1]] = normalized.get(pair[0], normalized.get(pair[1], 0))
 	var extra := []
 	for delayed in state.get("strategic_delayed", []):
-		if str(delayed.get("target", "")) == ("npc" if enemy else "player"): extra.append({"icon":"hourglass", "label":str(delayed.get("amount", 0)), "tooltip":tr("EXPEDITION_DELAYED") % int(delayed.get("due_turn", 0))})
+		if str(delayed.get("target", "")) == ("npc" if enemy else "player"): extra.append({"icon":"hourglass", "label":str(delayed.get("amount", 0)), "tooltip":tr("STATUS_DELAYED_DETAIL") % [int(delayed.get("amount", 0)), int(delayed.get("due_turn", 0))]})
 	for field in ["strategic_trap", "strategic_heal_suppression"]:
-		if fighter.has(field): extra.append({"icon":"trap" if field == "strategic_trap" else "heal_block", "label":"%dT" % maxi(0, int(fighter[field].get("expires_turn", 0)) - int(state.get("turn", 0))), "tooltip":field.replace("_", " ").capitalize()})
-	var passive: Variant = fighter.get("expedition_passive")
-	if passive is Dictionary:
-		for marker in passive.get("markers", []):
-			extra.append({"icon":"type", "label":"•", "tooltip":str(marker).replace("_", " ").capitalize()})
-		for modifier in passive.get("modifiers", []):
-			if modifier is Dictionary:
-				var modifier_type := str(modifier.get("stat", modifier.get("kind", ""))).replace("_", " ").capitalize()
-				var amount := str(modifier.get("amount", ""))
-				var duration := str(modifier.get("expires_at", modifier.get("duration", "")))
-				extra.append({"icon":"power", "label":amount, "tooltip":"%s: %s  %s" % [modifier_type, amount, duration]})
+		if fighter.has(field):
+			var remaining := maxi(0, int(fighter[field].get("expires_turn", 0)) - int(state.get("turn", 0)))
+			var description := tr("STATUS_TRAP_DETAIL") % [roundi(float(fighter[field].get("value", 0)) * 100), remaining] if field == "strategic_trap" else tr("STATUS_HEAL_SUPPRESSION_DETAIL") % remaining
+			extra.append({"icon":"trap" if field == "strategic_trap" else "heal_block", "label":"%dT" % remaining, "tooltip":description})
 	var anomaly: Variant = state.get("physical_anomaly")
 	if anomaly is Dictionary and not anomaly.is_empty():
 		var affinity := str(fighter.get("type", ""))
 		var modifier := 15 if affinity == str(anomaly.get("favored_type", "")) else -15 if affinity == str(anomaly.get("weakened_type", "")) else 0
 		if modifier != 0: extra.append({"icon":"type", "label":("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip":tr("ANOMALY_TOOLTIP_GAIN") % [GameLocalization.catalog("type", str(anomaly.get("favored_type", "")), "name", str(anomaly.get("favored_type", "")).capitalize()), GameLocalization.catalog("type", str(anomaly.get("weakened_type", "")), "name", str(anomaly.get("weakened_type", "")).capitalize()), int(anomaly.get("remaining_exchanges", 0))]})
 	icons.set_boss_effects(true, extra)
-	icons.set_fighter(0, {"status":normalized, "spell_neutralize_active":fighter.get("spell_neutralize_active", 0), "spell_neutralize_pending":fighter.get("spell_neutralize_pending", 0)})
+	icons.set_fighter(0, {"status":normalized, "persistent_statuses":fighter.get("persistent_statuses", {}), "defense_presentation":fighter.get("defense_presentation", {}), "passive_modifiers":fighter.get("passive_modifiers", []), "pending_drain":fighter.get("pending_drain", []), "spell_neutralize_active":fighter.get("spell_neutralize_active", 0), "spell_neutralize_pending":fighter.get("spell_neutralize_pending", 0)})
 	var inspiration := Inspiration.new()
 	_place(inspiration, Vector2(x, 725), Vector2(200, 26))
 	inspiration.set_fighter({"inspiration":fighter.get("inspiration", 0), "inspiration_used_this_battle":fighter.get("inspiration_used", false)})
@@ -484,6 +489,11 @@ func lock_controls() -> void:
 func _append_event(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
 	var actor := str(event.get("actor", event.get("side", "")))
+	if kind == "hom_passive" and event.has("effects"):
+		var hom: Dictionary = registry.get_homunculus_collection().get(str(event.get("hom_id", "")), {})
+		if not hom.is_empty():
+			log_presenter.append(log, int(event.get("turn", -1)), log_presenter.passive_message(event, hom), {"category":"homunculus"})
+			return
 	var event_key := "EXPEDITION_EVENT_" + kind.to_upper()
 	var translated := tr(event_key)
 	if translated == event_key: translated = kind.replace("_", " ").capitalize()
@@ -580,8 +590,15 @@ func _animate_event(event: Dictionary) -> void:
 	if kind == "spell" and actor in ["player", "npc"]:
 		var spell: Dictionary = registry.get_spell_by_id(str(event.get("spell_id", "")))
 		var sprite := player_sprite if actor == "player" else enemy_sprite
-		if str(spell.get("category", "")) == "attack": _animate_lunge(sprite, 20.0 if actor == "player" else -20.0)
+		if str(spell.get("category", "")) == "attack":
+			_animate_lunge(sprite, 20.0 if actor == "player" else -20.0)
+			if bool(event.get("hit", false)):
+				var source: Dictionary = session.get("combat_state", {}).get(actor, {})
+				var types: Array = source.get("expedition_types", [])
+				CombatVFX.hit(enemy_sprite if actor == "player" else player_sprite, str(types[0]) if not types.is_empty() else str(source.get("type", "")))
 		else: _animate_pulse(sprite, Color(0.68, 0.85, 1.0))
+	elif kind == "hom_passive" and actor in ["player", "npc"]:
+		CombatVFX.passive(player_hom_sprite if actor == "player" else enemy_hom_sprite, player_sprite if actor == "player" else enemy_sprite)
 	elif kind in ["hom_attack", "hom_miss"] and actor in ["player", "npc"]:
 		_animate_lunge(player_hom_sprite if actor == "player" else enemy_hom_sprite, 14.0 if actor == "player" else -14.0)
 	elif kind == "evade" and actor in ["player", "npc"]:

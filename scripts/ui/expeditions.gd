@@ -789,6 +789,13 @@ func _clear_body() -> void:
 func _render() -> void:
 	background_shade.color = Color(0.2, 0.2, 0.2, 0.55) if session.is_empty() else Color(0, 0, 0, 0.38)
 	background_shade.visible = str(session.get("phase", "")) not in ["EXPLORE", "COMBAT"]
+	var retained_icons: Array = []
+	if str(session.get("phase", "")) == "COMBAT" and is_instance_valid(combat_view):
+		var previous: Dictionary = combat_view.session
+		var old_combat: Dictionary = previous.get("combat_state", {})
+		var new_combat: Dictionary = session.get("combat_state", {})
+		if previous.get("run_id") == session.get("run_id") and old_combat.get("floor") == new_combat.get("floor") and old_combat.get("npc", {}).get("id") == new_combat.get("npc", {}).get("id") and int(new_combat.get("turn", 0)) >= int(old_combat.get("turn", 0)):
+			retained_icons = combat_view.take_status_icons()
 	_clear_body()
 	_update_status()
 	_update_controls()
@@ -811,7 +818,7 @@ func _render() -> void:
 		return
 	match str(session.get("phase", "")):
 		"EXPLORE": _render_choices()
-		"COMBAT": _render_combat()
+		"COMBAT": _render_combat(retained_icons)
 		"REWARD": _render_terminal(true)
 		"ROUTE": _render_route()
 		"LOSS": _render_terminal(false)
@@ -892,11 +899,11 @@ func _select(index: int) -> void:
 		recovery_required = true
 		message.text = tr("EXPEDITION_CONNECTION")
 
-func _render_combat() -> void:
+func _render_combat(retained_icons: Array = []) -> void:
 	combat_view = preload("res://scripts/ui/expedition_combat.gd").new()
 	combat_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	body.add_child(combat_view)
-	combat_view.configure(self, session)
+	combat_view.configure(self, session, retained_icons)
 	message.text = ""
 
 func _render_terminal(won: bool) -> void:

@@ -50,13 +50,13 @@ test("blessing damage, poison remainder and energy are bounded", () => {
   const a = turn(base), b = turn(surge);
   expect(b.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount).toBeGreaterThan(a.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount);
   expect(b.events.find((e: any) => e.kind === "reflect").amount).toBe(a.events.find((e: any) => e.kind === "reflect").amount);
-  let ward = make("toxin_ward"); ward.player.status.poison = 4;
+  let ward = make("toxin_ward"); delete ward.combat_rules_version; ward.player.status.poison = 4;
   const ticks = []; for (let i = 0; i < 4; i++) { const r = turn(ward); ticks.push(r.events.find((e: any) => e.kind === "poison" && e.side === "player").amount); ward = r.next_state; }
   expect(ticks).toEqual([3, 2, 3, 2]);
   for (const [floor, percentage] of [[3, 20], [6, 25], [9, 30], [21, 50], [30, 50]] as const) {
     const info = publicDungeonBlessing(createDungeonBlessing(new Uint8Array(32).fill(2), "run", floor, true));
     expect(info.offers.find((offer: any) => offer.id === "toxin_ward").description).toContain(`${percentage}%`);
-    let state = make("toxin_ward", floor); state.player.status.poison = 5;
+    let state = make("toxin_ward", floor); delete state.combat_rules_version; state.player.status.poison = 5;
     let damage = 0; for (let i = 0; i < 5; i++) { const result = turn(state); damage += result.events.find((event: any) => event.kind === "poison" && event.side === "player").amount; state = result.next_state; }
     expect(damage).toBe(15 - Math.floor(15 * percentage / 100));
   }
@@ -422,7 +422,7 @@ test("NPC executes poison then Pyrolytic Fuse as an authoritative two-turn combo
   const initial = createDungeonCombatState(setup, enemy, all); initial.player.hp = initial.player.max_hp = 1000;
   const first = resolveDungeonTurn(initial, { turn: 1, spell_id: "ash_temper" }, () => 0);
   expect(first.events.find((e: any) => e.kind === "spell" && e.actor === "npc").spell_id).toBe("caustic_mark");
-  expect(first.next_state.player.status.poison).toBe(1);
+  expect(first.next_state.player.status.poison).toBe(2);
   const second = resolveDungeonTurn(first.next_state, { turn: 2, spell_id: "cinder_fist" }, () => 0);
   expect(second.events.find((e: any) => e.kind === "spell" && e.actor === "npc").spell_id).toBe("pyrolytic_fuse");
   expect(second.events.find((e: any) => e.kind === "combo_trigger")).toMatchObject({ actor: "npc", target: "player", source_spell_id: "pyrolytic_fuse", prerequisite: "poison" });

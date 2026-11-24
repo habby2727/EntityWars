@@ -313,7 +313,7 @@ test("conditional modifiers use poison, prior hits, marks and HP before the hit"
  const out = resolvePvpExchange(s,{turn:1,spell_id:"corrosive_tribute"},{turn:1,spell_id:"aurum_edge"},(_t,i)=>draws[i]) as any;
  const noProc = resolvePvpExchange(s,{turn:1,spell_id:"corrosive_tribute"},{turn:1,spell_id:"aurum_edge"},()=>0.5) as any;
  expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").damage).toBe(noProc.events.find((e: any)=>e.kind === "damage" && e.side === "left").damage);
- expect(out.state.fighters.right.status.poison).toBe(1);
+ expect(out.state.fighters.right.status.poison).toBe(2);
  expect(out.events.some((e: any)=>e.kind === "consume_poison")).toBe(false);
 });
 

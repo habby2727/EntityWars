@@ -7,12 +7,29 @@ export function transferStrategicStatus(kind: string, actor: any, target: any, a
   const sourceId = kind === "debuff_transfer" ? actorId : targetId;
   const destinationId = kind === "debuff_transfer" ? targetId : actorId;
   const field = (kind === "debuff_transfer" ? negative : positive).find(key => (source.status[key] ?? 0) > 0);
-  if (!field) return;
+  if (!field) {
+    if (kind === "debuff_transfer") for (const name of ["burn", "lethargy"]) {
+      const key = `${name}_effect`, effect = source[key];
+      if (!effect) continue;
+      delete source[key];
+      if (!destination[key]) destination[key] = effect;
+      events.push({ kind, actor: actorId, source: sourceId, target: destinationId, status: name, removed: 1, previous: destination[key] === effect ? 0 : 1, value: 1 });
+      break;
+    }
+    return;
+  }
   const old = source.status[field];
   const value = kind === "debuff_transfer" ? old : Math.min(0.2, old * 0.5);
   const previous = destination.status[field] ?? 0;
+  const poisonEffect = field === "poison" && source.combat_rules_version === 2 ? structuredClone(source.poison_effect ?? null) : null;
+  const poisonSource = field === "poison" ? source.poison_source ?? null : null;
   clear(source, field);
   apply(destination, field, value);
+  if (field === "poison" && source.combat_rules_version === 2) {
+    if (previous > 0) destination.status.poison = previous;
+    else if (poisonEffect) { destination.poison_effect = poisonEffect; destination.poison_source = poisonSource; }
+    destination.poison_transfer_pending = true;
+  }
   events.push({ kind, actor: actorId, source: sourceId, target: destinationId, status: field, removed: old, previous, value: destination.status[field] ?? 0 });
 }
 

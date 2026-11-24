@@ -23,6 +23,29 @@ const ids = ["cinder_fist", "furnace_rush", "ash_temper", "brimstone_crash"];
 const setup = buildTrustedCombatSetup({player_id:"p",state_revision:1,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{},homunculus_progress:{honin:{owned:true,level:0,xp:0}}}, {entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:"honin",spell_ids:ids,mode:"attack"}, catalogs, {independentLoadout:true});
 const rng = (turn: number, draw: number) => deterministicDraw(seed, "battle", turn, draw);
 
+test("U3.1 expedition uses versioned poison without changing tactical tier", () => {
+  const enemy=buildExpeditionEnemy(seed,"u31-status",8,false,setup,catalogs);
+  enemy.tactical_tier="very_difficult";
+  const state:any=createExpeditionCombatState(setup,enemy,catalogs);
+  expect(state.error).toBeUndefined();
+  state.player.hp=state.player.max_hp=100;state.npc.hp=state.npc.max_hp=200;
+  state.player.status.poison=3;state.npc.status.poison=3;state.npc.status.stun=100;
+  const result:any=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},()=>0.5);
+  expect(result.error).toBeUndefined();expect(result.next_state.tactical_tier).toBe("very_difficult");
+  expect(result.events.filter((event:any)=>event.kind==="poison").map((event:any)=>event.amount)).toEqual([3,5]);
+});
+
+test("U3.1 poison caused by a poison-damage passive ticks once in the same exchange", () => {
+  const enemy=buildExpeditionEnemy(seed,"u31-passive-chain",8,false,setup,catalogs);enemy.homunculus_id="crishvin";
+  const state:any=createExpeditionCombatState(setup,enemy,catalogs);
+  state.player.hp=state.player.max_hp=100;state.npc.hp=state.npc.max_hp=200;
+  state.npc.status.poison=3;state.npc.poison_source="player";state.npc.status.stun=100;
+  const result:any=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},()=>0.5);
+  expect(result.error).toBeUndefined();
+  expect(result.events.filter((event:any)=>event.kind==="poison").map((event:any)=>[event.side,event.amount])).toEqual([["npc",5],["player",3]]);
+  expect(result.next_state.player.status.poison).toBe(2);
+});
+
 test("updated entity base statistics", () => {
   expect(entities.entities.find(e => e.id === "mercury_01")?.base_stats).toEqual({hp:91,power:23,guard:10,tempo:18});
   expect(entities.entities.find(e => e.id === "sodium_01")?.base_stats).toEqual({hp:122,power:16,guard:16,tempo:10});

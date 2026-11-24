@@ -1,7 +1,8 @@
+import { applyPersistentStatus, cleansePersistentStatus, expirePersistentStatuses, statusActive, validChance, validPendingDrains, validPersistentFighter } from "./persistent_effects";
 import { effectiveTimedDefense, applyTimedDefense, expireTimedDefenses, drainHealth, applyTimedAwarePassive } from "./solo_hunt_combat";
 import { newExpeditionPassiveState, beginPassiveExchange, applyCombatPassive, passiveModifiers, finishPassiveAttack, finishPassiveExchange, recordPassiveSpellHit } from "./expedition_passive_state";
 import { homunculusAttackMultiplierById } from "./homunculus_catalog";
-import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "./combat_event_provenance";
+import { recordPoisonChange, poisonTickMetadata, poisonTickDamage, recordInspirationActivation } from "./combat_event_provenance";
 import { createHmac } from "node:crypto";
 import { expeditionDualTypeMultiplier, expeditionCaptures } from "./expeditions_rules";
 import type { Database } from "bun:sqlite";
@@ -121,6 +122,8 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
     return pool[Math.floor(roll * pool.length)].id;
   }
   const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
+  const enemyShield = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "shield") : enemyStatus.shield ?? 0;
+  const enemyReflect = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "reflect") : enemyStatus.reflect ?? 0;
   const allMoves = equippedIds.map(id => spells.find(s => s?.id === id)).filter(Boolean);
   const has = (s: any, kind: string) => s.effects.some((e: any) => e.kind === kind);
   const poisonFollow = allMoves.some(s => has(s, "bonus_if_poisoned") && (cooldowns[s.id] ?? 0) <= 1);
@@ -135,7 +138,7 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
     const poison = s.effects.find((e: any) => e.kind === "bonus_if_poisoned");
     const power = s.power_mult * (poison && enemyStatus.poison > 0 ? 1 + poison.value : 1);
     const base = Math.max(1, Math.round(((npc.atk ?? 0) * (1 + (ownStatus.atk_boost ?? 0) - (ownStatus.atk_down ?? 0)) - Math.trunc((target.def ?? 0) * 0.5)) * typeMultiplier * physicalAnomalyMultiplier(context.anomaly, npc.type) * power * (1 + (enemyStatus.vuln ?? 0))));
-    return enemyStatus.shield > 0 ? Math.max(0, Math.round(base * (1 - enemyStatus.shield))) : base;
+    return enemyShield > 0 ? Math.max(0, Math.round(base * (1 - enemyShield))) : base;
   };
   const lethalAvailable = legal.some(s => s.category === "attack" && estimate(s) >= target.hp && s.accuracy > 0);
   const scored = legal.map(spell => {
@@ -145,7 +148,9 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
     for (const effect of spell.effects) {
       if (effect.kind === "heal") score += npc.hp < npc.max_hp * 0.6 ? Math.min(effect.value ?? 0, npc.max_hp - npc.hp) * 3 : -70;
       if (effect.kind === "shield" && !(ownStatus.shield > 0)) score += 35 + (floor >= 8 && wardFollow ? 75 : 0);
-      if (effect.kind === "poison" && effect.target === "enemy" && !(enemyStatus.poison > 0)) score += 35 + (floor >= 8 && poisonFollow ? 80 : 0);
+      if (effect.kind === "poison" && effect.target === "enemy" && !(enemyStatus.poison > 0)) score += npc.combat_rules_version === 2 ? (effect.chance ?? 1) * (35 + Math.min(40, Math.round((target.max_hp ?? 0) * 0.135)) + (floor >= 8 && poisonFollow ? 80 : 0)) : 35 + (floor >= 8 && poisonFollow ? 80 : 0);
+      if (effect.kind === "burn" && !target.burn_effect) score += (effect.chance ?? 1) * (30 + 100 * Math.max(effectiveTimedDefense(target, "shield"), effectiveTimedDefense(target, "reflect")));
+      if (effect.kind === "lethargy" && !target.lethargy_effect) score += (effect.chance ?? 1) * 45;
       if (effect.kind === "vuln" && effect.target === "enemy" && !(enemyStatus.vuln > 0)) score += 25;
       if (floor >= 8 && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(effect.kind) && enemyStatus.poison > 0) score += 65;
       if (floor >= 8 && ["bonus_if_shielded", "ward_convert"].includes(effect.kind) && ownStatus.shield > 0) score += 90;
@@ -175,10 +180,10 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
         if (["poison", "vuln", "atk_down"].includes(effect.kind) && effect.target === "enemy" && (enemyStatus[effect.kind] ?? 0) > 0) score -= 75;
       }
       if (floor >= 8) {
-        const debuffed = ["poison", "stun", "vuln", "atk_down", "misalign_next"].some(k => (ownStatus[k] ?? 0) > 0);
+        const debuffed = ["poison", "stun", "vuln", "atk_down", "misalign_next"].some(k => (ownStatus[k] ?? 0) > 0) || !!npc.burn_effect || !!npc.lethargy_effect;
         if (has(spell, "cleanse_one") || has(spell, "debuff_transfer")) score += debuffed ? 175 : -60;
-        if (spell.category === "attack" && (enemyStatus.reflect ?? 0) > 0) score -= Math.min(150, estimate(spell) * enemyStatus.reflect * (npc.hp < npc.max_hp * 0.4 ? 5 : 2));
-        if ((has(spell, "pierce_ward") || has(spell, "ward_dispel")) && (enemyStatus.shield ?? 0) > 0) score += 65;
+        if (spell.category === "attack" && enemyReflect > 0) score -= Math.min(150, estimate(spell) * enemyReflect * (npc.hp < npc.max_hp * 0.4 ? 5 : 2));
+        if ((has(spell, "pierce_ward") || has(spell, "ward_dispel")) && enemyShield > 0) score += 65;
       }
       if (floor >= 15 && spell.category === "attack") score += estimate(spell) * spell.accuracy;
     }
@@ -210,9 +215,9 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
   return tied[Math.floor(roll * tied.length)].id;
 }
 
-const DUNGEON_GENERATED_EFFECTS = new Set(["atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
+const DUNGEON_GENERATED_EFFECTS = new Set(["burn", "lethargy", "atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
 const DUNGEON_EFFECTS = new Set([...DUNGEON_GENERATED_EFFECTS, "hom_stun", "type_neutralize", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "ward_dispel", "shield_by_order", "poison_on_reflect"]);
-const validEffect = (e: any) => e && DUNGEON_EFFECTS.has(e.kind) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["threshold", "max_heal", "second_value"].every(k => e[k] === undefined || (typeof e[k] === "number" && Number.isFinite(e[k]) && e[k] >= 0)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
+const validEffect = (e: any) => e && DUNGEON_EFFECTS.has(e.kind) && validChance(e) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["threshold", "max_heal", "second_value"].every(k => e[k] === undefined || (typeof e[k] === "number" && Number.isFinite(e[k]) && e[k] >= 0)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
 const DUNGEON_ITEMS = new Set(["power_flat", "guard_flat", "true_on_hit", "dot_true", "vuln_on_hit", "tempo_flat", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
 
 /** Expedition hybrids require both components, rather than merely one eligible type. */
@@ -304,7 +309,7 @@ export function createDungeonCombatState(setup: any, enemy: any, catalogs: any, 
   const inspirationCatalog = { player: dungeonInspirationCandidates(player.type, player.spell_ids, catalogs.spells), npc: expedition ? dungeonInspirationCandidatesForTypes(enemy.types, npc.spell_ids, catalogs.spells) : dungeonInspirationCandidates(npc.type, npc.spell_ids, catalogs.spells) };
   if (inspirationCatalog.player.length < 3 || inspirationCatalog.npc.length < 3) return { error: "UNSUPPORTED_MECHANIC" };
   for (const fighter of [player, npc]) Object.assign(fighter, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
-  return { player, npc, ...(!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}), ...(enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}), ...(enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}), inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, hom_synergy: structuredClone(setup.hom_id ? setup.hom_synergy ?? {} : {}), hom_advantage: setup.hom_id ? setup.hom_advantage ?? 0 : 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+  return { combat_rules_version: 2, player, npc, ...(!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}), ...(enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}), ...(enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}), inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, hom_synergy: structuredClone(setup.hom_id ? setup.hom_synergy ?? {} : {}), hom_advantage: setup.hom_id ? setup.hom_advantage ?? 0 : 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
 }
 
 export function createDungeonBlessing(seed: Uint8Array, runId: string, floor: number, hasHom: boolean): any {
@@ -339,12 +344,15 @@ export function resolveDungeonBlessing(state: any, decision: any): any {
 
 export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number, draw: number) => number): any {
   if (!state || state.terminal_result || state.blessing?.pending || state.player?.inspiration_pending || !decision || typeof decision !== "object" || Object.keys(decision).some(k => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function") return { error: "INVALID_DECISION" };
+  if ([state.player, state.npc].some(fighter => !validPersistentFighter(fighter, state.combat_rules_version, state.turn))) return { error: "UNSUPPORTED_MECHANIC" };
+  if (!validPendingDrains(state, ["player", "npc"], ["player", "npc"])) return { error: "UNSUPPORTED_MECHANIC" };
   const switching = decision.switch_slot !== undefined;
   if (switching && (decision.spell_id !== undefined || decision.hom_action !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id)) return { error: "INVALID_DECISION" };
   const spell = switching ? null : state.spells.find((s: any) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
   if (!switching && (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || (decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3)))) return { error: "INVALID_DECISION" };
   if (state.spells.some((s: any) => !Array.isArray(s.effects) || s.effects.some((e: any) => !validEffect(e) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))) return { error: "UNSUPPORTED_MECHANIC" };
   const next = structuredClone(state), events: any[] = [];
+  if (next.combat_rules_version === 2) for (const fighter of [next.player, next.npc]) { fighter.combat_rules_version = 2; fighter.combat_exchange = decision.turn; }
   const firePassive = (event: any, poisonDamage = 0, attack: any = null) => applyTimedAwarePassive(next.player, next.npc, event, next.types, "player", "npc", events, poisonDamage, attack);
   const fireNpcPassive = (event: any, poisonDamage = 0, attack: any = null) => applyTimedAwarePassive(next.npc, next.player, event, next.types, "npc", "player", events, poisonDamage, attack);
   const modifiers = (fighter = next.player) => fighter.expedition_passive ? passiveModifiers(fighter.expedition_passive) : {};
@@ -414,6 +422,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       accuracy = Math.max(0, Math.min(1, accuracy + (actor.status.focus_next ?? 0) - (actor.status.misalign_next ?? 0) + (modifiers(actor).accuracy_pct ?? 0)));
       delete actor.status.focus_next; delete actor.status.misalign_next;
     } else accuracy = Math.max(0, Math.min(1, accuracy + (modifiers(actor).accuracy_pct ?? 0)));
+    if (statusActive(actor, "lethargy", decision.turn)) accuracy = Math.max(0, accuracy - 0.15);
     const hit = draw() < accuracy;
     events.push({ kind: "spell", actor: who, spell_id: chosen.id, hit });
     if (who === "npc" && actor.expedition_types && actor.hom_id) actor.hom_energy = Math.min(6, actor.hom_energy + 1);
@@ -487,7 +496,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
         }
         if ((next.item_effects?.dot_true ?? 0) > 0 && (next.item_effects?.vuln_on_hit ?? 0) > 0) target.status.vuln = Math.max(target.status.vuln ?? 0, Math.min(1, next.item_effects.vuln_on_hit));
         const homDot = Math.min(target.hp, Math.max(0, Math.trunc(next.hom_synergy?.dot_true ?? 0)));
-        if (homDot > 0) { target.hp -= homDot; events.push({ kind: "hom_dot", actor: who, target: "npc", amount: homDot, hp: target.hp }); }
+        if (homDot > 0) { target.hp -= homDot; if (next.combat_rules_version === 2) events.push({kind:"hom_passive", turn:decision.turn, actor:who, target:"npc", hom_id:next.player.hom_id, passive_id:next.player.hom_id, trigger:"spell_hit", effects:[{kind:"dot_true", target:"npc", amount:homDot, unit:"hp", duration:"instant", remaining:0}]}); events.push({ kind: "hom_dot", actor: who, target: "npc", amount: homDot, hp: target.hp }); }
       }
       if (who === "npc" && next.combat_mode === "expedition") {
         for (const key of ["true_on_hit", "dot_true"]) {
@@ -514,6 +523,8 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       events.push({ kind: "ward_convert", actor: who, target: who === "player" ? "npc" : "player", shield: previousWard, amount, hp: target.hp });
     }
     for (const e of chosen.effects) {
+      if (e.chance !== undefined && draw() >= e.chance) continue;
+      if (e.kind === "burn" || e.kind === "lethargy") { if (applyPersistentStatus(target, e.kind, who, decision.turn)) { events.push({kind:"status_applied", actor:who, target:who === "player" ? "npc" : "player", status:e.kind, expires_exchange:decision.turn + 2, spell_id:chosen.id}); awardInspiration(actor, who, e.kind); } continue; }
       if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(e.kind)) continue;
       if (e.kind === "physical_anomaly") { next.physical_anomaly = castPhysicalAnomaly(chosen, decision.turn); events.push({ kind: "physical_anomaly_cast", actor: who, anomaly: structuredClone(next.physical_anomaly) }); continue; }
       if (e.kind === "debuff_transfer" || e.kind === "buff_steal") {
@@ -539,13 +550,15 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       const recipient = e.target === "self" ? actor : target;
       const recipientId = recipient === next.player ? "player" : "npc";
       if (e.kind === "type_neutralize") { recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, e.value); continue; }
-      if (e.kind === "cleanse_one") { for (const field of ["poison", "stun", "vuln", "atk_down", "misalign_next"]) if ((recipient.status[field] ?? 0) > 0) { events.push({ kind: "status_cleansed", actor: who, target: recipientId, status: field, previous: recipient.status[field] }); delete recipient.status[field]; if (field === "poison") recordPoisonChange(recipient, 0, null); break; } continue; }
+      if (e.kind === "cleanse_one") { const field = ["poison", "stun", "vuln", "atk_down", "misalign_next"].find(key => (recipient.status[key] ?? 0) > 0); if (field) { events.push({ kind: "status_cleansed", actor: who, target: recipientId, status: field, previous: recipient.status[field] }); delete recipient.status[field]; if (field === "poison") recordPoisonChange(recipient, 0, null); } else { const status = cleansePersistentStatus(recipient); if (status) events.push({kind:"status_cleansed", actor:who, target:recipientId, status}); } continue; }
       if (e.kind === "recoil") { const amount = Math.min(recipient.hp, Math.trunc(e.value)); recipient.hp -= amount; if (amount > 0) recipient.spell_hit_this_exchange = true; events.push({ kind: "recoil", actor: who, target: recipientId, amount, hp: recipient.hp }); continue; }
       if (e.kind === "consume_poison") { if (poisonedBefore) { recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(e.value)); recordPoisonChange(recipient, recipient.status.poison, null); } continue; }
       if (e.kind === "life_leech" && !e.health_drain) { const before = recipient.hp; if (before > 0) recipient.hp = Math.min(recipient.max_hp, before + strategicHeal(recipient, Math.min(e.max_heal ?? 0, Math.floor(directDamage * e.value)))); if (recipient.hp > before) events.push({ kind: "heal", actor: who, target: recipientId, amount: recipient.hp - before, hp: recipient.hp }); continue; }
       if (e.kind === "life_leech" && e.health_drain === true) {
-        const { damage, healed } = drainHealth(actor, target, e.max_heal ?? 0, effectiveTimedDefense(target, "shield"), who === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
-        if ((target.status.shield ?? 0) > 0) clearDefense(target, "shield");
+        const drainAmount = next.combat_rules_version === 2 && chosen.id === "brine_mend" ? Math.round(target.hp * 0.06) : e.max_heal ?? 0;
+        if (next.combat_rules_version === 2 && chosen.id === "brine_mend") { next.pending_drains ??= []; next.pending_drains.push({source:who, target:who === "player" ? "npc" : "player", due_exchange:decision.turn + 1}); }
+        const { damage, healed } = drainHealth(actor, target, drainAmount, effectiveTimedDefense(target, "shield"), who === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
+        if (effectiveTimedDefense(target, "shield") > 0 && (target.status.shield ?? 0) > 0) clearDefense(target, "shield");
         if (damage > 0) target.spell_hit_this_exchange = true;
         events.push({ kind: "damage", actor: who, target: who === "player" ? "npc" : "player", amount: damage, hp: target.hp, spell_id: chosen.id });
         if (damage > 0) (who === "player" ? fireNpcPassive : firePassive)("damage_received");
@@ -608,7 +621,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
     next.active_weapon_slot = decision.switch_slot; next.item_id = weapon.id; next.item_effects = weapon.effects;
     events.push({ kind: "switch", actor: "player", slot: decision.switch_slot, item_id: weapon.id }); firePassive("weapon_switched");
   } else act(next.player, next.npc, spell, "player");
-  if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) { if (next.player.status.hom_stun > 0) { next.player.status.hom_stun--; events.push({ kind: "status_consumed", target: "player", status: "hom_stun", remaining: next.player.status.hom_stun }); } else if ((modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) { events.push({kind:"evade",actor:"npc",target:"player"}); fireNpcPassive("dodge"); } else if (draw() < 0.95) { const neutralizations = [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]; const homFactor = (type: string) => homunculusAttackMultiplierById(next.player.hom_id, type, next.types, neutralizations); const factor = next.npc.expedition_types ? Math.sqrt(homFactor(next.npc.expedition_types[0]) * homFactor(next.npc.expedition_types[1])) : homFactor(next.npc.type); let damage = Math.max(1, Math.round((next.player.atk + (modifiers().power_flat ?? 0)) * (next.player.hom_energy >= 6 ? 0.6 : 0.4) * factor)); if (effectiveTimedDefense(next.npc, "shield") > 0) { damage = Math.max(0, Math.round(damage * (1 - effectiveTimedDefense(next.npc, "shield")))); if ((next.npc.status.shield ?? 0) > 0) clearDefense(next.npc, "shield"); } next.npc.hp = Math.max(0, next.npc.hp - damage); if (damage > 0) fireNpcPassive("damage_received"); events.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp }); const reflect = next.npc.timed_defenses?.reflect?.value ?? 0; if (reflect > 0) { const ignored = (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < next.item_effects.ignore_reflect_chance; const amount = ignored ? 0 : Math.min(next.player.hp, Math.round(damage * reflect)); next.player.hp -= amount; if (amount > 0) firePassive("damage_received"); events.push({kind:"reflect",actor:"npc",target:"player",amount,hp:next.player.hp,ignored}); } } else events.push({ kind: "hom_miss", actor: "player" }); next.player.hom_energy = 0; }
+  if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) { if (next.player.status.hom_stun > 0) { next.player.status.hom_stun--; events.push({ kind: "status_consumed", target: "player", status: "hom_stun", remaining: next.player.status.hom_stun }); } else if ((modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) { events.push({kind:"evade",actor:"npc",target:"player"}); fireNpcPassive("dodge"); } else if (draw() < 0.95) { const neutralizations = [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]; const homFactor = (type: string) => homunculusAttackMultiplierById(next.player.hom_id, type, next.types, neutralizations); const factor = next.npc.expedition_types ? Math.sqrt(homFactor(next.npc.expedition_types[0]) * homFactor(next.npc.expedition_types[1])) : homFactor(next.npc.type); let damage = Math.max(1, Math.round((next.player.atk + (modifiers().power_flat ?? 0)) * (next.player.hom_energy >= 6 ? 0.6 : 0.4) * factor)); if (effectiveTimedDefense(next.npc, "shield") > 0) { damage = Math.max(0, Math.round(damage * (1 - effectiveTimedDefense(next.npc, "shield")))); if ((next.npc.status.shield ?? 0) > 0) clearDefense(next.npc, "shield"); } next.npc.hp = Math.max(0, next.npc.hp - damage); if (damage > 0) fireNpcPassive("damage_received"); events.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp }); const reflect = statusActive(next.npc, "burn", decision.turn) ? 0 : next.npc.timed_defenses?.reflect?.value ?? 0; if (reflect > 0) { const ignored = (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < next.item_effects.ignore_reflect_chance; const amount = ignored ? 0 : Math.min(next.player.hp, Math.round(damage * reflect)); next.player.hp -= amount; if (amount > 0) firePassive("damage_received"); events.push({kind:"reflect",actor:"npc",target:"player",amount,hp:next.player.hp,ignored}); } } else events.push({ kind: "hom_miss", actor: "player" }); next.player.hom_energy = 0; }
   };
   const npcAction = () => {
   act(next.npc, next.player, npcSpell, "npc");
@@ -627,7 +640,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
       next.player.hp = Math.max(0, next.player.hp - damage);
       if (damage > 0) firePassive("damage_received");
       events.push({ kind: "hom_attack", actor: "npc", amount: damage, hp: next.player.hp });
-      const reflect = next.player.timed_defenses?.reflect?.value ?? 0;
+      const reflect = statusActive(next.player, "burn", decision.turn) ? 0 : next.player.timed_defenses?.reflect?.value ?? 0;
       if (reflect > 0) { const ignored = (npcEffects.ignore_reflect_chance ?? 0) > 0 && draw() < npcEffects.ignore_reflect_chance; const amount = ignored ? 0 : Math.min(next.npc.hp, Math.round(damage * reflect)); next.npc.hp -= amount; if (amount > 0) fireNpcPassive("damage_received"); events.push({kind:"reflect",actor:"player",target:"npc",amount,hp:next.npc.hp,ignored}); }
     } else events.push({ kind: "hom_miss", actor: "npc" });
     next.npc.hom_energy = 0;
@@ -638,18 +651,46 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   const playerFirst = (next.player.tempo ?? 10) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_tempo ?? 0) + (modifiers().tempo_flat ?? 0) + (next.player.status.tempo_bonus ?? 0) >= (next.npc.tempo ?? 10) + (npcEffects.tempo_flat ?? 0) + (modifiers(next.npc).tempo_flat ?? 0) + (next.npc.status.tempo_bonus ?? 0);
   delete next.player.status.tempo_bonus; delete next.npc.status.tempo_bonus;
   if (playerFirst) { playerAction(); npcAction(); } else { npcAction(); if (next.player.hp > 0 && next.npc.hp > 0) playerAction(); }
-  for (const fighter of [next.player, next.npc]) {
-    if (fighter.hp > 0 && fighter.status.poison > 0) { let tick = 3; if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = tick * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder; const prevented = Math.min(Math.max(0, tick - 1), Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); const victim = fighter === next.player ? "player" : "npc"; const provenance = poisonTickMetadata(fighter, victim, ["player", "npc"], amount, decision.turn); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: victim, amount, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); if (provenance.source === "player" && victim === "npc" && amount > 0) firePassive("opponent_poison_damage", amount); if (provenance.source === "npc" && victim === "player" && amount > 0) { firePassive("damage_received"); fireNpcPassive("opponent_poison_damage", amount); } if (provenance.source === "player" && victim === "npc" && amount > 0) fireNpcPassive("damage_received"); recordPoisonChange(fighter, fighter.status.poison, null); }
-    for (const id of Object.keys(fighter.cooldowns)) fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
+  if (next.pending_drains?.length) {
+    const future: any[] = [];
+    for (const pending of next.pending_drains) {
+      if (pending.due_exchange > decision.turn) { future.push(pending); continue; }
+      const actor = next[pending.source], target = next[pending.target];
+      if (!actor || !target || actor.hp <= 0 || target.hp <= 0) continue;
+      const shield = effectiveTimedDefense(target, "shield");
+      const {damage, healed} = drainHealth(actor, target, Math.round(target.hp * 0.06), shield, pending.source === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
+      if (shield > 0 && (target.status.shield ?? 0) > 0) clearDefense(target, "shield");
+      if (damage > 0) { target.spell_hit_this_exchange = true; (pending.source === "player" ? fireNpcPassive : firePassive)("damage_received"); }
+      events.push({kind:"damage", actor:pending.source, target:pending.target, amount:damage, actual_damage:damage, hp:target.hp, spell_id:"brine_mend", source:"pending_drain"});
+      events.push({kind:"heal", actor:pending.source, target:pending.source, amount:healed, hp:actor.hp, spell_id:"brine_mend", source:"pending_drain"});
+      const reflect = effectiveTimedDefense(target, "reflect");
+      if (damage > 0 && reflect > 0) {
+        const chance = pending.source === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
+        const ignored = chance > 0 && draw() < Math.min(1, chance);
+        const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(damage * reflect)); actor.hp -= reflected;
+        if (reflected > 0) (pending.source === "player" ? firePassive : fireNpcPassive)("damage_received");
+        if ((target.status.reflect ?? 0) > 0) clearDefense(target, "reflect");
+        const poison = target.status.poison_on_reflect ?? 0;
+        if (!ignored && poison > 0) { const previous = actor.status.poison ?? 0; actor.status.poison = Math.max(previous, poison); recordPoisonChange(actor, previous, target.poison_reflect_source ?? null); }
+        delete target.status.poison_on_reflect; delete target.poison_reflect_source;
+        events.push({kind:"reflect", actor:pending.target, target:pending.source, amount:reflected, hp:actor.hp, ignored});
+      }
+    }
+    next.pending_drains = future;
   }
+  const poisonFighters = [next.player, next.npc], ticked = new Set<any>();
+  do {
+    for (const fighter of poisonFighters) if (!ticked.has(fighter) && fighter.hp > 0 && fighter.status.poison > 0) { ticked.add(fighter); let tick = poisonTickDamage(fighter); if (fighter === next.player && next.blessing?.selected === "toxin_ward") { const b = next.blessing, mitigation = tick * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder; const prevented = Math.min(Math.max(0, tick - 1), Math.floor(mitigation / 100)); b.poison_remainder = mitigation % 100; tick -= prevented; } const amount = Math.min(tick, fighter.hp); const victim = fighter === next.player ? "player" : "npc"; const provenance = poisonTickMetadata(fighter, victim, ["player", "npc"], amount, decision.turn); fighter.hp -= amount; fighter.spell_hit_this_exchange = true; fighter.status.poison--; events.push({ kind: "poison", target: fighter.id, side: victim, amount, hp: fighter.hp, remaining: fighter.status.poison, ...provenance }); if (provenance.source === "player" && victim === "npc" && amount > 0) firePassive("opponent_poison_damage", amount); if (provenance.source === "npc" && victim === "player" && amount > 0) { firePassive("damage_received"); fireNpcPassive("opponent_poison_damage", amount); } if (provenance.source === "player" && victim === "npc" && amount > 0) fireNpcPassive("damage_received"); recordPoisonChange(fighter, fighter.status.poison, null); }
+  } while (next.combat_rules_version === 2 && poisonFighters.some(fighter => !ticked.has(fighter) && fighter.hp > 0 && fighter.status.poison > 0));
+  for (const fighter of poisonFighters) for (const id of Object.keys(fighter.cooldowns)) fighter.cooldowns[id] = Math.max(0, fighter.cooldowns[id] - 1);
   finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events);
   triggerEliteTrait("end");
   for (const jam of pendingJams) jamStrategicCooldown(jam.target.spell_ids.map((id: string) => next.spells.find((s: any) => s.id === id)), jam.target.cooldowns, jam.actor, jam.targetId, events);
   next.turn++; next.rng_counter = counter;
-  for (const fighter of [next.player, next.npc]) expireTimedDefenses(fighter, next.turn);
+  for (const fighter of [next.player, next.npc]) { expireTimedDefenses(fighter, next.turn); for (const status of expirePersistentStatuses(fighter, next.turn)) events.push({kind:"status_expired", target:fighter === next.player ? "player" : "npc", status}); }
   if (next.player.hp > 0 && next.npc.hp > 0 && next.turn % 2 === 1) {
     const homReflect = Math.max(0, Math.min(1, next.hom_synergy?.reflect_pct ?? 0));
-    if (homReflect > 0) { applyDefense(next.player, "reflect", homReflect); events.push({ kind: "status_applied", actor: "player", target: "player", status: "reflect", value: next.player.status.reflect, source: "homunculus" }); }
+    if (homReflect > 0) { const previous = next.player.status.reflect ?? 0; applyDefense(next.player, "reflect", homReflect); if (next.combat_rules_version === 2 && next.player.status.reflect > previous) events.push({kind:"hom_passive", turn:next.turn, actor:"player", target:"player", hom_id:next.player.hom_id, passive_id:next.player.hom_id, trigger:"round_start", effects:[{kind:"reflect_pct", target:"player", amount:homReflect, unit:"fraction", duration:"until_consumed", remaining:0}]}); events.push({ kind: "status_applied", actor: "player", target: "player", status: "reflect", value: next.player.status.reflect, source: "homunculus" }); }
     for (const [effect, field] of [["ward_pct", "shield"], ["reflect_pct", "reflect"]]) {
       const value = Math.max(0, Math.min(1, next.item_effects?.[effect] ?? 0));
       if (value > 0) {

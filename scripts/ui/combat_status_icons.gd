@@ -17,7 +17,7 @@ const DEFINITIONS := [
 	["tempo_bonus", "tempo", "STATUS_TEMPO", "number"],
 	["focus_next", "type", "STATUS_FOCUS", "plus"],
 	["misalign_next", "stun", "STATUS_MISALIGN", "minus"],
-	["poison_on_reflect", "poison", "STATUS_POISON_REFLECT", "turns"],
+	["poison_on_reflect", "poison", "STATUS_POISON_REFLECT", "armed"],
 ]
 
 var victory_only := false
@@ -47,7 +47,7 @@ func _entries() -> Array:
 	var entries: Array = []
 	if victory_only:
 		return [{"icon": "crown", "label": "", "victory": 0}, {"icon": "crown", "label": "", "victory": 1}]
-	if not _boss_mode and not _feedback.is_empty():
+	if not _feedback.is_empty():
 		entries.append({"icon": _feedback_icon, "label": _feedback, "tooltip": _feedback})
 	entries.append_array(_visible_effects())
 	return entries
@@ -88,13 +88,35 @@ var _current_feedback: Dictionary = {}
 var _feedback_icon := "type"
 var _previous_neutralization := 0.0
 var _previous_mark_turns := 0
+var _previous_persistent: Dictionary = {}
 
 func set_fighter(wins: int, fighter: Dictionary) -> void:
 	_wins = wins
 	if is_instance_valid(victory_markers):
 		victory_markers.set_fighter(wins, {})
 	_effects.clear()
-	var status: Dictionary = fighter.get("status", {})
+	var status: Dictionary = fighter.get("status", {}).duplicate(true)
+	var local_timed: Dictionary = fighter.get("timed_defenses", {})
+	for field in ["shield_pct", "reflect_pct"]:
+		if local_timed.has(field): status[field] = maxf(float(status.get(field, 0)), float(local_timed[field].get("value", 0)))
+	var local_burn: Dictionary = fighter.get("burn_effect", {})
+	var next_exchange := int(fighter.get("combat_exchange", 0)) + 1
+	if not local_burn.is_empty() and int(local_burn.get("applied_exchange", next_exchange)) < next_exchange and next_exchange <= int(local_burn.get("expires_exchange", 0)):
+		status["shield_pct"] = 0
+		status["reflect_pct"] = 0
+	var persistent: Dictionary = fighter.get("persistent_statuses", {}).duplicate(true)
+	if fighter.has("poison_effect") and int(status.get("poison", 0)) > 0:
+		persistent.poison = {"stage": mini(3, int(fighter.poison_effect.get("stage", 0)) + 1), "remaining": int(status.poison)}
+	for kind in ["burn", "lethargy"]:
+		if fighter.has(kind + "_effect"):
+			var effect: Dictionary = fighter[kind + "_effect"]
+			persistent[kind] = {"remaining": maxi(0, int(effect.get("expires_exchange", 0)) - int(fighter.get("combat_exchange", effect.get("applied_exchange", 0))))}
+	if _status_initialized:
+		for kind in ["burn", "lethargy"]:
+			var had := _previous_persistent.has(kind)
+			var has := persistent.has(kind)
+			if had != has: _queue_feedback(kind, "%dT" % int(persistent.get(kind, {}).get("remaining", 0)), not has, kind)
+	_previous_persistent = persistent.duplicate(true)
 	if _status_initialized:
 		for definition in DEFINITIONS:
 			var key: String = definition[0]
@@ -116,11 +138,42 @@ func set_fighter(wins: int, fighter: Dictionary) -> void:
 		var label := ""
 		match definition[3]:
 			"turns": label = "%dT" % int(value)
+			"armed": label = ""
 			"percent": label = "%d%%" % int(round(value * 100))
 			"plus": label = "+%d%%" % int(round(value * 100))
 			"minus": label = "-%d%%" % int(round(value * 100))
 			_: label = ("+" if value > 0 else "") + str(value).trim_suffix(".0")
-		_effects.append({"icon": definition[1], "label": label, "tooltip": "%s (%s)" % [tr(definition[2]), label], "tooltip_key": definition[2]})
+		var tooltip := "%s (%s)" % [tr(definition[2]), label]
+		if definition[0] == "poison" and persistent.has("poison"):
+			var stage := clampi(int(persistent.poison.get("stage", 1)), 1, 3)
+			tooltip = tr("STATUS_POISON_STAGES") % [stage, str(["2.5", "5", "6"][stage - 1]), int(value)]
+		var timed: Dictionary = fighter.get("defense_presentation", {}).duplicate(true)
+		if timed.is_empty():
+			for field in local_timed:
+				timed[field] = {"remaining":maxi(0, int(local_timed[field].get("expires_turn", 0)) - int(fighter.get("combat_exchange", 0)))}
+		var timed_key := str(definition[0])
+		if not timed.has(timed_key): timed_key = timed_key.trim_suffix("_pct")
+		if timed.has(timed_key): tooltip += " " + (tr("STATUS_DEFENSE_DURATION") % int(timed[timed_key].get("remaining", 0)))
+		var display := {"icon": definition[1], "label": label, "tooltip": tooltip}
+		if (definition[0] != "poison" or not persistent.has("poison")) and not timed.has(timed_key): display["tooltip_key"] = definition[2]
+		_effects.append(display)
+	for kind in ["burn", "lethargy"]:
+		if persistent.has(kind):
+			var turns := int(persistent[kind].get("remaining", 0))
+			if turns > 0: _effects.append({"icon":kind, "label":"%dT" % turns, "tooltip":tr("STATUS_" + kind.to_upper() + "_DETAIL") % turns})
+	for drain in fighter.get("pending_drain", []):
+		_effects.append({"icon":"drain", "label":"%dT" % int(drain.get("remaining", 1)), "tooltip":tr("STATUS_DRAIN_DETAIL") % int(drain.get("remaining", 1))})
+	var passive_modifiers: Array = fighter.get("passive_modifiers", [])
+	if not fighter.has("passive_modifiers"):
+		passive_modifiers = fighter.get("expedition_passive", {}).get("modifiers", [])
+	for modifier in passive_modifiers:
+		if modifier.has("exchange") and int(modifier.exchange) < int(fighter.get("combat_exchange", 0)): continue
+		var kind := str(modifier.get("kind", ""))
+		var amount := float(modifier.get("amount", 0))
+		var label := "+%d%%" % roundi(amount * 100) if kind.ends_with("_pct") else "+%s" % str(amount).trim_suffix(".0")
+		var name := tr("PASSIVE_EFFECT_" + kind.to_upper())
+		var duration := tr("PASSIVE_DURATION_" + str(modifier.get("duration", "")).to_upper())
+		_effects.append({"icon":"power", "label":label, "tooltip":"%s %s %s" % [label, name, duration]})
 	var mark: Dictionary = status.get("hybrid_mark", {})
 	if int(mark.get("remaining", 0)) > 0:
 		_effects.append({"icon": "chain", "label": "%dT" % int(mark.remaining), "tooltip": tr("STATUS_HYBRID_MARK") % int(mark.remaining), "tooltip_key": "STATUS_HYBRID_MARK", "turns": int(mark.remaining)})
@@ -181,6 +234,7 @@ func _effect_tooltip(effect: Dictionary) -> String:
 	if key == "STATUS_TYPE_CHANGE":
 		return tr(key) % [int(effect.value), tr(effect.phase)]
 	if not key.is_empty():
+		if str(effect.label).is_empty(): return tr(key)
 		return "%s (%s)" % [tr(key), effect.label]
 	return str(effect.get("tooltip", ""))
 
@@ -241,6 +295,17 @@ func _draw_icon(kind: String, offset: Vector2, enabled: bool) -> void:
 		"poison":
 			c = Color("65d56e")
 			draw_colored_polygon(PackedVector2Array([Vector2(12, 2), Vector2(6, 10), Vector2(5, 14), Vector2(7, 18), Vector2(12, 20), Vector2(17, 18), Vector2(19, 14), Vector2(18, 10)]), c)
+		"burn":
+			c = Color("ff8b39")
+			draw_colored_polygon(PackedVector2Array([Vector2(12, 2), Vector2(17, 9), Vector2(19, 14), Vector2(16, 20), Vector2(8, 20), Vector2(5, 15), Vector2(9, 8), Vector2(10, 13)]), c)
+		"lethargy":
+			c = Color("b484ed")
+			draw_arc(Vector2(12, 11), 8, 1.0, 5.3, 20, c, 3, true)
+		"drain":
+			c = Color("59ddac")
+			draw_arc(Vector2(12, 11), 8, -2.3, 2.2, 20, c, 2, true)
+			draw_line(Vector2(15, 7), Vector2(9, 15), c, 2, true)
+			draw_line(Vector2(9, 15), Vector2(9, 10), c, 2, true)
 		"shield":
 			c = Color("69b9f4")
 			draw_colored_polygon(PackedVector2Array([Vector2(12, 2), Vector2(20, 5), Vector2(19, 13), Vector2(12, 20), Vector2(5, 13), Vector2(4, 5)]), c)

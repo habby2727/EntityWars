@@ -4,6 +4,33 @@ const COLORS := {"damage": "ff7777", "heal": "78de9f", "shield": "73bfff", "buff
 const PATHS := {"damage": "M4 19 L17 4 M12 4 L20 4 L20 12 M3 14 L10 21", "heal": "M12 4 V20 M4 12 H20", "shield": "M12 3 L20 6 L18 15 L12 21 L6 15 L4 6 Z", "debuff": "M12 3 L5 12 Q3 20 12 21 Q21 20 19 12 Z", "buff": "M12 20 V4 M6 10 L12 4 L18 10", "miss": "M5 5 L19 19 M19 5 L5 19", "advantage": "M12 3 L15 9 L21 12 L15 15 L12 21 L9 15 L3 12 L9 9 Z", "combo": "M3 14 L9 7 L13 12 L20 4 M15 4 H20 V9", "homunculus": "M5 19 V10 L8 5 L12 9 L16 5 L19 10 V19 Z", "system": "M12 4 V12 L17 15 M20 12 A8 8 0 1 1 4 12 A8 8 0 1 1 20 12"}
 var _icons := {}
 
+func passive_message(event: Dictionary, hom: Dictionary) -> String:
+	var locale := TranslationServer.get_locale().substr(0, 2)
+	var names: Dictionary = hom.get("passive", {}).get("name", {})
+	var passive_name := str(names.get(locale, names.get("en", "")))
+	if passive_name.is_empty(): passive_name = TranslationServer.translate("PASSIVE_LEGACY_NAME")
+	var hom_name := str(hom.get("name", ""))
+	var details: Array[String] = []
+	for effect in event.get("effects", []):
+		if not effect is Dictionary or (str(effect.get("kind", "")) == "heal" and not event.get("show_heal", false)):
+			continue
+		var key := "PASSIVE_EFFECT_" + str(effect.get("kind", "")).to_upper()
+		var label := TranslationServer.translate(key)
+		if label == key:
+			continue
+		var amount := float(effect.get("amount", 0))
+		var value := "+%s%%" % str(snappedf(amount * 100.0, 0.01)) if str(effect.get("unit", "")) == "fraction" else "+%s" % str(snappedf(amount, 0.01))
+		var duration_key := "PASSIVE_DURATION_" + str(effect.get("duration", "")).to_upper()
+		var duration := TranslationServer.translate(duration_key)
+		if duration == duration_key: duration = ""
+		var target := ""
+		if effect.get("target") != event.get("actor"):
+			target = TranslationServer.translate("PASSIVE_TARGET_OPPONENT")
+		details.append("%s %s %s %s" % [value, label, duration, target])
+	var message := "%s — %s" % [hom_name, passive_name]
+	if not details.is_empty(): message += ": " + ", ".join(details)
+	return message
+
 func append(label: RichTextLabel, turn: int, message: String, event: Dictionary = {}) -> void:
 	var category := str(event.get("category", "system"))
 	var color := Color("d9a4f5") if category == "inspiration" else Color("73d9d4") if category == "switch" else Color.from_string(COLORS.get(category, COLORS.system), Color.WHITE)

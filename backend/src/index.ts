@@ -42,6 +42,8 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
+import { publicCombatStatus, publicIncomingDrains } from "./public_combat_status";
+import { statusActive } from "./persistent_effects";
 import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
 import { createExpeditionService, ExpeditionError, maintainExpeditionReplays } from "./expeditions_service";
 import { commonAppearance, commonAppearances, guardiansFor } from "./solo_guardians";
@@ -3306,7 +3308,9 @@ type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rot
 function publicDungeonCombat(combat: any) {
 	const trait = dungeonEliteTrait(combat);
 	const encounter = combat.special_encounter;
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, blessing: publicDungeonBlessing(combat.blessing), ...(encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}), ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+	const { spell_ids, original_spell_ids, cooldowns, inspiration_offers, temporary_spell_id, temporary_replaced_slot, ...visibleNpc } = combat.npc;
+	const fighter = (entry: any, side: string) => ({ ...entry, ...publicCombatStatus(entry, combat.turn), pending_drain: publicIncomingDrains(combat, side) });
+	return { player: fighter(combat.player, "player"), npc: fighter(visibleNpc, "npc"), floor: combat.floor, blessing: publicDungeonBlessing(combat.blessing), ...(encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}), ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {
@@ -3345,7 +3349,7 @@ function publicHuntCombat(state: any) {
 		if (typeof raw?.hybrid_mark?.remaining === "number" && raw.hybrid_mark.remaining > 0) result.hybrid_mark = { owner: raw.hybrid_mark.owner, remaining: raw.hybrid_mark.remaining };
 		return result;
 	};
-	const fighter = (entry: any) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status), ...(entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}), ...(entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {}) });
+	const fighter = (entry: any, side: string) => { const view = publicCombatStatus(entry, state.turn); return { pending_drain: publicIncomingDrains(state, side), persistent_statuses: view.persistent_statuses, passive_modifiers: view.passive_modifiers, id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(view.status), defense_presentation: view.defense_presentation, spell_neutralize_active: entry.spell_neutralize_active ?? 0, spell_neutralize_pending: entry.spell_neutralize_pending ?? 0, ...(entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}), ...(entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {}) }; };
 	const moves = (state.spell_ids ?? []).map((id: string) => {
 		const spell = (state.spells ?? []).find((entry: any) => entry.id === id);
 		return { id, name: spell?.name, type: spell?.type, category: spell?.category, power_mult: spell?.power_mult, accuracy: spell?.accuracy, cooldown_remaining: state.cooldowns?.[id] ?? 0 };
@@ -3354,11 +3358,11 @@ function publicHuntCombat(state: any) {
 		turn: state.turn,
 		physical_anomaly: state.physical_anomaly ?? null,
 		strategic_delayed: (state.strategic_delayed ?? []).map((entry: any) => ({ actor: entry.actor, target: entry.target, amount: entry.amount, due_turn: entry.due_turn })),
-		player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
-		boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...(state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {}) },
-		minions: (state.minions ?? []).map(fighter),
+		player: { ...fighter(state.player, "player"), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
+		boss: { ...fighter(state.boss, "boss"), tier: state.boss_tier, intent: state.boss_intent, ...(state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {}) },
+		minions: (state.minions ?? []).map((entry: any) => fighter(entry, entry.id)),
 		moves,
-		shield: { turns: state.boss_shield_turns, reduction: state.boss_shield_turns > 0 ? state.boss_shield_config?.reduction : 0 },
+		shield: { turns: state.boss_shield_turns, reduction: state.boss_shield_turns > 0 && !statusActive(state.boss, "burn", state.turn + 1) ? state.boss_shield_config?.reduction : 0, suppressed: state.boss_shield_turns > 0 && statusActive(state.boss, "burn", state.turn + 1) },
 		fury: { pending: state.fury_pending, multiplier: state.fury_pending ? state.fury_mult : null },
 		power_turn: { active: state.power_turn_active, used: state.power_turn_used },
 		inspiration: { pending: !!state.player.inspiration_pending, offers: state.player.inspiration_pending ? [...(state.inspiration_offers ?? [])] : [] },

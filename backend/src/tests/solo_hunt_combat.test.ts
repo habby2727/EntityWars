@@ -306,11 +306,11 @@ test("minion stun and poison expire independently without affecting the other mi
   for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
   state.minions[0].status = { stun: 1, poison: 2 };
   const result = resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "minion_1" }, () => 0.99);
-  expect(result.next_state.minions[0].hp).toBe(21);
+  expect(result.next_state.minions[0].hp).toBe(23);
   expect(result.next_state.minions[0].status.stun).toBe(0);
   expect(result.events.filter((e: any) => e.kind === "status_consumed" && e.target === "minion_0" && e.status === "stun")).toHaveLength(1);
   expect(result.next_state.minions[0].status.poison).toBe(1);
-  expect(result.events.some((e: any) => e.kind === "status_tick" && e.target === "minion_0" && e.damage === 3 && e.hp === 21 && e.remaining === 1)).toBe(true);
+  expect(result.events.some((e: any) => e.kind === "status_tick" && e.target === "minion_0" && e.damage === 1 && e.hp === 23 && e.remaining === 1)).toBe(true);
   expect(result.events.find((e: any) => e.kind === "status_snapshot" && e.target === "minion_0").status).toEqual({ stun: 0, poison: 1 });
   expect(result.next_state.minions[1].hp).toBe(24);
   expect(result.events.filter((e: any) => e.kind === "minion_attack").map((e: any) => e.actor)).toEqual(["minion_1"]);
@@ -334,7 +334,7 @@ test("poison ticks once for each living fighter even while boss is protected", (
   const result = resolveCombatTurn(state, decision, () => 0.99);
   const ticks = result.events.filter((e: any) => e.kind === "status_tick");
   expect(ticks.map((e: any) => e.target)).toEqual(["player", "boss", "minion_0", "minion_1"]);
-  expect(ticks.map((e: any) => e.damage)).toEqual([3, 1, 1, 3]);
+  expect(ticks.map((e: any) => e.damage)).toEqual([3, 1, 1, 1]);
   expect(ticks.every((e: any) => e.remaining === 0)).toBe(true);
   expect(result.terminal_result).toBeNull();
   expect(result.next_state.minions[1].hp).toBeGreaterThan(0);
@@ -362,7 +362,7 @@ test("reflection poison transitions reflect changes and ignored effects", () => 
   const decision = { turn: 1, spell_id: "cinder_fist", target: "boss" };
   const state = make();
   const hit = resolveCombatTurn(state, decision, () => 0.5);
-  expect(hit.events.filter((e: any) => e.kind === "status_applied" && e.source === "poison_on_reflect")).toMatchObject([{ target: "player", previous: 0, value: 2 }]);
+  expect(hit.events.filter((e: any) => e.kind === "status_applied" && e.source === "poison_on_reflect")).toMatchObject([{ target: "player", previous: 0, value: 3 }]);
   expect(hit.events.filter((e: any) => e.kind === "status_consumed" && e.status === "poison_on_reflect")).toMatchObject([{ target: "boss", previous: 2, value: 0, ignored: false }]);
   expect(resolveCombatTurn(state, decision, () => 0.5)).toEqual(hit);
   const ignored = make(); ignored.item_effects.ignore_reflect_chance = 1;
@@ -802,7 +802,7 @@ test("native Aether and Vitriol spells, delayed neutralization and poison", () =
   const harvest = resolveCombatTurn(poisoned, action, draws).next_state;
   expect([harvest.boss.hp, harvest.boss.status.poison]).toEqual([102, 1]);
   const marked = resolveCombatTurn(plain, { turn: 1, spell_id: "caustic_mark", target: "boss" }, draws).next_state;
-  expect(marked.boss.status.poison).toBe(1);
+  expect(marked.boss.status.poison).toBe(2);
 });
 
 test("reflection uses calculated damage even when the target has little HP", () => {
