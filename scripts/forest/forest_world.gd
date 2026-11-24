@@ -71,7 +71,9 @@ var _quest_owner := ""
 var _quest_generation := 0
 var _quest_zone_generation := 0
 var _quest_request_zone_generation := 0
-var _quest_action_id := ""
+var _quest_request_client_generation := -1
+var _quest_pending_actions := {}
+var _quest_pending_request_key := ""
 var _quest_server_time := 0
 var _quest_tick := 0
 var _quest_timer: Timer
@@ -230,6 +232,7 @@ func _on_name_state(state: Dictionary) -> void:
 		_clear_verified_name()
 		return
 	ResourceBars.update(_resource_rows, state)
+	_sync_quest_pending_identity()
 	_verified_name = value
 	_name_generation = ConnectionGate._generation
 	_name_client_generation = _name_backend._session_generation
@@ -942,14 +945,30 @@ func _exit_tree() -> void:
 	if is_instance_valid(_presence): _presence.shutdown()
 
 func _fetch_quest() -> void:
+	if is_instance_valid(_name_backend) and _quest_request_client_generation != _name_backend._session_generation:
+		_quest_request = ""
+		_quest_pending_request_key = ""
 	if not is_inside_tree() or not is_instance_valid(_name_backend) or not is_instance_valid(_presence) or not _presence.entered or not _name_session_matches() or not _quest_request.is_empty():
 		return
+	_sync_quest_pending_identity()
 	_quest_zone = str(_zones[_zone_index].id)
 	_quest_owner = str(ConnectionGate.player_id)
 	_quest_generation = int(ConnectionGate._generation)
 	_quest_request_zone_generation = _quest_zone_generation
 	_quest_request_kind = "get"
+	_quest_request_client_generation = _name_backend._session_generation
 	_quest_request = _name_backend.request_api("GET", "/forest/quests", null)
+
+func _sync_quest_pending_identity() -> void:
+	if not is_instance_valid(_name_backend):
+		_quest_pending_actions.clear()
+		return
+	if str(ConnectionGate.player_id).is_empty():
+		return
+	for key in _quest_pending_actions.keys():
+		var pending: Dictionary = _quest_pending_actions[key]
+		if str(pending.owner) != str(ConnectionGate.player_id) or str(pending.server) != str(_name_backend.base_url):
+			_quest_pending_actions.erase(key)
 
 func _clear_quest() -> void:
 	_quest = {}
@@ -964,17 +983,23 @@ func _clear_quest() -> void:
 			npc.queue_free()
 
 func _quest_submit() -> void:
-	if not _quest_request.is_empty() or _quest.is_empty():
+	if not _quest_request.is_empty() or str(_quest.get("state", "")) not in ["OFFERED", "COMPLETED"]:
 		return
 	var kind := "accept" if str(_quest.get("state", "")) == "OFFERED" else "claim"
-	if _quest_action_id.is_empty():
-		_quest_action_id = _name_backend._make_uuid()
+	_sync_quest_pending_identity()
+	var quest_id := str(_quest.quest_id)
+	var key := JSON.stringify([kind, quest_id, str(ConnectionGate.player_id), str(_name_backend.base_url)])
+	if not _quest_pending_actions.has(key):
+		_quest_pending_actions[key] = {"kind":kind, "quest_id":quest_id, "action_id":_name_backend._make_uuid(), "owner":str(ConnectionGate.player_id), "server":str(_name_backend.base_url)}
+	var pending: Dictionary = _quest_pending_actions[key]
 	_quest_zone = str(_zones[_zone_index].id)
 	_quest_owner = str(ConnectionGate.player_id)
 	_quest_generation = int(ConnectionGate._generation)
 	_quest_request_zone_generation = _quest_zone_generation
 	_quest_request_kind = kind
-	_quest_request = _name_backend.request_api("POST", "/forest/quests/" + kind, {"quest_id":_quest.quest_id, "client_action_id":_quest_action_id})
+	_quest_request_client_generation = _name_backend._session_generation
+	_quest_pending_request_key = key
+	_quest_request = _name_backend.request_api("POST", "/forest/quests/" + str(pending.kind), {"quest_id":pending.quest_id, "client_action_id":pending.action_id})
 	_build_npc_actions()
 
 func _on_quest_response(request_id: String, ok: bool, data: Dictionary) -> void:
@@ -982,19 +1007,25 @@ func _on_quest_response(request_id: String, ok: bool, data: Dictionary) -> void:
 		return
 	var kind := _quest_request_kind
 	_quest_request = ""
+	if kind != "get":
+		var error := str(data.get("error", ""))
+		var status := int(data.get("http_status", 0))
+		var uncertain := not ok and (error in ["network_error", "bad_json"] or status == 408 or status >= 500)
+		if not uncertain:
+			_quest_pending_actions.erase(_quest_pending_request_key)
+		_quest_pending_request_key = ""
+	_sync_quest_pending_identity()
 	if _quest_owner != str(ConnectionGate.player_id) or _quest_generation != int(ConnectionGate._generation) or _quest_request_zone_generation != _quest_zone_generation or _quest_zone != str(_zones[_zone_index].id):
-		_quest_action_id = ""
 		_fetch_quest()
 		return
 	if not ok:
 		if str(data.get("error", "")) == "QUEST_STORAGE_FULL" and is_instance_valid(_dialogue_text):
 			_dialogue_text.text = tr("FOREST_QUEST_STORAGE_FULL")
-		if str(data.get("error", "")) != "network_error":
-			_quest_action_id = ""
 		_build_npc_actions()
 		return
-	_quest_action_id = ""
 	if kind == "claim":
+		_quest.state = "CLAIMED"
+		_build_npc_actions()
 		_name_backend.refresh_state()
 		_fetch_quest()
 		return
@@ -1004,6 +1035,8 @@ func _on_quest_response(request_id: String, ok: bool, data: Dictionary) -> void:
 	_quest = value if value is Dictionary else {}
 	for npc in _npcs.duplicate():
 		if str(npc.npc_id).begins_with("quest_") and (not _quest.has("npc_id") or npc.npc_id != _quest.npc_id):
+			if npc == _talking_to:
+				_close_dialogue()
 			_npcs.erase(npc)
 			npc.queue_free()
 	if not _quest.is_empty() and not _npcs.any(func(n): return n.npc_id == _quest.npc_id):
