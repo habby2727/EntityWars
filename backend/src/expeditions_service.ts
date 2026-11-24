@@ -116,7 +116,8 @@ function publicSession(row: any, state: any) {
   return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e: any, choice: number) => ({ choice, id:e.entity_id, name:e.name, types:e.types, preview_texture:e.preview_texture, capturable:e.capturable })) : [], ...(state.combat && state.phase !== "REWARD" ? {combat_state:publicExpeditionCombat(state.combat), battle_log:state.log.map(publicEvent)} : {}), ...(state.phase === "REWARD" ? {reward_homunculus: (() => { const h = expeditionCaptures.find(h => h.id === state.selected?.homunculus_id); return h ? {id:h.id,name:h.name,type:h.type,preview_texture:h.preview_texture,combat_texture:h.combat_texture} : null; })(), capture_candidate: state.candidate ? { id:state.candidate.id, name:state.candidate.name, type:state.candidate.type, rarity:state.candidate.rarity, preview_texture:state.candidate.preview_texture } : null, capture_attempts:state.capture_attempts ?? 0, capture_attempts_remaining:state.capture_closed === true ? 0 : Math.max(0, 3-(state.capture_attempts ?? 0)), capture_closed:state.capture_closed === true, ...(state.victory_reward ? {victory_reward:state.victory_reward} : {})} : {}), ...(state.latest_reward ? {latest_reward:state.latest_reward} : {}), ...(state.phase === "ROUTE" ? { directions:["left","forward","right"], allowed_directions:(state.consecutive_right ?? 0) >= 3 ? ["left","forward"] : ["left","forward","right"], consecutive_right:state.consecutive_right ?? 0, last_direction:state.last_direction ?? null } : {}) };
 }
 
-type Options = { db: Database; secret: string; catalogs: any; getPlayer: (playerId: string) => any; makeSetup: (playerId: string, snapshot: any, selection: any) => any; awardVictory: (playerId: string, loadoutJson: string, now: number) => void; grantVictoryLoot: (playerId: string, grants: Record<string, number>, rewardId: string, now: number) => Record<string, number>; spendManaEssence: (playerId: string, actionId: string, now: number) => void; captureHomunculus: (playerId: string, id: string, now: number) => { duplicate: boolean } };
+export type ExpeditionQuestEvent = {kind:"victory";playerId:string;now:number;runId:string;depth:number;difficultyDepth:number;tier:string;enemyId:string} | {kind:"capture";playerId:string;now:number;runId:string;depth:number;homunculusId:string;success:true};
+type Options = { db: Database; secret: string; catalogs: any; getPlayer: (playerId: string) => any; makeSetup: (playerId: string, snapshot: any, selection: any) => any; awardVictory: (playerId: string, loadoutJson: string, now: number) => void; grantVictoryLoot: (playerId: string, grants: Record<string, number>, rewardId: string, now: number) => Record<string, number>; spendManaEssence: (playerId: string, actionId: string, now: number) => void; captureHomunculus: (playerId: string, id: string, now: number) => { duplicate: boolean }; questProgress?: (event: ExpeditionQuestEvent) => void };
 export function createExpeditionService(options: Options) {
   const {db, secret, catalogs} = options;
   const seedFor = (runId: string) => createHmac("sha256", secret).update("expedition:" + runId).digest();
@@ -279,6 +280,7 @@ export function createExpeditionService(options: Options) {
             const roll=expeditionDraw(seed,JSON.stringify(["victory-loot",row.run_id,state.depth]),0);
             const grants=options.grantVictoryLoot(playerId,expeditionVictoryGrants(tier,roll),rewardId,now);
             state.victory_reward={reward_id:rewardId,tier,grants};
+            options.questProgress?.({kind:"victory",playerId,now,runId:row.run_id,depth:state.depth,difficultyDepth:state.difficulty_depth ?? state.depth,tier,enemyId:state.selected.entity_id});
           } else if (state.combat.terminal_result === "LOSS") {
             const pool=balance(playerId,now); if (pool.mana > 0) saveBalance(playerId,{...changeExpeditionMana(pool, -Math.min(1, pool.mana),now),crystals:pool.crystals});
             state.phase="LOSS"; row.status="LOSS";
@@ -295,6 +297,7 @@ export function createExpeditionService(options: Options) {
           saveBalance(playerId,{...pool,crystals:pool.crystals-1});
           state.capture_attempts=attempt; state.capture_closed=success || attempt >= 3;
           const capture=success ? options.captureHomunculus(playerId,candidate.id,now) : null;
+          if (success) options.questProgress?.({kind:"capture",playerId,now,runId:row.run_id,depth:state.depth,homunculusId:candidate.id,success:true});
           const event={reward_id:`${row.run_id}:${state.depth}:capture:${attempt}`,kind:success ? "capture_success" : "capture_failure",candidate_id:candidate.id,attempt,remaining_attempts:success ? 0 : 3-attempt,...(success ? {preview_texture:candidate.preview_texture,duplicate:capture!.duplicate,duplicate_xp:capture!.duplicate ? 20 : 0} : {})};
           state.latest_reward=event; events=[event];
         } else if (action === "skip") {

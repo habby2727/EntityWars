@@ -367,7 +367,7 @@ HOM_STATUS_LOCKED,Locked,Bloqueado
 HOM_STATUS_UNKNOWN,Syncing ownership?,Sincronizando propiedad?
 HOM_TYPE,Element: %s,Elemento: %s
 HOM_PASSIVE,Passive: %s,Pasiva: %s
-HOM_CAPTURE_REQUIRED,Requires capture in an expedition.,Requiere capturarlo en una expedici?n.
+HOM_CAPTURE_REQUIRED,Requires capture in an expedition.,Requiere capturarlo en una expedición.
 HOM_LEVEL_MUTATION,Level %d / 10 | Mutation: %s,Nivel %d / 10 | Mutaci?n: %s
 EXPEDITION_TURN,Turn,Turno
 EXPEDITION_REWARD_NORMAL,Normal victory,Victoria normal
@@ -488,3 +488,22 @@ SPECTATOR_ENDED,Observation ended.,La observación ha terminado.
 SPECTATOR_CONNECTION,Connection unavailable.,Conexión no disponible.
 SPECTATOR_LEAVE,Leave spectating,Dejar de observar
 SPECTATOR_VIEWERS,Spectators,Espectadores
+FOREST_QUEST_TITLE,Daily quest,Misión diaria
+FOREST_QUEST_ACCEPT,Accept,Aceptar
+FOREST_QUEST_CLAIM,Claim,Reclamar
+FOREST_QUEST_MYSTERY,Mystery reward,Recompensa misteriosa
+FOREST_QUEST_DURATION,%d hours,%d horas
+FOREST_QUEST_EASY,Easy,Fácil
+FOREST_QUEST_MEDIUM,Medium,Media
+FOREST_QUEST_HARD,Hard,Difícil
+FOREST_QUEST_OBJECTIVE_WINS,Win %d expedition battles.,Gana %d combates de expedición.
+FOREST_QUEST_OBJECTIVE_STREAK,Win %d consecutive battles in one expedition.,Gana %d combates consecutivos en una expedición.
+FOREST_QUEST_OBJECTIVE_DEPTH,Win at expedition depth %d or higher.,Gana a profundidad %d o superior en expedición.
+FOREST_QUEST_OBJECTIVE_CAPTURES,Capture %d homunculi.,Captura %d homúnculos.
+FOREST_QUEST_OBJECTIVE_DIFFICULT,Win %d Difficult or higher expedition battles.,Gana %d combates de expedición difíciles o superiores.
+FOREST_QUEST_OBJECTIVE_VERY_DIFFICULT,Win %d Very Difficult or higher expedition battles.,Gana %d combates de expedición muy difíciles o superiores.
+FOREST_QUEST_OBJECTIVE_DISTINCT,Defeat %d distinct expedition enemies.,Derrota %d enemigos distintos en expedición.
+FOREST_QUEST_RESOURCE_ESSENCE,essence,esencia
+FOREST_QUEST_RESOURCE_CORE,core,núcleo
+FOREST_QUEST_RESOURCE_ARCANE_SHARD,arcane shard,fragmento arcano
+FOREST_QUEST_STORAGE_FULL,Free storage space before claiming.,Libera espacio de almacenamiento antes de reclamar.

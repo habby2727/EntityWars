@@ -62,6 +62,19 @@ var _remotes := {}
 var _selected_remote := ""
 var _portal_deadline := 0
 var _handoff_pending := false
+var _quest := {}
+var _quest_catalog := []
+var _quest_request := ""
+var _quest_request_kind := ""
+var _quest_zone := ""
+var _quest_owner := ""
+var _quest_generation := 0
+var _quest_zone_generation := 0
+var _quest_request_zone_generation := 0
+var _quest_action_id := ""
+var _quest_server_time := 0
+var _quest_tick := 0
+var _quest_timer: Timer
 
 func _ready() -> void:
 	_zones = Zones.runtime_zones()
@@ -156,6 +169,15 @@ func _ready() -> void:
 	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_debug_label)
 	_build_dialogue()
+	var quest_file := FileAccess.open("res://data/static/forest_quests.json", FileAccess.READ)
+	if quest_file:
+		var quest_data = JSON.parse_string(quest_file.get_as_text())
+		if quest_data is Dictionary:
+			_quest_catalog = quest_data.get("npcs", [])
+	_quest_timer = Timer.new()
+	_quest_timer.one_shot = true
+	_quest_timer.timeout.connect(_fetch_quest)
+	add_child(_quest_timer)
 	UIThemeFactory.apply_theme_to(self)
 	MenuArt.button(leave)
 	MenuArt.button(_talk_button)
@@ -184,12 +206,14 @@ func _setup_nameplate() -> void:
 	_name_backend.auto_flush = false
 	_name_backend.state_updated.connect(_on_name_state)
 	_name_backend.auth_changed.connect(_on_name_auth_changed)
+	_name_backend.api_completed.connect(_on_quest_response)
 	add_child(_name_backend)
 
 func _on_name_auth_changed(_token: String) -> void:
 	_clear_verified_name()
 
 func _clear_verified_name() -> void:
+	_clear_quest()
 	_verified_name = ""
 	_name_generation = -1
 	_name_client_generation = -1
@@ -210,6 +234,8 @@ func _on_name_state(state: Dictionary) -> void:
 	_name_generation = ConnectionGate._generation
 	_name_client_generation = _name_backend._session_generation
 	_player.set_display_name(value)
+	if is_instance_valid(_presence) and _presence.entered and _quest.is_empty():
+		_fetch_quest.call_deferred()
 
 func _name_session_matches() -> bool:
 	return is_instance_valid(_name_backend) and not ConnectionGate.blocked() and not ConnectionGate.debug_lab_navigation_allowed() and not str(ConnectionGate.player_id).is_empty() and not str(ConnectionGate.token).is_empty() and _name_backend.token == ConnectionGate.token and _name_backend._verified_player_id == ConnectionGate.player_id and SceneRouter.forest_selected_summoner() != ""
@@ -287,6 +313,8 @@ func _set_zone(index: int, arrival: Vector2 = Vector2.INF) -> bool:
 	if texture == null:
 		return false
 	_zone_index = index
+	_quest_zone_generation += 1
+	_quest = {}
 	_deselect_remote()
 	_background.texture = texture
 	_polygon_fill.polygon = polygon
@@ -403,6 +431,8 @@ func _reset_touch() -> void:
 	_player.joystick_vector = Vector2.ZERO
 
 func _process(_delta: float) -> void:
+	if is_instance_valid(_talking_to) and str(_talking_to.npc_id).begins_with("quest_") and str(_quest.get("state", "")) == "ACTIVE":
+		_update_dialogue_text()
 	if is_instance_valid(_player) and is_instance_valid(_joystick):
 		var moving: bool = _joystick.vector.length_squared() > 0.0001
 		for key in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
@@ -533,12 +563,23 @@ func _open_dialogue(npc: Node2D) -> void:
 	_build_npc_actions()
 	_dialogue.show()
 	_talk_button.hide()
+	if str(npc.npc_id).begins_with("quest_"):
+		_fetch_quest()
 
 func _build_npc_actions() -> void:
 	for child in _action_row.get_children():
 		_action_row.remove_child(child)
 		child.queue_free()
 	if not is_instance_valid(_talking_to):
+		return
+	if str(_talking_to.npc_id).begins_with("quest_"):
+		if str(_quest.get("state", "")) in ["OFFERED", "COMPLETED"]:
+			var quest_button := Button.new()
+			quest_button.text = "FOREST_QUEST_ACCEPT" if _quest.state == "OFFERED" else "FOREST_QUEST_CLAIM"
+			quest_button.disabled = not _quest_request.is_empty()
+			quest_button.pressed.connect(_quest_submit)
+			_action_row.add_child(quest_button)
+			MenuArt.button(quest_button)
 		return
 	var action := ""
 	for data in NPCs.NPCS:
@@ -578,6 +619,23 @@ func _open_npc_action(action: String) -> void:
 
 func _update_dialogue_text() -> void:
 	if is_instance_valid(_talking_to):
+		if str(_talking_to.npc_id).begins_with("quest_"):
+			_dialogue_name.text = tr("FOREST_QUEST_TITLE")
+			var objective := tr("FOREST_QUEST_OBJECTIVE_" + str(_quest.get("objective", "")).to_upper()) % int(_quest.get("target", 0))
+			var state := str(_quest.get("state", ""))
+			var details := ""
+			if state == "OFFERED":
+				var hours: int = {"easy":4, "medium":8, "hard":12}.get(str(_quest.get("difficulty", "")), 0)
+				details = tr("FOREST_QUEST_" + str(_quest.get("difficulty", "")).to_upper()) + " — " + (tr("FOREST_QUEST_DURATION") % hours) + " — " + tr("FOREST_QUEST_MYSTERY")
+			elif state == "ACTIVE":
+				var remaining := maxi(0, int(_quest.get("expires_at", 0)) - (_quest_server_time + Time.get_ticks_msec() - _quest_tick))
+				details = "%s/%s — %dh %02dm" % [int(_quest.get("progress", 0)), int(_quest.get("target", 0)), remaining / 3600000, (remaining / 60000) % 60]
+			elif state == "COMPLETED":
+				var reward: Dictionary = _quest.get("reward", {})
+				for resource in reward:
+					details = "%s %s" % [reward[resource], tr("FOREST_QUEST_RESOURCE_" + str(resource).to_upper())]
+			_dialogue_text.text = objective + "\n" + details
+			return
 		var key: String = str(_talking_to.npc_id).to_upper()
 		_dialogue_name.text = tr("FOREST_NPC_%s_NAME" % key)
 		_dialogue_text.text = tr("FOREST_NPC_%s_DIALOGUE" % key)
@@ -683,6 +741,7 @@ func _start_presence(selected: String) -> void:
 	_presence.peer_left.connect(_on_peer_left)
 	_presence.peer_chat.connect(_on_peer_chat)
 	_presence.disconnected.connect(_clear_remotes)
+	_presence.disconnected.connect(_clear_quest)
 	_presence.configure(_zones, selected)
 
 func _on_presence_snapshot(state: Dictionary, peers: Array) -> void:
@@ -701,6 +760,7 @@ func _on_presence_snapshot(state: Dictionary, peers: Array) -> void:
 	_transition_until = Time.get_ticks_msec() + PORTAL_LOCK_MS
 	for peer in peers:
 		_on_peer_joined(peer)
+	_fetch_quest()
 
 func _on_presence_correction(state: Dictionary) -> void:
 	_deselect_remote()
@@ -880,3 +940,90 @@ func _leave_forest() -> void:
 func _exit_tree() -> void:
 	_resource_catalog.free()
 	if is_instance_valid(_presence): _presence.shutdown()
+
+func _fetch_quest() -> void:
+	if not is_inside_tree() or not is_instance_valid(_name_backend) or not is_instance_valid(_presence) or not _presence.entered or not _name_session_matches() or not _quest_request.is_empty():
+		return
+	_quest_zone = str(_zones[_zone_index].id)
+	_quest_owner = str(ConnectionGate.player_id)
+	_quest_generation = int(ConnectionGate._generation)
+	_quest_request_zone_generation = _quest_zone_generation
+	_quest_request_kind = "get"
+	_quest_request = _name_backend.request_api("GET", "/forest/quests", null)
+
+func _clear_quest() -> void:
+	_quest = {}
+	_quest_zone_generation += 1
+	if is_instance_valid(_quest_timer):
+		_quest_timer.stop()
+	for npc in _npcs.duplicate():
+		if str(npc.npc_id).begins_with("quest_"):
+			if npc == _talking_to:
+				_close_dialogue()
+			_npcs.erase(npc)
+			npc.queue_free()
+
+func _quest_submit() -> void:
+	if not _quest_request.is_empty() or _quest.is_empty():
+		return
+	var kind := "accept" if str(_quest.get("state", "")) == "OFFERED" else "claim"
+	if _quest_action_id.is_empty():
+		_quest_action_id = _name_backend._make_uuid()
+	_quest_zone = str(_zones[_zone_index].id)
+	_quest_owner = str(ConnectionGate.player_id)
+	_quest_generation = int(ConnectionGate._generation)
+	_quest_request_zone_generation = _quest_zone_generation
+	_quest_request_kind = kind
+	_quest_request = _name_backend.request_api("POST", "/forest/quests/" + kind, {"quest_id":_quest.quest_id, "client_action_id":_quest_action_id})
+	_build_npc_actions()
+
+func _on_quest_response(request_id: String, ok: bool, data: Dictionary) -> void:
+	if request_id != _quest_request or _quest_request.is_empty():
+		return
+	var kind := _quest_request_kind
+	_quest_request = ""
+	if _quest_owner != str(ConnectionGate.player_id) or _quest_generation != int(ConnectionGate._generation) or _quest_request_zone_generation != _quest_zone_generation or _quest_zone != str(_zones[_zone_index].id):
+		_quest_action_id = ""
+		_fetch_quest()
+		return
+	if not ok:
+		if str(data.get("error", "")) == "QUEST_STORAGE_FULL" and is_instance_valid(_dialogue_text):
+			_dialogue_text.text = tr("FOREST_QUEST_STORAGE_FULL")
+		if str(data.get("error", "")) != "network_error":
+			_quest_action_id = ""
+		_build_npc_actions()
+		return
+	_quest_action_id = ""
+	if kind == "claim":
+		_name_backend.refresh_state()
+		_fetch_quest()
+		return
+	_quest_server_time = int(data.get("server_time_unix_ms", 0))
+	_quest_tick = Time.get_ticks_msec()
+	var value = data.get("quest")
+	_quest = value if value is Dictionary else {}
+	for npc in _npcs.duplicate():
+		if str(npc.npc_id).begins_with("quest_") and (not _quest.has("npc_id") or npc.npc_id != _quest.npc_id):
+			_npcs.erase(npc)
+			npc.queue_free()
+	if not _quest.is_empty() and not _npcs.any(func(n): return n.npc_id == _quest.npc_id):
+		for data_npc in _quest_catalog:
+			if str(data_npc.id) == str(_quest.npc_id) and str(data_npc.zone) == _quest_zone:
+				var npc_data: Dictionary = data_npc.duplicate()
+				npc_data.position = Vector2(data_npc.position[0], data_npc.position[1])
+				npc_data.stationary = true
+				var npc := ForestNPC.new()
+				npc.name = data_npc.id
+				_actors.add_child(npc)
+				var protected: Array[Vector2] = []
+				npc.setup(npc_data, _player.polygon, _zones[_zone_index].portals, protected)
+				_npcs.append(npc)
+				break
+	if is_instance_valid(_talking_to) and str(_talking_to.npc_id).begins_with("quest_"):
+		_update_dialogue_text()
+		_build_npc_actions()
+	var next_day := (int(_quest_server_time / 86400000) + 1) * 86400000
+	var deadline := int(_quest.get("expires_at", next_day))
+	if str(_quest.get("state", "")) == "COMPLETED":
+		deadline = int(_quest.get("completed_at", _quest_server_time)) + 86400000
+	_quest_timer.start(maxf(0.1, float(mini(next_day, deadline) - _quest_server_time) / 1000.0 + 0.1))

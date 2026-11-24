@@ -4,6 +4,7 @@ const Catalog := preload("res://scripts/forest/forest_npcs.gd")
 static var _texture_cache := {}
 var npc_id := ""
 var paused := false
+var stationary := false
 var moving := false
 var moving_left := false
 var polygon := PackedVector2Array()
@@ -22,6 +23,7 @@ var _interaction_hint: PanelContainer
 
 func setup(data: Dictionary, area: PackedVector2Array, portals: Array, protected: Array[Vector2]) -> void:
 	npc_id = data.id
+	stationary = bool(data.get("stationary", false))
 	position = data.position
 	_home = position
 	polygon = area
@@ -60,6 +62,13 @@ func setup(data: Dictionary, area: PackedVector2Array, portals: Array, protected
 	_interaction_hint.add_child(label)
 	add_child(_interaction_hint)
 	_interaction_hint.hide()
+	if stationary:
+		var marker := Label.new()
+		marker.text = "!"
+		marker.position = Vector2(-8, -118)
+		marker.add_theme_color_override("font_color", Color("ffd86b"))
+		marker.add_theme_font_size_override("font_size", 28)
+		add_child(marker)
 
 func show_interaction_hint(show_hint: bool) -> void:
 	if is_instance_valid(_interaction_hint):
@@ -67,7 +76,7 @@ func show_interaction_hint(show_hint: bool) -> void:
 
 func _process(delta: float) -> void:
 	_bob += delta
-	if not paused:
+	if not paused and not stationary:
 		if moving:
 			position.x = move_toward(position.x, _target.x, _speed * delta)
 			if is_equal_approx(position.x, _target.x):

@@ -13,6 +13,7 @@ import { createGlobalChat } from "./global_chat";
 import { createFriends } from "./social/friends";
 import { createForestPresence, loadCatalog, type ForestData } from "./forest/presence";
 import { createForestDuels } from "./forest/duels";
+import { createForestQuests, ForestQuestError } from "./forest_quests";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
 import { createPvpChat, createPvpMatches, createPvpQueue, createSharedPvpMatch, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
@@ -342,11 +343,12 @@ if (spectatorEnabled) {
  installSpectatorStartGuard(id=>spectatorService?.endViewer(id),id=>spectatorService?.namesForTarget(id) ?? []);
 }
 let expeditionService: ReturnType<typeof createExpeditionService> | null = null;
+let forestQuests: ReturnType<typeof createForestQuests> | null = null;
 function getExpeditionService() {
 	if (expeditionService) return expeditionService;
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
 	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
-	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
+	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, questProgress: Bun.env.FOREST_QUESTS_ENABLED === "1" ? event => forestQuests?.progress(event) : undefined, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
 		const row = getPlayerByIdStmt.get(playerId) as { state_json: string } | undefined;
 		if (!row) throw new HttpError(404, "Player not found.");
 		let player: PlayerState;
@@ -1347,6 +1349,20 @@ async function startServer(): Promise<void> {
 		if (performance.now() >= leaseDeadline) { fenceLease(); return false; }
 		return true;
 	}
+	if (Bun.env.FOREST_QUESTS_ENABLED === "1" && forest) {
+		const catalog = readJsonFile(resolve(import.meta.dir, "..", "..", "data", "static", "forest_quests.json"));
+		forestQuests = createForestQuests({db,secret:WORLD_SECRET,npcs:catalog.npcs,position:id=>leaseValid() ? forest.positionOf(id) : null,grant:(id,reward,questId,now)=>{
+			const row=getPlayerByIdStmt.get(id) as {state_json:string}|undefined;
+			if (!row) throw new HttpError(404,"Player not found.");
+			const player=JSON.parse(row.state_json) as PlayerState;
+			assertWalletInvariant(player.wallet);
+			const before={...player.wallet}, caps=walletCapacities(player);
+			for (const [resource,amount] of Object.entries(reward)) if ((player.wallet[resource] ?? 0)+amount>(caps[resource] ?? getWalletCap(resource))) throw new ForestQuestError(409,"QUEST_STORAGE_FULL");
+			applyWalletGrant(player.wallet,reward); assertWalletInvariant(player.wallet); player.updated_at=now;
+			if (updatePlayerStmt.run(JSON.stringify(player),now,id).changes!==1) throw new HttpError(409,"Player unavailable.");
+			auditWalletMutation(id,computeWalletDelta(before,player.wallet),"FOREST_QUEST_REWARD",questId,now);
+		}});
+	}
 	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite,protocol) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite,protocol); } }, () => { try { return !!getRankedServices(); } catch { return false; } });
 	if (forest && leaseToken) {
 		getRedis().on("error", fenceLease);
@@ -1716,6 +1732,16 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (["/forest/quests", "/forest/quests/accept", "/forest/quests/claim"].includes(url.pathname)) {
+					const playerId=await requireAuth(req,ctx);
+					if (!forest || !leaseValid()) return jsonResponse({error:"FOREST_QUESTS_UNAVAILABLE"},503);
+					if (!forestQuests && req.method==="GET" && url.pathname==="/forest/quests") return jsonResponse({quest:null,server_time_unix_ms:Date.now()});
+					if (!forestQuests) return jsonResponse({error:"FOREST_QUESTS_UNAVAILABLE"},503);
+					await applyRateLimit(ctx,{keyPrefix:"rl:forest-quests",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+					if (req.method==="GET" && url.pathname==="/forest/quests") return jsonResponse(forestQuests.get(playerId));
+					if (req.method!=="POST" || url.pathname==="/forest/quests") return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+					return jsonResponse(forestQuests.action(playerId,url.pathname.endsWith("/accept") ? "accept" : "claim",await readSocialJson(req,Math.min(config.maxBodyBytes,4096))));
+				}
 				if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel", "/forest/duels/ready"].includes(url.pathname)) {
 					const playerId = await requireAuth(req, ctx);
 					if (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_DUELS_UNAVAILABLE"}, 503);
@@ -3260,8 +3286,8 @@ async function startServer(): Promise<void> {
 			} catch (err) {
 				recordError();
 				const sqliteBusy = typeof err === "object" && err !== null && typeof (err as { code?: unknown }).code === "string" && String((err as { code: string }).code).startsWith("SQLITE_BUSY");
-				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
-				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError ? err.status : 500;
+				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof ForestQuestError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
+				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof ForestQuestError || err instanceof CombatRewardError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);
