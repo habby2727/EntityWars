@@ -636,8 +636,8 @@ func _add_preview_actor(entry: Dictionary, x: float, ground: float, main: bool, 
 				var unlocked := not online_guardian.is_empty() or bool(_hunt_progress.get("boss_unlocked", false))
 				if not verified:
 					call_deferred("_request_guardian_progress")
-				_hunt_fight.disabled = not verified or _backend.token.is_empty() or (not active and (not unlocked or (online_guardian.is_empty() and not bool(_hunt_selected.get("available", false)))))
-				var reason := "" if not _hunt_fight.disabled else ("Progress unavailable; retry." if not verified else ("Defeat all guardians first." if not unlocked else "Special boss is outside its rotation window."))
+				_hunt_fight.disabled = not verified or _backend.token.is_empty() or (not active and (not unlocked or (online_guardian.is_empty() and not (bool(_hunt_selected.get("available", false)) or bool(_hunt_progress.get("personal_boss_available", false))))))
+				var reason := "" if not _hunt_fight.disabled else ("Progress unavailable; retry." if not verified else ("Defeat all guardians first." if not unlocked else tr("HUNT_WINDOW_EXPLANATION")))
 				_preview_status.text = "%s\n%s\nGuardians: %d/%d defeated%s" % [str(entry.get("name", "Boss")), "Special Boss" if online_guardian.is_empty() else "Guardian of " + str(_hunt_selected.get("name", "Boss")) + " — " + tier.capitalize(), int(_hunt_progress.get("defeated_count", 0)), int(_hunt_progress.get("total_count", 0)), "\n" + reason if not reason.is_empty() else ""]
 				_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
 				_view_guardians.visible = main and verified and not unlocked and not active
@@ -1203,6 +1203,8 @@ func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> voi
 	if verified:
 		for guardian in _hunt_progress.get("guardians", []):
 			_preview_status.text += "\n%s — %s — %s" % [str(guardian.get("name", "Guardian")), str(guardian.get("tier", "")).capitalize(), "Defeated" if bool(guardian.get("defeated", false)) else "Available"]
+	if verified:
+		_preview_status.text += "\n" + tr("HUNT_WINDOW_EXPLANATION")
 	_preview_status.visible = true
 	_boss_picker.visible = false
 	_boss_hp.visible = false
@@ -1210,9 +1212,9 @@ func _select_nearby_hunt(boss: Dictionary, request_progress: bool = true) -> voi
 	_boss_open.visible = false
 	_debug_fight.visible = false
 	_hunt_fight.visible = true
-	_hunt_fight.disabled = not verified or _backend == null or _backend.token.is_empty() or (not active and (not unlocked or not bool(boss.get("available", false))))
+	_hunt_fight.disabled = not verified or _backend == null or _backend.token.is_empty() or (not active and (not unlocked or not (bool(boss.get("available", false)) or bool(_hunt_progress.get("personal_boss_available", false)))))
 	if _hunt_fight.disabled and verified:
-		_preview_status.text += "\n" + ("Connect and sign in to fight." if _backend == null or _backend.token.is_empty() else ("Defeat all guardians first." if not unlocked else "Special boss is outside its rotation window."))
+		_preview_status.text += "\n" + ("Connect and sign in to fight." if _backend == null or _backend.token.is_empty() else ("Defeat all guardians first." if not unlocked else tr("HUNT_WINDOW_EXPLANATION")))
 	_set_hunt_button_text("HUNT_RESUME" if active else "HUNT_FIGHT")
 	_view_guardians.visible = verified and not unlocked and not active
 	_world_modal.visible = true
@@ -1235,7 +1237,7 @@ func _start_map_hunt() -> void:
 	if global_id.is_empty() and not _hunt_selected.has("appearance_id") and (_hunt_progress_key != _guardian_key() or _hunt_progress_owner != _backend._verified_player_id or (_hunt_guardian_id.is_empty() and not bool(_hunt_progress.get("boss_unlocked", false)))):
 		_preview_status.text = "Guardian progress unavailable or boss locked."
 		return
-	if global_id.is_empty() and ((not _hunt_selected.has("appearance_id") and _hunt_guardian_id.is_empty() and not bool(_hunt_selected.get("available", false))) or _hunt_rotation < 0 or (not _hunt_selected.has("appearance_id") and _hunt_guardian_id.is_empty() and _hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary)):
+	if global_id.is_empty() and _hunt_guardian_id.is_empty() and not bool(_hunt_progress.get("personal_boss_available", false)) and ((not _hunt_selected.has("appearance_id") and not bool(_hunt_selected.get("available", false))) or _hunt_rotation < 0 or (not _hunt_selected.has("appearance_id") and _hunt_boundary > 0 and _backend.get_server_time_unix_ms() >= _hunt_boundary)):
 		_preview_status.text = "Encounter expired. Refreshing..."
 		_request_map_hunts()
 		return

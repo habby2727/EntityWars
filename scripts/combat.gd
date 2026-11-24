@@ -2240,6 +2240,9 @@ func _setup_solo_boss() -> bool:
 	_apply_mods(enemy)
 	_solo_base_hp = maxi(1, roundi(float(enemy.max_hp) / float(_solo_def.hp_mult)))
 	_solo_base_atk = maxi(1, roundi(float(enemy.atk) / float(_solo_def.attack_mult)))
+	# Offline previews use the minimum Ancient Hunt budget; online snapshots supply their own HP.
+	var hunt_caps := {"common": 110, "mythic": 135, "rare": 165, "epic": 205, "legendary": 250}
+	enemy.max_hp = roundi(float(hunt_caps[_solo_def.tier]) * 0.8)
 	enemy.hp = enemy.max_hp
 	enemy.name = str(_solo_def.name)
 	return true

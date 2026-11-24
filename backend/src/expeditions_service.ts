@@ -110,7 +110,7 @@ function publicCombat(combat: any) {
   return { player: combat.player, npc, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((w: any) => ({id:w.id})), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 function publicSession(row: any, state: any) {
-  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e: any, choice: number) => ({ choice, id:e.entity_id, name:e.name, types:e.types, preview_texture:e.preview_texture, capturable:e.capturable })) : [], ...(state.combat && state.phase !== "REWARD" ? {combat_state:publicCombat(state.combat), battle_log:state.log.map(publicEvent)} : {}), ...(state.phase === "REWARD" ? {reward_homunculus: (() => { const h = expeditionCaptures.find(h => h.id === state.selected?.homunculus_id); return h ? {id:h.id,name:h.name,type:h.type,preview_texture:h.preview_texture,combat_texture:h.combat_texture} : null; })(), capture_candidate: state.candidate ? { id:state.candidate.id, name:state.candidate.name, type:state.candidate.type, rarity:state.candidate.rarity, preview_texture:state.candidate.preview_texture } : null, capture_attempts:state.capture_attempts ?? 0, capture_attempts_remaining:state.capture_closed === true ? 0 : Math.max(0, 3-(state.capture_attempts ?? 0)), capture_closed:state.capture_closed === true, ...(state.victory_reward ? {victory_reward:state.victory_reward} : {})} : {}), ...(state.latest_reward ? {latest_reward:state.latest_reward} : {}), ...(state.phase === "ROUTE" ? { directions:["left","forward","right"], last_direction:state.last_direction ?? null } : {}) };
+  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e: any, choice: number) => ({ choice, id:e.entity_id, name:e.name, types:e.types, preview_texture:e.preview_texture, capturable:e.capturable })) : [], ...(state.combat && state.phase !== "REWARD" ? {combat_state:publicCombat(state.combat), battle_log:state.log.map(publicEvent)} : {}), ...(state.phase === "REWARD" ? {reward_homunculus: (() => { const h = expeditionCaptures.find(h => h.id === state.selected?.homunculus_id); return h ? {id:h.id,name:h.name,type:h.type,preview_texture:h.preview_texture,combat_texture:h.combat_texture} : null; })(), capture_candidate: state.candidate ? { id:state.candidate.id, name:state.candidate.name, type:state.candidate.type, rarity:state.candidate.rarity, preview_texture:state.candidate.preview_texture } : null, capture_attempts:state.capture_attempts ?? 0, capture_attempts_remaining:state.capture_closed === true ? 0 : Math.max(0, 3-(state.capture_attempts ?? 0)), capture_closed:state.capture_closed === true, ...(state.victory_reward ? {victory_reward:state.victory_reward} : {})} : {}), ...(state.latest_reward ? {latest_reward:state.latest_reward} : {}), ...(state.phase === "ROUTE" ? { directions:["left","forward","right"], allowed_directions:(state.consecutive_right ?? 0) >= 3 ? ["left","forward"] : ["left","forward","right"], consecutive_right:state.consecutive_right ?? 0, last_direction:state.last_direction ?? null } : {}) };
 }
 
 type Options = { db: Database; secret: string; catalogs: any; getPlayer: (playerId: string) => any; makeSetup: (playerId: string, snapshot: any, selection: any) => any; awardVictory: (playerId: string, loadoutJson: string, now: number) => void; grantVictoryLoot: (playerId: string, grants: Record<string, number>, rewardId: string, now: number) => Record<string, number>; spendManaEssence: (playerId: string, actionId: string, now: number) => void; captureHomunculus: (playerId: string, id: string, now: number) => { duplicate: boolean } };
@@ -244,9 +244,11 @@ export function createExpeditionService(options: Options) {
             const key=`${row.run_id}:node:${state.depth}:enemy:${cursor}`;
             selected=buildExpeditionEnemy(seed,key,state.depth,selected.capturable,setup,catalogs,selected.entity_id,selected.homunculus_id,state.npc_item_level,state.difficulty_depth ?? state.depth);
           }
+          const tacticalTier=expeditionVictoryTier(state.difficulty_depth ?? state.depth,selected,setup);
+          selected={...selected, tactical_tier:tacticalTier};
           const combat=createExpeditionCombatState(setup,selected,catalogs);
           if (combat.error) fail(409,"Expedition combat unavailable.");
-          state.victory_tier=expeditionVictoryTier(state.difficulty_depth ?? state.depth,selected,setup); state.victory_reward=null;
+          state.victory_tier=tacticalTier; state.victory_reward=null;
           state.phase="COMBAT"; state.combat=combat; state.selected=selected; state.choices=[]; state.log=[];
         } else if (action === "turn" || action === "inspiration") {
           if (state.phase!=="COMBAT") fail(409,"Expedition combat unavailable.");
@@ -291,13 +293,13 @@ export function createExpeditionService(options: Options) {
           state.phase="ROUTE"; state.combat=null; state.log=[]; state.selected=null; state.candidate=null;
         } else if (action === "advance") {
           const difficultyDepth=(state.difficulty_depth ?? state.depth)+(body.direction === "left" ? 1 : body.direction === "forward" ? 2 : 0);
-          if (state.phase!=="ROUTE" || !Number.isSafeInteger(state.depth+1) || !Number.isSafeInteger(difficultyDepth)) fail(409,"Route unavailable.");
+          if (state.phase!=="ROUTE" || !Number.isSafeInteger(state.depth+1) || !Number.isSafeInteger(difficultyDepth) || (body.direction === "right" && (state.consecutive_right ?? 0) >= 3)) fail(409,"Route unavailable.");
           const pool=balance(playerId,now);
           const granted=pool.crystals < EXPEDITION_CRYSTAL_CAP && expeditionDraw(seed,JSON.stringify(["crystal-drop",row.run_id,state.depth]),0) < 0.5;
           if (granted) saveBalance(playerId,{...pool,crystals:pool.crystals+1});
           const reward={reward_id:`${row.run_id}:${state.depth}:crystal`,kind:"crystal_drop",granted,amount:granted ? 1 : 0,...(granted ? {asset_key:"res://assets/entities/expeditions/capture.png"} : {})};
           state.latest_reward=reward; events=[reward];
-          state.depth++; state.difficulty_depth=difficultyDepth; state.last_direction=body.direction;
+          state.depth++; state.difficulty_depth=difficultyDepth; state.last_direction=body.direction; state.consecutive_right=body.direction === "right" ? (state.consecutive_right ?? 0) + 1 : 0;
           if (state.npc_item_level === undefined) { const frozen = JSON.parse(row.snapshot_json), loadout = JSON.parse(row.loadout_json); state.npc_item_level = Math.max(0, ...loadout.weapon_ids.filter((id: any) => !!id).map((id: string) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0)))); }
           makeNode(state,JSON.parse(row.setup_json),row.run_id,seed);
         } else {

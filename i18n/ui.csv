@@ -438,3 +438,6 @@ DUEL_OPPONENT,Opponent,Rival
 DUEL_FORFEIT_CONFIRM,Leave this duel? This forfeits the match.,?Salir del duelo? Perder?s el combate.
 DUEL_RETURN_FOREST,Return to Forest,Volver al Bosque
 DUEL_UNAVAILABLE,Friendly duels are unavailable,Los duelos amistosos no est?n disponibles
+
+EXPEDITION_RIGHT_LIMIT,Choose left or forward after three consecutive right turns.,Elige izquierda o recto tras tres giros consecutivos a la derecha.
+HUNT_WINDOW_EXPLANATION,Defeat all guardians to earn a first victory opportunity outside the rotation. After victory rematches follow the rotation.,Derrota a todos los guardianes para conseguir una oportunidad hasta tu primera victoria fuera de la rotación. Tras la victoria las revanchas siguen la rotación.

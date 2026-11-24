@@ -115,6 +115,11 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
   const legal = equippedIds.map(id => spells.find(s => s?.id === id)).filter(s => s && (npc.expedition_types ? expeditionSpellLegal(s, npc.expedition_types) : (s.type === npc.type || (["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(npc.type)))) && Array.isArray(s.effects) && s.effects.every((e: any) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && Number.isFinite(s.power_mult) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Number.isInteger(cooldowns[s.id] ?? 0) && (cooldowns[s.id] ?? 0) === 0);
   if (legal.length === 0) throw new Error("NO_AVAILABLE_DUNGEON_SPELL");
   if (floor <= 3 && !npc.expedition_types) return legal[Math.floor(roll * legal.length)].id;
+  if (npc.expedition_types && context.tactical_tier === "normal") {
+    const attacks = legal.filter(s => s.category === "attack");
+    const pool = attacks.length ? attacks : legal;
+    return pool[Math.floor(roll * pool.length)].id;
+  }
   const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
   const allMoves = equippedIds.map(id => spells.find(s => s?.id === id)).filter(Boolean);
   const has = (s: any, kind: string) => s.effects.some((e: any) => e.kind === kind);
@@ -158,11 +163,25 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
         if (anomaly?.favored_type === proposed.favored_type && anomaly?.weakened_type === proposed.weakened_type) score -= 120;
         else if (anomaly?.favored_type === npc.type || anomaly?.weakened_type === target.type) score -= 80;
       }
-      if (effect.kind === "cooldown_jam" && floor >= 15) score += (target.spell_ids ?? []).some((id: string) => (target.cooldowns?.[id] ?? 0) === 0 && spells.some(s => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1)) ? 35 : 0;
+      if (effect.kind === "cooldown_jam" && floor >= 15) score += ((!npc.expedition_types || !context.tactical_tier) && (target.spell_ids ?? []).some((id: string) => (target.cooldowns?.[id] ?? 0) === 0 && spells.some(s => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1))) ? 35 : 0;
       if (floor >= 15 && effect.kind === "atk_down" && !(enemyStatus.atk_down > 0)) score += 25;
     }
     if (floor >= 15 && enemyStatus.vuln > 0 && spell.category === "attack") score += spell.power_mult * 20;
     if (floor >= 8 && spell.category === "support" && npc.hp < npc.max_hp * 0.3 && !has(spell, "heal")) score -= 35;
+    if (npc.expedition_types && context.tactical_tier && floor >= 5) {
+      // Avoid spending support turns refreshing effects that are already active.
+      for (const effect of spell.effects) {
+        if (["shield", "reflect", "atk_boost"].includes(effect.kind) && effect.target === "self" && (ownStatus[effect.kind] ?? 0) > 0) score -= 100;
+        if (["poison", "vuln", "atk_down"].includes(effect.kind) && effect.target === "enemy" && (enemyStatus[effect.kind] ?? 0) > 0) score -= 75;
+      }
+      if (floor >= 8) {
+        const debuffed = ["poison", "stun", "vuln", "atk_down", "misalign_next"].some(k => (ownStatus[k] ?? 0) > 0);
+        if (has(spell, "cleanse_one") || has(spell, "debuff_transfer")) score += debuffed ? 175 : -60;
+        if (spell.category === "attack" && (enemyStatus.reflect ?? 0) > 0) score -= Math.min(150, estimate(spell) * enemyStatus.reflect * (npc.hp < npc.max_hp * 0.4 ? 5 : 2));
+        if ((has(spell, "pierce_ward") || has(spell, "ward_dispel")) && (enemyStatus.shield ?? 0) > 0) score += 65;
+      }
+      if (floor >= 15 && spell.category === "attack") score += estimate(spell) * spell.accuracy;
+    }
     const personality = context.personality;
     if (personality) {
       const attack = spell.category === "attack", injured = npc.hp < npc.max_hp, shielded = ownStatus.shield > 0;
@@ -349,7 +368,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   const draw = () => { const value = rng(decision.turn, counter++); if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error("INVALID_RNG"); return value; };
   let npcSpell: any;
   try {
-    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? Math.max(8, Math.min(1000, next.floor)) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
+    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? ({normal: 1, difficult: 5, very_difficult: 8, exceptional: 15}[next.tactical_tier as string] ?? Math.max(8, Math.min(1000, next.floor))) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
     npcSpell = next.spells.find((s: any) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL") throw err;

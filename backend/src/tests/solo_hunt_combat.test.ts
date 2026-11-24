@@ -1446,3 +1446,19 @@ test("Hunt spell accuracy respects debuffs and does not penalize guaranteed spel
  s.player.status.focus_next = 0.2; expect(cast(s,"cinder_fist",0.999999).events.some((e: any) => e.kind === "damage" && e.actor === "player")).toBe(true);
  expect(cast(make(),"furnace_rush",0.9).events.some((e: any) => e.kind === "miss" && e.actor === "player")).toBe(true);
 });
+
+
+test("Ancient Hunt HP budgets are tier based and independent of entity HP", () => {
+  const caps: Record<string, number> = {common:110, mythic:135, rare:165, epic:205, legendary:250};
+  for (const [tier, cap] of Object.entries(caps)) {
+    const snap = {...snapshot, boss_id:`hunt_${tier}`};
+    const low = buildTrustedCombatSetup(snap, selection, catalogs, {independentLoadout:true, ancientHunt:true});
+    const high = buildTrustedCombatSetup({...snap, item_progress:{bismuth_talisman:{level:10}}, homunculus_progress:{cinder:{level:10}}}, {...selection, weapon_ids:["bismuth_talisman", null], homunculus_id:"cinder"}, catalogs, {independentLoadout:true, ancientHunt:true});
+    expect(createCombatState(low).boss.max_hp).toBe(Math.round(cap * 0.8));
+    expect(createCombatState(high).boss.max_hp).toBe(cap);
+    const changed = structuredClone(catalogs); changed.entities.find((e:any)=>e.id === "sodium_01").base_stats.hp = 999;
+    expect(createCombatState(buildTrustedCombatSetup(snap, selection, changed, {independentLoadout:true, ancientHunt:true})).boss.max_hp).toBe(Math.round(cap * 0.8));
+  }
+  const global = createCombatState(buildTrustedCombatSetup({...snapshot,boss_id:"hunt_legendary"}, selection, catalogs, {independentLoadout:true}));
+  expect(global.boss.max_hp).toBe(Math.round(122 * catalogs.bosses.find((b:any)=>b.tier === "legendary").hp_mult));
+});

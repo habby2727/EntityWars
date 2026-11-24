@@ -262,7 +262,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     let expectedEssence = beforeA;
     for (let i = 0; i < guardians.length; i++) {
       const guardian = guardians[i];
-      const opened = await start(`guardian-${i}`, guardian.guardian_id);
+      const opened = await request("/world/boss-hunts/start", {client_action_id:`guardian-${i}`, hunt_id:special.id, rotation_key:schedule.rotation_key-1, zone_id:zone, guardian_id:guardian.guardian_id}, a.data.token);
       expect(opened.status).toBe(200);
       expect(opened.data.guardian_id).toBe(guardian.guardian_id);
       expect(opened.data.boss_definition.id).toBe(guardian.template_id);
@@ -301,8 +301,37 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
       }
     }
     expect((await request(listPath, undefined, a.data.token)).data.boss_unlocked).toBe(true);
-    const main = await start("unlocked");
+    expect((await request(listPath, undefined, a.data.token)).data.personal_boss_available).toBe(true);
+    const offWindow = (id:string) => request("/world/boss-hunts/start", {client_action_id:id,hunt_id:special.id,rotation_key:schedule.rotation_key-1,zone_id:zone}, a.data.token);
+    const main = await offWindow("unlocked");
     expect(main.status).toBe(200);
+    expect((await request("/world/boss-hunts/forfeit",{client_action_id:"personal-forfeit",session_id:main.data.session_id},a.data.token)).status).toBe(200);
+    const bossLoss=await offWindow("personal-loss-start"); expect(bossLoss.status).toBe(200);
+    expect((await request("/world/boss-hunts/loadout", {session_id:bossLoss.data.session_id,client_action_id:"personal-loss-load",entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:null,spell_ids:["cinder_fist","furnace_rush","ash_temper","brimstone_crash"],mode:"attack"}, a.data.token)).status).toBe(200);
+    const losing=JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id=?").get(bossLoss.data.session_id) as any).combat_state_json);
+    losing.player.hp=1; losing.boss.atk=10000; losing.boss_intent="Strike";
+    db.query("UPDATE solo_hunt_sessions SET combat_state_json=? WHERE session_id=?").run(JSON.stringify(losing),bossLoss.data.session_id);
+    let lost:any;
+    for(let turn=1;turn<=10;turn++) {
+      lost=await request("/world/boss-hunts/turn",{session_id:bossLoss.data.session_id,client_action_id:`personal-loss-${turn}`,expected_revision:turn,decision:{turn,spell_id:"cinder_fist",target:"boss",hom_action:"hold"}},a.data.token);
+      if(lost.data.status === "VERIFIED_LOSS") break;
+    }
+    expect(lost.data.status).toBe("VERIFIED_LOSS");
+    expect((await request(listPath,undefined,a.data.token)).data.personal_boss_available).toBe(true);
+    const retry=await offWindow("personal-retry"); expect(retry.status).toBe(200);
+    expect((await request("/world/boss-hunts/loadout", { session_id:retry.data.session_id, client_action_id:"personal-load", entity_id:"sulfur_01", weapon_ids:[null,null], homunculus_id:null, spell_ids:["cinder_fist","furnace_rush","ash_temper","brimstone_crash"], mode:"attack" }, a.data.token)).status).toBe(200);
+    const bossState=JSON.parse((db.query("SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id=?").get(retry.data.session_id) as any).combat_state_json);
+    bossState.boss.hp=1; bossState.boss.status.stun=100; bossState.minion_config.count=0;
+    db.query("UPDATE solo_hunt_sessions SET combat_state_json=? WHERE session_id=?").run(JSON.stringify(bossState),retry.data.session_id);
+    let won:any;
+    for(let turn=1;turn<=10;turn++) {
+      won=await request("/world/boss-hunts/turn",{session_id:retry.data.session_id,client_action_id:`personal-turn-${turn}`,expected_revision:turn,decision:{turn,spell_id:"cinder_fist",target:"boss",hom_action:"hold"}},a.data.token);
+      if(won.data.status === "VERIFIED_WIN") break;
+    }
+    expect(won.data.status).toBe("VERIFIED_WIN");
+    expect((await request(listPath,undefined,a.data.token)).data.personal_boss_available).toBe(false);
+    expect((await offWindow("personal-consumed")).status).toBe(409);
+    expect((await start("scheduled-rematch")).status).toBe(200);
     server.kill(); await server.exited;
     server = spawnServer();
     await wait();

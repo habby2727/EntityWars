@@ -11062,6 +11062,10 @@ function createGlobalChat(db, clock = Date.now, bridgeEnabled = false, friendIds
         if (!player)
           throw new Error("Player unavailable for announcement.");
         const now = clock();
+        const previous = db.query("SELECT announced_at FROM global_chat_announcements WHERE player_id = ?").get(playerId);
+        if (previous && now - previous.announced_at < 20 * 60000)
+          return false;
+        db.query("INSERT INTO global_chat_announcements (player_id, announced_at) VALUES (?, ?) ON CONFLICT(player_id) DO UPDATE SET announced_at = excluded.announced_at").run(playerId, now);
         const text = `${registered ? "Welcome" : "Welcome back"}, ${player.display_name}!`;
         const inserted = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, source) VALUES (?, ?, ?, ?, 'Entity Wars', 'system')").run("", crypto.randomUUID(), text, now);
         if (bridgeEnabled) {
@@ -11069,6 +11073,7 @@ function createGlobalChat(db, clock = Date.now, bridgeEnabled = false, friendIds
           db.query("DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)").run();
         }
         prune.run();
+        return true;
       }).immediate();
     },
     close() {
@@ -12738,7 +12743,7 @@ function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
   if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value)))
     return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot2.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, ...hom?.passive ? { hom_passive_level: homLevel } : {}, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  const result = { ancientHunt: options.ancientHunt === true, rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot2.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, ...hom?.passive ? { hom_passive_level: homLevel } : {}, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -12765,6 +12770,10 @@ function createCombatState(setup, serverRng) {
   const minionRatios = { common: 0, mythic: 0.18, rare: 0.2, epic: 0.25, legendary: 0.3 };
   const minionConfig = { count: setup.boss.minions, hp: Math.max(1, Math.round(setup.bossEntity.base_stats.hp * minionRatios[setup.boss.tier])), atk: Math.max(1, Math.round(setup.bossEntity.base_stats.power * 0.25)), type: setup.bossEntity.type, def: setup.bossEntity.base_stats.guard };
   const bossFighter = fighter(setup.bossEntity, setup.boss.hp_mult * (1 + setup.rating * setup.scaling.max_hp_bonus), setup.boss.attack_mult * (1 + setup.rating * setup.scaling.max_attack_bonus));
+  if (setup.ancientHunt) {
+    const cap = { common: 110, mythic: 135, rare: 165, epic: 205, legendary: 250 }[setup.boss.tier];
+    bossFighter.hp = bossFighter.max_hp = Math.round(cap * (0.8 + 0.2 * setup.rating));
+  }
   bossFighter.def = Math.round(bossFighter.def * (1 + setup.rating * setup.scaling.max_defense_bonus));
   return { physical_anomaly: null, player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active2.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
 }
@@ -18243,6 +18252,11 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, targ
     throw new Error("NO_AVAILABLE_DUNGEON_SPELL");
   if (floor <= 3 && !npc.expedition_types)
     return legal[Math.floor(roll * legal.length)].id;
+  if (npc.expedition_types && context.tactical_tier === "normal") {
+    const attacks = legal.filter((s) => s.category === "attack");
+    const pool = attacks.length ? attacks : legal;
+    return pool[Math.floor(roll * pool.length)].id;
+  }
   const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
   const allMoves = equippedIds.map((id) => spells2.find((s) => s?.id === id)).filter(Boolean);
   const has = (s, kind) => s.effects.some((e) => e.kind === kind);
@@ -18305,7 +18319,7 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, targ
           score -= 80;
       }
       if (effect.kind === "cooldown_jam" && floor >= 15)
-        score += (target.spell_ids ?? []).some((id) => (target.cooldowns?.[id] ?? 0) === 0 && spells2.some((s) => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1)) ? 35 : 0;
+        score += (!npc.expedition_types || !context.tactical_tier) && (target.spell_ids ?? []).some((id) => (target.cooldowns?.[id] ?? 0) === 0 && spells2.some((s) => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1)) ? 35 : 0;
       if (floor >= 15 && effect.kind === "atk_down" && !(enemyStatus.atk_down > 0))
         score += 25;
     }
@@ -18313,6 +18327,25 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, targ
       score += spell.power_mult * 20;
     if (floor >= 8 && spell.category === "support" && npc.hp < npc.max_hp * 0.3 && !has(spell, "heal"))
       score -= 35;
+    if (npc.expedition_types && context.tactical_tier && floor >= 5) {
+      for (const effect of spell.effects) {
+        if (["shield", "reflect", "atk_boost"].includes(effect.kind) && effect.target === "self" && (ownStatus[effect.kind] ?? 0) > 0)
+          score -= 100;
+        if (["poison", "vuln", "atk_down"].includes(effect.kind) && effect.target === "enemy" && (enemyStatus[effect.kind] ?? 0) > 0)
+          score -= 75;
+      }
+      if (floor >= 8) {
+        const debuffed = ["poison", "stun", "vuln", "atk_down", "misalign_next"].some((k) => (ownStatus[k] ?? 0) > 0);
+        if (has(spell, "cleanse_one") || has(spell, "debuff_transfer"))
+          score += debuffed ? 175 : -60;
+        if (spell.category === "attack" && (enemyStatus.reflect ?? 0) > 0)
+          score -= Math.min(150, estimate(spell) * enemyStatus.reflect * (npc.hp < npc.max_hp * 0.4 ? 5 : 2));
+        if ((has(spell, "pierce_ward") || has(spell, "ward_dispel")) && (enemyStatus.shield ?? 0) > 0)
+          score += 65;
+      }
+      if (floor >= 15 && spell.category === "attack")
+        score += estimate(spell) * spell.accuracy;
+    }
     const personality = context.personality;
     if (personality) {
       const attack = spell.category === "attack", injured = npc.hp < npc.max_hp, shielded = ownStatus.shield > 0;
@@ -18557,7 +18590,7 @@ function resolveDungeonTurn(state, decision, rng) {
   };
   let npcSpell;
   try {
-    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? Math.max(8, Math.min(1000, next.floor)) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
+    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? { normal: 1, difficult: 5, very_difficult: 8, exceptional: 15 }[next.tactical_tier] ?? Math.max(8, Math.min(1000, next.floor)) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
     npcSpell = next.spells.find((s) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL")
@@ -19391,6 +19424,7 @@ function createExpeditionCombatState(setup, enemy, catalogs, previousActiveSlot 
     state.npc.item_effects = effects;
     state.npc.weapons = [{ id: item.id, level: enemy.item_level }];
     state.tactics_enabled = true;
+    state.tactical_tier = enemy.tactical_tier ?? "normal";
     state.combat_mode = "expedition";
     state.npc.texture = manifest.texture;
     state.npc.preview_texture = manifest.preview_texture;
@@ -19577,7 +19611,7 @@ function publicSession(row, state) {
   return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e, choice) => ({ choice, id: e.entity_id, name: e.name, types: e.types, preview_texture: e.preview_texture, capturable: e.capturable })) : [], ...state.combat && state.phase !== "REWARD" ? { combat_state: publicCombat(state.combat), battle_log: state.log.map(publicEvent) } : {}, ...state.phase === "REWARD" ? { reward_homunculus: (() => {
     const h = expeditionCaptures.find((h2) => h2.id === state.selected?.homunculus_id);
     return h ? { id: h.id, name: h.name, type: h.type, preview_texture: h.preview_texture, combat_texture: h.combat_texture } : null;
-  })(), capture_candidate: state.candidate ? { id: state.candidate.id, name: state.candidate.name, type: state.candidate.type, rarity: state.candidate.rarity, preview_texture: state.candidate.preview_texture } : null, capture_attempts: state.capture_attempts ?? 0, capture_attempts_remaining: state.capture_closed === true ? 0 : Math.max(0, 3 - (state.capture_attempts ?? 0)), capture_closed: state.capture_closed === true, ...state.victory_reward ? { victory_reward: state.victory_reward } : {} } : {}, ...state.latest_reward ? { latest_reward: state.latest_reward } : {}, ...state.phase === "ROUTE" ? { directions: ["left", "forward", "right"], last_direction: state.last_direction ?? null } : {} };
+  })(), capture_candidate: state.candidate ? { id: state.candidate.id, name: state.candidate.name, type: state.candidate.type, rarity: state.candidate.rarity, preview_texture: state.candidate.preview_texture } : null, capture_attempts: state.capture_attempts ?? 0, capture_attempts_remaining: state.capture_closed === true ? 0 : Math.max(0, 3 - (state.capture_attempts ?? 0)), capture_closed: state.capture_closed === true, ...state.victory_reward ? { victory_reward: state.victory_reward } : {} } : {}, ...state.latest_reward ? { latest_reward: state.latest_reward } : {}, ...state.phase === "ROUTE" ? { directions: ["left", "forward", "right"], allowed_directions: (state.consecutive_right ?? 0) >= 3 ? ["left", "forward"] : ["left", "forward", "right"], consecutive_right: state.consecutive_right ?? 0, last_direction: state.last_direction ?? null } : {} };
 }
 function createExpeditionService(options) {
   const { db, secret, catalogs } = options;
@@ -19759,10 +19793,12 @@ function createExpeditionService(options) {
             const key2 = `${row.run_id}:node:${state2.depth}:enemy:${cursor}`;
             selected = buildExpeditionEnemy(seed, key2, state2.depth, selected.capturable, setup, catalogs, selected.entity_id, selected.homunculus_id, state2.npc_item_level, state2.difficulty_depth ?? state2.depth);
           }
+          const tacticalTier = expeditionVictoryTier(state2.difficulty_depth ?? state2.depth, selected, setup);
+          selected = { ...selected, tactical_tier: tacticalTier };
           const combat = createExpeditionCombatState(setup, selected, catalogs);
           if (combat.error)
             fail2(409, "Expedition combat unavailable.");
-          state2.victory_tier = expeditionVictoryTier(state2.difficulty_depth ?? state2.depth, selected, setup);
+          state2.victory_tier = tacticalTier;
           state2.victory_reward = null;
           state2.phase = "COMBAT";
           state2.combat = combat;
@@ -19830,7 +19866,7 @@ function createExpeditionService(options) {
           state2.candidate = null;
         } else if (action2 === "advance") {
           const difficultyDepth = (state2.difficulty_depth ?? state2.depth) + (body.direction === "left" ? 1 : body.direction === "forward" ? 2 : 0);
-          if (state2.phase !== "ROUTE" || !Number.isSafeInteger(state2.depth + 1) || !Number.isSafeInteger(difficultyDepth))
+          if (state2.phase !== "ROUTE" || !Number.isSafeInteger(state2.depth + 1) || !Number.isSafeInteger(difficultyDepth) || body.direction === "right" && (state2.consecutive_right ?? 0) >= 3)
             fail2(409, "Route unavailable.");
           const pool = balance(playerId, now);
           const granted = pool.crystals < EXPEDITION_CRYSTAL_CAP && expeditionDraw(seed, JSON.stringify(["crystal-drop", row.run_id, state2.depth]), 0) < 0.5;
@@ -19842,6 +19878,7 @@ function createExpeditionService(options) {
           state2.depth++;
           state2.difficulty_depth = difficultyDepth;
           state2.last_direction = body.direction;
+          state2.consecutive_right = body.direction === "right" ? (state2.consecutive_right ?? 0) + 1 : 0;
           if (state2.npc_item_level === undefined) {
             const frozen = JSON.parse(row.snapshot_json), loadout = JSON.parse(row.loadout_json);
             state2.npc_item_level = Math.max(0, ...loadout.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0))));
@@ -22668,7 +22705,7 @@ async function startServer() {
               const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId);
               const defeated = new Set(rows.map((row) => row.guardian_id));
               const guardians = definitions.map((definition) => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
-              return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter((g) => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every((g) => g.defeated) });
+              return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter((g) => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every((g) => g.defeated), personal_boss_available: guardians.length > 0 && guardians.every((g) => g.defeated) && !personalBossWon(playerId, zoneId, huntId) });
             }).immediate();
           }
           if (req.method == "GET" && url.pathname == "/world/boss-hunts/commons") {
@@ -22895,7 +22932,7 @@ async function startServer() {
               const trusted = { ...saved, player_id: playerId, state_revision: Number.isSafeInteger(saved.state_revision) ? saved.state_revision : 0, boss_id: row.hunt_id, boss_entity_id: SOLO_HUNT_BOSS_ENTITIES[row.hunt_id] };
               if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id))
                 throw new HttpError(400, "Homunculus is not owned.");
-              const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
+              const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true, ancientHunt: !row.global_event_id });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported hunt loadout.");
               const seed = createHmac7("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
@@ -22962,7 +22999,7 @@ async function startServer() {
                 if (globalEvent && db.query("SELECT 1 FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(requestedGlobal, playerId))
                   throw new HttpError(409, "Already defeated.");
                 const boss = globalEvent ? { ...JSON.parse(globalEvent.boss_snapshot_json), available: true } : schedule.bosses.find((candidate) => candidate.id === payload.hunt_id);
-                if (!globalEvent && (payload.rotation_key !== schedule.rotation_key || !boss || !payload.guardian_id && !boss.available))
+                if (!boss)
                   throw new HttpError(409, "Boss hunt is not available for this rotation.");
                 const zoneId = globalEvent ? undefined : payload.zone_id;
                 const guardianId = payload.guardian_id;
@@ -22973,6 +23010,9 @@ async function startServer() {
                   throw new HttpError(400, "Invalid guardian zone.");
                 if (!globalEvent && boss.tier !== "common" && !definitions)
                   throw new HttpError(409, "Guardian zone required.");
+                const personalAvailable = !globalEvent && !appearance && guardianId === undefined && !!definitions?.length && definitions.every((guardian) => !!db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id)) && !personalBossWon(playerId, zoneId, boss.id);
+                if (!globalEvent && guardianId === undefined && !personalAvailable && (payload.rotation_key !== schedule.rotation_key || !boss.available))
+                  throw new HttpError(409, "Boss hunt is not available for this rotation.");
                 let encounter = appearance ? { ...boss, ...appearance, display_texture_id: appearance.texture_id } : boss;
                 if (guardianId !== undefined) {
                   const guardian = definitions.find((entry) => entry.guardian_id === guardianId);
@@ -23242,6 +23282,9 @@ function publicDungeonCombat(combat) {
 }
 function expireSoloHunts(playerId, now) {
   db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
+}
+function personalBossWon(playerId, zoneId, huntId) {
+  return !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL LIMIT 1").get(playerId, zoneId, huntId);
 }
 function guardianRoster(playerId, zoneId, parentId, now) {
   const saved = db.query("SELECT definitions_json FROM solo_guardian_rosters WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").get(playerId, zoneId, parentId);

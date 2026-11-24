@@ -2808,7 +2808,7 @@ async function startServer(): Promise<void> {
 					const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId) as { guardian_id: string }[];
 					const defeated = new Set(rows.map(row => row.guardian_id));
 					const guardians = definitions.map(definition => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
-					return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter(g => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every(g => g.defeated) });
+					return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter(g => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every(g => g.defeated), personal_boss_available: guardians.length > 0 && guardians.every(g => g.defeated) && !personalBossWon(playerId, zoneId, huntId) });
 					}).immediate();
 				}
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts/commons") {
@@ -2980,7 +2980,7 @@ async function startServer(): Promise<void> {
 						if (saved.player_id !== undefined && saved.player_id !== playerId) throw new HttpError(400, "Invalid player snapshot.");
 						const trusted = { ...saved, player_id: playerId, state_revision: Number.isSafeInteger(saved.state_revision) ? saved.state_revision : 0, boss_id: row.hunt_id, boss_entity_id: SOLO_HUNT_BOSS_ENTITIES[row.hunt_id] };
 						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
-						const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
+						const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true, ancientHunt: !row.global_event_id });
 						if (setup.error) throw new HttpError(400, "Invalid or unsupported hunt loadout.");
 						const seed = createHmac("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
 						const combat = createCombatState(setup, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
@@ -3030,13 +3030,15 @@ async function startServer(): Promise<void> {
 							if (globalEvent && (payload as any).zone_id !== undefined && (payload as any).zone_id !== globalEvent.zone_id) throw new HttpError(409, "Global event zone mismatch.");
 							if (globalEvent && db.query("SELECT 1 FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(requestedGlobal, playerId)) throw new HttpError(409, "Already defeated.");
 							const boss = globalEvent ? { ...JSON.parse(globalEvent.boss_snapshot_json), available: true } : schedule.bosses.find(candidate => candidate.id === payload.hunt_id);
-							if (!globalEvent && (payload.rotation_key !== schedule.rotation_key || !boss || (!(payload as any).guardian_id && !boss.available))) throw new HttpError(409, "Boss hunt is not available for this rotation.");
+							if (!boss) throw new HttpError(409, "Boss hunt is not available for this rotation.");
 							const zoneId = globalEvent ? undefined : (payload as any).zone_id;
 							const guardianId = (payload as any).guardian_id;
 							if ((zoneId !== undefined && typeof zoneId !== "string") || (guardianId !== undefined && (typeof guardianId !== "string" || !guardianId))) throw new HttpError(400, "Invalid guardian selection.");
 							const definitions = zoneId === undefined ? null : guardianRoster(playerId, zoneId, boss.id, now);
 							if ((zoneId !== undefined && !definitions) || (guardianId !== undefined && !definitions)) throw new HttpError(400, "Invalid guardian zone.");
 							if (!globalEvent && boss.tier !== "common" && !definitions) throw new HttpError(409, "Guardian zone required.");
+							const personalAvailable = !globalEvent && !appearance && guardianId === undefined && !!definitions?.length && definitions.every(guardian => !!db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id)) && !personalBossWon(playerId, zoneId, boss.id);
+							if (!globalEvent && guardianId === undefined && !personalAvailable && (payload.rotation_key !== schedule.rotation_key || !boss.available)) throw new HttpError(409, "Boss hunt is not available for this rotation.");
 							let encounter = appearance ? { ...boss, ...appearance, display_texture_id: appearance.texture_id } : boss;
 							if (guardianId !== undefined) {
 								const guardian = definitions!.find(entry => entry.guardian_id === guardianId);
@@ -3309,6 +3311,11 @@ function publicDungeonCombat(combat: any) {
 
 function expireSoloHunts(playerId: string, now: number): void {
 	db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
+}
+
+// A verified, zone-attributed boss victory is the durable consumption record.
+function personalBossWon(playerId: string, zoneId: string, huntId: string): boolean {
+	return !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL LIMIT 1").get(playerId, zoneId, huntId);
 }
 
 function guardianRoster(playerId: string, zoneId: string, parentId: string, now: number) {

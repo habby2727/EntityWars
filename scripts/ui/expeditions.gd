@@ -972,6 +972,10 @@ func _render_route() -> void:
 		arrow.add_theme_font_size_override("font_size", 34)
 		arrow.text = ("←" if direction == "left" else "↑" if direction == "forward" else "→") + "\n" + tr("EXPEDITION_DIRECTION_" + str(direction).to_upper())
 		MenuArt.button(arrow)
+		var allowed: Variant = session.get("allowed_directions", directions)
+		if direction == "right" and allowed is Array and not direction in allowed:
+			arrow.set_meta("unavailable", true)
+			arrow.tooltip_text = tr("EXPEDITION_RIGHT_LIMIT")
 		arrow.pressed.connect(_send_phase_action.bind("advance", str(direction)))
 		row.add_child(arrow)
 		phase_buttons.append(arrow)

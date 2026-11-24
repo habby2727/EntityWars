@@ -64,6 +64,27 @@ test("routes preserve floor identity and persist independent difficulty, includi
   const selected = service.action("route-player","select",{run_id:run,expected_revision:advanced.session.revision,client_action_id:"select",choice:0},lease) as any;
   const frozen=read(); expect(frozen.victory_tier).toBe(expeditionVictoryTier(10,frozen.selected,setup));
   expect(selected.session.depth).toBe(11);
+  expect(frozen.selected.tactical_tier).toBe(frozen.victory_tier);
+  expect(frozen.combat.tactical_tier).toBe(frozen.victory_tier);
+  // Three rights survive service reconstruction; a fourth cannot mutate the run.
+  let currentRevision=selected.session.revision;
+  for (let i=0;i<3;i++) {
+    const persisted=read(); persisted.phase="ROUTE"; persisted.combat=null; persisted.consecutive_right=i;
+    db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(persisted),run);
+    const body={run_id:run,expected_revision:currentRevision,client_action_id:`right-${i}`,direction:"right"};
+    const result=service.action("route-player","advance",body,lease) as any;
+    expect(service.action("route-player","advance",body,lease)).toEqual(result);
+    expect(read().consecutive_right).toBe(i+1); currentRevision=result.session.revision;
+  }
+  const persisted=read(); persisted.phase="ROUTE";
+  db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(persisted),run);
+  service=createExpeditionService(options);
+  expect(service.state("route-player",lease).session).toMatchObject({directions:["left","forward","right"],allowed_directions:["left","forward"],consecutive_right:3});
+  const before=read();
+  expect(()=>service.action("route-player","advance",{run_id:run,expected_revision:currentRevision,client_action_id:"fourth",direction:"right"},lease)).toThrow();
+  expect(read()).toEqual(before);
+  service.action("route-player","advance",{run_id:run,expected_revision:currentRevision,client_action_id:"reset",direction:"left"},lease);
+  expect(read().consecutive_right).toBe(0);
   db.close();
 });
 
@@ -394,4 +415,21 @@ test("real encounters progress through victory tiers for both capture variants",
     expect(expeditionVictoryTier(depth,build(`normal-${depth}`,depth,false),setup)).toBe(normal);
     expect(expeditionVictoryTier(depth,build(`capture-${depth}`,depth,true),setup)).toBe(capture);
   }
+});
+
+
+test("frozen tactical tiers make seeded choices from the same legal loadout", () => {
+  const moves=[
+    {id:"weak",type:"sulfur",category:"attack",power_mult:0.3,accuracy:1,cooldown_turns:0,effects:[]},
+    {id:"lethal",type:"sulfur",category:"attack",power_mult:1,accuracy:1,cooldown_turns:0,effects:[]},
+    {id:"heal",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:1,effects:[{kind:"heal",target:"self",value:30}]},
+    {id:"clean",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:1,effects:[{kind:"cleanse_one",target:"self",value:1}]},
+  ];
+  const npc={type:"sulfur",expedition_types:["sulfur","gold"],hp:30,max_hp:100,atk:30,status:{poison:2}};
+  const target={type:"gold",hp:10,max_hp:100,def:0,status:{}};
+  const choose=(floor:number,tactical_tier:string, opponent=target)=>chooseDungeonNpcSpell(floor,moves.map(s=>s.id),moves,{},npc,opponent,0,{tactical_tier,types});
+  expect(choose(1,"normal")).toBe("weak");
+  expect(choose(5,"difficult")).toBe("lethal");
+  expect(choose(8,"very_difficult",{...target,hp:100})).toBe("clean");
+  expect(choose(8,"very_difficult",{...target,hp:100})).toBe(choose(8,"very_difficult",{...target,hp:100}));
 });
