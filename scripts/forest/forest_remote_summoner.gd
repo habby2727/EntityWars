@@ -3,6 +3,8 @@
 const ForestPlayer := preload("res://scripts/forest/forest_player.gd")
 static var _assets := {}
 var facing := 0
+var busy := false
+var _busy_icon: Control
 var _textures: Array = []
 var _bounds: Array = []
 var _scale := 1.0
@@ -38,6 +40,32 @@ func setup(data: Dictionary) -> void:
 	_from = position
 	_target = position
 	facing = int(data.facing)
+	set_busy(data)
+
+func set_busy(data: Dictionary) -> void:
+	busy = bool(data.get("busy", false))
+	position = Vector2(data.x, data.y)
+	_from = position
+	_target = position
+	_elapsed = 0.2
+	last_seq = -1
+	facing = int(data.facing)
+	_label.text = str(data.display_name)
+	set_cosmetic(str(data.summoner_id))
+	if not is_instance_valid(_busy_icon):
+		_busy_icon = Control.new()
+		_busy_icon.name = "BusyIndicator"
+		_busy_icon.size = Vector2(26, 26)
+		_busy_icon.mouse_filter = Control.MOUSE_FILTER_PASS
+		_busy_icon.tooltip_text = tr("FOREST_FIGHTING")
+		add_child(_busy_icon)
+		var glyph: Control = preload("res://scripts/ui/duel_swords.gd").new()
+		glyph.size = _busy_icon.size
+		_busy_icon.add_child(glyph)
+	_busy_icon.visible = busy
+	if busy:
+		set_friend_action("", Callable())
+		set_duel_action(false)
 
 func set_cosmetic(id: String) -> void:
 	if id not in ForestPlayer.FILES:
@@ -63,7 +91,7 @@ func set_cosmetic(id: String) -> void:
 	queue_redraw()
 
 func move_to(seq: int, point: Vector2, direction: int) -> void:
-	if seq <= last_seq:
+	if busy or seq <= last_seq:
 		return
 	last_seq = seq
 	_from = position
@@ -75,6 +103,8 @@ func _process(delta: float) -> void:
 	_bob += delta
 	_elapsed = minf(_elapsed + delta, 0.2)
 	position = _from.lerp(_target, _elapsed / 0.2)
+	if is_instance_valid(_busy_icon):
+		_busy_icon.position = Vector2(-13, _label.position.y - 29 + sin(_bob * TAU / 1.5) * 2.0)
 	queue_redraw()
 
 func set_friend_marker(value: bool) -> void:
@@ -88,6 +118,7 @@ func set_friend_marker(value: bool) -> void:
 		_friend_glyph.position = Vector2(-width * 0.5 - 23, _label.position.y + 5)
 
 func set_friend_action(mode: String, callback: Callable, cooldown_seconds: int = 0) -> void:
+	if busy: mode = ""
 	if is_instance_valid(_friend_action) and mode == _friend_mode:
 		if callback != _friend_callback:
 			if _friend_callback.is_valid() and _friend_action.pressed.is_connected(_friend_callback): _friend_action.pressed.disconnect(_friend_callback)
@@ -125,7 +156,7 @@ func set_friend_action(mode: String, callback: Callable, cooldown_seconds: int =
 		_friend_action.add_theme_font_size_override("font_size", 13)
 
 func set_duel_action(show_action: bool, callback: Callable = Callable(), cooldown_seconds: int = 0, pending: bool = false) -> void:
-	if not show_action:
+	if not show_action or busy:
 		if is_instance_valid(_duel_action): _duel_action.hide()
 		return
 	if not is_instance_valid(_duel_action):

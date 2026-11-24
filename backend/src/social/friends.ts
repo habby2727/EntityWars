@@ -33,11 +33,12 @@ export function createFriends(db: Database, clock: () => number = Date.now) {
     return {player_id: player, friends, incoming, outgoing, cooldowns, server_time:now};
    }).immediate();
   },
-  request(player: string, body: any, targetAvailable = true): Result {
+  request(player: string, body: any, targetAvailable = true, busy = false): Result {
    if (!validId(body?.target_player_id)) return error(400, 'Invalid target_player_id.');
    const target = body.target_player_id;
    return mutate(player, body, 'request', {target_player_id: target}, now => {
     if (player === target) return error(400, 'Cannot friend yourself.');
+    if (busy) return error(409, 'Player busy.');
     if (!targetAvailable || !db.query('SELECT 1 FROM players WHERE player_id = ?').get(target)) return error(404, 'Target unavailable.');
     const [low, high] = [player, target].sort();
     if (db.query('SELECT 1 FROM friendships WHERE player_low = ? AND player_high = ?').get(low, high)) return error(409, 'Already friends.');

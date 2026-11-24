@@ -2,6 +2,29 @@ import {test, expect} from 'bun:test';
 import {loadCatalog, validateCatalog, segmentInside, createForestPresence} from '../forest/presence';
 import {readFileSync} from 'node:fs';
 function harness(){let now=100000, valid=true;const service=createForestPresence(loadCatalog(),async()=>valid,()=>now);const connect=(id:string)=>{const events:any[]=[];const ws:any={data:{kind:'forest',playerId:id,displayName:'Name '+id,token:'secret'},send(s:string){events.push(JSON.parse(s));return 1;},close(){},getBufferedAmount(){return 0;}};service.open(ws);return {ws,events,send(m:any){service.message(ws,JSON.stringify({v:1,...m}));}}};return {service,connect,advance(ms:number){now+=ms},revoke(){valid=false}};}
+test('busy suspend and resume preserve visible state and expire safely',async()=>{
+ const h=harness(),a=h.connect('a'),observer=h.connect('observer'),legacy=h.connect('legacy');
+ a.send({type:'enter',summoner_id:'wizard',busy_protocol:1});observer.send({type:'enter',summoner_id:'witch',busy_protocol:1});legacy.send({type:'enter',summoner_id:'wizard'});
+ h.advance(250);a.send({type:'move',seq:1,x:980,y:760,facing:1});observer.events.length=0;
+ a.send({type:'suspend'});expect(h.service.roomOf('a')).toBeNull();expect(h.service.isBusy('a')).toBe(true);
+ expect(observer.events.at(-1)).toMatchObject({type:'peer_busy',player:{player_id:'a',busy:true,x:980,y:760,facing:1}});
+ expect(legacy.events.at(-1)).toMatchObject({type:'peer_leave',player_id:'a'});
+ const newcomer=h.connect('new');newcomer.send({type:'enter',summoner_id:'wizard',busy_protocol:1});
+ expect(newcomer.events[0].peers.filter((p:any)=>p.player_id==='a')).toEqual([expect.objectContaining({busy:true,x:980})]);
+ h.advance(60_000);h.service.renewBusy('a','new-token');h.advance(60_000);expect(h.service.isBusy('a')).toBe(true);
+ const resumed=h.connect('a');resumed.send({type:'enter',summoner_id:'wizard',busy_protocol:1});
+ expect(resumed.events[0].self).toMatchObject({x:980,y:760,facing:1});expect(h.service.roomOf('a')).toBe('central_clearing');
+ expect(observer.events.filter((e:any)=>e.type==='peer_busy' && e.player.player_id==='a').at(-1)).toMatchObject({player:{busy:false,x:980}});
+ expect(observer.events.filter((e:any)=>e.type==='peer_join' && e.player.player_id==='a')).toHaveLength(0);
+ expect(legacy.events.at(-1)).toMatchObject({type:'peer_join',player:{player_id:'a',x:980}});
+ resumed.send({type:'suspend'});observer.events.length=0;h.advance(90_001);expect(h.service.isBusy('a')).toBe(false);
+ expect(observer.events.filter((e:any)=>e.type==='peer_leave' && e.player_id==='a')).toHaveLength(1);
+ const again=h.connect('a');again.send({type:'enter',summoner_id:'wizard',busy_protocol:1});expect(again.events[0].self.x).toBe(980);
+ again.send({type:'suspend'});observer.events.length=0;h.service.evict('a');h.service.evict('a');
+ expect(observer.events.filter((e:any)=>e.type==='peer_leave' && e.player_id==='a')).toHaveLength(1);
+ const fresh=h.connect('a');fresh.send({type:'enter',summoner_id:'wizard',busy_protocol:1});expect(fresh.events[0].self.x).toBe(960);
+ fresh.send({type:'suspend'});h.revoke();await h.service.sweep();expect(h.service.isBusy('a')).toBe(false);
+});
 test('catalog and concave segment validation',()=>{const c=JSON.parse(readFileSync(new URL('../../../data/static/forest_zones.json',import.meta.url),'utf8'));const zones=validateCatalog(c);expect(zones.size).toBe(6);expect([...zones.values()].flatMap(z=>z.portals)).toHaveLength(10);expect(segmentInside([1,3],[3,3],[[0,0],[4,0],[4,4],[2,2],[0,4]])).toBe(false);c.zones[0].portals[0].arrival=[-1,-1];expect(()=>validateCatalog(c)).toThrow();});
 test('identity, movement, replacement, suspend and revocation',async()=>{const h=harness(),a=h.connect('a'),b=h.connect('b');a.send({type:'enter',summoner_id:'wizard',player_id:'fake',display_name:'fake'});b.send({type:'enter',summoner_id:'witch'});expect(b.events[0].peers[0]).toMatchObject({player_id:'a',display_name:'Name a'});a.events.length=0;b.events.length=0;h.advance(1000);a.send({type:'move',seq:1,x:980,y:760,facing:1});expect(b.events[0]).toMatchObject({type:'peer_move',x:980});a.send({type:'move',seq:1,x:981,y:760,facing:1});expect(a.events.at(-1).reason).toBe('INVALID_SEQ');a.send({type:'move',seq:2,x:1900,y:760,facing:1});expect(a.events.at(-1).reason).toBe('INVALID_MOVEMENT');a.send({type:'suspend'});expect(b.events.at(-1).type).toBe('peer_leave');const a2=h.connect('a');a2.send({type:'enter',summoner_id:'wizard'});expect(a2.events[0].self.x).toBe(980);const a3=h.connect('a');a3.send({type:'enter',summoner_id:'wizard'});expect(a3.events[0].self.x).toBe(980);h.revoke();await h.service.sweep();const fresh=h.connect('a');fresh.send({type:'enter',summoner_id:'wizard'});expect(fresh.events[0].self.x).toBe(960);});
 test('handoff acknowledgement follows committed removal and preserves TTL semantics',()=>{

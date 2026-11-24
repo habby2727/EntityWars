@@ -61,17 +61,22 @@ export function loadCatalog(path = resolve(import.meta.dir, "../../../data/stati
 type Socket = { send(data:string): number; close(code?:number, reason?:string): void; data: ForestData; getBufferedAmount(): number };
 export type ForestData = { kind: "forest"; playerId:string; displayName:string; token:string };
 type State = { player_id:string; display_name:string; zone_id:string; x:number; y:number; facing:number; summoner_id:string };
-type Session = { ws:Socket; state:State; entered:boolean; seq:number; at:number; credit:number; lastMove:number; pendingMove: {seq:number; x:number; y:number; facing:number} | null; lastCosmetic:number; rateAt:number; rate:number; malformed:number; checking:boolean };
+type Session = { ws:Socket; state:State; entered:boolean; seq:number; at:number; credit:number; lastMove:number; pendingMove: {seq:number; x:number; y:number; facing:number} | null; lastCosmetic:number; rateAt:number; rate:number; malformed:number; checking:boolean; busyProtocol:boolean };
 type Saved = { state:State; expires:number };
+type Busy = { state:State; auth:ForestData; expires:number; checking:boolean };
+const BUSY_LEASE_MS = 90_000, MAX_BUSY = 768;
 const cosmetics=new Set(['wizard','witch','cyberghost']);
 export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:ForestData)=>Promise<boolean>, clock:()=>number=Date.now, canServe:()=>boolean=()=>true) {
  const rooms=new Map<string,Map<string,Session>>([...zones.keys()].map(id=>[id,new Map()]));
- const active=new Map<string,Session>(), saved=new Map<string,Saved>();
+ const active=new Map<string,Session>(), saved=new Map<string,Saved>(), busy=new Map<string,Busy>();
  let fenced=false;
- const prune=()=>{const now=clock(); for(const [id,s] of saved) if(s.expires<=now) saved.delete(id);};
+ const prune=()=>{const now=clock(); for(const [id,s] of saved) if(s.expires<=now) saved.delete(id); for(const [id,b] of busy) if(b.expires<=now) dropBusy(id,b);};
  const send=(s:Session,m:object)=>{if(fenced || !canServe())return;try { if(s.ws.getBufferedAmount()>65536) { s.ws.close(1008,'slow client'); remove(s,120000); return; } if(s.ws.send(JSON.stringify({v:1,...m}))<0) {s.ws.close(1008,'slow client'); remove(s,120000);} } catch {remove(s,120000);} };
  const broadcast=(s:Session,m:object)=>{if(fenced || !canServe())return;for(const peer of rooms.get(s.state.zone_id)!.values()) if(peer!==s) send(peer,m);};
- const peers=(s:Session)=>[...rooms.get(s.state.zone_id)!.values()].filter(p=>p!==s).map(p=>({...p.state}));
+ const busyNotice=(b:Busy, entering:boolean)=>{ if(fenced || !canServe())return; for(const peer of rooms.get(b.state.zone_id)!.values()) { if(peer.state.player_id===b.state.player_id) continue; if(peer.busyProtocol) send(peer,{type:'peer_busy',player:{...b.state,busy:!entering}}); else send(peer,entering?{type:'peer_join',player:{...b.state}}:{type:'peer_leave',player_id:b.state.player_id}); } };
+ function dropBusy(id:string,b:Busy){if(busy.get(id)!==b)return;busy.delete(id);if(fenced || !canServe())return;for(const peer of rooms.get(b.state.zone_id)!.values()) if(peer.busyProtocol && peer.state.player_id!==id)send(peer,{type:'peer_leave',player_id:id});}
+ const countRoom=(zone:string)=>rooms.get(zone)!.size+[...busy.values()].filter(b=>b.state.zone_id===zone).length;
+ const peers=(s:Session)=>[...rooms.get(s.state.zone_id)!.values()].filter(p=>p!==s).map(p=>({...p.state})).concat(s.busyProtocol ? [...busy.values()].filter(b=>b.state.zone_id===s.state.zone_id && b.state.player_id!==s.state.player_id).map(b=>({...b.state,busy:true})) : []);
  function remove(s:Session,ttl:number) { if(fenced || !canServe() || active.get(s.state.player_id)!==s) return; active.delete(s.state.player_id); if(s.entered){rooms.get(s.state.zone_id)!.delete(s.state.player_id); broadcast(s,{type:'peer_leave',player_id:s.state.player_id});} if(ttl){prune(); if(saved.size>=1024) saved.delete(saved.keys().next().value!); saved.set(s.state.player_id,{state:{...s.state},expires:clock()+ttl});} else saved.delete(s.state.player_id); }
  const correction=(s:Session,seq:unknown,reason:string)=>send(s,{type:'correction',seq:Number.isSafeInteger(seq)?seq:0,zone_id:s.state.zone_id,x:s.state.x,y:s.state.y,facing:s.state.facing,reason});
  const validSeq=(n:unknown):n is number=>Number.isSafeInteger(n) && (n as number)>=0 && (n as number)<=2147483647;
@@ -79,9 +84,9 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
   if(fenced || !canServe()){ws.close(1011,'service unavailable');return;}
   prune(); const old=active.get(ws.data.playerId); if(old){remove(old,120000); old.ws.close(1000,'replaced');}
   if(active.size>=512){ws.close(1013,'capacity');return;}
-  const previous=saved.get(ws.data.playerId); saved.delete(ws.data.playerId);
-  const state:State=previous ? {...previous.state,display_name:ws.data.displayName} : {player_id:ws.data.playerId,display_name:ws.data.displayName,zone_id:'central_clearing',x:960,y:760,facing:0,summoner_id:'wizard'};
-  active.set(state.player_id,{ws,state,entered:false,seq:-1,at:clock(),credit:24,lastMove:0,pendingMove:null,lastCosmetic:0,rateAt:clock(),rate:0,malformed:0,checking:false});
+  const occupied=busy.get(ws.data.playerId), previous=saved.get(ws.data.playerId); if(!occupied) saved.delete(ws.data.playerId);
+  const state:State=occupied ? {...occupied.state,display_name:ws.data.displayName} : previous ? {...previous.state,display_name:ws.data.displayName} : {player_id:ws.data.playerId,display_name:ws.data.displayName,zone_id:'central_clearing',x:960,y:760,facing:0,summoner_id:'wizard'};
+  active.set(state.player_id,{ws,state,entered:false,seq:-1,at:clock(),credit:24,lastMove:0,pendingMove:null,lastCosmetic:0,rateAt:clock(),rate:0,malformed:0,checking:false,busyProtocol:false});
  }
  function message(ws:Socket,raw:string|Buffer) {
   if(fenced || !canServe())return;
@@ -92,15 +97,26 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
   if(!m || typeof m!=='object' || Array.isArray(m) || m.v!==1 || typeof m.type!=='string'){if(++s.malformed>=3){ws.close(1008,'invalid message');remove(s,120000);}return;}
   if(m.type==='ping'){send(s,{type:'pong',server_time:now});return;}
   if(m.type==='leave' || m.type==='suspend'){
-   const kind=m.type;remove(s,kind==='leave'?0:900000);send(s,{type:'handoff_ack',kind});
+   const kind=m.type; prune();
+   if(kind==='suspend' && s.entered && busy.size<MAX_BUSY) {
+    active.delete(s.state.player_id); rooms.get(s.state.zone_id)!.delete(s.state.player_id); s.pendingMove=null;
+    prune(); if(saved.size>=1024) saved.delete(saved.keys().next().value!);
+    saved.set(s.state.player_id,{state:{...s.state},expires:now+900000});
+    const record:Busy={state:{...s.state},auth:{...ws.data},expires:now+BUSY_LEASE_MS,checking:false}; busy.set(s.state.player_id,record); busyNotice(record,false);
+   } else { remove(s,kind==='leave'?0:900000); if(kind==='leave') {const record=busy.get(s.state.player_id);if(record)dropBusy(s.state.player_id,record);} }
+   send(s,{type:'handoff_ack',kind});
    // Godot can discard unread data when it receives the close frame in the same poll.
    // The client closes after the ACK; old clients still receive a bounded server close.
    setTimeout(()=>{try{ws.close(1000,kind==='leave'?'left':'suspended');}catch{}},500).unref();return;
   }
   if(m.type==='enter'){
    if(s.entered || !cosmetics.has(m.summoner_id)){send(s,{type:'error',error:'INVALID_ENTER'});return;}
-   const room=rooms.get(s.state.zone_id)!; if(room.size>=128){send(s,{type:'error',error:'ROOM_FULL'});return;}
-   s.state.summoner_id=m.summoner_id; s.entered=true;s.at=now; room.set(s.state.player_id,s); send(s,{type:'welcome',self:{...s.state},peers:peers(s),server_time:now}); if(active.get(s.state.player_id)===s) broadcast(s,{type:'peer_join',player:{...s.state}});return;
+   prune(); const ownBusy=busy.get(s.state.player_id); if(ownBusy) s.state={...ownBusy.state,display_name:ws.data.displayName};
+   const room=rooms.get(s.state.zone_id)!; if(countRoom(s.state.zone_id)-(ownBusy?1:0)>=128){send(s,{type:'error',error:'ROOM_FULL'});return;}
+   s.busyProtocol=m.busy_protocol===1; s.state.summoner_id=m.summoner_id; s.entered=true;s.at=now; s.seq=-1;
+   if(ownBusy){busy.delete(s.state.player_id);saved.delete(s.state.player_id);} room.set(s.state.player_id,s);
+   send(s,{type:'welcome',self:{...s.state},peers:peers(s),server_time:now});
+   if(active.get(s.state.player_id)===s) {if(ownBusy)busyNotice({...ownBusy,state:{...s.state}},true);else broadcast(s,{type:'peer_join',player:{...s.state}});}return;
   }
   if(!s.entered){send(s,{type:'error',error:'ENTER_REQUIRED'});return;}
   if(m.type==='cosmetic'){if(!cosmetics.has(m.summoner_id)){send(s,{type:'error',error:'INVALID_COSMETIC'});return;} if(now-s.lastCosmetic>=200 && s.state.summoner_id!==m.summoner_id){s.lastCosmetic=now;s.state.summoner_id=m.summoner_id;broadcast(s,{type:'peer_cosmetic',player_id:s.state.player_id,summoner_id:m.summoner_id});}return;}
@@ -120,7 +136,7 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
   }
   const p=zone.portals.find(p=>p.direction===m.direction);
   if(!p || x<p.corridor[0] || x>p.corridor[2] || y<p.corridor[1] || y>p.corridor[3] || !((p.direction==='north'&&y===0&&a[1]>y)||(p.direction==='south'&&y===1080&&a[1]<y)||(p.direction==='west'&&x===0&&a[0]>x)||(p.direction==='east'&&x===1920&&a[0]<x))){correction(s,m.seq,'INVALID_PORTAL');return;}
-  const destination=rooms.get(p.destination)!; if(destination.size>=128){correction(s,m.seq,'ROOM_FULL');return;}
+  prune(); const destination=rooms.get(p.destination)!; if(countRoom(p.destination)>=128){correction(s,m.seq,'ROOM_FULL');return;}
   s.pendingMove=null;
   rooms.get(s.state.zone_id)!.delete(s.state.player_id);broadcast(s,{type:'peer_leave',player_id:s.state.player_id});
   s.state.zone_id=p.destination;[s.state.x,s.state.y]=p.arrival;s.credit=0;s.at=now;destination.set(s.state.player_id,s);
@@ -128,9 +144,9 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
  }
  function flushSession(s:Session,now:number){if(!s.pendingMove || !s.entered || now-s.lastMove<200)return;const move=s.pendingMove;s.pendingMove=null;s.lastMove=now;broadcast(s,{type:'peer_move',player_id:s.state.player_id,...move});}
  function flush(){if(fenced || !canServe())return;const now=clock();for(const s of active.values())flushSession(s,now);}
- async function sweep(){if(fenced || !canServe())return;prune(); await Promise.all([...active.values()].map(async s=>{if(s.checking)return;s.checking=true;try{if(!await authenticate(s.ws.data) && !fenced && canServe() && active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1008,'session ended');}}catch{if(!fenced && canServe() && active.get(s.state.player_id)===s){remove(s,0);s.ws.close(1011,'authentication unavailable');}}finally{s.checking=false;}}));}
- function evict(playerId:string){if(fenced || !canServe())return;const s=active.get(playerId);if(s){remove(s,0);s.ws.close(1008,'session ended');}saved.delete(playerId);}
- function fence(){if(fenced)return;fenced=true;for(const s of active.values()){try{s.ws.close(1011,'service unavailable');}catch{}}active.clear();saved.clear();for(const room of rooms.values())room.clear();}
+ async function sweep(){if(fenced || !canServe())return;prune(); await Promise.all([...active.values()].map(async s=>{if(s.checking)return;s.checking=true;try{if(!await authenticate(s.ws.data) && !fenced && canServe() && active.get(s.state.player_id)===s)evict(s.state.player_id);}catch{if(!fenced && canServe() && active.get(s.state.player_id)===s){remove(s,0);const b=busy.get(s.state.player_id);if(b)dropBusy(s.state.player_id,b);s.ws.close(1011,'authentication unavailable');}}finally{s.checking=false;}}).concat([...busy.values()].map(async b=>{if(b.checking)return;b.checking=true;const auth=b.auth;try{if(!await authenticate(auth) && b.auth===auth && !fenced && canServe() && busy.get(b.state.player_id)===b){saved.delete(b.state.player_id);dropBusy(b.state.player_id,b);}}catch{if(b.auth===auth && !fenced && canServe() && busy.get(b.state.player_id)===b){saved.delete(b.state.player_id);dropBusy(b.state.player_id,b);}}finally{b.checking=false;}})));}
+ function evict(playerId:string){if(fenced || !canServe())return;const s=active.get(playerId);if(s){remove(s,0);s.ws.close(1008,'session ended');}saved.delete(playerId);const b=busy.get(playerId);if(b)dropBusy(playerId,b);}
+ function fence(){if(fenced)return;fenced=true;for(const s of active.values()){try{s.ws.close(1011,'service unavailable');}catch{}}active.clear();saved.clear();busy.clear();for(const room of rooms.values())room.clear();}
  function peerChat(playerId:string, message:{id:number;player_id:string;text:string;created_at:number}) {
   if(fenced || !canServe() || message.player_id!==playerId || !Number.isSafeInteger(message.id) || !Number.isSafeInteger(message.created_at) || typeof message.text!=='string') return;
   const session=active.get(playerId);
@@ -138,5 +154,5 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
   const event={type:'peer_chat',player_id:playerId,message_id:message.id,text:message.text,created_at:message.created_at,expires_at:message.created_at+10_000,server_time:clock()};
   send(session,event); broadcast(session,event);
  }
- return {open,message,peerChat,roomOf(playerId:string):string|null {if(fenced || !canServe()) return null;const s=active.get(playerId);return s?.entered && rooms.get(s.state.zone_id)?.get(playerId)===s ? s.state.zone_id : null;},close(ws:Socket){if(fenced)return;const s=active.get(ws.data.playerId);if(s?.ws===ws)remove(s,120000);},sweep,flush,evict,fence};
+ return {open,message,peerChat,renewBusy(playerId:string,token:string){if(fenced || !canServe() || !token)return;prune();const b=busy.get(playerId);if(b){b.auth={...b.auth,token};b.expires=clock()+BUSY_LEASE_MS;}},isBusy(playerId:string){if(fenced || !canServe())return false;prune();return busy.has(playerId);},roomOf(playerId:string):string|null {if(fenced || !canServe()) return null;const s=active.get(playerId);return s?.entered && rooms.get(s.state.zone_id)?.get(playerId)===s ? s.state.zone_id : null;},close(ws:Socket){if(fenced)return;const s=active.get(ws.data.playerId);if(s?.ws===ws)remove(s,120000);},sweep,flush,evict,fence};
 }

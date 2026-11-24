@@ -3,6 +3,7 @@
 signal snapshot(state: Dictionary, peers: Array)
 signal correction(state: Dictionary)
 signal peer_joined(player: Dictionary)
+signal peer_busy(player: Dictionary)
 signal peer_moved(player_id: String, seq: int, point: Vector2, facing: int)
 signal peer_cosmetic(player_id: String, summoner_id: String)
 signal peer_left(player_id: String)
@@ -21,6 +22,7 @@ var _token := ""
 var _generation := -1
 var _summoner := ""
 var _peers := {}
+var _busy_peers := {}
 var _retry_at := 0
 var _attempt := 0
 var _connect_at := 0
@@ -108,7 +110,7 @@ func _process(_delta: float) -> void:
 		_drop()
 		return
 	if not entered and _connect_at > 0:
-		_send({"type":"enter", "summoner_id":_summoner})
+		_send({"type":"enter", "summoner_id":_summoner, "busy_protocol":1})
 		_clock_request_at = Time.get_ticks_msec()
 		_connect_at = 0
 		_ping_at = Time.get_ticks_msec()
@@ -177,6 +179,7 @@ func handoff(kind: String) -> bool:
 	_closing = true
 	entered = false
 	_peers.clear()
+	_busy_peers.clear()
 	disconnected.emit()
 	var acknowledged := false
 	var deadline := Time.get_ticks_msec() + 1000
@@ -205,6 +208,7 @@ func shutdown() -> void:
 		socket = null
 	entered = false
 	_peers.clear()
+	_busy_peers.clear()
 
 func _drop(retry: bool = true) -> void:
 	_clock_server = 0
@@ -217,6 +221,7 @@ func _drop(retry: bool = true) -> void:
 	zone_id = ""
 	_portal_seq = 0
 	_peers.clear()
+	_busy_peers.clear()
 	disconnected.emit()
 	_attempt = mini(_attempt + 1, 6) if retry else 0
 	_retry_at = Time.get_ticks_msec() + mini(30000, 1000 * (1 << _attempt))
@@ -238,17 +243,20 @@ func _valid_position(id: String, x, y) -> bool:
 	return false
 
 func _player(value, expected_zone: String) -> bool:
-	return value is Dictionary and value.get("player_id") is String and value.player_id.length() > 0 and value.player_id.length() <= 128 and value.get("display_name") is String and value.display_name.length() > 0 and value.display_name.length() <= 128 and value.get("zone_id") == expected_zone and value.get("summoner_id") in Player.FILES and _integer(value.get("facing"), 0, 3) and _valid_position(expected_zone, value.get("x"), value.get("y"))
+	return value is Dictionary and (not value.has("busy") or value.busy is bool) and value.get("player_id") is String and value.player_id.length() > 0 and value.player_id.length() <= 128 and value.get("display_name") is String and value.display_name.length() > 0 and value.display_name.length() <= 128 and value.get("zone_id") == expected_zone and value.get("summoner_id") in Player.FILES and _integer(value.get("facing"), 0, 3) and _valid_position(expected_zone, value.get("x"), value.get("y"))
 
 func _snapshot_peers(value, zone: String) -> bool:
 	if not value is Array or value.size() > 128:
 		return false
 	var found := {}
+	var busy_found := {}
 	for peer in value:
 		if not _player(peer, zone) or peer.player_id == _owner or found.has(peer.player_id):
 			return false
 		found[peer.player_id] = -1
+		if bool(peer.get("busy", false)): busy_found[peer.player_id] = true
 	_peers = found
+	_busy_peers = busy_found
 	return true
 
 func _sync_clock(value: Variant) -> void:
@@ -295,20 +303,28 @@ func _receive(m: Dictionary) -> void:
 			var player = m.get("player")
 			if entered and _player(player, zone_id) and player.player_id != _owner and not _peers.has(player.player_id) and _peers.size() < 128:
 				_peers[player.player_id] = -1
+				if bool(player.get("busy", false)): _busy_peers[player.player_id] = true
 				peer_joined.emit(player)
+		"peer_busy":
+			var player = m.get("player")
+			if entered and _player(player, zone_id) and player.has("busy") and _peers.has(player.player_id) and player.player_id != _owner:
+				_peers[player.player_id] = -1
+				if player.busy: _busy_peers[player.player_id] = true
+				else: _busy_peers.erase(player.player_id)
+				peer_busy.emit(player)
 		"peer_move":
 			var id = m.get("player_id")
-			if entered and id is String and _peers.has(id) and _integer(m.get("seq"), 0, 2147483647) and int(m.seq) > _peers[id] and _integer(m.get("facing"), 0, 3) and _valid_position(zone_id, m.get("x"), m.get("y")):
+			if entered and id is String and _peers.has(id) and not _busy_peers.has(id) and _integer(m.get("seq"), 0, 2147483647) and int(m.seq) > _peers[id] and _integer(m.get("facing"), 0, 3) and _valid_position(zone_id, m.get("x"), m.get("y")):
 				_peers[id] = int(m.seq)
 				peer_moved.emit(id, int(m.seq), Vector2(m.x, m.y), int(m.facing))
 		"peer_cosmetic":
 			var id = m.get("player_id")
-			if entered and id is String and _peers.has(id) and m.get("summoner_id") in Player.FILES:
+			if entered and id is String and _peers.has(id) and not _busy_peers.has(id) and m.get("summoner_id") in Player.FILES:
 				peer_cosmetic.emit(id, m.summoner_id)
 		"peer_chat":
 			var id = m.get("player_id")
 			var text = m.get("text")
-			if not entered or not id is String or (id != _owner and not _peers.has(id)) or not text is String or text.is_empty() or text.length() > 200 or not _integer(m.get("message_id"), 1, 9007199254740991) or not _integer(m.get("created_at"), 1, 9007199254740991) or not _integer(m.get("expires_at"), 1, 9007199254740991) or int(m.expires_at) != int(m.created_at) + 10000 or _clock_server == 0:
+			if not entered or not id is String or (id != _owner and (not _peers.has(id) or _busy_peers.has(id))) or not text is String or text.is_empty() or text.length() > 200 or not _integer(m.get("message_id"), 1, 9007199254740991) or not _integer(m.get("created_at"), 1, 9007199254740991) or not _integer(m.get("expires_at"), 1, 9007199254740991) or int(m.expires_at) != int(m.created_at) + 10000 or _clock_server == 0:
 				return
 			var estimated_now := _clock_server + Time.get_ticks_msec() - _clock_ticks + _clock_guard
 			if _integer(m.get("server_time"), 1, 9007199254740991): estimated_now = maxi(estimated_now, int(m.server_time) + _clock_guard)
@@ -317,4 +333,5 @@ func _receive(m: Dictionary) -> void:
 		"peer_leave":
 			var id = m.get("player_id")
 			if entered and id is String and _peers.erase(id):
+				_busy_peers.erase(id)
 				peer_left.emit(id)

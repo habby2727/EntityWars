@@ -1723,14 +1723,16 @@ async function startServer(): Promise<void> {
 					if (url.pathname === "/social/friends/request") {
 						const target = body?.target_player_id;
 						const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !(await isUserDisabled(target));
-						result = friends.request(playerId, body, available);
+						result = friends.request(playerId, body, available, !!forest && leaseValid() && (forest.isBusy(playerId) || (typeof target === "string" && forest.isBusy(target))));
 					} else if (url.pathname === "/social/friends/respond") result = friends.respond(playerId, body);
 					else result = friends.cancel(playerId, body);
 					return jsonResponse(result.data, result.status);
 				}
 
 				if (req.method == "GET" && url.pathname == "/chat/state") {
-					return jsonResponse(globalChat.state(await requireAuth(req, ctx)));
+					const playerId = await requireAuth(req, ctx);
+					if (forest && leaseValid()) forest.renewBusy(playerId, extractToken(req)!);
+					return jsonResponse(globalChat.state(playerId));
 				}
 				if (req.method == "POST" && url.pathname == "/chat/send") {
 					const playerId = await requireAuth(req, ctx);

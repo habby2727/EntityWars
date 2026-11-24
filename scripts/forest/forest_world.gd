@@ -613,7 +613,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if (SocialClient.enabled or DuelClient.enabled) and SocialClient.available() and is_instance_valid(_presence) and _presence.entered and not _player.transition_locked:
 			for id in _remotes:
 				var avatar: Node2D = _remotes[id]
-				if Rect2(-45, -130, 90, 130).has_point(point - avatar.position):
+				if not bool(avatar.get("busy")) and Rect2(-45, -130, 90, 130).has_point(point - avatar.position):
 					_selected_remote = id
 					_update_social_remotes()
 					get_viewport().set_input_as_handled()
@@ -677,6 +677,7 @@ func _start_presence(selected: String) -> void:
 	_presence.snapshot.connect(_on_presence_snapshot)
 	_presence.correction.connect(_on_presence_correction)
 	_presence.peer_joined.connect(_on_peer_joined)
+	_presence.peer_busy.connect(_on_peer_busy)
 	_presence.peer_moved.connect(_on_peer_moved)
 	_presence.peer_cosmetic.connect(_on_peer_cosmetic)
 	_presence.peer_left.connect(_on_peer_left)
@@ -722,6 +723,17 @@ func _on_peer_joined(data: Dictionary) -> void:
 	_actors.add_child(avatar)
 	avatar.setup(data)
 	_remotes[id] = avatar
+	_update_social_remotes()
+
+func _on_peer_busy(data: Dictionary) -> void:
+	var id := str(data.player_id)
+	if not _remotes.has(id): return
+	if bool(data.busy) and _selected_remote == id: _deselect_remote()
+	var avatar = _remotes[id]
+	avatar.set_busy(data)
+	if bool(data.busy):
+		var bubble = avatar.get_node_or_null("SpeechBubble")
+		if bubble != null: bubble.clear_message()
 	_update_social_remotes()
 
 func _on_peer_moved(id: String, sequence: int, point: Vector2, direction: int) -> void:
@@ -774,6 +786,10 @@ func _update_social_remotes() -> void:
 		if not is_instance_valid(avatar): continue
 		var is_friend: bool = SocialClient.enabled and SocialClient.friends.has(id)
 		avatar.set_friend_marker(is_friend)
+		if avatar.busy:
+			avatar.set_friend_action("", Callable())
+			avatar.set_duel_action(false)
+			continue
 		if id != _selected_remote: continue
 		var pending_duel := not DuelClient.outgoing.is_empty() or not DuelClient.incoming.is_empty() or not DuelClient.accepted_invites.is_empty()
 		avatar.set_duel_action(DuelClient.enabled, DuelClient.request_duel.bind(id), DuelClient.cooldown_seconds(id), pending_duel)
