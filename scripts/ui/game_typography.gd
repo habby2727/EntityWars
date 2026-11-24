@@ -70,21 +70,26 @@ func _apply_font(node: Node) -> void:
 		_tracked_text[node.get_instance_id()] = str(TranslationServer.get_locale(), "|", node.text)
 	var settings_control := false
 	var chat_control := false
+	var combat_control := false
 	var ancestor := node
 	while ancestor != null:
 		if ancestor.scene_file_path == "res://scenes/ui/Settings.tscn":
 			settings_control = true
 		if ancestor.has_meta("global_chat_font"):
 			chat_control = true
+		if ancestor.has_meta("combat_font"):
+			combat_control = true
 		ancestor = ancestor.get_parent()
 	if node is PopupMenu:
-		var popup_font: Font = _chat_font if chat_control else (_body_font if settings_control or node.has_meta("localization_body_font") else _title_font)
+		var popup_font: Font = _chat_font if chat_control else (_title_font if combat_control else (_body_font if settings_control or node.has_meta("localization_body_font") else _title_font))
+		if popup_font == null:
+			return
 		node.add_theme_font_override("font", popup_font)
 		if popup_font == _body_font:
 			_double_font_sizes(node, ["font_size"])
 		return
 	var control := node as Control
-	if control == null or _title_font == null or _body_font == null:
+	if control == null:
 		return
 	var heading := control is BaseButton or control is TabBar or control is TabContainer
 	if settings_control and control is BaseButton:
@@ -104,8 +109,12 @@ func _apply_font(node: Node) -> void:
 		font = _sharp_font
 	elif heading and TranslationServer.get_locale().begins_with("es") and _has_spanish_accents(_control_text(control)):
 		font = _sharp_font
+	if combat_control:
+		font = _title_font
 	if chat_control:
 		font = _chat_font
+	if font == null:
+		return
 	if control is RichTextLabel:
 		for key in ["normal_font", "bold_font", "italics_font", "bold_italics_font", "mono_font"]:
 			control.add_theme_font_override(key, font)
@@ -119,7 +128,10 @@ func _apply_font(node: Node) -> void:
 
 func _double_font_sizes(control: Node, keys: Array) -> void:
 	var sizes := {}
+	var external: Dictionary = control.get_meta("typography_external_sizes", {})
 	for key in keys:
+		if external.has(key):
+			continue
 		var original: int = control.get_theme_font_size(key)
 		if original <= 0:
 			continue
@@ -132,16 +144,20 @@ func _restore_font_sizes(control: Node) -> void:
 	if not control.has_meta("typography_original_sizes"):
 		return
 	var sizes: Dictionary = control.get_meta("typography_original_sizes")
+	var external: Dictionary = control.get_meta("typography_external_sizes", {})
 	for key in sizes:
 		var original: Dictionary = sizes[key]
 		# Leave a later explicit size change alone.
-		if control.get_theme_font_size(key) != int(original.size) * 2:
+		if not control.has_theme_font_size_override(key) or control.get_theme_font_size(key) != int(original.size) * 2:
+			external[key] = true
 			continue
 		if original.override:
 			control.add_theme_font_size_override(key, original.size)
 		else:
 			control.remove_theme_font_size_override(key)
 	control.remove_meta("typography_original_sizes")
+	if not external.is_empty():
+		control.set_meta("typography_external_sizes", external)
 
 func _control_text(control: Control) -> String:
 	if control is Label or control is RichTextLabel or control is Button:

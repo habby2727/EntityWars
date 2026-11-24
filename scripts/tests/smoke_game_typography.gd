@@ -42,6 +42,18 @@ func _run() -> void:
 	body.text = "Explanation"
 	typography._process(0.1)
 	assert(body.get_theme_font_size("font_size") == 30)
+	body.add_theme_font_size_override("font_size", 19)
+	body.text = "Updated explanation"
+	typography._process(0.1)
+	assert(body.get_theme_font_size("font_size") == 19)
+	body.text = "Another explanation"
+	typography._process(0.1)
+	assert(body.get_theme_font_size("font_size") == 19)
+	body.text = "25%"
+	typography._process(0.1)
+	body.text = "Explanation again"
+	typography._process(0.1)
+	assert(body.get_theme_font_size("font_size") == 19)
 	assert(button.get_theme_font("font") == typography._title_font)
 	assert(rich.get_theme_font("normal_font") == typography._body_font)
 	assert(typography._body_font.resource_path == "res://assets/fonts/MedievalFont/JimNightshade-Regular.ttf")
@@ -65,6 +77,42 @@ func _run() -> void:
 	await process_frame
 	assert(number.get_theme_font("font") == typography._sharp_font)
 	assert(chat_text.get_theme_font("font") == typography._chat_font)
+	var combat := Control.new()
+	combat.set_meta("combat_font", true)
+	screen.add_child(combat)
+	var fighter_name := Label.new()
+	fighter_name.text = "Homúnculo 25"
+	fighter_name.add_theme_font_size_override("font_size", 15)
+	combat.add_child(fighter_name)
+	var spell := Button.new()
+	spell.text = "Poción"
+	combat.add_child(spell)
+	var combat_log := RichTextLabel.new()
+	combat_log.set_meta("global_chat_font", true)
+	combat.add_child(combat_log)
+	await process_frame
+	await process_frame
+	assert(fighter_name.get_theme_font("font") == typography._title_font)
+	assert(fighter_name.get_theme_font_size("font_size") == 15)
+	assert(spell.get_theme_font("font") == typography._title_font)
+	assert(combat_log.get_theme_font("normal_font") == typography._chat_font)
+	var saved_chat: Font = typography._chat_font
+	typography._chat_font = null
+	typography._apply_font(combat_log)
+	assert(combat_log.get_theme_font("normal_font") == saved_chat)
+	typography._chat_font = saved_chat
+	var popup := PopupMenu.new()
+	popup.set_meta("global_chat_font", true)
+	screen.add_child(popup)
+	await process_frame
+	var saved_popup_font := popup.get_theme_font("font")
+	typography._chat_font = null
+	typography._apply_font(popup)
+	assert(popup.get_theme_font("font") == saved_popup_font)
+	typography._chat_font = saved_chat
+	fighter_name.text = "25%"
+	typography._process(0.1)
+	assert(fighter_name.get_theme_font("font") == typography._title_font)
 	assert(translated.get_theme_font("font") == typography._sharp_font)
 	translated.text = "Aceptar"
 	typography._process(0.1)

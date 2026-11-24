@@ -2,12 +2,17 @@ extends RefCounted
 
 const COLORS := {"essence": "46c77a", "core": "f29b42", "arcane_shard": "a56df2", "time_crystal": "45c9e8"}
 
-static func build(container: Container, catalog: AssetCatalog, compact: bool = false, icon_gap: int = 5) -> Dictionary:
+static func build(container: Container, catalog: AssetCatalog, compact: bool = false, icon_gap: int = 5, large_numbers: bool = false) -> Dictionary:
 	var rows := {}
 	var icon_size := 32.0 if compact else 60.0
 	var bar_width := 150.0 if compact else 220.0
 	var bar_height := 24.0 if compact else 32.0
 	var text_size := 14 if compact else 18
+	if large_numbers:
+		icon_size = 40.0
+		bar_width = 225.0
+		bar_height = 40.0
+		text_size *= 2
 	for child in container.get_children():
 		container.remove_child(child)
 		child.queue_free()
@@ -59,11 +64,11 @@ static func build(container: Container, catalog: AssetCatalog, compact: bool = f
 		label.add_theme_font_size_override("font_size", text_size)
 		label.add_theme_color_override("font_color", Color.WHITE)
 		label.add_theme_color_override("font_outline_color", Color.BLACK)
-		label.add_theme_constant_override("outline_size", 3)
+		label.add_theme_constant_override("outline_size", 5 if large_numbers else 3)
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bar.add_child(label)
 		container.add_child(row)
-		rows[id] = {"row": row, "icon": icon, "bar": bar, "label": label, "clip": clip}
+		rows[id] = {"row": row, "icon": icon, "bar": bar, "label": label, "clip": clip, "large_numbers": large_numbers}
 	return rows
 
 static func update(rows: Dictionary, state: Dictionary, debug_mode: bool = false, balance: Dictionary = {}) -> void:
@@ -86,13 +91,15 @@ static func update(rows: Dictionary, state: Dictionary, debug_mode: bool = false
 		var bar: ProgressBar = data.bar
 		var label: Label = data.label
 		var clip: Control = data.clip
+		label.text = "%d / %d" % [amount, cap] if cap > 0 else "%d / ?" % amount
+		if bool(data.get("large_numbers", false)):
+			bar.custom_minimum_size.x = maxf(225.0, label.get_combined_minimum_size().x + 8.0)
 		bar.max_value = maxi(1, cap)
 		var width := maxf(bar.size.x, bar.custom_minimum_size.x)
 		var ratio := clampf(float(amount) / float(cap), 0.0, 1.0) if cap > 0 else 0.0
 		if amount > 0:
 			ratio = maxf(ratio, 2.0 / width)
 		bar.value = ratio * bar.max_value
-		label.text = "%d / %d" % [amount, cap] if cap > 0 else "%d / ?" % amount
 		clip.size.x = maxf(0.0, width - 4.0) * ratio
 
 static func wallet_capacities(level: int, route: String, hq_path: String, balance: Dictionary) -> Dictionary:

@@ -78,7 +78,7 @@ test("expedition economics and captures settle atomically through authenticated 
         const capped=player(a.player_id); capped.wallet.essence=1_000_000;
         db.query("UPDATE players SET state_json=? WHERE player_id=?").run(JSON.stringify(capped),a.player_id);
       }
-      if (victories >= 2 && (db.query("SELECT mana FROM expedition_balances WHERE player_id=?").get(a.player_id) as any).mana < 0.1) setPool(a.player_id,6,0,0);
+      if (victories >= 2 && (db.query("SELECT mana FROM expedition_balances WHERE player_id=?").get(a.player_id) as any).mana < 0.3) setPool(a.player_id,6,0,0);
       const before=player(a.player_id).homunculus_progress.cinder?.xp ?? 0;
       const selected=Math.max(0,session.choices.findIndex((x:any)=>x.capturable));
       const select=await req("/expeditions/select",body(session,{choice:selected}),a.token); expect(select.status).toBe(200);session=select.data.session;
@@ -120,7 +120,7 @@ test("expedition economics and captures settle atomically through authenticated 
       expect(player(a.player_id).homunculus_progress.cinder.xp).toBe(before+20);
       session=win.data.session; victories++; return win.data;
     };
-    let win=await victory(); expect(win.mana).toBe(5.9); expect((db.query("SELECT mana FROM expedition_balances WHERE player_id=?").get(a.player_id) as any).mana).toBe(5.9);
+    let win=await victory(); expect(win.mana).toBe(5.7); expect((db.query("SELECT mana FROM expedition_balances WHERE player_id=?").get(a.player_id) as any).mana).toBe(5.7);
     const skipAdvance=async(expectedPool?:number)=>{
       let skip=await req("/expeditions/skip",body(session),a.token); expect(skip.status).toBe(200); session=skip.data.session;
       const previousDepth=session.depth, advanceBody=body(session,{direction:"forward"});
@@ -129,8 +129,10 @@ test("expedition economics and captures settle atomically through authenticated 
       if(expectedPool!==undefined) expect(drop.granted).toBe(expectedPool<5 && expeditionDraw(runSeed,JSON.stringify(["crystal-drop",session.run_id,previousDepth]),0)<0.5);
       session=advanced.data.session; expect(session.latest_reward).toEqual(drop); return advanced.data;
     };
-    const firstAdvance=await skipAdvance(0); win=await victory(); expect(win.mana).toBe(5.8); expect(session.latest_reward).toEqual(firstAdvance.events[0]);
-    await skipAdvance(); setPool(a.player_id,0.1,0,Date.now()+EXPEDITION_MANA_INTERVAL_MS);
+    const firstAdvance=await skipAdvance(0); win=await victory(); expect(win.mana).toBe(5.4); expect(session.latest_reward).toEqual(firstAdvance.events[0]);
+    await skipAdvance(); setPool(a.player_id,0.2,0,Date.now()+EXPEDITION_MANA_INTERVAL_MS);
+    expect((await req("/expeditions/select",body(session,{choice:0}),a.token)).status).toBe(400);
+    setPool(a.player_id,0.3,0,Date.now()+EXPEDITION_MANA_INTERVAL_MS);
     win=await victory(); expect(win.mana).toBe(0);
     await skipAdvance();
     expect((await req("/expeditions/select",body(session,{choice:0}),a.token)).status).toBe(400);

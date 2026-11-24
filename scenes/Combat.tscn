@@ -628,8 +628,8 @@ custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 text = ""
 autowrap_mode = 1
-theme_override_font_sizes/font_size = 12
-custom_minimum_size = Vector2(220, 0)
+theme_override_font_sizes/font_size = 24
+custom_minimum_size = Vector2(440, 0)
 
 [node name="ConfirmLeave" type="PopupPanel" parent="."]
 visible = false

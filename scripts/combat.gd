@@ -266,6 +266,7 @@ var _next_turn_action := ""
 @onready var confirm_leave: Button = $ConfirmLeave/Panel/VBox/Buttons/LeaveButton
 
 func _ready() -> void:
+	set_meta("combat_font", true)
 	_spectator_readonly = not SceneRouter._spectator_context.is_empty()
 	backend_url = preload("res://scripts/net/backend_endpoint.gd").resolve(backend_url)
 	player_entity.flip_h = false
@@ -358,7 +359,7 @@ func _setup_combat_log() -> void:
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(4)
 	$LogBG.add_theme_stylebox_override("panel", style)
-	log_box.add_theme_font_override("normal_font", load("res://assets/fonts/liberation-serif/LiberationSerif-Regular.ttf"))
+	log_box.set_meta("global_chat_font", true)
 	log_box.meta_clicked.connect(_on_log_spell_clicked)
 	log_box.meta_hover_started.connect(_on_log_spell_hovered)
 	log_box.meta_hover_ended.connect(func(_meta): log_box.tooltip_text = "")

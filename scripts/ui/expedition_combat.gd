@@ -9,6 +9,25 @@ const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const LogPresenter := preload("res://scripts/ui/combat_log_presenter.gd")
 const CombatVFX := preload("res://scripts/ui/combat_vfx.gd")
 
+class WeaponTooltip:
+	static func make(source: Control, text: String) -> Control:
+		var panel := PanelContainer.new()
+		panel.theme_type_variation = "TooltipPanel"
+		panel.set_meta("combat_font", true)
+		var label := Label.new()
+		label.text = text
+		label.add_theme_font_size_override("font_size", maxi(1, source.get_theme_font_size("font_size", "TooltipLabel")) * 2)
+		panel.add_child(label)
+		return panel
+
+class WeaponButton extends Button:
+	func _make_custom_tooltip(for_text: String) -> Object:
+		return WeaponTooltip.make(self, for_text)
+
+class WeaponSlot extends Control:
+	func _make_custom_tooltip(for_text: String) -> Object:
+		return WeaponTooltip.make(self, for_text)
+
 class GroundShadow extends Control:
 	func _draw() -> void:
 		# Concentric translucent ellipses give the edge a soft fade.
@@ -45,6 +64,7 @@ func _exit_tree() -> void:
 	if is_instance_valid(registry): registry.free()
 
 func configure(scene: Control, data: Dictionary, retained_icons: Array = []) -> void:
+	set_meta("combat_font", true)
 	host = scene
 	session = data.duplicate(true)
 	retained_status_icons = retained_icons
@@ -109,6 +129,7 @@ func _build() -> void:
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	log_box.add_child(heading)
 	log = RichTextLabel.new()
+	log.set_meta("global_chat_font", true)
 	log.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	log.scroll_following = true
 	log.add_theme_font_size_override("normal_font_size", 18)
@@ -124,7 +145,7 @@ func _build() -> void:
 	for i in 2:
 		var item_id := str(equipped[i].get("id", "")) if i < equipped.size() and equipped[i] is Dictionary and equipped[i].get("id") != null else ""
 		var item: Dictionary = registry.get_items().get(item_id, {})
-		var button := Button.new()
+		var button := WeaponButton.new()
 		button.name = "WeaponSlot%d" % (i + 1)
 		button.flat = true
 		button.tooltip_text = GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id)))
@@ -158,7 +179,7 @@ func _build() -> void:
 			var item_id := str(entry.get("id", "")) if entry is Dictionary and entry.get("id") != null else ""
 			if item_id.is_empty(): continue
 			var item: Dictionary = registry.get_items().get(item_id, {})
-			var slot := Control.new()
+			var slot := WeaponSlot.new()
 			slot.name = "EnemyWeaponSlot%d" % (i + 1)
 			slot.tooltip_text = "%s  |  +%d" % [GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id))), int(entry.get("level", 0))]
 			_place(slot, Vector2(1296 + i * 112, 765), Vector2(104, 104))

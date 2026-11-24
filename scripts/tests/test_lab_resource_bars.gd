@@ -48,9 +48,19 @@ func _run() -> void:
 		assert(float(scene._get_production_per_hour().essence) > 0.0)
 		var essence: Dictionary = scene._resource_rows.essence
 		assert(essence.icon.mouse_filter == Control.MOUSE_FILTER_IGNORE)
-		assert(essence.icon.custom_minimum_size == Vector2(32, 32))
-		assert(essence.bar.custom_minimum_size == Vector2(150, 24))
-		assert(essence.label.get_theme_font_size("font_size") == 14)
+		var large: bool = path.ends_with("LabHub.tscn")
+		assert(essence.icon.custom_minimum_size == (Vector2(40, 40) if large else Vector2(32, 32)))
+		assert(essence.bar.custom_minimum_size == (Vector2(225, 40) if large else Vector2(150, 24)))
+		assert(essence.label.get_theme_font_size("font_size") == (28 if large else 14))
+		assert(essence.label.get_theme_constant("outline_size") == (5 if large else 3))
+		if large:
+			var bars = load("res://scripts/ui/lab_resource_bars.gd")
+			bars.update(scene._resource_rows, {"wallet":{"essence":123456789}, "wallet_capacities":{"essence":987654321}})
+			await process_frame
+			assert(essence.bar.size.x >= essence.label.get_combined_minimum_size().x + 8.0, "large resource values fit inside the bar")
+			var next_row: Control = scene._resource_rows.core.row
+			assert(next_row.position.y >= essence.row.position.y + essence.row.size.y, "resource rows do not overlap")
+			scene._update_resource_bar()
 		assert(essence.bar.get_theme_stylebox("background").border_width_left == 0)
 		scene._state.wallet.essence = 1
 		scene._state.lab.buildings.storage_vault.level = 10

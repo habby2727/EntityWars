@@ -151,7 +151,7 @@ func _setup_chat() -> void:
 	chat_log.offset_top = host.log_box.offset_top
 	chat_log.offset_bottom = host.log_box.offset_bottom
 	chat_log.scroll_following = true
-	chat_log.add_theme_font_override("normal_font", load("res://assets/fonts/liberation-serif/LiberationSerif-Regular.ttf"))
+	chat_log.set_meta("global_chat_font", true)
 	chat_log.add_theme_font_size_override("normal_font_size", 20)
 	chat_log.hide()
 	host.add_child(chat_log)

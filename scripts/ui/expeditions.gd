@@ -594,7 +594,7 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 	if response_kind == "state":
 		recovery_required = false
 		if mana_continue_requested:
-			mana_prompt = float(data.get("mana", 0)) < 0.1
+			mana_prompt = float(data.get("mana", 0)) < 0.3
 			mana_continue_requested = false
 	var response_events: Array = data.get("events", []) if data.get("events") is Array else []
 	state_data = data.duplicate(true)
@@ -602,7 +602,7 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 	received_ticks = Time.get_ticks_msec()
 	countdown_refresh = false
 	session = received.duplicate(true) if received is Dictionary else {}
-	if session.get("status") == "ACTIVE" and float(data.get("mana", 0)) < 0.1 and str(session.get("phase", "")) != "COMBAT": mana_prompt = true
+	if session.get("status") == "ACTIVE" and float(data.get("mana", 0)) < 0.3 and str(session.get("phase", "")) != "COMBAT": mana_prompt = true
 	if request_kind != "state":
 		pending.clear()
 		if response_kind == "exit":
@@ -880,7 +880,7 @@ func _render_mana_prompt() -> void:
 	var proceed := Button.new()
 	proceed.text = tr("EXPEDITION_CONTINUE")
 	proceed.custom_minimum_size = Vector2(320, 56)
-	proceed.set_meta("unavailable", float(state_data.get("mana", 0)) < 0.1)
+	proceed.set_meta("unavailable", float(state_data.get("mana", 0)) < 0.3)
 	MenuArt.button(proceed)
 	proceed.pressed.connect(func():
 		mana_continue_requested = true

@@ -261,6 +261,8 @@ func _draw() -> void:
 
 func _draw_icon(kind: String, offset: Vector2, enabled: bool) -> void:
 	draw_set_transform(offset, 0.0, Vector2.ONE if victory_only else Vector2(2, 2))
+	if not victory_only:
+		draw_circle(Vector2(12, 11.5), 11.5, Color(0.025, 0.035, 0.045, 0.76), true, -1.0, true)
 	var c := Color.WHITE
 	match kind:
 		"hourglass":

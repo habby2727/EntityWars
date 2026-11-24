@@ -2,9 +2,9 @@ extends Control
 
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const SUMMONERS := {
-	"wizard": ["Arcane Wraith", "res://assets/forest/summoners/Wizard_front.png"],
-	"witch": ["Phantom Sorceress", "res://assets/forest/summoners/Witch_Front.png"],
-	"cyberghost": ["Cyberghost", "res://assets/forest/summoners/Cyberghost_Front.png"]
+	"wizard": ["FOREST_SUMMONER_WIZARD", "res://assets/forest/summoners/Wizard_front.png"],
+	"witch": ["FOREST_SUMMONER_WITCH", "res://assets/forest/summoners/Witch_Front.png"],
+	"cyberghost": ["FOREST_SUMMONER_CYBERGHOST", "res://assets/forest/summoners/Cyberghost_Front.png"]
 }
 var _selected := ""
 var _cards := {}

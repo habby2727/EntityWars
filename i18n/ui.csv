@@ -33,6 +33,7 @@ AUTH_RECOVERY_REQUIRED,Sign in with the account that owns the unfinished session
 MENU_COMBAT,COMBAT,COMBATE
 MENU_INVENTORY,INVENTORY,INVENTARIO
 MENU_LABORATORY,LABORATORY,LABORATORIO
+LAB_MENU,Menu,Menú
 MENU_SETTINGS,SETTINGS,AJUSTES
 SETTINGS_TITLE,SETTINGS,AJUSTES
 SETTINGS_LANGUAGE,Language,Idioma
@@ -291,7 +292,7 @@ EXPEDITION_MANA_FULL,Full,Completo
 EXPEDITION_MANA_INSUFFICIENT,Not enough essence.,No tienes suficiente esencia.
 EXPEDITION_MANA_LIMIT,Purchase limit reached. Try again later.,Has alcanzado el límite de compras. Inténtalo más tarde.
 EXPEDITION_MANA_FULL_NOTICE,Not enough room for 1 mana.,No queda espacio para 1 de maná.
-EXPEDITION_MANA_TOOLTIP,"+1 every 2 hours; -0.1 per victory; up to -1 on defeat, exit or abandonment. Next regeneration: %s","+1 cada 2 horas; -0.1 por victoria; hasta -1 por derrota, salida o abandono. Próxima regeneración: %s"
+EXPEDITION_MANA_TOOLTIP,"+1 every 2 hours; -0.3 per victory; up to -1 on defeat, exit or abandonment. Next regeneration: %s","+1 cada 2 horas; -0.3 por victoria; hasta -1 por derrota, salida o abandono. Próxima regeneración: %s"
 EXPEDITION_CRYSTALS_TOOLTIP,"Maximum 5. Each capture attempt costs 1; advancing after a victory may grant 1.","Máximo 5. Cada intento de captura cuesta 1; avanzar tras una victoria puede conceder 1."
 EXPEDITION_CONNECTION,Connection unavailable. Retry.,Conexión no disponible. Inténtalo de nuevo.
 EXPEDITION_ACCOUNT_REQUIRED,Verify the original account and owned homunculus first.,Verifica primero la cuenta original y el homúnculo en propiedad.
@@ -377,6 +378,9 @@ EXPEDITION_REWARD_EXCEPTIONAL,Exceptional victory,Victoria excepcional
 
 FOREST_ENTER,Enter Forest,Entrar en el bosque
 FOREST_CHOOSE_SUMMONER,Choose your summoner,Elige tu invocador
+FOREST_SUMMONER_WIZARD,Arcane Wizard,Mago Arcano
+FOREST_SUMMONER_WITCH,Spectral Witch,Bruja Espectral
+FOREST_SUMMONER_CYBERGHOST,Cyberghost,Cyberfantasma
 FOREST_SELECT,Select,Seleccionar
 FOREST_CONFIRM,Enter Forest,Entrar en el bosque
 FOREST_LEAVE,Exit,Salir

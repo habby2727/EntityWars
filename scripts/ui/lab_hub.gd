@@ -241,7 +241,7 @@ func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
 		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	if _resource_bar != null:
-		_resource_rows = ResourceBars.build(_resource_bar, _catalog, true, -10)
+		_resource_rows = ResourceBars.build(_resource_bar, _catalog, true, 0, true)
 
 func _update_resource_bar() -> void:
 	ResourceBars.update(_resource_rows, _state, _debug.unlock_all_buildings, _db.balance)

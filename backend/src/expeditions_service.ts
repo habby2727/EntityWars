@@ -239,7 +239,7 @@ export function createExpeditionService(options: Options) {
           options.spendManaEssence(playerId,actionId,now);
           saveBalance(playerId,{...changeExpeditionMana(pool,1,now),crystals:pool.crystals});
         } else if (action === "select") {
-          if (balance(playerId,now).mana < 0.1) fail(400,"Not enough expedition mana.");
+          if (balance(playerId,now).mana < 0.3) fail(400,"Not enough expedition mana.");
           if (state.phase!=="EXPLORE") fail(409,"Enemy selection unavailable.");
           let selected=state.choices[body.choice]; const setup=JSON.parse(row.setup_json);
           // Old active runs may have generated their choices before NPC items existed.
@@ -268,8 +268,8 @@ export function createExpeditionService(options: Options) {
           }
           if (state.combat.terminal_result === "WIN") {
             const pool=balance(playerId,now);
-            if (pool.mana < 0.1) fail(400,"Not enough expedition mana.");
-            saveBalance(playerId,{...changeExpeditionMana(pool,-0.1,now),crystals:pool.crystals});
+            if (pool.mana < 0.3) fail(400,"Not enough expedition mana.");
+            saveBalance(playerId,{...changeExpeditionMana(pool,-0.3,now),crystals:pool.crystals});
             state.phase="REWARD";
             state.candidate=state.selected.capturable ? expeditionCaptures.find(h => h.id === state.selected.homunculus_id) : null;
             state.capture_attempts=0; state.capture_closed=false;
