@@ -14,33 +14,44 @@ jobs:
         with:
           bun-version: 1.3.8
       - name: Install existing backend dependencies
+        id: backend_dependencies
         working-directory: backend
         run: bun install --frozen-lockfile
       - name: Run isolated backend regression tests
+        if: ${{ !cancelled() && steps.backend_dependencies.outcome == 'success' }}
         working-directory: backend
         run: bun run test:isolated
       - name: Run PvP combat regression tests
+        if: ${{ !cancelled() && steps.backend_dependencies.outcome == 'success' }}
         working-directory: backend
         run: bun test src/tests/pvp_combat.test.ts
       - name: Run Dungeon and Expeditions combat regression tests
+        if: ${{ !cancelled() && steps.backend_dependencies.outcome == 'success' }}
         working-directory: backend
         run: bun test src/tests/dungeon.test.ts src/tests/expeditions_combat.test.ts
       - name: Build backend
+        if: ${{ !cancelled() && steps.backend_dependencies.outcome == 'success' }}
         working-directory: backend
         run: bun run build
       - name: Install Godot 4.6
+        id: godot_install
+        if: ${{ !cancelled() }}
         run: |
           curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot/releases/download/4.6-stable/Godot_v4.6-stable_linux.x86_64.zip
           unzip -q /tmp/godot.zip -d /tmp/godot
       - name: Import project headlessly
+        id: godot_import
+        if: ${{ !cancelled() && steps.godot_install.outcome == 'success' }}
         run: /tmp/godot/Godot_v4.6-stable_linux.x86_64 --headless --path "$GITHUB_WORKSPACE" --editor --quit
       - name: Check scene navigation with isolated user data
+        if: ${{ !cancelled() && steps.godot_import.outcome == 'success' }}
         run: |
           export UI_CAPTURE_DIR="$RUNNER_TEMP/entitywars-ui"
           export XDG_DATA_HOME="$UI_CAPTURE_DIR"
           mkdir -p "$UI_CAPTURE_DIR"
           /tmp/godot/Godot_v4.6-stable_linux.x86_64 --headless --path "$GITHUB_WORKSPACE" --script res://scripts/tests/smoke_ui_navigation.gd
       - name: Check loading startup with isolated user data
+        if: ${{ !cancelled() && steps.godot_import.outcome == 'success' }}
         run: |
           export XDG_DATA_HOME="$RUNNER_TEMP/entitywars-loading"
           mkdir -p "$XDG_DATA_HOME"

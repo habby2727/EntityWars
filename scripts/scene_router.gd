@@ -133,12 +133,14 @@ static func begin_spectating(context: Dictionary) -> void:
 	_go_to(SCENE_EXPEDITIONS if context.get("mode") == "expedition" else SCENE_COMBAT, "Spectator")
 
 static func finish_spectating() -> void:
+	var tree := _get_tree()
+	var spectator = tree.root.get_node_or_null("SpectatorClient") if tree != null and tree.root != null else null
 	if _spectator_context.is_empty():
-		SpectatorClient.leave()
+		if spectator != null: spectator.leave()
 		go_to_lab_hub()
 		return
 	var origin := str(_spectator_context.get("origin", ""))
-	SpectatorClient.leave()
+	if spectator != null: spectator.leave()
 	_spectator_context.clear()
 	if forest_return_available():
 		_forest_restore = _forest_return.duplicate(true)
