@@ -1,0 +1,9 @@
+﻿{
+  "enemies": [
+    {"id":"noxiris","role":"balanced","element":"mercury","hp":150,"damage":25,"defense":4,"speed":85,"range":70,"unlock_wave":1},
+    {"id":"mycelion","role":"swarm","element":"vitriol","hp":100,"damage":20,"defense":2,"speed":100,"range":65,"unlock_wave":2},
+    {"id":"vitreous","role":"fast","element":"sodium","hp":125,"damage":25,"defense":3,"speed":115,"range":70,"unlock_wave":3},
+    {"id":"hexalith","role":"ranged","element":"aether","hp":135,"damage":28,"defense":2,"speed":75,"range":160,"unlock_wave":4},
+    {"id":"mortivane","role":"tank","element":"gold","hp":260,"damage":24,"defense":10,"speed":65,"range":70,"unlock_wave":5}
+  ]
+}

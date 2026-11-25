@@ -17,6 +17,10 @@ const enemy = (team: Team): Team => team === "blue" ? "red" : "blue";
 const labId = (team: Team, lane: Lane) => `${team}:${lane}`;
 const copy = <T>(value: T): T => structuredClone(value);
 const dist2 = (a: Point, b: Point) => (a.x-b.x)**2 + (a.y-b.y)**2;
+/** Stable nearest opposing living unit in attack range. */
+export function nearestTarget<T extends { id:number; team:Team; hp:number; position:Point }>(unit:T, units:T[], range:number):T | undefined {
+  return units.filter(other => other.team !== unit.team && other.hp > 0 && dist2(unit.position,other.position) <= range ** 2).sort((a,b) => dist2(unit.position,a.position)-dist2(unit.position,b.position) || a.id-b.id)[0];
+}
 
 // FNV-1a and xorshift32 provide a portable, deterministic per-controller shuffle.
 function shuffle(seed: string): string[] {
@@ -39,12 +43,12 @@ export function initializeMatch(mode: Mode, seed: string, controllerIds: string[
   const perTeam = controllerIds.length / 2;
   return { kind: "woe", mode, tick: 0, controllers: controllerIds.map((id,i) => { const deck = shuffle(`${seed.length}:${seed}:${id.length}:${id}`); return { id, team: i < perTeam ? "blue" : "red", zealTenths: 50, slots: deck.slice(0,3), queue: deck.slice(3), actionIds: [] }; }), laboratories: teams.flatMap(team => lanes.map(lane => ({ id: labId(team,lane), team, lane, hp: arena.laboratory_hp, maxHp: arena.laboratory_hp, position: copy(arena.laboratories[team][lane]) }))), units: [], nextUnitId: 1, events: [], result: null };
 }
-function route(team: Team, from: Lane, target: Lane): Point[] {
+export function route(team: Team, from: Lane, target: Lane): Point[] {
   return [...copy(arena.approaches[team][from]), copy(arena.plaza), ...copy(arena.approaches[enemy(team)][target]).reverse(), copy(arena.spawns[enemy(team)][target])];
 }
 // Before the plaza, keep following the current approach. Beyond it, cross to the
 // other approach at the same depth, then continue toward the surviving lab.
-function redirectRoute(unit: Unit, target: Lane): Point[] {
+export function redirectRoute(unit: Unit, target: Lane): Point[] {
   const approach = [copy(arena.plaza), ...copy(arena.approaches[enemy(unit.team)][target]).reverse(), copy(arena.spawns[enemy(unit.team)][target])];
   const plazaIndex = arena.approaches[unit.team][unit.lane].length;
   if (unit.waypoint <= plazaIndex) return [...copy(unit.route.slice(unit.waypoint, plazaIndex + 1)), ...approach.slice(1)];
@@ -85,7 +89,7 @@ export function applyDeployment(state: MatchState, command: DeploymentCommand): 
   next.units.push({ id: next.nextUnitId++, controllerId: player.id, team: player.team, lane: command.lane, cardId: command.cardId, hp: cardById[command.cardId].hp, position: copy(arena.spawns[player.team][command.lane]), route: route(player.team,command.lane,targetLane), waypoint: 0, targetLane, cooldown: 0 });
   return { accepted: true, state: next };
 }
-function move(unit: Unit, amount: number) {
+export function move(unit: Unit, amount: number) {
   while (amount > 0 && unit.waypoint < unit.route.length) {
     const point = unit.route[unit.waypoint]; const dx = point.x-unit.position.x, dy = point.y-unit.position.y; const d = Math.hypot(dx,dy);
     if (d <= amount) { unit.position = { ...point }; unit.waypoint++; amount -= d; }
@@ -108,8 +112,7 @@ export function advanceTick(state: MatchState): MatchState {
       lab = next.laboratories.find(l => l.team === enemy(unit.team) && l.lane === unit.targetLane)!;
       unit.route = redirectRoute(unit, unit.targetLane); unit.waypoint = 0;
     }
-    const targets = next.units.filter(other => other.team !== unit.team && other.hp > 0 && dist2(unit.position,other.position) <= card.range ** 2).sort((a,b) => dist2(unit.position,a.position)-dist2(unit.position,b.position) || a.id-b.id);
-    const target = targets[0];
+    const target = nearestTarget(unit, next.units, card.range);
     if (target || (lab.hp > 0 && dist2(unit.position,lab.position) <= card.range ** 2)) {
       if (unit.cooldown === 0) {
         const damage = target ? attackDamage(card.damage,cardById[target.cardId].defense,elementalMultiplier(card.element,cardById[target.cardId].element)) : attackDamage(card.damage,0);
