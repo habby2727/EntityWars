@@ -34,5 +34,24 @@ func _run() -> void:
 	await create_timer(0.5).timeout
 	assert(is_instance_valid(current_scene) and current_scene.get_instance_id() == arena_id)
 	assert(arena_transitions[0] == 1)
+	# Startup recovery has no previous Forest position; use the account's saved
+	# summoner and enter at the normal spawn rather than sending it to the lab.
+	var preferences := ConfigFile.new()
+	preferences.load(SceneRouter.FOREST_PREFERENCES)
+	var has_summoner := OS.get_environment("INVUIR_NO_SUMMONER") != "1"
+	preferences.set_value("players", str(gate.player_id).sha256_text(), "wizard" if has_summoner else "")
+	assert(preferences.save(SceneRouter.FOREST_PREFERENCES) == OK)
+	SceneRouter._forest_owner = ""
+	SceneRouter._forest_summoner = ""
+	var arena = current_scene
+	arena._confirm_return()
+	for child in arena.get_children():
+		if child is ConfirmationDialog: child.confirmed.emit()
+	deadline = Time.get_ticks_msec() + 10000
+	var destination := SceneRouter.SCENE_FOREST_WORLD if has_summoner else SceneRouter.SCENE_SUMMONER_SELECTION
+	while Time.get_ticks_msec() < deadline and (not is_instance_valid(current_scene) or current_scene.scene_file_path != destination):
+		await process_frame
+	assert(is_instance_valid(current_scene) and current_scene.scene_file_path == destination)
+	assert(SceneRouter.forest_selected_summoner() == ("wizard" if has_summoner else ""))
 	print("MINIGAME_STARTUP_PRIORITY_PASS ", "woe" if live_woe else "core_defense")
 	quit(0)

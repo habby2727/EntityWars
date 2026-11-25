@@ -232,7 +232,7 @@ func _run() -> void:
 			if not arena._buttons[i].disabled and slot == -1: slot = i
 		if not check(slot >= 0, "affordable card"): quit(1); return
 		arena._select(slot)
-		if not check(arena._selected == slot and arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:left"].size == Vector2(110,110), "selection and deployment target"): quit(1); return
+		if not check(arena._selected == slot and arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:left"].size == Vector2(140,140), "selection and deployment target"): quit(1); return
 		arena._deploy("left")
 		if not check(await wait_for(func(): return not arena._acting and not arena._snapshot.units.is_empty()), "deploy in arena"): quit(1); return
 		var deployed: Dictionary = arena._snapshot.units[0]

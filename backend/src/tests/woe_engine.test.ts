@@ -1,6 +1,6 @@
 ﻿import { test, expect } from "bun:test";
 import { arena, cards, cardById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "../woe/catalog";
-import { initializeMatch, applyDeployment, advanceTick, getPublicSnapshot, formationPoint, route, move, type MatchState } from "../woe/engine";
+import { initializeMatch, applyDeployment, advanceTick, getPublicSnapshot, formationPoint, route, move, WOE_MOVEMENT_MULTIPLIER, type MatchState } from "../woe/engine";
 const make = () => initializeMatch("1v1", "seed", ["b", "r"]);
 function deploy(s: MatchState, i: number, slot=0, lane: "left"|"right"="left") { const p=s.controllers[i]; const r=applyDeployment(s,{actionId:`${s.nextUnitId}`,controllerId:p.id,slot,cardId:p.slots[slot],lane}); expect(r.accepted).toBe(true); return r.state; }
 function ticks(s: MatchState, n: number) { for(let i=0;i<n;i++) s=advanceTick(s); return s; }
@@ -90,7 +90,7 @@ test("modes, seeded openings, rotation and independent zeal",()=>{
  for(const mode of ["1v1","2v2"] as const) for(let i=0;i<20;i++){const s=initializeMatch(mode,String(i),mode==="1v1"?["b","r"]:["b","b2","r","r2"]); expect(s.laboratories.length).toBe(4); expect(s.controllers.every(p=>p.slots.some(id=>cardById[id].cost<=3))).toBe(true);}
  let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id].cost<=3), card=p.slots[slot], replacement=p.queue[0]; s=deploy(s,0,slot);
  expect(s.controllers[0].slots[slot]).toBe(replacement); expect(s.controllers[0].queue.at(-1)).toBe(card); expect(s.controllers[0].zealTenths).toBe(50-cardById[card].cost*10);
- s=ticks(s,10); expect(s.controllers[0].zealTenths).toBe(60-cardById[card].cost*10); expect(s.controllers[1].zealTenths).toBe(60); s=ticks(s,100); expect(s.controllers.every(p=>p.zealTenths===100)).toBe(true);
+ s=ticks(s,10); expect(s.controllers[0].zealTenths).toBe(55-cardById[card].cost*10); expect(s.controllers[1].zealTenths).toBe(55); s=ticks(s,200); expect(s.controllers.every(p=>p.zealTenths===100)).toBe(true);
 });
 test("invalid and duplicate actions do not mutate or charge",()=>{
  let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id].cost<=3); const cmd={actionId:"x",controllerId:p.id,slot,cardId:p.slots[slot],lane:"left" as const};
@@ -100,6 +100,16 @@ test("invalid and duplicate actions do not mutate or charge",()=>{
 });
 test("bounded spawns and movement",()=>{
  let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); expect(Math.abs(s.units[0].position.x-s.units[1].position.x)).toBeLessThanOrEqual(48); expect(s.units[0].position.y+s.units[1].position.y).toBe(1080); expect(arena.spawns.blue.left.x+arena.spawns.blue.right.x).toBe(1920); const pos=structuredClone(s.units[0].position); s=advanceTick(s); expect(s.units[0].position).not.toEqual(pos);
+});
+test('WOE generates one zeal in two seconds and slows every card equally',()=>{
+ let s=make();s.controllers.forEach(p=>p.zealTenths=0);
+ s=ticks(s,19);expect(s.controllers.map(p=>p.zealTenths)).toEqual([9,9]);
+ s=advanceTick(s);expect(s.controllers.map(p=>p.zealTenths)).toEqual([10,10]);
+ for(const card of cards){
+  let sample=make();sample.controllers[0].slots[0]=card.id;sample.controllers[0].zealTenths=100;sample=deploy(sample,0);
+  const before=sample.units[0].position;sample=advanceTick(sample);const after=sample.units[0].position;
+  expect(Math.hypot(after.x-before.x,after.y-before.y)).toBeCloseTo(card.speed*WOE_MOVEMENT_MULTIPLIER*arena.tick_ms/1000,8);
+ }
 });
 test('formation slots remain bounded, advance and reach short-range laboratories in both directions',()=>{
  for(const team of ['blue','red'] as const) for(const lane of ['left','right'] as const) {

@@ -13,6 +13,8 @@ export interface DeploymentCommand { actionId: string; controllerId: string; slo
 export type DeploymentResult = { accepted: true; state: MatchState } | { accepted: false; state: MatchState; reason: string };
 const teams: Team[] = ["blue", "red"];
 const lanes: Lane[] = ["left", "right"];
+// WOE units move more slowly without changing the shared Core Defense catalog.
+export const WOE_MOVEMENT_MULTIPLIER = 0.85;
 const enemy = (team: Team): Team => team === "blue" ? "red" : "blue";
 const labId = (team: Team, lane: Lane) => `${team}:${lane}`;
 const copy = <T>(value: T): T => structuredClone(value);
@@ -121,7 +123,8 @@ function finish(state: MatchState, team: Team) { state.result = { winner: team, 
 export function advanceTick(state: MatchState): MatchState {
   if (state.result) return state;
   const next = copy(state); next.events = []; next.tick++;
-  for (const player of next.controllers) player.zealTenths = Math.min(100, player.zealTenths + 1);
+  // One tenth every two ticks: one full zeal per two simulated seconds.
+  if (next.tick % 2 === 0) for (const player of next.controllers) player.zealTenths = Math.min(100, player.zealTenths + 1);
   for (const unit of next.units) {
     if (unit.hp <= 0 || next.result) continue;
     if (unit.cooldown > 0) unit.cooldown--;
@@ -144,7 +147,7 @@ export function advanceTick(state: MatchState): MatchState {
           if (!target && next.laboratories.every(l => l.team !== lab.team || l.hp === 0)) finish(next,unit.team);
         }
       }
-    } else move(unit,card.speed * arena.tick_ms / 1000);
+    } else move(unit,card.speed * WOE_MOVEMENT_MULTIPLIER * arena.tick_ms / 1000);
   }
   next.units = next.units.filter(u => u.hp > 0);
   if (!next.result && next.tick >= arena.duration_ticks) {

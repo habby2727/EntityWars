@@ -27,10 +27,11 @@ class Meter extends Control:
 class DeployMarker extends Button:
 	func _draw() -> void:
 		var center := size * 0.5
-		draw_circle(center, 38.0, Color(1.0, 0.84, 0.2, 0.12))
-		draw_arc(center, 39.0, 0, TAU, 48, Color("ffe778"), 3.0)
-		draw_arc(center, 28.0, 0, TAU, 40, Color("fff3b0"), 2.0)
-		draw_circle(center, 4.0, Color("fff7c9"))
+		draw_circle(center, 55.0, Color(1.0, 0.76, 0.08, 0.16))
+		draw_circle(center, 47.0, Color(1.0, 0.87, 0.25, 0.24))
+		draw_arc(center, 48.0, 0, TAU, 48, Color("ffe778"), 5.0)
+		draw_arc(center, 34.0, 0, TAU, 40, Color("fff3b0"), 3.0)
+		draw_circle(center, 6.0, Color("fff7c9"))
 
 var _identity := ""
 var _client: Node
@@ -157,13 +158,13 @@ func _build() -> void:
 			_lab_bars[team + ":" + lane] = meter
 			var spawn: Dictionary = data.spawns[team][lane]
 			var marker := DeployMarker.new()
-			marker.position = Vector2(float(spawn.x)-55,float(spawn.y)-55)
-			marker.size = Vector2(110,110)
+			marker.position = Vector2(float(spawn.x)-70,float(spawn.y)-70)
+			marker.size = Vector2(140,140)
 			marker.text = ""
 			for style in ["normal", "hover", "pressed", "focus", "disabled"]:
 				marker.add_theme_stylebox_override(style, StyleBoxEmpty.new())
 			marker.add_theme_font_size_override("font_size", 48)
-			marker.modulate = Color(1,0.9,0.15,0.8)
+			marker.modulate = Color(1,1,1,0.9)
 			marker.pressed.connect(_deploy.bind(lane))
 			marker.visible = false
 			_stage.add_child(marker)
@@ -249,7 +250,7 @@ func _process(delta: float) -> void:
 		_zeal_meter.value = _display_zeal
 		_zeal_meter.queue_redraw()
 	for marker in _lane_buttons.values():
-		if marker.visible: marker.modulate.a = 0.6 + 0.3 * sin(_seconds * 4.0)
+		if marker.visible: marker.modulate.a = 0.65 + 0.35 * sin(_seconds * 5.5)
 	if _debug_visual:
 		_debug_step(delta)
 		return

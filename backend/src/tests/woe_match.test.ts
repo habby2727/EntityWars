@@ -21,6 +21,21 @@ function setup(mode='1v1',players=['a']) {
 test('ticks, bots, restart, lease fence and bounded catch-up',()=>{
  const h=setup();h.service.pulse();const a=h.service.state('a',h.id,'0').data;expect(a.tick).toBe(1);expect(a.events.some((e:any)=>e.type==='spawn')).toBe(true);expect(a.snapshot.players.find((p:any)=>p.id!=='a').slots).toBeUndefined();h.advance(3600_000);const replacement=createWoeMatchService(h.db,()=>true,h.now);replacement.pulse();expect(replacement.state('a',h.id,'0').data.tick).toBe(2);h.disable();h.service.pulse();expect(h.service.state('a',h.id,'0').status).toBe(503);h.enable();expect(h.service.state('a',h.id,'0').data.tick).toBe(2);h.db.close();
 });
+test('1v1 NPC is one controller and pays the same zeal budget for every deployment',()=>{
+ const h=setup();const participants=h.db.query('SELECT controller_id, human, team FROM woe_match_participants WHERE match_id=?').all(h.id) as any[];
+ expect(participants).toHaveLength(2);expect(participants.filter(p=>p.human===0)).toHaveLength(1);
+ const bot=participants.find(p=>p.human===0);expect(bot.team).toBe('red');
+ for(let i=0;i<121;i++)h.service.pulse();
+ const state=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(h.id) as any).state_json);
+ const events=(h.db.query('SELECT event_json FROM woe_match_events WHERE match_id=?').all(h.id) as any[]).map(r=>JSON.parse(r.event_json));
+ const spawns=events.filter(e=>e.type==='spawn');expect(spawns.length).toBeGreaterThan(0);expect(spawns.every(e=>e.controller_id===bot.controller_id)).toBe(true);
+ const spent=spawns.reduce((n,e)=>n+cardById[e.card_id].cost*10,0);
+ const botState=state.controllers.find((p:any)=>p.id===bot.controller_id);
+ expect(spent+botState.zealTenths).toBeLessThanOrEqual(50+Math.floor(state.tick/2));
+ expect(spawns.length).toBeLessThanOrEqual(Math.floor((50+Math.floor(state.tick/2))/20));
+ expect(state.controllers.find((p:any)=>p.id==='a').zealTenths).toBe(100);
+ h.db.close();
+});
 test('deploy is private, validated, idempotent and journaled',()=>{
  const h=setup('1v1',['a','b']);const initial=h.service.state('a',h.id,'0').data,slots=initial.snapshot.players.find((p:any)=>p.id==='a').slots,slot=slots.findIndex((id:string)=>cardById[id].cost<=5),card=slots[slot];const body={match_id:h.id,client_action_id:'one',slot,card_id:card,lane:'left'};const first=h.service.deploy('a',body);expect(first.status).toBe(200);expect(h.service.deploy('a',body)).toEqual(first);expect(h.service.deploy('a',{...body,lane:'right'}).status).toBe(409);expect(h.service.deploy('a',{...body,client_action_id:'stale'}).status).toBe(409);expect(h.service.deploy('b',{...body,client_action_id:'forge',controller_id:'a'}).status).toBe(400);expect(h.service.state('c',h.id,'0').status).toBe(403);h.service.pulse();const page=h.service.state('a',h.id,'0').data;expect(page.events[0]).toMatchObject({seq:1,type:'spawn',card_id:card,controller_id:'a'});expect(h.service.state('a',h.id,'1').data.events.every((x:any)=>x.seq>1)).toBe(true);expect(page.snapshot.units[0].maxHp).toBeGreaterThan(0);h.db.close();
 });

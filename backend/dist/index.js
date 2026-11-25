@@ -17849,6 +17849,7 @@ function attackDamage(damage, defense, multiplier = 1) {
 // src/woe/engine.ts
 var teams = ["blue", "red"];
 var lanes = ["left", "right"];
+var WOE_MOVEMENT_MULTIPLIER = 0.85;
 var enemy = (team) => team === "blue" ? "red" : "blue";
 var labId = (team, lane) => `${team}:${lane}`;
 var copy = (value) => structuredClone(value);
@@ -17987,8 +17988,9 @@ function advanceTick(state) {
   const next = copy(state);
   next.events = [];
   next.tick++;
-  for (const player of next.controllers)
-    player.zealTenths = Math.min(100, player.zealTenths + 1);
+  if (next.tick % 2 === 0)
+    for (const player of next.controllers)
+      player.zealTenths = Math.min(100, player.zealTenths + 1);
   for (const unit of next.units) {
     if (unit.hp <= 0 || next.result)
       continue;
@@ -18018,7 +18020,7 @@ function advanceTick(state) {
         }
       }
     } else
-      move(unit, card.speed * arena.tick_ms / 1000);
+      move(unit, card.speed * WOE_MOVEMENT_MULTIPLIER * arena.tick_ms / 1000);
   }
   next.units = next.units.filter((u) => u.hp > 0);
   if (!next.result && next.tick >= arena.duration_ticks) {
@@ -18846,8 +18848,9 @@ function advanceCoreDefenseTick(state) {
   let s = clone(state);
   s.events = [];
   s.tick = plus(s.tick);
-  for (const p of s.controllers)
-    p.zealTenths = Math.min(100, p.zealTenths + 1);
+  if (s.phase === "wave")
+    for (const p of s.controllers)
+      p.zealTenths = Math.min(100, p.zealTenths + 1);
   if (s.phase === "intermission") {
     s.intermissionTicks--;
     if (s.intermissionTicks === 0) {

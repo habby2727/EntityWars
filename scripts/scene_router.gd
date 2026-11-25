@@ -188,6 +188,23 @@ static func recover_core_defense_after_startup(match: Dictionary) -> bool:
 static func finish_woe_safely() -> void:
 	if woe_context_valid() and forest_return_available():
 		finish_woe()
+	elif woe_context_valid() and bool(_woe_context.get("startup", false)) and _forest_modes_safe():
+		# Startup recovery has no saved Forest position, but it still belongs to
+		# the authenticated account. Return to the Forest's normal entry point.
+		var owner := _forest_verified_owner()
+		var summoner := forest_selected_summoner()
+		if summoner.is_empty():
+			var config := ConfigFile.new()
+			if config.load(FOREST_PREFERENCES) == OK:
+				summoner = str(config.get_value("players", owner.sha256_text(), ""))
+		_woe_context.clear()
+		_clear_forest_return()
+		if summoner in FOREST_SUMMONERS:
+			_forest_owner = owner
+			_forest_summoner = summoner
+			_go_to(SCENE_FOREST_WORLD, "ForestWorld")
+		else:
+			go_to_summoner_selection()
 	else:
 		_woe_context.clear()
 		_clear_forest_return()

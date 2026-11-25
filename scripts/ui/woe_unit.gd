@@ -8,6 +8,10 @@ var card_id := ""
 var team := "blue"
 var unit_kind := "homunculus"
 var target_position := Vector2.ZERO
+var _move_origin := Vector2.ZERO
+var _move_elapsed := 0.0
+var _move_duration := 1.0
+var _sample_elapsed := 1.0
 var hp := 1.0
 var max_hp := 1.0
 var visual_offset := 0.0
@@ -58,14 +62,24 @@ func setup(data: Dictionary) -> void:
 	visual_offset = float((unit_id * 7) % 19 - 9)
 	target_position = Vector2(float(data.get("x", 0)), float(data.get("y", 0)))
 	position = target_position
+	_move_origin = position
 	sprite = Sprite2D.new()
 	add_child(sprite)
 	_update_frame()
 	update_state(data)
+	_sample_elapsed = 1.0
 
 func update_state(data: Dictionary) -> void:
 	if dying: return
-	target_position = Vector2(float(data.get("x", target_position.x)), float(data.get("y", target_position.y)))
+	var next_position := Vector2(float(data.get("x", target_position.x)), float(data.get("y", target_position.y)))
+	if not next_position.is_equal_approx(target_position):
+		_move_origin = position
+		target_position = next_position
+		_move_elapsed = 0.0
+		# Spread movement over the snapshot interval, with a speed limit for
+		# delayed responses. The server remains authoritative for combat.
+		_move_duration = maxf(clampf(_sample_elapsed, 0.85, 1.5), position.distance_to(target_position) / 120.0)
+	_sample_elapsed = 0.0
 	hp = float(data.get("hp", hp))
 	max_hp = maxf(1.0, float(data.get("maxHp", max_hp)))
 	queue_redraw()
@@ -104,8 +118,11 @@ func _process(delta: float) -> void:
 			return
 		visible = int(death_time * 8.0) % 2 == 0
 	else:
-		moving = position.distance_to(target_position) > 1.0
-		position = position.lerp(target_position, 1.0 - exp(-delta * 7.0))
+		_sample_elapsed += delta
+		_move_elapsed = minf(_move_elapsed + delta, _move_duration)
+		var previous := position
+		position = _move_origin.lerp(target_position, _move_elapsed / _move_duration)
+		moving = position.distance_squared_to(previous) > 0.000001
 	separation = separation.lerp(desired_separation, 1.0 - exp(-delta * 5.0))
 	queue_redraw()
 	strike_time = maxf(0.0, strike_time - delta)

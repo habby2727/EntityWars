@@ -57,10 +57,10 @@ func _run() -> void:
 		arena._canvas.size = viewport_size
 		arena._resize()
 		assert(arena._stage.scale.is_equal_approx(viewport_size / Vector2(1920,1080)))
-		assert(arena._lane_buttons["blue:left"].size == Vector2(110,110))
-		assert(arena._lane_buttons["blue:left"].position + Vector2(55,55) == Vector2(410,800))
-		assert(arena._lane_buttons["red:right"].position + Vector2(55,55) == Vector2(1510,280))
-		assert((arena._lane_buttons["blue:left"].size * arena._stage.scale).x >= 55.0)
+		assert(arena._lane_buttons["blue:left"].size == Vector2(140,140))
+		assert(arena._lane_buttons["blue:left"].position + Vector2(70,70) == Vector2(410,800))
+		assert(arena._lane_buttons["red:right"].position + Vector2(70,70) == Vector2(1510,280))
+		assert((arena._lane_buttons["blue:left"].size * arena._stage.scale).x >= 70.0)
 		assert(arena._lab_bars["blue:left"].position.x + arena._lab_bars["blue:left"].size.x < 535.0)
 	arena._match_id = "m"
 	arena._cards = {"neon":{"cost":2,"element":"mercury"}}

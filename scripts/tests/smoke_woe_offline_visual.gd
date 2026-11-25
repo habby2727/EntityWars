@@ -29,6 +29,12 @@ func _run() -> void:
 		assert(arena._is_cd == (kind == "core_defense"))
 		assert(arena._own.slots.size() == 3)
 		arena._select(0)
+		var marker = arena._lane_buttons["blue:left"]
+		assert(marker.visible and marker.size == Vector2(140, 140))
+		arena._process(0.1)
+		var first_alpha: float = marker.modulate.a
+		arena._process(0.4)
+		assert(absf(marker.modulate.a - first_alpha) > 0.1)
 		arena._deploy("left")
 		assert(arena._debug_units.size() >= 1 and arena._units.size() >= 1)
 		arena._debug_step(3.0)

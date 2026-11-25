@@ -71,7 +71,7 @@ function spawn(s:CoreDefenseState) {
 export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState {
  if(state.result)return state;
  let s=clone(state);s.events=[];s.tick=plus(s.tick);
- for(const p of s.controllers)p.zealTenths=Math.min(100,p.zealTenths+1);
+ if(s.phase==='wave')for(const p of s.controllers)p.zealTenths=Math.min(100,p.zealTenths+1);
  if(s.phase==='intermission') {
   s.intermissionTicks--;
   if(s.intermissionTicks===0) {s.wave=plus(s.wave);s.waveSpawned=0;s.pendingSpawns=waveCount(s.wave);s.spawnCooldown=0;s.phase='wave';}
