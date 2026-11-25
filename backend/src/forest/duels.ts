@@ -1,4 +1,5 @@
 import { endSpectatingForStart } from "../spectator_guard";
+import { activeWoe } from "../woe/busy";
 import { activePractice } from "../practice_service";
 import type { Database } from 'bun:sqlite';
 import type { PvpSnapshot } from '../pvp/combat';
@@ -20,6 +21,7 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
  };
  const row = (id: string) => db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE i.invite_id=?`).get(id) as any;
  const busyPvp = (id: string, now: number) => !!db.query('SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>? UNION ALL SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1 LIMIT 1').get(id, now, id);
+ const busyWoe = (a:string,b:string,now:number) => activeWoe(db,a,now) || activeWoe(db,b,now);
  const reserved = (id: string) => !!db.query('SELECT 1 FROM forest_duel_reservations WHERE player_id=?').get(id);
  const mutate = (player: string, body: any, type: string, payload: object, run: (now:number)=>Result): Result => {
   if (!canServe()) return fail(503, 'FOREST_DUELS_UNAVAILABLE');
@@ -71,7 +73,7 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
     if (cooldown>now) return {status:429,data:{error:'DUEL_COOLDOWN',cooldown_until:cooldown,server_time:now}};
     const zone = roomOf(player);
     if (!zone || roomOf(target)!==zone) return fail(409,'FOREST_ROOM_MISMATCH');
-    if (reserved(player) || reserved(target) || busyPvp(player,now) || busyPvp(target,now)) return fail(409,'PLAYER_BUSY');
+    if (busyWoe(player,target,now) || reserved(player) || reserved(target) || busyPvp(player,now) || busyPvp(target,now)) return fail(409,'PLAYER_BUSY');
     const id = crypto.randomUUID();
     db.query("INSERT INTO forest_duel_invites VALUES (?,?,?,?,'PENDING',?,?,?)").run(id,player,target,zone,now,now,now+PENDING_MS);
     const reserve = db.query('INSERT INTO forest_duel_reservations VALUES (?,?)'); reserve.run(player,id); reserve.run(target,id);
@@ -88,7 +90,7 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
      if (!combatAvailable()) return fail(503,'PVP_SECRET_REQUIRED');
      if (!challengerAvailable) return fail(404,'PLAYER_UNAVAILABLE');
      if (roomOf(player)!==invitation.originating_zone || roomOf(invitation.challenger_id)!==invitation.originating_zone) return fail(409,'FOREST_ROOM_MISMATCH');
-     if (busyPvp(player,now) || busyPvp(invitation.challenger_id,now)) return fail(409,'PLAYER_BUSY');
+     if (busyWoe(player,invitation.challenger_id,now) || busyPvp(player,now) || busyPvp(invitation.challenger_id,now)) return fail(409,'PLAYER_BUSY');
      db.query("UPDATE forest_duel_invites SET status='ACCEPTED', updated_at=?, expires_at=? WHERE invite_id=?").run(now,now+PREPARING_MS,body.invite_id);
     } else {
      db.query("UPDATE forest_duel_invites SET status='DECLINED', updated_at=? WHERE invite_id=?").run(now,body.invite_id); unlock(body.invite_id);
@@ -103,6 +105,7 @@ export function createForestDuels(db: Database, roomOf: (id: string) => string |
     const invitation = row(body.invite_id);
     if (!invitation || ![invitation.challenger_id,invitation.recipient_id].includes(player)) return fail(404,'INVITE_UNAVAILABLE');
     if (invitation.status === 'STARTED') { const old=db.query('SELECT selection_json,playback_protocol FROM forest_duel_ready WHERE invite_id=? AND player_id=?').get(body.invite_id,player) as any; if (!old || old.selection_json!==JSON.stringify(body.selection) || old.playback_protocol !== (body.playback_protocol ?? 0)) return fail(409,'READY_CONFLICT'); const found=db.query('SELECT match_id FROM pvp_matches WHERE invite_id=?').get(body.invite_id) as any; return {status:200,data:{state:'STARTED',match_id:found.match_id}}; }
+    if (busyWoe(invitation.challenger_id,invitation.recipient_id,now)) return fail(409,'PLAYER_BUSY');
     if (activePractice(db,invitation.challenger_id,now) || activePractice(db,invitation.recipient_id,now)) return fail(409,'PLAYER_BUSY');
     if (invitation.status !== 'ACCEPTED') return fail(409,'INVITE_NOT_ACTIVE');
     if (!available) return fail(404,'PLAYER_UNAVAILABLE');

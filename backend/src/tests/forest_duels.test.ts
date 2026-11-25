@@ -217,3 +217,40 @@ test.skipIf(!redisBin)('authenticated READY races with cancellation and Ranked j
   const repeated=await post('/forest/duels/match/forfeit',body,c.token);expect(await repeated.json()).toEqual(forfeitData);
  }finally{for(const ws of sockets)ws.close();if(server){server.kill();await server.exited}redis.disconnect();redisProcess.kill();await redisProcess.exited;for(let i=0;;i++){try{rmSync(dir,{recursive:true,force:true});break}catch(e){if(i>=20)throw e;await Bun.sleep(250)}}}
 },60000);
+
+test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and initialize a match',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'ew-woe-http-')),path=join(dir,'db.sqlite'),db=new Database(path);migrate(db);db.close();
+ const rp=await freePort(),port=await freePort(),redisProcess=Bun.spawn([redisBin!,'--bind','127.0.0.1','--port',String(rp),'--save','','--appendonly','no'],{stdout:'ignore',stderr:'ignore'}),redis=new Redis(`redis://127.0.0.1:${rp}`,{lazyConnect:true,retryStrategy:()=>null});redis.on('error',()=>{});let server:any;const sockets:WebSocket[]=[];
+ try {
+  let ready=false;for(let i=0;i<50;i++){try{await redis.connect();ready=true;break}catch{}await Bun.sleep(100)}expect(ready).toBe(true);
+  const env={...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(port),DB_PATH:path,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_WOE_ENABLED:'1',FOREST_DUELS_ENABLED:'1',PVP_ENABLED:'0',PVP_RNG_SECRET:'test-secret-with-at-least-32-characters',LOGIN_RATE_LIMIT_MAX:'100'};
+  server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env,stdout:'ignore',stderr:'ignore'});const base=`http://127.0.0.1:${port}`;ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}expect(ready).toBe(true);
+  const post=(url:string,body:any,token?:string)=>fetch(base+url,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify(body)});
+  const get=(url:string,token?:string)=>fetch(base+url,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  expect((await get('/forest/woe/rooms')).status).toBe(401);
+  const accounts:any[]=[];for(const username of ['WoeHttpAlice','WoeHttpBob','WoeHttpCarol']){const login:any=await (await post('/auth/register',{username,password:'secret1'})).json();const state:any=await (await get('/forest/duels/state',login.token)).json();accounts.push({token:login.token,id:state.player_id})}const [a,b,c]=accounts;
+  expect((await post('/forest/woe/create',{mode:'1v1',client_action_id:'offline'},a.token)).status).toBe(409);
+  async function enterAndTravel(account:any){
+   const ws=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${account.token}`,'X-EntityWars-Client-Build':'5509'}} as any);sockets.push(ws);
+   await new Promise<void>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('welcome timeout')),4000);ws.onopen=()=>ws.send(JSON.stringify({v:1,type:'enter',summoner_id:'wizard'}));ws.onmessage=e=>{if(JSON.parse(String(e.data)).type==='welcome'){clearTimeout(timer);ok()}};ws.onerror=()=>fail(Error('socket error'))});
+   let seq=0,x=960,y=760;
+   async function moveTo(tx:number,ty:number){while(x!==tx||y!==ty){await Bun.sleep(360);x+=Math.sign(tx-x)*Math.min(70,Math.abs(tx-x));y+=Math.sign(ty-y)*Math.min(70,Math.abs(ty-y));ws.send(JSON.stringify({v:1,type:'move',seq:++seq,x,y,facing:0}))}}
+   async function portal(direction:string,px:number,py:number){await Bun.sleep(360);const p=new Promise<any>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('zone timeout')),4000);const cb=(e:any)=>{const m=JSON.parse(String(e.data));if(m.type==='zone'){clearTimeout(timer);ws.removeEventListener('message',cb);ok(m)}else if(m.type==='correction'){clearTimeout(timer);fail(Error(JSON.stringify(m)))}};ws.addEventListener('message',cb)});ws.send(JSON.stringify({v:1,type:'portal',seq:++seq,direction,crossing_x:px,crossing_y:py}));const zone=await p;x=zone.x;y=zone.y;return zone.zone_id}
+   await moveTo(960,540);await moveTo(70,540);expect(await portal('west',0,540)).toBe('alchemical_ruins');await moveTo(960,540);await moveTo(960,70);expect(await portal('north',960,0)).toBe('duel_clearing');
+  }
+  await Promise.all([enterAndTravel(a),enterAndTravel(b)]);
+  const created=await post('/forest/woe/create',{mode:'1v1',client_action_id:'create'},a.token);expect(created.status).toBe(200);let room:any=await created.json();const roomId=room.room_id;
+  expect((await post('/forest/woe/join',{room_id_or_code:room.join_code,client_action_id:'join',player_id:a.id},b.token)).status).toBe(400);
+  const joined=await post('/forest/woe/join',{room_id_or_code:room.join_code,client_action_id:'join'},b.token);expect(joined.status).toBe(200);room=await joined.json();
+  expect((await get(`/forest/woe/state?room_id=${roomId}&viewer_id=${a.id}`,c.token)).status).toBe(404);
+  expect((await post('/forest/woe/seat',{room_id:roomId,seat:'blue:left',expected_revision:room.revision,client_action_id:'forged',player_id:a.id},b.token)).status).toBe(400);
+  room=await (await post('/forest/woe/seat',{room_id:roomId,seat:'blue:left',expected_revision:room.revision,client_action_id:'a-seat'},a.token)).json();
+  expect((await post('/forest/woe/seat',{room_id:roomId,seat:'red:left',expected_revision:room.revision-1,client_action_id:'stale'},b.token)).status).toBe(409);
+  room=await (await post('/forest/woe/seat',{room_id:roomId,seat:'red:left',expected_revision:room.revision,client_action_id:'b-seat'},b.token)).json();
+  expect((await post('/forest/woe/start',{room_id:roomId,fill_bots:false,expected_revision:room.revision,client_action_id:'not-host'},b.token)).status).toBe(403);
+  const started=await post('/forest/woe/start',{room_id:roomId,fill_bots:false,expected_revision:room.revision,client_action_id:'start'},a.token);expect(started.status).toBe(200);const start:any=await started.json();expect(start.match_id).toBeTruthy();
+  const bview:any=await (await get(`/forest/woe/state?room_id=${roomId}&viewer_id=${a.id}`,b.token)).json();expect(bview.snapshot.players.find((p:any)=>p.id===a.id).slots).toBeUndefined();expect(bview.snapshot.players.find((p:any)=>p.id===b.id).slots).toBeDefined();
+  const secondaryPort=await freePort(),secondary=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env:{...env,PORT:String(secondaryPort),FOREST_WS_ENABLED:'0',FOREST_WOE_ENABLED:'0'},stdout:'ignore',stderr:'ignore'});
+  try{let up=false;for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${secondaryPort}/health`)).ok){up=true;break}}catch{}await Bun.sleep(100)}expect(up).toBe(true);expect((await fetch(`http://127.0.0.1:${secondaryPort}/forest/woe/rooms`,{headers:{Authorization:`Bearer ${a.token}`}})).status).toBe(503)}finally{secondary.kill();await secondary.exited}
+ } finally {for(const ws of sockets)ws.close();if(server){server.kill();await server.exited}redis.disconnect();redisProcess.kill();await redisProcess.exited;for(let i=0;;i++){try{rmSync(dir,{recursive:true,force:true});break}catch(e){if(i>=20)throw e;await Bun.sleep(250)}}}
+},60000);

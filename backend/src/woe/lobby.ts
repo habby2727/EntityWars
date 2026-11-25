@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { activePractice } from '../practice_service';
 import { initializeMatch, getPublicSnapshot, type Mode } from './engine';
 
+// WOE-4 must replace pregame expiry/abandonment with heartbeat, reconnection, controlled forfeits and match completion.
 const WAIT_MS=30*60_000, START_MS=15*60_000, RETENTION=7*86_400_000, MAX_ROOMS=1000;
 const seats=['blue:left','blue:right','red:left','red:right'];
 const valid=(v:unknown):v is string=>typeof v==='string' && v.length>0 && v.length<=128 && v.trim()===v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);

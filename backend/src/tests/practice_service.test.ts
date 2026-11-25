@@ -11,13 +11,19 @@ const catalogs = {entities:read('entities.json').entities,items:read('items.json
 test('Practice owns combat, replays actions and settles capped XP once', () => {
   const db=new Database(':memory:');
   db.exec(readFileSync(resolve(import.meta.dir,'../../migrations/sqlite/0031_practice.sql'),'utf8'));
-  db.exec(`CREATE TABLE pvp_match_players(player_id TEXT,active INTEGER); CREATE TABLE pvp_queue(player_id TEXT,expires_at INTEGER); CREATE TABLE forest_duel_reservations(player_id TEXT,invite_id TEXT); CREATE TABLE forest_duel_invites(invite_id TEXT,status TEXT,expires_at INTEGER); CREATE TABLE dungeon_runs(player_id TEXT,status TEXT,expires_at INTEGER); CREATE TABLE solo_hunt_sessions(player_id TEXT,status TEXT,expires_at INTEGER); CREATE TABLE expedition_runs(player_id TEXT,status TEXT,heartbeat_at INTEGER);`);
+  db.exec(`CREATE TABLE woe_rooms(room_id TEXT,status TEXT,expires_at INTEGER); CREATE TABLE woe_members(player_id TEXT,room_id TEXT); CREATE TABLE pvp_match_players(player_id TEXT,active INTEGER); CREATE TABLE pvp_queue(player_id TEXT,expires_at INTEGER); CREATE TABLE forest_duel_reservations(player_id TEXT,invite_id TEXT); CREATE TABLE forest_duel_invites(invite_id TEXT,status TEXT,expires_at INTEGER); CREATE TABLE dungeon_runs(player_id TEXT,status TEXT,expires_at INTEGER); CREATE TABLE solo_hunt_sessions(player_id TEXT,status TEXT,expires_at INTEGER); CREATE TABLE expedition_runs(player_id TEXT,status TEXT,heartbeat_at INTEGER);`);
   const ids=catalogs.spells.filter((s:any)=>s.type==='sulfur').slice(0,4).map((s:any)=>s.id);
   const hom=catalogs.homunculi[0].id;
   const selection={entity_id:'sulfur_01',weapon_ids:[null,null],homunculus_id:hom,spell_ids:ids,mode:'attack'};
   const player={player_id:'alice',homunculus_progress:{[hom]:{owned:true,level:0,xp:0}},spell_progress:{equipped_by_mode:{attack:{sulfur_01:ids}},learned_by_entity:{}},item_progress:{}};
   let xp=0, grants=0; const now=1_800_000_000_000;
   const service=createPracticeService(db,catalogs,new Uint8Array(32).fill(4),(id,build)=>trustedPvpSnapshot(id,build,player,catalogs),(_id,_snapshot,_now,amount)=>{grants++; const before=Math.floor(xp/100); xp+=amount; return {homunculus_id:hom,xp_granted:amount,level_before:before,level_after:Math.floor(xp/100)};},()=>now);
+  db.query("INSERT INTO woe_rooms VALUES ('r','WAITING',?)").run(now+1000);
+  db.query("INSERT INTO woe_members VALUES ('alice','r')").run();
+  expect(()=>service.start('alice','woe-waiting',selection)).toThrow('PLAYER_BUSY');
+  db.query("UPDATE woe_rooms SET status='STARTED'").run();
+  expect(()=>service.start('alice','woe-started',selection)).toThrow('PLAYER_BUSY');
+  db.query("UPDATE woe_rooms SET expires_at=?").run(now);
   expect(()=>service.start('alice','bad',{...selection,entity_id:'missing'})).toThrow('UNTRUSTED_SETUP');
   const start=service.start('alice','start0',selection) as any;
   expect(start.kind).toBe('practice'); expect(start.enemy.spell_ids).toBeUndefined();

@@ -1,4 +1,5 @@
 import { endSpectatingForStart, spectatorNames } from "../spectator_guard";
+import { activeWoe, woeBusySql } from "../woe/busy";
 import { activePractice } from "../practice_service";
 import { combatHomunculusAllowed } from "../homunculus_catalog";
 import type { Database } from "bun:sqlite";
@@ -53,7 +54,7 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
   const expire = db.prepare("DELETE FROM pvp_queue WHERE expires_at <= ?");
   const queued = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id = ?");
   const active = db.prepare("SELECT p.match_id, m.kind FROM pvp_match_players p JOIN pvp_matches m ON m.match_id=p.match_id WHERE p.player_id = ? AND p.active = 1");
-  const first = db.prepare("SELECT q.player_id, q.queued_at, q.expires_at, q.snapshot_json FROM pvp_queue q WHERE q.player_id <> ? AND NOT EXISTS (SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=q.player_id AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?) ORDER BY q.queued_at, q.rowid LIMIT 1");
+  const first = db.prepare(`SELECT q.player_id, q.queued_at, q.expires_at, q.snapshot_json FROM pvp_queue q WHERE q.player_id <> ? AND NOT EXISTS (SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=q.player_id AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?) AND NOT ${woeBusySql("q.player_id", "?")} ORDER BY q.queued_at, q.rowid LIMIT 1`);
   const insert = db.prepare("INSERT INTO pvp_queue (player_id, queued_at, expires_at, snapshot_json) VALUES (?, ?, ?, ?)");
   const remove = db.prepare("DELETE FROM pvp_queue WHERE player_id = ?");
   const validId = (id: string) => typeof id === "string" && id.length > 0 && id.length <= 256;
@@ -90,16 +91,17 @@ export function createPvpQueue(db: Database, catalogs: PvpCatalogs, trustedSnaps
           if (JSON.stringify(stored.selection) !== JSON.stringify(selection) || (stored.playback_protocol ?? 0) !== (playbackProtocol ?? 0)) throw new Error("QUEUE_CONFLICT");
           return { state: "QUEUED", joined_at: previous.queued_at, expires_at: previous.expires_at };
         }
+        if (activeWoe(db,playerId,now)) throw new Error("PLAYER_BUSY");
         endSpectatingForStart(playerId);
         if (activePractice(db,playerId,now)) throw new Error("PLAYER_BUSY");
         const snapshot = trustedSnapshot(playerId, selection);
         if (!snapshot || snapshot.player_id !== playerId || "error" in createPvpFighter(snapshot, catalogs)) throw new Error("UNTRUSTED_SETUP");
-        let opponent = first.get(playerId,now) as any, other: PvpSnapshot | null = null;
+        let opponent = first.get(playerId,now,now) as any, other: PvpSnapshot | null = null;
         while (opponent) {
           const stored = JSON.parse(opponent.snapshot_json);
           other = stored.snapshot ?? null;
           if (other && other.player_id === opponent.player_id && other.player_id !== playerId && !("error" in createPvpFighter(other, catalogs))) break;
-          remove.run(opponent.player_id); opponent = first.get(playerId,now) as any;
+          remove.run(opponent.player_id); opponent = first.get(playerId,now,now) as any;
         }
         if (!opponent || !other) { insert.run(playerId, now, now + 3_600_000, JSON.stringify({selection, snapshot, ...(playbackProtocol === 1 ? {playback_protocol:1} : {})})); return { state: "QUEUED", joined_at: now, expires_at: now + 3_600_000 }; }
         const id = createSharedPvpMatch(db,catalogs,snapshot,other,now,"ranked",null,playbackProtocol === 1 && JSON.parse(opponent.snapshot_json).playback_protocol === 1 ? 1 : 0);

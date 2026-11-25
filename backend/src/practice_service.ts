@@ -1,3 +1,4 @@
+import { activeWoe } from "./woe/busy";
 import { endSpectatingForStart, spectatorNames } from "./spectator_guard";
 import type { Database } from "bun:sqlite";
 import { createHmac, randomUUID } from "node:crypto";
@@ -12,7 +13,7 @@ export function activePractice(db: Database, player: string, now: number): boole
   return !!db.query("SELECT 1 FROM practice_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now);
 }
 export function otherCombat(db: Database, player: string, now: number): boolean {
-  return !!(db.query("SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1").get(player)
+  return !!(activeWoe(db,player,now) || db.query("SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1").get(player)
     || db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>?").get(player,now)
     || db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(player,now)
     || db.query("SELECT 1 FROM dungeon_runs WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player,now)
