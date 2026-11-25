@@ -39,12 +39,12 @@ func _ready() -> void:
 	_recover_core_defense.call_deferred()
 
 func _recover_core_defense() -> void:
-	if not CoreDefenseClient.available() or CoreDefenseClient.saved_match().is_empty(): return
+	if not CoreDefenseClient.available(): return
 	var identity: String = CoreDefenseClient.identity()
 	var match_id: String = CoreDefenseClient.saved_match()
 	var response: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/current", null, self)
 	if not is_inside_tree() or identity != CoreDefenseClient.identity(): return
-	if response.code == 200 and CoreDefenseClient.valid_match(response.data, str(ConnectionGate.player_id)) and str(response.data.match_id) == match_id:
+	if response.code == 200 and CoreDefenseClient.valid_match(response.data, str(ConnectionGate.player_id)) and (response.data.status == "RUNNING" or (not match_id.is_empty() and str(response.data.match_id) == match_id)):
 		SceneRouter.recover_core_defense_after_startup(response.data)
 
 func _recover_woe() -> void:

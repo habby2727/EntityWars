@@ -604,3 +604,4 @@ CD_INVITE_STATUS_ACCEPTED,Accepted,Aceptada
 CD_INVITE_STATUS_DECLINED,Declined,Rechazada
 CD_INVITE_STATUS_CANCELLED,Cancelled,Cancelada
 CD_INVITE_STATUS_EXPIRED,Expired,Caducada
+WOE_DEBUG_VISUAL,LOCAL VISUAL PREVIEW - No server or rewards,VISTA VISUAL LOCAL - Sin servidor ni recompensas

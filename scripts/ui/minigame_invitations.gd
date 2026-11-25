@@ -1,5 +1,7 @@
 extends VBoxContainer
 
+const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+
 signal admitted(room: Dictionary)
 var room_id := ""
 var game_kind := "core_defense"
@@ -18,6 +20,7 @@ func _ready() -> void:
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_status)
 	var refresh := Button.new()
+	MENU_ART.button(refresh)
 	refresh.text = tr("CD_INVITE_REFRESH")
 	refresh.pressed.connect(refresh_invitations)
 	add_child(refresh)
@@ -88,6 +91,7 @@ func refresh_invitations() -> void:
 				if not friend is Dictionary: continue
 				var id := str(friend.get("player_id", ""))
 				var button := Button.new()
+				MENU_ART.button(button)
 				button.text = tr("CD_INVITE_FRIEND") % str(friend.get("display_name", id))
 				button.pressed.connect(_send.bind(id))
 				_items.add_child(button)
@@ -96,6 +100,7 @@ func refresh_invitations() -> void:
 
 func _add_button(parent: Node, key: String, callback: Callable) -> void:
 	var button := Button.new()
+	MENU_ART.button(button)
 	button.text = tr(key)
 	button.custom_minimum_size.y = 44
 	button.pressed.connect(callback)
@@ -142,6 +147,9 @@ func _submit(action: String, values: Dictionary) -> void:
 		_status.text = tr("CD_INVITE_UNAVAILABLE")
 		return
 	if code > 0 and code < 500 and code != 408 and code != 429 and error != "FOREST_PRESENCE_REQUIRED" and not (action == "invite/respond" and bool(values.get("accept", false)) and (error == "ACTION_EXPIRED" or code == 200)): _save({})
+	if code == 200 and action == "invite/respond" and bool(values.get("accept", false)) and str(pending.get("recover_room", "")) != str(result.data.get("room", {}).get("room_id", "")):
+		_status.text = tr("CD_INVITE_UNAVAILABLE")
+		return
 	if code == 200 and result.data.get("status") == "ACCEPTED":
 		var room: Variant = result.data.get("room", {})
 		if _client().valid_room(room, str(ConnectionGate.player_id)):
@@ -150,13 +158,15 @@ func _submit(action: String, values: Dictionary) -> void:
 					_status.text = tr("CD_INVITE_UNAVAILABLE")
 					return
 			else: _client().save_room(str(room.room_id))
-			_save({})
 			_busy = true
 			var endpoint := "/forest/woe/state?room_id=" if game_kind == "woe" else "/forest/core-defense/state?room_id="
 			var verified: Dictionary = await _client().request(endpoint + str(room.room_id).uri_encode(), null, self)
 			if not _valid(): return
 			_busy = false
-			if verified.code == 200 and _client().valid_room(verified.data, str(ConnectionGate.player_id)):
+			if verified.code == 200 and _client().valid_room(verified.data, str(ConnectionGate.player_id)) and str(verified.data.room_id) == str(pending.get("recover_room", "")):
+				if not _save({}):
+					_status.text = tr("CD_INVITE_UNAVAILABLE")
+					return
 				admitted.emit(verified.data)
 				return
 			_status.text = tr("CD_INVITE_UNAVAILABLE")
@@ -167,7 +177,7 @@ func _submit(action: String, values: Dictionary) -> void:
 		var recovered: Dictionary = await _client().request(endpoint + str(pending.recover_room).uri_encode(), null, self)
 		if not _valid(): return
 		_busy = false
-		if recovered.code == 200 and _client().valid_room(recovered.data, str(ConnectionGate.player_id)):
+		if recovered.code == 200 and _client().valid_room(recovered.data, str(ConnectionGate.player_id)) and str(recovered.data.room_id) == str(pending.recover_room):
 			if game_kind == "core_defense":
 				if not CoreDefenseClient.persist_room(str(recovered.data.room_id)):
 					_status.text = tr("CD_INVITE_UNAVAILABLE")

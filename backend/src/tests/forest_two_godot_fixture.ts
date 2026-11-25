@@ -49,7 +49,29 @@ try {
    fixtureDb.query('UPDATE woe_matches SET state_json=? WHERE match_id=?').run(JSON.stringify(next),id);
   }).immediate()} finally {fixtureDb.close()}
  };
- let timer:any;const exits=await Promise.race([Promise.all([injectLab(),...godots.map(g=>g.proc.exited)]).then(x=>x.slice(1)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('overall client timeout; inspect last phase in retained logs')),process.env.FOREST_WOE_TIMEOUT_TEST==='1'?360000:(process.env.FOREST_WOE_TEST==='1'||process.env.FOREST_CD_TEST==='1')?120000:60000);})]);clearTimeout(timer);
+ // Test-only acceleration: edit only this fixture's temporary database. The real
+ // scheduler produces the wave-complete, intermission, next-wave and defeat events.
+ const accelerateCoreDefense=async()=>{
+  if(process.env.FOREST_CD_TEST!=='1')return;
+  const wait=async(name:string)=>{const deadline=Date.now()+60000;while(!existsSync(join(dir,name))&&Date.now()<deadline)await Bun.sleep(50);assert(existsSync(join(dir,name)),`CD fixture synchronization: ${name}`)};
+  await wait('cd_deployed');await wait('cd_arena_0');
+  const id=readFileSync(join(dir,'cd_arena_0'),'utf8');
+  const fixtureDb=new Database(dbPath);fixtureDb.exec('PRAGMA busy_timeout=5000');
+  const edit=(fn:(state:any)=>void)=>fixtureDb.transaction(()=>{const row=fixtureDb.query("SELECT state_json FROM woe_matches WHERE match_id=? AND status='RUNNING'").get(id) as any;assert(row,'running CD fixture match');const state=JSON.parse(row.state_json);fn(state);fixtureDb.query('UPDATE woe_matches SET state_json=? WHERE match_id=?').run(JSON.stringify(state),id)}).immediate();
+  try {
+   edit(s=>{s.pendingSpawns=0;s.units=s.units.filter((u:any)=>u.kind!=='enemy')});
+   await wait('cd_wave2_0');await wait('cd_wave2_1');
+   // Move a live wave-two enemy to the last damaged laboratory; gameplay performs the kill.
+   let deadline=Date.now()+10000,found=false;
+   while(!found && Date.now()<deadline){
+    const row=fixtureDb.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(id) as any;
+    found=JSON.parse(row.state_json).units.some((u:any)=>u.kind==='enemy');if(!found)await Bun.sleep(50);
+   }
+   assert(found,'wave-two enemy spawned');
+   edit(s=>{const enemy=s.units.find((u:any)=>u.kind==='enemy');const labs=s.laboratories.filter((l:any)=>l.team==='blue');labs[0].hp=0;labs[1].hp=1;enemy.targetLane=labs[1].lane;enemy.position={...labs[1].position};enemy.cooldown=0;s.units=[enemy]});
+  } finally {fixtureDb.close()}
+ };
+ let timer:any;const exits=await Promise.race([Promise.all([injectLab(),accelerateCoreDefense(),...godots.map(g=>g.proc.exited)]).then(x=>x.slice(2)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('overall client timeout; inspect last phase in retained logs')),process.env.FOREST_WOE_TIMEOUT_TEST==='1'?360000:(process.env.FOREST_WOE_TEST==='1'||process.env.FOREST_CD_TEST==='1')?120000:60000);})]);clearTimeout(timer);
  const logs=godots.map(g=>scrub(readFileSync(g.log,'utf8')));for(const log of logs)console.log(log);assert.deepEqual(exits,[0,0]);
  if(process.env.FOREST_WOE_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot WOE client logged an error');const ids=logs.map(log=>/WOE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'WOE clients received different matches');}
  if(process.env.FOREST_CD_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot Core Defense client logged an error');const ids=logs.map(log=>/CORE_DEFENSE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Core Defense clients received different matches');}

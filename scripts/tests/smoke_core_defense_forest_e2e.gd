@@ -125,16 +125,28 @@ func _run() -> void:
 		if not check(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible,"both lanes"): quit(1); return
 		arena._deploy("left")
 		if not check(await wait_for(func(): return not arena._acting and arena._snapshot.units.any(func(u): return str(u.get("controllerId", "")) == str(gate.player_id))),"authoritative deployment"): quit(1); return
+		# Inject one transport outage, then reconnect to the same live server.
+		if not check(await wait_for(func(): return not arena._requesting and not cd._request_busy), "before disconnect"): quit(1); return
+		cd.set_script(load("res://scripts/tests/core_defense_e2e_fault_client.gd"))
+		cd.simulate_disconnect = true
+		arena._poll = 0
+		if not check(await wait_for(func(): return not arena._playback_ready, 5.0), "simulated disconnect"): quit(1); return
+		cd.simulate_disconnect = false
+		arena._poll = 0
+		if not check(await wait_for(func(): return arena._playback_ready and not arena._requesting, 5.0), "live reconnect"): quit(1); return
 		signal_file("cd_deployed")
 	else:
 		if not check(await wait_file("cd_deployed"),"deployment signal"): quit(1); return
-		arena._confirm_forfeit()
-		await process_frame
-		if not check(confirm(arena),"forfeit confirmation"): quit(1); return
+	# Fixture accelerates wave completion in its private database; the scheduler
+	# still performs the transition and emits both clients' authoritative states.
+	if not check(await wait_for(func(): return arena._snapshot.get("phase") == "intermission" and int(arena._snapshot.get("completedWaves", 0)) >= 1, 15.0),"wave one intermission"): quit(1); return
+	if not check(await wait_for(func(): return int(arena._snapshot.get("wave", 0)) >= 2, 15.0),"wave two"): quit(1); return
+	signal_file("cd_wave2_%d" % role)
 	if not check(await wait_for(func(): return arena._finished,15.0),"shared result"): quit(1); return
-	if not check(str(arena._snapshot.result.reason) == "forfeit","forfeit reason"): quit(1); return
+	if not check(str(arena._snapshot.result.reason) == "laboratories","shared defeat reason"): quit(1); return
 	arena._confirm_return()
 	if not check(await wait_for(func(): return scene_is(FOREST) and is_instance_valid(current_scene._presence) and current_scene._presence.entered),"Forest return"): quit(1); return
+	if not check(current_scene._player.position.distance_to(Vector2(800,550)) < 1.0 and str(current_scene._zones[current_scene._zone_index].id) == "duel_clearing", "exact Forest return"): quit(1); return
 	if role == 0:
 		world = current_scene
 		if not check(await open_browser(world),"solo browser"): quit(1); return

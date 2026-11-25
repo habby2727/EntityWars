@@ -1,5 +1,7 @@
 extends PanelContainer
 
+const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+
 signal admitted(room: Dictionary)
 var _rows: VBoxContainer
 var _status: Label
@@ -9,6 +11,7 @@ var _busy := false
 var _epoch := ""
 
 func _ready() -> void:
+	add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(28, 28, 28, 28)))
 	_epoch = WoeClient.identity()
 	custom_minimum_size = Vector2(420, 360)
 	var box := VBoxContainer.new()
@@ -39,6 +42,7 @@ func _ready() -> void:
 	scroll.add_child(_rows)
 	_button(box, "WOE_RETRY", _retry)
 	var close := Button.new()
+	MENU_ART.button(close)
 	close.text = tr("FOREST_CLOSE")
 	close.pressed.connect(queue_free)
 	box.add_child(close)
@@ -54,6 +58,7 @@ func _process(_delta: float) -> void:
 
 func _button(parent: Node, text_key: String, action: Callable) -> Button:
 	var b := Button.new()
+	MENU_ART.button(b)
 	b.text = tr(text_key)
 	b.pressed.connect(action)
 	parent.add_child(b)

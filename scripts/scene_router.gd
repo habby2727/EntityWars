@@ -99,6 +99,20 @@ static func begin_woe(room: Dictionary, zone_id: String, foot: Vector2, facing: 
 static func woe_context_valid() -> bool:
 	return not _woe_context.is_empty() and str(_woe_context.get("player_id", "")) == _forest_verified_owner() and int(_woe_context.get("generation", -1)) == int(_connection_gate()._generation) and str(_woe_context.get("base_url", "")) == str(_connection_gate().base_url) and (bool(_woe_context.get("startup", false)) or forest_return_available())
 
+# Editor-only visual preview; no server room or persistent match is created.
+static func begin_woe_debug(kind: String, zone_id: String, foot: Vector2, facing: int) -> void:
+	var gate := _connection_gate()
+	var tree := _get_tree()
+	if not gate.debug_lab_navigation_allowed() or kind not in ["woe", "core_defense"] or not _forest_modes_safe(): return
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_FOREST_WORLD: return
+	if not tree.current_scene.forest_action_allowed(kind, zone_id, foot, facing): return
+	var context := {"verified_owner":"", "summoner_id":forest_selected_summoner(), "zone_id":zone_id, "foot_position":foot, "facing":facing, "debug":true, "identity_generation":gate._generation}
+	if not _valid_forest_context(context): return
+	_forest_return = context
+	_forest_restore.clear()
+	_woe_context = {"kind":kind, "match_id":"debug_visual", "player_id":"", "generation":gate._generation, "base_url":str(gate.base_url), "debug_visual":true}
+	_go_to(SCENE_WOE_ARENA, "WOEArena")
+
 # Called after a server-confirmed STARTED room response for this member.
 static func enter_woe_match(room: Dictionary) -> void:
 	if not woe_context_valid() or str(room.get("status", "")) != "STARTED": return
@@ -163,7 +177,8 @@ static func recover_core_defense_after_startup(match: Dictionary) -> bool:
 	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_MAIN_MENU or not _forest_modes_safe(): return false
 	var owner := _forest_verified_owner()
 	var client := tree.root.get_node("CoreDefenseClient")
-	if owner.is_empty() or not _woe_context.is_empty() or not client.valid_match(match, owner) or str(match.match_id) != client.saved_match(): return false
+	if owner.is_empty() or not _woe_context.is_empty() or not client.valid_match(match, owner): return false
+	if match.status != "RUNNING" and str(match.match_id) != client.saved_match(): return false
 	_woe_context = {"kind":"core_defense","room_id":"","match_id":str(match.match_id),"player_id":owner,"generation":_connection_gate()._generation,"base_url":str(_connection_gate().base_url),"startup":true}
 	_go_to(SCENE_WOE_ARENA, "WOEArena")
 	return true
@@ -634,6 +649,8 @@ static func _go_to(scene_path: String, label: String) -> void:
 	var local_debug_scenes := [SCENE_MAIN_MENU, SCENE_SETTINGS, SCENE_LAB_HUB, SCENE_LAB_STRUCTURES, SCENE_INVENTORY, SCENE_TRADE_HALL, SCENE_EXPEDITIONS, SCENE_WORLD_GATE, SCENE_WORLD_ZONE, SCENE_WORLD_ZONE_CHAOS, SCENE_WORLD_ZONE_CORRUPTED, SCENE_WORLD_ZONE_CRYSTAL, SCENE_SUMMONER_SELECTION, SCENE_FOREST_WORLD]
 	if _connection_gate().debug_lab_navigation_allowed():
 		local_debug_scenes.append(SCENE_LOADOUT)
+		if bool(_woe_context.get("debug_visual", false)):
+			local_debug_scenes.append(SCENE_WOE_ARENA)
 		if bool(_ranked_context.get("debug_visual", false)):
 			local_debug_scenes.append(SCENE_COMBAT)
 	if _connection_gate().blocked() and not (_connection_gate().debug_lab_navigation_allowed() and scene_path in local_debug_scenes):

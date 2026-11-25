@@ -1,11 +1,14 @@
 extends PanelContainer
 
+const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+
 signal admitted(room: Dictionary)
 var _identity := ""
 var _busy := false
 var _status: Label
 
 func _ready() -> void:
+	add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(28, 28, 28, 28)))
 	_identity = CoreDefenseClient.identity()
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
@@ -19,6 +22,7 @@ func _ready() -> void:
 	box.add_child(_status)
 	for choice in [["CD_SOLO", "solo"], ["CD_COOP", "coop"]]:
 		var button := Button.new()
+		MENU_ART.button(button)
 		button.text = tr(choice[0])
 		button.custom_minimum_size.y = 48
 		button.pressed.connect(_create.bind(choice[1]))
@@ -33,10 +37,12 @@ func _ready() -> void:
 	scroll.add_child(invites)
 	invites.admitted.connect(_verified)
 	var retry := Button.new()
+	MENU_ART.button(retry)
 	retry.text = tr("WOE_RETRY")
 	retry.pressed.connect(_recover)
 	box.add_child(retry)
 	var close := Button.new()
+	MENU_ART.button(close)
 	close.text = tr("FOREST_CLOSE")
 	close.pressed.connect(queue_free)
 	box.add_child(close)
@@ -58,6 +64,33 @@ func _create(mode: String) -> void:
 
 func _recover() -> void:
 	if _busy or not _valid(): return
+	# Inspect journals before replaying them: terminal states obsolete only their own actions.
+	var journal_ids: Array[String] = []
+	for item in [CoreDefenseClient.saved_pending(), CoreDefenseClient.saved_forfeit_action()]:
+		var id := str(item.get("values", {}).get("match_id", ""))
+		if not id.is_empty() and id not in journal_ids: journal_ids.append(id)
+	for id in journal_ids:
+		_busy = true
+		var state: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/state?match_id=" + id.uri_encode() + "&after=0", null, self)
+		if not _valid(): return
+		_busy = false
+		if state.code != 200 or not CoreDefenseClient.valid_match(state.get("data"), str(ConnectionGate.player_id)) or str(state.data.match_id) != id:
+			_status.text = tr("WOE_RETRY_PENDING")
+			return
+		if state.data.status == "FINISHED":
+			if not CoreDefenseClient.reconcile_terminal(state.data):
+				_status.text = tr("WOE_RETRY_PENDING")
+				return
+		else:
+			# Arena retry logic is restricted to the authenticated current match.
+			_busy = true
+			var live: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/current", null, self)
+			if not _valid(): return
+			_busy = false
+			if live.code == 200 and CoreDefenseClient.valid_match(live.get("data"), str(ConnectionGate.player_id)) and live.data.status == "RUNNING" and str(live.data.match_id) == id:
+				admitted.emit(live.data)
+			else: _status.text = tr("WOE_RETRY_PENDING")
+			return
 	if not CoreDefenseClient.saved_forfeit_action().is_empty():
 		_busy = true
 		var forfeited: Dictionary = await CoreDefenseClient.retry_forfeit()

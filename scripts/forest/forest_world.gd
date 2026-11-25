@@ -626,6 +626,9 @@ func _open_npc_action(action: String) -> void:
 	if _handoff_pending: return
 	if not forest_action_allowed(action, str(_zones[_zone_index].id), _player.position, _player.facing) or not SceneRouter._forest_modes_safe():
 		return
+	if action in ["woe", "core_defense"] and ConnectionGate.debug_lab_navigation_allowed():
+		SceneRouter.begin_woe_debug(action, str(_zones[_zone_index].id), _player.position, _player.facing)
+		return
 	if action == "core_defense":
 		if _canvas.get_node_or_null("CoreDefenseBrowser") != null: return
 		var browser = preload("res://scripts/ui/core_defense_browser.gd").new()

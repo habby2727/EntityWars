@@ -1,5 +1,7 @@
 extends Control
 
+const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+
 const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080.png")
 const ARENA := "res://data/static/woe_arena.json"
 var _room := {}
@@ -48,6 +50,7 @@ func _build() -> void:
 				var point: Dictionary = arena.laboratories[team][lane]
 				var seat: String = str(team) + ":" + str(lane)
 				var button := Button.new()
+				MENU_ART.button(button)
 				button.name = seat
 				button.position = Vector2(float(point.x)-115, float(point.y)-65)
 				button.size = Vector2(230, 130)
@@ -56,6 +59,7 @@ func _build() -> void:
 				_canvas.add_child(button)
 				_seat_buttons[seat] = button
 	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(28, 28, 28, 28)))
 	panel.position = Vector2(710, 310)
 	panel.size = Vector2(500, 460)
 	_canvas.add_child(panel)
@@ -73,22 +77,27 @@ func _build() -> void:
 	_fill.button_pressed = true
 	box.add_child(_fill)
 	_start = Button.new()
+	MENU_ART.button(_start)
 	_start.text = tr("WOE_START")
 	_start.pressed.connect(_start_match)
 	box.add_child(_start)
 	var copy := Button.new()
+	MENU_ART.button(copy)
 	copy.text = tr("WOE_COPY_CODE")
 	copy.pressed.connect(func(): DisplayServer.clipboard_set(str(_room.get("join_code", ""))))
 	box.add_child(copy)
 	var refresh := Button.new()
+	MENU_ART.button(refresh)
 	refresh.text = tr("WOE_REFRESH")
 	refresh.pressed.connect(_refresh)
 	box.add_child(refresh)
 	var retry := Button.new()
+	MENU_ART.button(retry)
 	retry.text = tr("WOE_RETRY")
 	retry.pressed.connect(_retry)
 	box.add_child(retry)
 	var leave := Button.new()
+	MENU_ART.button(leave)
 	leave.text = tr("WOE_LEAVE")
 	leave.pressed.connect(_leave_pressed)
 	box.add_child(leave)

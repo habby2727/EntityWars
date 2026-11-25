@@ -7,6 +7,7 @@ const EFFECTS := preload("res://scripts/ui/woe_effects.gd")
 const ARENA := "res://data/static/woe_arena.json"
 const CARDS := "res://data/static/woe_cards.json"
 const POLL_INTERVAL := 0.5
+const MENU_ART := preload("res://scripts/ui/menu_art.gd")
 
 class Meter extends Control:
 	var segments := 10
@@ -34,6 +35,12 @@ class DeployMarker extends Button:
 var _identity := ""
 var _client: Node
 var _is_cd := false
+var _debug_visual := false
+var _debug_spawn_timer := 0.0
+var _debug_attack_timer := 0.0
+var _debug_index := 0
+var _debug_next_id := 1
+var _debug_units: Array = []
 var _server_score := {}
 var _match_id := ""
 var _cursor := 0
@@ -41,6 +48,12 @@ var _revision := -1
 var _poll := 0.0
 var _backoff := POLL_INTERVAL
 var _poll_period := POLL_INTERVAL
+var _delivery_ticks := 0
+var _awaiting_deploy_state := false
+var _deploy_receipt_revision := -1
+var _missing_match := false
+var _other_recovery_busy := false
+var _other_recovery_next := 0
 var _requesting := false
 var _acting := false
 var _action_kind := ""
@@ -77,6 +90,7 @@ var _seconds := 0.0
 
 func _ready() -> void:
 	_is_cd = SceneRouter._woe_context.get("kind", "woe") == "core_defense"
+	_debug_visual = bool(SceneRouter._woe_context.get("debug_visual", false)) and ConnectionGate.debug_lab_navigation_allowed()
 	_client = CoreDefenseClient if _is_cd else WoeClient
 	if _is_cd:
 		_poll_period = 1.0
@@ -92,10 +106,13 @@ func _ready() -> void:
 	var catalog: Variant = JSON.parse_string(FileAccess.get_file_as_string(CARDS))
 	if catalog is Dictionary:
 		for card in catalog.get("cards", []): _cards[str(card.id)] = card
-	_forfeited = _client.saved_forfeit() == _match_id
+	_forfeited = not _debug_visual and _client.saved_forfeit() == _match_id
 	_build()
 	_forfeit.disabled = _forfeited
-	_poll_state()
+	if _debug_visual:
+		_debug_render()
+	else:
+		_poll_state()
 
 func _valid() -> bool:
 	return is_inside_tree() and _identity == _client.identity() and SceneRouter.woe_context_valid() and str(SceneRouter._woe_context.get("match_id", "")) == _match_id
@@ -179,13 +196,7 @@ func _build() -> void:
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(170,120)
 		button.add_theme_font_size_override("font_size", 24)
-		for state in ["normal", "hover", "pressed", "disabled", "focus"]:
-			var style := StyleBoxFlat.new()
-			style.bg_color = Color("173044") if state != "disabled" else Color("202a34")
-			style.border_color = Color("9adbf2") if state != "disabled" else Color("536472")
-			style.set_border_width_all(2)
-			style.set_corner_radius_all(8)
-			button.add_theme_stylebox_override(state, style)
+		MENU_ART.button(button)
 		button.expand_icon = true
 		button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(_select.bind(i))
@@ -211,12 +222,14 @@ func _build() -> void:
 	_forfeit.position = Vector2(1640, 30)
 	_forfeit.size = Vector2(230,55)
 	_forfeit.text = tr("WOE_FORFEIT")
+	MENU_ART.button(_forfeit)
 	_forfeit.pressed.connect(_confirm_forfeit)
 	_stage.add_child(_forfeit)
 	_return_button = Button.new()
 	_return_button.position = Vector2(1640,95)
 	_return_button.size = Vector2(230,55)
 	_return_button.text = tr("WOE_RETURN")
+	MENU_ART.button(_return_button)
 	_return_button.pressed.connect(_confirm_return)
 	_stage.add_child(_return_button)
 	_resize()
@@ -235,17 +248,31 @@ func _process(delta: float) -> void:
 		_zeal_meter.queue_redraw()
 	for marker in _lane_buttons.values():
 		if marker.visible: marker.modulate.a = 0.6 + 0.3 * sin(_seconds * 4.0)
+	if _debug_visual:
+		_debug_step(delta)
+		return
 	_poll -= delta
-	if _poll <= 0.0 and not _requesting and (not _is_cd or (not _acting and not _finished)) and _valid(): _poll_state()
+	if _poll <= 0.0 and not _requesting and (not _is_cd or (not _acting and not _finished and not _missing_match)) and _valid(): _poll_state()
 
 func _poll_state() -> void:
 	if _requesting or (_is_cd and _acting) or not _valid(): return
 	_requesting = true
 	var requested_id := _match_id
 	var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
+	var request_start := Time.get_ticks_msec()
 	var result: Dictionary = await _client.request(endpoint + "match/state?match_id=%s&after=%d" % [requested_id.uri_encode(), _cursor], null, self)
 	if not _valid() or requested_id != _match_id: return
 	_requesting = false
+	_delivery_ticks = mini(20, ceili(float(Time.get_ticks_msec() - request_start) / 100.0))
+	if _is_cd and ((int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "MATCH_UNAVAILABLE") or (int(result.get("code", 0)) == 403 and str(result.get("error", "")) == "NOT_PARTICIPANT")):
+		_missing_match = _client.reconcile_missing_match(_match_id, str(result.error))
+		_notice.text = tr("CD_UNAVAILABLE")
+		if _missing_match:
+			_forfeit.disabled = true
+			_selected = -1
+			_update_hud()
+		else: _poll = 8.0
+		return
 	if int(result.get("code", 0)) != 200 or not _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.get("match_id", "")) != _match_id:
 		_playback_ready = false
 		_notice.text = tr("WOE_ARENA_NETWORK")
@@ -258,12 +285,20 @@ func _poll_state() -> void:
 	_server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 	_notice.text = tr("WOE_FORFEITED_NOTICE") if _forfeited else ""
 	_accept_state(result.data, true)
+	if _is_cd and str(_client.saved_pending().get("action", "")) == "start":
+		_reconcile_pending_start()
+	if _is_cd and not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
+		_reconcile_other_matches()
+	if _is_cd and int(result.data.get("revision", -1)) >= _deploy_receipt_revision:
+		_awaiting_deploy_state = false
+		_deploy_receipt_revision = -1
+		_update_hud()
 	_poll = (0.85 if _is_cd else 0.05) if _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
-	if _is_cd and not _acting and not _client.saved_forfeit_action().is_empty():
+	if _is_cd and not _finished and not _acting and str(_client.saved_forfeit_action().get("values", {}).get("match_id", "")) == _match_id:
 		_retry_forfeit()
 	elif not _acting and not _client.saved_pending().is_empty():
 		var pending: Dictionary = _client.saved_pending()
-		if str(pending.get("action", "")).begins_with("match/") and str(pending.get("values", {}).get("match_id", "")) == _match_id: _retry_pending()
+		if (not _is_cd or not _finished) and str(pending.get("action", "")).begins_with("match/") and str(pending.get("values", {}).get("match_id", "")) == _match_id: _retry_pending()
 
 func _accept_state(data: Dictionary, consume_events: bool) -> void:
 	if str(data.get("match_id", "")) != _match_id: return
@@ -291,7 +326,7 @@ func _accept_state(data: Dictionary, consume_events: bool) -> void:
 			_cursor = seq
 			_remember_event(event)
 			# Pages from startup, reconnect and long backlogs advance the cursor silently.
-			if _playback_ready and seq > _silent_until_seq and int(event.get("tick", -100)) >= maxi(snapshot_tick, _last_snapshot_tick) - 5 and shown < 48:
+			if _playback_ready and seq > _silent_until_seq and int(event.get("tick", -100)) >= maxi(snapshot_tick, _last_snapshot_tick) - (maxi(10, ceili(_poll_period * 10.0)) + _delivery_ticks + 2 if _is_cd else 5) and shown < 48:
 				_event(event)
 				shown += 1
 	if consume_events: _playback_ready = true
@@ -330,7 +365,7 @@ func _event(event: Dictionary) -> void:
 		var target := _point(event.get("targetPosition"))
 		var element := str(event.get("element", _element(str(event.get("cardId", "")))) )
 		var attacker: Variant = _units.get(int(event.get("attacker", 0)))
-		if is_instance_valid(attacker) and attacker.target_position.distance_to(source) < 80.0: attacker.attack()
+		if is_instance_valid(attacker) and (not _is_cd or (attacker.card_id == str(event.get("assetId", event.get("cardId", ""))) and attacker.team == str(event.get("team", "")))) and attacker.target_position.distance_to(source) < 80.0: attacker.attack()
 		var victim: Variant = _units.get(int(event.get("target", 0))) if event.get("target") is int or event.get("target") is float else null
 		if is_instance_valid(victim) and victim.target_position.distance_to(target) < 80.0: victim.hit()
 		_effects.emit_effect("charge", element, source, target, str(event.get("team", "")))
@@ -423,6 +458,8 @@ func _render_snapshot() -> void:
 	var outcome: Variant = _snapshot.get("result")
 	_finished = outcome is Dictionary
 	if _finished:
+		if _is_cd and not _debug_visual and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
+			_notice.text = tr("CD_UNAVAILABLE")
 		var winner := str(outcome.get("winner", ""))
 		_result.text = (tr("CD_RESULT") % [int(_snapshot.get("completedWaves", 0)), tr("CD_REASON_" + str(outcome.get("reason", "laboratories")).to_upper())]) if _is_cd else (tr("WOE_DRAW") if winner.is_empty() or winner == "<null>" else (tr("WOE_VICTORY") if winner == _team else tr("WOE_DEFEAT")))
 		_forfeit.disabled = true
@@ -463,12 +500,12 @@ func _update_hud() -> void:
 		var card: Dictionary = _cards.get(id, {})
 		button.icon = UNIT.frame(id,"front",1)
 		button.text = "%s\n%d" % [id.capitalize(), int(card.get("cost",0))] if not card.is_empty() else ""
-		button.disabled = _finished or _forfeited or _acting or card.is_empty() or zeal < float(card.get("cost",99))
+		button.disabled = _finished or _missing_match or _forfeited or _acting or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < float(card.get("cost",99))
 		button.modulate = Color("ffe38a") if _selected == i else (Color(0.65,0.7,0.75,1) if button.disabled else Color.WHITE)
 	for key in _lane_buttons:
 		var marker: Button = _lane_buttons[key]
 		var lab: Meter = _lab_bars[key]
-		marker.visible = not _finished and not _forfeited and _selected >= 0 and str(key).begins_with(_team + ":") and lab.value > 0
+		marker.visible = not _finished and not _missing_match and not _forfeited and not (_is_cd and _awaiting_deploy_state) and _selected >= 0 and str(key).begins_with(_team + ":") and lab.value > 0
 		marker.disabled = _acting
 
 func _select(slot: int) -> void:
@@ -479,9 +516,12 @@ func _select(slot: int) -> void:
 
 func _deploy(lane: String) -> void:
 	var slots: Array = _own.get("slots", [])
-	if _acting or _selected < 0 or _selected >= slots.size(): return
+	if _acting or (_is_cd and _awaiting_deploy_state) or _selected < 0 or _selected >= slots.size(): return
 	var slot := _selected
 	_selected = -1
+	if _debug_visual:
+		_debug_deploy(str(slots[slot]), lane)
+		return
 	_action("match/deploy", {"match_id":_match_id,"slot":slot,"card_id":str(slots[slot]),"lane":lane})
 
 func _action(action: String, values: Dictionary) -> void:
@@ -515,6 +555,8 @@ func _retry_forfeit() -> void:
 func _finish_action(result: Dictionary) -> void:
 	if _is_cd and _action_kind == "match/deploy" and int(result.get("code",0)) == 200 and result.get("data", {}).get("accepted", false):
 		_notice.text = ""
+		_awaiting_deploy_state = true
+		_deploy_receipt_revision = int(result.data.get("revision", -1))
 	elif int(result.get("code",0)) == 200 and _client.valid_match(result.get("data"), str(ConnectionGate.player_id)):
 		if _action_kind == "match/forfeit":
 			_forfeited = true
@@ -524,6 +566,7 @@ func _finish_action(result: Dictionary) -> void:
 		_accept_state(result.data, false)
 	else:
 		if str(result.get("error", "")) == "ACTION_EXPIRED" and _is_cd:
+			_awaiting_deploy_state = true
 			_notice.text = tr("CD_ACTION_EXPIRED")
 		if str(result.get("error", "")) == "FORFEITED":
 			_forfeited = true
@@ -536,6 +579,9 @@ func _finish_action(result: Dictionary) -> void:
 	_update_hud()
 
 func _confirm_forfeit() -> void:
+	if _debug_visual:
+		SceneRouter.finish_woe_safely()
+		return
 	if _finished or _forfeited or _acting: return
 	var dialog := ConfirmationDialog.new()
 	dialog.dialog_text = tr("CD_FORFEIT_CONFIRM") if _is_cd else tr("WOE_FORFEIT_CONFIRM")
@@ -546,7 +592,13 @@ func _confirm_forfeit() -> void:
 	dialog.popup_centered()
 
 func _confirm_return() -> void:
+	if _debug_visual or _missing_match:
+		SceneRouter.finish_woe_safely()
+		return
 	if _finished:
+		if _is_cd and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
+			_notice.text = tr("CD_UNAVAILABLE")
+			return
 		_client.save_match("")
 		_client.save_forfeit("")
 		_client.save_room("")
@@ -558,3 +610,64 @@ func _confirm_return() -> void:
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)
 	dialog.popup_centered()
+
+# A deliberately visual-only local preview, independent of match persistence and networking.
+func _debug_render() -> void:
+	_snapshot = {"kind":"core_defense" if _is_cd else "woe", "tick":int(_seconds * 10), "wave":1 + int(_seconds / 30), "completedWaves":int(_seconds / 30), "enemiesKilled":0, "pendingSpawns":0, "units":_debug_units, "laboratories":[], "players":[{"id":str(ConnectionGate.player_id), "team":"blue", "zeal":10, "slots":[UNIT.IDS[_debug_index % UNIT.IDS.size()], UNIT.IDS[(_debug_index + 1) % UNIT.IDS.size()], UNIT.IDS[(_debug_index + 2) % UNIT.IDS.size()]]}], "result":null}
+	_render_snapshot()
+	_notice.text = tr("WOE_DEBUG_VISUAL")
+
+func _debug_deploy(card: String, lane: String) -> void:
+	_debug_add(card, "blue", "homunculus", 410.0 if lane == "left" else 1510.0, 800.0)
+	_debug_index = (_debug_index + 1) % UNIT.IDS.size()
+	_debug_render()
+
+func _debug_add(asset: String, team: String, kind: String, x: float, y: float) -> void:
+	if _debug_units.size() >= 30: _debug_units.pop_front()
+	_debug_units.append({"id":_debug_next_id, "cardId":asset, "assetId":asset, "kind":kind, "team":team, "x":x, "y":y, "hp":100, "maxHp":100})
+	_debug_next_id += 1
+
+func _debug_step(delta: float) -> void:
+	_debug_spawn_timer -= delta
+	if _debug_spawn_timer <= 0.0:
+		_debug_spawn_timer = 2.5
+		var enemy_index := int(_seconds / 2.5)
+		var enemy: String = UNIT.ENEMY_IDS[enemy_index % UNIT.ENEMY_IDS.size()] if _is_cd else UNIT.IDS[enemy_index % UNIT.IDS.size()]
+		_debug_add(enemy, "red", "enemy" if _is_cd else "homunculus", 410.0 if enemy_index % 2 == 0 else 1510.0, 280.0)
+	for unit in _debug_units:
+		var direction := 1.0 if unit.team == "red" else -1.0
+		unit.y = float(unit.y) + direction * 45.0 * delta
+		if (direction > 0 and unit.y > 650.0) or (direction < 0 and unit.y < 430.0):
+			unit.y = 280.0 if direction > 0 else 800.0
+	_debug_render()
+	_debug_attack_timer -= delta
+	if _debug_attack_timer <= 0.0:
+		_debug_attack_timer = 1.5
+		for unit in _units.values():
+			if is_instance_valid(unit): unit.attack()
+
+func _reconcile_pending_start() -> void:
+	var saved: Dictionary = _client.saved_pending()
+	var room_id := str(saved.get("values", {}).get("room_id", ""))
+	if room_id.is_empty(): return
+	var room: Dictionary = await _client.request("/forest/core-defense/state?room_id=" + room_id.uri_encode(), null, self)
+	if not _valid(): return
+	if room.code == 200 and _client.valid_room(room.get("data"), str(ConnectionGate.player_id)) and str(room.data.get("match_id", "")) == _match_id:
+		_client.reconcile_started(room.data)
+
+# Old journals can block a new match, but must never be replayed in it.
+func _reconcile_other_matches() -> void:
+	_other_recovery_busy = true
+	_other_recovery_next = Time.get_ticks_msec() + 5000
+	var ids: Array[String] = []
+	for entry in [_client.saved_pending(), _client.saved_forfeit_action()]:
+		var id := str(entry.get("values", {}).get("match_id", ""))
+		if not id.is_empty() and id != _match_id and id not in ids: ids.append(id)
+	for id in ids:
+		var result: Dictionary = await _client.request("/forest/core-defense/match/state?match_id=" + id.uri_encode() + "&after=0", null, self)
+		if not _valid(): return
+		if result.code == 200 and _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) and str(result.data.match_id) == id and result.data.status == "FINISHED":
+			if not _client.reconcile_terminal(result.data): _notice.text = tr("CD_UNAVAILABLE")
+		elif (int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "MATCH_UNAVAILABLE") or (int(result.get("code", 0)) == 403 and str(result.get("error", "")) == "NOT_PARTICIPANT"):
+			if not _client.reconcile_missing_match(id, str(result.error)): _notice.text = tr("CD_UNAVAILABLE")
+	_other_recovery_busy = false
