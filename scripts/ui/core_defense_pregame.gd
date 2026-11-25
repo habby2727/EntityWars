@@ -1,6 +1,6 @@
 extends Control
 
-const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
 
 var _identity := ""
 var _room := {}
@@ -23,21 +23,23 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(28, 28, 28, 28)))
-	panel.custom_minimum_size = Vector2(460, 400)
+	PANEL_STYLE.panel(panel)
+	panel.custom_minimum_size = Vector2(700, 520)
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	panel.add_child(box)
 	_info = Label.new()
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_info.add_theme_font_size_override("font_size", 24)
 	box.add_child(_info)
 	_message = Label.new()
 	box.add_child(_message)
 	_start = Button.new()
-	MENU_ART.button(_start)
+	PANEL_STYLE.button(_start, true)
 	_start.text = tr("WOE_START")
-	_start.custom_minimum_size.y = 48
+	_start.custom_minimum_size.y = 64
+	_start.add_theme_font_size_override("font_size", 30)
 	_start.pressed.connect(_start_match)
 	box.add_child(_start)
 	var scroll := ScrollContainer.new()
@@ -46,24 +48,28 @@ func _ready() -> void:
 	box.add_child(scroll)
 	_invites = preload("res://scripts/ui/minigame_invitations.gd").new()
 	_invites.name = "Invitations"
+	_invites.plain_buttons = true
 	_invites.room_id = str(SceneRouter._woe_context.room_id)
 	scroll.add_child(_invites)
 	var retry := Button.new()
-	MENU_ART.button(retry)
+	PANEL_STYLE.button(retry)
 	retry.text = tr("WOE_RETRY")
 	retry.custom_minimum_size.y = 48
+	retry.add_theme_font_size_override("font_size", 22)
 	retry.pressed.connect(_retry)
 	box.add_child(retry)
 	var leave := Button.new()
-	MENU_ART.button(leave)
+	PANEL_STYLE.button(leave)
 	leave.text = tr("WOE_LEAVE")
 	leave.custom_minimum_size.y = 48
+	leave.add_theme_font_size_override("font_size", 22)
 	leave.pressed.connect(_leave)
 	box.add_child(leave)
 	var local_return := Button.new()
-	MENU_ART.button(local_return)
+	PANEL_STYLE.button(local_return)
 	local_return.text = tr("WOE_RETURN")
 	local_return.custom_minimum_size.y = 48
+	local_return.add_theme_font_size_override("font_size", 22)
 	local_return.pressed.connect(SceneRouter.finish_woe_safely)
 	box.add_child(local_return)
 	_refresh()

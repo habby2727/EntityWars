@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { advanceTick, applyDeployment, getPublicSnapshot, type MatchState, type Team } from './engine';
 import { chooseBotDeployment } from './bot_ai';
+import {potionById} from './catalog';
 import { cleanupCoreDefense } from './core_defense_retention';
 
 const PAGE=100, EVENT_LIMIT=2000, ACTION_LIMIT=2048, RETENTION=24*60*60_000;
@@ -32,7 +33,8 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
   return {match_id:r.match_id,status:r.status,revision:r.revision,tick:state.tick,server_time_unix_ms:clock(),snapshot:snap,events,cursor:gap?r.event_seq:(events.at(-1)?.seq??after),latest_event_seq:r.event_seq,resync_required:gap};
  }
  function action(player:string,b:any,kind:'deploy'|'forfeit'):Result {
-  const keys=kind==='deploy'?['match_id','client_action_id','slot','card_id','lane']:['match_id','client_action_id'];
+  const targeted=kind==='deploy' && !!b && typeof b==='object' && ('target_x' in b || 'target_y' in b);
+  const keys=kind==='deploy'?(targeted?['match_id','client_action_id','slot','card_id','target_x','target_y']:['match_id','client_action_id','slot','card_id','lane']):['match_id','client_action_id'];
   if(!b||typeof b!=='object'||Array.isArray(b)||Object.keys(b).some(k=>!keys.includes(k))||!valid(b.match_id)||!valid(b.client_action_id))return fail(400,'INVALID_REQUEST');
   const payload=JSON.stringify(keys.map(k=>[k,b[k]]));
   return inTransaction(()=>{
@@ -43,9 +45,9 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
    let result:Result; const state=JSON.parse(r.state_json) as MatchState;
    if(r.status!=='RUNNING'||p.forfeited)result=fail(409,r.status!=='RUNNING'?'MATCH_FINISHED':'FORFEITED');
    else if(kind==='deploy'){
-    const applied=applyDeployment(state,{actionId:b.client_action_id,controllerId:player,slot:b.slot,cardId:b.card_id,lane:b.lane});
+    const applied=applyDeployment(state,{actionId:b.client_action_id,controllerId:player,slot:b.slot,cardId:b.card_id,lane:b.lane,target_x:b.target_x,target_y:b.target_y});
     if(!applied.accepted)result=fail(409,applied.reason);
-    else {save(r,applied.state,[spawnEvent(applied.state)],clock());result={status:200,data:snapshot(row(b.match_id),player,r.event_seq)}}
+    else {save(r,applied.state,potionById[b.card_id]?applied.state.events.slice(state.events.length):[spawnEvent(applied.state)],clock());result={status:200,data:snapshot(row(b.match_id),player,r.event_seq)}}
    } else {
     db.query('UPDATE woe_match_participants SET forfeited=1 WHERE match_id=? AND controller_id=?').run(b.match_id,player);
     const remaining=db.query('SELECT team,count(*) n FROM woe_match_participants WHERE match_id=? AND human=1 AND forfeited=0 GROUP BY team').all(b.match_id) as any[];
@@ -63,7 +65,7 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
   db.transaction(()=>{
    if(!canServe())return;const r=row(id);if(!r||r.status!=='RUNNING')return;
    let state=JSON.parse(r.state_json) as MatchState;const events:any[]=[];
-   if(state.tick%10===0){const bots=db.query('SELECT controller_id FROM woe_match_participants WHERE match_id=? AND (human=0 OR forfeited=1) ORDER BY controller_id').all(id) as any[];for(const bot of bots){const cmd=chooseBotDeployment(state,bot.controller_id);if(cmd){const applied=applyDeployment(state,cmd);if(applied.accepted){state=applied.state;events.push(spawnEvent(state))}}}}
+   if(state.tick%10===0){const bots=db.query('SELECT controller_id FROM woe_match_participants WHERE match_id=? AND (human=0 OR forfeited=1) ORDER BY controller_id').all(id) as any[];for(const bot of bots){const cmd=chooseBotDeployment(state,bot.controller_id);if(cmd){const applied=applyDeployment(state,cmd);if(applied.accepted){const fresh=applied.state.events.slice(state.events.length);state=applied.state;events.push(...(potionById[cmd.cardId]?fresh:[spawnEvent(state)]))}}}}
    state=advanceTick(state);events.push(...state.events);if(!canServe())throw new Error('FOREST_WOE_FENCED');save(r,state,events,clock());if(!canServe())throw new Error('FOREST_WOE_FENCED');
   }).immediate();
  }

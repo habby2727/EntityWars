@@ -116,7 +116,8 @@ test("enemy growth uses difficulty without changing floor or deterministic choic
   const first=enemy(11,1), stronger=enemy(11,31), oldCall=buildExpeditionEnemy(seed,"growth",11,false,setup,catalogs);
   expect(oldCall).toEqual(enemy(11,11));
   expect(first.floor).toBe(11); expect(stronger.floor).toBe(11);
-  expect([first.entity_id,first.homunculus_id,first.spell_ids,first.item_id]).toEqual([stronger.entity_id,stronger.homunculus_id,stronger.spell_ids,stronger.item_id]);
+  expect([first.entity_id,first.homunculus_id]).toEqual([stronger.entity_id,stronger.homunculus_id]);
+  expect(stronger).toEqual(enemy(11,31));
   expect(stronger.hp).toBeGreaterThan(first.hp); expect(stronger.attack).toBeGreaterThan(first.attack); expect(stronger.defense).toBeGreaterThan(first.defense); expect(stronger.homunculus_level).toBeGreaterThan(first.homunculus_level);
 });
 test("difficulty adds two defense per step, capped at 26", () => {
@@ -455,4 +456,45 @@ test("frozen tactical tiers make seeded choices from the same legal loadout", ()
   expect(choose(5,"difficult")).toBe("lethal");
   expect(choose(8,"very_difficult",{...target,hp:100})).toBe("clean");
   expect(choose(8,"very_difficult",{...target,hp:100})).toBe(choose(8,"very_difficult",{...target,hp:100}));
+});
+
+test("expedition tactics prefer reliable safe lethal attacks and respect cooldowns without mutation", () => {
+  const moves:any[] = [
+    {id:"certain",type:"sulfur",category:"attack",power_mult:1,accuracy:1,cooldown_turns:0,effects:[]},
+    {id:"risky",type:"sulfur",category:"attack",power_mult:2,accuracy:0.7,cooldown_turns:1,effects:[]},
+    {id:"heal",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"heal",target:"self",value:20}]},
+    {id:"shield",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"shield",target:"self",value:0.2}]},
+  ];
+  const npc:any={type:"sulfur",expedition_types:["sulfur","gold"],hp:100,max_hp:100,atk:30,status:{}};
+  const target:any={type:"gold",hp:10,max_hp:100,def:0,status:{}};
+  const choose=(cd:any={})=>chooseDungeonNpcSpell(15,moves.map(s=>s.id),moves,cd,npc,target,0.4,{tactical_tier:"exceptional",types});
+  const before=JSON.stringify([npc,target,moves]);
+  expect(choose()).toBe("certain"); expect(choose({certain:1})).toBe("risky");
+  expect(JSON.stringify([npc,target,moves])).toBe(before);
+  npc.hp=5; target.status.reflect=1;
+  expect(["shield","heal"]).toContain(choose());
+});
+
+test("higher difficulty builds have a deterministic reliable basic attack", () => {
+  for (let i=0;i<30;i++) {
+    const enemy=buildExpeditionEnemy(seed,`tactical-build-${i}`,15,false,setup,catalogs);
+    expect(enemy).toEqual(buildExpeditionEnemy(seed,`tactical-build-${i}`,15,false,setup,catalogs));
+    const equipped=enemy.spell_ids.map((id:string)=>catalogs.spells.find(s=>s.id===id)!);
+    expect(new Set(enemy.spell_ids).size).toBe(4);
+    expect(equipped.every((s:any)=>expeditionSpellSupported(s,enemy.types))).toBe(true);
+    expect(equipped.some((s:any)=>s.category==="attack" && s.cooldown_turns===0 && s.accuracy>=0.9)).toBe(true);
+  }
+});
+
+test("expedition NPC selection does not depend on the submitted player spell", () => {
+  const enemy=buildExpeditionEnemy(seed,"action-independence",15,false,setup,catalogs);
+  enemy.tactical_tier="very_difficult";
+  const state:any=createExpeditionCombatState(setup,enemy,catalogs);
+  state.player.hp=state.player.max_hp=1000; state.npc.hp=state.npc.max_hp=1000;
+  const before=JSON.stringify(state);
+  const a=resolveExpeditionTurn(state,{turn:1,spell_id:"cinder_fist"},rng);
+  const b=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},rng);
+  expect(a.error).toBeUndefined(); expect(b.error).toBeUndefined();
+  expect(a.events.find((e:any)=>e.kind==="spell" && e.actor==="npc")?.spell_id).toBe(b.events.find((e:any)=>e.kind==="spell" && e.actor==="npc")?.spell_id);
+  expect(JSON.stringify(state)).toBe(before);
 });

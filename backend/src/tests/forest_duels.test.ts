@@ -247,7 +247,7 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
   expect((await post('/forest/core-defense/create',{mode:'solo',client_action_id:'forge',player_id:b.id},a.token)).status).toBe(400);
   expect((await get(`/forest/core-defense/match/state?match_id=${core.match_id}&viewer_id=${a.id}`,c.token)).status).toBe(403);
   expect((await get(`/forest/woe/match/state?match_id=${core.match_id}`,a.token)).status).toBe(404);
-  const coreCurrent:any=await (await get('/forest/core-defense/match/current',a.token)).json();const coreHand=coreCurrent.snapshot.players.find((p:any)=>p.id===a.id).slots;const coreSlot=coreHand.findIndex((id:string)=>cardById[id].cost<=5);
+  const coreCurrent:any=await (await get('/forest/core-defense/match/current',a.token)).json();const coreHand=coreCurrent.snapshot.players.find((p:any)=>p.id===a.id).slots;const coreSlot=coreHand.findIndex((id:string)=>cardById[id] && cardById[id].cost<=5);
   const coreCmd={match_id:core.match_id,client_action_id:`${coreCurrent.server_time_unix_ms}:http`,slot:coreSlot,card_id:coreHand[coreSlot],lane:'left'};
   const coreDeploy=await post('/forest/core-defense/match/deploy',coreCmd,a.token);expect(coreDeploy.status).toBe(200);const coreAck=await coreDeploy.json();expect(await (await post('/forest/core-defense/match/deploy',coreCmd,a.token)).json()).toEqual(coreAck);
   expect((await post('/forest/core-defense/match/forfeit',{match_id:core.match_id,client_action_id:'cd-forfeit'},a.token)).status).toBe(200);
@@ -273,7 +273,7 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
   expect((await get(`/forest/woe/match/state?match_id=${start.match_id}&after=0`,c.token)).status).toBe(403);
   const current:any=await (await get('/forest/woe/match/current',a.token)).json();expect(current.match_id).toBe(start.match_id);
   const hand=current.snapshot.players.find((p:any)=>p.id===a.id).slots;
-  const slot=hand.findIndex((id:string)=>cardById[id].cost<=5);const command={match_id:start.match_id,client_action_id:'http-deploy',slot,card_id:hand[slot],lane:'left'};
+  const slot=hand.findIndex((id:string)=>cardById[id] && cardById[id].cost<=5);const command={match_id:start.match_id,client_action_id:'http-deploy',slot,card_id:hand[slot],lane:'left'};
   const deployed=await post('/forest/woe/match/deploy',command,a.token);expect(deployed.status).toBe(200);const response=await deployed.json();
   expect(await (await post('/forest/woe/match/deploy',command,a.token)).json()).toEqual(response);
   expect((await post('/forest/woe/match/deploy',{...command,client_action_id:'stale'},a.token)).status).toBe(409);

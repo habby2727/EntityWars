@@ -120,6 +120,14 @@ export function createForestPresence(zones:Map<string,Zone>, authenticate:(data:
   }
   if(!s.entered){send(s,{type:'error',error:'ENTER_REQUIRED'});return;}
   if(m.type==='cosmetic'){if(!cosmetics.has(m.summoner_id)){send(s,{type:'error',error:'INVALID_COSMETIC'});return;} if(now-s.lastCosmetic>=200 && s.state.summoner_id!==m.summoner_id){s.lastCosmetic=now;s.state.summoner_id=m.summoner_id;broadcast(s,{type:'peer_cosmetic',player_id:s.state.player_id,summoner_id:m.summoner_id});}return;}
+  if(m.type==='duels_travel'){
+   if(!validSeq(m.seq) || m.seq<=s.seq){correction(s,m.seq,'INVALID_SEQ');return;} s.seq=m.seq;
+   if(s.state.zone_id!=='central_clearing' || Math.hypot(s.state.x-960,s.state.y-590)>145){correction(s,m.seq,'INVALID_TRAVEL');return;}
+   prune();const destination=rooms.get('duel_clearing');if(!destination || countRoom('duel_clearing')>=128){correction(s,m.seq,'ROOM_FULL');return;}
+   s.pendingMove=null;rooms.get(s.state.zone_id)!.delete(s.state.player_id);broadcast(s,{type:'peer_leave',player_id:s.state.player_id});
+   s.state.zone_id='duel_clearing';s.state.x=960;s.state.y=700;s.state.facing=2;s.credit=0;s.at=now;destination.set(s.state.player_id,s);
+   send(s,{type:'zone',zone_id:s.state.zone_id,x:s.state.x,y:s.state.y,facing:s.state.facing,peers:peers(s)});if(active.get(s.state.player_id)===s)broadcast(s,{type:'peer_join',player:{...s.state}});return;
+  }
   if(m.type!=='move' && m.type!=='portal'){send(s,{type:'error',error:'UNKNOWN_TYPE'});return;}
   if(!validSeq(m.seq) || m.seq<=s.seq){correction(s,m.seq,'INVALID_SEQ');return;} s.seq=m.seq;
   const x=m.type==='move'?m.x:m.crossing_x, y=m.type==='move'?m.y:m.crossing_y;

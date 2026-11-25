@@ -1,6 +1,6 @@
 extends Control
 
-const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
 
 const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080.png")
 const ARENA := "res://data/static/woe_arena.json"
@@ -10,6 +10,8 @@ var _canvas: Control
 var _labels := {}
 var _seat_buttons := {}
 var _info: Label
+var _code_label: Label
+var _copy_button
 var _message: Label
 var _start: Button
 var _invite_button: Button
@@ -37,7 +39,9 @@ func _build() -> void:
 	aspect.stretch_mode = AspectRatioContainer.STRETCH_FIT
 	add_child(aspect)
 	_canvas = Control.new()
+	_canvas.set_meta("minigame_native_typography", true)
 	aspect.add_child(_canvas)
+	_canvas.theme = PANEL_STYLE.readable_theme()
 	_canvas.resized.connect(_resize)
 	var bg := TextureRect.new()
 	bg.texture = BG
@@ -53,60 +57,82 @@ func _build() -> void:
 				var point: Dictionary = arena.laboratories[team][lane]
 				var seat: String = str(team) + ":" + str(lane)
 				var button := Button.new()
-				MENU_ART.button(button)
+				PANEL_STYLE.button(button)
 				button.name = seat
-				button.position = Vector2(float(point.x)-115, float(point.y)-65)
-				button.size = Vector2(230, 130)
+				button.position = Vector2(float(point.x)-150, float(point.y)-75)
+				button.size = Vector2(300, 150)
+				button.add_theme_font_size_override("font_size", 24)
 				button.text = tr("WOE_" + team.to_upper()) + "\n" + tr("WOE_EMPTY")
 				button.pressed.connect(_seat.bind(seat))
 				_canvas.add_child(button)
 				_seat_buttons[seat] = button
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(28, 28, 28, 28)))
-	panel.position = Vector2(710, 310)
-	panel.size = Vector2(500, 460)
+	PANEL_STYLE.panel(panel)
+	panel.position = Vector2(650, 260)
+	panel.size = Vector2(620, 560)
 	_canvas.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	panel.add_child(box)
 	_info = Label.new()
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_info.add_theme_font_size_override("font_size", 22)
+	_info.max_lines_visible = 4
+	_info.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	box.add_child(_info)
+	var code_row := HBoxContainer.new()
+	box.add_child(code_row)
+	_code_label = Label.new()
+	_code_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_code_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_code_label.add_theme_font_size_override("font_size", 18)
+	code_row.add_child(_code_label)
+	_copy_button = preload("res://scripts/ui/copy_code_button.gd").new()
+	PANEL_STYLE.button(_copy_button)
+	code_row.add_child(_copy_button)
 	_message = Label.new()
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_message)
 	_fill = CheckBox.new()
 	_fill.text = tr("WOE_FILL_BOTS")
+	_fill.add_theme_font_size_override("font_size", 21)
 	_fill.button_pressed = true
 	box.add_child(_fill)
 	_start = Button.new()
-	MENU_ART.button(_start)
+	PANEL_STYLE.button(_start, true)
 	_start.text = tr("WOE_START")
+	_start.custom_minimum_size.y = 62
+	_start.add_theme_font_size_override("font_size", 30)
 	_start.pressed.connect(_start_match)
 	box.add_child(_start)
 	_invite_button = Button.new()
-	MENU_ART.button(_invite_button)
+	PANEL_STYLE.button(_invite_button)
 	_invite_button.text = tr("INVITE_OPEN")
+	_invite_button.custom_minimum_size.y = 54
+	_invite_button.add_theme_font_size_override("font_size", 24)
 	_invite_button.pressed.connect(_open_invites)
 	box.add_child(_invite_button)
-	var copy := Button.new()
-	MENU_ART.button(copy)
-	copy.text = tr("WOE_COPY_CODE")
-	copy.pressed.connect(func(): DisplayServer.clipboard_set(str(_room.get("join_code", ""))))
-	box.add_child(copy)
+	var secondary := HBoxContainer.new()
+	box.add_child(secondary)
 	var refresh := Button.new()
-	MENU_ART.button(refresh)
+	PANEL_STYLE.button(refresh)
 	refresh.text = tr("WOE_REFRESH")
+	refresh.add_theme_font_size_override("font_size", 21)
 	refresh.pressed.connect(_refresh)
-	box.add_child(refresh)
+	refresh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	secondary.add_child(refresh)
 	var retry := Button.new()
-	MENU_ART.button(retry)
-	retry.text = tr("WOE_RETRY")
+	PANEL_STYLE.button(retry)
+	retry.text = tr("WOE_RECOVER_SHORT")
+	retry.add_theme_font_size_override("font_size", 21)
 	retry.pressed.connect(_retry)
-	box.add_child(retry)
+	retry.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	secondary.add_child(retry)
 	var leave := Button.new()
-	MENU_ART.button(leave)
+	PANEL_STYLE.button(leave)
 	leave.text = tr("WOE_LEAVE")
+	leave.custom_minimum_size.y = 52
+	leave.add_theme_font_size_override("font_size", 22)
 	leave.pressed.connect(_leave_pressed)
 	box.add_child(leave)
 	_resize()
@@ -119,11 +145,12 @@ func _resize() -> void:
 		var button: Button = _seat_buttons[seat]
 		var parts := str(seat).split(":")
 		var p: Dictionary = arena.laboratories[parts[0]][parts[1]]
-		button.position = Vector2(float(p.x)-115,float(p.y)-65) * scale_factor
+		button.position = Vector2(float(p.x)-150,float(p.y)-75) * scale_factor
 		button.scale = scale_factor
 	for child in _canvas.get_children():
 		if child is PanelContainer:
-			child.position = Vector2(710,310) * scale_factor
+			child.position = Vector2(650,260) * scale_factor
+			child.size = Vector2(620,560)
 			child.scale = scale_factor
 
 func _valid() -> bool:
@@ -168,7 +195,10 @@ func _render() -> void:
 		_transitioning = true
 		SceneRouter.enter_woe_match(_room)
 		return
-	_info.text = "%s  %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s" % [tr("WOE_TITLE"),mode,tr("WOE_HOST"),_display_name(host),tr("WOE_CODE"),_room.get("join_code", ""),tr("WOE_REVISION"),_room.get("revision", 0),tr("WOE_STATUS"),_room.get("status", "")]
+	_info.text = "%s  %s\n%s: %s" % [tr("WOE_TITLE"),mode,tr("WOE_HOST"),_display_name(host)]
+	_code_label.text = "%s: %s" % [tr("WOE_CODE"), _room.get("join_code", "")]
+	_copy_button.code = str(_room.get("join_code", ""))
+	_copy_button.disabled = _copy_button.code.is_empty()
 	var player_list: Array[String] = []
 	for member in _room.get("members", []):
 		if member is Dictionary:
@@ -199,6 +229,7 @@ func _render() -> void:
 	if is_instance_valid(_invites): _invites.set_inviting_enabled(not _invite_button.disabled and _room.get("members", []).size() < (2 if mode == "1v1" else 4))
 	_fill.disabled = host != owner or started or _changing
 	_message.text = tr("WOE_INITIALIZED") if started else tr("WOE_WAITING")
+	_resize.call_deferred()
 
 func _display_name(id: String) -> String:
 	for member in _room.get("members", []):
@@ -221,6 +252,7 @@ func _open_invites() -> void:
 	_invite_popup.add_child(scroll)
 	_invites = preload("res://scripts/ui/minigame_invitations.gd").new()
 	_invites.game_kind = "woe"
+	_invites.plain_buttons = true
 	_invites.room_id = str(_room.get("room_id", ""))
 	_invites.can_invite = _room.get("members", []).size() < (2 if _room.get("mode") == "1v1" else 4)
 	_invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -172,6 +172,14 @@ func portal(direction: String, point: Vector2, foot: Vector2, facing: int) -> bo
 	_portal_seq = seq
 	return true
 
+func travel_to_duels(foot: Vector2, facing: int) -> bool:
+	if _closing or not entered or zone_id != "central_clearing" or not move(foot, facing, true) or seq >= 2147483647:
+		return false
+	seq += 1
+	if not _send({"type":"duels_travel", "seq":seq}): return false
+	_portal_seq = seq
+	return true
+
 func handoff(kind: String) -> bool:
 	if _closing:
 		return false

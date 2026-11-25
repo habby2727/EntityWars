@@ -2,6 +2,7 @@
   "width": 1920,
   "height": 1080,
   "laboratory_hp": 1000,
+  "laboratory_defense": { "range": 120, "damage": 30, "interval_ms": 1000 },
   "tick_ms": 100,
   "duration_ticks": 1800,
   "unit_cap": 100,

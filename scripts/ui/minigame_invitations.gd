@@ -1,12 +1,14 @@
 extends VBoxContainer
 
 const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
 
 signal admitted(room: Dictionary)
 var room_id := ""
 var game_kind := "core_defense"
 var allow_accept := false
 var can_invite := true
+var plain_buttons := false
 var _identity := ""
 var _busy := false
 var _status: Label
@@ -23,7 +25,7 @@ func _ready() -> void:
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_status)
 	var refresh := Button.new()
-	MENU_ART.button(refresh)
+	_style_button(refresh)
 	refresh.text = tr("CD_INVITE_REFRESH")
 	refresh.pressed.connect(refresh_invitations)
 	add_child(refresh)
@@ -116,7 +118,7 @@ func _render_cache() -> void:
 				if not friend is Dictionary: continue
 				var id := str(friend.get("player_id", ""))
 				var button := Button.new()
-				MENU_ART.button(button)
+				_style_button(button)
 				var display := str(friend.get("display_name", "")).strip_edges()
 				button.text = tr("CD_INVITE_FRIEND") % (display if not display.is_empty() else tr("INVITE_UNKNOWN_PLAYER"))
 				button.set_meta("invite_friend", true)
@@ -128,11 +130,15 @@ func _render_cache() -> void:
 
 func _add_button(parent: Node, key: String, callback: Callable) -> void:
 	var button := Button.new()
-	MENU_ART.button(button)
+	_style_button(button)
 	button.text = tr(key)
 	button.custom_minimum_size.y = 44
 	button.pressed.connect(callback)
 	parent.add_child(button)
+
+func _style_button(button: Button) -> void:
+	if plain_buttons: PANEL_STYLE.button(button)
+	else: MENU_ART.button(button)
 
 func _friend_name(id: String) -> String:
 	var value := str(SocialClient.friends.get(id, "")).strip_edges()

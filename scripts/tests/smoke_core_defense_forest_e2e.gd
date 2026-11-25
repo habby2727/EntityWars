@@ -121,8 +121,18 @@ func _run() -> void:
 	if not check(await wait_file("cd_arena_%d" % (1-role)),"shared arena"): quit(1); return
 	if not check(await wait_for(func(): return arena._snapshot.units.any(func(u): return u.get("kind") == "enemy"),10.0),"enemy snapshot"): quit(1); return
 	if role == 0:
-		var slot := 3
-		if not check(await wait_for(func(): return not arena._buttons[3].disabled, 15.0), "fourth card affordable"): quit(1); return
+		if OS.get_environment("FOREST_POTION_TEST") == "1":
+			if not check(await wait_file("potion_ready"), "potion fixture ready"): quit(1); return
+			if not check(await wait_for(func(): return arena._own.get("slots", []).size() == 4 and arena._own.slots[3] == "thunderlock" and not arena._buttons[3].disabled, 10.0), "potion hand ready"): quit(1); return
+			arena._select(3)
+			if not check(arena._potion_target.visible and not arena._lane_buttons["blue:left"].visible, "potion targeting"): quit(1); return
+			arena._cast_potion(Vector2(960,540))
+			if not check(await wait_for(func(): return not arena._acting and arena._own.get("slots", []).size() == 4 and arena._own.slots[3] != "thunderlock", 10.0), "authoritative potion cast"): quit(1); return
+			signal_file("potion_cast_0")
+		var slot := -1
+		if not check(await wait_for(func(): return arena._own.get("slots", []).any(func(id): return arena._cards.get(str(id), {}).get("kind") != "potion" and arena._card_cost(arena._cards.get(str(id), {})) <= float(arena._own.get("zeal", 0))), 15.0), "unit affordable"): quit(1); return
+		for i in range(4):
+			if not arena._buttons[i].disabled and arena._cards.get(str(arena._own.slots[i]), {}).get("kind") != "potion": slot = i; break
 		if not check(slot >= 0,"affordable card"): quit(1); return
 		arena._select(slot)
 		if not check(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible,"both lanes"): quit(1); return
@@ -142,7 +152,7 @@ func _run() -> void:
 		if not check(await wait_file("cd_deployed"),"deployment signal"): quit(1); return
 		var slot := -1
 		for i in range(4):
-			if not arena._buttons[i].disabled and slot < 0: slot = i
+			if not arena._buttons[i].disabled and slot < 0 and arena._cards.get(str(arena._own.slots[i]), {}).get("kind") != "potion": slot = i
 		if not check(slot >= 0, "coop guest affordable card"): quit(1); return
 		arena._select(slot)
 		if not check(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible, "guest both lanes"): quit(1); return

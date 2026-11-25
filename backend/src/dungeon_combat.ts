@@ -121,6 +121,7 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
     const pool = attacks.length ? attacks : legal;
     return pool[Math.floor(roll * pool.length)].id;
   }
+  if (npc.expedition_types && ["difficult", "very_difficult", "exceptional"].includes(context.tactical_tier)) return chooseExpeditionNpcSpell(legal, equippedIds.map(id => spells.find(s => s?.id === id)).filter(Boolean), cooldowns, npc, target, context);
   const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
   const enemyShield = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "shield") : enemyStatus.shield ?? 0;
   const enemyReflect = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "reflect") : enemyStatus.reflect ?? 0;
@@ -213,6 +214,71 @@ export function chooseDungeonNpcSpell(floor: number, equippedIds: string[], spel
   const best = Math.max(...scored.map(s => s.score));
   const tied = scored.filter(s => s.score === best);
   return tied[Math.floor(roll * tied.length)].id;
+}
+
+// A bounded one-action lookahead. The passive adapter runs on copies so scoring
+// observes the same conditions as combat without committing markers or effects.
+function chooseExpeditionNpcSpell(legal: any[], equipped: any[], cooldowns: Record<string, number>, npc: any, target: any, context: any): string {
+  const tier = context.tactical_tier === "exceptional" ? 2 : context.tactical_tier === "very_difficult" ? 1 : 0;
+  const has = (s: any, ...kinds: string[]) => s.effects.some((e: any) => kinds.includes(e.kind));
+  const own = npc.status ?? {}, enemy = target.status ?? {};
+  const shield = effectiveTimedDefense(target, "shield"), reflect = effectiveTimedDefense(target, "reflect");
+  const ownShield = effectiveTimedDefense(npc, "shield");
+  const evalAttack = (s: any) => {
+    const actor = structuredClone(npc), victim = structuredClone(target);
+    if (actor.expedition_passive?.exchange > 0) applyCombatPassive(actor, victim, "before_attack", context.types, "npc", "player", [], 0, s);
+    const mods = actor.expedition_passive ? passiveModifiers(actor.expedition_passive) : {};
+    const guard = target.expedition_passive ? passiveModifiers(target.expedition_passive).guard_flat ?? 0 : 0;
+    const relation = (t: string) => context.types?.effectiveness?.[t]?.[target.type] ?? 1;
+    const hybridFactor = (t: string) => relation(t) > 1 ? 1.25 : relation(t) < 1 ? 0.8 : 1;
+    let mult = s.type === "hybrid" ? Math.pow(hybridFactor(s.primary_type), 0.65) * Math.pow(hybridFactor(s.secondary_type), 0.35) : s.type === "universal" ? 1 : relation(s.type) > 1 ? 1.18 : relation(s.type) < 1 ? 0.84 : 1;
+    if (npc.expedition_types.includes(s.type) && relation(s.type) < 1) mult = Math.min(1, mult + (npc.item_effects?.disadvantage_reduction ?? 0));
+    if (s.type !== "universal") mult = 1 + (mult - 1) * (1 - Math.max(npc.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, context.neutralize ?? 0));
+    let power = s.power_mult;
+    for (const e of s.effects) {
+      if (e.kind === "bonus_if_poisoned" && enemy.poison > 0 || e.kind === "bonus_if_hit_last_exchange" && npc.spell_hit_last_exchange) power *= 1 + e.value;
+      if (e.kind === "bonus_power_if_poisoned" && enemy.poison > 0 || e.kind === "bonus_if_shielded" && ownShield > 0 || e.kind === "bonus_if_low_hp" && npc.hp < npc.max_hp * (e.threshold ?? 0.4) || e.kind === "bonus_power_if_hit_last_exchange" && npc.spell_hit_last_exchange || e.kind === "bonus_if_marked" && enemy.hybrid_mark?.owner === "npc" && enemy.hybrid_mark.remaining > 0) power += e.value;
+    }
+    const anomaly = s.type === "hybrid" ? Math.pow(physicalAnomalyMultiplier(context.anomaly, s.primary_type), 0.65) * Math.pow(physicalAnomalyMultiplier(context.anomaly, s.secondary_type), 0.35) : physicalAnomalyMultiplier(context.anomaly, npc.expedition_types.includes(s.type) ? s.type : npc.type);
+    let damage = Math.max(1, Math.round(((npc.atk + (mods.power_flat ?? 0)) * (1 + (own.atk_boost ?? 0) - (own.atk_down ?? 0)) - Math.trunc((target.def + guard) * 0.5)) * mult * anomaly * (1 + (enemy.vuln ?? 0)) * power));
+    damage = Math.max(1, Math.round(damage * Math.max(0.1, Math.min(1, context.incomingMult ?? 1))));
+    const dispel = s.effects.find((e: any) => e.kind === "ward_dispel")?.value ?? 0, pierce = s.effects.find((e: any) => e.kind === "pierce_ward")?.value ?? 0;
+    if (shield > 0) damage = Math.max(0, Math.round(damage * (1 - shield * (1 - dispel) * (1 - pierce))));
+    const accuracy = Math.max(0, Math.min(1, s.accuracy + (own.focus_next ?? 0) - (own.misalign_next ?? 0) + (mods.accuracy_pct ?? 0) - (statusActive(npc, "lethargy", context.turn ?? 1) ? 0.15 : 0)));
+    const conversion = s.effects.find((e: any) => e.kind === "ward_convert");
+    const extra = (conversion && ownShield > 0 ? Math.min(Math.floor(target.max_hp * 0.2), Math.floor(npc.max_hp * ownShield * conversion.value)) : 0) + Math.max(0, Math.trunc(npc.item_effects?.true_on_hit ?? 0)) + Math.max(0, Math.trunc(npc.item_effects?.dot_true ?? 0));
+    return {damage, extra, chance: accuracy * (1 - Math.min(1, context.evasion ?? 0))};
+  };
+  const evaluated = legal.map(s => ({s, attack: s.category === "attack" ? evalAttack(s) : null}));
+  const safeLethals = evaluated.filter(x => x.attack && x.attack.damage + x.attack.extra >= target.hp && !(reflect > 0 && Math.round(x.attack.damage * reflect) >= npc.hp && (npc.item_effects?.ignore_reflect_chance ?? 0) < 1));
+  if (safeLethals.length) return safeLethals.sort((a, b) => b.attack!.chance - a.attack!.chance || a.s.id.localeCompare(b.s.id))[0].s.id;
+  const scored = evaluated.map(({s, attack}) => {
+    let score = attack ? Math.min(target.hp, attack.damage + attack.extra) * attack.chance : 0;
+    if (tier > 0 && attack && (enemy.poison > 0 && has(s, "bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison") || ownShield > 0 && has(s, "ward_convert", "bonus_if_shielded") || enemy.hybrid_mark?.owner === "npc" && enemy.hybrid_mark.remaining > 0 && has(s, "bonus_if_marked"))) score += npc.atk * attack.chance * (tier === 2 ? 0.5 : 0.3);
+    if (attack && reflect > 0) {
+      const reflected = Math.round(attack.damage * reflect);
+      score -= reflected * attack.chance * (1 - (npc.item_effects?.ignore_reflect_chance ?? 0)) * (tier === 2 ? 2 : 1);
+      if (reflected >= npc.hp && (npc.item_effects?.ignore_reflect_chance ?? 0) < 1) score -= 10000;
+    }
+    for (const e of s.effects) {
+      const chance = (e.chance ?? 1) * s.accuracy;
+      if (e.kind === "heal" && e.target === "self") score += Math.min(e.value, npc.max_hp - npc.hp) * chance * (tier === 2 ? 1.5 : 1);
+      if (["cleanse_one", "debuff_transfer"].includes(e.kind)) score += ["poison", "stun", "vuln", "atk_down", "misalign_next"].some(k => (own[k] ?? 0) > 0) || npc.burn_effect || npc.lethargy_effect ? npc.max_hp * 0.5 * chance : -10;
+      if (e.kind === "shield" && e.target === "self" && ownShield <= 0) score += chance * npc.max_hp * e.value * (tier === 2 ? 0.8 : 0.5);
+      if (e.kind === "poison" && e.target === "enemy" && !(enemy.poison > 0)) score += chance * target.max_hp * 0.06 * Math.min(2, e.value) * (npc.hom_id === "venam" ? 1.3 : 1);
+      if (["vuln", "atk_down"].includes(e.kind) && e.target === "enemy" && !(enemy[e.kind] > 0)) score += chance * npc.atk * 0.15 * (npc.hom_id === "mantillo" ? 1.3 : 1);
+      if (tier > 0) {
+        const follow = equipped.filter(f => f.id !== s.id && (cooldowns[f.id] ?? 0) <= 1);
+        const setup = e.kind === "poison" && e.target === "enemy" && !(enemy.poison > 0) ? follow.some(f => has(f, "bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison")) && e.value > 1 : e.kind === "shield" && e.target === "self" && ownShield <= 0 ? follow.some(f => has(f, "ward_convert", "bonus_if_shielded")) : e.kind === "hybrid_mark" && !enemy.hybrid_mark ? follow.some(f => has(f, "bonus_if_marked")) && e.value > 1 : false;
+        if (setup) score += chance * npc.atk * (tier === 2 ? 0.9 : 0.6);
+      }
+      if (["shield", "reflect", "atk_boost"].includes(e.kind) && e.target === "self" && (own[e.kind] ?? 0) > 0 || ["poison", "vuln", "atk_down"].includes(e.kind) && e.target === "enemy" && (enemy[e.kind] ?? 0) > 0) score -= s.category === "support" ? 30 : 0;
+    }
+    if (tier === 2 && attack) score -= s.cooldown_turns * 0.25;
+    return {id: s.id, score};
+  });
+  scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  return scored[0].id;
 }
 
 const DUNGEON_GENERATED_EFFECTS = new Set(["burn", "lethargy", "atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
@@ -376,7 +442,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   const draw = () => { const value = rng(decision.turn, counter++); if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error("INVALID_RNG"); return value; };
   let npcSpell: any;
   try {
-    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? ({normal: 1, difficult: 5, very_difficult: 8, exceptional: 15}[next.tactical_tier as string] ?? Math.max(8, Math.min(1000, next.floor))) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
+    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? ({normal: 1, difficult: 5, very_difficult: 8, exceptional: 15}[next.tactical_tier as string] ?? Math.max(8, Math.min(1000, next.floor))) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined, turn: decision.turn, neutralize: next.hom_synergy?.type_neutralize, incomingMult: next.hom_synergy?.incoming_mult, evasion: (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) });
     npcSpell = next.spells.find((s: any) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL") throw err;
@@ -627,7 +693,13 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   act(next.npc, next.player, npcSpell, "npc");
   const homFactor = next.npc.expedition_types ? homunculusAttackMultiplierById(next.npc.hom_id, next.player.type, next.types, [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]) : 1;
   const earlyHomDamage = Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * 0.4 * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) * (1 - (next.player.status.shield ?? 0))));
-  const spendHom = !next.npc.expedition_types || next.npc.hom_energy >= 6 || next.player.hp <= earlyHomDamage || next.npc.hp <= next.npc.max_hp * 0.3 || (next.player.status.shield ?? 0) > 0 && next.npc.hom_energy >= 5;
+  let spendHom = !next.npc.expedition_types || next.npc.hom_energy >= 6 || next.player.hp <= earlyHomDamage || next.npc.hp <= next.npc.max_hp * 0.3 || (next.player.status.shield ?? 0) > 0 && next.npc.hom_energy >= 5;
+  if (next.npc.expedition_types && ["very_difficult", "exceptional"].includes(next.tactical_tier)) {
+    const homDamage = Math.max(0, Math.round(Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * (next.npc.hom_energy >= 6 ? 0.6 : 0.4) * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)))) * (1 - effectiveTimedDefense(next.player, "shield"))));
+    const homReflect = statusActive(next.player, "burn", decision.turn) ? 0 : next.player.timed_defenses?.reflect?.value ?? 0;
+    const suicidal = Math.round(homDamage * homReflect) >= next.npc.hp && (npcEffects.ignore_reflect_chance ?? 0) < 1;
+    spendHom = !suicidal && (next.npc.hom_energy >= 6 || next.player.hp <= homDamage || next.npc.hp <= next.npc.max_hp * 0.3);
+  }
   if (next.npc.hom_id && next.npc.hom_energy >= 3 && spendHom && next.npc.hp > 0 && next.player.hp > 0) {
     if (next.npc.status.hom_stun > 0) {
       next.npc.status.hom_stun--; events.push({ kind: "status_consumed", target: "npc", status: "hom_stun", remaining: next.npc.status.hom_stun });

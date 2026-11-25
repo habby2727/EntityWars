@@ -31,6 +31,13 @@ func _run() -> void:
 	assert(not restarted.saved_pending().is_empty())
 	assert(restarted.reconcile_missing_match("old", "MATCH_UNAVAILABLE"))
 	assert(restarted.saved_pending().is_empty())
+	restarted.responses = [{"code":0,"error":"WOE_NETWORK"}, {"code":200,"data":{"match_id":"new","status":"RUNNING","snapshot":{"kind":"woe","players":[{"id":gate.player_id,"slots":[],"zeal":0}]}}}]
+	var potion := {"match_id":"new","slot":2,"card_id":"thunderlock","target_x":960.0,"target_y":540.0}
+	await restarted.mutate("match/deploy", potion)
+	var potion_body: Dictionary = restarted.saved_pending().body.duplicate(true)
+	assert(potion_body.target_x == 960.0 and potion_body.target_y == 540.0 and not potion_body.has("lane"))
+	await restarted.retry_pending()
+	assert(restarted.bodies[-1] == potion_body and restarted.saved_pending().is_empty())
 	restarted.responses = [{"code":429,"error":"ACTION_LIMIT"}]
 	await restarted.mutate("match/deploy", {"match_id":"new","slot":0,"card_id":"neon","lane":"left"})
 	assert(restarted.saved_pending().is_empty())

@@ -15,6 +15,12 @@ func _run() -> void:
 	root.add_child(loadout)
 	var screen := Control.new()
 	root.add_child(screen)
+	var native_panel := PanelContainer.new()
+	load("res://scripts/ui/minigame_panel_style.gd").panel(native_panel)
+	screen.add_child(native_panel)
+	var native_label := Label.new()
+	native_label.text = "Sala de duelos"
+	native_panel.add_child(native_label)
 	var heading := Label.new()
 	heading.name = "Title"
 	screen.add_child(heading)
@@ -33,6 +39,10 @@ func _run() -> void:
 	assert(heading.get_theme_font("font") == typography._title_font)
 	assert(body.get_theme_font("font") == typography._body_font)
 	assert(body.get_theme_font_size("font_size") == 30)
+	assert(native_label.get_theme_font("font") is SystemFont)
+	native_label.text = "Sala actualizada"
+	typography._process(0.1)
+	assert(native_label.get_theme_font("font") is SystemFont)
 	typography._apply_font(body)
 	assert(body.get_theme_font_size("font_size") == 30)
 	body.text = "25%"

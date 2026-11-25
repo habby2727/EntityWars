@@ -35,12 +35,34 @@ func _run() -> void:
 			var team := "blue" if i < 8 else "red"
 			var asset := "neon" if team == "blue" else ("noxiris" if kind == "core_defense" else "mantillo")
 			arena._debug_add(asset, team, "enemy" if kind == "core_defense" and team == "red" else "homunculus", 855.0 + float(i % 8) * 30.0, 565.0 if team == "blue" else 515.0)
+		if kind == "woe":
+			for x in [410.0,1510.0]:
+				arena._debug_add("neon", "red", "homunculus", x, 760.0)
+				arena._debug_add("mantillo", "blue", "homunculus", x, 320.0)
 		arena._debug_render()
+		if kind == "woe":
+			for team in ["blue", "red"]:
+				for lane in ["left", "right"]:
+					arena._snapshot.laboratories.append({"id":team+":"+lane,"team":team,"hp":1000,"maxHp":1000})
+			arena._render_snapshot()
 		arena._select(0)
 		arena.set_process(false)
 		arena._own.zeal = 5
 		arena._own.zeal_regen_ticks = 17
 		arena._sync_zeal_display()
+		if OS.get_environment("WOE_POTION_CAPTURE") == "1":
+			var potion_id := OS.get_environment("WOE_POTION_ID")
+			if potion_id not in ["thunderlock", "vitriol_potion"]: potion_id = "thunderlock"
+			arena._own.slots[3] = potion_id
+			arena._select(3)
+			arena._potion_target.point = Vector2(960,540)
+			arena._potion_target.showing = true
+			arena._potion_target.queue_redraw()
+			var count := 0
+			for unit in arena._units.values():
+				if count >= 4: break
+				unit.update_state({"x":unit.target_position.x,"y":unit.target_position.y,"snapshot_tick":100,"paralyzed_until":150,"poison_until":130})
+				count += 1
 		if kind == "core_defense":
 			arena._snapshot["allied_count"] = 2
 			arena._snapshot["allied_cap"] = 4
@@ -50,6 +72,14 @@ func _run() -> void:
 			await create_timer(0.5).timeout
 			for unit in arena._units.values():
 				if is_instance_valid(unit): unit.attack()
+			if kind == "woe":
+				for team in ["blue", "red"]:
+					for lane in ["left", "right"]:
+						var center: Vector2 = arena._defense_ranges.labs[team+":"+lane].center
+						var target := center + Vector2(0,-100 if team == "blue" else 100)
+						arena._event({"type":"lab_attack","labId":team+":"+lane,"targetPosition":{"x":target.x,"y":target.y},"damage":26})
+			if OS.get_environment("WOE_POTION_CAPTURE") == "1":
+				arena._event({"type":"potion_cast","cardId":str(arena._own.slots[3]),"team":"blue","position":{"x":960,"y":540}})
 			arena._event({"type":"death","target":999,"targetKind":"unit","victimCardId":"neon","victimTeam":"red","victimPosition":{"x":1020,"y":540}})
 			await RenderingServer.frame_post_draw
 			var picture := root.get_texture().get_image()

@@ -1,4 +1,4 @@
-import { cardById, cardCost, elementalMultiplier } from './catalog';
+import { cardById, cardCost, potionById, elementalMultiplier } from './catalog';
 import { validateDeployment, type DeploymentCommand, type MatchState, type Lane } from './engine';
 
 // Only own hand and visible units/labs enter the score. Stable ties spread controllers across lanes.
@@ -6,10 +6,22 @@ export function chooseBotDeployment(state: MatchState, id: string, options?: { v
  const p=state.controllers.find(c=>c.id===id); if(!p || state.result)return null;
  const alliesAlive=state.units.filter(u=>u.hp>0&&u.team===p.team).length;
  const enemiesAlive=state.units.filter(u=>u.hp>0&&u.team!==p.team).length;
- if(alliesAlive>enemiesAlive || (alliesAlive===enemiesAlive && alliesAlive>=3) || (alliesAlive===0 && enemiesAlive===0 && state.tick<50))return null;
+ if(alliesAlive>enemiesAlive || (alliesAlive===0 && enemiesAlive===0 && state.tick<50))return null;
  const choices: {cmd:DeploymentCommand;score:number}[]=[];
  const bias=[...id].reduce((n,c)=>(n*33+c.charCodeAt(0))>>>0,0);
- for(const lane of ['left','right'] as Lane[]) for(let slot=0;slot<p.slots.length;slot++) {
+ const enemiesVisible=state.units.filter(u=>u.hp>0&&u.team!==p.team).sort((a,b)=>a.id-b.id);
+ for(let slot=0;slot<p.slots.length;slot++){
+  const potion=potionById[p.slots[slot]];if(!potion)continue;
+  for(const center of enemiesVisible){
+   const targets=enemiesVisible.filter(u=>(u.position.x-center.position.x)**2+(u.position.y-center.position.y)**2<=potion.radius**2 && (potion.id==='thunderlock'?(u.paralyzedUntil??0)<=state.tick:(u.poisonUntil??0)<=state.tick));
+   if(targets.length<2)continue;
+   const cmd={actionId:`bot:${state.tick}:${id}`,controllerId:id,slot,cardId:potion.id,target_x:center.position.x,target_y:center.position.y};
+   if((options?.validate ?? validateDeployment)(state,cmd))continue;
+   choices.push({cmd,score:targets.length*5-potion.cost*0.12-slot*0.001});
+  }
+ }
+ if(alliesAlive!==enemiesAlive || alliesAlive<3)for(const lane of ['left','right'] as Lane[]) for(let slot=0;slot<p.slots.length;slot++) {
+  if(!cardById[p.slots[slot]])continue;
   const card=cardById[p.slots[slot]], cmd={actionId:`bot:${state.tick}:${id}`,controllerId:id,slot,cardId:card.id,lane};
   if((options?.validate ?? validateDeployment)(state,cmd))continue;
   const enemies=state.units.filter(u=>u.hp>0&&u.team!==p.team&&u.lane===lane), allies=state.units.filter(u=>u.hp>0&&u.team===p.team&&u.lane===lane);

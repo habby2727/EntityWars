@@ -6,7 +6,7 @@ import {initializeCoreDefense,applyCoreDefenseDeployment,advanceCoreDefenseTick,
 // Synthetic plaza populations; no health, damage, speed or range is boosted.
 test('crowded opposing WOE units fight deterministically and reroute after laboratory destruction',()=>{
  let s=initializeMatch('1v1','crowd',['blue','red']);
- for(const p of s.controllers){p.zealTenths=100;const r=applyDeployment(s,{controllerId:p.id,actionId:p.id,slot:0,cardId:p.slots[0],lane:'left'});if(!r.accepted)throw Error(r.reason);s=r.state;}
+ for(const player of [...s.controllers]){const p=s.controllers.find(x=>x.id===player.id)!;p.zealTenths=100;const slot=p.slots.findIndex(id=>!!cardById[id]);const r=applyDeployment(s,{controllerId:p.id,actionId:p.id,slot,cardId:p.slots[slot],lane:'left'});if(!r.accepted)throw Error(r.reason);s=r.state;}
  const templates=s.units;s.units=Array.from({length:100},(_,i)=>{const team=i<50?'blue':'red',id=i+1,u=structuredClone(templates.find(x=>x.team===team)!);u.id=id;u.cardId=['neon','mantillo','solcarp'][i%3];u.hp=cardById[u.cardId].hp;u.position=formationPoint({x:960,y:team==='blue'?568:512},id);u.route=route(team,'left','left',id);u.waypoint=4;return u;});
  s.nextUnitId=101;s.laboratories.find(l=>l.id==='red:left')!.hp=0;
  function run(){let state=structuredClone(s),attacks=0;for(let i=0;i<300&&!state.result;i++){state=advanceTick(state);expect(state.units.length).toBeLessThanOrEqual(100);for(const u of state.units)expect(Number.isFinite(u.position.x)&&Number.isFinite(u.position.y)).toBe(true);for(const e of state.events){if(e.type==='attack'){attacks++;expect(Math.hypot(e.position.x-e.targetPosition.x,e.position.y-e.targetPosition.y)).toBeLessThanOrEqual(cardById[e.cardId].range+0.00001)}}}return {state,attacks};}

@@ -7,6 +7,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import Redis from 'ioredis';
 import assert from 'node:assert/strict';
 import {applyDeployment, type MatchState} from '../woe/engine';
+import {cardById} from '../woe/catalog';
 
 async function port():Promise<number>{return new Promise((ok,fail)=>{const s=createServer();s.on('error',fail);s.listen(0,'127.0.0.1',()=>{const p=(s.address() as any).port;s.close(()=>ok(p));});});}
 const backend=resolve(import.meta.dir,'../..'),root=resolve(backend,'..'),dir=mkdtempSync(join(tmpdir(),'forest-two-')),dbPath=join(dir,'db.sqlite'),db=new Database(dbPath),now=Date.now();
@@ -44,10 +45,27 @@ try {
    const row=fixtureDb.query('SELECT state_json FROM woe_matches WHERE match_id=? AND status=\'RUNNING\'').get(id) as any;assert(row,'running WOE match');
    const state=JSON.parse(row.state_json) as MatchState;state.laboratories.find(l=>l.id==='red:left')!.hp=0;state.laboratories.find(l=>l.id==='red:right')!.hp=1;
    const blue=state.controllers.find(c=>c.team==='blue')!;blue.zealTenths=100;
-   const deployed=applyDeployment(state,{actionId:'fixture-lab',controllerId:blue.id,slot:0,cardId:blue.slots[0],lane:'left'});assert(deployed.accepted);
+   const slot=blue.slots.findIndex(id=>!!cardById[id]);assert(slot>=0);
+   const deployed=applyDeployment(state,{actionId:'fixture-lab',controllerId:blue.id,slot,cardId:blue.slots[slot],lane:'left'});assert(deployed.accepted);
    const next=deployed.state,unit=next.units.at(-1)!;unit.position={...next.laboratories.find(l=>l.id==='red:right')!.position};unit.targetLane='right';unit.cooldown=0;
    fixtureDb.query('UPDATE woe_matches SET state_json=? WHERE match_id=?').run(JSON.stringify(next),id);
   }).immediate()} finally {fixtureDb.close()}
+ };
+ const injectPotion=async()=>{
+  if(process.env.FOREST_POTION_TEST!=='1')return;
+  const prefix=process.env.FOREST_CD_TEST==='1'?'cd_arena_':'arena_';const a=join(dir,prefix+'0'),b=join(dir,prefix+'1'),deadline=Date.now()+60000;
+  while((!existsSync(a)||!existsSync(b))&&Date.now()<deadline)await Bun.sleep(50);
+  assert(existsSync(a)&&existsSync(b),'potion arena synchronization timed out');
+  const id=readFileSync(a,'utf8');assert.equal(id,readFileSync(b,'utf8'));
+  const fixtureDb=new Database(dbPath);fixtureDb.exec('PRAGMA busy_timeout=5000');
+  try {fixtureDb.transaction(()=>{
+   const row=fixtureDb.query("SELECT state_json FROM woe_matches WHERE match_id=? AND status='RUNNING'").get(id) as any;assert(row);
+   const s=JSON.parse(row.state_json),p=s.controllers.find((c:any)=>c.id===records[0].id);assert(p);
+   let slot=p.slots.indexOf('thunderlock');if(slot>=0)[p.slots[slot],p.slots[3]]=[p.slots[3],p.slots[slot]];
+   else {slot=p.queue.indexOf('thunderlock');assert(slot>=0);[p.queue[slot],p.slots[3]]=[p.slots[3],p.queue[slot]];}
+   p.zealTenths=100;fixtureDb.query('UPDATE woe_matches SET state_json=?,revision=revision+1 WHERE match_id=?').run(JSON.stringify(s),id);
+  }).immediate()} finally {fixtureDb.close()}
+  writeFileSync(join(dir,'potion_ready'),'ok');
  };
  // Test-only acceleration: edit only this fixture's temporary database. The real
  // scheduler produces the wave-complete, intermission, next-wave and defeat events.
@@ -71,8 +89,9 @@ try {
    edit(s=>{const enemy=s.units.find((u:any)=>u.kind==='enemy');const labs=s.laboratories.filter((l:any)=>l.team==='blue');labs[0].hp=0;labs[1].hp=1;enemy.targetLane=labs[1].lane;enemy.position={...labs[1].position};enemy.cooldown=0;s.units=[enemy]});
   } finally {fixtureDb.close()}
  };
- let timer:any;const exits=await Promise.race([Promise.all([injectLab(),accelerateCoreDefense(),...godots.map(g=>g.proc.exited)]).then(x=>x.slice(2)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('overall client timeout; inspect last phase in retained logs')),process.env.FOREST_WOE_TIMEOUT_TEST==='1'||process.env.FOREST_WOE_CYCLES==='1'?360000:(process.env.FOREST_WOE_TEST==='1'||process.env.FOREST_CD_TEST==='1')?120000:60000);})]);clearTimeout(timer);
+ let timer:any;const exits=await Promise.race([Promise.all([injectLab(),accelerateCoreDefense(),injectPotion(),...godots.map(g=>g.proc.exited)]).then(x=>x.slice(3)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('overall client timeout; inspect last phase in retained logs')),process.env.FOREST_WOE_TIMEOUT_TEST==='1'||process.env.FOREST_WOE_CYCLES==='1'?360000:(process.env.FOREST_WOE_TEST==='1'||process.env.FOREST_CD_TEST==='1')?120000:60000);})]);clearTimeout(timer);
  const logs=godots.map(g=>scrub(readFileSync(g.log,'utf8')));for(const log of logs)console.log(log);assert.deepEqual(exits,[0,0]);
+ if(process.env.FOREST_POTION_TEST==='1')assert(existsSync(join(dir,'potion_cast_0')),'authenticated potion cast not acknowledged');
  if(process.env.FOREST_WOE_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot WOE client logged an error');const ids=logs.map(log=>/WOE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'WOE clients received different matches');}
  if(process.env.FOREST_WOE_TIMEOUT_TEST==='1'){
   const matchId=readFileSync(join(dir,'arena_0'),'utf8'), timingDb=new Database(dbPath,{readonly:true});

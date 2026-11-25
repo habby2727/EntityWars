@@ -1,6 +1,6 @@
 extends PanelContainer
 
-const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
 
 signal admitted(room: Dictionary)
 var _rows: VBoxContainer
@@ -11,7 +11,7 @@ var _busy := false
 var _epoch := ""
 
 func _ready() -> void:
-	add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(28, 28, 28, 28)))
+	PANEL_STYLE.panel(self)
 	_epoch = WoeClient.identity()
 	custom_minimum_size = Vector2(420, 360)
 	var box := VBoxContainer.new()
@@ -26,9 +26,12 @@ func _ready() -> void:
 	box.add_child(_status)
 	var actions := HBoxContainer.new()
 	box.add_child(actions)
-	_button(actions, "WOE_CREATE_1V1", func(): _mutate("create", {"mode":"1v1"}))
-	_button(actions, "WOE_CREATE_2V2", func(): _mutate("create", {"mode":"2v2"}))
-	_button(actions, "WOE_REFRESH", refresh)
+	for mode in ["1v1", "2v2"]:
+		var create := _button(actions, "WOE_CREATE_" + mode.to_upper(), _mutate.bind("create", {"mode":mode}))
+		create.custom_minimum_size.y = 70
+		create.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		create.add_theme_font_size_override("font_size", 22)
+	_button(box, "WOE_REFRESH", refresh)
 	_code = LineEdit.new()
 	_code.placeholder_text = tr("WOE_CODE_HINT")
 	box.add_child(_code)
@@ -48,12 +51,13 @@ func _ready() -> void:
 	invites.name = "Invitations"
 	invites.game_kind = "woe"
 	invites.allow_accept = true
+	invites.plain_buttons = true
 	invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	invite_scroll.add_child(invites)
 	invites.admitted.connect(_invite_admitted)
 	_button(box, "WOE_RETRY", _retry)
 	var close := Button.new()
-	MENU_ART.button(close)
+	PANEL_STYLE.button(close)
 	close.text = tr("FOREST_CLOSE")
 	close.pressed.connect(queue_free)
 	box.add_child(close)
@@ -69,7 +73,7 @@ func _process(_delta: float) -> void:
 
 func _button(parent: Node, text_key: String, action: Callable) -> Button:
 	var b := Button.new()
-	MENU_ART.button(b)
+	PANEL_STYLE.button(b, text_key in ["WOE_CREATE_1V1", "WOE_CREATE_2V2"])
 	b.text = tr(text_key)
 	b.pressed.connect(action)
 	parent.add_child(b)

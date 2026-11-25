@@ -28,6 +28,63 @@ class Meter extends Control:
 				if translucent_partial and fraction < 1.0: cell_color.a *= 0.5
 				draw_rect(Rect2(rect.position, Vector2(rect.size.x * fraction, rect.size.y)), cell_color)
 
+class DefenseRanges extends Node2D:
+	var labs := {}
+	var radius := 120.0
+	var ended := false
+	func configure(data: Dictionary) -> void:
+		radius = float(data.get("laboratory_defense", {}).get("range", 120))
+		for team in ["blue", "red"]:
+			for lane in ["left", "right"]:
+				var point: Dictionary = data.laboratories[team][lane]
+				labs[team + ":" + lane] = {"team":team, "center":Vector2(float(point.x),float(point.y)), "alive":false, "active":false, "flash":0.0}
+
+	func update_snapshot(laboratories: Array, units: Array, finished: bool) -> void:
+		ended = finished
+		for id in labs:
+			labs[id].alive = false
+			labs[id].active = false
+		for lab in laboratories:
+			if not lab is Dictionary: continue
+			var id := str(lab.get("id", ""))
+			if not labs.has(id): continue
+			labs[id].alive = not finished and float(lab.get("hp", 0)) > 0.0
+			if not labs[id].alive:
+				labs[id].flash = 0.0
+				continue
+			for unit in units:
+				if not unit is Dictionary or str(unit.get("team", "")) == labs[id].team or str(unit.get("team", "")) not in ["blue", "red"] or float(unit.get("hp", 0)) <= 0.0: continue
+				var point := Vector2(float(unit.get("x", 0)),float(unit.get("y", 0)))
+				if point.distance_squared_to(labs[id].center) <= radius * radius:
+					labs[id].active = true
+					break
+		queue_redraw()
+
+	func flash(id: String) -> void:
+		if labs.has(id) and labs[id].alive and labs[id].active:
+			labs[id].flash = 0.25
+			queue_redraw()
+
+	func _process(delta: float) -> void:
+		for id in labs:
+			if labs[id].flash > 0.0:
+				labs[id].flash = maxf(0.0, labs[id].flash - delta)
+				queue_redraw()
+
+	func _draw() -> void:
+		if ended: return
+		for id in labs:
+			var lab: Dictionary = labs[id]
+			if not lab.alive or not lab.active: continue
+			var points := PackedVector2Array([lab.center])
+			var start := PI if lab.team == "blue" else 0.0
+			for i in range(33):
+				var angle := start + PI * float(i) / 32.0
+				points.append(lab.center + Vector2.from_angle(angle) * radius)
+			var tint := Color("59bdff") if lab.team == "blue" else Color("ff6b59")
+			tint.a = 0.10 + 0.16 * float(lab.flash) / 0.25
+			draw_colored_polygon(points, tint)
+
 class DeployMarker extends Button:
 	func _draw() -> void:
 		var center := size * 0.5
@@ -36,6 +93,32 @@ class DeployMarker extends Button:
 		draw_arc(center, 48.0, 0, TAU, 48, Color("ffe778"), 5.0)
 		draw_arc(center, 34.0, 0, TAU, 40, Color("fff3b0"), 3.0)
 		draw_circle(center, 6.0, Color("fff7c9"))
+
+class PotionTarget extends Control:
+	signal cast_requested(point: Vector2)
+	signal cancel_requested
+	var radius := 0.0
+	var point := Vector2.ZERO
+	var showing := false
+	var potion_id := ""
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseMotion or event is InputEventScreenDrag:
+			point = event.position
+			showing = true
+			queue_redraw()
+		elif event is InputEventMouseButton and event.pressed:
+			if event.button_index == MOUSE_BUTTON_RIGHT: cancel_requested.emit()
+			elif event.button_index == MOUSE_BUTTON_LEFT: cast_requested.emit(event.position)
+			accept_event()
+		elif event is InputEventScreenTouch and event.pressed:
+			cast_requested.emit(event.position)
+			accept_event()
+	func _draw() -> void:
+		if not showing: return
+		var color := Color(0.45,0.8,1.0,0.18) if potion_id == "thunderlock" else Color(0.45,0.85,0.35,0.18)
+		draw_circle(point,radius,color)
+		color.a = 0.7
+		draw_arc(point,radius,0,TAU,48,color,2.0)
 
 var _identity := ""
 var _client: Node
@@ -78,6 +161,8 @@ var _playback_ready := false
 var _silent_until_seq := 0
 var _last_snapshot_tick := 0
 var _effects: Node2D
+var _defense_ranges: DefenseRanges
+var _potion_target: PotionTarget
 var _cards := {}
 var _lab_bars := {}
 var _lane_buttons := {}
@@ -114,6 +199,7 @@ func _ready() -> void:
 	var catalog: Variant = JSON.parse_string(FileAccess.get_file_as_string(CARDS))
 	if catalog is Dictionary:
 		for card in catalog.get("cards", []): _cards[str(card.id)] = card
+		for potion in catalog.get("potions", []): _cards[str(potion.id)] = potion
 	_forfeited = not _debug_visual and _client.saved_forfeit() == _match_id
 	_build()
 	_forfeit.disabled = _forfeited
@@ -144,11 +230,21 @@ func _build() -> void:
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage.add_child(bg)
+	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ARENA))
+	if not _is_cd:
+		_defense_ranges = DefenseRanges.new()
+		_defense_ranges.configure(data)
+		_stage.add_child(_defense_ranges)
+	_potion_target = PotionTarget.new()
+	_potion_target.size = Vector2(1920,1080)
+	_potion_target.visible = false
+	_potion_target.cast_requested.connect(_cast_potion)
+	_potion_target.cancel_requested.connect(_cancel_potion)
+	_stage.add_child(_potion_target)
 	_field = Node2D.new()
 	_stage.add_child(_field)
 	_effects = EFFECTS.new()
 	_stage.add_child(_effects)
-	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ARENA))
 	for team in (["blue"] if _is_cd else ["blue", "red"]):
 		for lane in ["left", "right"]:
 			var point: Dictionary = data.laboratories[team][lane]
@@ -202,7 +298,7 @@ func _build() -> void:
 	_stage.add_child(hud)
 	for i in range(4):
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(150,120)
+		button.custom_minimum_size = Vector2(170,120)
 		button.add_theme_font_size_override("font_size", 24)
 		MENU_ART.button(button)
 		button.expand_icon = true
@@ -337,6 +433,7 @@ func _accept_state(data: Dictionary, consume_events: bool) -> void:
 		_render_snapshot()
 	if consume_events and not resync:
 		var shown := 0
+		var laboratory_shown := 0
 		for event in data.get("events", []):
 			if not event is Dictionary: continue
 			var seq := int(event.get("seq", 0))
@@ -345,9 +442,12 @@ func _accept_state(data: Dictionary, consume_events: bool) -> void:
 			_cursor = seq
 			_remember_event(event)
 			# Pages from startup, reconnect and long backlogs advance the cursor silently.
-			if _playback_ready and seq > _silent_until_seq and int(event.get("tick", -100)) >= maxi(snapshot_tick, _last_snapshot_tick) - (maxi(10, ceili(_poll_period * 10.0)) + _delivery_ticks + 2 if _is_cd else 5) and shown < 48:
+			var laboratory_event := str(event.get("type", "")) in ["potion_cast", "potion_damage"] or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "potion") or (not _is_cd and (str(event.get("type", "")) == "lab_attack" or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "laboratory")))
+			var window := maxi(10, ceili(_poll_period * 10.0)) + _delivery_ticks + 2 if _is_cd or laboratory_event else 5
+			if _playback_ready and seq > _silent_until_seq and int(event.get("tick", -100)) >= maxi(snapshot_tick, _last_snapshot_tick) - window and (laboratory_shown < 32 if laboratory_event else shown < 48):
 				_event(event)
-				shown += 1
+				if laboratory_event: laboratory_shown += 1
+				else: shown += 1
 	if consume_events: _playback_ready = true
 
 func _clear_visuals() -> void:
@@ -364,6 +464,11 @@ func _remember(id: int, card: String, team: String, point: Vector2, unit_kind: S
 
 func _point(value: Variant) -> Vector2:
 	return Vector2(float(value.get("x", 0)), float(value.get("y", 0))) if value is Dictionary else Vector2.ZERO
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and _is_selected_potion():
+		_cancel_potion()
+		get_viewport().set_input_as_handled()
 
 func _remember_event(event: Dictionary) -> void:
 	if str(event.get("type", "")) == "spawn":
@@ -397,6 +502,33 @@ func _event(event: Dictionary) -> void:
 		_damage(target, int(event.get("damage",0)))
 	elif kind == "tower_strike" and _is_cd:
 		_effects.emit_effect("tower_strike", "gold", _point(event.get("position")), _point(event.get("targetPosition")), "red")
+	elif kind == "potion_cast":
+		var card_id := str(event.get("cardId", ""))
+		var card: Dictionary = _cards.get(card_id, {})
+		if card.get("kind") != "potion": return
+		var point := _point(event.get("position"))
+		_effects.emit_effect("potion_cast", "aether" if card_id == "thunderlock" else "vitriol", point, point, str(event.get("team", "")), "", float(card.get("radius", 0)))
+		_effects.show_potion_area("aether" if card_id == "thunderlock" else "vitriol", point, float(card.get("radius", 0)), float(card.get("duration_ticks", 0)) / 10.0, maxf(0.0, float(_last_snapshot_tick - int(event.get("tick", _last_snapshot_tick))) / 10.0))
+	elif kind == "potion_damage":
+		var target := _point(event.get("targetPosition"))
+		var victim: Variant = _units.get(int(event.get("target", 0)))
+		if is_instance_valid(victim) and victim.target_position.distance_to(target) < 80.0:
+			victim.hit()
+			target = victim.position
+		_effects.emit_effect("impact", "vitriol", target, target)
+		_damage(target, int(event.get("damage", 0)))
+	elif kind == "lab_attack" and not _is_cd and is_instance_valid(_defense_ranges) and not _finished:
+		var lab_id := str(event.get("labId", ""))
+		if not _defense_ranges.labs.has(lab_id) or not _defense_ranges.labs[lab_id].alive: return
+		var lab: Dictionary = _defense_ranges.labs[lab_id]
+		var target := _point(event.get("targetPosition"))
+		var victim: Variant = _units.get(int(event.get("target", 0)))
+		if is_instance_valid(victim) and victim.target_position.distance_to(target) < 80.0:
+			victim.hit()
+			target = victim.position
+		_defense_ranges.flash(lab_id)
+		_effects.emit_effect("lab_defense", "aether", lab.center, target, lab.team, lab_id)
+		_damage(target, int(event.get("damage", 0)), lab_id)
 	elif kind == "death" and (event.get("targetKind") == "unit" or event.get("target") is int or event.get("target") is float):
 		var id := int(event.get("target",0))
 		var known: Dictionary = _known_units.get(id, {})
@@ -432,9 +564,10 @@ func _add_unit(data: Dictionary) -> Node:
 	_units[id] = unit
 	return unit
 
-func _damage(point: Vector2, amount: int) -> void:
+func _damage(point: Vector2, amount: int, lab_id: String = "") -> void:
 	if _field.get_child_count() >= 220: return
 	var label := Label.new()
+	if not lab_id.is_empty(): label.set_meta("defense_lab_id", lab_id)
 	label.position = point + Vector2(-20,-65)
 	label.text = str(amount)
 	label.add_theme_color_override("font_color", Color("fff1a1"))
@@ -452,7 +585,9 @@ func _render_snapshot() -> void:
 		_remember(id, str(data.get("assetId", data.get("cardId", ""))), str(data.get("team", "")), Vector2(float(data.get("x",0)), float(data.get("y",0))), str(data.get("kind", "homunculus")), str(data.get("element", "")))
 		var unit := _add_unit(data)
 		if is_instance_valid(unit):
-			unit.update_state(data)
+			var visual_data: Dictionary = data.duplicate()
+			visual_data["snapshot_tick"] = int(_snapshot.get("tick", 0))
+			unit.update_state(visual_data)
 			live[id] = true
 	for id in _units.keys():
 		if not live.has(id):
@@ -480,6 +615,13 @@ func _render_snapshot() -> void:
 		_clock.text = "%s  %02d:%02d  %s" % [tr("WOE_BLUE"), time_left / 60, time_left % 60, tr("WOE_RED")]
 	var outcome: Variant = _snapshot.get("result")
 	_finished = outcome is Dictionary
+	if is_instance_valid(_defense_ranges):
+		_defense_ranges.update_snapshot(_snapshot.get("laboratories", []), _snapshot.get("units", []), _finished)
+		_effects.prune_lab_defense(_defense_ranges.labs)
+		for child in _field.get_children():
+			if child.has_meta("defense_lab_id"):
+				var id := str(child.get_meta("defense_lab_id"))
+				if not _defense_ranges.labs.has(id) or not _defense_ranges.labs[id].alive: child.queue_free()
 	if _finished:
 		if not _debug_visual and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
 			_notice.text = tr("CD_UNAVAILABLE")
@@ -513,6 +655,9 @@ func _separate_units() -> void:
 func _card_cost(card: Dictionary) -> float:
 	return float(card.get("cost", 99) if _is_cd else card.get("woe_cost", card.get("cost", 99)))
 
+func _is_selected_potion() -> bool:
+	return _selected >= 0 and _cards.get(_selected_card, {}).get("kind") == "potion"
+
 func _snapshot_zeal_progress() -> float:
 	var old_zeal := float(_own.get("zeal", 0))
 	return clampf(float(_own.get("zeal_regen_ticks", (old_zeal - floorf(old_zeal)) * 30.0)) / 30.0, 0.0, 0.9999)
@@ -532,7 +677,7 @@ func _update_hud() -> void:
 		_zeal_label.text += "\n" + (tr("CD_ALLIED_CAP") % [int(_snapshot.get("allied_count", 0)), int(_snapshot.allied_cap)])
 	var capped := _is_cd and _snapshot.has("allied_cap") and int(_snapshot.get("allied_count", 0)) >= int(_snapshot.allied_cap)
 	var slots: Array = _own.get("slots", [])
-	if _selected >= 0 and (_selected >= slots.size() or str(slots[_selected]) != _selected_card or zeal < _card_cost(_cards.get(_selected_card, {})) or capped):
+	if _selected >= 0 and (_selected >= slots.size() or str(slots[_selected]) != _selected_card or zeal < _card_cost(_cards.get(_selected_card, {})) or (capped and not _is_selected_potion())):
 		_selected = -1
 		_selected_card = ""
 	for i in range(_buttons.size()):
@@ -540,16 +685,25 @@ func _update_hud() -> void:
 		button.visible = i < slots.size()
 		var id := str(slots[i]) if i < slots.size() else ""
 		var card: Dictionary = _cards.get(id, {})
-		button.icon = UNIT.frame(id,"front",1)
-		button.text = "%s\n%d" % [id.capitalize(), int(_card_cost(card))] if not card.is_empty() else ""
-		button.disabled = _returning or _finished or _missing_match or _forfeited or _acting or capped or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < _card_cost(card)
+		var potion: bool = card.get("kind") == "potion"
+		button.add_theme_font_size_override("font_size", 16 if potion else 24)
+		button.icon = load(str(card.get("texture", ""))) as Texture2D if potion else UNIT.frame(id,"front",1)
+		var card_name := tr(str(card.get("name_key", ""))).replace(" ", "\n") if potion else id.capitalize()
+		button.text = "%s\n%d" % [card_name, int(_card_cost(card))] if not card.is_empty() else ""
+		button.disabled = _returning or _finished or _missing_match or _forfeited or _acting or (capped and not potion) or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < _card_cost(card)
 		button.modulate = Color("ffe38a") if _selected == i else (Color(0.65,0.7,0.75,1) if button.disabled else Color.WHITE)
 	for key in _lane_buttons:
 		var marker: Button = _lane_buttons[key]
 		var lab: Meter = _lab_bars[key]
 		var lane := str(key).get_slice(":", 1)
-		marker.visible = not _returning and not _finished and not _missing_match and not _forfeited and not (_is_cd and _awaiting_deploy_state) and _selected >= 0 and str(key).begins_with(_team + ":") and lab.value > 0 and (_is_cd or _debug_visual or lane in _own.get("allowedDeploymentLanes", []))
+		marker.visible = not _returning and not _finished and not _missing_match and not _forfeited and not (_is_cd and _awaiting_deploy_state) and _selected >= 0 and not _is_selected_potion() and str(key).begins_with(_team + ":") and lab.value > 0 and (_is_cd or _debug_visual or lane in _own.get("allowedDeploymentLanes", []))
 		marker.disabled = _acting
+	if is_instance_valid(_potion_target):
+		_potion_target.visible = _is_selected_potion() and not _returning and not _finished and not _missing_match and not _forfeited and not _acting and not (_is_cd and _awaiting_deploy_state)
+		if _potion_target.visible:
+			_potion_target.potion_id = _selected_card
+			_potion_target.radius = float(_cards[_selected_card].get("radius", 0))
+			_potion_target.queue_redraw()
 
 func _select(slot: int) -> void:
 	if _returning: return
@@ -560,13 +714,27 @@ func _select(slot: int) -> void:
 
 func _deploy(lane: String) -> void:
 	var slots: Array = _own.get("slots", [])
-	if _acting or (_is_cd and _awaiting_deploy_state) or _selected < 0 or _selected >= slots.size(): return
+	if _acting or (_is_cd and _awaiting_deploy_state) or _selected < 0 or _selected >= slots.size() or _is_selected_potion(): return
 	var slot := _selected
 	_selected = -1
 	if _debug_visual:
 		_debug_deploy(str(slots[slot]), lane)
 		return
 	_action("match/deploy", {"match_id":_match_id,"slot":slot,"card_id":str(slots[slot]),"lane":lane})
+
+func _cancel_potion() -> void:
+	_selected = -1
+	_selected_card = ""
+	_potion_target.showing = false
+	_update_hud()
+
+func _cast_potion(point: Vector2) -> void:
+	if not _is_selected_potion() or _acting or not point.is_finite() or point.x < 0 or point.x > 1920 or point.y < 0 or point.y > 1080: return
+	var slot := _selected
+	var card := _selected_card
+	_cancel_potion()
+	if _debug_visual: return
+	_action("match/deploy", {"match_id":_match_id,"slot":slot,"card_id":card,"target_x":point.x,"target_y":point.y})
 
 func _action(action: String, values: Dictionary) -> void:
 	if _returning or _acting or not _valid(): return

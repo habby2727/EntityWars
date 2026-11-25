@@ -24,6 +24,8 @@ var strike_time := 0.0
 var flash_time := 0.0
 var animation_time := 0.0
 var moving := false
+var paralyzed_remaining := 0.0
+var poison_remaining := 0.0
 var sprite: Sprite2D
 
 static func frame(card: String, facing: String, index: int) -> Texture2D:
@@ -71,6 +73,9 @@ func setup(data: Dictionary) -> void:
 
 func update_state(data: Dictionary) -> void:
 	if dying: return
+	var tick := int(data.get("snapshot_tick", 0))
+	paralyzed_remaining = maxf(0.0, float(int(data.get("paralyzed_until", tick)) - tick) / 10.0)
+	poison_remaining = maxf(0.0, float(int(data.get("poison_until", tick)) - tick) / 10.0)
 	var next_position := Vector2(float(data.get("x", target_position.x)), float(data.get("y", target_position.y)))
 	if not next_position.is_equal_approx(target_position):
 		_move_origin = position
@@ -119,10 +124,17 @@ func _process(delta: float) -> void:
 		visible = int(death_time * 8.0) % 2 == 0
 	else:
 		_sample_elapsed += delta
-		_move_elapsed = minf(_move_elapsed + delta, _move_duration)
-		var previous := position
-		position = _move_origin.lerp(target_position, _move_elapsed / _move_duration)
-		moving = position.distance_squared_to(previous) > 0.000001
+		if paralyzed_remaining > 0.0:
+			paralyzed_remaining = maxf(0.0, paralyzed_remaining - delta)
+			_move_origin = position
+			_move_elapsed = 0.0
+			moving = false
+		else:
+			_move_elapsed = minf(_move_elapsed + delta, _move_duration)
+			var previous := position
+			position = _move_origin.lerp(target_position, _move_elapsed / _move_duration)
+			moving = position.distance_squared_to(previous) > 0.000001
+		poison_remaining = maxf(0.0, poison_remaining - delta)
 	separation = separation.lerp(desired_separation, 1.0 - exp(-delta * 5.0))
 	queue_redraw()
 	strike_time = maxf(0.0, strike_time - delta)
@@ -136,6 +148,16 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	if dying: return
+	var aura := Vector2(clampf(visual_offset + separation.x, -20.0, 20.0), -28.0 + separation.y)
+	if poison_remaining > 0.0:
+		draw_circle(aura, 27.0, Color(0.4,0.8,0.2,0.15))
+		draw_arc(aura, 25.0, 0, TAU, 24, Color(0.65,0.35,0.9,0.6), 2.0)
+	if paralyzed_remaining > 0.0:
+		draw_circle(aura, 28.0, Color(0.3,0.7,1.0,0.16))
+		for i in range(4):
+			var angle := float(i) * TAU / 4.0 + sin(animation_time * 8.0) * 0.12
+			var direction := Vector2.from_angle(angle)
+			draw_line(aura + direction * 20.0, aura + direction * 32.0, Color(1.0,0.9,0.35,0.8), 2.0)
 	var origin := Vector2(clampf(visual_offset + separation.x, -20.0, 20.0) - 24, -72 + separation.y - bar_rise)
 	var border := Color("66bfff") if team == "blue" else Color("ff796c")
 	draw_rect(Rect2(origin - Vector2(2, 2), Vector2(52, 9)), border)

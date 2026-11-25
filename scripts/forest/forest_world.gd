@@ -600,7 +600,7 @@ func _build_npc_actions() -> void:
 		if data.id == _talking_to.npc_id:
 			action = data.action_id
 			break
-	var options := ["guide_inventory", "guide_trade"] if action == "guide" else ([action] if action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe", "core_defense"] else [])
+	var options := ["guide_inventory", "guide_trade"] if action == "guide" else ([action] if action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe", "core_defense", "duels_travel"] else [])
 	for option in options:
 		var button := Button.new()
 		button.name = "Action_" + option
@@ -619,12 +619,24 @@ func forest_action_allowed(action: String, zone_id: String, foot: Vector2, facin
 		return false
 	for data in NPCs.NPCS:
 		if data.id == _talking_to.npc_id and data.zone == zone_id:
-			return (data.action_id == "guide" and action in ["guide_inventory", "guide_trade"]) or (data.action_id == action and action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe", "core_defense"])
+			return (data.action_id == "guide" and action in ["guide_inventory", "guide_trade"]) or (data.action_id == action and action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe", "core_defense", "duels_travel"])
 	return false
 
 func _open_npc_action(action: String) -> void:
 	if _handoff_pending: return
 	if not forest_action_allowed(action, str(_zones[_zone_index].id), _player.position, _player.facing) or not SceneRouter._forest_modes_safe():
+		return
+	if action == "duels_travel":
+		if is_instance_valid(_presence) and _presence.entered:
+			if _presence.travel_to_duels(_player.position, _player.facing):
+				_close_dialogue()
+				_player.exit_pending = true
+				_portal_deadline = Time.get_ticks_msec() + 3000
+				_reset_touch()
+		elif not is_instance_valid(_presence):
+			_player.exit_pending = true
+			_transition_generation += 1
+			_complete_portal.call_deferred(_transition_generation, "central_clearing", "duel_clearing", Vector2(960, 700), "north")
 		return
 	if action in ["woe", "core_defense"] and ConnectionGate.debug_lab_navigation_allowed():
 		SceneRouter.begin_woe_debug(action, str(_zones[_zone_index].id), _player.position, _player.facing)

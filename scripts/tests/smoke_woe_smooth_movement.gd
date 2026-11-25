@@ -36,6 +36,13 @@ func _run() -> void:
 		unit.update_state({"x": 175.0, "y": 10.0})
 		unit._process(1.0)
 		assert(unit.position.distance_to(Vector2(175.0, 10.0)) < 0.01)
+		unit.update_state({"x": 225.0, "y": 10.0, "snapshot_tick":100, "paralyzed_until":150, "poison_until":130})
+		var frozen: Vector2 = unit.position
+		unit._process(1.0)
+		assert(unit.position == frozen and not unit.moving and unit.paralyzed_remaining > 0.0 and unit.poison_remaining > 0.0)
+		unit.update_state({"x": 225.0, "y": 10.0, "snapshot_tick":150})
+		unit._process(0.1)
+		assert(unit.position.x > frozen.x and unit.paralyzed_remaining == 0.0 and unit.poison_remaining == 0.0)
 		unit.queue_free()
 	print("WOE/CD smooth movement OK")
 	quit()

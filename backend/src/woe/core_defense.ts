@@ -1,7 +1,8 @@
 ﻿import enemyData from '../../../data/static/core_defense_enemies.json';
 import waveRules from '../../../data/static/core_defense_waves.json';
-import { arena, cardById, attackDamage, elementalMultiplier, ATTACK_INTERVAL_MS, type Element } from './catalog';
+import { arena, cardById, potionById, attackDamage, elementalMultiplier, ATTACK_INTERVAL_MS, type Element } from './catalog';
 import { initializeMatch, applyDeployment, validateDeployment, route, redirectRoute, move, nearestTarget, formationPoint, regenerateZeal, zealProgress, type Unit, type MatchState, type Controller, type Laboratory, type Lane, type DeploymentCommand } from './engine';
+import {processPotionStatuses,advanceUnitCooldown,paralyzed,poisoned,potionSnapshot} from './potions';
 
 export type CoreDefenseMode = 'solo' | 'coop';
 type PersistedCoreDefenseMode = CoreDefenseMode | 'solo_bot';
@@ -12,7 +13,7 @@ const enemyById: Readonly<Record<string, Readonly<EnemyDefinition>>> = Object.fr
 if (coreDefenseEnemies.length !== 5 || new Set(coreDefenseEnemies.map(e=>e.id)).size !== 5 || coreDefenseEnemies.some(e => !e.role || !Number.isSafeInteger(e.unlock_wave) || e.unlock_wave < 1 || [e.hp,e.damage,e.speed,e.range].some(n=>!Number.isSafeInteger(n)||n<=0) || !Number.isSafeInteger(e.defense) || e.defense<0 || (()=>{try { elementalMultiplier(e.element,e.element); return false; } catch { return true; }})())) throw new Error('INVALID_CORE_DEFENSE_CATALOG');
 
 export interface DefenseUnit extends Unit { kind:'homunculus'|'enemy'; maxHp:number; damage:number; defense:number; speed:number; range:number; element:Element }
-type DefenseEvent = { type:'spawn'|'attack'|'death'|'tower_strike'; tick:number; team:'blue'|'red'; cardId:string; position:{x:number;y:number}; [key:string]:unknown };
+type DefenseEvent = { type:'spawn'|'attack'|'death'|'tower_strike'|'potion_cast'|'potion_damage'; tick:number; team:'blue'|'red'; cardId:string; position:{x:number;y:number}; [key:string]:unknown };
 export interface CoreDefenseState {
  kind:'core_defense'; mode:PersistedCoreDefenseMode; tick:number; controllers:Controller[]; laboratories:Laboratory[]; units:DefenseUnit[]; nextUnitId:number; events:DefenseEvent[];
  wave:number; completedWaves:number; enemiesSpawned:number; enemiesKilled:number; waveSpawned:number; pendingSpawns:number; phase:'wave'|'intermission'|'defeat'; intermissionTicks:number; spawnCooldown:number;
@@ -48,16 +49,19 @@ export function alliedCapacity(s:CoreDefenseState) {
 }
 export function validateCoreDefenseDeployment(s:CoreDefenseState,c:DeploymentCommand):string|null {
  const reason=validateDeployment(asWoe(s),c); if(reason)return reason;
+ if(potionById[c.cardId])return null;
  const capacity=alliedCapacity(s);
  if(capacity.allied_count>=capacity.allied_cap || capacity.allied_count>=waveRules.allied_unit_cap)return 'UNIT_CAP';
  return null;
 }
 export function applyCoreDefenseDeployment(s:CoreDefenseState,c:DeploymentCommand): {accepted:true;state:CoreDefenseState}|{accepted:false;state:CoreDefenseState;reason:string} {
  const reason=validateCoreDefenseDeployment(s,c); if(reason)return {accepted:false,state:s,reason};
- const prepared=clone(s); nextAvailableId(prepared);
+ const prepared=clone(s); if(!potionById[c.cardId])nextAvailableId(prepared);
  const applied=applyDeployment(asWoe(prepared),c); if(!applied.accepted) return {accepted:false,state:s,reason:applied.reason};
- const next=applied.state as unknown as CoreDefenseState, u=next.units[next.units.length-1], card=cardById[u.cardId];
+ const next=applied.state as unknown as CoreDefenseState;
  const actions=next.controllers.find(p=>p.id===c.controllerId)!.actionIds; if(actions.length>waveRules.action_id_limit) actions.shift();
+ if(potionById[c.cardId])return {accepted:true,state:next};
+ const u=next.units[next.units.length-1], card=cardById[u.cardId];
  Object.assign(u,{kind:'homunculus',maxHp:card.hp,damage:card.damage,defense:card.defense,speed:card.speed,range:card.range,element:card.element});
  next.events.push({type:'spawn',tick:next.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane:u.lane,controller_id:u.controllerId,kind:u.kind,assetId:u.cardId,element:u.element,hp:u.hp,maxHp:u.maxHp});
  return {accepted:true,state:next};
@@ -87,6 +91,7 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
  if(state.result)return state;
  let s=clone(state);s.events=[];s.tick=plus(s.tick);
  for(const u of s.units)strikeCampingAlly(s,u);
+ processPotionStatuses(s.units,s.tick,u=>(u as DefenseUnit).maxHp,(event,u,died)=>{s.events.push({type:'potion_damage',...event});if(died){s.events.push({type:'death',...event});if((u as DefenseUnit).kind==='enemy')s.enemiesKilled=plus(s.enemiesKilled);}});
  const capacity=alliedCapacity(s);
  for(const p of s.controllers)regenerateZeal(p,s.phase==='wave' && capacity.allied_count<capacity.allied_cap);
  if(s.phase==='intermission') {
@@ -99,7 +104,8 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
  s.units.sort((a,b)=>a.id-b.id);
  for(const u of s.units) {
   if(u.hp<=0 || s.result)continue;
-  if(u.cooldown>0)u.cooldown--;
+  if(paralyzed(u,s.tick))continue;
+  const slow=poisoned(u,s.tick);advanceUnitCooldown(u,slow);
   let lab:Laboratory|undefined;
   if(u.team==='red') {
    lab=s.laboratories.find(l=>l.team==='blue'&&l.lane===u.targetLane)!;
@@ -110,7 +116,7 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
   if(victim) {
    if(u.cooldown===0) {
     const damage=target?attackDamage(u.damage,target.defense,elementalMultiplier(u.element,target.element)):attackDamage(u.damage,0);
-    const dealt=Math.min(victim.hp,damage);victim.hp-=dealt;u.cooldown=ATTACK_INTERVAL_MS/arena.tick_ms;
+    const dealt=Math.min(victim.hp,damage);victim.hp-=dealt;u.cooldown=ATTACK_INTERVAL_MS/arena.tick_ms;delete u.cooldownFraction;
     s.events.push({type:'attack',attacker:u.id,target:victim.id,damage:dealt,tick:s.tick,team:u.team,cardId:u.cardId,kind:u.kind,assetId:u.cardId,element:u.element,position:clone(u.position),targetPosition:clone(victim.position),targetKind:target?'unit':'laboratory',victimKind:target?.kind??'laboratory',victimAssetId:target?.cardId??null,victimElement:target?.element??null,targetHp:victim.hp,targetMaxHp:target?.maxHp??lab?.maxHp});
     if(victim.hp===0) {
      s.events.push({type:'death',attacker:u.id,target:victim.id,tick:s.tick,team:u.team,cardId:u.cardId,kind:u.kind,assetId:u.cardId,element:u.element,position:clone(u.position),targetPosition:clone(victim.position),victimKind:target?.kind??'laboratory',victimAssetId:target?.cardId??null,victimElement:target?.element??null,victimCardId:target?.cardId??null,victimTeam:victim.team,victimPosition:clone(victim.position),targetKind:target?'unit':'laboratory'});
@@ -118,7 +124,7 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
      if(!target && s.laboratories.filter(l=>l.team==='blue').every(l=>l.hp===0)){s.result={winner:'red',reason:'laboratories'};s.phase='defeat';}
     }
    }
-  } else {move(u,u.speed*arena.tick_ms/1000);strikeCampingAlly(s,u);}
+  } else {move(u,u.speed*(slow?0.6:1)*arena.tick_ms/1000);strikeCampingAlly(s,u);}
  }
  s.units=s.units.filter(u=>u.hp>0);
  if(!s.result && s.phase==='wave' && s.pendingSpawns===0 && !s.units.some(u=>u.kind==='enemy')) {s.completedWaves=s.wave;s.phase='intermission';s.intermissionTicks=waveRules.intermission_ticks;}
@@ -126,5 +132,5 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
 }
 export function getCoreDefenseSnapshot(s:CoreDefenseState,viewerId?:string) {
  const capacity=alliedCapacity(s);
- return clone({kind:s.kind,mode:s.mode,tick:s.tick,wave:s.wave,completedWaves:s.completedWaves,enemiesSpawned:s.enemiesSpawned,enemiesKilled:s.enemiesKilled,pendingSpawns:s.pendingSpawns,phase:s.phase,intermissionTicks:s.intermissionTicks,...capacity,regeneration_blocked:s.phase!=='wave'||capacity.allied_count>=capacity.allied_cap,remainingBlueLabHp:s.laboratories.filter(l=>l.team==='blue').reduce((n,l)=>n+l.hp,0),laboratories:s.laboratories,units:s.units.map(u=>({id:u.id,kind:u.kind,assetId:u.cardId,cardId:u.cardId,...(u.kind==='homunculus'?{controllerId:u.controllerId}:{}),team:u.team,lane:u.lane,hp:u.hp,maxHp:u.maxHp,element:u.element,x:Math.round(u.position.x*100)/100,y:Math.round(u.position.y*100)/100})),players:s.controllers.map(p=>({id:p.id,team:p.team,...(viewerId===p.id?{zeal:Math.floor(p.zealTenths/10),zeal_regen_ticks:zealProgress(p),slots:p.slots}:{})})),events:s.events,result:s.result});
+ return clone({kind:s.kind,mode:s.mode,tick:s.tick,wave:s.wave,completedWaves:s.completedWaves,enemiesSpawned:s.enemiesSpawned,enemiesKilled:s.enemiesKilled,pendingSpawns:s.pendingSpawns,phase:s.phase,intermissionTicks:s.intermissionTicks,...capacity,regeneration_blocked:s.phase!=='wave'||capacity.allied_count>=capacity.allied_cap,remainingBlueLabHp:s.laboratories.filter(l=>l.team==='blue').reduce((n,l)=>n+l.hp,0),laboratories:s.laboratories,units:s.units.map(u=>({id:u.id,kind:u.kind,assetId:u.cardId,cardId:u.cardId,...(u.kind==='homunculus'?{controllerId:u.controllerId}:{}),team:u.team,lane:u.lane,hp:u.hp,maxHp:u.maxHp,element:u.element,x:Math.round(u.position.x*100)/100,y:Math.round(u.position.y*100)/100,...potionSnapshot(u,s.tick)})),players:s.controllers.map(p=>({id:p.id,team:p.team,...(viewerId===p.id?{zeal:Math.floor(p.zealTenths/10),zeal_regen_ticks:zealProgress(p),slots:p.slots}:{})})),events:s.events,result:s.result});
 }

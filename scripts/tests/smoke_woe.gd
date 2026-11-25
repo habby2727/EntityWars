@@ -43,12 +43,19 @@ func _run() -> void:
 	pregame._room = {"room_id":"room", "mode":"1v1", "status":"WAITING", "host_id":"a", "revision":2, "join_code":"CODE", "members":[{"player_id":"tester-abc", "display_name":"Test Player", "seat":"blue:left"}]}
 	pregame._render()
 	assert(pregame._seat_buttons.size() == 4)
+	assert(pregame._seat_buttons["blue:left"].get_theme_stylebox("normal") is StyleBoxFlat)
+	assert(pregame._start.get_theme_stylebox("normal") is StyleBoxFlat)
 	for viewport_size in [Vector2(1920,1080), Vector2(1280,720), Vector2(960,540)]:
 		pregame._canvas.size = viewport_size
 		pregame._resize()
 		var factor: Vector2 = viewport_size / Vector2(1920,1080)
-		assert(pregame._seat_buttons["blue:left"].position.is_equal_approx(Vector2(295,795) * factor))
-		assert(pregame._seat_buttons["red:right"].position.is_equal_approx(Vector2(1395,155) * factor))
+		assert(pregame._seat_buttons["blue:left"].position.is_equal_approx(Vector2(260,785) * factor))
+		assert(pregame._seat_buttons["red:right"].position.is_equal_approx(Vector2(1360,145) * factor))
+	assert(pregame._copy_button.code == "CODE")
+	pregame._copy_button._copy()
+	assert(pregame._copy_button.copied_for > 0.0)
+	pregame._copy_button._process(2.1)
+	assert(pregame._copy_button.copied_for == 0.0)
 	assert(pregame._seat_buttons["blue:right"].text.contains("Test Player"))
 	pregame._room.mode = "2v2"
 	pregame._render()

@@ -108,10 +108,21 @@ func _run() -> void:
 	change_scene_to_file(FOREST)
 	if not check(await wait_for(func(): return scene_is(FOREST) and is_instance_valid(current_scene._presence) and current_scene._presence.entered), "real Forest presence"): quit(1); return
 	var world = current_scene
-	if not check(await walk(world,Vector2(960,540)) and await walk(world,Vector2(70,540)), "central walk"): quit(1); return
-	if not check(await portal(world,"west",Vector2(0,540),"alchemical_ruins"), "west portal"): quit(1); return
-	if not check(await walk(world,Vector2(960,540)) and await walk(world,Vector2(960,70)), "ruins walk"): quit(1); return
-	if not check(await portal(world,"north",Vector2(960,0),"duel_clearing"), "north portal"): quit(1); return
+	if OS.get_environment("FOREST_DUELS_SHORTCUT_TEST") == "1":
+		if not check(await walk(world,Vector2(960,700)), "duels guide walk"): quit(1); return
+		var guide = null
+		for npc in world._npcs:
+			if npc.npc_id == "duels_guide": guide = npc
+		if not check(guide != null and guide.get_node("Nameplate") != null, "duels guide"): quit(1); return
+		world._open_dialogue(guide)
+		if not check(world._dialogue.visible and world._action_row.get_node_or_null("Action_duels_travel") != null, "duels guide dialogue"): quit(1); return
+		world._open_npc_action("duels_travel")
+		if not check(await wait_for(func(): return str(world._zones[world._zone_index].id) == "duel_clearing" and world._presence.zone_id == "duel_clearing"), "authenticated duels travel"): quit(1); return
+	else:
+		if not check(await walk(world,Vector2(960,540)) and await walk(world,Vector2(70,540)), "central walk"): quit(1); return
+		if not check(await portal(world,"west",Vector2(0,540),"alchemical_ruins"), "west portal"): quit(1); return
+		if not check(await walk(world,Vector2(960,540)) and await walk(world,Vector2(960,70)), "ruins walk"): quit(1); return
+		if not check(await portal(world,"north",Vector2(960,0),"duel_clearing"), "north portal"): quit(1); return
 	if not check(await walk(world,Vector2(1050,550)), "NPC walk"): quit(1); return
 	var invite_test := OS.get_environment("FOREST_WOE_INVITE_TEST") == "1"
 	if invite_test:
@@ -198,10 +209,18 @@ func _run() -> void:
 		if role == 1 and OS.get_environment("FOREST_WOE_LOST_ACCEPT") == "1": print("WOE_INVITATION_EXACT_REPLAY_PASS")
 		print("WOE_INVITATION_SCENE_PASS ", OS.get_environment("FOREST_WOE_INVITE_MODE") if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2" else "1v1")
 		if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2":
-			if not check(arena._own.get("allowedDeploymentLanes", []) == ["left"], "selected seat owns left lane"): quit(1); return
-			var denied: Dictionary = await root.get_node("WoeClient").request("/forest/woe/match/deploy", {"match_id":match_id,"client_action_id":"fixture-denied-lane","slot":0,"card_id":arena._own.slots[0],"lane":"right"})
-			if not check(denied.code == 409 and denied.error == "LANE_NOT_OWNED", "server rejects teammate lane"): quit(1); return
-			print("WOE_INVITED_LANE_AUTHORITY_PASS")
+			if not check(arena._own.get("allowedDeploymentLanes", []) == ["left", "right"], "both team lanes available"): quit(1); return
+			var unit_slot := -1
+			for i in range(arena._own.slots.size()):
+				if arena._cards.get(str(arena._own.slots[i]), {}).get("kind") != "potion" and not arena._buttons[i].disabled: unit_slot = i; break
+			if not check(unit_slot >= 0, "unit hand"): quit(1); return
+			arena._select(unit_slot)
+			if not check(arena._lane_buttons[arena._team + ":left"].visible and arena._lane_buttons[arena._team + ":right"].visible, "both team markers visible"): quit(1); return
+			var card := str(arena._own.slots[unit_slot])
+			arena._deploy("right")
+			if not check(await wait_for(func(): return not arena._acting and str(arena._own.slots[unit_slot]) != card, 10.0), "authenticated right lane deployment"): quit(1); return
+			if not check(arena._snapshot.units.any(func(unit): return str(unit.get("controllerId", "")) == str(gate.player_id) and unit.get("lane") == "right"), "right lane unit in snapshot"): quit(1); return
+			print("WOE_INVITED_SHARED_LANES_PASS")
 	for p in arena._snapshot.players:
 		if not check(p.has("slots") == (str(p.id) == str(gate.player_id)) and p.has("zeal") == (str(p.id) == str(gate.player_id)), "hand privacy"): quit(1); return
 	signal_file("arena_%d" % role, match_id)
@@ -227,8 +246,18 @@ func _run() -> void:
 		quit(0)
 		return
 	if role == 0:
-		var slot := 3
-		if not check(await wait_for(func(): return not arena._buttons[3].disabled, 15.0), "fourth card affordable"): quit(1); return
+		if OS.get_environment("FOREST_POTION_TEST") == "1":
+			if not check(await wait_file("potion_ready"), "potion fixture ready"): quit(1); return
+			if not check(await wait_for(func(): return arena._own.get("slots", []).size() == 4 and arena._own.slots[3] == "thunderlock" and not arena._buttons[3].disabled, 10.0), "potion hand ready"): quit(1); return
+			arena._select(3)
+			if not check(arena._potion_target.visible and not arena._lane_buttons["blue:left"].visible, "potion targeting"): quit(1); return
+			arena._cast_potion(Vector2(960,540))
+			if not check(await wait_for(func(): return not arena._acting and arena._own.get("slots", []).size() == 4 and arena._own.slots[3] != "thunderlock", 10.0), "authoritative potion cast"): quit(1); return
+			signal_file("potion_cast_0")
+		var slot := -1
+		if not check(await wait_for(func(): return arena._own.get("slots", []).any(func(id): return arena._cards.get(str(id), {}).get("kind") != "potion" and arena._card_cost(arena._cards.get(str(id), {})) <= float(arena._own.get("zeal", 0))), 15.0), "unit affordable"): quit(1); return
+		for i in range(4):
+			if not arena._buttons[i].disabled and arena._cards.get(str(arena._own.slots[i]), {}).get("kind") != "potion": slot = i; break
 		if not check(slot >= 0, "affordable card"): quit(1); return
 		arena._select(slot)
 		if not check(arena._selected == slot and arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:left"].size == Vector2(140,140), "selection and deployment target"): quit(1); return

@@ -2,6 +2,14 @@ import {test, expect} from 'bun:test';
 import {loadCatalog, validateCatalog, segmentInside, createForestPresence} from '../forest/presence';
 import {readFileSync} from 'node:fs';
 function harness(){let now=100000, valid=true;const service=createForestPresence(loadCatalog(),async()=>valid,()=>now);const connect=(id:string)=>{const events:any[]=[];const ws:any={data:{kind:'forest',playerId:id,displayName:'Name '+id,token:'secret'},send(s:string){events.push(JSON.parse(s));return 1;},close(){},getBufferedAmount(){return 0;}};service.open(ws);return {ws,events,send(m:any){service.message(ws,JSON.stringify({v:1,...m}));}}};return {service,connect,advance(ms:number){now+=ms},revoke(){valid=false}};}
+test('duels guide travel requires server-side proximity and updates presence',()=>{
+ const h=harness(),a=h.connect('a'),b=h.connect('b');a.send({type:'enter',summoner_id:'wizard'});b.send({type:'enter',summoner_id:'witch'});
+ a.send({type:'duels_travel',seq:1});expect(a.events.at(-1)).toMatchObject({type:'correction',reason:'INVALID_TRAVEL'});expect(h.service.roomOf('a')).toBe('central_clearing');
+ h.advance(500);a.send({type:'move',seq:2,x:960,y:700,facing:0});a.send({type:'duels_travel',seq:3});
+ expect(a.events.at(-1)).toMatchObject({type:'zone',zone_id:'duel_clearing',x:960,y:700});expect(b.events.at(-1)).toMatchObject({type:'peer_leave',player_id:'a'});expect(h.service.roomOf('a')).toBe('duel_clearing');
+ a.send({type:'duels_travel',seq:4});expect(a.events.at(-1).reason).toBe('INVALID_TRAVEL');
+ h.service.close(a.ws);const resumed=h.connect('a');resumed.send({type:'enter',summoner_id:'wizard'});expect(resumed.events[0].self.zone_id).toBe('duel_clearing');
+});
 test('busy suspend and resume preserve visible state and expire safely',async()=>{
  const h=harness(),a=h.connect('a'),observer=h.connect('observer'),legacy=h.connect('legacy');
  a.send({type:'enter',summoner_id:'wizard',busy_protocol:1});observer.send({type:'enter',summoner_id:'witch',busy_protocol:1});legacy.send({type:'enter',summoner_id:'wizard'});

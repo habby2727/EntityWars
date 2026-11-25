@@ -1,8 +1,8 @@
 ﻿import { test, expect } from "bun:test";
-import { arena, cards, cardById, cardCost, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "../woe/catalog";
+import { arena, cards, cardById, cardCost, potions, potionById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "../woe/catalog";
 import { initializeMatch, applyDeployment, advanceTick, getPublicSnapshot, formationPoint, route, move, WOE_MOVEMENT_MULTIPLIER, type MatchState } from "../woe/engine";
 const make = () => initializeMatch("1v1", "seed", ["b", "r"]);
-function deploy(s: MatchState, i: number, slot=0, lane: "left"|"right"="left") { const p=s.controllers[i]; const r=applyDeployment(s,{actionId:`${s.nextUnitId}`,controllerId:p.id,slot,cardId:p.slots[slot],lane}); expect(r.accepted).toBe(true); return r.state; }
+function deploy(s: MatchState, i: number, slot=0, lane: "left"|"right"="left") { const p=s.controllers[i]; if(!cardById[p.slots[slot]])slot=p.slots.findIndex(id=>!!cardById[id]); const r=applyDeployment(s,{actionId:`${s.nextUnitId}`,controllerId:p.id,slot,cardId:p.slots[slot],lane}); expect(r.accepted).toBe(true); return r.state; }
 function ticks(s: MatchState, n: number) { for(let i=0;i<n;i++) s=advanceTick(s); return s; }
 test("catalog and elemental damage",()=>{
  expect(cards.map(c=>[c.id,c.cost])).toEqual([["neon",2],["luny",3],["mantillo",3],["nebulynx",4],["venam",4],["cedix",4],["flincho",5],["solcarp",5],["hyrox",6],["astralotl",6]]);
@@ -10,18 +10,68 @@ test("catalog and elemental damage",()=>{
  expect(elementalMultiplier("mercury","gold")).toBe(1.18); expect(elementalMultiplier("gold","mercury")).toBe(0.84); expect(elementalMultiplier("gold","sodium")).toBe(1);
  expect(attackDamage(100,0,1.18)).toBe(118); expect(attackDamage(100,0,0.84)).toBe(84); expect(attackDamage(1,20)).toBe(0); expect(attackDamage(20000,0)).toBe(10000);
 });
-test("ten-card rotation cycles all cards, including Cedix, through four slots",()=>{
+test('all four laboratories attack one nearest living enemy with stable ties and neutral defense',()=>{
+ expect(arena.laboratory_defense).toEqual({range:120,damage:30,interval_ms:1000});
+ for(const mode of ['1v1','2v2'] as const) for(const team of ['blue','red'] as const) for(const lane of ['left','right'] as const){
+  let s=mode==='1v1'?make():initializeMatch('2v2','defense',['b','b2','r','r2']);const lab=s.laboratories.find(l=>l.team===team&&l.lane===lane)!;
+  const opponent=mode==='1v1'?(team==='blue'?1:0):(team==='blue'?2:0)+(lane==='right'?1:0);s.controllers[opponent].zealTenths=100;s=deploy(s,opponent,0,lane);
+  const base=s.units[0],sign=team==='blue'?-1:1;
+  s.units=[
+   {...structuredClone(base),id:9,cardId:'mantillo',position:{x:lab.position.x+20,y:lab.position.y+sign*80},hp:1000,cooldown:1000,route:[]},
+   {...structuredClone(base),id:3,cardId:'mantillo',position:{x:lab.position.x-20,y:lab.position.y+sign*80},hp:1000,cooldown:1000,route:[]},
+   {...structuredClone(base),id:5,cardId:'mantillo',position:{x:lab.position.x,y:lab.position.y+sign*120},hp:1000,cooldown:1000,route:[]},
+   {...structuredClone(base),id:6,cardId:'mantillo',position:{x:lab.position.x,y:lab.position.y+sign*121},hp:1000,cooldown:1000,route:[]},
+   {...structuredClone(base),id:7,team,cardId:'mantillo',position:{...lab.position},hp:1000,cooldown:1000,route:[]},
+   {...structuredClone(base),id:1,cardId:'mantillo',position:{...lab.position},hp:0,cooldown:1000,route:[]},
+  ];
+  s=advanceTick(s);const attacks=s.events.filter(e=>e.type==='lab_attack');expect(attacks).toHaveLength(1);
+  expect(attacks[0]).toMatchObject({labId:lab.id,team,target:3,damage:attackDamage(30,cardById.mantillo.defense),position:lab.position});
+  expect(s.units.find(u=>u.id===3)!.hp).toBe(1000-attackDamage(30,cardById.mantillo.defense));
+  expect(s.units.find(u=>u.id===9)!.hp).toBe(1000);expect(s.units.find(u=>u.id===7)!.hp).toBe(1000);
+  for(let i=0;i<9;i++){s=advanceTick(s);expect(s.events.some(e=>e.type==='lab_attack')).toBe(false);}
+  s=advanceTick(JSON.parse(JSON.stringify(s)));expect(s.events.filter(e=>e.type==='lab_attack')).toHaveLength(1);
+ }
+});
+test('laboratory range is inclusive, old states are ready, dead labs never fire and deaths are unique',()=>{
+ let s=make();s.controllers[1].zealTenths=100;s=deploy(s,1);const lab=s.laboratories.find(l=>l.id==='blue:left')!;
+ const u=s.units[0];u.cardId='neon';u.position={x:lab.position.x,y:lab.position.y-121};u.route=[];u.cooldown=1000;u.hp=1000;
+ delete lab.defenseCooldown;s=advanceTick(s);expect(s.events.some(e=>e.type==='lab_attack')).toBe(false);
+ s.units[0].position.y=lab.position.y-120;s.units[0].hp=1;s=advanceTick(JSON.parse(JSON.stringify(s)));
+ expect(s.events.filter(e=>e.type==='lab_attack')).toHaveLength(1);expect(s.events.filter(e=>e.type==='death'&&e.target===u.id)).toHaveLength(1);
+ expect(s.events.find(e=>e.type==='death')).toMatchObject({attackerKind:'laboratory',labId:'blue:left',targetKind:'unit',victimCardId:'neon',victimTeam:'red'});
+ expect(s.units).toHaveLength(0);expect(advanceTick(s).events).toHaveLength(0);
+ s=make();s.controllers[1].zealTenths=100;s=deploy(s,1);s.units[0].position={...s.laboratories[0].position};s.units[0].route=[];s.units[0].cooldown=1000;
+ s.laboratories[0].hp=0;s=advanceTick(s);expect(s.events.some(e=>e.type==='lab_attack')).toBe(false);
+});
+test('laboratory fires on entry and cannot act after being destroyed in the same tick',()=>{
+ let s=make();s.controllers[1].zealTenths=100;s=deploy(s,1);let lab=s.laboratories.find(l=>l.id==='blue:left')!,u=s.units[0];
+ u.cardId='neon';u.position={x:lab.position.x,y:lab.position.y-126};u.route=[{...lab.position}];u.waypoint=0;u.cooldown=1000;
+ s=advanceTick(s);expect(s.events.find(e=>e.type==='lab_attack')).toMatchObject({labId:lab.id,target:u.id});
+ s=make();s.controllers[1].zealTenths=100;s=deploy(s,1);lab=s.laboratories.find(l=>l.id==='blue:left')!;u=s.units[0];
+ lab.hp=1;u.cardId='neon';u.position={...lab.position};u.cooldown=0;s=advanceTick(s);
+ expect(s.laboratories.find(l=>l.id===lab.id)!.hp).toBe(0);expect(s.events.some(e=>e.type==='lab_attack'&&e.labId===lab.id)).toBe(false);
+});
+test('laboratories do not attack units killed earlier in the same tick',()=>{
+ let s=make();s.controllers.forEach(p=>p.zealTenths=100);s=deploy(s,0);s=deploy(s,1);
+ const lab=s.laboratories.find(l=>l.id==='blue:left')!,attacker=s.units[0],victim=s.units[1];
+ attacker.cardId='neon';attacker.position={...lab.position};attacker.cooldown=0;
+ victim.cardId='mantillo';victim.position={x:lab.position.x,y:lab.position.y-20};victim.hp=1;victim.cooldown=1000;
+ s=advanceTick(s);expect(s.events.filter(e=>e.type==='death'&&e.target===victim.id)).toHaveLength(1);
+ expect(s.events.some(e=>e.type==='lab_attack'&&e.target===victim.id)).toBe(false);
+});
+test("twelve-card rotation cycles units and potions through four slots",()=>{
  let s=make(); const initial=[...s.controllers[0].slots], deployed:string[]=[];
- expect(s.controllers[0].queue.length).toBe(6);
- for(let i=0;i<14;i++) {
+ expect(s.controllers[0].queue.length).toBe(8);
+ for(let i=0;i<16;i++) {
    s.controllers[0].zealTenths=100;
    const slot=i%4, card=s.controllers[0].slots[slot]; deployed.push(card);
-   s=deploy(s,0,slot);
-   expect(s.controllers[0].zealTenths).toBe(100-cardCost(cardById[card],'woe')*10);
+   const command={actionId:`rotation-${i}`,controllerId:s.controllers[0].id,slot,cardId:card,...(potionById[card]?{target_x:0,target_y:0}:{lane:'left' as const})};
+   const result=applyDeployment(s,command);expect(result.accepted).toBe(true);s=result.state;
+   expect(s.controllers[0].zealTenths).toBe(100-(potionById[card]?.cost??cardCost(cardById[card],'woe'))*10);
    expect(s.controllers[0].slots.length).toBe(4);
  }
- expect(new Set(deployed.slice(0,10))).toEqual(new Set(cards.map(c=>c.id)));
- expect(deployed.slice(10)).toEqual(initial);
+ expect(new Set(deployed.slice(0,12))).toEqual(new Set([...cards,...potions].map(c=>c.id)));
+ expect(deployed.slice(12)).toEqual(initial);
 });
 test("Cedix attacks use sulfur effectiveness once",()=>{
  for(const [defender,multiplier] of [["venam",1.18],["luny",0.84]] as const) {
@@ -48,25 +98,28 @@ test("snapshots expose only the viewer's hand and zeal",()=>{
    const snapshot=getPublicSnapshot(s,viewer);
    for(const p of snapshot.players) {
      const source=s.controllers.find(c=>c.id===p.id)!;
-     if(p.id===viewer) { expect(p).toEqual({id:p.id,team:p.team,zeal:source.zealTenths/10,zeal_regen_ticks:0,slots:source.slots,allowedDeploymentLanes:[s.controllers.filter(c=>c.team===source.team).indexOf(source)===0?'left':'right']}); }
+     if(p.id===viewer) { expect(p).toEqual({id:p.id,team:p.team,zeal:source.zealTenths/10,zeal_regen_ticks:0,slots:source.slots,allowedDeploymentLanes:['left','right']}); }
      else { expect(p).toEqual({id:p.id,team:p.team}); }
      expect(p).not.toHaveProperty("queue"); expect(p).not.toHaveProperty("actionIds");
    }
  }
 });
-test("2v2 seat ownership survives serialization and applies to bots and destroyed labs",()=>{
- let s=JSON.parse(JSON.stringify(initializeMatch('2v2','seats',['blue','bot-blue','red','bot-red'])));
- for (const [i,lane] of ['left','right','left','right'].entries()) {
-  const p=s.controllers[i]; p.zealTenths=100;
-  const cmd={actionId:`seat-${i}`,controllerId:p.id,slot:0,cardId:p.slots[0],lane:lane as 'left'|'right'};
-  const before=structuredClone(s);
-  expect(applyDeployment(s,{...cmd,lane:lane==='left'?'right':'left'})).toMatchObject({accepted:false,reason:'LANE_NOT_OWNED'});
-  expect(s).toEqual(before);
+test("2v2 both teammates can use either surviving laboratory after recovery",()=>{
+ for (const i of [0,1,2,3]) for (const lane of ['left','right'] as const) {
+  const s=JSON.parse(JSON.stringify(initializeMatch('2v2','seats',['blue','bot-blue','red','bot-red'])));
+  const p=s.controllers[i];p.zealTenths=100;const slot=p.slots.findIndex((id:string)=>!!cardById[id]);
+  const cmd={actionId:`seat-${i}`,controllerId:p.id,slot,cardId:p.slots[slot],lane};
+  expect(getPublicSnapshot(s,p.id).players.find((x:any)=>x.id===p.id)!.allowedDeploymentLanes).toEqual(['left','right']);
   expect(applyDeployment(s,{...cmd,lane:'invalid' as any})).toMatchObject({accepted:false,reason:'INVALID_LANE'});
-  expect(applyDeployment(s,cmd).accepted).toBe(true);
+  const deployed=applyDeployment(s,cmd);expect(deployed.accepted).toBe(true);
+  expect(deployed.state.units[0]).toMatchObject({controllerId:p.id,team:p.team,lane});
   s.laboratories.find((l:any)=>l.team===p.team&&l.lane===lane).hp=0;
   expect(applyDeployment(s,cmd)).toMatchObject({accepted:false,reason:'LANE_DESTROYED'});
-  expect(getPublicSnapshot(s,p.id).players.find((x:any)=>x.id===p.id)!.allowedDeploymentLanes).toEqual([]);
+  const other=lane==='left'?'right':'left';
+  expect(getPublicSnapshot(s,p.id).players.find((x:any)=>x.id===p.id)!.allowedDeploymentLanes).toEqual([other]);
+  expect(applyDeployment(s,{...cmd,lane:other}).accepted).toBe(true);
+  s.laboratories.find((l:any)=>l.team!==p.team&&l.lane===other).hp=0;
+  expect(applyDeployment(s,{...cmd,lane:other}).accepted).toBe(true);
  }
 });
 test("rerouting beyond the plaza returns to the plaza before switching lanes",()=>{
@@ -84,13 +137,13 @@ test("rerouting beyond the plaza returns to the plaza before switching lanes",()
  }
 });
 test("modes, seeded openings, rotation and independent zeal",()=>{
- for(const mode of ["1v1","2v2"] as const) for(let i=0;i<20;i++){const s=initializeMatch(mode,String(i),mode==="1v1"?["b","r"]:["b","b2","r","r2"]); expect(s.laboratories.length).toBe(4); expect(s.controllers.every(p=>p.slots.some(id=>cardById[id].cost<=3))).toBe(true);}
- let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id].cost<=3), card=p.slots[slot], replacement=p.queue[0]; s=deploy(s,0,slot);
+ for(const mode of ["1v1","2v2"] as const) for(let i=0;i<20;i++){const s=initializeMatch(mode,String(i),mode==="1v1"?["b","r"]:["b","b2","r","r2"]); expect(s.laboratories.length).toBe(4); expect(s.controllers.every(p=>p.slots.some(id=>cardById[id] && cardById[id].cost<=3))).toBe(true);}
+ let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id] && cardById[id].cost<=3), card=p.slots[slot], replacement=p.queue[0]; s=deploy(s,0,slot);
  expect(s.controllers[0].slots[slot]).toBe(replacement); expect(s.controllers[0].queue.at(-1)).toBe(card); expect(s.controllers[0].zealTenths).toBe(50-cardById[card].cost*10);
  s=ticks(s,30); expect(s.controllers[0].zealTenths).toBe(60-cardById[card].cost*10); expect(s.controllers[1].zealTenths).toBe(60); s=ticks(s,240); expect(s.controllers.every(p=>p.zealTenths===100)).toBe(true);
 });
 test("invalid and duplicate actions do not mutate or charge",()=>{
- let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id].cost<=3); const cmd={actionId:"x",controllerId:p.id,slot,cardId:p.slots[slot],lane:"left" as const};
+ let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id] && cardById[id].cost<=3); const cmd={actionId:"x",controllerId:p.id,slot,cardId:p.slots[slot],lane:"left" as const};
  const original=structuredClone(s); expect(applyDeployment(s,{...cmd,slot:9}).accepted).toBe(false); expect(s).toEqual(original); s=applyDeployment(s,cmd).state;
  const before=structuredClone(s); expect(applyDeployment(s,cmd)).toMatchObject({accepted:false,reason:"DUPLICATE_ACTION_ID"}); expect(s).toEqual(before);
  const fresh={...cmd,actionId:"y",cardId:s.controllers[0].slots[slot]}; s.laboratories[0].hp=0; expect(applyDeployment(s,fresh)).toMatchObject({reason:"LANE_DESTROYED"}); s.laboratories[0].hp=1000; s.controllers[0].zealTenths=0; expect(applyDeployment(s,fresh)).toMatchObject({reason:"INSUFFICIENT_ZEAL"});
@@ -151,6 +204,6 @@ test("unit cap rejects without mutation",()=>{
  let s=make(); s.controllers[0].zealTenths=100; s=deploy(s,0); s.units=Array.from({length:arena.unit_cap},(_,i)=>({...structuredClone(s.units[0]),id:i+1})); s.controllers[0].zealTenths=100; const p=s.controllers[0], before=structuredClone(s); expect(applyDeployment(s,{actionId:"cap",controllerId:p.id,slot:0,cardId:p.slots[0],lane:"left"})).toMatchObject({reason:"UNIT_CAP"}); expect(s).toEqual(before);
 });
 test("seeded automated matches terminate and replay identically",()=>{
- function play(seed:string,mode:"1v1"|"2v2") { let s=initializeMatch(mode,seed,mode==="1v1"?["b","r"]:["b","b2","r","r2"]); while(!s.result && s.tick<1800){ if(s.tick%10===0) for(let i=0;i<s.controllers.length;i++){const p=s.controllers[i], slot=p.slots.findIndex(id=>cardCost(cardById[id],'woe')*10<=p.zealTenths); if(slot>=0) s=applyDeployment(s,{actionId:`${s.tick}:${i}`,controllerId:p.id,slot,cardId:p.slots[slot],lane:(Math.floor(s.tick/100)+i)%2?"right":"left"}).state;} s=advanceTick(s); } expect(s.result).not.toBeNull(); return getPublicSnapshot(s); }
+ function play(seed:string,mode:"1v1"|"2v2") { let s=initializeMatch(mode,seed,mode==="1v1"?["b","r"]:["b","b2","r","r2"]); while(!s.result && s.tick<1800){ if(s.tick%10===0) for(let i=0;i<s.controllers.length;i++){const p=s.controllers[i], slot=p.slots.findIndex(id=>cardById[id] && cardCost(cardById[id],'woe')*10<=p.zealTenths); if(slot>=0) s=applyDeployment(s,{actionId:`${s.tick}:${i}`,controllerId:p.id,slot,cardId:p.slots[slot],lane:(Math.floor(s.tick/100)+i)%2?"right":"left"}).state;} s=advanceTick(s); } expect(s.result).not.toBeNull(); return getPublicSnapshot(s); }
  for(const mode of ["1v1","2v2"] as const) for(let i=0;i<3;i++) expect(play(String(i),mode)).toEqual(play(String(i),mode));
 });

@@ -1,6 +1,6 @@
 extends PanelContainer
 
-const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
 
 signal admitted(room: Dictionary)
 var _identity := ""
@@ -8,7 +8,7 @@ var _busy := false
 var _status: Label
 
 func _ready() -> void:
-	add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(28, 28, 28, 28)))
+	PANEL_STYLE.panel(self)
 	_identity = CoreDefenseClient.identity()
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
@@ -22,13 +22,14 @@ func _ready() -> void:
 	box.add_child(_status)
 	for choice in [["CD_SOLO", "solo"], ["CD_COOP", "coop"]]:
 		var button := Button.new()
-		MENU_ART.button(button)
+		PANEL_STYLE.button(button, true)
 		button.text = tr(choice[0])
-		button.custom_minimum_size.y = 48
+		button.custom_minimum_size.y = 68
+		button.add_theme_font_size_override("font_size", 22)
 		button.pressed.connect(_create.bind(choice[1]))
 		box.add_child(button)
 	var rankings := Button.new()
-	MENU_ART.button(rankings)
+	PANEL_STYLE.button(rankings)
 	rankings.text = tr("CD_TOP_PLAYERS")
 	rankings.custom_minimum_size.y = 48
 	rankings.pressed.connect(_open_rankings)
@@ -40,16 +41,17 @@ func _ready() -> void:
 	var invites = preload("res://scripts/ui/minigame_invitations.gd").new()
 	invites.name = "Invitations"
 	invites.allow_accept = true
+	invites.plain_buttons = true
 	invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(invites)
 	invites.admitted.connect(_verified)
 	var retry := Button.new()
-	MENU_ART.button(retry)
+	PANEL_STYLE.button(retry)
 	retry.text = tr("WOE_RETRY")
 	retry.pressed.connect(_recover)
 	box.add_child(retry)
 	var close := Button.new()
-	MENU_ART.button(close)
+	PANEL_STYLE.button(close)
 	close.text = tr("FOREST_CLOSE")
 	close.pressed.connect(queue_free)
 	box.add_child(close)

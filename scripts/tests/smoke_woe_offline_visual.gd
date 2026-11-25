@@ -8,6 +8,23 @@ func _run() -> void:
 	assert(gate.enable_debug_lab())
 	SceneRouter._forest_owner = ""
 	SceneRouter._forest_summoner = "wizard"
+	var travel_world = load("res://scenes/forest/ForestWorld.tscn").instantiate()
+	root.add_child(travel_world)
+	current_scene = travel_world
+	await process_frame
+	var guide = null
+	for candidate in travel_world._npcs:
+		if candidate.npc_id == "duels_guide": guide = candidate
+	assert(guide != null and guide.get_node("Nameplate").text == tr("FOREST_NPC_DUELS_GUIDE_NAME"))
+	travel_world._player.position = guide.position
+	travel_world._player.transition_locked = false
+	travel_world._open_dialogue(guide)
+	assert(travel_world._action_row.get_node_or_null("Action_duels_travel") != null)
+	travel_world._open_npc_action("duels_travel")
+	await process_frame
+	assert(str(travel_world._zones[travel_world._zone_index].id) == "duel_clearing")
+	travel_world.queue_free()
+	await process_frame
 	for kind in ["woe", "core_defense"]:
 		var world = load("res://scenes/forest/ForestWorld.tscn").instantiate()
 		root.add_child(world)

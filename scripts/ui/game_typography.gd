@@ -57,7 +57,7 @@ func _apply_font_if_alive(id: int) -> void:
 func _excluded(node: Node) -> bool:
 	var current := node
 	while current != null and current != get_tree().root:
-		if current.scene_file_path in EXCLUDED_SCENES:
+		if current.scene_file_path in EXCLUDED_SCENES or current.has_meta("minigame_native_typography"):
 			return true
 		current = current.get_parent()
 	return false

@@ -64,7 +64,7 @@ func _run() -> void:
 		assert(arena._lab_bars["blue:left"].position.x + arena._lab_bars["blue:left"].size.x < 535.0)
 	arena._match_id = "m"
 	arena._cards = {"neon":{"cost":2,"element":"mercury"}}
-	arena._snapshot = {"tick":1,"units":[],"laboratories":[],"players":[{"id":str(root.get_node("ConnectionGate").player_id),"team":"blue","zeal":5,"slots":["neon","neon","neon"],"allowedDeploymentLanes":["left"]}],"result":null}
+	arena._snapshot = {"tick":1,"units":[],"laboratories":[],"players":[{"id":str(root.get_node("ConnectionGate").player_id),"team":"blue","zeal":5,"slots":["neon","neon","neon"],"allowedDeploymentLanes":["left","right"]}],"result":null}
 	arena._render_snapshot()
 	assert(arena._zeal_meter.segments == 10 and arena._buttons[0].icon != null)
 	arena._snapshot.players[0].zeal_regen_ticks = 15
@@ -97,6 +97,33 @@ func _run() -> void:
 	var paused: float = arena._zeal_meter.value
 	arena._process(0.5)
 	assert(is_equal_approx(paused, arena._zeal_meter.value))
+	var card_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/woe_cards.json"))
+	for potion in card_data.potions: arena._cards[str(potion.id)] = potion
+	arena._snapshot.players[0].slots[3] = "thunderlock"
+	arena._render_snapshot()
+	assert(not arena._buttons[3].disabled and arena._buttons[3].icon != null)
+	arena._select(3)
+	assert(arena._potion_target.visible and arena._potion_target.radius == 80.0)
+	assert(not arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible)
+	for viewport_size in [Vector2(1920,1080),Vector2(1280,720),Vector2(960,540)]:
+		arena._canvas.size = viewport_size
+		arena._resize()
+		var logical := Vector2(960,540)
+		var screen: Vector2 = arena._potion_target.get_global_transform_with_canvas() * logical
+		assert((arena._potion_target.get_global_transform_with_canvas().affine_inverse() * screen).distance_to(logical) < 0.01)
+	var motion := InputEventMouseMotion.new()
+	motion.position = Vector2(960,540)
+	arena._potion_target._gui_input(motion)
+	assert(arena._potion_target.showing and arena._potion_target.point == Vector2(960,540))
+	arena._debug_visual = true
+	var tap := InputEventScreenTouch.new()
+	tap.pressed = true
+	tap.position = Vector2(960,540)
+	arena._potion_target._gui_input(tap)
+	assert(not arena._potion_target.visible and arena._selected == -1)
+	arena._debug_visual = false
+	arena._snapshot.players[0].slots[3] = "solcarp"
+	arena._render_snapshot()
 	arena._event({"type":"tower_strike","position":{"x":410,"y":220},"targetPosition":{"x":420,"y":250}})
 	assert(arena._effects.effects.back().kind == "tower_strike")
 	arena._is_cd = false
@@ -105,7 +132,7 @@ func _run() -> void:
 	arena._snapshot.erase("regeneration_blocked")
 	arena._render_snapshot()
 	arena._select(0)
-	assert(arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible and not arena._lane_buttons["red:left"].visible)
+	assert(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible and not arena._lane_buttons["red:left"].visible)
 	arena._accept_state({"match_id":"m","revision":2,"snapshot":arena._snapshot,"events":[{"seq":1,"type":"spawn","unit_id":4,"card_id":"neon","team":"red","position":{"x":100,"y":100}}]},true)
 	assert(arena._cursor == 1)
 	arena._accept_state({"match_id":"m","revision":1,"snapshot":arena._snapshot,"events":[{"seq":1,"type":"spawn","unit_id":4,"card_id":"neon","team":"red","position":{"x":100,"y":100}}]},true)
@@ -163,7 +190,7 @@ func _run() -> void:
 	assert(fx.effects.is_empty())
 	arena._lab_bars["blue:left"].value = 0
 	arena._update_hud()
-	assert(not arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible)
+	assert(not arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible)
 	arena._own.allowedDeploymentLanes = ["right"]
 	arena._update_hud()
 	assert(arena._lane_buttons["blue:right"].visible)
@@ -181,6 +208,101 @@ func _run() -> void:
 	finished.result = {"winner":"red","reason":"laboratories"}
 	arena._accept_state({"match_id":"m","revision":6,"snapshot":finished,"events":[]},false)
 	assert(arena._finished and arena._result.text == arena.tr("WOE_DEFEAT"))
+	var defense = arena
+	defense._effects.clear()
+	defense._clear_visuals()
+	defense._finished = false
+	defense._debug_visual = true
+	defense._cursor = 0
+	defense._revision = -1
+	defense._silent_until_seq = 0
+	defense._match_id = "defense"
+	defense._cards = {"neon":{"cost":2,"element":"mercury"}}
+	defense._playback_ready = true
+	var labs: Array = []
+	for team in ["blue","red"]:
+		for lane in ["left","right"]:
+			labs.append({"id":team + ":" + lane,"team":team,"hp":1000,"maxHp":1000})
+	var defense_snapshot := {"tick":100,"units":[{"id":81,"cardId":"neon","team":"blue","x":410,"y":320,"hp":100,"maxHp":150}],"laboratories":labs,"players":[],"result":null}
+	var shot := {"seq":1,"tick":90,"type":"lab_attack","labId":"red:left","team":"red","target":81,"targetPosition":{"x":410,"y":320},"position":{"x":410,"y":220},"damage":26}
+	defense._accept_state({"match_id":"defense","revision":1,"snapshot":defense_snapshot,"events":[shot]},true)
+	assert(defense._defense_ranges.radius == 120.0 and defense._defense_ranges.labs.size() == 4)
+	assert(defense._defense_ranges.labs["red:left"].active and not defense._defense_ranges.labs["blue:left"].active)
+	assert(defense._defense_ranges.labs["red:left"].center == Vector2(410,220))
+	assert(defense._defense_ranges.labs["red:right"].center == Vector2(1510,220))
+	assert(defense._defense_ranges.labs["blue:left"].center == Vector2(410,860) and defense._defense_ranges.labs["blue:right"].center == Vector2(1510,860))
+	assert(defense._effects.effects.size() == 1 and defense._effects.effects[0].source == Vector2(410,220) and defense._effects.effects[0].target == Vector2(410,320))
+	assert(defense._defense_ranges.labs["red:left"].flash > 0.0)
+	defense_snapshot.units[0].y = 340.0
+	defense._defense_ranges.update_snapshot(labs,defense_snapshot.units,false)
+	assert(defense._defense_ranges.labs["red:left"].active)
+	defense_snapshot.units[0].y = 340.1
+	defense._defense_ranges.update_snapshot(labs,defense_snapshot.units,false)
+	assert(not defense._defense_ranges.labs["red:left"].active)
+	defense_snapshot.units[0].y = 320.0
+	defense._defense_ranges.update_snapshot(labs,defense_snapshot.units,false)
+	defense._accept_state({"match_id":"defense","revision":1,"snapshot":defense_snapshot,"events":[shot]},true)
+	assert(defense._effects.effects.size() == 1)
+	defense._effects.clear()
+	defense._units[81].position = Vector2(408,332)
+	defense._event(shot)
+	assert(defense._effects.effects[0].target == Vector2(408,332))
+	defense._units[81].position = Vector2(410,320)
+	var crowded_events: Array = []
+	for i in range(48):
+		crowded_events.append({"seq":i+2,"tick":100,"type":"attack","attacker":1,"target":81,"cardId":"neon","team":"red","position":{"x":400,"y":300},"targetPosition":{"x":410,"y":320},"damage":1})
+	var crowded_shot: Dictionary = shot.duplicate(true)
+	crowded_shot.seq = 50
+	crowded_events.append(crowded_shot)
+	defense._accept_state({"match_id":"defense","revision":1,"snapshot":defense_snapshot,"events":crowded_events},true)
+	assert(defense._cursor == 50 and defense._effects.effects.any(func(effect): return effect.kind == "lab_defense"))
+	defense._effects.clear()
+	defense._event(shot)
+	for viewport_size in [Vector2(1920,1080),Vector2(1280,720),Vector2(960,540)]:
+		defense._canvas.size = viewport_size
+		defense._resize()
+		assert((defense._defense_ranges.labs["red:left"].center * defense._stage.scale).is_equal_approx(Vector2(410,220) * viewport_size / Vector2(1920,1080)))
+	defense_snapshot.units.clear()
+	defense._accept_state({"match_id":"defense","revision":2,"snapshot":defense_snapshot,"events":[]},false)
+	assert(not defense._defense_ranges.labs["red:left"].active)
+	labs[2].hp = 0
+	defense._accept_state({"match_id":"defense","revision":3,"snapshot":defense_snapshot,"events":[]},false)
+	assert(not defense._defense_ranges.labs["red:left"].alive and defense._effects.effects.is_empty())
+	for child in defense._field.get_children():
+		if child.has_meta("defense_lab_id"): assert(child.is_queued_for_deletion())
+	defense_snapshot.result = {"winner":null,"reason":"timeout"}
+	defense._debug_visual = true
+	defense._accept_state({"match_id":"defense","revision":4,"snapshot":defense_snapshot,"events":[]},false)
+	assert(defense._defense_ranges.ended)
+	defense_snapshot.result = null
+	labs[2].hp = 1000
+	defense_snapshot.units.append({"id":81,"cardId":"neon","team":"blue","x":410,"y":320,"hp":100,"maxHp":150})
+	shot.seq = 51
+	defense._accept_state({"match_id":"defense","revision":5,"snapshot":defense_snapshot,"resync_required":true,"cursor":51,"events":[shot]},true)
+	assert(defense._cursor == 51 and defense._effects.effects.is_empty())
+	defense._accept_state({"match_id":"defense","revision":5,"snapshot":defense_snapshot,"events":[shot]},true)
+	assert(defense._effects.effects.is_empty())
+	var cd_arena = arena_script.new()
+	cd_arena._is_cd = true
+	cd_arena._build()
+	assert(cd_arena._defense_ranges == null)
+	cd_arena._event({"type":"lab_attack","labId":"blue:left","target":81})
+	assert(cd_arena._effects.effects.is_empty())
+	var potion_effects = load("res://scripts/ui/woe_effects.gd").new()
+	potion_effects.show_potion_area("aether", Vector2(960,540), 80, 5.0, 1.0)
+	potion_effects.show_potion_area("vitriol", Vector2(800,500), 130, 3.0)
+	assert(potion_effects.potion_areas.size() == 2)
+	assert(potion_effects.potion_areas[0].radius == 80 and potion_effects.potion_areas[1].radius == 130)
+	potion_effects._process(3.0)
+	assert(potion_effects.potion_areas.size() == 1 and potion_effects.potion_areas[0].element == "aether")
+	potion_effects._process(1.0)
+	assert(potion_effects.potion_areas.is_empty())
+	for i in range(120): potion_effects.show_potion_area("aether", Vector2.ZERO, 80, 5.0)
+	assert(potion_effects.potion_areas.size() == potion_effects.CAP)
+	potion_effects.clear()
+	assert(potion_effects.potion_areas.is_empty())
+	potion_effects.free()
+	cd_arena.free()
 	arena.queue_free()
 	print("WOE_ARENA_SMOKE_PASS")
 	quit(0)

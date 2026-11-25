@@ -14111,6 +14111,8 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells, cooldowns, npc, targe
     const pool = attacks.length ? attacks : legal;
     return pool[Math.floor(roll * pool.length)].id;
   }
+  if (npc.expedition_types && ["difficult", "very_difficult", "exceptional"].includes(context.tactical_tier))
+    return chooseExpeditionNpcSpell(legal, equippedIds.map((id) => spells.find((s) => s?.id === id)).filter(Boolean), cooldowns, npc, target, context);
   const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
   const enemyShield = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "shield") : enemyStatus.shield ?? 0;
   const enemyReflect = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "reflect") : enemyStatus.reflect ?? 0;
@@ -14247,6 +14249,85 @@ function chooseDungeonNpcSpell(floor, equippedIds, spells, cooldowns, npc, targe
   const best = Math.max(...scored.map((s) => s.score));
   const tied = scored.filter((s) => s.score === best);
   return tied[Math.floor(roll * tied.length)].id;
+}
+function chooseExpeditionNpcSpell(legal, equipped, cooldowns, npc, target, context) {
+  const tier = context.tactical_tier === "exceptional" ? 2 : context.tactical_tier === "very_difficult" ? 1 : 0;
+  const has = (s, ...kinds) => s.effects.some((e) => kinds.includes(e.kind));
+  const own2 = npc.status ?? {}, enemy = target.status ?? {};
+  const shield = effectiveTimedDefense(target, "shield"), reflect = effectiveTimedDefense(target, "reflect");
+  const ownShield = effectiveTimedDefense(npc, "shield");
+  const evalAttack = (s) => {
+    const actor = structuredClone(npc), victim = structuredClone(target);
+    if (actor.expedition_passive?.exchange > 0)
+      applyCombatPassive(actor, victim, "before_attack", context.types, "npc", "player", [], 0, s);
+    const mods = actor.expedition_passive ? passiveModifiers(actor.expedition_passive) : {};
+    const guard = target.expedition_passive ? passiveModifiers(target.expedition_passive).guard_flat ?? 0 : 0;
+    const relation = (t) => context.types?.effectiveness?.[t]?.[target.type] ?? 1;
+    const hybridFactor = (t) => relation(t) > 1 ? 1.25 : relation(t) < 1 ? 0.8 : 1;
+    let mult = s.type === "hybrid" ? Math.pow(hybridFactor(s.primary_type), 0.65) * Math.pow(hybridFactor(s.secondary_type), 0.35) : s.type === "universal" ? 1 : relation(s.type) > 1 ? 1.18 : relation(s.type) < 1 ? 0.84 : 1;
+    if (npc.expedition_types.includes(s.type) && relation(s.type) < 1)
+      mult = Math.min(1, mult + (npc.item_effects?.disadvantage_reduction ?? 0));
+    if (s.type !== "universal")
+      mult = 1 + (mult - 1) * (1 - Math.max(npc.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, context.neutralize ?? 0));
+    let power = s.power_mult;
+    for (const e of s.effects) {
+      if (e.kind === "bonus_if_poisoned" && enemy.poison > 0 || e.kind === "bonus_if_hit_last_exchange" && npc.spell_hit_last_exchange)
+        power *= 1 + e.value;
+      if (e.kind === "bonus_power_if_poisoned" && enemy.poison > 0 || e.kind === "bonus_if_shielded" && ownShield > 0 || e.kind === "bonus_if_low_hp" && npc.hp < npc.max_hp * (e.threshold ?? 0.4) || e.kind === "bonus_power_if_hit_last_exchange" && npc.spell_hit_last_exchange || e.kind === "bonus_if_marked" && enemy.hybrid_mark?.owner === "npc" && enemy.hybrid_mark.remaining > 0)
+        power += e.value;
+    }
+    const anomaly = s.type === "hybrid" ? Math.pow(physicalAnomalyMultiplier(context.anomaly, s.primary_type), 0.65) * Math.pow(physicalAnomalyMultiplier(context.anomaly, s.secondary_type), 0.35) : physicalAnomalyMultiplier(context.anomaly, npc.expedition_types.includes(s.type) ? s.type : npc.type);
+    let damage = Math.max(1, Math.round(((npc.atk + (mods.power_flat ?? 0)) * (1 + (own2.atk_boost ?? 0) - (own2.atk_down ?? 0)) - Math.trunc((target.def + guard) * 0.5)) * mult * anomaly * (1 + (enemy.vuln ?? 0)) * power));
+    damage = Math.max(1, Math.round(damage * Math.max(0.1, Math.min(1, context.incomingMult ?? 1))));
+    const dispel = s.effects.find((e) => e.kind === "ward_dispel")?.value ?? 0, pierce = s.effects.find((e) => e.kind === "pierce_ward")?.value ?? 0;
+    if (shield > 0)
+      damage = Math.max(0, Math.round(damage * (1 - shield * (1 - dispel) * (1 - pierce))));
+    const accuracy = Math.max(0, Math.min(1, s.accuracy + (own2.focus_next ?? 0) - (own2.misalign_next ?? 0) + (mods.accuracy_pct ?? 0) - (statusActive(npc, "lethargy", context.turn ?? 1) ? 0.15 : 0)));
+    const conversion = s.effects.find((e) => e.kind === "ward_convert");
+    const extra = (conversion && ownShield > 0 ? Math.min(Math.floor(target.max_hp * 0.2), Math.floor(npc.max_hp * ownShield * conversion.value)) : 0) + Math.max(0, Math.trunc(npc.item_effects?.true_on_hit ?? 0)) + Math.max(0, Math.trunc(npc.item_effects?.dot_true ?? 0));
+    return { damage, extra, chance: accuracy * (1 - Math.min(1, context.evasion ?? 0)) };
+  };
+  const evaluated = legal.map((s) => ({ s, attack: s.category === "attack" ? evalAttack(s) : null }));
+  const safeLethals = evaluated.filter((x) => x.attack && x.attack.damage + x.attack.extra >= target.hp && !(reflect > 0 && Math.round(x.attack.damage * reflect) >= npc.hp && (npc.item_effects?.ignore_reflect_chance ?? 0) < 1));
+  if (safeLethals.length)
+    return safeLethals.sort((a, b) => b.attack.chance - a.attack.chance || a.s.id.localeCompare(b.s.id))[0].s.id;
+  const scored = evaluated.map(({ s, attack }) => {
+    let score = attack ? Math.min(target.hp, attack.damage + attack.extra) * attack.chance : 0;
+    if (tier > 0 && attack && (enemy.poison > 0 && has(s, "bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison") || ownShield > 0 && has(s, "ward_convert", "bonus_if_shielded") || enemy.hybrid_mark?.owner === "npc" && enemy.hybrid_mark.remaining > 0 && has(s, "bonus_if_marked")))
+      score += npc.atk * attack.chance * (tier === 2 ? 0.5 : 0.3);
+    if (attack && reflect > 0) {
+      const reflected = Math.round(attack.damage * reflect);
+      score -= reflected * attack.chance * (1 - (npc.item_effects?.ignore_reflect_chance ?? 0)) * (tier === 2 ? 2 : 1);
+      if (reflected >= npc.hp && (npc.item_effects?.ignore_reflect_chance ?? 0) < 1)
+        score -= 1e4;
+    }
+    for (const e of s.effects) {
+      const chance = (e.chance ?? 1) * s.accuracy;
+      if (e.kind === "heal" && e.target === "self")
+        score += Math.min(e.value, npc.max_hp - npc.hp) * chance * (tier === 2 ? 1.5 : 1);
+      if (["cleanse_one", "debuff_transfer"].includes(e.kind))
+        score += ["poison", "stun", "vuln", "atk_down", "misalign_next"].some((k) => (own2[k] ?? 0) > 0) || npc.burn_effect || npc.lethargy_effect ? npc.max_hp * 0.5 * chance : -10;
+      if (e.kind === "shield" && e.target === "self" && ownShield <= 0)
+        score += chance * npc.max_hp * e.value * (tier === 2 ? 0.8 : 0.5);
+      if (e.kind === "poison" && e.target === "enemy" && !(enemy.poison > 0))
+        score += chance * target.max_hp * 0.06 * Math.min(2, e.value) * (npc.hom_id === "venam" ? 1.3 : 1);
+      if (["vuln", "atk_down"].includes(e.kind) && e.target === "enemy" && !(enemy[e.kind] > 0))
+        score += chance * npc.atk * 0.15 * (npc.hom_id === "mantillo" ? 1.3 : 1);
+      if (tier > 0) {
+        const follow = equipped.filter((f) => f.id !== s.id && (cooldowns[f.id] ?? 0) <= 1);
+        const setup = e.kind === "poison" && e.target === "enemy" && !(enemy.poison > 0) ? follow.some((f) => has(f, "bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison")) && e.value > 1 : e.kind === "shield" && e.target === "self" && ownShield <= 0 ? follow.some((f) => has(f, "ward_convert", "bonus_if_shielded")) : e.kind === "hybrid_mark" && !enemy.hybrid_mark ? follow.some((f) => has(f, "bonus_if_marked")) && e.value > 1 : false;
+        if (setup)
+          score += chance * npc.atk * (tier === 2 ? 0.9 : 0.6);
+      }
+      if (["shield", "reflect", "atk_boost"].includes(e.kind) && e.target === "self" && (own2[e.kind] ?? 0) > 0 || ["poison", "vuln", "atk_down"].includes(e.kind) && e.target === "enemy" && (enemy[e.kind] ?? 0) > 0)
+        score -= s.category === "support" ? 30 : 0;
+    }
+    if (tier === 2 && attack)
+      score -= s.cooldown_turns * 0.25;
+    return { id: s.id, score };
+  });
+  scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  return scored[0].id;
 }
 var DUNGEON_GENERATED_EFFECTS = new Set(["burn", "lethargy", "atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
 var DUNGEON_EFFECTS = new Set([...DUNGEON_GENERATED_EFFECTS, "hom_stun", "type_neutralize", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "ward_dispel", "shield_by_order", "poison_on_reflect"]);
@@ -14459,7 +14540,7 @@ function resolveDungeonTurn(state, decision, rng) {
   };
   let npcSpell;
   try {
-    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? { normal: 1, difficult: 5, very_difficult: 8, exceptional: 15 }[next.tactical_tier] ?? Math.max(8, Math.min(1000, next.floor)) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
+    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? { normal: 1, difficult: 5, very_difficult: 8, exceptional: 15 }[next.tactical_tier] ?? Math.max(8, Math.min(1000, next.floor)) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined, turn: decision.turn, neutralize: next.hom_synergy?.type_neutralize, incomingMult: next.hom_synergy?.incoming_mult, evasion: (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) });
     npcSpell = next.spells.find((s) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL")
@@ -14976,7 +15057,13 @@ function resolveDungeonTurn(state, decision, rng) {
     act(next.npc, next.player, npcSpell, "npc");
     const homFactor = next.npc.expedition_types ? homunculusAttackMultiplierById(next.npc.hom_id, next.player.type, next.types, [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]) : 1;
     const earlyHomDamage = Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * 0.4 * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) * (1 - (next.player.status.shield ?? 0))));
-    const spendHom = !next.npc.expedition_types || next.npc.hom_energy >= 6 || next.player.hp <= earlyHomDamage || next.npc.hp <= next.npc.max_hp * 0.3 || (next.player.status.shield ?? 0) > 0 && next.npc.hom_energy >= 5;
+    let spendHom = !next.npc.expedition_types || next.npc.hom_energy >= 6 || next.player.hp <= earlyHomDamage || next.npc.hp <= next.npc.max_hp * 0.3 || (next.player.status.shield ?? 0) > 0 && next.npc.hom_energy >= 5;
+    if (next.npc.expedition_types && ["very_difficult", "exceptional"].includes(next.tactical_tier)) {
+      const homDamage = Math.max(0, Math.round(Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * (next.npc.hom_energy >= 6 ? 0.6 : 0.4) * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)))) * (1 - effectiveTimedDefense(next.player, "shield"))));
+      const homReflect = statusActive(next.player, "burn", decision.turn) ? 0 : next.player.timed_defenses?.reflect?.value ?? 0;
+      const suicidal = Math.round(homDamage * homReflect) >= next.npc.hp && (npcEffects.ignore_reflect_chance ?? 0) < 1;
+      spendHom = !suicidal && (next.npc.hom_energy >= 6 || next.player.hp <= homDamage || next.npc.hp <= next.npc.max_hp * 0.3);
+    }
     if (next.npc.hom_id && next.npc.hom_energy >= 3 && spendHom && next.npc.hp > 0 && next.player.hp > 0) {
       if (next.npc.status.hom_stun > 0) {
         next.npc.status.hom_stun--;
@@ -15907,6 +15994,31 @@ function buildExpeditionEnemy(seed, encounterKey, depth, capturable, setup, cata
     if (!available.length)
       throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
     selected.push(pick2(available, `spell-${selected.length}`));
+  }
+  if (difficultyDepth >= (capturable ? 4 : 5)) {
+    const tie = (s) => draw(`loadout:${s.id}`) * 0.01;
+    const quality = (s) => {
+      const factor2 = (t) => relation(t) > 1 ? 1.18 : relation(t) < 1 ? 0.84 : 1;
+      const element = s.type === "hybrid" ? Math.pow(factor2(s.primary_type), 0.65) * Math.pow(factor2(s.secondary_type), 0.35) : s.type === "universal" ? 1 : factor2(s.type);
+      return (s.category === "attack" ? s.power_mult * s.accuracy * element / (1 + s.cooldown_turns * 0.12) : 0.35 * s.accuracy) + tie(s);
+    };
+    const rank = (a, b) => quality(b) - quality(a) || a.id.localeCompare(b.id);
+    const reliable = [...basic].sort((a, b) => (b.accuracy >= 0.9 ? 1 : 0) - (a.accuracy >= 0.9 ? 1 : 0) || rank(a, b))[0];
+    const comboValue = (a, b) => {
+      if (a.id === b.id)
+        return 0;
+      const poison = has(a, "poison", "enemy") && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].some((k) => has(b, k));
+      const shield = has(a, "shield", "self") && ["ward_convert", "bonus_if_shielded"].some((k) => has(b, k));
+      const mark = has(a, "hybrid_mark", "enemy") && has(b, "bonus_if_marked");
+      const debuff = has(a, "vuln", "enemy") && b.category === "attack";
+      return (poison || shield || mark || debuff ? (mark ? 1.25 : 0.65) * a.accuracy * b.accuracy + draw(`combo:${a.id}:${b.id}`) * 0.4 : 0) + (poison && ["venam", "crishvin"].includes(hom.id) || shield && hom.id === "ninux" || debuff && hom.id === "mantillo" ? 0.15 : 0);
+    };
+    const pairs2 = candidates.flatMap((a) => candidates.map((b) => ({ a, b, score: comboValue(a, b) }))).filter((p) => p.score > 0 && p.a.id !== reliable.id && p.b.id !== reliable.id).sort((x, y) => y.score + quality(y.a) + quality(y.b) - (x.score + quality(x.a) + quality(x.b)) || x.a.id.localeCompare(y.a.id) || x.b.id.localeCompare(y.b.id));
+    selected.splice(0, selected.length, reliable);
+    if (pairs2.length)
+      selected.push(pairs2[0].a, pairs2[0].b);
+    while (selected.length < 4)
+      selected.push(candidates.filter((s) => !selected.some((x) => x.id === s.id)).sort(rank)[0]);
   }
   const base = setup.entity.base_stats, bonus = setup.bonuses ?? {};
   const weapons = Array.isArray(setup.weapons) ? setup.weapons.filter((w) => w.id).map((w) => w.effects) : [setup.itemEffects ?? {}];
@@ -17194,6 +17306,37 @@ function createForestPresence(zones, authenticate, clock = Date.now, canServe = 
       }
       return;
     }
+    if (m.type === "duels_travel") {
+      if (!validSeq(m.seq) || m.seq <= s.seq) {
+        correction(s, m.seq, "INVALID_SEQ");
+        return;
+      }
+      s.seq = m.seq;
+      if (s.state.zone_id !== "central_clearing" || Math.hypot(s.state.x - 960, s.state.y - 590) > 145) {
+        correction(s, m.seq, "INVALID_TRAVEL");
+        return;
+      }
+      prune();
+      const destination2 = rooms.get("duel_clearing");
+      if (!destination2 || countRoom("duel_clearing") >= 128) {
+        correction(s, m.seq, "ROOM_FULL");
+        return;
+      }
+      s.pendingMove = null;
+      rooms.get(s.state.zone_id).delete(s.state.player_id);
+      broadcast(s, { type: "peer_leave", player_id: s.state.player_id });
+      s.state.zone_id = "duel_clearing";
+      s.state.x = 960;
+      s.state.y = 700;
+      s.state.facing = 2;
+      s.credit = 0;
+      s.at = now;
+      destination2.set(s.state.player_id, s);
+      send(s, { type: "zone", zone_id: s.state.zone_id, x: s.state.x, y: s.state.y, facing: s.state.facing, peers: peers(s) });
+      if (active2.get(s.state.player_id) === s)
+        broadcast(s, { type: "peer_join", player: { ...s.state } });
+      return;
+    }
     if (m.type !== "move" && m.type !== "portal") {
       send(s, { type: "error", error: "UNKNOWN_TYPE" });
       return;
@@ -17684,6 +17827,10 @@ var woe_cards_default = {
       range: 120,
       role: "heavy attacker"
     }
+  ],
+  potions: [
+    { id: "thunderlock", kind: "potion", cost: 3, radius: 80, duration_ticks: 50, texture: "res://assets/forest/woe/potions/thunderlock_256.png", name_key: "WOE_POTION_THUNDERLOCK" },
+    { id: "vitriol_potion", kind: "potion", cost: 4, radius: 130, duration_ticks: 30, texture: "res://assets/forest/woe/potions/vitriol_256.png", name_key: "WOE_POTION_VITRIOL" }
   ]
 };
 // ../data/static/woe_arena.json
@@ -17691,6 +17838,7 @@ var woe_arena_default = {
   width: 1920,
   height: 1080,
   laboratory_hp: 1000,
+  laboratory_defense: { range: 120, damage: 30, interval_ms: 1000 },
   tick_ms: 100,
   duration_ticks: 1800,
   unit_cap: 100,
@@ -17834,6 +17982,10 @@ var cards = Object.freeze(woe_cards_default.cards.map((raw) => {
 if (cards.length !== 10 || new Set(cards.map((c) => c.id)).size !== 10)
   throw new Error("INVALID_WOE_CATALOG");
 var cardById = Object.freeze(Object.fromEntries(cards.map((c) => [c.id, c])));
+var potions = Object.freeze(woe_cards_default.potions.map((raw) => Object.freeze(raw)));
+if (potions.length !== 2 || new Set(potions.map((p) => p.id)).size !== 2 || potions.some((p) => !["thunderlock", "vitriol_potion"].includes(p.id) || p.kind !== "potion" || ![p.cost, p.radius, p.duration_ticks].every((n) => Number.isSafeInteger(n) && n > 0) || !p.texture || !p.name_key))
+  throw new Error("INVALID_WOE_POTION");
+var potionById = Object.freeze(Object.fromEntries(potions.map((p) => [p.id, p])));
 function cardCost(card, kind) {
   return kind === "woe" ? card.woe_cost ?? card.cost : card.cost;
 }
@@ -17848,6 +18000,60 @@ function attackDamage(damage, defense, multiplier = 1) {
   if (![damage, defense, multiplier].every(Number.isFinite) || damage < 0 || defense < 0 || ![0.84, 1, 1.18].includes(multiplier))
     throw new Error("INVALID_WOE_DAMAGE");
   return Math.max(0, Math.min(1e4, Math.round(Math.max(0, damage - defense) * multiplier)));
+}
+
+// src/woe/potions.ts
+var paralyzed = (u, tick) => (u.paralyzedUntil ?? 0) >= tick && (u.paralyzedUntil ?? 0) > 0;
+var poisoned = (u, tick) => (u.poisonUntil ?? 0) >= tick && (u.poisonUntil ?? 0) > 0;
+function castPotion(units, team, potion, point, tick) {
+  for (const u of units) {
+    if (u.hp <= 0 || u.team === team || (u.position.x - point.x) ** 2 + (u.position.y - point.y) ** 2 > potion.radius ** 2)
+      continue;
+    if (potion.id === "thunderlock" && (u.paralyzedUntil ?? 0) <= tick)
+      u.paralyzedUntil = tick + potion.duration_ticks;
+    if (potion.id === "vitriol_potion" && (u.poisonUntil ?? 0) <= tick) {
+      u.poisonUntil = tick + potion.duration_ticks;
+      u.poisonNextTick = tick + 10;
+      u.poisonTeam = team;
+    }
+  }
+}
+function processPotionStatuses(units, tick, maxHp, emit) {
+  for (const u of units) {
+    if (u.paralyzedUntil !== undefined && tick > u.paralyzedUntil)
+      delete u.paralyzedUntil;
+    if (u.poisonUntil !== undefined && tick > u.poisonUntil) {
+      delete u.poisonUntil;
+      delete u.poisonNextTick;
+      delete u.poisonTeam;
+    }
+    if (u.hp <= 0 || !poisoned(u, tick) || u.poisonNextTick === undefined || tick < u.poisonNextTick)
+      continue;
+    const damage = Math.min(u.hp, Math.max(1, Math.round(maxHp(u) * 0.1)));
+    u.hp -= damage;
+    u.poisonNextTick += 10;
+    const pos = { ...u.position };
+    const event = { tick, team: u.poisonTeam ?? (u.team === "blue" ? "red" : "blue"), cardId: "vitriol_potion", target: u.id, position: pos, targetPosition: pos, damage, attackerKind: "potion", targetKind: "unit", victimCardId: u.cardId, victimAssetId: u.cardId, victimTeam: u.team, victimPosition: pos, victimKind: u.kind ?? "homunculus", victimElement: u.element };
+    emit(event, u, u.hp === 0);
+  }
+}
+function advanceUnitCooldown(u, slow) {
+  if (!slow && u.cooldownFraction === undefined) {
+    if (u.cooldown > 0)
+      u.cooldown--;
+    return;
+  }
+  if (u.cooldown <= 0) {
+    u.cooldown = 0;
+    delete u.cooldownFraction;
+    return;
+  }
+  const remaining = Math.max(0, u.cooldown * 5 - (u.cooldownFraction ?? 0) - (slow ? 3 : 5));
+  u.cooldown = Math.ceil(remaining / 5);
+  u.cooldownFraction = u.cooldown * 5 - remaining;
+}
+function potionSnapshot(u, tick) {
+  return { ...(u.paralyzedUntil ?? 0) > tick ? { paralyzed_until: u.paralyzedUntil } : {}, ...(u.poisonUntil ?? 0) > tick ? { poison_until: u.poisonUntil } : {} };
 }
 
 // src/woe/engine.ts
@@ -17886,7 +18092,7 @@ function shuffle(seed) {
     n = Math.imul(n ^ seed.charCodeAt(i), 16777619) >>> 0;
   if (!n)
     n = 2654435769;
-  const deck = cards.map((c) => c.id);
+  const deck = [...cards.map((c) => c.id), ...potions.map((p) => p.id)];
   for (let i = deck.length - 1;i > 0; i--) {
     n ^= n << 13;
     n ^= n >>> 17;
@@ -17895,8 +18101,8 @@ function shuffle(seed) {
     const j = n % (i + 1);
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  if (!deck.slice(0, 4).some((id) => cardCost(cardById[id], "woe") <= 3)) {
-    const j = deck.findIndex((id) => cardCost(cardById[id], "woe") <= 3);
+  if (!deck.slice(0, 4).some((id) => cardById[id] && cardCost(cardById[id], "woe") <= 3)) {
+    const j = deck.findIndex((id) => cardById[id] && cardCost(cardById[id], "woe") <= 3);
     [deck[0], deck[j]] = [deck[j], deck[0]];
   }
   return deck;
@@ -17945,9 +18151,7 @@ function allowedDeploymentLanes(state, controllerId) {
   const player = state.controllers.find((p) => p.id === controllerId);
   if (!player)
     return [];
-  const teamControllers = state.controllers.filter((p) => p.team === player.team);
-  const permitted = state.kind === "woe" && state.mode === "2v2" ? [lanes[teamControllers.findIndex((p) => p.id === controllerId)]].filter((lane) => !!lane) : lanes;
-  return permitted.filter((lane) => state.laboratories.some((l) => l.team === player.team && l.lane === lane && l.hp > 0));
+  return lanes.filter((lane) => state.laboratories.some((l) => l.team === player.team && l.lane === lane && l.hp > 0));
 }
 function validateDeployment(state, command) {
   if (state.result)
@@ -17959,18 +18163,22 @@ function validateDeployment(state, command) {
     return "INVALID_CONTROLLER";
   if (player.actionIds.includes(command.actionId))
     return "DUPLICATE_ACTION_ID";
-  if (!lanes.includes(command.lane))
-    return "INVALID_LANE";
-  if (state.kind === "woe" && state.mode === "2v2" && ![lanes[state.controllers.filter((p) => p.team === player.team).findIndex((p) => p.id === player.id)]].includes(command.lane))
-    return "LANE_NOT_OWNED";
-  if (!Number.isInteger(command.slot) || command.slot < 0 || ![3, 4].includes(player.slots.length) || command.slot >= player.slots.length || player.slots[command.slot] !== command.cardId || !cardById[command.cardId])
+  if (!Number.isInteger(command.slot) || command.slot < 0 || ![3, 4].includes(player.slots.length) || command.slot >= player.slots.length || player.slots[command.slot] !== command.cardId || !cardById[command.cardId] && !potionById[command.cardId])
     return "INVALID_CARD";
-  if (!state.laboratories.find((l) => l.team === player.team && l.lane === command.lane && l.hp > 0))
-    return "LANE_DESTROYED";
-  if (player.zealTenths < cardCost(cardById[command.cardId], state.kind) * 10)
+  const potion = potionById[command.cardId];
+  if (potion) {
+    if (command.lane !== undefined || typeof command.target_x !== "number" || typeof command.target_y !== "number" || !Number.isFinite(command.target_x) || !Number.isFinite(command.target_y) || command.target_x < 0 || command.target_x > arena.width || command.target_y < 0 || command.target_y > arena.height)
+      return "INVALID_TARGET";
+  } else {
+    if (command.target_x !== undefined || command.target_y !== undefined || !command.lane || !lanes.includes(command.lane))
+      return "INVALID_LANE";
+    if (!state.laboratories.find((l) => l.team === player.team && l.lane === command.lane && l.hp > 0))
+      return "LANE_DESTROYED";
+    if (state.units.length >= arena.unit_cap)
+      return "UNIT_CAP";
+  }
+  if (player.zealTenths < (potion ? potion.cost : cardCost(cardById[command.cardId], state.kind)) * 10)
     return "INSUFFICIENT_ZEAL";
-  if (state.units.length >= arena.unit_cap)
-    return "UNIT_CAP";
   return null;
 }
 function applyDeployment(state, command) {
@@ -17981,10 +18189,17 @@ function applyDeployment(state, command) {
   const player = next.controllers.find((p) => p.id === command.controllerId);
   if (player.zealTenths >= 100)
     player.zealRegenTicks = 0;
-  player.zealTenths -= cardCost(cardById[command.cardId], state.kind) * 10;
+  const potion = potionById[command.cardId];
+  player.zealTenths -= (potion ? potion.cost : cardCost(cardById[command.cardId], state.kind)) * 10;
   player.actionIds.push(command.actionId);
   player.slots[command.slot] = player.queue.shift();
   player.queue.push(command.cardId);
+  if (potion) {
+    const position = { x: command.target_x, y: command.target_y };
+    castPotion(next.units, player.team, potion, position, next.tick);
+    next.events.push({ type: "potion_cast", tick: next.tick, team: player.team, cardId: potion.id, target: 0, position: copy(position), targetPosition: copy(position), radius: potion.radius });
+    return { accepted: true, state: next };
+  }
   let targetLane = command.lane;
   if (!next.laboratories.find((l) => l.team === enemy(player.team) && l.lane === targetLane && l.hp > 0))
     targetLane = targetLane === "left" ? "right" : "left";
@@ -18019,11 +18234,18 @@ function advanceTick(state) {
   next.tick++;
   for (const player of next.controllers)
     regenerateZeal(player, true);
+  processPotionStatuses(next.units, next.tick, (u) => cardById[u.cardId].hp, (event, _u, died) => {
+    next.events.push({ type: "potion_damage", ...event });
+    if (died)
+      next.events.push({ type: "death", ...event });
+  });
   for (const unit of next.units) {
     if (unit.hp <= 0 || next.result)
       continue;
-    if (unit.cooldown > 0)
-      unit.cooldown--;
+    if (paralyzed(unit, next.tick))
+      continue;
+    const slow = poisoned(unit, next.tick);
+    advanceUnitCooldown(unit, slow);
     const card = cardById[unit.cardId];
     let lab = next.laboratories.find((l) => l.team === enemy(unit.team) && l.lane === unit.targetLane);
     if (lab.hp <= 0) {
@@ -18042,6 +18264,7 @@ function advanceTick(state) {
         victim.hp -= dealt;
         next.events.push({ type: "attack", attacker: unit.id, target: victim.id, damage: dealt, tick: next.tick, team: unit.team, cardId: unit.cardId, position: copy(unit.position), targetPosition: copy(victim.position) });
         unit.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
+        delete unit.cooldownFraction;
         if (victim.hp === 0) {
           next.events.push({ type: "death", attacker: unit.id, target: victim.id, tick: next.tick, team: unit.team, cardId: unit.cardId, position: copy(unit.position), targetPosition: copy(victim.position), victimCardId: target?.cardId ?? null, victimTeam: victim.team, victimPosition: copy(victim.position), targetKind: target ? "unit" : "laboratory" });
           if (!target && next.laboratories.every((l) => l.team !== lab.team || l.hp === 0))
@@ -18049,8 +18272,26 @@ function advanceTick(state) {
         }
       }
     } else
-      move(unit, card.speed * WOE_MOVEMENT_MULTIPLIER * arena.tick_ms / 1000);
+      move(unit, card.speed * WOE_MOVEMENT_MULTIPLIER * (slow ? 0.6 : 1) * arena.tick_ms / 1000);
   }
+  if (!next.result)
+    for (const lab of next.laboratories) {
+      if (lab.hp <= 0)
+        continue;
+      lab.defenseCooldown = Math.max(0, (lab.defenseCooldown ?? 0) - 1);
+      if (lab.defenseCooldown > 0)
+        continue;
+      const target = next.units.filter((u) => u.team !== lab.team && u.hp > 0 && dist2(u.position, lab.position) <= arena.laboratory_defense.range ** 2).sort((a, b) => dist2(a.position, lab.position) - dist2(b.position, lab.position) || a.id - b.id)[0];
+      if (!target)
+        continue;
+      const dealt = Math.min(target.hp, attackDamage(arena.laboratory_defense.damage, cardById[target.cardId].defense));
+      target.hp -= dealt;
+      lab.defenseCooldown = arena.laboratory_defense.interval_ms / arena.tick_ms;
+      const event = { labId: lab.id, attackerKind: "laboratory", target: target.id, tick: next.tick, team: lab.team, cardId: "", position: copy(lab.position), targetPosition: copy(target.position) };
+      next.events.push({ type: "lab_attack", ...event, damage: dealt });
+      if (target.hp === 0)
+        next.events.push({ type: "death", ...event, targetKind: "unit", victimCardId: target.cardId, victimTeam: target.team, victimPosition: copy(target.position) });
+    }
   next.units = next.units.filter((u) => u.hp > 0);
   if (!next.result && next.tick >= arena.duration_ticks) {
     const score = (team) => {
@@ -18064,7 +18305,7 @@ function advanceTick(state) {
   return next;
 }
 function getPublicSnapshot(state, viewerId) {
-  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map((u) => ({ id: u.id, controllerId: u.controllerId, team: u.team, lane: u.lane, cardId: u.cardId, hp: u.hp, maxHp: cardById[u.cardId].hp, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), laboratories: state.laboratories, players: state.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: Math.floor(p.zealTenths / 10), zeal_regen_ticks: zealProgress(p), slots: p.slots, allowedDeploymentLanes: allowedDeploymentLanes(state, p.id) } : {} })), events: state.events, result: state.result });
+  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map((u) => ({ id: u.id, controllerId: u.controllerId, team: u.team, lane: u.lane, cardId: u.cardId, hp: u.hp, maxHp: cardById[u.cardId].hp, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100, ...potionSnapshot(u, state.tick) })), laboratories: state.laboratories, players: state.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: Math.floor(p.zealTenths / 10), zeal_regen_ticks: zealProgress(p), slots: p.slots, allowedDeploymentLanes: allowedDeploymentLanes(state, p.id) } : {} })), events: state.events, result: state.result });
 }
 
 // src/woe/lobby.ts
@@ -18405,22 +18646,40 @@ function chooseBotDeployment(state, id, options) {
     return null;
   const alliesAlive = state.units.filter((u) => u.hp > 0 && u.team === p.team).length;
   const enemiesAlive = state.units.filter((u) => u.hp > 0 && u.team !== p.team).length;
-  if (alliesAlive > enemiesAlive || alliesAlive === enemiesAlive && alliesAlive >= 3 || alliesAlive === 0 && enemiesAlive === 0 && state.tick < 50)
+  if (alliesAlive > enemiesAlive || alliesAlive === 0 && enemiesAlive === 0 && state.tick < 50)
     return null;
   const choices = [];
   const bias = [...id].reduce((n, c) => n * 33 + c.charCodeAt(0) >>> 0, 0);
-  for (const lane of ["left", "right"])
-    for (let slot = 0;slot < p.slots.length; slot++) {
-      const card = cardById[p.slots[slot]], cmd = { actionId: `bot:${state.tick}:${id}`, controllerId: id, slot, cardId: card.id, lane };
+  const enemiesVisible = state.units.filter((u) => u.hp > 0 && u.team !== p.team).sort((a, b) => a.id - b.id);
+  for (let slot = 0;slot < p.slots.length; slot++) {
+    const potion = potionById[p.slots[slot]];
+    if (!potion)
+      continue;
+    for (const center of enemiesVisible) {
+      const targets = enemiesVisible.filter((u) => (u.position.x - center.position.x) ** 2 + (u.position.y - center.position.y) ** 2 <= potion.radius ** 2 && (potion.id === "thunderlock" ? (u.paralyzedUntil ?? 0) <= state.tick : (u.poisonUntil ?? 0) <= state.tick));
+      if (targets.length < 2)
+        continue;
+      const cmd = { actionId: `bot:${state.tick}:${id}`, controllerId: id, slot, cardId: potion.id, target_x: center.position.x, target_y: center.position.y };
       if ((options?.validate ?? validateDeployment)(state, cmd))
         continue;
-      const enemies = state.units.filter((u) => u.hp > 0 && u.team !== p.team && u.lane === lane), allies = state.units.filter((u) => u.hp > 0 && u.team === p.team && u.lane === lane);
-      const lab = state.laboratories.find((l) => l.team === p.team && l.lane === lane);
-      const counters = enemies.reduce((n, u) => n + elementalMultiplier(card.element, options?.element ? options.element(u.cardId) : cardById[u.cardId].element) - 1, 0);
-      const threat = enemies.reduce((n, u) => n + Math.max(0, 1 - Math.abs(u.position.y - lab.position.y) / 700), 0);
-      const score = threat * 5 + enemies.length * 1.5 - allies.length * 1.2 + (1 - lab.hp / lab.maxHp) * 3 + counters * 4 + cardCost(card, state.kind) * 0.12 + ((bias + state.tick / 10) % 2 === (lane === "left" ? 0 : 1) ? 0.3 : 0) - slot * 0.001;
-      choices.push({ cmd, score });
+      choices.push({ cmd, score: targets.length * 5 - potion.cost * 0.12 - slot * 0.001 });
     }
+  }
+  if (alliesAlive !== enemiesAlive || alliesAlive < 3)
+    for (const lane of ["left", "right"])
+      for (let slot = 0;slot < p.slots.length; slot++) {
+        if (!cardById[p.slots[slot]])
+          continue;
+        const card = cardById[p.slots[slot]], cmd = { actionId: `bot:${state.tick}:${id}`, controllerId: id, slot, cardId: card.id, lane };
+        if ((options?.validate ?? validateDeployment)(state, cmd))
+          continue;
+        const enemies = state.units.filter((u) => u.hp > 0 && u.team !== p.team && u.lane === lane), allies = state.units.filter((u) => u.hp > 0 && u.team === p.team && u.lane === lane);
+        const lab = state.laboratories.find((l) => l.team === p.team && l.lane === lane);
+        const counters = enemies.reduce((n, u) => n + elementalMultiplier(card.element, options?.element ? options.element(u.cardId) : cardById[u.cardId].element) - 1, 0);
+        const threat = enemies.reduce((n, u) => n + Math.max(0, 1 - Math.abs(u.position.y - lab.position.y) / 700), 0);
+        const score = threat * 5 + enemies.length * 1.5 - allies.length * 1.2 + (1 - lab.hp / lab.maxHp) * 3 + counters * 4 + cardCost(card, state.kind) * 0.12 + ((bias + state.tick / 10) % 2 === (lane === "left" ? 0 : 1) ? 0.3 : 0) - slot * 0.001;
+        choices.push({ cmd, score });
+      }
   choices.sort((a, b) => b.score - a.score);
   return choices[0]?.cmd ?? null;
 }
@@ -18547,7 +18806,8 @@ function createWoeMatchService(db, canServe, clock = Date.now, shared) {
     return { match_id: r.match_id, status: r.status, revision: r.revision, tick: state.tick, server_time_unix_ms: clock(), snapshot: snap, events: events2, cursor: gap ? r.event_seq : events2.at(-1)?.seq ?? after, latest_event_seq: r.event_seq, resync_required: gap };
   }
   function action(player, b, kind) {
-    const keys = kind === "deploy" ? ["match_id", "client_action_id", "slot", "card_id", "lane"] : ["match_id", "client_action_id"];
+    const targeted = kind === "deploy" && !!b && typeof b === "object" && (("target_x" in b) || ("target_y" in b));
+    const keys = kind === "deploy" ? targeted ? ["match_id", "client_action_id", "slot", "card_id", "target_x", "target_y"] : ["match_id", "client_action_id", "slot", "card_id", "lane"] : ["match_id", "client_action_id"];
     if (!b || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !keys.includes(k)) || !valid3(b.match_id) || !valid3(b.client_action_id))
       return fail5(400, "INVALID_REQUEST");
     const payload = JSON.stringify(keys.map((k) => [k, b[k]]));
@@ -18568,11 +18828,11 @@ function createWoeMatchService(db, canServe, clock = Date.now, shared) {
       if (r.status !== "RUNNING" || p.forfeited)
         result = fail5(409, r.status !== "RUNNING" ? "MATCH_FINISHED" : "FORFEITED");
       else if (kind === "deploy") {
-        const applied = applyDeployment(state, { actionId: b.client_action_id, controllerId: player, slot: b.slot, cardId: b.card_id, lane: b.lane });
+        const applied = applyDeployment(state, { actionId: b.client_action_id, controllerId: player, slot: b.slot, cardId: b.card_id, lane: b.lane, target_x: b.target_x, target_y: b.target_y });
         if (!applied.accepted)
           result = fail5(409, applied.reason);
         else {
-          save2(r, applied.state, [spawnEvent(applied.state)], clock());
+          save2(r, applied.state, potionById[b.card_id] ? applied.state.events.slice(state.events.length) : [spawnEvent(applied.state)], clock());
           result = { status: 200, data: snapshot2(row(b.match_id), player, r.event_seq) };
         }
       } else {
@@ -18612,8 +18872,9 @@ function createWoeMatchService(db, canServe, clock = Date.now, shared) {
           if (cmd) {
             const applied = applyDeployment(state, cmd);
             if (applied.accepted) {
+              const fresh = applied.state.events.slice(state.events.length);
               state = applied.state;
-              events2.push(spawnEvent(state));
+              events2.push(...potionById[cmd.cardId] ? fresh : [spawnEvent(state)]);
             }
           }
         }
@@ -18844,6 +19105,8 @@ function validateCoreDefenseDeployment(s, c) {
   const reason = validateDeployment(asWoe(s), c);
   if (reason)
     return reason;
+  if (potionById[c.cardId])
+    return null;
   const capacity = alliedCapacity(s);
   if (capacity.allied_count >= capacity.allied_cap || capacity.allied_count >= core_defense_waves_default.allied_unit_cap)
     return "UNIT_CAP";
@@ -18854,14 +19117,18 @@ function applyCoreDefenseDeployment(s, c) {
   if (reason)
     return { accepted: false, state: s, reason };
   const prepared = clone(s);
-  nextAvailableId(prepared);
+  if (!potionById[c.cardId])
+    nextAvailableId(prepared);
   const applied = applyDeployment(asWoe(prepared), c);
   if (!applied.accepted)
     return { accepted: false, state: s, reason: applied.reason };
-  const next = applied.state, u = next.units[next.units.length - 1], card = cardById[u.cardId];
+  const next = applied.state;
   const actions = next.controllers.find((p) => p.id === c.controllerId).actionIds;
   if (actions.length > core_defense_waves_default.action_id_limit)
     actions.shift();
+  if (potionById[c.cardId])
+    return { accepted: true, state: next };
+  const u = next.units[next.units.length - 1], card = cardById[u.cardId];
   Object.assign(u, { kind: "homunculus", maxHp: card.hp, damage: card.damage, defense: card.defense, speed: card.speed, range: card.range, element: card.element });
   next.events.push({ type: "spawn", tick: next.tick, team: u.team, cardId: u.cardId, position: clone(u.position), unit_id: u.id, card_id: u.cardId, lane: u.lane, controller_id: u.controllerId, kind: u.kind, assetId: u.cardId, element: u.element, hp: u.hp, maxHp: u.maxHp });
   return { accepted: true, state: next };
@@ -18901,6 +19168,14 @@ function advanceCoreDefenseTick(state) {
   s.tick = plus(s.tick);
   for (const u of s.units)
     strikeCampingAlly(s, u);
+  processPotionStatuses(s.units, s.tick, (u) => u.maxHp, (event, u, died) => {
+    s.events.push({ type: "potion_damage", ...event });
+    if (died) {
+      s.events.push({ type: "death", ...event });
+      if (u.kind === "enemy")
+        s.enemiesKilled = plus(s.enemiesKilled);
+    }
+  });
   const capacity = alliedCapacity(s);
   for (const p of s.controllers)
     regenerateZeal(p, s.phase === "wave" && capacity.allied_count < capacity.allied_cap);
@@ -18923,8 +19198,10 @@ function advanceCoreDefenseTick(state) {
   for (const u of s.units) {
     if (u.hp <= 0 || s.result)
       continue;
-    if (u.cooldown > 0)
-      u.cooldown--;
+    if (paralyzed(u, s.tick))
+      continue;
+    const slow = poisoned(u, s.tick);
+    advanceUnitCooldown(u, slow);
     let lab;
     if (u.team === "red") {
       lab = s.laboratories.find((l) => l.team === "blue" && l.lane === u.targetLane);
@@ -18944,6 +19221,7 @@ function advanceCoreDefenseTick(state) {
         const dealt = Math.min(victim.hp, damage);
         victim.hp -= dealt;
         u.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
+        delete u.cooldownFraction;
         s.events.push({ type: "attack", attacker: u.id, target: victim.id, damage: dealt, tick: s.tick, team: u.team, cardId: u.cardId, kind: u.kind, assetId: u.cardId, element: u.element, position: clone(u.position), targetPosition: clone(victim.position), targetKind: target ? "unit" : "laboratory", victimKind: target?.kind ?? "laboratory", victimAssetId: target?.cardId ?? null, victimElement: target?.element ?? null, targetHp: victim.hp, targetMaxHp: target?.maxHp ?? lab?.maxHp });
         if (victim.hp === 0) {
           s.events.push({ type: "death", attacker: u.id, target: victim.id, tick: s.tick, team: u.team, cardId: u.cardId, kind: u.kind, assetId: u.cardId, element: u.element, position: clone(u.position), targetPosition: clone(victim.position), victimKind: target?.kind ?? "laboratory", victimAssetId: target?.cardId ?? null, victimElement: target?.element ?? null, victimCardId: target?.cardId ?? null, victimTeam: victim.team, victimPosition: clone(victim.position), targetKind: target ? "unit" : "laboratory" });
@@ -18956,7 +19234,7 @@ function advanceCoreDefenseTick(state) {
         }
       }
     } else {
-      move(u, u.speed * arena.tick_ms / 1000);
+      move(u, u.speed * (slow ? 0.6 : 1) * arena.tick_ms / 1000);
       strikeCampingAlly(s, u);
     }
   }
@@ -18970,7 +19248,7 @@ function advanceCoreDefenseTick(state) {
 }
 function getCoreDefenseSnapshot(s, viewerId) {
   const capacity = alliedCapacity(s);
-  return clone({ kind: s.kind, mode: s.mode, tick: s.tick, wave: s.wave, completedWaves: s.completedWaves, enemiesSpawned: s.enemiesSpawned, enemiesKilled: s.enemiesKilled, pendingSpawns: s.pendingSpawns, phase: s.phase, intermissionTicks: s.intermissionTicks, ...capacity, regeneration_blocked: s.phase !== "wave" || capacity.allied_count >= capacity.allied_cap, remainingBlueLabHp: s.laboratories.filter((l) => l.team === "blue").reduce((n, l) => n + l.hp, 0), laboratories: s.laboratories, units: s.units.map((u) => ({ id: u.id, kind: u.kind, assetId: u.cardId, cardId: u.cardId, ...u.kind === "homunculus" ? { controllerId: u.controllerId } : {}, team: u.team, lane: u.lane, hp: u.hp, maxHp: u.maxHp, element: u.element, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), players: s.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: Math.floor(p.zealTenths / 10), zeal_regen_ticks: zealProgress(p), slots: p.slots } : {} })), events: s.events, result: s.result });
+  return clone({ kind: s.kind, mode: s.mode, tick: s.tick, wave: s.wave, completedWaves: s.completedWaves, enemiesSpawned: s.enemiesSpawned, enemiesKilled: s.enemiesKilled, pendingSpawns: s.pendingSpawns, phase: s.phase, intermissionTicks: s.intermissionTicks, ...capacity, regeneration_blocked: s.phase !== "wave" || capacity.allied_count >= capacity.allied_cap, remainingBlueLabHp: s.laboratories.filter((l) => l.team === "blue").reduce((n, l) => n + l.hp, 0), laboratories: s.laboratories, units: s.units.map((u) => ({ id: u.id, kind: u.kind, assetId: u.cardId, cardId: u.cardId, ...u.kind === "homunculus" ? { controllerId: u.controllerId } : {}, team: u.team, lane: u.lane, hp: u.hp, maxHp: u.maxHp, element: u.element, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100, ...potionSnapshot(u, s.tick) })), players: s.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: Math.floor(p.zealTenths / 10), zeal_regen_ticks: zealProgress(p), slots: p.slots } : {} })), events: s.events, result: s.result });
 }
 
 // src/woe/core_defense_lobby.ts
@@ -19199,7 +19477,8 @@ function createCoreDefenseMatchService(db, canServe, clock = Date.now) {
     }
   }
   function action(p, b, kind) {
-    const keys = kind === "deploy" ? ["match_id", "client_action_id", "slot", "card_id", "lane"] : ["match_id", "client_action_id"];
+    const targeted = kind === "deploy" && !!b && typeof b === "object" && (("target_x" in b) || ("target_y" in b));
+    const keys = kind === "deploy" ? targeted ? ["match_id", "client_action_id", "slot", "card_id", "target_x", "target_y"] : ["match_id", "client_action_id", "slot", "card_id", "lane"] : ["match_id", "client_action_id"];
     if (!b || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !keys.includes(k)) || !valid5(b.match_id) || !valid5(b.client_action_id))
       return fail7(400, "INVALID_REQUEST");
     const payload = JSON.stringify(keys.map((k) => [k, b[k]]));
@@ -19238,7 +19517,7 @@ function createCoreDefenseMatchService(db, canServe, clock = Date.now) {
       if (r.status !== "RUNNING" || participant.forfeited)
         result = fail7(409, r.status !== "RUNNING" ? "MATCH_FINISHED" : "FORFEITED");
       else if (kind === "deploy") {
-        const applied = applyCoreDefenseDeployment(s, { actionId: b.client_action_id, controllerId: p, slot: b.slot, cardId: b.card_id, lane: b.lane });
+        const applied = applyCoreDefenseDeployment(s, { actionId: b.client_action_id, controllerId: p, slot: b.slot, cardId: b.card_id, lane: b.lane, target_x: b.target_x, target_y: b.target_y });
         if (!applied.accepted)
           result = fail7(409, applied.reason);
         else {
