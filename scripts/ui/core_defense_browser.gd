@@ -27,6 +27,12 @@ func _ready() -> void:
 		button.custom_minimum_size.y = 48
 		button.pressed.connect(_create.bind(choice[1]))
 		box.add_child(button)
+	var rankings := Button.new()
+	MENU_ART.button(rankings)
+	rankings.text = tr("CD_TOP_PLAYERS")
+	rankings.custom_minimum_size.y = 48
+	rankings.pressed.connect(_open_rankings)
+	box.add_child(rankings)
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size.y = 100
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -150,3 +156,10 @@ func _complete(result: Dictionary) -> void:
 
 func _verified(room: Dictionary) -> void:
 	if _valid(): admitted.emit(room)
+
+func _open_rankings() -> void:
+	if not _valid() or get_node_or_null("Rankings") != null: return
+	var popup = preload("res://scripts/ui/core_defense_rankings.gd").new()
+	popup.name = "Rankings"
+	add_child(popup)
+	popup.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

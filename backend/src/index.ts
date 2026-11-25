@@ -1769,12 +1769,13 @@ async function startServer(): Promise<void> {
                     return jsonResponse(result.data,result.status);
                 }
 
-				if (["/forest/core-defense/match/state", "/forest/core-defense/match/current", "/forest/core-defense/match/deploy", "/forest/core-defense/match/forfeit", "/forest/core-defense/rooms", "/forest/core-defense/state", "/forest/core-defense/create", "/forest/core-defense/join", "/forest/core-defense/start", "/forest/core-defense/leave"].includes(url.pathname)) {
+				if (["/forest/core-defense/leaderboard", "/forest/core-defense/match/state", "/forest/core-defense/match/current", "/forest/core-defense/match/deploy", "/forest/core-defense/match/forfeit", "/forest/core-defense/rooms", "/forest/core-defense/state", "/forest/core-defense/create", "/forest/core-defense/join", "/forest/core-defense/start", "/forest/core-defense/leave"].includes(url.pathname)) {
                     const playerId=await requireAuth(req,ctx);
                     if(!coreEnabled()) return jsonResponse({error:"FOREST_CORE_DEFENSE_UNAVAILABLE"},503);
                     await applyRateLimit(ctx,{keyPrefix:"rl:forest-core-defense",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
                     let result;
-                    if(req.method==="GET" && url.pathname==="/forest/core-defense/rooms") result=coreDefense.list();
+                    if(req.method==="GET" && url.pathname==="/forest/core-defense/leaderboard") { const keys=[...url.searchParams.keys()]; result=keys.length===2 && keys.filter(k=>k==="mode").length===1 && keys.filter(k=>k==="month").length===1 ? coreMatches.leaderboard(url.searchParams.get("mode"),url.searchParams.get("month")) : {status:400,data:{error:"INVALID_REQUEST"}}; }
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/rooms") result=coreDefense.list();
                     else if(req.method==="GET" && url.pathname==="/forest/core-defense/state") result=coreDefense.state(playerId,url.searchParams.get("room_id"));
                     else if(req.method==="GET" && url.pathname==="/forest/core-defense/match/state") result=coreMatches.state(playerId,url.searchParams.get("match_id"),url.searchParams.get("after")??"0");
                     else if(req.method==="GET" && url.pathname==="/forest/core-defense/match/current") result=coreMatches.current(playerId);

@@ -32,3 +32,9 @@ The journal retains the latest 2000 events per match, paginates 100 at a time an
 ## Persistence and maintenance
 
 The committed match row is the sole runtime state; started lobby snapshots read it inside the lobby transaction. Terminal score and event retention remain 24 hours. Scheduler maintenance runs under the Forest lease even with only Core Defense enabled, processes expired rooms and replay records in bounded batches, and removes orphaned Core Defense records with foreign key enforcement either enabled or disabled. Replay cleanup advances a separate durable watermark; it does not refresh player activity. Repeating the successful forfeit ID returns its original response; a different ID after forfeiting is rejected without adding a replay record.
+
+## Monthly leaderboards
+
+`GET /forest/core-defense/leaderboard?mode=solo|coop&month=current|previous` requires the same authentication, feature flag, lease and rate limit as other Core Defense routes. Both filters are required exactly once; other parameters are rejected. The response contains `current_month`, `previous_month`, `viewed_month` (UTC `YYYY-MM`), `mode`, and up to 100 `entries` containing only `display_name` and `completed_waves`. Scores order by waves descending, completion time ascending, then player ID ascending.
+
+Only authoritative natural defeats with positive waves and the exact unassisted human roster are recorded in the terminal transaction. Each player has one best per mode and month, independent of 24-hour match retention. Maintenance removes old rows in bounded batches; reads expose only the two permitted months. A durable month watermark prevents clock rollback from reopening an expired month. No historical results are backfilled.

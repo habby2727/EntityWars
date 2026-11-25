@@ -610,3 +610,10 @@ CD_INVITE_STATUS_DECLINED,Declined,Rechazada
 CD_INVITE_STATUS_CANCELLED,Cancelled,Cancelada
 CD_INVITE_STATUS_EXPIRED,Expired,Caducada
 WOE_DEBUG_VISUAL,LOCAL VISUAL PREVIEW - No server or rewards,VISTA VISUAL LOCAL - Sin servidor ni recompensas
+
+CD_TOP_PLAYERS,Top Players,Mejores jugadores
+CD_CURRENT_MONTH,Current month,Mes actual
+CD_PREVIOUS_MONTH,Previous month,Mes anterior
+CD_RANKING_HEADER,Position   Player   Waves,Posici?n   Jugador   Olas
+CD_RANKING_LOADING,Loading rankings?,Cargando clasificaci?n?
+CD_RANKING_EMPTY,No scores yet.,Todav?a no hay puntuaciones.

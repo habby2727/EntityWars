@@ -461,7 +461,7 @@ func _render_snapshot() -> void:
 		if _is_cd and not _debug_visual and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
 			_notice.text = tr("CD_UNAVAILABLE")
 		var winner := str(outcome.get("winner", ""))
-		_result.text = (tr("CD_RESULT") % [int(_snapshot.get("completedWaves", 0)), tr("CD_REASON_" + str(outcome.get("reason", "laboratories")).to_upper())]) if _is_cd else (tr("WOE_DRAW") if winner.is_empty() or winner == "<null>" else (tr("WOE_VICTORY") if winner == _team else tr("WOE_DEFEAT")))
+		_result.text = (tr("CD_RESULT") % [int(_server_score.get("completed_waves", _snapshot.get("completedWaves", 0))), tr("CD_REASON_" + str(outcome.get("reason", "laboratories")).to_upper())]) if _is_cd else (tr("WOE_DRAW") if winner.is_empty() or winner == "<null>" else (tr("WOE_VICTORY") if winner == _team else tr("WOE_DEFEAT")))
 		_forfeit.disabled = true
 		_selected = -1
 	_update_hud()
@@ -563,6 +563,7 @@ func _finish_action(result: Dictionary) -> void:
 			_client.save_forfeit(_match_id)
 			_forfeit.disabled = true
 			_selected = -1
+		if _is_cd: _server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 		_accept_state(result.data, false)
 	else:
 		if str(result.get("error", "")) == "ACTION_EXPIRED" and _is_cd:

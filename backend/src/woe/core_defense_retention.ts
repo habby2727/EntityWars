@@ -1,8 +1,10 @@
+import {maintainMonthlyScores} from './core_defense_leaderboard';
 ﻿import type {Database} from 'bun:sqlite';
 
 // Called inside the scheduler's fenced transaction, even when WOE is disabled.
 // Every selection is capped; more work is picked up on later maintenance passes.
 export function cleanupCoreDefense(db:Database,now:number) {
+ maintainMonthlyScores(db,now);
  const limit=32, rows=(sql:string,...args:any[])=>db.query(sql).all(...args) as any[];
  for(const r of rows("SELECT r.room_id FROM woe_rooms r JOIN core_defense_rooms c ON c.room_id=r.room_id WHERE r.status='WAITING' AND r.expires_at<=? ORDER BY r.expires_at LIMIT ?",now,limit)) {
   db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=? AND status='WAITING'").run(now,r.room_id);
