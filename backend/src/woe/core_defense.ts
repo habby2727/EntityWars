@@ -16,7 +16,7 @@ type DefenseEvent = { type:'spawn'|'attack'|'death'; tick:number; team:'blue'|'r
 export interface CoreDefenseState {
  kind:'core_defense'; mode:CoreDefenseMode; tick:number; controllers:Controller[]; laboratories:Laboratory[]; units:DefenseUnit[]; nextUnitId:number; events:DefenseEvent[];
  wave:number; completedWaves:number; enemiesSpawned:number; enemiesKilled:number; waveSpawned:number; pendingSpawns:number; phase:'wave'|'intermission'|'defeat'; intermissionTicks:number; spawnCooldown:number;
- result:{winner:'red';reason:'laboratories'}|null;
+ result:{winner:'red'|null;reason:'laboratories'|'forfeit'|'abandoned'}|null;
 }
 const clone = <T>(x:T):T => structuredClone(x);
 const other = (lane:Lane):Lane => lane === 'left' ? 'right' : 'left';
@@ -54,7 +54,7 @@ export function applyCoreDefenseDeployment(s:CoreDefenseState,c:DeploymentComman
  const next=applied.state as unknown as CoreDefenseState, u=next.units[next.units.length-1], card=cardById[u.cardId];
  const actions=next.controllers.find(p=>p.id===c.controllerId)!.actionIds; if(actions.length>waveRules.action_id_limit) actions.shift();
  Object.assign(u,{kind:'homunculus',maxHp:card.hp,damage:card.damage,defense:card.defense,speed:card.speed,range:card.range,element:card.element});
- next.events.push({type:'spawn',tick:next.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane:u.lane,controller_id:u.controllerId,kind:u.kind,assetId:u.cardId});
+ next.events.push({type:'spawn',tick:next.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane:u.lane,controller_id:u.controllerId,kind:u.kind,assetId:u.cardId,element:u.element,hp:u.hp,maxHp:u.maxHp});
  return {accepted:true,state:next};
 }
 function spawn(s:CoreDefenseState) {
@@ -65,14 +65,14 @@ function spawn(s:CoreDefenseState) {
  nextAvailableId(s);
  const u:DefenseUnit={id:s.nextUnitId++,controllerId:'',team:'red',lane,cardId:def.id,hp:stats.hp,maxHp:stats.hp,damage:stats.damage,defense:stats.defense,speed:stats.speed,range:stats.range,element:stats.element,kind:'enemy',position:clone(arena.spawns.red[lane]),route:route('red',lane,target),waypoint:0,targetLane:target,cooldown:0};
  s.units.push(u);s.waveSpawned++;s.enemiesSpawned=plus(s.enemiesSpawned);s.pendingSpawns--;s.spawnCooldown=waveRules.spawn_interval_ticks;
- s.events.push({type:'spawn',tick:s.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane,kind:u.kind,assetId:u.cardId});
+ s.events.push({type:'spawn',tick:s.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane,kind:u.kind,assetId:u.cardId,element:u.element,hp:u.hp,maxHp:u.maxHp});
 }
-export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState {
+export function advanceCoreDefenseTick(state:CoreDefenseState, botIds?:string[]):CoreDefenseState {
  if(state.result)return state;
  let s=clone(state);s.events=[];s.tick=plus(s.tick);
  for(const p of s.controllers)p.zealTenths=Math.min(100,p.zealTenths+1);
- if(s.mode==='solo_bot' && s.tick%10===0) {
-  const cmd=chooseBotDeployment(asWoe(s),s.controllers[1].id,{validate:(st,c)=>validateCoreDefenseDeployment(st as unknown as CoreDefenseState,c),element:id=>enemyById[id]?.element ?? cardById[id].element});
+ if(s.tick%10===0) for(const botId of new Set(botIds ?? (s.mode==='solo_bot'?[s.controllers[1].id]:[]))) {
+  const cmd=chooseBotDeployment(asWoe(s),botId,{validate:(st,c)=>validateCoreDefenseDeployment(st as unknown as CoreDefenseState,c),element:id=>enemyById[id]?.element ?? cardById[id].element});
   if(cmd) s=applyCoreDefenseDeployment(s,cmd).state;
  }
  if(s.phase==='intermission') {
@@ -97,9 +97,9 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
    if(u.cooldown===0) {
     const damage=target?attackDamage(u.damage,target.defense,elementalMultiplier(u.element,target.element)):attackDamage(u.damage,0);
     const dealt=Math.min(victim.hp,damage);victim.hp-=dealt;u.cooldown=ATTACK_INTERVAL_MS/arena.tick_ms;
-    s.events.push({type:'attack',attacker:u.id,target:victim.id,damage:dealt,tick:s.tick,team:u.team,cardId:u.cardId,position:clone(u.position),targetPosition:clone(victim.position)});
+    s.events.push({type:'attack',attacker:u.id,target:victim.id,damage:dealt,tick:s.tick,team:u.team,cardId:u.cardId,kind:u.kind,assetId:u.cardId,element:u.element,position:clone(u.position),targetPosition:clone(victim.position),targetKind:target?'unit':'laboratory',victimKind:target?.kind??'laboratory',victimAssetId:target?.cardId??null,victimElement:target?.element??null,targetHp:victim.hp,targetMaxHp:target?.maxHp??lab?.maxHp});
     if(victim.hp===0) {
-     s.events.push({type:'death',attacker:u.id,target:victim.id,tick:s.tick,team:u.team,cardId:u.cardId,position:clone(u.position),targetPosition:clone(victim.position),victimCardId:target?.cardId??null,victimTeam:victim.team,victimPosition:clone(victim.position),targetKind:target?'unit':'laboratory'});
+     s.events.push({type:'death',attacker:u.id,target:victim.id,tick:s.tick,team:u.team,cardId:u.cardId,kind:u.kind,assetId:u.cardId,element:u.element,position:clone(u.position),targetPosition:clone(victim.position),victimKind:target?.kind??'laboratory',victimAssetId:target?.cardId??null,victimElement:target?.element??null,victimCardId:target?.cardId??null,victimTeam:victim.team,victimPosition:clone(victim.position),targetKind:target?'unit':'laboratory'});
      if(target?.kind==='enemy')s.enemiesKilled=plus(s.enemiesKilled);
      if(!target && s.laboratories.filter(l=>l.team==='blue').every(l=>l.hp===0)){s.result={winner:'red',reason:'laboratories'};s.phase='defeat';}
     }

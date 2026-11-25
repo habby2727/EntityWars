@@ -224,7 +224,7 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
  const rp=await freePort(),port=await freePort(),redisProcess=Bun.spawn([redisBin!,'--bind','127.0.0.1','--port',String(rp),'--save','','--appendonly','no'],{stdout:'ignore',stderr:'ignore'}),redis=new Redis(`redis://127.0.0.1:${rp}`,{lazyConnect:true,retryStrategy:()=>null});redis.on('error',()=>{});let server:any;const sockets:WebSocket[]=[];
  try {
   let ready=false;for(let i=0;i<50;i++){try{await redis.connect();ready=true;break}catch{}await Bun.sleep(100)}expect(ready).toBe(true);
-  const env={...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(port),DB_PATH:path,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_WOE_ENABLED:'1',FOREST_DUELS_ENABLED:'1',PVP_ENABLED:'0',PVP_RNG_SECRET:'test-secret-with-at-least-32-characters',LOGIN_RATE_LIMIT_MAX:'100'};
+  const env={...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(port),DB_PATH:path,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_WOE_ENABLED:'1',FOREST_CORE_DEFENSE_ENABLED:'1',FOREST_DUELS_ENABLED:'1',PVP_ENABLED:'0',PVP_RNG_SECRET:'test-secret-with-at-least-32-characters',LOGIN_RATE_LIMIT_MAX:'100'};
   server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env,stdout:'ignore',stderr:'ignore'});const base=`http://127.0.0.1:${port}`;ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}expect(ready).toBe(true);
   const post=(url:string,body:any,token?:string)=>fetch(base+url,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify(body)});
   const get=(url:string,token?:string)=>fetch(base+url,{headers:token?{Authorization:`Bearer ${token}`}:{}});
@@ -240,6 +240,15 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
    await moveTo(960,540);await moveTo(70,540);expect(await portal('west',0,540)).toBe('alchemical_ruins');await moveTo(960,540);await moveTo(960,70);expect(await portal('north',960,0)).toBe('duel_clearing');return ws;
   }
   const [aw,bw]=await Promise.all([enterAndTravel(a),enterAndTravel(b)]);
+  expect((await get('/forest/core-defense/rooms')).status).toBe(401);
+  const coreResponse=await post('/forest/core-defense/create',{mode:'solo',client_action_id:'cd-create'},a.token);expect(coreResponse.status).toBe(200);const core:any=await coreResponse.json();
+  expect((await post('/forest/core-defense/create',{mode:'solo',client_action_id:'forge',player_id:b.id},a.token)).status).toBe(400);
+  expect((await get(`/forest/core-defense/match/state?match_id=${core.match_id}&viewer_id=${a.id}`,c.token)).status).toBe(403);
+  expect((await get(`/forest/woe/match/state?match_id=${core.match_id}`,a.token)).status).toBe(404);
+  const coreCurrent:any=await (await get('/forest/core-defense/match/current',a.token)).json();const coreHand=coreCurrent.snapshot.players.find((p:any)=>p.id===a.id).slots;const coreSlot=coreHand.findIndex((id:string)=>cardById[id].cost<=5);
+  const coreCmd={match_id:core.match_id,client_action_id:`${coreCurrent.server_time_unix_ms}:http`,slot:coreSlot,card_id:coreHand[coreSlot],lane:'left'};
+  const coreDeploy=await post('/forest/core-defense/match/deploy',coreCmd,a.token);expect(coreDeploy.status).toBe(200);const coreAck=await coreDeploy.json();expect(await (await post('/forest/core-defense/match/deploy',coreCmd,a.token)).json()).toEqual(coreAck);
+  expect((await post('/forest/core-defense/match/forfeit',{match_id:core.match_id,client_action_id:'cd-forfeit'},a.token)).status).toBe(200);
   const created=await post('/forest/woe/create',{mode:'1v1',client_action_id:'create'},a.token);expect(created.status).toBe(200);let room:any=await created.json();const roomId=room.room_id;
   expect((await post('/forest/woe/join',{room_id_or_code:room.join_code,client_action_id:'join',player_id:a.id},b.token)).status).toBe(400);
   const joined=await post('/forest/woe/join',{room_id_or_code:room.join_code,client_action_id:'join'},b.token);expect(joined.status).toBe(200);room=await joined.json();

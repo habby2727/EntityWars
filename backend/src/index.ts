@@ -15,6 +15,8 @@ import { createForestPresence, loadCatalog, type ForestData } from "./forest/pre
 import { createForestDuels } from "./forest/duels";
 import { createWoeLobby } from "./woe/lobby";
 import { createWoeMatchService } from "./woe/match_service";
+import { createCoreDefenseLobby } from "./woe/core_defense_lobby";
+import { createCoreDefenseMatchService } from "./woe/core_defense_match_service";
 import { createForestQuests, ForestQuestError } from "./forest_quests";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
@@ -1367,8 +1369,11 @@ async function startServer(): Promise<void> {
 	}
 	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite,protocol) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite,protocol); } }, () => { try { return !!getRankedServices(); } catch { return false; } });
 	const woe = createWoeLobby(db, id => forest?.roomOf(id) ?? null, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid());
-	const woeMatches = createWoeMatchService(db, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid());
-	if (Bun.env.FOREST_WOE_ENABLED === "1" && forest) woeMatches.start();
+	const coreEnabled = () => Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1" && !!forest && leaseValid();
+	const coreDefense = createCoreDefenseLobby(db, id => forest?.roomOf(id) ?? null, coreEnabled);
+	const coreMatches = createCoreDefenseMatchService(db, coreEnabled);
+	const woeMatches = createWoeMatchService(db, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid(), Date.now, {canSchedule:()=>!!forest && leaseValid(), coreDefense:coreMatches});
+	if ((Bun.env.FOREST_WOE_ENABLED === "1" || Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1") && forest) woeMatches.start();
 	if (forest && leaseToken) {
 		getRedis().on("error", fenceLease);
 		getRedis().on("close", fenceLease);
@@ -1747,6 +1752,24 @@ async function startServer(): Promise<void> {
 					if (req.method!=="POST" || url.pathname==="/forest/quests") return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
 					return jsonResponse(forestQuests.action(playerId,url.pathname.endsWith("/accept") ? "accept" : url.pathname.endsWith("/cancel") ? "cancel" : "claim",await readSocialJson(req,Math.min(config.maxBodyBytes,4096))));
 				}
+				if (["/forest/core-defense/match/state", "/forest/core-defense/match/current", "/forest/core-defense/match/deploy", "/forest/core-defense/match/forfeit", "/forest/core-defense/rooms", "/forest/core-defense/state", "/forest/core-defense/create", "/forest/core-defense/join", "/forest/core-defense/start", "/forest/core-defense/leave"].includes(url.pathname)) {
+                    const playerId=await requireAuth(req,ctx);
+                    if(!coreEnabled()) return jsonResponse({error:"FOREST_CORE_DEFENSE_UNAVAILABLE"},503);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:forest-core-defense",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+                    let result;
+                    if(req.method==="GET" && url.pathname==="/forest/core-defense/rooms") result=coreDefense.list();
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/state") result=coreDefense.state(playerId,url.searchParams.get("room_id"));
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/match/state") result=coreMatches.state(playerId,url.searchParams.get("match_id"),url.searchParams.get("after")??"0");
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/match/current") result=coreMatches.current(playerId);
+                    else if(req.method==="POST" && ["/forest/core-defense/create","/forest/core-defense/join","/forest/core-defense/start","/forest/core-defense/leave","/forest/core-defense/match/deploy","/forest/core-defense/match/forfeit"].includes(url.pathname)) {
+                        const body=await readSocialJson(req,Math.min(config.maxBodyBytes,4096));
+                        if(url.pathname.endsWith('/match/deploy')) result=coreMatches.deploy(playerId,body);
+                        else if(url.pathname.endsWith('/match/forfeit')) result=coreMatches.forfeit(playerId,body);
+                        else {const action=url.pathname.substring('/forest/core-defense/'.length) as 'create'|'join'|'start'|'leave';result=coreDefense[action](playerId,body);}
+                    } else return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+                    return jsonResponse(result.data,result.status);
+                }
+
 				if (["/forest/woe/match/state", "/forest/woe/match/current", "/forest/woe/match/deploy", "/forest/woe/match/forfeit"].includes(url.pathname)) {
                     const playerId = await requireAuth(req, ctx);
                     if (Bun.env.FOREST_WOE_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_WOE_UNAVAILABLE"},503);

@@ -7,8 +7,8 @@ type Result={status:number;data:any};
 const fail=(status:number,error:string):Result=>({status,data:{error}});
 const valid=(v:unknown):v is string=>typeof v==='string' && v.length>0 && v.length<=128 && v.trim()===v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
 
-export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:()=>number=Date.now) {
- const row=(id:string)=>db.query('SELECT * FROM woe_matches WHERE match_id=?').get(id) as any;
+export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:()=>number=Date.now, shared?:{canSchedule:()=>boolean; coreDefense:{tickOne:(id:string)=>void}}) {
+ const row=(id:string)=>db.query('SELECT * FROM woe_matches WHERE match_id=? AND room_id NOT IN (SELECT room_id FROM core_defense_rooms)').get(id) as any;
  const member=(id:string,player:string)=>db.query('SELECT * FROM woe_match_participants WHERE match_id=? AND controller_id=? AND human=1').get(id,player) as any;
  const inTransaction=(f:()=>Result):Result=>{if(!canServe())return fail(503,'FOREST_WOE_UNAVAILABLE');return db.transaction(()=>canServe()?f():fail(503,'FOREST_WOE_UNAVAILABLE')).immediate()};
  function append(id:string, seq:number, events:any[]) {for(const e of events)db.query('INSERT INTO woe_match_events VALUES (?,?,?)').run(id,++seq,JSON.stringify(e));if(seq>EVENT_LIMIT)db.query('DELETE FROM woe_match_events WHERE match_id=? AND seq<=?').run(id,seq-EVENT_LIMIT);return seq}
@@ -68,15 +68,15 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
   }).immediate();
  }
  let timer:ReturnType<typeof setInterval>|undefined;let lastCleanup=0;
- function pulse(){if(!canServe())return;const now=clock();if(now-lastCleanup>60_000){
+ function pulse(){if(!(shared?.canSchedule() ?? canServe()))return;const now=clock();if(now-lastCleanup>60_000){
    // Some deployments do not enable SQLite foreign keys; explicitly remove children.
-   db.transaction(()=>{const expired=db.query("SELECT match_id FROM woe_matches WHERE status='FINISHED' AND finished_at<=? LIMIT 32").all(now-RETENTION) as any[];for(const r of expired){for(const table of ['woe_match_events','woe_match_actions','woe_match_participants'])db.query(`DELETE FROM ${table} WHERE match_id=?`).run(r.match_id);db.query('DELETE FROM woe_matches WHERE match_id=?').run(r.match_id)}}).immediate();lastCleanup=now}
-  const running=db.query("SELECT match_id FROM woe_matches WHERE status='RUNNING' ORDER BY match_id LIMIT 256").all() as any[];for(const r of running){if(!canServe())break;tickOne(r.match_id)}
+   db.transaction(()=>{if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED');const expired=db.query("SELECT match_id FROM woe_matches WHERE status='FINISHED' AND finished_at<=? LIMIT 32").all(now-RETENTION) as any[];for(const r of expired){for(const table of ['core_defense_actions','core_defense_results','core_defense_participants','woe_match_events','woe_match_actions','woe_match_participants'])db.query(`DELETE FROM ${table} WHERE match_id=?`).run(r.match_id);db.query('DELETE FROM woe_matches WHERE match_id=?').run(r.match_id)}if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED')}).immediate();lastCleanup=now}
+  const running=db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='RUNNING' ORDER BY m.match_id LIMIT 256").all() as any[];for(const r of running){if(!(shared?.canSchedule() ?? canServe()))break;if(r.cd)shared?.coreDefense.tickOne(r.match_id);else tickOne(r.match_id)}
  }
  return {
   start(){if(!timer){timer=setInterval(pulse,100);timer.unref()}},stop(){if(timer)clearInterval(timer);timer=undefined},pulse,
   state(player:string,id:unknown,after:unknown):Result {if(!valid(id)||typeof after!=='string'||!/^\d{1,15}$/.test(after)||!Number.isSafeInteger(Number(after)))return fail(400,'INVALID_REQUEST');return inTransaction(()=>{const r=row(id);if(!r)return fail(404,'MATCH_UNAVAILABLE');if(!member(id,player))return fail(403,'NOT_PARTICIPANT');return {status:200,data:snapshot(r,player,Number(after))}})},
-  current(player:string):Result{return inTransaction(()=>{const r=db.query("SELECT m.* FROM woe_matches m JOIN woe_match_participants p ON p.match_id=m.match_id WHERE p.controller_id=? AND p.human=1 ORDER BY (m.status='RUNNING') DESC,m.created_at DESC LIMIT 1").get(player) as any;return {status:200,data:r?snapshot(r,player,0):{match:null,server_time_unix_ms:clock()}}})},
+  current(player:string):Result{return inTransaction(()=>{const r=db.query("SELECT m.* FROM woe_matches m JOIN woe_match_participants p ON p.match_id=m.match_id WHERE p.controller_id=? AND p.human=1 AND m.room_id NOT IN (SELECT room_id FROM core_defense_rooms) ORDER BY (m.status='RUNNING') DESC,m.created_at DESC LIMIT 1").get(player) as any;return {status:200,data:r?snapshot(r,player,0):{match:null,server_time_unix_ms:clock()}}})},
   deploy:(player:string,b:any)=>action(player,b,'deploy'),forfeit:(player:string,b:any)=>action(player,b,'forfeit')
  };
 }
