@@ -1,0 +1,20 @@
+import { cardById, elementalMultiplier } from './catalog';
+import { validateDeployment, type DeploymentCommand, type MatchState, type Lane } from './engine';
+
+// Only own hand and visible units/labs enter the score. Stable ties spread controllers across lanes.
+export function chooseBotDeployment(state: MatchState, id: string): DeploymentCommand | null {
+ const p=state.controllers.find(c=>c.id===id); if(!p || state.result)return null;
+ const choices: {cmd:DeploymentCommand;score:number}[]=[];
+ const bias=[...id].reduce((n,c)=>(n*33+c.charCodeAt(0))>>>0,0);
+ for(const lane of ['left','right'] as Lane[]) for(let slot=0;slot<3;slot++) {
+  const card=cardById[p.slots[slot]], cmd={actionId:`bot:${state.tick}:${id}`,controllerId:id,slot,cardId:card.id,lane};
+  if(validateDeployment(state,cmd))continue;
+  const enemies=state.units.filter(u=>u.team!==p.team&&u.lane===lane), allies=state.units.filter(u=>u.team===p.team&&u.lane===lane);
+  const lab=state.laboratories.find(l=>l.team===p.team&&l.lane===lane)!;
+  const counters=enemies.reduce((n,u)=>n+elementalMultiplier(card.element,cardById[u.cardId].element)-1,0);
+  const threat=enemies.reduce((n,u)=>n+Math.max(0,1-Math.abs(u.position.y-lab.position.y)/700),0);
+  const score=threat*5+enemies.length*1.5-allies.length*1.2+(1-lab.hp/lab.maxHp)*3+counters*4+card.cost*0.12+((bias+state.tick/10)%2===(lane==='left'?0:1)?0.3:0)-slot*0.001;
+  choices.push({cmd,score});
+ }
+ choices.sort((a,b)=>b.score-a.score);return choices[0]?.cmd??null;
+}

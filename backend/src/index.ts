@@ -14,6 +14,7 @@ import { createFriends } from "./social/friends";
 import { createForestPresence, loadCatalog, type ForestData } from "./forest/presence";
 import { createForestDuels } from "./forest/duels";
 import { createWoeLobby } from "./woe/lobby";
+import { createWoeMatchService } from "./woe/match_service";
 import { createForestQuests, ForestQuestError } from "./forest_quests";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
@@ -1366,6 +1367,8 @@ async function startServer(): Promise<void> {
 	}
 	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite,protocol) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite,protocol); } }, () => { try { return !!getRankedServices(); } catch { return false; } });
 	const woe = createWoeLobby(db, id => forest?.roomOf(id) ?? null, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid());
+	const woeMatches = createWoeMatchService(db, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid());
+	if (Bun.env.FOREST_WOE_ENABLED === "1" && forest) woeMatches.start();
 	if (forest && leaseToken) {
 		getRedis().on("error", fenceLease);
 		getRedis().on("close", fenceLease);
@@ -1744,6 +1747,20 @@ async function startServer(): Promise<void> {
 					if (req.method!=="POST" || url.pathname==="/forest/quests") return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
 					return jsonResponse(forestQuests.action(playerId,url.pathname.endsWith("/accept") ? "accept" : url.pathname.endsWith("/cancel") ? "cancel" : "claim",await readSocialJson(req,Math.min(config.maxBodyBytes,4096))));
 				}
+				if (["/forest/woe/match/state", "/forest/woe/match/current", "/forest/woe/match/deploy", "/forest/woe/match/forfeit"].includes(url.pathname)) {
+                    const playerId = await requireAuth(req, ctx);
+                    if (Bun.env.FOREST_WOE_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_WOE_UNAVAILABLE"},503);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:forest-woe",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+                    let result;
+                    if(req.method === "GET" && url.pathname.endsWith("/state")) result=woeMatches.state(playerId,url.searchParams.get("match_id"),url.searchParams.get("after") ?? "0");
+                    else if(req.method === "GET" && url.pathname.endsWith("/current")) result=woeMatches.current(playerId);
+                    else if(req.method === "POST" && (url.pathname.endsWith("/deploy") || url.pathname.endsWith("/forfeit"))) {
+                        const body=await readSocialJson(req,Math.min(config.maxBodyBytes,4096));
+                        result=url.pathname.endsWith("/deploy")?woeMatches.deploy(playerId,body):woeMatches.forfeit(playerId,body);
+                    } else return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+                    return jsonResponse(result.data,result.status);
+                }
+
 				if (["/forest/woe/rooms", "/forest/woe/state", "/forest/woe/create", "/forest/woe/join", "/forest/woe/seat", "/forest/woe/leave", "/forest/woe/start"].includes(url.pathname)) {
 					const playerId = await requireAuth(req, ctx);
 					if (Bun.env.FOREST_WOE_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_WOE_UNAVAILABLE"}, 503);

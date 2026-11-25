@@ -249,9 +249,17 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
   room=await (await post('/forest/woe/seat',{room_id:roomId,seat:'red:left',expected_revision:room.revision,client_action_id:'b-seat'},b.token)).json();
   expect((await post('/forest/woe/start',{room_id:roomId,fill_bots:false,expected_revision:room.revision,client_action_id:'not-host'},b.token)).status).toBe(403);
   const started=await post('/forest/woe/start',{room_id:roomId,fill_bots:false,expected_revision:room.revision,client_action_id:'start'},a.token);expect(started.status).toBe(200);const start:any=await started.json();expect(start.match_id).toBeTruthy();
+  expect((await get(`/forest/woe/match/state?match_id=${start.match_id}&after=0`)).status).toBe(401);
+  expect((await get(`/forest/woe/match/state?match_id=${start.match_id}&after=0`,c.token)).status).toBe(403);
+  const current:any=await (await get('/forest/woe/match/current',a.token)).json();expect(current.match_id).toBe(start.match_id);
+  const hand=current.snapshot.players.find((p:any)=>p.id===a.id).slots;
+  const command={match_id:start.match_id,client_action_id:'http-deploy',slot:0,card_id:hand[0],lane:'left'};
+  const deployed=await post('/forest/woe/match/deploy',command,a.token);expect(deployed.status).toBe(200);const response=await deployed.json();
+  expect(await (await post('/forest/woe/match/deploy',command,a.token)).json()).toEqual(response);
+  expect((await post('/forest/woe/match/deploy',{...command,client_action_id:'stale'},a.token)).status).toBe(409);
   const bview:any=await (await get(`/forest/woe/state?room_id=${roomId}&viewer_id=${a.id}`,b.token)).json();expect(bview.snapshot.players.find((p:any)=>p.id===a.id).slots).toBeUndefined();expect(bview.snapshot.players.find((p:any)=>p.id===b.id).slots).toBeDefined();
   const secondaryPort=await freePort(),secondary=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env:{...env,PORT:String(secondaryPort),FOREST_WS_ENABLED:'0',FOREST_WOE_ENABLED:'0'},stdout:'ignore',stderr:'ignore'});
-  try {let up=false;for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${secondaryPort}/health`)).ok){up=true;break}}catch{}await Bun.sleep(100)}expect(up).toBe(true);expect((await fetch(`http://127.0.0.1:${secondaryPort}/forest/woe/rooms`,{headers:{Authorization:`Bearer ${a.token}`}})).status).toBe(503);
+  try {let up=false;for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${secondaryPort}/health`)).ok){up=true;break}}catch{}await Bun.sleep(100)}expect(up).toBe(true);expect((await fetch(`http://127.0.0.1:${secondaryPort}/forest/woe/rooms`,{headers:{Authorization:`Bearer ${a.token}`}})).status).toBe(503);expect((await fetch(`http://127.0.0.1:${secondaryPort}/forest/woe/match/current`,{headers:{Authorization:`Bearer ${a.token}`}})).status).toBe(503);
   // Optional Godot client exercise reuses these authenticated accounts and live Forest sockets.
   if (Bun.env.WOE_GODOT_BIN) {
    // Forward the first create but replace its successful response: the client

@@ -7,8 +7,8 @@ export interface Point { x: number; y: number }
 export interface Controller { id: string; team: Team; zealTenths: number; slots: string[]; queue: string[]; actionIds: string[] }
 export interface Laboratory { id: string; team: Team; lane: Lane; hp: number; maxHp: number; position: Point }
 export interface Unit { id: number; controllerId: string; team: Team; lane: Lane; cardId: string; hp: number; position: Point; route: Point[]; waypoint: number; targetLane: Lane; cooldown: number }
-export type CombatEvent = { type: "attack"; attacker: number; target: number | string; damage: number } | { type: "death"; target: number | string };
-export interface MatchState { mode: Mode; kind: "woe"; tick: number; controllers: Controller[]; laboratories: Laboratory[]; units: Unit[]; nextUnitId: number; events: CombatEvent[]; result: { winner: Team | null; reason: "laboratories" | "timeout" } | null }
+export type CombatEvent = { type: "attack" | "death"; attacker?: number; target: number | string; damage?: number; tick: number; team: Team; cardId: string; position: Point; targetPosition: Point };
+export interface MatchState { mode: Mode; kind: "woe"; tick: number; controllers: Controller[]; laboratories: Laboratory[]; units: Unit[]; nextUnitId: number; events: CombatEvent[]; result: { winner: Team | null; reason: "laboratories" | "timeout" | "forfeit" | "abandoned" } | null }
 export interface DeploymentCommand { actionId: string; controllerId: string; slot: number; cardId: string; lane: Lane }
 export type DeploymentResult = { accepted: true; state: MatchState } | { accepted: false; state: MatchState; reason: string };
 const teams: Team[] = ["blue", "red"];
@@ -114,10 +114,10 @@ export function advanceTick(state: MatchState): MatchState {
       if (unit.cooldown === 0) {
         const damage = target ? attackDamage(card.damage,cardById[target.cardId].defense,elementalMultiplier(card.element,cardById[target.cardId].element)) : attackDamage(card.damage,0);
         const victim = target ?? lab; const dealt = Math.min(victim.hp,damage); victim.hp -= dealt;
-        next.events.push({ type: "attack", attacker: unit.id, target: victim.id, damage: dealt });
+        next.events.push({ type: "attack", attacker: unit.id, target: victim.id, damage: dealt, tick: next.tick, team: unit.team, cardId: unit.cardId, position: copy(unit.position), targetPosition: copy(victim.position) });
         unit.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
         if (victim.hp === 0) {
-          next.events.push({ type: "death", target: victim.id });
+          next.events.push({ type: "death", attacker: unit.id, target: victim.id, tick: next.tick, team: unit.team, cardId: unit.cardId, position: copy(unit.position), targetPosition: copy(victim.position) });
           if (!target && next.laboratories.every(l => l.team !== lab.team || l.hp === 0)) finish(next,unit.team);
         }
       }
@@ -133,5 +133,5 @@ export function advanceTick(state: MatchState): MatchState {
 }
 /** Pass only an authenticated controller ID; omit it for a public/spectator view. */
 export function getPublicSnapshot(state: MatchState, viewerId?: string) {
-  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, ...(viewerId === p.id ? { zeal:p.zealTenths / 10, slots:p.slots } : {}) })), events:state.events, result:state.result });
+  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, maxHp:cardById[u.cardId].hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, ...(viewerId === p.id ? { zeal:p.zealTenths / 10, slots:p.slots } : {}) })), events:state.events, result:state.result });
 }

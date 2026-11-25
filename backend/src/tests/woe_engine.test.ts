@@ -37,7 +37,7 @@ test("all cards wait ten ticks between attacks even after their target dies",()=
    let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); s.controllers[1].zealTenths=100; s=deploy(s,1);
    s.units[0].cardId=card.id; s.units[1].hp=1; s.units[2].hp=10000;
    s.units.forEach(u=>u.position={x:960,y:540}); s.units[1].cooldown=100; s.units[2].cooldown=100;
-   s=advanceTick(s); expect(s.events).toContainEqual({type:"death",target:2});
+   s=advanceTick(s); expect(s.events.some(e=>e.type==="death"&&e.target===2)).toBe(true);
    for(let i=0;i<9;i++) { s=advanceTick(s); expect(s.events.some(e=>e.type==="attack" && e.attacker===1)).toBe(false); }
    s=advanceTick(s); expect(s.events.some(e=>e.type==="attack" && e.attacker===1 && e.target===3)).toBe(true);
  }
@@ -89,11 +89,11 @@ test("mirrored spawns and movement",()=>{
 test("group combat, deterministic targets, multiplier and death",()=>{
  let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); s.controllers[1].zealTenths=100; s=deploy(s,1);
  s.units[0].cardId="neon"; s.units[1].cardId="solcarp"; s.units[2].cardId="solcarp"; s.units.forEach(u=>u.position={x:960,y:540}); s.units[1].hp=1;
- s=advanceTick(s); expect(s.events[0]).toEqual({type:"attack",attacker:1,target:2,damage:1}); expect(s.events).toContainEqual({type:"death",target:2}); expect(s.units.some(u=>u.id===2)).toBe(false); expect(s.events.some(e=>e.type==="attack"&&e.attacker===3)).toBe(true);
+ s=advanceTick(s); expect(s.events[0]).toMatchObject({type:"attack",attacker:1,target:2,damage:1}); expect(s.events.some(e=>e.type==="death"&&e.target===2)).toBe(true); expect(s.units.some(u=>u.id===2)).toBe(false); expect(s.events.some(e=>e.type==="attack"&&e.attacker===3)).toBe(true);
  s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); s.units[0].cardId="neon"; s.units[1].cardId="solcarp"; s.units.forEach(u=>u.position={x:960,y:540}); s=advanceTick(s); expect(s.events[0]).toMatchObject({damage:attackDamage(cardById.neon.damage,cardById.solcarp.defense,1.18)});
 });
 test("laboratory redirection and immediate victory",()=>{
- let s=make(); s.controllers[0].zealTenths=100; s=deploy(s,0); s.laboratories.find(l=>l.id==="red:left")!.hp=0; s=advanceTick(s); expect(s.units[0].targetLane).toBe("right"); const lab=s.laboratories.find(l=>l.id==="red:right")!; lab.hp=1; s.units[0].position={...lab.position}; s=advanceTick(s); expect(s.result).toEqual({winner:"blue",reason:"laboratories"}); expect(s.events).toContainEqual({type:"death",target:"red:right"}); expect(advanceTick(s)).toBe(s);
+ let s=make(); s.controllers[0].zealTenths=100; s=deploy(s,0); s.laboratories.find(l=>l.id==="red:left")!.hp=0; s=advanceTick(s); expect(s.units[0].targetLane).toBe("right"); const lab=s.laboratories.find(l=>l.id==="red:right")!; lab.hp=1; s.units[0].position={...lab.position}; s=advanceTick(s); expect(s.result).toEqual({winner:"blue",reason:"laboratories"}); expect(s.events.some(e=>e.type==="death"&&e.target==="red:right")).toBe(true); expect(advanceTick(s)).toBe(s);
 });
 test("timeout compares lab count then health and permits draw",()=>{
  let s=make(); s.tick=1799; expect(advanceTick(s).result?.winner).toBe(null); s=make(); s.tick=1799; s.laboratories[0].hp=1; s.laboratories[1].hp=1; s.laboratories[2].hp=0; expect(advanceTick(s).result?.winner).toBe("blue"); s=make(); s.tick=1799; s.laboratories[0].hp--; expect(advanceTick(s).result?.winner).toBe("red");

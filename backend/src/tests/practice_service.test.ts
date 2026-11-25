@@ -24,6 +24,8 @@ test('Practice owns combat, replays actions and settles capped XP once', () => {
   db.query("UPDATE woe_rooms SET status='STARTED'").run();
   expect(()=>service.start('alice','woe-started',selection)).toThrow('PLAYER_BUSY');
   db.query("UPDATE woe_rooms SET expires_at=?").run(now);
+  expect(()=>service.start('alice','woe-still-running',selection)).toThrow('PLAYER_BUSY');
+  db.query("UPDATE woe_rooms SET status='EXPIRED'").run();
   expect(()=>service.start('alice','bad',{...selection,entity_id:'missing'})).toThrow('UNTRUSTED_SETUP');
   const start=service.start('alice','start0',selection) as any;
   expect(start.kind).toBe('practice'); expect(start.enemy.spell_ids).toBeUndefined();

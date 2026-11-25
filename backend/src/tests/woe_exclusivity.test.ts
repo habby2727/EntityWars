@@ -1,3 +1,4 @@
+import {createWoeMatchService} from '../woe/match_service';
 import {test,expect} from 'bun:test';
 import {Database} from 'bun:sqlite';
 import {readFileSync,readdirSync,mkdtempSync,rmSync} from 'node:fs';
@@ -20,12 +21,12 @@ test('WOE membership guards Ranked and friendly admissions, expiry and candidate
  expect(d.request('b',{target_player_id:'a',client_action_id:'r2'}).data.error).toBe('PLAYER_BUSY');
  expect(q.join('b',{}).state).toBe('QUEUED');expect(w.join('b',{room_id_or_code:room,client_action_id:'busy'}).data.error).toBe('PLAYER_BUSY');q.cancel('b');
  r=w.seat('a',{room_id:room,seat:'blue:left',expected_revision:r.revision,client_action_id:'seat'}).data;
- expect(w.start('a',{room_id:room,fill_bots:true,expected_revision:r.revision,client_action_id:'start'}).status).toBe(200);
+ r=w.start('a',{room_id:room,fill_bots:true,expected_revision:r.revision,client_action_id:'start'}).data;expect(r.match_id).toBeTruthy();
  expect(()=>q.join('a',{})).toThrow('PLAYER_BUSY');expect(d.request('b',{target_player_id:'a',client_action_id:'r3'}).data.error).toBe('PLAYER_BUSY');
  // Legacy inconsistent data must never allow the busy queued candidate to match.
  db.query('INSERT INTO pvp_queue VALUES (?,?,?,?)').run('a',now,now+1000,JSON.stringify({selection:{},snapshot:snap('a')}));
  expect(q.join('c',{}).state).toBe('QUEUED');expect((db.query('SELECT count(*) n FROM pvp_matches').get() as any).n).toBe(0);q.cancel('a');q.cancel('c');
- expect(w.leave('a',{room_id:room,client_action_id:'leave'}).status).toBe(200);expect(q.join('a',{}).state).toBe('QUEUED');q.cancel('a');
+ expect(w.leave('a',{room_id:room,client_action_id:'leave'}).status).toBe(200);expect(()=>q.join('a',{})).toThrow('PLAYER_BUSY');const matches=createWoeMatchService(db,()=>true,()=>now);expect(matches.forfeit('a',{match_id:r.match_id,client_action_id:'forfeit'}).status).toBe(200);expect(q.join('a',{}).state).toBe('QUEUED');q.cancel('a');
  r=w.create('a',{mode:'1v1',client_action_id:'again'}).data;now=r.expires_at;expect(activeWoe(db,'a',now)).toBe(false);expect(q.join('a',{}).state).toBe('QUEUED');
  expect((db.query('SELECT count(*) n FROM woe_members').get() as any).n).toBe(1);db.close();
 });

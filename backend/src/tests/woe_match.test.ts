@@ -1,0 +1,53 @@
+import {test,expect} from 'bun:test';
+import {Database} from 'bun:sqlite';
+import {readFileSync,readdirSync} from 'node:fs';
+import {resolve,join} from 'node:path';
+import {createWoeLobby} from '../woe/lobby';
+import {createWoeMatchService} from '../woe/match_service';
+import {activeWoe} from '../woe/busy';
+import {initializeMatch} from '../woe/engine';
+function setup(mode='1v1',players=['a']) {
+ const db=new Database(':memory:');db.exec('PRAGMA foreign_keys=ON');const dir=resolve(import.meta.dir,'../../migrations/sqlite');for(const f of readdirSync(dir).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(join(dir,f),'utf8'));
+ for(const id of ['a','b','c','d','e'])db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}');
+ let now=1000000,enabled=true;const lobby=createWoeLobby(db,()=> 'duel_clearing',()=>enabled,()=>now),service=createWoeMatchService(db,()=>enabled,()=>now);
+ let r=lobby.create(players[0],{mode,client_action_id:'create'}).data;const room=r.room_id;
+ for(const id of players.slice(1))r=lobby.join(id,{room_id_or_code:room,client_action_id:'join'}).data;
+ const seats=mode==='1v1'?['blue:left','red:left']:['blue:left','blue:right','red:left','red:right'];
+ for(let i=0;i<players.length;i++)r=lobby.seat(players[i],{room_id:room,seat:seats[i],expected_revision:r.revision,client_action_id:'seat'}).data;
+ const start=lobby.start(players[0],{room_id:room,fill_bots:true,expected_revision:r.revision,client_action_id:'start'});expect(start.status).toBe(200);
+ return {db,lobby,service,id:start.data.match_id,room,advance:(ms:number)=>now+=ms,disable:()=>enabled=false,enable:()=>enabled=true,now:()=>now};
+}
+test('ticks, bots, restart, lease fence and bounded catch-up',()=>{
+ const h=setup();h.service.pulse();const a=h.service.state('a',h.id,'0').data;expect(a.tick).toBe(1);expect(a.events.some((e:any)=>e.type==='spawn')).toBe(true);expect(a.snapshot.players.find((p:any)=>p.id!=='a').slots).toBeUndefined();h.advance(3600_000);const replacement=createWoeMatchService(h.db,()=>true,h.now);replacement.pulse();expect(replacement.state('a',h.id,'0').data.tick).toBe(2);h.disable();h.service.pulse();expect(h.service.state('a',h.id,'0').status).toBe(503);h.enable();expect(h.service.state('a',h.id,'0').data.tick).toBe(2);h.db.close();
+});
+test('deploy is private, validated, idempotent and journaled',()=>{
+ const h=setup('1v1',['a','b']);const initial=h.service.state('a',h.id,'0').data,card=initial.snapshot.players.find((p:any)=>p.id==='a').slots[0];const body={match_id:h.id,client_action_id:'one',slot:0,card_id:card,lane:'left'};const first=h.service.deploy('a',body);expect(first.status).toBe(200);expect(h.service.deploy('a',body)).toEqual(first);expect(h.service.deploy('a',{...body,lane:'right'}).status).toBe(409);expect(h.service.deploy('a',{...body,client_action_id:'stale'}).status).toBe(409);expect(h.service.deploy('b',{...body,client_action_id:'forge',controller_id:'a'}).status).toBe(400);expect(h.service.state('c',h.id,'0').status).toBe(403);h.service.pulse();const page=h.service.state('a',h.id,'0').data;expect(page.events[0]).toMatchObject({seq:1,type:'spawn',card_id:card});expect(h.service.state('a',h.id,'1').data.events.every((x:any)=>x.seq>1)).toBe(true);expect(page.snapshot.units[0].maxHp).toBeGreaterThan(0);h.db.close();
+});
+test('leave preserves match, forfeit releases reservation and retains result',()=>{
+ const h=setup('1v1',['a','b']);expect(h.lobby.leave('a',{room_id:h.room,client_action_id:'leave'}).status).toBe(200);expect(activeWoe(h.db,'a',h.now())).toBe(true);const result=h.service.forfeit('a',{match_id:h.id,client_action_id:'f'});expect(result.data.snapshot.result).toEqual({winner:'red',reason:'forfeit'});expect(activeWoe(h.db,'a',h.now())).toBe(false);expect(h.service.current('a').data.match_id).toBe(h.id);expect(h.service.state('b',h.id,'0').data.events.at(-1).type).toBe('result');h.db.close();
+});
+test('2v2 forfeit enables bot takeover',()=>{
+ const h=setup('2v2',['a','b','c']);expect(h.service.forfeit('a',{match_id:h.id,client_action_id:'f'}).status).toBe(200);expect(h.service.state('b',h.id,'0').data.status).toBe('RUNNING');h.service.pulse();const s=h.service.state('b',h.id,'0').data;expect(s.snapshot.units.some((u:any)=>u.controllerId==='a')).toBe(true);expect(h.service.deploy('a',{match_id:h.id,client_action_id:'d',slot:0,card_id:'neon',lane:'left'}).data.error).toBe('FORFEITED');h.db.close();
+});
+test('event cursor gaps request a resync',()=>{
+ const h=setup();h.service.pulse();h.db.query('DELETE FROM woe_match_events WHERE match_id=?').run(h.id);h.db.query('UPDATE woe_matches SET event_seq=2002 WHERE match_id=?').run(h.id);h.db.query('INSERT INTO woe_match_events VALUES (?,?,?)').run(h.id,2002,JSON.stringify({type:'spawn'}));expect(h.service.state('a',h.id,'0').data.resync_required).toBe(true);expect(h.service.state('a',h.id,'9999').data.resync_required).toBe(true);h.db.close();
+});
+test('timeout uses 1800 simulation ticks and releases both humans',()=>{
+ const h=setup('1v1',['a','b']);for(let i=0;i<1800;i++)h.service.pulse();const state=h.service.state('a',h.id,'0').data;expect(state.tick).toBe(1800);expect(state.snapshot.result).toEqual({winner:null,reason:'timeout'});expect(activeWoe(h.db,'b',h.now())).toBe(false);h.db.close();
+});
+test('scheduler advances without polling and stops when fenced',async()=>{
+ const h=setup('1v1',['a','b']);h.service.start();await Bun.sleep(350);h.disable();const tick=(h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(h.id) as any).state_json;await Bun.sleep(220);expect((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(h.id) as any).state_json).toBe(tick);expect(JSON.parse(tick).tick).toBeGreaterThanOrEqual(2);h.service.stop();h.db.close();
+});
+test('ordered event pagination and retention gap',()=>{
+ const h=setup();for(let i=1;i<=205;i++)h.db.query('INSERT INTO woe_match_events VALUES (?,?,?)').run(h.id,i,JSON.stringify({type:'spawn',tick:i}));h.db.query('UPDATE woe_matches SET event_seq=205 WHERE match_id=?').run(h.id);const a=h.service.state('a',h.id,'0').data,b=h.service.state('a',h.id,String(a.cursor)).data,c=h.service.state('a',h.id,String(b.cursor)).data;expect([a.events.length,b.events.length,c.events.length]).toEqual([100,100,5]);expect(c.cursor).toBe(205);h.db.query('DELETE FROM woe_match_events WHERE match_id=? AND seq<50').run(h.id);expect(h.service.state('a',h.id,'0').data.resync_required).toBe(true);h.db.close();
+});
+
+test('simultaneous four-bot matches are isolated and deploy in both lanes',()=>{
+ const h=setup();const now=h.now();for(let i=0;i<8;i++){const id='load'+i,ids=Array.from({length:4},(_,n)=>`${id}:bot:${n}`),state=initializeMatch('2v2',id,ids);h.db.query("INSERT INTO woe_matches(match_id,room_id,status,state_json,created_at,updated_at) VALUES (?,?,'RUNNING',?,?,?)").run(id,'room'+i,JSON.stringify(state),now,now);for(let n=0;n<4;n++)h.db.query('INSERT INTO woe_match_participants(match_id,controller_id,team,human) VALUES (?,?,?,0)').run(id,ids[n],n<2?'blue':'red');}
+ const t=performance.now();for(let i=0;i<100;i++)h.service.pulse();const elapsed=performance.now()-t;console.log(`WOE load: 9 concurrent matches, 100 pulses: ${elapsed.toFixed(1)} ms`);
+ for(let i=0;i<8;i++){const r:any=h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get('load'+i);const state=JSON.parse(r.state_json);expect(state.tick).toBe(100);expect(state.units.length).toBeLessThanOrEqual(100);expect(state.units.length).toBeGreaterThan(0);expect(new Set(state.units.map((u:any)=>u.lane)).size).toBe(2);}
+ h.db.close();
+});
+test('terminal retention expires and removes dependent journal records',()=>{
+ const h=setup('1v1',['a','b']);h.service.forfeit('a',{match_id:h.id,client_action_id:'f'});h.advance(24*60*60_000+1);h.service.pulse();expect(h.service.state('b',h.id,'0').status).toBe(404);for(const table of ['woe_match_events','woe_match_actions','woe_match_participants'])expect((h.db.query(`SELECT count(*) n FROM ${table} WHERE match_id=?`).get(h.id) as any).n).toBe(0);h.db.close();
+});
