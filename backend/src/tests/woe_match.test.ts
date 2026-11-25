@@ -53,6 +53,41 @@ test('timeout uses 1800 simulation ticks and releases both humans',()=>{
 test('scheduler advances without polling and stops when fenced',async()=>{
  const h=setup('1v1',['a','b']);h.service.start();await Bun.sleep(350);h.disable();const tick=(h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(h.id) as any).state_json;await Bun.sleep(220);expect((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(h.id) as any).state_json).toBe(tick);expect(JSON.parse(tick).tick).toBeGreaterThanOrEqual(2);h.service.stop();h.db.close();
 });
+test('started lobby reads committed match state after ticks and service restart',()=>{
+ const h=setup('1v1',['a','b']);
+ expect((h.db.query('SELECT match_json FROM woe_rooms WHERE room_id=?').get(h.room) as any).match_json).toBeNull();
+ h.db.query("UPDATE woe_rooms SET match_json='legacy stale snapshot' WHERE room_id=?").run(h.room);
+ for(let i=0;i<4;i++)h.service.pulse();
+ const restarted=createWoeLobby(h.db,()=> 'duel_clearing',()=>true,h.now);
+ expect(restarted.state('a',h.room).data.snapshot.tick).toBe(4);
+ expect(h.service.state('a',h.id,'0').data.snapshot.tick).toBe(4);
+ expect((h.db.query('SELECT match_json FROM woe_rooms WHERE room_id=?').get(h.room) as any).match_json).toBe('legacy stale snapshot');
+ h.db.close();
+});
+test('scheduled tick errors back off without starving other matches or crashing',async()=>{
+ const h=setup('1v1',['a','b']);let room=h.lobby.create('e',{mode:'1v1',client_action_id:'create'}).data;
+ room=h.lobby.seat('e',{room_id:room.room_id,seat:'blue:left',expected_revision:room.revision,client_action_id:'seat'}).data;
+ room=h.lobby.start('e',{room_id:room.room_id,expected_revision:room.revision,client_action_id:'start',fill_bots:true}).data;
+ h.db.exec(`CREATE TRIGGER fail_one_tick BEFORE UPDATE OF state_json ON woe_matches WHEN old.match_id='${h.id}' BEGIN SELECT RAISE(ABORT,'fixture failure'); END`);
+ const original=console.error;let errors=0;console.error=()=>{errors++};
+ try {h.service.start();await Bun.sleep(1450);h.service.stop();expect(errors).toBeGreaterThanOrEqual(1);expect(errors).toBeLessThanOrEqual(2);expect(h.service.state('e',room.match_id,'0').data.tick).toBeGreaterThanOrEqual(10);expect(h.service.state('a',h.id,'0').data.tick).toBe(0)} finally {h.service.stop();console.error=original;h.db.close()}
+});
+test('scheduler guard exceptions back off and recover without terminating the process',async()=>{
+ const h=setup('1v1',['a','b']);let throwOnce=true;let errors=0;const original=console.error;
+ const runtime=createWoeMatchService(h.db,()=>true,h.now,{canSchedule:()=>{if(throwOnce){throwOnce=false;throw Error('fixture guard failure')}return true},coreDefense:{tickOne:()=>{}}});
+ console.error=()=>{errors++};
+ try {runtime.start();await Bun.sleep(1450);runtime.stop();expect(errors).toBe(1);expect(h.service.state('a',h.id,'0').data.tick).toBeGreaterThanOrEqual(2)} finally {runtime.stop();console.error=original;h.db.close()}
+});
+test('scheduler catches up after a short event-loop stall without duplicate ticks',async()=>{
+ const h=setup('1v1',['a','b']);h.service.start();
+ try {
+  await Bun.sleep(150);const before=h.service.state('a',h.id,'0').data.tick;
+  const started=performance.now();Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,350);await Bun.sleep(300);
+  const elapsed=performance.now()-started,after=h.service.state('a',h.id,'0').data.tick;
+  expect(after-before).toBeGreaterThanOrEqual(5);
+  expect(after-before).toBeLessThanOrEqual(Math.ceil(elapsed/100)+1);
+ } finally {h.service.stop();h.db.close()}
+});
 test('ordered event pagination and retention gap',()=>{
  const h=setup();for(let i=1;i<=205;i++)h.db.query('INSERT INTO woe_match_events VALUES (?,?,?)').run(h.id,i,JSON.stringify({type:'spawn',tick:i}));h.db.query('UPDATE woe_matches SET event_seq=205 WHERE match_id=?').run(h.id);const a=h.service.state('a',h.id,'0').data,b=h.service.state('a',h.id,String(a.cursor)).data,c=h.service.state('a',h.id,String(b.cursor)).data;expect([a.events.length,b.events.length,c.events.length]).toEqual([100,100,5]);expect(c.cursor).toBe(205);h.db.query('DELETE FROM woe_match_events WHERE match_id=? AND seq<50').run(h.id);expect(h.service.state('a',h.id,'0').data.resync_required).toBe(true);h.db.close();
 });

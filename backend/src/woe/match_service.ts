@@ -22,7 +22,6 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
   for(const c of state.controllers)c.actionIds=[];
   const json=JSON.stringify(state);
   db.query('UPDATE woe_matches SET state_json=?,event_seq=?,revision=revision+1,updated_at=?,status=?,finished_at=? WHERE match_id=?').run(json,seq,now,done?'FINISHED':'RUNNING',done?now:null,r.match_id);
-  db.query('UPDATE woe_rooms SET match_json=?,updated_at=? WHERE room_id=?').run(json,now,r.room_id);
   if(done){db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=?").run(now,r.room_id);db.query('DELETE FROM woe_members WHERE room_id=?').run(r.room_id)}
  }
  function snapshot(r:any,player:string,after:number) {
@@ -68,14 +67,35 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
    state=advanceTick(state);events.push(...state.events);if(!canServe())throw new Error('FOREST_WOE_FENCED');save(r,state,events,clock());if(!canServe())throw new Error('FOREST_WOE_FENCED');
   }).immediate();
  }
- let timer:ReturnType<typeof setInterval>|undefined;let lastCleanup=0;
- function pulse(){if(!(shared?.canSchedule() ?? canServe()))return;const now=clock();if(now-lastCleanup>60_000){
+ let timer:ReturnType<typeof setTimeout>|undefined;let lastCleanup=0, nextDue=0;
+ const failures=new Map<string,{until:number;delay:number}>();
+ function runPulse(isolateFailures=false){if(!(shared?.canSchedule() ?? canServe()))return;const now=clock();if(now-lastCleanup>60_000){
    // Some deployments do not enable SQLite foreign keys; explicitly remove children.
    db.transaction(()=>{if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED');const expired=db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='FINISHED' AND m.finished_at<=? LIMIT 32").all(now-RETENTION) as any[];for(const r of expired){if(r.cd){const actions=db.query('SELECT rowid AS id FROM core_defense_actions WHERE match_id=? LIMIT 32').all(r.match_id) as {id:number}[];for(const a of actions)db.query('DELETE FROM core_defense_actions WHERE rowid=?').run(a.id);if(db.query('SELECT 1 FROM core_defense_actions WHERE match_id=? LIMIT 1').get(r.match_id))continue;}for(const table of ['core_defense_actions','core_defense_results','core_defense_participants','woe_match_events','woe_match_actions','woe_match_participants'])db.query(`DELETE FROM ${table} WHERE match_id=?`).run(r.match_id);db.query('DELETE FROM woe_matches WHERE match_id=?').run(r.match_id)}cleanupCoreDefense(db,now);if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED')}).immediate();lastCleanup=now}
-  const running=db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='RUNNING' ORDER BY m.match_id LIMIT 256").all() as any[];for(const r of running){if(!(shared?.canSchedule() ?? canServe()))break;if(r.cd)shared?.coreDefense.tickOne(r.match_id);else tickOne(r.match_id)}
+  const running=db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='RUNNING' ORDER BY m.match_id LIMIT 256").all() as any[];
+  if(isolateFailures){const live=new Set(running.map(r=>r.match_id));for(const id of failures.keys())if(!live.has(id))failures.delete(id)}
+  for(const r of running){
+   if(!(shared?.canSchedule() ?? canServe()))break;
+   if(isolateFailures && performance.now()<(failures.get(r.match_id)?.until??0))continue;
+   try {if(r.cd)shared?.coreDefense.tickOne(r.match_id);else tickOne(r.match_id);failures.delete(r.match_id)}
+   catch(error){if(!isolateFailures)throw error;if(!(shared?.canSchedule() ?? canServe()))break;const delay=Math.min(30000,(failures.get(r.match_id)?.delay??500)*2);failures.set(r.match_id,{until:performance.now()+delay,delay});console.error('FOREST_MINIGAME_TICK_FAILED',r.match_id,error)}
+  }
+ }
+ function pulse(isolateFailures=false){if(Bun.env.FOREST_WOE_PULSE_PROFILE!=='1')return runPulse(isolateFailures);const start=performance.now();try{return runPulse(isolateFailures)}finally{console.log(`R2_PULSE ${performance.now()-start}`)}}
+ // Deadlines use a monotonic clock. Bound work per callback and wall-time debt;
+ // discarded debt slows simulation under overload but never skips game ticks.
+ function arm(delay:number){timer=setTimeout(scheduled,Math.max(1,delay));timer.unref()}
+ function scheduled(){
+  if(!timer)return;
+  try {
+   if(!(shared?.canSchedule() ?? canServe())){nextDue=performance.now()+100;arm(100);return}
+   const now=performance.now();nextDue=Math.max(nextDue,now-300);
+   let steps=0;while(steps<3 && performance.now()>=nextDue && (shared?.canSchedule() ?? canServe())){pulse(true);nextDue+=100;steps++}arm(nextDue-performance.now())
+  }
+  catch(error){console.error('FOREST_MINIGAME_SCHEDULER_FAILED',error);nextDue=performance.now()+1000;arm(1000)}
  }
  return {
-  start(){if(!timer){timer=setInterval(pulse,100);timer.unref()}},stop(){if(timer)clearInterval(timer);timer=undefined},pulse,
+  start(){if(!timer){nextDue=performance.now()+100;arm(100)}},stop(){if(timer)clearTimeout(timer);timer=undefined;failures.clear()},pulse:()=>pulse(),
   state(player:string,id:unknown,after:unknown):Result {if(!valid(id)||typeof after!=='string'||!/^\d{1,15}$/.test(after)||!Number.isSafeInteger(Number(after)))return fail(400,'INVALID_REQUEST');return inTransaction(()=>{const r=row(id);if(!r)return fail(404,'MATCH_UNAVAILABLE');if(!member(id,player))return fail(403,'NOT_PARTICIPANT');return {status:200,data:snapshot(r,player,Number(after))}})},
   current(player:string):Result{return inTransaction(()=>{const r=db.query("SELECT m.* FROM woe_matches m JOIN woe_match_participants p ON p.match_id=m.match_id WHERE p.controller_id=? AND p.human=1 AND m.room_id NOT IN (SELECT room_id FROM core_defense_rooms) ORDER BY (m.status='RUNNING') DESC,m.created_at DESC LIMIT 1").get(player) as any;return {status:200,data:r?snapshot(r,player,0):{match:null,server_time_unix_ms:clock()}}})},
   deploy:(player:string,b:any)=>action(player,b,'deploy'),forfeit:(player:string,b:any)=>action(player,b,'forfeit')

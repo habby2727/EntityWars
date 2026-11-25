@@ -1,6 +1,6 @@
 ﻿import { test, expect } from "bun:test";
 import { arena, cards, cardById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "../woe/catalog";
-import { initializeMatch, applyDeployment, advanceTick, getPublicSnapshot, type MatchState } from "../woe/engine";
+import { initializeMatch, applyDeployment, advanceTick, getPublicSnapshot, formationPoint, route, move, type MatchState } from "../woe/engine";
 const make = () => initializeMatch("1v1", "seed", ["b", "r"]);
 function deploy(s: MatchState, i: number, slot=0, lane: "left"|"right"="left") { const p=s.controllers[i]; const r=applyDeployment(s,{actionId:`${s.nextUnitId}`,controllerId:p.id,slot,cardId:p.slots[slot],lane}); expect(r.accepted).toBe(true); return r.state; }
 function ticks(s: MatchState, n: number) { for(let i=0;i<n;i++) s=advanceTick(s); return s; }
@@ -98,8 +98,35 @@ test("invalid and duplicate actions do not mutate or charge",()=>{
  const before=structuredClone(s); expect(applyDeployment(s,cmd)).toMatchObject({accepted:false,reason:"DUPLICATE_ACTION_ID"}); expect(s).toEqual(before);
  const fresh={...cmd,actionId:"y",cardId:s.controllers[0].slots[slot]}; s.laboratories[0].hp=0; expect(applyDeployment(s,fresh)).toMatchObject({reason:"LANE_DESTROYED"}); s.laboratories[0].hp=1000; s.controllers[0].zealTenths=0; expect(applyDeployment(s,fresh)).toMatchObject({reason:"INSUFFICIENT_ZEAL"});
 });
-test("mirrored spawns and movement",()=>{
- let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); expect(s.units[0].position.x).toBe(s.units[1].position.x); expect(s.units[0].position.y+s.units[1].position.y).toBe(1080); expect(arena.spawns.blue.left.x+arena.spawns.blue.right.x).toBe(1920); const pos=structuredClone(s.units[0].position); s=advanceTick(s); expect(s.units[0].position).not.toEqual(pos);
+test("bounded spawns and movement",()=>{
+ let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); expect(Math.abs(s.units[0].position.x-s.units[1].position.x)).toBeLessThanOrEqual(48); expect(s.units[0].position.y+s.units[1].position.y).toBe(1080); expect(arena.spawns.blue.left.x+arena.spawns.blue.right.x).toBe(1920); const pos=structuredClone(s.units[0].position); s=advanceTick(s); expect(s.units[0].position).not.toEqual(pos);
+});
+test('formation slots remain bounded, advance and reach short-range laboratories in both directions',()=>{
+ for(const team of ['blue','red'] as const) for(const lane of ['left','right'] as const) {
+  const opponent=team==='blue'?'red':'blue';
+  const positions=new Set<string>();
+  for(let id=1;id<=100;id++) {
+   const spawn=formationPoint(arena.spawns[team][lane],id);
+   positions.add(JSON.stringify(spawn));
+   expect(Math.abs(spawn.x-arena.spawns[team][lane].x)).toBeLessThanOrEqual(30);
+   expect(Math.abs(spawn.y-arena.spawns[team][lane].y)).toBeLessThanOrEqual(20);
+   const u:any={position:spawn,route:route(team,lane,lane,id),waypoint:0};
+   for(let tick=0;tick<500;tick++) {const before={...u.position};move(u,6.5);expect(Math.hypot(u.position.x-before.x,u.position.y-before.y)).toBeLessThanOrEqual(6.500001);}
+   expect(u.waypoint).toBe(u.route.length);
+   expect(Math.hypot(u.position.x-arena.laboratories[opponent][lane].x,u.position.y-arena.laboratories[opponent][lane].y)).toBeLessThanOrEqual(65);
+  }
+  expect(positions.size).toBe(100);
+ }
+});
+test('100 mixed-speed WOE units make deterministic progress without blocking',()=>{
+ for(const team of ['blue','red'] as const){
+  let s=make();const index=team==='blue'?0:1;s.controllers[index].zealTenths=100;s=deploy(s,index);const original=s.units[0];
+  s.units=Array.from({length:100},(_,i)=>({...structuredClone(original),id:i+1,cardId:['neon','mantillo','solcarp'][i%3],position:formationPoint(arena.spawns[team].left,i+1),route:route(team,'left','left',i+1),waypoint:0}));
+  s.nextUnitId=101;const a=ticks(s,40),b=ticks(JSON.parse(JSON.stringify(s)),40);
+  expect(a).toEqual(b);expect(a.units.length).toBe(100);
+  expect(a.units.every(u=>team==='blue'?u.position.y<arena.spawns.blue.left.y:u.position.y>arena.spawns.red.left.y)).toBe(true);
+  expect(new Set(a.units.map(u=>`${u.position.x.toFixed(2)}:${u.position.y.toFixed(2)}`)).size).toBeGreaterThanOrEqual(25);
+ }
 });
 test("group combat, deterministic targets, multiplier and death",()=>{
  let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); s.controllers[1].zealTenths=100; s=deploy(s,1);

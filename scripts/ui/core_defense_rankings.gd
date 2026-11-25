@@ -11,6 +11,8 @@ var _current: Button
 var _previous: Button
 var _retry: Button
 var _mode_buttons := {}
+var _closing := false
+var _requests := 0
 
 func _ready() -> void:
 	_identity = CoreDefenseClient.identity()
@@ -72,8 +74,11 @@ func _process(_delta: float) -> void:
 	if _identity != CoreDefenseClient.identity(): _close()
 
 func _close() -> void:
+	if _closing: return
+	_closing = true
 	_generation += 1
-	queue_free()
+	hide()
+	if _requests == 0: queue_free()
 
 func _set_mode(value: String) -> void:
 	_mode = value
@@ -98,7 +103,12 @@ func _fetch() -> void:
 		_status.text = tr("CD_UNAVAILABLE")
 		_retry.disabled = false
 		return
+	_requests += 1
 	var result: Dictionary = await CoreDefenseClient.request("/forest/core-defense/leaderboard?mode=" + requested_mode + "&month=" + requested_month, null, self)
+	_requests -= 1
+	if _closing:
+		if _requests == 0: queue_free()
+		return
 	if not is_inside_tree() or is_queued_for_deletion() or request_generation != _generation or _identity != CoreDefenseClient.identity(): return
 	_retry.disabled = false
 	if result.get("code") != 200 or not result.get("data") is Dictionary or not result.data.get("entries") is Array or result.data.get("mode") != requested_mode or not result.data.get("current_month") is String or not result.data.get("previous_month") is String or result.data.get("viewed_month") != result.data.get("current_month" if requested_month == "current" else "previous_month"):

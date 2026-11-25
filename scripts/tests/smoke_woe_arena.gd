@@ -130,6 +130,10 @@ func _run() -> void:
 	arena._own.allowedDeploymentLanes = ["right"]
 	arena._update_hud()
 	assert(arena._lane_buttons["blue:right"].visible)
+	arena._action_kind = "match/deploy"
+	arena._finish_action({"code":429,"error":"RATE_LIMIT"})
+	assert(arena._poll == 4.0 and arena._poll_period == 4.0)
+	assert(arena.POLL_INTERVAL == 1.0)
 	arena._accept_state({"match_id":"m","revision":4,"snapshot":arena._snapshot,"resync_required":true,"cursor":50},true)
 	assert(arena._cursor == 50 and arena._units.is_empty())
 	var finished: Dictionary = arena._snapshot.duplicate(true)

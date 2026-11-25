@@ -87,6 +87,10 @@ func play_bot_game(mode: String) -> bool:
 	await process_frame
 	if not check(confirm_dialog(arena), "bot game confirmation"): return false
 	if not check(await wait_for(func(): return arena._finished), "bot game result"): return false
+	if OS.get_environment("FOREST_WOE_CYCLES") == "1":
+		# Deliberately close a finished arena while its state request is in flight.
+		arena._poll_state()
+		if not check(arena._requesting, "state request in flight at return"): return false
 	arena._confirm_return()
 	return check(await wait_for(func(): return scene_is(FOREST) and is_instance_valid(current_scene._presence) and current_scene._presence.entered), "bot game return")
 
@@ -175,10 +179,16 @@ func _run() -> void:
 		if not check(await wait_file("guest_seated"), "guest seat"): quit(1); return
 		pregame._refresh()
 		await create_timer(0.6).timeout
+		if OS.get_environment("FOREST_WOE_LOST_START") == "1": root.get_node("WoeClient").set_script(load("res://scripts/tests/woe_invitation_fault_client.gd"))
 		pregame._start_match()
 	if not check(await wait_for(func(): return scene_is(ARENA), 15.0), "automatic arena transition"): quit(1); return
 	var arena = current_scene
 	if not check(await wait_for(func(): return not arena._own.is_empty() and not arena._snapshot.is_empty()), "arena state"): quit(1); return
+	if role == 0 and OS.get_environment("FOREST_WOE_LOST_START") == "1":
+		var client = root.get_node("WoeClient")
+		if not check(await wait_for(func(): return client.saved_pending().is_empty(), 10.0), "committed start journal reconciled"): quit(1); return
+		if not check(client.start_bodies.size() == 1, "start was not replayed"): quit(1); return
+		print("WOE_LOST_COMMITTED_START_PASS")
 	var match_id: String = arena._match_id
 	if invite_test:
 		var bots := 0
@@ -187,6 +197,11 @@ func _run() -> void:
 		if not check(bots == (2 if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2" else 0), "invited match bot fill"): quit(1); return
 		if role == 1 and OS.get_environment("FOREST_WOE_LOST_ACCEPT") == "1": print("WOE_INVITATION_EXACT_REPLAY_PASS")
 		print("WOE_INVITATION_SCENE_PASS ", OS.get_environment("FOREST_WOE_INVITE_MODE") if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2" else "1v1")
+		if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2":
+			if not check(arena._own.get("allowedDeploymentLanes", []) == ["left"], "selected seat owns left lane"): quit(1); return
+			var denied: Dictionary = await root.get_node("WoeClient").request("/forest/woe/match/deploy", {"match_id":match_id,"client_action_id":"fixture-denied-lane","slot":0,"card_id":arena._own.slots[0],"lane":"right"})
+			if not check(denied.code == 409 and denied.error == "LANE_NOT_OWNED", "server rejects teammate lane"): quit(1); return
+			print("WOE_INVITED_LANE_AUTHORITY_PASS")
 	for p in arena._snapshot.players:
 		if not check(p.has("slots") == (str(p.id) == str(gate.player_id)) and p.has("zeal") == (str(p.id) == str(gate.player_id)), "hand privacy"): quit(1); return
 	signal_file("arena_%d" % role, match_id)
@@ -256,8 +271,15 @@ func _run() -> void:
 	arena._confirm_return()
 	if not check(await wait_for(func(): return scene_is(FOREST) and is_instance_valid(current_scene._presence) and current_scene._presence.entered), "terminal Forest return"): quit(1); return
 	if role == 0:
-		if not await play_bot_game("1v1"): quit(1); return
-		if not await play_bot_game("2v2"): quit(1); return
+		print("WOE_CYCLE_COUNTS before_bots nodes=", get_node_count(), " objects=", Performance.get_monitor(Performance.OBJECT_COUNT))
+		var cycles := 10 if OS.get_environment("FOREST_WOE_CYCLES") == "1" else 2
+		for i in range(cycles):
+			if not await play_bot_game("1v1" if i % 2 == 0 else "2v2"): quit(1); return
+			await create_timer(1.0).timeout
+			var requests := 0
+			for node in root.find_children("*", "HTTPRequest", true, false):
+				if node.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED: requests += 1
+			print("WOE_CYCLE_COUNTS cycle=", i+1, " nodes=", get_node_count(), " objects=", Performance.get_monitor(Performance.OBJECT_COUNT), " orphans=", Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT), " active_http=", requests)
 		print("WOE_BOT_SCENES_PASS 1v1 2v2")
 	print("WOE_FOREST_E2E_PASS ",match_id)
 	quit(0 if not failed else 1)

@@ -6,7 +6,7 @@ const UNIT := preload("res://scripts/ui/woe_unit.gd")
 const EFFECTS := preload("res://scripts/ui/woe_effects.gd")
 const ARENA := "res://data/static/woe_arena.json"
 const CARDS := "res://data/static/woe_cards.json"
-const POLL_INTERVAL := 0.5
+const POLL_INTERVAL := 1.0
 const MENU_ART := preload("res://scripts/ui/menu_art.gd")
 
 class Meter extends Control:
@@ -86,6 +86,7 @@ var _zeal_label: Label
 var _forfeit: Button
 var _return_button: Button
 var _finished := false
+var _returning := false
 var _seconds := 0.0
 
 func _ready() -> void:
@@ -239,8 +240,9 @@ func _resize() -> void:
 
 func _process(delta: float) -> void:
 	if not _identity.is_empty() and _identity != _client.identity():
-		SceneRouter.finish_woe_safely()
+		_return_when_idle()
 		return
+	if _returning: return
 	_seconds += delta
 	if is_instance_valid(_zeal_meter):
 		_display_zeal = lerpf(_display_zeal, float(_own.get("zeal", 0)), 1.0 - exp(-delta * 8.0))
@@ -251,8 +253,13 @@ func _process(delta: float) -> void:
 	if _debug_visual:
 		_debug_step(delta)
 		return
+	if _finished:
+		if not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next and not _client.saved_pending().is_empty():
+			if str(_client.saved_pending().get("action", "")) == "start": _reconcile_pending_start()
+			else: _reconcile_other_matches()
+		return
 	_poll -= delta
-	if _poll <= 0.0 and not _requesting and (not _is_cd or (not _acting and not _finished and not _missing_match)) and _valid(): _poll_state()
+	if _poll <= 0.0 and not _requesting and not _finished and not _missing_match and (not _is_cd or not _acting) and _valid(): _poll_state()
 
 func _poll_state() -> void:
 	if _requesting or (_is_cd and _acting) or not _valid(): return
@@ -261,10 +268,10 @@ func _poll_state() -> void:
 	var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
 	var request_start := Time.get_ticks_msec()
 	var result: Dictionary = await _client.request(endpoint + "match/state?match_id=%s&after=%d" % [requested_id.uri_encode(), _cursor], null, self)
-	if not _valid() or requested_id != _match_id: return
 	_requesting = false
+	if _returning or not _valid() or requested_id != _match_id: return
 	_delivery_ticks = mini(20, ceili(float(Time.get_ticks_msec() - request_start) / 100.0))
-	if _is_cd and ((int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "MATCH_UNAVAILABLE") or (int(result.get("code", 0)) == 403 and str(result.get("error", "")) == "NOT_PARTICIPANT")):
+	if ((int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "MATCH_UNAVAILABLE") or (int(result.get("code", 0)) == 403 and str(result.get("error", "")) == "NOT_PARTICIPANT")):
 		_missing_match = _client.reconcile_missing_match(_match_id, str(result.error))
 		_notice.text = tr("CD_UNAVAILABLE")
 		if _missing_match:
@@ -276,25 +283,24 @@ func _poll_state() -> void:
 	if int(result.get("code", 0)) != 200 or not _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.get("match_id", "")) != _match_id:
 		_playback_ready = false
 		_notice.text = tr("WOE_ARENA_NETWORK")
-		if int(result.get("code",0)) == 429: _poll_period = 4.0 if _is_cd else 0.65
+		if int(result.get("code",0)) == 429: _poll_period = 4.0
 		_backoff = minf(8.0, maxf(1.0, _backoff * 2.0))
 		_poll = _backoff
 		return
 	_backoff = 1.0 if _is_cd else POLL_INTERVAL
-	if _is_cd and _poll_period > 1.0: _poll_period = 1.0
+	if _poll_period > 1.0: _poll_period = 1.0
 	_server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 	_notice.text = tr("WOE_FORFEITED_NOTICE") if _forfeited else ""
 	_accept_state(result.data, true)
-	if str(_client.saved_pending().get("action", "")) == "start":
-		if _is_cd: _reconcile_pending_start()
-		elif not _acting: _retry_pending()
-	if _is_cd and not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
+	if str(_client.saved_pending().get("action", "")) == "start" and not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
+		_reconcile_pending_start()
+	elif not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
 		_reconcile_other_matches()
 	if _is_cd and int(result.data.get("revision", -1)) >= _deploy_receipt_revision:
 		_awaiting_deploy_state = false
 		_deploy_receipt_revision = -1
 		_update_hud()
-	_poll = (0.85 if _is_cd else 0.05) if _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
+	_poll = 0.85 if _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
 	if _is_cd and not _finished and not _acting and str(_client.saved_forfeit_action().get("values", {}).get("match_id", "")) == _match_id:
 		_retry_forfeit()
 	elif not _acting and not _client.saved_pending().is_empty():
@@ -459,7 +465,7 @@ func _render_snapshot() -> void:
 	var outcome: Variant = _snapshot.get("result")
 	_finished = outcome is Dictionary
 	if _finished:
-		if _is_cd and not _debug_visual and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
+		if not _debug_visual and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
 			_notice.text = tr("CD_UNAVAILABLE")
 		var winner := str(outcome.get("winner", ""))
 		_result.text = (tr("CD_RESULT") % [int(_server_score.get("completed_waves", _snapshot.get("completedWaves", 0))), tr("CD_REASON_" + str(outcome.get("reason", "laboratories")).to_upper())]) if _is_cd else (tr("WOE_DRAW") if winner.is_empty() or winner == "<null>" else (tr("WOE_VICTORY") if winner == _team else tr("WOE_DEFEAT")))
@@ -486,7 +492,7 @@ func _separate_units() -> void:
 			continue
 		var column := (rank % 5) - 2
 		var row := (rank / 5) % 3
-		unit.set_separation(Vector2(float(column) * 9.0, float(row - 1) * 6.0), float(rank % 3) * 9.0)
+		unit.set_separation(Vector2(float(column) * 3.0, float(row - 1) * 2.0), float(rank % 3) * 3.0)
 
 func _update_hud() -> void:
 	var zeal := float(_own.get("zeal",0))
@@ -501,16 +507,17 @@ func _update_hud() -> void:
 		var card: Dictionary = _cards.get(id, {})
 		button.icon = UNIT.frame(id,"front",1)
 		button.text = "%s\n%d" % [id.capitalize(), int(card.get("cost",0))] if not card.is_empty() else ""
-		button.disabled = _finished or _missing_match or _forfeited or _acting or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < float(card.get("cost",99))
+		button.disabled = _returning or _finished or _missing_match or _forfeited or _acting or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < float(card.get("cost",99))
 		button.modulate = Color("ffe38a") if _selected == i else (Color(0.65,0.7,0.75,1) if button.disabled else Color.WHITE)
 	for key in _lane_buttons:
 		var marker: Button = _lane_buttons[key]
 		var lab: Meter = _lab_bars[key]
 		var lane := str(key).get_slice(":", 1)
-		marker.visible = not _finished and not _missing_match and not _forfeited and not (_is_cd and _awaiting_deploy_state) and _selected >= 0 and str(key).begins_with(_team + ":") and lab.value > 0 and (_is_cd or _debug_visual or lane in _own.get("allowedDeploymentLanes", []))
+		marker.visible = not _returning and not _finished and not _missing_match and not _forfeited and not (_is_cd and _awaiting_deploy_state) and _selected >= 0 and str(key).begins_with(_team + ":") and lab.value > 0 and (_is_cd or _debug_visual or lane in _own.get("allowedDeploymentLanes", []))
 		marker.disabled = _acting
 
 func _select(slot: int) -> void:
+	if _returning: return
 	_selected = -1 if _selected == slot else slot
 	var slots: Array = _own.get("slots", [])
 	_selected_card = str(slots[_selected]) if _selected >= 0 and _selected < slots.size() else ""
@@ -527,13 +534,13 @@ func _deploy(lane: String) -> void:
 	_action("match/deploy", {"match_id":_match_id,"slot":slot,"card_id":str(slots[slot]),"lane":lane})
 
 func _action(action: String, values: Dictionary) -> void:
-	if _acting or not _valid(): return
+	if _returning or _acting or not _valid(): return
 	_acting = true
 	_action_kind = action
 	_update_hud()
 	var result: Dictionary = await _client.mutate(action, values)
-	if not _valid(): return
 	_acting = false
+	if not _valid(): return
 	_finish_action(result)
 
 func _retry_pending() -> void:
@@ -541,8 +548,8 @@ func _retry_pending() -> void:
 	_acting = true
 	_action_kind = str(_client.saved_pending().get("action", ""))
 	var result: Dictionary = await _client.retry_pending()
-	if not _valid(): return
 	_acting = false
+	if not _valid(): return
 	_finish_action(result)
 
 func _retry_forfeit() -> void:
@@ -550,8 +557,8 @@ func _retry_forfeit() -> void:
 	_acting = true
 	_action_kind = "match/forfeit"
 	var result: Dictionary = await _client.retry_forfeit()
-	if not _valid(): return
 	_acting = false
+	if not _valid(): return
 	_finish_action(result)
 
 func _finish_action(result: Dictionary) -> void:
@@ -578,7 +585,8 @@ func _finish_action(result: Dictionary) -> void:
 		if str(result.get("error", "")) != "ACTION_EXPIRED" or not _is_cd:
 			_notice.text = tr("WOE_ARENA_NETWORK") if int(result.get("code",0)) == 0 or int(result.get("code",0)) >= 500 else tr("WOE_ARENA_ACTION_FAILED")
 	_action_kind = ""
-	_poll = (4.0 if int(result.get("code", 0)) == 429 else (2.0 if int(result.get("code", 0)) == 0 or int(result.get("code", 0)) >= 500 else 0.85)) if _is_cd else 0.05
+	if int(result.get("code", 0)) == 429: _poll_period = 4.0
+	_poll = 4.0 if int(result.get("code", 0)) == 429 else (2.0 if int(result.get("code", 0)) == 0 or int(result.get("code", 0)) >= 500 else 0.85)
 	_update_hud()
 
 func _confirm_forfeit() -> void:
@@ -596,7 +604,7 @@ func _confirm_forfeit() -> void:
 
 func _confirm_return() -> void:
 	if _debug_visual or _missing_match:
-		SceneRouter.finish_woe_safely()
+		_return_when_idle()
 		return
 	if _finished:
 		if _is_cd and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
@@ -605,14 +613,26 @@ func _confirm_return() -> void:
 		_client.save_match("")
 		_client.save_forfeit("")
 		_client.save_room("")
-		SceneRouter.finish_woe_safely()
+		_return_when_idle()
 		return
 	var dialog := ConfirmationDialog.new()
 	dialog.dialog_text = tr("WOE_RETURN_CONFIRM")
-	dialog.confirmed.connect(SceneRouter.finish_woe_safely)
+	dialog.confirmed.connect(_return_when_idle)
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)
 	dialog.popup_centered()
+
+func _return_when_idle() -> void:
+	if _returning: return
+	_returning = true
+	if _identity != _client.identity(): hide()
+	else:
+		_return_button.disabled = true
+		_forfeit.disabled = true
+		_update_hud()
+	while is_inside_tree() and (_requesting or _acting or _other_recovery_busy):
+		await get_tree().process_frame
+	if is_inside_tree(): SceneRouter.finish_woe_safely()
 
 # A deliberately visual-only local preview, independent of match persistence and networking.
 func _debug_render() -> void:
@@ -650,25 +670,40 @@ func _debug_step(delta: float) -> void:
 			if is_instance_valid(unit): unit.attack()
 
 func _reconcile_pending_start() -> void:
+	_other_recovery_busy = true
+	_other_recovery_next = Time.get_ticks_msec() + 5000
 	var saved: Dictionary = _client.saved_pending()
 	var room_id := str(saved.get("values", {}).get("room_id", ""))
-	if room_id.is_empty(): return
-	var room: Dictionary = await _client.request("/forest/core-defense/state?room_id=" + room_id.uri_encode(), null, self)
-	if not _valid(): return
-	if room.code == 200 and _client.valid_room(room.get("data"), str(ConnectionGate.player_id)) and str(room.data.get("match_id", "")) == _match_id:
+	if room_id.is_empty():
+		_other_recovery_busy = false
+		return
+	var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
+	var room: Dictionary = await _client.request(endpoint + "state?room_id=" + room_id.uri_encode(), null, self)
+	if not _valid():
+		_other_recovery_busy = false
+		return
+	if room.code == 200 and _client.valid_room(room.get("data"), str(ConnectionGate.player_id)) and not str(room.data.get("match_id", "")).is_empty():
 		_client.reconcile_started(room.data)
+	elif int(room.get("code", 0)) == 404 and str(room.get("error", "")) == "ROOM_UNAVAILABLE":
+		_client.reconcile_missing_room(room_id)
+	_other_recovery_busy = false
 
 # Old journals can block a new match, but must never be replayed in it.
 func _reconcile_other_matches() -> void:
 	_other_recovery_busy = true
 	_other_recovery_next = Time.get_ticks_msec() + 5000
 	var ids: Array[String] = []
-	for entry in [_client.saved_pending(), _client.saved_forfeit_action()]:
+	var entries := [_client.saved_pending()]
+	if _is_cd: entries.append(_client.saved_forfeit_action())
+	for entry in entries:
 		var id := str(entry.get("values", {}).get("match_id", ""))
 		if not id.is_empty() and id != _match_id and id not in ids: ids.append(id)
 	for id in ids:
-		var result: Dictionary = await _client.request("/forest/core-defense/match/state?match_id=" + id.uri_encode() + "&after=0", null, self)
-		if not _valid(): return
+		var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
+		var result: Dictionary = await _client.request(endpoint + "match/state?match_id=" + id.uri_encode() + "&after=0", null, self)
+		if not _valid():
+			_other_recovery_busy = false
+			return
 		if result.code == 200 and _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) and str(result.data.match_id) == id and result.data.status == "FINISHED":
 			if not _client.reconcile_terminal(result.data): _notice.text = tr("CD_UNAVAILABLE")
 		elif (int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "MATCH_UNAVAILABLE") or (int(result.get("code", 0)) == 403 and str(result.get("error", "")) == "NOT_PARTICIPANT"):
