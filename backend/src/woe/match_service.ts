@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { advanceTick, applyDeployment, getPublicSnapshot, type MatchState, type Team } from './engine';
 import { chooseBotDeployment } from './bot_ai';
+import { cleanupCoreDefense } from './core_defense_retention';
 
 const PAGE=100, EVENT_LIMIT=2000, ACTION_LIMIT=2048, RETENTION=24*60*60_000;
 type Result={status:number;data:any};
@@ -70,7 +71,7 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
  let timer:ReturnType<typeof setInterval>|undefined;let lastCleanup=0;
  function pulse(){if(!(shared?.canSchedule() ?? canServe()))return;const now=clock();if(now-lastCleanup>60_000){
    // Some deployments do not enable SQLite foreign keys; explicitly remove children.
-   db.transaction(()=>{if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED');const expired=db.query("SELECT match_id FROM woe_matches WHERE status='FINISHED' AND finished_at<=? LIMIT 32").all(now-RETENTION) as any[];for(const r of expired){for(const table of ['core_defense_actions','core_defense_results','core_defense_participants','woe_match_events','woe_match_actions','woe_match_participants'])db.query(`DELETE FROM ${table} WHERE match_id=?`).run(r.match_id);db.query('DELETE FROM woe_matches WHERE match_id=?').run(r.match_id)}if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED')}).immediate();lastCleanup=now}
+   db.transaction(()=>{if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED');const expired=db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='FINISHED' AND m.finished_at<=? LIMIT 32").all(now-RETENTION) as any[];for(const r of expired){if(r.cd){const actions=db.query('SELECT rowid AS id FROM core_defense_actions WHERE match_id=? LIMIT 32').all(r.match_id) as {id:number}[];for(const a of actions)db.query('DELETE FROM core_defense_actions WHERE rowid=?').run(a.id);if(db.query('SELECT 1 FROM core_defense_actions WHERE match_id=? LIMIT 1').get(r.match_id))continue;}for(const table of ['core_defense_actions','core_defense_results','core_defense_participants','woe_match_events','woe_match_actions','woe_match_participants'])db.query(`DELETE FROM ${table} WHERE match_id=?`).run(r.match_id);db.query('DELETE FROM woe_matches WHERE match_id=?').run(r.match_id)}cleanupCoreDefense(db,now);if(!(shared?.canSchedule() ?? canServe()))throw new Error('FOREST_WOE_FENCED')}).immediate();lastCleanup=now}
   const running=db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='RUNNING' ORDER BY m.match_id LIMIT 256").all() as any[];for(const r of running){if(!(shared?.canSchedule() ?? canServe()))break;if(r.cd)shared?.coreDefense.tickOne(r.match_id);else tickOne(r.match_id)}
  }
  return {
