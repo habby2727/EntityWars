@@ -234,7 +234,7 @@ func _on_auth_changed(_token: String) -> void:
 	received_snapshot = false
 	acknowledged_revision = 0
 	server_time_ms = 0
-	_catch_up()
+	# Keep queued events aligned with event_cursor until a newer snapshot requires catch-up.
 	header.text = "Reconnect to recover this match"
 	state.clear()
 	timer_panel.hide()

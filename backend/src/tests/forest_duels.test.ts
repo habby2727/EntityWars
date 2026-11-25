@@ -1,6 +1,6 @@
 import {test, expect} from 'bun:test';
 import {Database} from 'bun:sqlite';
-import {readFileSync, readdirSync, mkdtempSync, rmSync} from 'node:fs';
+import {readFileSync, readdirSync, mkdtempSync, rmSync, existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
@@ -236,9 +236,9 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
    let seq=0,x=960,y=760;
    async function moveTo(tx:number,ty:number){while(x!==tx||y!==ty){await Bun.sleep(360);x+=Math.sign(tx-x)*Math.min(70,Math.abs(tx-x));y+=Math.sign(ty-y)*Math.min(70,Math.abs(ty-y));ws.send(JSON.stringify({v:1,type:'move',seq:++seq,x,y,facing:0}))}}
    async function portal(direction:string,px:number,py:number){await Bun.sleep(360);const p=new Promise<any>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('zone timeout')),4000);const cb=(e:any)=>{const m=JSON.parse(String(e.data));if(m.type==='zone'){clearTimeout(timer);ws.removeEventListener('message',cb);ok(m)}else if(m.type==='correction'){clearTimeout(timer);fail(Error(JSON.stringify(m)))}};ws.addEventListener('message',cb)});ws.send(JSON.stringify({v:1,type:'portal',seq:++seq,direction,crossing_x:px,crossing_y:py}));const zone=await p;x=zone.x;y=zone.y;return zone.zone_id}
-   await moveTo(960,540);await moveTo(70,540);expect(await portal('west',0,540)).toBe('alchemical_ruins');await moveTo(960,540);await moveTo(960,70);expect(await portal('north',960,0)).toBe('duel_clearing');
+   await moveTo(960,540);await moveTo(70,540);expect(await portal('west',0,540)).toBe('alchemical_ruins');await moveTo(960,540);await moveTo(960,70);expect(await portal('north',960,0)).toBe('duel_clearing');return ws;
   }
-  await Promise.all([enterAndTravel(a),enterAndTravel(b)]);
+  const [aw,bw]=await Promise.all([enterAndTravel(a),enterAndTravel(b)]);
   const created=await post('/forest/woe/create',{mode:'1v1',client_action_id:'create'},a.token);expect(created.status).toBe(200);let room:any=await created.json();const roomId=room.room_id;
   expect((await post('/forest/woe/join',{room_id_or_code:room.join_code,client_action_id:'join',player_id:a.id},b.token)).status).toBe(400);
   const joined=await post('/forest/woe/join',{room_id_or_code:room.join_code,client_action_id:'join'},b.token);expect(joined.status).toBe(200);room=await joined.json();
@@ -251,6 +251,24 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
   const started=await post('/forest/woe/start',{room_id:roomId,fill_bots:false,expected_revision:room.revision,client_action_id:'start'},a.token);expect(started.status).toBe(200);const start:any=await started.json();expect(start.match_id).toBeTruthy();
   const bview:any=await (await get(`/forest/woe/state?room_id=${roomId}&viewer_id=${a.id}`,b.token)).json();expect(bview.snapshot.players.find((p:any)=>p.id===a.id).slots).toBeUndefined();expect(bview.snapshot.players.find((p:any)=>p.id===b.id).slots).toBeDefined();
   const secondaryPort=await freePort(),secondary=Bun.spawn([process.execPath,'src/index.ts'],{cwd:resolve(import.meta.dir,'../..'),env:{...env,PORT:String(secondaryPort),FOREST_WS_ENABLED:'0',FOREST_WOE_ENABLED:'0'},stdout:'ignore',stderr:'ignore'});
-  try{let up=false;for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${secondaryPort}/health`)).ok){up=true;break}}catch{}await Bun.sleep(100)}expect(up).toBe(true);expect((await fetch(`http://127.0.0.1:${secondaryPort}/forest/woe/rooms`,{headers:{Authorization:`Bearer ${a.token}`}})).status).toBe(503)}finally{secondary.kill();await secondary.exited}
+  try {let up=false;for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${secondaryPort}/health`)).ok){up=true;break}}catch{}await Bun.sleep(100)}expect(up).toBe(true);expect((await fetch(`http://127.0.0.1:${secondaryPort}/forest/woe/rooms`,{headers:{Authorization:`Bearer ${a.token}`}})).status).toBe(503);
+  // Optional Godot client exercise reuses these authenticated accounts and live Forest sockets.
+  if (Bun.env.WOE_GODOT_BIN) {
+   // Forward the first create but replace its successful response: the client
+   // must retry the exact action without creating a second room.
+   const forwarded:{action:string;room:string}[]=[];
+   const proxy=Bun.serve({hostname:'127.0.0.1',port:0,async fetch(req){const url=new URL(req.url);const body=req.method==='GET'?undefined:await req.arrayBuffer();const response=await fetch(base+url.pathname+url.search,{method:req.method,headers:req.headers,body});if(req.method==='POST'&&url.pathname==='/forest/woe/create'){const payload=JSON.parse(new TextDecoder().decode(body));const data:any=await response.clone().json();forwarded.push({action:payload.client_action_id,room:data.room_id});if(forwarded.length===1)return new Response('simulated lost response',{status:503})}return response}});
+   try {
+   const client=Bun.spawn([Bun.env.WOE_GODOT_BIN,'--headless','--path',resolve(import.meta.dir,'../../..'),'--script','res://scripts/tests/smoke_woe_live_client.gd','--log-file',join(dir,'godot-client.log')],{env:{...process.env,WOE_TEST_BASE:base,WOE_TEST_ACCOUNTS:JSON.stringify([a,b]),WOE_TEST_ROOM:roomId,WOE_TEST_SYNC:dir,WOE_TEST_DISABLED_BASE:`http://127.0.0.1:${secondaryPort}`,WOE_TEST_PROXY:`http://127.0.0.1:${proxy.port}`},stdout:'pipe',stderr:'pipe'});
+   const handoff=async(ws:WebSocket)=>await new Promise<void>((ok,fail)=>{const timer=setTimeout(()=>fail(Error('handoff timeout')),3000);ws.addEventListener('message',function cb(e){const m=JSON.parse(String(e.data));if(m.type==='handoff_ack'&&m.kind==='suspend'){clearTimeout(timer);ws.removeEventListener('message',cb);ok()}});ws.send(JSON.stringify({v:1,type:'suspend'}))});
+   const reenter=async(account:any)=>await new Promise<WebSocket>((ok,fail)=>{const ws=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${account.token}`,'X-EntityWars-Client-Build':'5509'}} as any);sockets.push(ws);const timer=setTimeout(()=>fail(Error('restore timeout')),4000);ws.onopen=()=>ws.send(JSON.stringify({v:1,type:'enter',summoner_id:'wizard'}));ws.onmessage=e=>{const m=JSON.parse(String(e.data));if(m.type==='welcome'){clearTimeout(timer);expect(m.self).toMatchObject({zone_id:'duel_clearing',x:960,y:895,facing:0,summoner_id:'wizard'});ok(ws)}};ws.onerror=()=>fail(Error('restore socket error'))});
+   const coordinate=(async()=>{let currentA=aw,currentB=bw;for(const step of ['suspend_a','suspend_b','restore','suspend_a2','restore2']){const deadline=Date.now()+15000;while(!existsSync(join(dir,step))&&Date.now()<deadline)await Bun.sleep(30);if(!existsSync(join(dir,step)))throw Error('missing Godot checkpoint '+step);if(step==='suspend_a'||step==='suspend_a2')await handoff(currentA);else if(step==='suspend_b')await handoff(currentB);else if(step==='restore'){[currentA,currentB]=await Promise.all([reenter(a),reenter(b)])}else currentA=await reenter(a);await Bun.write(join(dir,step+'.ack'),'ok')}})();
+   const [out,err,code]=await Promise.all([new Response(client.stdout).text(),new Response(client.stderr).text(),client.exited,coordinate]);
+   expect(forwarded).toHaveLength(2);expect(forwarded[0]).toEqual(forwarded[1]);expect(forwarded[0].room).toBeTruthy();
+   const log=readFileSync(join(dir,'godot-client.log'),'utf8');expect({code,out:out.includes('WOE_LIVE_CLIENT_PASS') || log.includes('WOE_LIVE_CLIENT_PASS'),err}).toEqual({code:0,out:true,err:''});
+   } finally {proxy.stop(true)}
+  }
+  } finally {secondary.kill();await secondary.exited}
+
  } finally {for(const ws of sockets)ws.close();if(server){server.kill();await server.exited}redis.disconnect();redisProcess.kill();await redisProcess.exited;for(let i=0;;i++){try{rmSync(dir,{recursive:true,force:true});break}catch(e){if(i>=20)throw e;await Bun.sleep(250)}}}
 },60000);

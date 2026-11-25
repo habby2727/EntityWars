@@ -100,7 +100,12 @@ func _run() -> void:
 	var first_texture = avatar._textures[0]
 	avatar.set_cosmetic("wizard")
 	avatar.set_cosmetic("witch")
-	check(avatar._textures[0] == first_texture and avatar.get_child_count() == 1, "Cosmetic cache or nameplate leaked")
+	var nameplates := 0
+	var busy_indicators := 0
+	for child in avatar.get_children():
+		if child.name == "Nameplate": nameplates += 1
+		if child.name == "BusyIndicator": busy_indicators += 1
+	check(avatar._textures[0] == first_texture and nameplates == 1 and busy_indicators <= 1 and avatar.get_child_count() == nameplates + busy_indicators and avatar._label.text == "Server Peer", "Cosmetic cache or nameplate leaked")
 	avatar.move_to(2, Vector2(960,760), 1)
 	avatar.move_to(1, Vector2(1000,760), 0)
 	avatar._process(0.1)

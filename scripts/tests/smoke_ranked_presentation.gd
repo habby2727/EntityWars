@@ -14,7 +14,10 @@ func _run() -> void:
 	var snapshot := {"match_id":"smoke", "status":"ACTIVE", "combat_revision":0, "turn":0, "battle_index":1, "player":fighter.duplicate(true), "enemy":fighter.duplicate(true), "ready":{}, "score":{}, "events":[], "chat":[]}
 	ranked.state = snapshot.duplicate(true)
 	ranked._render()
-	assert(combat.player_hp.value == 100 and combat.enemy_hp.value == 100)
+	if not (combat.player_hp.value == 100 and combat.enemy_hp.value == 100):
+		push_error("Ranked presentation assertion failed at original line 17")
+		quit(1)
+		return
 	var events := [
 		{"id":1,"turn":1,"kind":"damage","category":"damage","actor":"player","target":"enemy","verb":" FIRST", "damage":30,"hp":70},
 		{"id":2,"turn":1,"kind":"reflect","category":"damage","actor":"enemy","target":"player","verb":" REFLECT", "damage":10,"hp":90},
@@ -27,51 +30,105 @@ func _run() -> void:
 	ranked.state = snapshot.duplicate(true)
 	ranked._render()
 	ranked._render()
-	assert(ranked.event_queue.size() == 4)
+	if not (ranked.event_queue.size() == 4):
+		push_error("Ranked presentation assertion failed at original line 30")
+		quit(1)
+		return
 	ranked.next_poll = 1000
 	ranked._process(0.01)
-	assert(combat.enemy_hp.value == 100 and ranked.event_queue.size() == 3)
+	if not (combat.enemy_hp.value == 100 and ranked.event_queue.size() == 3):
+		push_error("Ranked presentation assertion failed at original line 33")
+		quit(1)
+		return
 	ranked._process(0.3)
-	assert(combat.enemy_hp.value > 70 and combat.enemy_hp.value < 100)
+	if not (combat.enemy_hp.value > 70 and combat.enemy_hp.value < 100):
+		push_error("Ranked presentation assertion failed at original line 35")
+		quit(1)
+		return
 	var midpoint: float = combat.enemy_hp.value
 	ranked._render()
-	assert(is_equal_approx(combat.enemy_hp.value, midpoint))
+	if not (is_equal_approx(combat.enemy_hp.value, midpoint)):
+		push_error("Ranked presentation assertion failed at original line 38")
+		quit(1)
+		return
 	ranked._on_auth_changed("")
-	assert(ranked.event_queue.size() == 3 and ranked.event_presenting)
+	if not (ranked.event_queue.size() == 3 and ranked.event_presenting):
+		push_error("Ranked presentation assertion failed at original line 40")
+		quit(1)
+		return
 	ranked.state = snapshot.duplicate(true)
 	ranked._render()
-	assert(ranked.event_queue.size() == 3)
+	if not (ranked.event_queue.size() == 3):
+		push_error("Ranked presentation assertion failed at original line 43")
+		quit(1)
+		return
 	ranked._process(0.31)
-	assert(combat.enemy_hp.value == 70 and combat.player_hp.value == 100)
+	if not (combat.enemy_hp.value == 70 and combat.player_hp.value == 100):
+		push_error("Ranked presentation assertion failed at original line 45")
+		quit(1)
+		return
 	ranked._process(0.4)
-	assert(ranked.event_queue.size() == 2 and combat.player_hp.value == 100)
+	if not (ranked.event_queue.size() == 2 and combat.player_hp.value == 100):
+		push_error("Ranked presentation assertion failed at original line 47")
+		quit(1)
+		return
 	ranked._process(0.6)
-	assert(combat.player_hp.value == 90)
+	if not (combat.player_hp.value == 90):
+		push_error("Ranked presentation assertion failed at original line 49")
+		quit(1)
+		return
 	ranked._process(0.4)
-	assert(ranked.event_queue.size() == 1)
-	assert(combat.log_box.get_parsed_text().find("STATUS") >= 0)
+	if not (ranked.event_queue.size() == 1):
+		push_error("Ranked presentation assertion failed at original line 51")
+		quit(1)
+		return
+	if not (combat.log_box.get_parsed_text().find("STATUS") >= 0):
+		push_error("Ranked presentation assertion failed at original line 52")
+		quit(1)
+		return
 	snapshot.status = "FINISHED"
 	snapshot.result = {"result":"win", "mp_delta":1}
 	snapshot.enemy.hp = 0
 	snapshot.events = events + [{"id":5,"turn":2,"kind":"damage","category":"damage","actor":"player","target":"enemy","verb":" FINAL", "hp":0,"damage":50}, {"id":6,"turn":2,"kind":"battle_result"}, {"id":7,"turn":2,"kind":"match_result"}]
 	ranked.state = snapshot.duplicate(true)
 	ranked._render()
-	assert(not ranked.result_popup_shown and combat.enemy_hp.value == 70)
+	if not (not ranked.result_popup_shown and combat.enemy_hp.value == 70):
+		push_error("Ranked presentation assertion failed at original line 59")
+		quit(1)
+		return
 	ranked._process(1.25)
-	assert(combat.enemy_hp.value == 70 and ranked.event_queue.size() == 3)
+	if not (combat.enemy_hp.value == 70 and ranked.event_queue.size() == 3):
+		push_error("Ranked presentation assertion failed at original line 61")
+		quit(1)
+		return
 	ranked._process(0.6)
-	assert(combat.enemy_hp.value == 50 and not ranked.result_popup_shown)
+	if not (combat.enemy_hp.value == 50 and not ranked.result_popup_shown):
+		push_error("Ranked presentation assertion failed at original line 63")
+		quit(1)
+		return
 	ranked._process(0.4)
 	ranked._process(0.3)
-	assert(combat.enemy_hp.value > 0 and combat.enemy_hp.value < 50 and not ranked.result_popup_shown)
+	if not (combat.enemy_hp.value > 0 and combat.enemy_hp.value < 50 and not ranked.result_popup_shown):
+		push_error("Ranked presentation assertion failed at original line 66")
+		quit(1)
+		return
 	ranked._process(0.3)
 	ranked._process(0.4)
 	ranked._process(1.0)
-	assert(not ranked.result_popup_shown)
+	if not (not ranked.result_popup_shown):
+		push_error("Ranked presentation assertion failed at original line 70")
+		quit(1)
+		return
 	ranked._process(1.0)
-	assert(ranked.result_popup_shown and combat.enemy_hp.value == 0)
+	if not (ranked.result_popup_shown and combat.enemy_hp.value == 0):
+		push_error("Ranked presentation assertion failed at original line 72")
+		quit(1)
+		return
 	var log_text: String = combat.log_box.get_parsed_text()
-	assert(log_text.find("FIRST") < log_text.find("REFLECT") and log_text.find("REFLECT") < log_text.find("STATUS") and log_text.find("STATUS") < log_text.find("SECOND") and log_text.find("SECOND") < log_text.find("FINAL"))
+	if not (log_text.find("FIRST") < log_text.find("REFLECT") and log_text.find("REFLECT") < log_text.find("STATUS") and log_text.find("STATUS") < log_text.find("SECOND") and log_text.find("SECOND") < log_text.find("FINAL")):
+		push_error("Ranked presentation assertion failed at original line 74")
+		quit(1)
+		return
 	combat.queue_free()
 	await process_frame
 	var restored = load("res://scenes/Combat.tscn").instantiate()
@@ -82,10 +139,16 @@ func _run() -> void:
 	restored_ranked.next_poll = 1000
 	restored_ranked.state = snapshot.duplicate(true)
 	restored_ranked._render()
-	assert(restored.enemy_hp.value == 0 and not restored.next_turn_btn.visible and not restored_ranked.result_popup_shown)
+	if not (restored.enemy_hp.value == 0 and not restored.next_turn_btn.visible and not restored_ranked.result_popup_shown):
+		push_error("Ranked presentation assertion failed at original line 85")
+		quit(1)
+		return
 	restored_ranked._process(0.1)
 	restored_ranked._process(0.6)
-	assert(restored.enemy_hp.value == 0 and not restored_ranked.result_popup_shown)
+	if not (restored.enemy_hp.value == 0 and not restored_ranked.result_popup_shown):
+		push_error("Ranked presentation assertion failed at original line 88")
+		quit(1)
+		return
 	restored.queue_free()
 	await process_frame
 	var round_combat = load("res://scenes/Combat.tscn").instantiate()
@@ -108,11 +171,20 @@ func _run() -> void:
 	round_ranked._process(0.01)
 	round_ranked._process(0.6)
 	round_ranked._process(0.4)
-	assert(round_combat.enemy_hp.value == 0)
+	if not (round_combat.enemy_hp.value == 0):
+		push_error("Ranked presentation assertion failed at original line 111")
+		quit(1)
+		return
 	round_ranked._process(1.0)
-	assert(round_combat.enemy_hp.value == 100)
+	if not (round_combat.enemy_hp.value == 100):
+		push_error("Ranked presentation assertion failed at original line 113")
+		quit(1)
+		return
 	round_ranked._process(0.6)
-	assert(round_combat.enemy_hp.value == 80)
+	if not (round_combat.enemy_hp.value == 80):
+		push_error("Ranked presentation assertion failed at original line 115")
+		quit(1)
+		return
 	print("PASS ranked serial playback, polling, reconnect, initial snapshot and terminal result")
 	round_combat.queue_free()
 	quit(0)

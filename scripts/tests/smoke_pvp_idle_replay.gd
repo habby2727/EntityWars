@@ -2,7 +2,7 @@ extends SceneTree
 
 class FakeBackend extends BackendClient:
 	var replays: Array[bool] = []
-	func request_api(_method: String, _path: String, _body: Variant, _expect_state: bool = false, _recovery: bool = false, replay: bool = false) -> String:
+	func request_api(_method: String, _path: String, _body: Variant, _expect_state: bool = false, _recovery: bool = false, replay: bool = false, _expedition_lease: String = "") -> String:
 		replays.append(replay)
 		return "request-%d" % replays.size()
 
