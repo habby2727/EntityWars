@@ -2,9 +2,9 @@
 import waveRules from '../../../data/static/core_defense_waves.json';
 import { arena, cardById, attackDamage, elementalMultiplier, ATTACK_INTERVAL_MS, type Element } from './catalog';
 import { initializeMatch, applyDeployment, validateDeployment, route, redirectRoute, move, nearestTarget, type Unit, type MatchState, type Controller, type Laboratory, type Lane, type DeploymentCommand } from './engine';
-import { chooseBotDeployment } from './bot_ai';
 
-export type CoreDefenseMode = 'solo' | 'solo_bot' | 'coop';
+export type CoreDefenseMode = 'solo' | 'coop';
+type PersistedCoreDefenseMode = CoreDefenseMode | 'solo_bot';
 type EnemyDefinition = { id:string; role:string; element:Element; hp:number; damage:number; defense:number; speed:number; range:number; unlock_wave:number };
 export const coreDefenseEnemies: readonly Readonly<EnemyDefinition>[] = Object.freeze(enemyData.enemies.map(e => Object.freeze(e as EnemyDefinition)));
 export const coreDefenseRules = Object.freeze(waveRules);
@@ -14,7 +14,7 @@ if (coreDefenseEnemies.length !== 5 || new Set(coreDefenseEnemies.map(e=>e.id)).
 export interface DefenseUnit extends Unit { kind:'homunculus'|'enemy'; maxHp:number; damage:number; defense:number; speed:number; range:number; element:Element }
 type DefenseEvent = { type:'spawn'|'attack'|'death'; tick:number; team:'blue'|'red'; cardId:string; position:{x:number;y:number}; [key:string]:unknown };
 export interface CoreDefenseState {
- kind:'core_defense'; mode:CoreDefenseMode; tick:number; controllers:Controller[]; laboratories:Laboratory[]; units:DefenseUnit[]; nextUnitId:number; events:DefenseEvent[];
+ kind:'core_defense'; mode:PersistedCoreDefenseMode; tick:number; controllers:Controller[]; laboratories:Laboratory[]; units:DefenseUnit[]; nextUnitId:number; events:DefenseEvent[];
  wave:number; completedWaves:number; enemiesSpawned:number; enemiesKilled:number; waveSpawned:number; pendingSpawns:number; phase:'wave'|'intermission'|'defeat'; intermissionTicks:number; spawnCooldown:number;
  result:{winner:'red'|null;reason:'laboratories'|'forfeit'|'abandoned'}|null;
 }
@@ -34,7 +34,7 @@ export function enemyStats(id:string,wave:number) {
  return { ...e, hp:Math.min(waveRules.max_hp,Math.round(e.hp*(1+(wave-1)*waveRules.hp_growth_per_wave))), damage:Math.min(waveRules.max_damage,Math.round(e.damage*(1+(wave-1)*waveRules.damage_growth_per_wave))) };
 }
 export function initializeCoreDefense(mode:CoreDefenseMode,seed:string,controllerIds:string[]):CoreDefenseState {
- if (!['solo','solo_bot','coop'].includes(mode) || !Array.isArray(controllerIds) || controllerIds.length !== (mode==='solo'?1:2) || controllerIds.some(id=>typeof id!=='string'||!id||id.length>128) || new Set(controllerIds).size!==controllerIds.length || typeof seed!=='string') throw new Error('INVALID_CORE_DEFENSE_MATCH');
+ if (!['solo','coop'].includes(mode) || !Array.isArray(controllerIds) || controllerIds.length !== (mode==='solo'?1:2) || controllerIds.some(id=>typeof id!=='string'||!id||id.length>128) || new Set(controllerIds).size!==controllerIds.length || typeof seed!=='string') throw new Error('INVALID_CORE_DEFENSE_MATCH');
  // The WOE initializer supplies the exact controller shuffle and laboratory geometry.
  let dummy='__core_defense_red__'; while(controllerIds.includes(dummy)) dummy += '_';
  const base=initializeMatch('1v1',seed,[controllerIds[0],dummy]);
@@ -67,14 +67,10 @@ function spawn(s:CoreDefenseState) {
  s.units.push(u);s.waveSpawned++;s.enemiesSpawned=plus(s.enemiesSpawned);s.pendingSpawns--;s.spawnCooldown=waveRules.spawn_interval_ticks;
  s.events.push({type:'spawn',tick:s.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane,kind:u.kind,assetId:u.cardId,element:u.element,hp:u.hp,maxHp:u.maxHp});
 }
-export function advanceCoreDefenseTick(state:CoreDefenseState, botIds?:string[]):CoreDefenseState {
+export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState {
  if(state.result)return state;
  let s=clone(state);s.events=[];s.tick=plus(s.tick);
  for(const p of s.controllers)p.zealTenths=Math.min(100,p.zealTenths+1);
- if(s.tick%10===0) for(const botId of new Set(botIds ?? (s.mode==='solo_bot'?[s.controllers[1].id]:[]))) {
-  const cmd=chooseBotDeployment(asWoe(s),botId,{validate:(st,c)=>validateCoreDefenseDeployment(st as unknown as CoreDefenseState,c),element:id=>enemyById[id]?.element ?? cardById[id].element});
-  if(cmd) s=applyCoreDefenseDeployment(s,cmd).state;
- }
  if(s.phase==='intermission') {
   s.intermissionTicks--;
   if(s.intermissionTicks===0) {s.wave=plus(s.wave);s.waveSpawned=0;s.pendingSpawns=waveCount(s.wave);s.spawnCooldown=0;s.phase='wave';}

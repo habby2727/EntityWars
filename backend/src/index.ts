@@ -14,6 +14,7 @@ import { createFriends } from "./social/friends";
 import { createForestPresence, loadCatalog, type ForestData } from "./forest/presence";
 import { createForestDuels } from "./forest/duels";
 import { createWoeLobby } from "./woe/lobby";
+import { createMinigameInvitations } from "./social/minigame_invitations";
 import { createWoeMatchService } from "./woe/match_service";
 import { createCoreDefenseLobby } from "./woe/core_defense_lobby";
 import { createCoreDefenseMatchService } from "./woe/core_defense_match_service";
@@ -1372,6 +1373,7 @@ async function startServer(): Promise<void> {
 	const coreEnabled = () => Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1" && !!forest && leaseValid();
 	const coreDefense = createCoreDefenseLobby(db, id => forest?.roomOf(id) ?? null, coreEnabled);
 	const coreMatches = createCoreDefenseMatchService(db, coreEnabled);
+	const minigameInvites = createMinigameInvitations(db, {canServe:()=>socialEnabled && !!forest && leaseValid(), enabled:kind=>kind==="woe" ? Bun.env.FOREST_WOE_ENABLED==="1" : Bun.env.FOREST_CORE_DEFENSE_ENABLED==="1", online:id=>globalChat.isOnline(id), join:{woe:woe.joinFromInvitation,core_defense:coreDefense.joinFromInvitation}});
 	const woeMatches = createWoeMatchService(db, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid(), Date.now, {canSchedule:()=>!!forest && leaseValid(), coreDefense:coreMatches});
 	if ((Bun.env.FOREST_WOE_ENABLED === "1" || Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1") && forest) woeMatches.start();
 	if (forest && leaseToken) {
@@ -1752,6 +1754,21 @@ async function startServer(): Promise<void> {
 					if (req.method!=="POST" || url.pathname==="/forest/quests") return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
 					return jsonResponse(forestQuests.action(playerId,url.pathname.endsWith("/accept") ? "accept" : url.pathname.endsWith("/cancel") ? "cancel" : "claim",await readSocialJson(req,Math.min(config.maxBodyBytes,4096))));
 				}
+				if (["/forest/minigames/invitations","/forest/minigames/invite-friends","/forest/minigames/invite","/forest/minigames/invite/respond","/forest/minigames/invite/cancel"].includes(url.pathname)) {
+                    const playerId=await requireAuth(req,ctx);
+                    if(!socialEnabled)return jsonResponse({error:"SOCIAL_DISABLED"},503);
+                    if(!forest || !leaseValid() || (Bun.env.FOREST_WOE_ENABLED!=="1" && Bun.env.FOREST_CORE_DEFENSE_ENABLED!=="1"))return jsonResponse({error:"MINIGAMES_UNAVAILABLE"},503);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:forest-minigames",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+                    let result;
+                    if(req.method==="GET" && url.pathname.endsWith('/invitations'))result=minigameInvites.state(playerId);
+                    else if(req.method==="GET" && url.pathname.endsWith('/invite-friends'))result=minigameInvites.friends(playerId,url.searchParams.get('room_id'));
+                    else if(req.method==="POST" && ['/forest/minigames/invite','/forest/minigames/invite/respond','/forest/minigames/invite/cancel'].includes(url.pathname)) {
+                        const body=await readSocialJson(req,Math.min(config.maxBodyBytes,4096));
+                        result=url.pathname.endsWith('/respond')?minigameInvites.respond(playerId,body):url.pathname.endsWith('/cancel')?minigameInvites.cancel(playerId,body):minigameInvites.invite(playerId,body);
+                    } else return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+                    return jsonResponse(result.data,result.status);
+                }
+
 				if (["/forest/core-defense/match/state", "/forest/core-defense/match/current", "/forest/core-defense/match/deploy", "/forest/core-defense/match/forfeit", "/forest/core-defense/rooms", "/forest/core-defense/state", "/forest/core-defense/create", "/forest/core-defense/join", "/forest/core-defense/start", "/forest/core-defense/leave"].includes(url.pathname)) {
                     const playerId=await requireAuth(req,ctx);
                     if(!coreEnabled()) return jsonResponse({error:"FOREST_CORE_DEFENSE_UNAVAILABLE"},503);
