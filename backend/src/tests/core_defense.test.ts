@@ -2,10 +2,20 @@
 import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {arena,cardById,elementalMultiplier} from '../woe/catalog';
+import {formationPoint,route} from '../woe/engine';
 import {initializeCoreDefense,advanceCoreDefenseTick,applyCoreDefenseDeployment,getCoreDefenseSnapshot,coreDefenseEnemies,coreDefenseRules,enemyStats,waveCount,type CoreDefenseState} from '../woe/core_defense';
 const make=(mode:'solo'|'coop'='solo')=>initializeCoreDefense(mode,'seed',mode==='solo'?['a']:['a','b']);
 function deploy(s:CoreDefenseState) {const p=s.controllers[0];p.zealTenths=100;const r=applyCoreDefenseDeployment(s,{actionId:'x',controllerId:p.id,slot:0,cardId:p.slots[0],lane:'left'});expect(r.accepted).toBe(true);return r.state;}
 function ticks(s:CoreDefenseState,n:number) {for(let i=0;i<n;i++)s=advanceCoreDefenseTick(s);return s;}
+test('crowded allied formations move deterministically without blocking',()=>{
+ const s=deploy(make());const template=s.units[0];
+ s.units=Array.from({length:75},(_,i)=>({...structuredClone(template),id:i+1,position:formationPoint(arena.spawns.blue.left,i+1),route:route('blue','left','left',i+1),waypoint:0}));
+ s.nextUnitId=76;s.phase='intermission';s.intermissionTicks=1000;
+ const a=ticks(s,40),b=ticks(JSON.parse(JSON.stringify(s)),40);
+ expect(a).toEqual(b);
+ expect(new Set(a.units.map(u=>`${u.position.x.toFixed(2)}:${u.position.y.toFixed(2)}`)).size).toBe(75);
+ expect(a.units.every(u=>u.position.y<arena.spawns.blue.left.y)).toBe(true);
+});
 test('solo and both coop humans may deploy at either surviving blue laboratory',()=>{
  for(const mode of ['solo','coop'] as const) for(const index of mode==='solo'?[0]:[0,1]) for(const lane of ['left','right'] as const) {
   const s=make(mode),p=s.controllers[index]; p.zealTenths=100;

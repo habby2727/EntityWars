@@ -1,6 +1,7 @@
 ﻿import {test,expect} from 'bun:test';
 import {Database} from 'bun:sqlite';
-import {readFileSync,readdirSync} from 'node:fs';
+import {readFileSync,readdirSync,mkdtempSync,unlinkSync,rmdirSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {createCoreDefenseLobby} from '../woe/core_defense_lobby';
 import {createCoreDefenseMatchService} from '../woe/core_defense_match_service';
@@ -13,6 +14,28 @@ import {cardById} from '../woe/catalog';
 import {createMinigameInvitations} from '../social/minigame_invitations';
 function setup(){const db=new Database(':memory:');db.exec('PRAGMA foreign_keys=ON');const dir=resolve(import.meta.dir,'../../migrations/sqlite');for(const f of readdirSync(dir).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(join(dir,f),'utf8'));for(const p of ['a','b','c','d'])db.query('INSERT INTO players VALUES (?,?,?,0)').run(p,p,'{}');let now=1700000000000,enabled=true;const presence=new Set(['a','b','c','d']),clock=()=>now,can=()=>enabled;const lobby=createCoreDefenseLobby(db,p=>presence.has(p)?'duel_clearing':null,can,clock),cd=createCoreDefenseMatchService(db,can,clock),woe=createWoeLobby(db,p=>presence.has(p)?'duel_clearing':null,can,clock),runtime=createWoeMatchService(db,can,clock,{canSchedule:can,coreDefense:cd});for(const [a,b] of [['a','b'],['a','c'],['a','d'],['b','c'],['b','d'],['c','d']])db.query('INSERT INTO friendships VALUES (?,?,?)').run(a,b,now);const invites=createMinigameInvitations(db,{canServe:can,enabled:()=>true,online:()=>true,join:{woe:woe.joinFromInvitation,core_defense:lobby.joinFromInvitation},clock});return {db,lobby,cd,woe,runtime,invites,presence,clock,advance:(n:number)=>now+=n,disable:()=>enabled=false,enable:()=>enabled=true};}
 const create=(h:ReturnType<typeof setup>,mode:string,p='a')=>h.lobby.create(p,{mode,client_action_id:`create:${p}`});
+
+test('fresh and upgraded isolated file-backed SQLite migrations preserve match state',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'ew-r1-migrate-')), migrations=resolve(import.meta.dir,'../../migrations/sqlite');
+ const files=readdirSync(migrations).filter(f=>f.endsWith('.sql')).sort();
+ try {for(const upgrade of [false,true]){
+  const path=join(dir,upgrade?'upgrade.sqlite':'fresh.sqlite'),db=new Database(path);
+  try {
+   db.exec('PRAGMA foreign_keys=ON');
+   for(const f of files){
+    if(upgrade && f.startsWith('0038')){
+     db.query("INSERT INTO woe_rooms(room_id,join_code,mode,host_id,status,revision,created_at,updated_at,expires_at,match_json) VALUES ('room','CODE','1v1','a','STARTED',1,0,0,0,'legacy')").run();
+     db.query("INSERT INTO core_defense_rooms VALUES ('room','solo')").run();
+     db.query("INSERT INTO woe_matches(match_id,room_id,status,state_json,created_at,updated_at) VALUES ('match','room','RUNNING','authoritative',0,0)").run();
+    }
+    db.exec(readFileSync(join(migrations,f),'utf8'));
+   }
+   expect((db.query('PRAGMA integrity_check').get() as any).integrity_check).toBe('ok');
+   expect(db.query("SELECT name FROM sqlite_master WHERE name='core_defense_monthly_scores'").get()).not.toBeNull();
+   if(upgrade){expect((db.query("SELECT state_json FROM woe_matches WHERE match_id='match'").get() as any).state_json).toBe('authoritative');expect((db.query("SELECT match_json FROM woe_rooms WHERE room_id='room'").get() as any).match_json).toBeNull();}
+  } finally {db.close();unlinkSync(path)}
+ }} finally {rmdirSync(dir)}
+});
 
 function joinCoop(h:ReturnType<typeof setup>,host:string,player:string,id:string) {const sent=h.invites.invite(host,{room_id:id,game_kind:'core_defense',target_player_id:player,client_action_id:`${h.clock()}:send-${player}-${id}`});expect(sent.status).toBe(200);const accepted=h.invites.respond(player,{invite_id:sent.data.invite_id,accept:true,client_action_id:`${h.clock()}:accept-${host}-${id}`});expect(accepted.status).toBe(200);return accepted.data.room;}
 test('solo starts immediately, coexist, reserve and isolate WOE APIs',()=>{const h=setup(),a=create(h,'solo').data,b=create(h,'solo','b').data;expect(a.members[0]).toMatchObject({player_id:'a',display_name:'a'});expect(a.host_name).toBe('a');expect(a.status).toBe('STARTED');expect(create(h,'solo_bot','c').data.error).toBe('INVALID_REQUEST');expect(b.controllers.filter((p:any)=>p.bot)).toHaveLength(0);expect(activeWoe(h.db,'a',h.clock())).toBe(true);expect(h.woe.create('a',{mode:'1v1',client_action_id:'w'}).data.error).toBe('PLAYER_BUSY');expect(h.woe.state('a',a.room_id).status).toBe(404);expect(h.runtime.state('a',a.match_id,'0').status).toBe(404);expect(h.runtime.current('a').data.match).toBeNull();h.runtime.pulse();expect(h.cd.state('a',a.match_id,'0').data.tick).toBe(1);expect(h.cd.state('b',b.match_id,'0').data.tick).toBe(1);expect(h.cd.state('a',b.match_id,'0').status).toBe(403);h.db.close()});
@@ -57,6 +80,15 @@ test('coop monthly awards two humans and fenced terminal rollback',()=>{
 });
 
 test('monthly ranking deterministic ordering and limit',()=>{const h=setup(),time=h.clock(),month=new Date(time).toISOString().slice(0,7);for(let i=0;i<105;i++){const id=`p${String(i).padStart(3,'0')}`;h.db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,`Name ${id}`,'{}');h.db.query('INSERT INTO core_defense_monthly_scores VALUES (?,?,?,?,?)').run(month,'solo',id,10,i<2?time-1:time)}const result=h.cd.leaderboard('solo','current').data;expect(result.entries).toHaveLength(100);expect(result.entries[0].display_name).toBe('Name p000');expect(result.entries[99].display_name).toBe('Name p099');for(const [mode,period] of [['SOLO','current'],['solo',''],['solo','2023-11'],['solo_bot','previous']])expect(h.cd.leaderboard(mode,period).status).toBe(400);h.db.close()});
+test('CD-only maintenance drains obsolete monthly scores in bounded batches without leaderboard reads',()=>{
+ const h=setup(), now=Date.UTC(2025,2,1); h.advance(now-h.clock());
+ for(let i=0;i<70;i++){const id=`obsolete-${i}`;h.db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}');h.db.query('INSERT INTO core_defense_monthly_scores VALUES (?,?,?,?,?)').run('2025-01','solo',id,1,now)}
+ h.db.query('INSERT INTO core_defense_monthly_scores VALUES (?,?,?,?,?)').run('2025-02','solo','a',3,now);
+ const runtime=createWoeMatchService(h.db,()=>false,h.clock,{canSchedule:()=>true,coreDefense:h.cd});
+ const count=()=>Number((h.db.query("SELECT count(*) n FROM core_defense_monthly_scores WHERE month='2025-01'").get() as any).n);
+ runtime.pulse();expect(count()).toBe(38);h.advance(60001);runtime.pulse();expect(count()).toBe(6);h.advance(60001);runtime.pulse();expect(count()).toBe(0);
+ expect((h.db.query("SELECT count(*) n FROM core_defense_monthly_scores WHERE month='2025-02'").get() as any).n).toBe(1);h.db.close();
+});
 
 
 test('natural defeat records terminal UTC month across midnight and restart',()=>{const h=setup();h.advance(Date.UTC(2024,11,31,23,59,59)-h.clock());const r=create(h,'solo').data;let s=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(r.match_id) as any).state_json);s=advanceCoreDefenseTick(s);const e=s.units.find((u:any)=>u.kind==='enemy');const lab=s.laboratories.find((l:any)=>l.id==='blue:left');s.laboratories.find((l:any)=>l.id==='blue:right').hp=0;lab.hp=1;e.position={...lab.position};e.targetLane='left';e.cooldown=0;s.completedWaves=4;h.db.query('UPDATE woe_matches SET state_json=? WHERE match_id=?').run(JSON.stringify(s),r.match_id);h.advance(2000);createCoreDefenseMatchService(h.db,()=>true,h.clock).tickOne(r.match_id);expect(h.cd.state('a',r.match_id,'0').data.score).toMatchObject({reason:'laboratories',completed_waves:4});expect(h.cd.leaderboard('solo','current').data).toMatchObject({current_month:'2025-01',previous_month:'2024-12',entries:[{display_name:'a',completed_waves:4}]});expect(h.cd.leaderboard('solo','previous').data.entries).toHaveLength(0);h.db.close()});

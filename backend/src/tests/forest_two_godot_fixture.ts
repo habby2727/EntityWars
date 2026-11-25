@@ -31,7 +31,7 @@ try {
  for(let i=0;i<2;i++){
   const log=join(dir,`godot${i}.log`),profile=join(dir,`profile${i}`);mkdirSync(profile,{recursive:true});
   const env={...process.env,APPDATA:profile,XDG_DATA_HOME:profile,FOREST_TEST_PROFILE:profile,FOREST_SMOKE_URL:'',FOREST_FAULT_URL:'',FOREST_TWO_URL:base,FOREST_TWO_ID:records[i].id,FOREST_TWO_TOKEN:records[i].token,FOREST_TWO_OTHER:records[1-i].id,FOREST_TWO_THIRD:records[2].id,FOREST_DUEL_ROLE:String(i),FOREST_WOE_SYNC:dir,FOREST_WOE_TIMEOUT_TEST:process.env.FOREST_WOE_TIMEOUT_TEST||'0',FOREST_WOE_LAB_TEST:process.env.FOREST_WOE_LAB_TEST||'0'};
-  godots.push({log,proc:Bun.spawn([exe,'--headless','--path',root,'--log-file',log,'--script',process.env.FOREST_CD_TEST==='1'?'res://scripts/tests/smoke_core_defense_forest_e2e.gd':process.env.FOREST_WOE_TEST==='1'?'res://scripts/tests/smoke_woe_forest_e2e.gd':process.env.FOREST_DUEL_TEST==='1'?'res://scripts/tests/smoke_friendly_http.gd':'res://scripts/tests/smoke_forest_multiplayer.gd'],{cwd:root,env,stdout:'ignore',stderr:'ignore'})});
+  godots.push({log,proc:Bun.spawn([exe,'--headless',...(process.env.FOREST_GODOT_VERBOSE==='1'?['--verbose']:[]),'--path',root,'--log-file',log,'--script',process.env.FOREST_CD_TEST==='1'?'res://scripts/tests/smoke_core_defense_forest_e2e.gd':process.env.FOREST_WOE_TEST==='1'?'res://scripts/tests/smoke_woe_forest_e2e.gd':process.env.FOREST_DUEL_TEST==='1'?'res://scripts/tests/smoke_friendly_http.gd':'res://scripts/tests/smoke_forest_multiplayer.gd'],{cwd:root,env,stdout:'ignore',stderr:'ignore'})});
  }
  const injectLab=async()=>{
   if(process.env.FOREST_WOE_LAB_TEST!=='1')return;
@@ -54,7 +54,7 @@ try {
  const accelerateCoreDefense=async()=>{
   if(process.env.FOREST_CD_TEST!=='1')return;
   const wait=async(name:string)=>{const deadline=Date.now()+60000;while(!existsSync(join(dir,name))&&Date.now()<deadline)await Bun.sleep(50);assert(existsSync(join(dir,name)),`CD fixture synchronization: ${name}`)};
-  await wait('cd_deployed');await wait('cd_arena_0');
+  await wait('cd_deployed');await wait('cd_both_deployed');await wait('cd_arena_0');
   const id=readFileSync(join(dir,'cd_arena_0'),'utf8');
   const fixtureDb=new Database(dbPath);fixtureDb.exec('PRAGMA busy_timeout=5000');
   const edit=(fn:(state:any)=>void)=>fixtureDb.transaction(()=>{const row=fixtureDb.query("SELECT state_json FROM woe_matches WHERE match_id=? AND status='RUNNING'").get(id) as any;assert(row,'running CD fixture match');const state=JSON.parse(row.state_json);fn(state);fixtureDb.query('UPDATE woe_matches SET state_json=? WHERE match_id=?').run(JSON.stringify(state),id)}).immediate();
@@ -75,6 +75,18 @@ try {
  const logs=godots.map(g=>scrub(readFileSync(g.log,'utf8')));for(const log of logs)console.log(log);assert.deepEqual(exits,[0,0]);
  if(process.env.FOREST_WOE_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot WOE client logged an error');const ids=logs.map(log=>/WOE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'WOE clients received different matches');}
  if(process.env.FOREST_CD_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot Core Defense client logged an error');const ids=logs.map(log=>/CORE_DEFENSE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Core Defense clients received different matches');}
+ if(process.env.FOREST_CD_TEST==='1'){
+  const path='/forest/core-defense/leaderboard',headers={Authorization:`Bearer ${records[0].token}`,'X-EntityWars-Client-Build':'5509'};
+  assert.equal((await fetch(base+path+'?mode=solo&month=current')).status,401);
+  for(const q of ['mode=bad&month=current','mode=solo&mode=coop&month=current','mode=solo&month=current&extra=x']) assert.equal((await fetch(base+path+'?'+q,{headers})).status,400);
+  for(const mode of ['solo','coop']){const res=await fetch(base+path+`?mode=${mode}&month=current`,{headers});assert.equal(res.status,200);const data=await res.json() as any;assert.equal(data.mode,mode);assert.equal(data.viewed_month,data.current_month);if(mode==='coop')assert(data.entries.some((e:any)=>e.display_name===records[0].name&&e.completed_waves>=1),'authoritative coop score');}
+  const previous=await (await fetch(base+path+'?mode=coop&month=previous',{headers})).json() as any;assert.equal(previous.viewed_month,previous.previous_month);
+  console.log('Authenticated leaderboard HTTP: unauthorized, invalid and duplicate filters, solo/coop and injected-fixture terminal score passed');
+ }
+ if(process.env.FOREST_WOE_TEST==='1'){
+  const response=await fetch(base+'/forest/core-defense/leaderboard?mode=solo&month=current',{headers:{Authorization:`Bearer ${records[0].token}`,'X-EntityWars-Client-Build':'5509'}});
+  assert.equal(response.status,503);console.log('Authenticated leaderboard HTTP: disabled flag passed');
+ }
  if(process.env.FOREST_DUEL_TEST==='1'){const ids=logs.map(log=>/FRIENDLY_HTTP_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Friendly participants received different matches');}
  success=true;console.log('Two authenticated clients with separate profiles and third WebSocket: passed');
 } finally {

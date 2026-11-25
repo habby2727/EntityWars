@@ -1,7 +1,7 @@
 ﻿import enemyData from '../../../data/static/core_defense_enemies.json';
 import waveRules from '../../../data/static/core_defense_waves.json';
 import { arena, cardById, attackDamage, elementalMultiplier, ATTACK_INTERVAL_MS, type Element } from './catalog';
-import { initializeMatch, applyDeployment, validateDeployment, route, redirectRoute, move, nearestTarget, type Unit, type MatchState, type Controller, type Laboratory, type Lane, type DeploymentCommand } from './engine';
+import { initializeMatch, applyDeployment, validateDeployment, route, redirectRoute, move, nearestTarget, formationPoint, type Unit, type MatchState, type Controller, type Laboratory, type Lane, type DeploymentCommand } from './engine';
 
 export type CoreDefenseMode = 'solo' | 'coop';
 type PersistedCoreDefenseMode = CoreDefenseMode | 'solo_bot';
@@ -63,7 +63,8 @@ function spawn(s:CoreDefenseState) {
  const stats=enemyStats(def.id,s.wave), lane:Lane=(s.waveSpawned+(s.wave-1))%2===0?'left':'right';
  const target=s.laboratories.find(l=>l.team==='blue'&&l.lane===lane&&l.hp>0)?lane:other(lane);
  nextAvailableId(s);
- const u:DefenseUnit={id:s.nextUnitId++,controllerId:'',team:'red',lane,cardId:def.id,hp:stats.hp,maxHp:stats.hp,damage:stats.damage,defense:stats.defense,speed:stats.speed,range:stats.range,element:stats.element,kind:'enemy',position:clone(arena.spawns.red[lane]),route:route('red',lane,target),waypoint:0,targetLane:target,cooldown:0};
+ const id=s.nextUnitId++;
+ const u:DefenseUnit={id,controllerId:'',team:'red',lane,cardId:def.id,hp:stats.hp,maxHp:stats.hp,damage:stats.damage,defense:stats.defense,speed:stats.speed,range:stats.range,element:stats.element,kind:'enemy',position:formationPoint(arena.spawns.red[lane],id),route:route('red',lane,target,id),waypoint:0,targetLane:target,cooldown:0,formation:true};
  s.units.push(u);s.waveSpawned++;s.enemiesSpawned=plus(s.enemiesSpawned);s.pendingSpawns--;s.spawnCooldown=waveRules.spawn_interval_ticks;
  s.events.push({type:'spawn',tick:s.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane,kind:u.kind,assetId:u.cardId,element:u.element,hp:u.hp,maxHp:u.maxHp});
 }

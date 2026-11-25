@@ -141,6 +141,15 @@ func _run() -> void:
 		signal_file("cd_deployed")
 	else:
 		if not check(await wait_file("cd_deployed"),"deployment signal"): quit(1); return
+		var slot := -1
+		for i in range(3):
+			if not arena._buttons[i].disabled and slot < 0: slot = i
+		if not check(slot >= 0, "coop guest affordable card"): quit(1); return
+		arena._select(slot)
+		if not check(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible, "guest both lanes"): quit(1); return
+		arena._deploy("right")
+		if not check(await wait_for(func(): return not arena._acting and arena._snapshot.units.any(func(u): return str(u.get("controllerId", "")) == str(gate.player_id) and u.get("lane") == "right")), "guest right lane deployment"): quit(1); return
+		signal_file("cd_both_deployed")
 	# Fixture accelerates wave completion in its private database; the scheduler
 	# still performs the transition and emits both clients' authoritative states.
 	if not check(await wait_for(func(): return arena._snapshot.get("phase") == "intermission" and int(arena._snapshot.get("completedWaves", 0)) >= 1, 15.0),"wave one intermission"): quit(1); return

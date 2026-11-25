@@ -251,8 +251,13 @@ func _process(delta: float) -> void:
 	if _debug_visual:
 		_debug_step(delta)
 		return
+	if _finished:
+		if not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next and not _client.saved_pending().is_empty():
+			if str(_client.saved_pending().get("action", "")) == "start": _reconcile_pending_start()
+			else: _reconcile_other_matches()
+		return
 	_poll -= delta
-	if _poll <= 0.0 and not _requesting and (not _is_cd or (not _acting and not _finished and not _missing_match)) and _valid(): _poll_state()
+	if _poll <= 0.0 and not _requesting and not _finished and not _missing_match and (not _is_cd or not _acting) and _valid(): _poll_state()
 
 func _poll_state() -> void:
 	if _requesting or (_is_cd and _acting) or not _valid(): return
@@ -264,7 +269,7 @@ func _poll_state() -> void:
 	if not _valid() or requested_id != _match_id: return
 	_requesting = false
 	_delivery_ticks = mini(20, ceili(float(Time.get_ticks_msec() - request_start) / 100.0))
-	if _is_cd and ((int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "MATCH_UNAVAILABLE") or (int(result.get("code", 0)) == 403 and str(result.get("error", "")) == "NOT_PARTICIPANT")):
+	if ((int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "MATCH_UNAVAILABLE") or (int(result.get("code", 0)) == 403 and str(result.get("error", "")) == "NOT_PARTICIPANT")):
 		_missing_match = _client.reconcile_missing_match(_match_id, str(result.error))
 		_notice.text = tr("CD_UNAVAILABLE")
 		if _missing_match:
@@ -285,10 +290,9 @@ func _poll_state() -> void:
 	_server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 	_notice.text = tr("WOE_FORFEITED_NOTICE") if _forfeited else ""
 	_accept_state(result.data, true)
-	if str(_client.saved_pending().get("action", "")) == "start":
-		if _is_cd: _reconcile_pending_start()
-		elif not _acting: _retry_pending()
-	if _is_cd and not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
+	if str(_client.saved_pending().get("action", "")) == "start" and not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
+		_reconcile_pending_start()
+	elif not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
 		_reconcile_other_matches()
 	if _is_cd and int(result.data.get("revision", -1)) >= _deploy_receipt_revision:
 		_awaiting_deploy_state = false
@@ -459,7 +463,7 @@ func _render_snapshot() -> void:
 	var outcome: Variant = _snapshot.get("result")
 	_finished = outcome is Dictionary
 	if _finished:
-		if _is_cd and not _debug_visual and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
+		if not _debug_visual and not _client.reconcile_terminal({"match_id":_match_id,"status":"FINISHED","snapshot":_snapshot}):
 			_notice.text = tr("CD_UNAVAILABLE")
 		var winner := str(outcome.get("winner", ""))
 		_result.text = (tr("CD_RESULT") % [int(_server_score.get("completed_waves", _snapshot.get("completedWaves", 0))), tr("CD_REASON_" + str(outcome.get("reason", "laboratories")).to_upper())]) if _is_cd else (tr("WOE_DRAW") if winner.is_empty() or winner == "<null>" else (tr("WOE_VICTORY") if winner == _team else tr("WOE_DEFEAT")))
@@ -486,7 +490,7 @@ func _separate_units() -> void:
 			continue
 		var column := (rank % 5) - 2
 		var row := (rank / 5) % 3
-		unit.set_separation(Vector2(float(column) * 9.0, float(row - 1) * 6.0), float(rank % 3) * 9.0)
+		unit.set_separation(Vector2(float(column) * 3.0, float(row - 1) * 2.0), float(rank % 3) * 3.0)
 
 func _update_hud() -> void:
 	var zeal := float(_own.get("zeal",0))
@@ -650,24 +654,35 @@ func _debug_step(delta: float) -> void:
 			if is_instance_valid(unit): unit.attack()
 
 func _reconcile_pending_start() -> void:
+	_other_recovery_busy = true
+	_other_recovery_next = Time.get_ticks_msec() + 5000
 	var saved: Dictionary = _client.saved_pending()
 	var room_id := str(saved.get("values", {}).get("room_id", ""))
-	if room_id.is_empty(): return
-	var room: Dictionary = await _client.request("/forest/core-defense/state?room_id=" + room_id.uri_encode(), null, self)
+	if room_id.is_empty():
+		_other_recovery_busy = false
+		return
+	var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
+	var room: Dictionary = await _client.request(endpoint + "state?room_id=" + room_id.uri_encode(), null, self)
 	if not _valid(): return
-	if room.code == 200 and _client.valid_room(room.get("data"), str(ConnectionGate.player_id)) and str(room.data.get("match_id", "")) == _match_id:
+	if room.code == 200 and _client.valid_room(room.get("data"), str(ConnectionGate.player_id)) and not str(room.data.get("match_id", "")).is_empty():
 		_client.reconcile_started(room.data)
+	elif int(room.get("code", 0)) == 404 and str(room.get("error", "")) == "ROOM_UNAVAILABLE":
+		_client.reconcile_missing_room(room_id)
+	_other_recovery_busy = false
 
 # Old journals can block a new match, but must never be replayed in it.
 func _reconcile_other_matches() -> void:
 	_other_recovery_busy = true
 	_other_recovery_next = Time.get_ticks_msec() + 5000
 	var ids: Array[String] = []
-	for entry in [_client.saved_pending(), _client.saved_forfeit_action()]:
+	var entries := [_client.saved_pending()]
+	if _is_cd: entries.append(_client.saved_forfeit_action())
+	for entry in entries:
 		var id := str(entry.get("values", {}).get("match_id", ""))
 		if not id.is_empty() and id != _match_id and id not in ids: ids.append(id)
 	for id in ids:
-		var result: Dictionary = await _client.request("/forest/core-defense/match/state?match_id=" + id.uri_encode() + "&after=0", null, self)
+		var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
+		var result: Dictionary = await _client.request(endpoint + "match/state?match_id=" + id.uri_encode() + "&after=0", null, self)
 		if not _valid(): return
 		if result.code == 200 and _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) and str(result.data.match_id) == id and result.data.status == "FINISHED":
 			if not _client.reconcile_terminal(result.data): _notice.text = tr("CD_UNAVAILABLE")

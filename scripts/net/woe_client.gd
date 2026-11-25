@@ -37,11 +37,44 @@ func saved_pending() -> Dictionary:
 	var value: Variant = _config().get_value("pending", account_key(), {})
 	return value if value is Dictionary else {}
 
-func _save_pending(value: Dictionary) -> void:
-	if not available(): return
+func _save_pending(value: Dictionary) -> bool:
+	if not available(): return false
 	var cfg := _config()
 	cfg.set_value("pending", account_key(), value)
-	if cfg.save(recovery_file()) != OK: push_warning("WOE pending action could not be saved")
+	return cfg.save(recovery_file()) == OK
+
+func reconcile_started(room: Dictionary) -> void:
+	var saved := saved_pending()
+	if valid_room(room, str(ConnectionGate.player_id)) and room.get("status") == "STARTED" and saved.get("action") == "start" and str(saved.get("values", {}).get("room_id", "")) == str(room.get("room_id", "")):
+		if _save_pending({}): pending = {}
+
+func reconcile_terminal(match_data: Dictionary) -> bool:
+	if not available() or not valid_match(match_data, str(ConnectionGate.player_id)) or match_data.get("status") != "FINISHED": return false
+	var saved := saved_pending()
+	if str(saved.get("action", "")).begins_with("match/") and str(saved.get("values", {}).get("match_id", "")) == str(match_data.match_id):
+		if not _save_pending({}): return false
+		pending = {}
+	return true
+
+func reconcile_missing_match(match_id: String, error: String) -> bool:
+	if not available() or match_id.is_empty() or error not in ["MATCH_UNAVAILABLE", "NOT_PARTICIPANT"]: return false
+	var cfg := _config()
+	var saved: Variant = cfg.get_value("pending", account_key(), {})
+	if saved is Dictionary and str(saved.get("action", "")).begins_with("match/") and str(saved.get("values", {}).get("match_id", "")) == match_id: cfg.set_value("pending", account_key(), {})
+	if str(cfg.get_value("matches", account_key(), "")) == match_id: cfg.set_value("matches", account_key(), "")
+	if cfg.save(recovery_file()) != OK: return false
+	if str(pending.get("values", {}).get("match_id", "")) == match_id: pending = {}
+	return true
+
+func reconcile_missing_room(room_id: String) -> bool:
+	if not available() or room_id.is_empty(): return false
+	var cfg := _config()
+	var saved: Variant = cfg.get_value("pending", account_key(), {})
+	if saved is Dictionary and saved.get("action") in ["start", "leave"] and str(saved.get("values", {}).get("room_id", "")) == room_id: cfg.set_value("pending", account_key(), {})
+	if str(cfg.get_value("rooms", account_key(), "")) == room_id: cfg.set_value("rooms", account_key(), "")
+	if cfg.save(recovery_file()) != OK: return false
+	if str(pending.get("values", {}).get("room_id", "")) == room_id: pending = {}
+	return true
 
 func valid_room(data: Variant, player: String) -> bool:
 	if not data is Dictionary or not data.get("room_id") is String or str(data.room_id).is_empty() or not data.get("members") is Array: return false
@@ -118,7 +151,9 @@ func mutate(action: String, values: Dictionary = {}) -> Dictionary:
 		var body := values.duplicate(true)
 		body.client_action_id = "%s-%s" % [Time.get_ticks_usec(), Crypto.new().generate_random_bytes(16).hex_encode()]
 		pending = {"action":action,"values":values.duplicate(true),"body":body}
-		_save_pending(pending)
+		if not _save_pending(pending):
+			pending = {}
+			return {"code":0,"error":"WOE_RECOVERY_STORAGE"}
 	_pending_key = account
 	mutation_busy = true
 	var result: Dictionary = await request("/forest/woe/" + action, pending.body)
@@ -127,8 +162,10 @@ func mutate(action: String, values: Dictionary = {}) -> Dictionary:
 	var code := int(result.code)
 	if code == 200 and action in ["create", "join"] and not valid_room(result.get("data"), str(ConnectionGate.player_id)):
 		return {"code":0,"error":"WOE_NETWORK"}
-	if code > 0 and code < 500 and code != 408 and code != 429:
-		_save_pending({})
+	if code == 200 and action.begins_with("match/") and (not valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.match_id) != str(values.get("match_id", ""))): return {"code":0,"error":"WOE_NETWORK"}
+	var definitive_limit := code == 429 and str(result.get("error", "")) in ["ACTION_LIMIT", "MATCH_LIMIT", "ROOM_LIMIT"]
+	if code > 0 and code < 500 and code != 408 and (code != 429 or definitive_limit):
+		if not _save_pending({}): return {"code":0,"error":"WOE_RECOVERY_STORAGE"}
 		pending = {}
 		if code == 200:
 			var data: Variant = result.get("data", {})

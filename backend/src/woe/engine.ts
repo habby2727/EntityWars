@@ -6,7 +6,7 @@ export type Mode = "1v1" | "2v2";
 export interface Point { x: number; y: number }
 export interface Controller { id: string; team: Team; zealTenths: number; slots: string[]; queue: string[]; actionIds: string[] }
 export interface Laboratory { id: string; team: Team; lane: Lane; hp: number; maxHp: number; position: Point }
-export interface Unit { id: number; controllerId: string; team: Team; lane: Lane; cardId: string; hp: number; position: Point; route: Point[]; waypoint: number; targetLane: Lane; cooldown: number }
+export interface Unit { id: number; controllerId: string; team: Team; lane: Lane; cardId: string; hp: number; position: Point; route: Point[]; waypoint: number; targetLane: Lane; cooldown: number; formation?: boolean }
 export type CombatEvent = { type: "attack" | "death"; attacker?: number; target: number | string; damage?: number; tick: number; team: Team; cardId: string; position: Point; targetPosition: Point; victimCardId?: string | null; victimTeam?: Team; victimPosition?: Point; targetKind?: "unit" | "laboratory" };
 export interface MatchState { mode: Mode; kind: "woe"; tick: number; controllers: Controller[]; laboratories: Laboratory[]; units: Unit[]; nextUnitId: number; events: CombatEvent[]; result: { winner: Team | null; reason: "laboratories" | "timeout" | "forfeit" | "abandoned" } | null }
 export interface DeploymentCommand { actionId: string; controllerId: string; slot: number; cardId: string; lane: Lane }
@@ -43,13 +43,21 @@ export function initializeMatch(mode: Mode, seed: string, controllerIds: string[
   const perTeam = controllerIds.length / 2;
   return { kind: "woe", mode, tick: 0, controllers: controllerIds.map((id,i) => { const deck = shuffle(`${seed.length}:${seed}:${id.length}:${id}`); return { id, team: i < perTeam ? "blue" : "red", zealTenths: 50, slots: deck.slice(0,3), queue: deck.slice(3), actionIds: [] }; }), laboratories: teams.flatMap(team => lanes.map(lane => ({ id: labId(team,lane), team, lane, hp: arena.laboratory_hp, maxHp: arena.laboratory_hp, position: copy(arena.laboratories[team][lane]) }))), units: [], nextUnitId: 1, events: [], result: null };
 }
-export function route(team: Team, from: Lane, target: Lane): Point[] {
-  return [...copy(arena.approaches[team][from]), copy(arena.plaza), ...copy(arena.approaches[enemy(team)][target]).reverse(), copy(arena.spawns[enemy(team)][target])];
+// Fixed, bounded slots avoid collision solving and preserve forward progress. The
+// final waypoint stays within the shortest laboratory attack range (65).
+export function formationPoint(point: Point, id: number, endpoint=false): Point {
+  const order=[0,-1,1,-2,2], n=(id-1)%100, group=Math.floor(n/25), slot=n%25;
+  return {x:point.x+order[slot%5]*(endpoint?10:12)+(endpoint?[0,1,-1,2][group]:[0,3,-3,6][group]), y:point.y+(endpoint?0:order[Math.floor(slot/5)]*8+[0,2,-2,4][group])};
+}
+export function route(team: Team, from: Lane, target: Lane, formationId?: number): Point[] {
+  const points=[...copy(arena.approaches[team][from]), copy(arena.plaza), ...copy(arena.approaches[enemy(team)][target]).reverse(), copy(arena.spawns[enemy(team)][target])];
+  return formationId === undefined ? points : points.map((p,i)=>formationPoint(p,formationId,i===points.length-1));
 }
 // Before the plaza, keep following the current approach. Beyond it, cross to the
 // other approach at the same depth, then continue toward the surviving lab.
 export function redirectRoute(unit: Unit, target: Lane): Point[] {
-  const approach = [copy(arena.plaza), ...copy(arena.approaches[enemy(unit.team)][target]).reverse(), copy(arena.spawns[enemy(unit.team)][target])];
+  let approach = [copy(arena.plaza), ...copy(arena.approaches[enemy(unit.team)][target]).reverse(), copy(arena.spawns[enemy(unit.team)][target])];
+  if(unit.formation) approach=approach.map((p,i)=>formationPoint(p,unit.id,i===approach.length-1));
   const plazaIndex = arena.approaches[unit.team][unit.lane].length;
   if (unit.waypoint <= plazaIndex) return [...copy(unit.route.slice(unit.waypoint, plazaIndex + 1)), ...approach.slice(1)];
   const y = unit.position.y;
@@ -97,7 +105,8 @@ export function applyDeployment(state: MatchState, command: DeploymentCommand): 
   player.slots[command.slot] = player.queue.shift()!; player.queue.push(command.cardId);
   let targetLane = command.lane;
   if (!next.laboratories.find(l => l.team === enemy(player.team) && l.lane === targetLane && l.hp > 0)) targetLane = targetLane === "left" ? "right" : "left";
-  next.units.push({ id: next.nextUnitId++, controllerId: player.id, team: player.team, lane: command.lane, cardId: command.cardId, hp: cardById[command.cardId].hp, position: copy(arena.spawns[player.team][command.lane]), route: route(player.team,command.lane,targetLane), waypoint: 0, targetLane, cooldown: 0 });
+  const id=next.nextUnitId++;
+  next.units.push({ id, controllerId: player.id, team: player.team, lane: command.lane, cardId: command.cardId, hp: cardById[command.cardId].hp, position: formationPoint(arena.spawns[player.team][command.lane],id), route: route(player.team,command.lane,targetLane,id), waypoint: 0, targetLane, cooldown: 0, formation:true });
   return { accepted: true, state: next };
 }
 export function move(unit: Unit, amount: number) {
