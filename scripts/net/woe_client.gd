@@ -14,9 +14,12 @@ func account_key() -> String:
 func available() -> bool:
 	return not ConnectionGate.blocked() and not str(ConnectionGate.player_id).is_empty() and not str(ConnectionGate.token).is_empty() and not str(ConnectionGate.base_url).is_empty()
 
+func recovery_file() -> String:
+	return RECOVERY_FILE
+
 func _config() -> ConfigFile:
 	var cfg := ConfigFile.new()
-	cfg.load(RECOVERY_FILE)
+	cfg.load(recovery_file())
 	return cfg
 
 func saved_room() -> String:
@@ -27,7 +30,7 @@ func save_room(room_id: String) -> void:
 	if not available(): return
 	var cfg := _config()
 	cfg.set_value("rooms", account_key(), room_id)
-	if cfg.save(RECOVERY_FILE) != OK: push_warning("WOE recovery could not be saved")
+	if cfg.save(recovery_file()) != OK: push_warning("WOE recovery could not be saved")
 
 func saved_pending() -> Dictionary:
 	if not available(): return {}
@@ -38,7 +41,7 @@ func _save_pending(value: Dictionary) -> void:
 	if not available(): return
 	var cfg := _config()
 	cfg.set_value("pending", account_key(), value)
-	if cfg.save(RECOVERY_FILE) != OK: push_warning("WOE pending action could not be saved")
+	if cfg.save(recovery_file()) != OK: push_warning("WOE pending action could not be saved")
 
 func valid_room(data: Variant, player: String) -> bool:
 	if not data is Dictionary or not data.get("room_id") is String or str(data.room_id).is_empty() or not data.get("members") is Array: return false
@@ -55,7 +58,7 @@ func save_match(match_id: String) -> void:
 	if not available(): return
 	var cfg := _config()
 	cfg.set_value("matches", account_key(), match_id)
-	if cfg.save(RECOVERY_FILE) != OK: push_warning("WOE match recovery could not be saved")
+	if cfg.save(recovery_file()) != OK: push_warning("WOE match recovery could not be saved")
 
 func saved_forfeit() -> String:
 	if not available(): return ""
@@ -65,11 +68,12 @@ func save_forfeit(match_id: String) -> void:
 	if not available(): return
 	var cfg := _config()
 	cfg.set_value("forfeited", account_key(), match_id)
-	if cfg.save(RECOVERY_FILE) != OK: push_warning("WOE forfeit recovery could not be saved")
+	if cfg.save(recovery_file()) != OK: push_warning("WOE forfeit recovery could not be saved")
 
 func valid_match(data: Variant, player: String) -> bool:
 	if not data is Dictionary or not data.get("match_id") is String or str(data.match_id).is_empty(): return false
 	if data.get("status") not in ["RUNNING", "FINISHED"] or not data.get("snapshot") is Dictionary: return false
+	if data.snapshot.get("kind") != "woe": return false
 	var players: Variant = data.snapshot.get("players")
 	if not players is Array: return false
 	var found := false

@@ -600,7 +600,7 @@ func _build_npc_actions() -> void:
 		if data.id == _talking_to.npc_id:
 			action = data.action_id
 			break
-	var options := ["guide_inventory", "guide_trade"] if action == "guide" else ([action] if action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe"] else [])
+	var options := ["guide_inventory", "guide_trade"] if action == "guide" else ([action] if action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe", "core_defense"] else [])
 	for option in options:
 		var button := Button.new()
 		button.name = "Action_" + option
@@ -619,12 +619,26 @@ func forest_action_allowed(action: String, zone_id: String, foot: Vector2, facin
 		return false
 	for data in NPCs.NPCS:
 		if data.id == _talking_to.npc_id and data.zone == zone_id:
-			return (data.action_id == "guide" and action in ["guide_inventory", "guide_trade"]) or (data.action_id == action and action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe"])
+			return (data.action_id == "guide" and action in ["guide_inventory", "guide_trade"]) or (data.action_id == action and action in ["forge", "lab", "expeditions", "world_gate", "ranked", "woe", "core_defense"])
 	return false
 
 func _open_npc_action(action: String) -> void:
 	if _handoff_pending: return
 	if not forest_action_allowed(action, str(_zones[_zone_index].id), _player.position, _player.facing) or not SceneRouter._forest_modes_safe():
+		return
+	if action == "core_defense":
+		if _canvas.get_node_or_null("CoreDefenseBrowser") != null: return
+		var browser = preload("res://scripts/ui/core_defense_browser.gd").new()
+		browser.name = "CoreDefenseBrowser"
+		browser.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+		var half_width := minf(360.0, _canvas.size.x * 0.46)
+		var half_height := minf(310.0, _canvas.size.y * 0.46)
+		browser.offset_left = -half_width
+		browser.offset_right = half_width
+		browser.offset_top = -half_height
+		browser.offset_bottom = half_height
+		_canvas.add_child(browser)
+		browser.admitted.connect(_core_defense_admitted)
 		return
 	if action == "woe":
 		if _canvas.get_node_or_null("WOEBrowser") != null: return
@@ -653,6 +667,15 @@ func _woe_admitted(room: Dictionary) -> void:
 	if not is_inside_tree(): return
 	if identity == WoeClient.identity():
 		SceneRouter.begin_woe(room, str(_zones[_zone_index].id), _player.position, _player.facing)
+	_resume_if_still_here()
+
+func _core_defense_admitted(room: Dictionary) -> void:
+	if _handoff_pending or not (CoreDefenseClient.valid_room(room, str(ConnectionGate.player_id)) or CoreDefenseClient.valid_match(room, str(ConnectionGate.player_id))) or not forest_action_allowed("core_defense", str(_zones[_zone_index].id), _player.position, _player.facing): return
+	var identity: String = CoreDefenseClient.identity()
+	await _prepare_handoff("suspend")
+	if not is_inside_tree(): return
+	if identity == CoreDefenseClient.identity():
+		SceneRouter.begin_core_defense(room, str(_zones[_zone_index].id), _player.position, _player.facing)
 	_resume_if_still_here()
 
 func _update_dialogue_text() -> void:

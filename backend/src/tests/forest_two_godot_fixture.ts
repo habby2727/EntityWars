@@ -13,7 +13,7 @@ const backend=resolve(import.meta.dir,'../..'),root=resolve(backend,'..'),dir=mk
 const tokenLifetime=process.env.FOREST_WOE_TIMEOUT_TEST==='1'?600000:120000;
 const records=Array.from({length:3},(_,i)=>({id:randomUUID(),token:randomUUID(),name:`TwoGodot${i}`}));
 for(const f of readdirSync(join(backend,'migrations/sqlite')).filter(f=>f.endsWith('.sql')).sort()) db.exec(readFileSync(join(backend,'migrations/sqlite',f),'utf8'));
-const insert=db.prepare('INSERT INTO players (player_id,display_name,state_json,updated_at) VALUES (?,?,?,?)');for(const r of records) insert.run(r.id,r.name,'{}',now);db.close();
+const insert=db.prepare('INSERT INTO players (player_id,display_name,state_json,updated_at) VALUES (?,?,?,?)');for(const r of records) insert.run(r.id,r.name,'{}',now);if(process.env.FOREST_CD_TEST==='1'){const ids=[records[0].id,records[1].id].sort();db.query('INSERT INTO friendships VALUES (?,?,?)').run(ids[0],ids[1],now)}db.close();
 const rp=await port(),ap=await port(),base=`http://127.0.0.1:${ap}`,redisBin=Bun.env.FOREST_TEST_REDIS_SERVER||Bun.which('redis-server');assert(redisBin,'redis-server required');
 const redisProc=Bun.spawn([redisBin,'--bind','127.0.0.1','--port',String(rp),'--save','','--appendonly','no'],{stdout:'ignore',stderr:'ignore'});
 const redis=new Redis(`redis://127.0.0.1:${rp}`,{lazyConnect:true,retryStrategy:()=>null});redis.on('error',()=>{});
@@ -23,7 +23,7 @@ const scrub=(value:string)=>{for(const r of records){value=value.split(r.token).
 try {
  let ready=false;for(let i=0;i<50;i++){try{await redis.connect();ready=true;break}catch{await Bun.sleep(100)}}assert(ready,'Redis startup failed');
  const pipe=redis.pipeline();for(const r of records){const h=createHash('sha256').update(r.token).digest('hex');pipe.set(`access:${r.token}`,JSON.stringify({userId:r.id,createdAt:now,expiresAt:now+tokenLifetime}),'PX',tokenLifetime);pipe.set(`idle:${h}`,'1','EX',10800);pipe.set(`idle-initialized:${h}`,'1','PX',tokenLifetime);}await pipe.exec();
- server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:backend,env:{...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(ap),DB_PATH:dbPath,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_WOE_ENABLED:process.env.FOREST_WOE_TEST==='1'?'1':'0',FOREST_DUELS_ENABLED:process.env.FOREST_DUEL_TEST==='1'?'1':'0',PVP_ENABLED:'0',PVP_RNG_SECRET:'friendly-fixture-secret-at-least-32-bytes',SESSION_IDLE_ENABLED:'1'},stdout:Bun.file(serverLog),stderr:Bun.file(serverErr)});
+ server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:backend,env:{...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(ap),DB_PATH:dbPath,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_WOE_ENABLED:process.env.FOREST_WOE_TEST==='1'?'1':'0',FOREST_CORE_DEFENSE_ENABLED:process.env.FOREST_CD_TEST==='1'?'1':'0',SOCIAL_ENABLED:process.env.FOREST_CD_TEST==='1'?'1':'0',FOREST_DUELS_ENABLED:process.env.FOREST_DUEL_TEST==='1'?'1':'0',PVP_ENABLED:'0',PVP_RNG_SECRET:'friendly-fixture-secret-at-least-32-bytes',SESSION_IDLE_ENABLED:'1'},stdout:Bun.file(serverLog),stderr:Bun.file(serverErr)});
  ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}assert(ready,'API startup failed');
  third=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${records[2].token}`,'X-EntityWars-Client-Build':'5509'}} as any);
  await new Promise<void>((ok,fail)=>{const t=setTimeout(()=>fail(Error('third peer welcome timeout')),5000);third!.onopen=()=>third!.send(JSON.stringify({v:1,type:'enter',summoner_id:'cyberghost'}));third!.onmessage=e=>{if(JSON.parse(String(e.data)).type==='welcome'){clearTimeout(t);ok();}};third!.onerror=()=>fail(Error('third peer socket error'));third!.onclose=e=>{if(e.code!==1000)fail(Error(`third peer closed: ${e.code} ${e.reason}`));};});
@@ -31,7 +31,7 @@ try {
  for(let i=0;i<2;i++){
   const log=join(dir,`godot${i}.log`),profile=join(dir,`profile${i}`);mkdirSync(profile,{recursive:true});
   const env={...process.env,APPDATA:profile,XDG_DATA_HOME:profile,FOREST_TEST_PROFILE:profile,FOREST_SMOKE_URL:'',FOREST_FAULT_URL:'',FOREST_TWO_URL:base,FOREST_TWO_ID:records[i].id,FOREST_TWO_TOKEN:records[i].token,FOREST_TWO_OTHER:records[1-i].id,FOREST_TWO_THIRD:records[2].id,FOREST_DUEL_ROLE:String(i),FOREST_WOE_SYNC:dir,FOREST_WOE_TIMEOUT_TEST:process.env.FOREST_WOE_TIMEOUT_TEST||'0',FOREST_WOE_LAB_TEST:process.env.FOREST_WOE_LAB_TEST||'0'};
-  godots.push({log,proc:Bun.spawn([exe,'--headless','--path',root,'--log-file',log,'--script',process.env.FOREST_WOE_TEST==='1'?'res://scripts/tests/smoke_woe_forest_e2e.gd':process.env.FOREST_DUEL_TEST==='1'?'res://scripts/tests/smoke_friendly_http.gd':'res://scripts/tests/smoke_forest_multiplayer.gd'],{cwd:root,env,stdout:'ignore',stderr:'ignore'})});
+  godots.push({log,proc:Bun.spawn([exe,'--headless','--path',root,'--log-file',log,'--script',process.env.FOREST_CD_TEST==='1'?'res://scripts/tests/smoke_core_defense_forest_e2e.gd':process.env.FOREST_WOE_TEST==='1'?'res://scripts/tests/smoke_woe_forest_e2e.gd':process.env.FOREST_DUEL_TEST==='1'?'res://scripts/tests/smoke_friendly_http.gd':'res://scripts/tests/smoke_forest_multiplayer.gd'],{cwd:root,env,stdout:'ignore',stderr:'ignore'})});
  }
  const injectLab=async()=>{
   if(process.env.FOREST_WOE_LAB_TEST!=='1')return;
@@ -49,9 +49,10 @@ try {
    fixtureDb.query('UPDATE woe_matches SET state_json=? WHERE match_id=?').run(JSON.stringify(next),id);
   }).immediate()} finally {fixtureDb.close()}
  };
- let timer:any;const exits=await Promise.race([Promise.all([injectLab(),...godots.map(g=>g.proc.exited)]).then(x=>x.slice(1)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('overall client timeout; inspect last phase in retained logs')),process.env.FOREST_WOE_TIMEOUT_TEST==='1'?360000:process.env.FOREST_WOE_TEST==='1'?120000:60000);})]);clearTimeout(timer);
+ let timer:any;const exits=await Promise.race([Promise.all([injectLab(),...godots.map(g=>g.proc.exited)]).then(x=>x.slice(1)),new Promise<never>((_,fail)=>{timer=setTimeout(()=>fail(Error('overall client timeout; inspect last phase in retained logs')),process.env.FOREST_WOE_TIMEOUT_TEST==='1'?360000:(process.env.FOREST_WOE_TEST==='1'||process.env.FOREST_CD_TEST==='1')?120000:60000);})]);clearTimeout(timer);
  const logs=godots.map(g=>scrub(readFileSync(g.log,'utf8')));for(const log of logs)console.log(log);assert.deepEqual(exits,[0,0]);
  if(process.env.FOREST_WOE_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot WOE client logged an error');const ids=logs.map(log=>/WOE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'WOE clients received different matches');}
+ if(process.env.FOREST_CD_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot Core Defense client logged an error');const ids=logs.map(log=>/CORE_DEFENSE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Core Defense clients received different matches');}
  if(process.env.FOREST_DUEL_TEST==='1'){const ids=logs.map(log=>/FRIENDLY_HTTP_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Friendly participants received different matches');}
  success=true;console.log('Two authenticated clients with separate profiles and third WebSocket: passed');
 } finally {

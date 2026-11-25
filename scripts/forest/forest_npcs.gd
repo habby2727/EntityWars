@@ -10,6 +10,7 @@ const NPCS := [
 	{"id":"mycelial_oracle", "zone":"ethereal_mist", "position":Vector2(610,620), "front":"Mycelial_Oracle_Front.png", "side":"Mycelial_Oracle_Side_Right.png", "action_id":"lore"},
 	{"id":"underbrush_eye", "zone":"ethereal_mist", "position":Vector2(1390,620), "front":"Underbrush_Eye_front.png", "side":"Underbrush_Eye_side_right.png", "action_id":"lore"},
 	{"id":"threshold_mask_spirit2", "zone":"arcane_sanctuary", "position":Vector2(1310,570), "front":"Threshold_Mask_Spirit2_FRONT.png", "side":"Threshold_Mask_Spirit2_SIDE_RIGHT.png", "action_id":"world_gate"},
+	{"id":"core_defense", "zone":"duel_clearing", "position":Vector2(800,450), "front":"Threshold_Mask_Spirit2_FRONT.png", "side":"Threshold_Mask_Spirit2_SIDE_RIGHT.png", "action_id":"core_defense", "stationary":true},
 	{"id":"war_of_entities", "zone":"duel_clearing", "position":Vector2(1120,450), "front":"Moss_Ruin_Guardian_FRONT.png", "side":"Moss_Ruin_Guardian_SIDE_RIGHT.png", "action_id":"woe", "stationary":true},
 	{"id":"bark_witch", "zone":"duel_clearing", "position":Vector2(1430,590), "front":"Bark_Witch_front.png", "side":"Bark_Witch_side_right.png", "action_id":"ranked"}
 ]

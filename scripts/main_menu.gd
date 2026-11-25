@@ -36,6 +36,16 @@ func _ready() -> void:
 		settings_btn.pressed.connect(SceneRouter.go_to_settings)
 	$ExitButton.pressed.connect(_show_exit_confirmation)
 	_recover_woe.call_deferred()
+	_recover_core_defense.call_deferred()
+
+func _recover_core_defense() -> void:
+	if not CoreDefenseClient.available() or CoreDefenseClient.saved_match().is_empty(): return
+	var identity: String = CoreDefenseClient.identity()
+	var match_id: String = CoreDefenseClient.saved_match()
+	var response: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/current", null, self)
+	if not is_inside_tree() or identity != CoreDefenseClient.identity(): return
+	if response.code == 200 and CoreDefenseClient.valid_match(response.data, str(ConnectionGate.player_id)) and str(response.data.match_id) == match_id:
+		SceneRouter.recover_core_defense_after_startup(response.data)
 
 func _recover_woe() -> void:
 	if not WoeClient.available() or WoeClient.saved_match().is_empty(): return

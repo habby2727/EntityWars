@@ -32,6 +32,9 @@ class DeployMarker extends Button:
 		draw_circle(center, 4.0, Color("fff7c9"))
 
 var _identity := ""
+var _client: Node
+var _is_cd := false
+var _server_score := {}
 var _match_id := ""
 var _cursor := 0
 var _revision := -1
@@ -73,7 +76,12 @@ var _finished := false
 var _seconds := 0.0
 
 func _ready() -> void:
-	_identity = WoeClient.identity()
+	_is_cd = SceneRouter._woe_context.get("kind", "woe") == "core_defense"
+	_client = CoreDefenseClient if _is_cd else WoeClient
+	if _is_cd:
+		_poll_period = 1.0
+		_backoff = 1.0
+	_identity = _client.identity()
 	if not SceneRouter.woe_context_valid():
 		SceneRouter.finish_woe_safely.call_deferred()
 		return
@@ -84,13 +92,13 @@ func _ready() -> void:
 	var catalog: Variant = JSON.parse_string(FileAccess.get_file_as_string(CARDS))
 	if catalog is Dictionary:
 		for card in catalog.get("cards", []): _cards[str(card.id)] = card
-	_forfeited = WoeClient.saved_forfeit() == _match_id
+	_forfeited = _client.saved_forfeit() == _match_id
 	_build()
 	_forfeit.disabled = _forfeited
 	_poll_state()
 
 func _valid() -> bool:
-	return is_inside_tree() and _identity == WoeClient.identity() and SceneRouter.woe_context_valid() and str(SceneRouter._woe_context.get("match_id", "")) == _match_id
+	return is_inside_tree() and _identity == _client.identity() and SceneRouter.woe_context_valid() and str(SceneRouter._woe_context.get("match_id", "")) == _match_id
 
 func _build() -> void:
 	var aspect := AspectRatioContainer.new()
@@ -116,7 +124,7 @@ func _build() -> void:
 	_effects = EFFECTS.new()
 	_stage.add_child(_effects)
 	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ARENA))
-	for team in ["blue", "red"]:
+	for team in (["blue"] if _is_cd else ["blue", "red"]):
 		for lane in ["left", "right"]:
 			var point: Dictionary = data.laboratories[team][lane]
 			var meter := Meter.new()
@@ -143,12 +151,12 @@ func _build() -> void:
 			_stage.add_child(marker)
 			_lane_buttons[team + ":" + lane] = marker
 	var top := HBoxContainer.new()
-	top.position = Vector2(660, 15)
-	top.size = Vector2(600, 55)
+	top.position = Vector2(320, 15) if _is_cd else Vector2(660, 15)
+	top.size = Vector2(1280, 55) if _is_cd else Vector2(600, 55)
 	top.alignment = BoxContainer.ALIGNMENT_CENTER
 	_stage.add_child(top)
 	_clock = Label.new()
-	_clock.add_theme_font_size_override("font_size", 32)
+	_clock.add_theme_font_size_override("font_size", 25 if _is_cd else 32)
 	top.add_child(_clock)
 	_notice = Label.new()
 	_notice.position = Vector2(670,75)
@@ -217,7 +225,7 @@ func _resize() -> void:
 	if is_instance_valid(_stage): _stage.scale = _canvas.size / Vector2(1920,1080)
 
 func _process(delta: float) -> void:
-	if not _identity.is_empty() and _identity != WoeClient.identity():
+	if not _identity.is_empty() and _identity != _client.identity():
 		SceneRouter.finish_woe_safely()
 		return
 	_seconds += delta
@@ -228,28 +236,33 @@ func _process(delta: float) -> void:
 	for marker in _lane_buttons.values():
 		if marker.visible: marker.modulate.a = 0.6 + 0.3 * sin(_seconds * 4.0)
 	_poll -= delta
-	if _poll <= 0.0 and not _requesting and _valid(): _poll_state()
+	if _poll <= 0.0 and not _requesting and (not _is_cd or (not _acting and not _finished)) and _valid(): _poll_state()
 
 func _poll_state() -> void:
-	if _requesting or not _valid(): return
+	if _requesting or (_is_cd and _acting) or not _valid(): return
 	_requesting = true
 	var requested_id := _match_id
-	var result: Dictionary = await WoeClient.request("/forest/woe/match/state?match_id=%s&after=%d" % [requested_id.uri_encode(), _cursor], null, self)
+	var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
+	var result: Dictionary = await _client.request(endpoint + "match/state?match_id=%s&after=%d" % [requested_id.uri_encode(), _cursor], null, self)
 	if not _valid() or requested_id != _match_id: return
 	_requesting = false
-	if int(result.get("code", 0)) != 200 or not WoeClient.valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.get("match_id", "")) != _match_id:
+	if int(result.get("code", 0)) != 200 or not _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.get("match_id", "")) != _match_id:
 		_playback_ready = false
 		_notice.text = tr("WOE_ARENA_NETWORK")
-		if int(result.get("code",0)) == 429: _poll_period = 0.65
+		if int(result.get("code",0)) == 429: _poll_period = 4.0 if _is_cd else 0.65
 		_backoff = minf(8.0, maxf(1.0, _backoff * 2.0))
 		_poll = _backoff
 		return
-	_backoff = POLL_INTERVAL
+	_backoff = 1.0 if _is_cd else POLL_INTERVAL
+	if _is_cd and _poll_period > 1.0: _poll_period = 1.0
+	_server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 	_notice.text = tr("WOE_FORFEITED_NOTICE") if _forfeited else ""
 	_accept_state(result.data, true)
-	_poll = 0.05 if _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
-	if not _acting and not WoeClient.saved_pending().is_empty():
-		var pending: Dictionary = WoeClient.saved_pending()
+	_poll = (0.85 if _is_cd else 0.05) if _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
+	if _is_cd and not _acting and not _client.saved_forfeit_action().is_empty():
+		_retry_forfeit()
+	elif not _acting and not _client.saved_pending().is_empty():
+		var pending: Dictionary = _client.saved_pending()
 		if str(pending.get("action", "")).begins_with("match/") and str(pending.get("values", {}).get("match_id", "")) == _match_id: _retry_pending()
 
 func _accept_state(data: Dictionary, consume_events: bool) -> void:
@@ -290,9 +303,9 @@ func _clear_visuals() -> void:
 	_known_units.clear()
 	if is_instance_valid(_effects): _effects.clear()
 
-func _remember(id: int, card: String, team: String, point: Vector2) -> void:
-	if id <= 0 or card not in UNIT.IDS or team not in ["blue", "red"]: return
-	_known_units[id] = {"cardId":card, "team":team, "position":point}
+func _remember(id: int, card: String, team: String, point: Vector2, unit_kind: String = "homunculus", element: String = "") -> void:
+	if id <= 0 or card not in UNIT.IDS + UNIT.ENEMY_IDS or team not in ["blue", "red"]: return
+	_known_units[id] = {"cardId":card, "team":team, "position":point, "kind":unit_kind, "element":element if not element.is_empty() else _element(card)}
 	while _known_units.size() > 256: _known_units.erase(_known_units.keys()[0])
 
 func _point(value: Variant) -> Vector2:
@@ -300,9 +313,9 @@ func _point(value: Variant) -> Vector2:
 
 func _remember_event(event: Dictionary) -> void:
 	if str(event.get("type", "")) == "spawn":
-		_remember(int(event.get("unit_id", 0)), str(event.get("card_id", "")), str(event.get("team", "")), _point(event.get("position")))
+		_remember(int(event.get("unit_id", 0)), str(event.get("assetId", event.get("card_id", ""))), str(event.get("team", "")), _point(event.get("position")), str(event.get("kind", "homunculus")), str(event.get("element", "")))
 	elif str(event.get("type", "")) in ["attack", "death"]:
-		_remember(int(event.get("attacker", 0)), str(event.get("cardId", "")), str(event.get("team", "")), _point(event.get("position")))
+		_remember(int(event.get("attacker", 0)), str(event.get("cardId", "")), str(event.get("team", "")), _point(event.get("position")), str(event.get("kind", "homunculus")), str(event.get("element", "")))
 
 func _element(card_id: String) -> String:
 	return str(_cards.get(card_id, {}).get("element", ""))
@@ -311,11 +324,11 @@ func _event(event: Dictionary) -> void:
 	var kind := str(event.get("type", ""))
 	if kind == "spawn":
 		var point := _point(event.get("position"))
-		_effects.emit_effect("spawn", _element(str(event.get("card_id", ""))), point, point, str(event.get("team", "")))
+		_effects.emit_effect("spawn", str(event.get("element", _element(str(event.get("card_id", ""))))), point, point, str(event.get("team", "")))
 	elif kind == "attack":
 		var source := _point(event.get("position"))
 		var target := _point(event.get("targetPosition"))
-		var element := _element(str(event.get("cardId", "")))
+		var element := str(event.get("element", _element(str(event.get("cardId", "")))) )
 		var attacker: Variant = _units.get(int(event.get("attacker", 0)))
 		if is_instance_valid(attacker) and attacker.target_position.distance_to(source) < 80.0: attacker.attack()
 		var victim: Variant = _units.get(int(event.get("target", 0))) if event.get("target") is int or event.get("target") is float else null
@@ -331,7 +344,7 @@ func _event(event: Dictionary) -> void:
 	elif kind == "death" and (event.get("targetKind") == "unit" or event.get("target") is int or event.get("target") is float):
 		var id := int(event.get("target",0))
 		var known: Dictionary = _known_units.get(id, {})
-		var card := str(event.get("victimCardId", known.get("cardId", "")))
+		var card := str(event.get("victimAssetId", event.get("victimCardId", known.get("cardId", ""))))
 		var team := str(event.get("victimTeam", known.get("team", "")))
 		var raw_point: Variant = event.get("victimPosition", event.get("targetPosition"))
 		if not raw_point is Dictionary or not raw_point.has("x") or not raw_point.has("y"):
@@ -339,22 +352,24 @@ func _event(event: Dictionary) -> void:
 			else: return
 		var point := _point(raw_point)
 		# A dead unit is rendered only as an independent corpse, never a live unit.
-		if card in UNIT.IDS and team in ["blue", "red"] and not _units.has(id):
+		if card in UNIT.IDS + UNIT.ENEMY_IDS and team in ["blue", "red"] and not _units.has(id):
 			for old in _corpses.duplicate():
 				if not is_instance_valid(old) or old.is_queued_for_deletion(): _corpses.erase(old)
 			if _corpses.size() >= 32:
 				_corpses.pop_front().queue_free()
 			var corpse := UNIT.new()
 			_field.add_child(corpse)
-			corpse.setup({"id":id,"cardId":card,"team":team,"x":point.x,"y":point.y,"hp":0,"maxHp":1})
+			corpse.setup({"id":id,"cardId":card,"assetId":card,"kind":str(event.get("victimKind", known.get("kind", "homunculus"))),"team":team,"x":point.x,"y":point.y,"hp":0,"maxHp":1})
 			corpse.die()
 			_corpses.append(corpse)
-			_effects.emit_effect("death", _element(card), point, point, team)
+			_effects.emit_effect("death", str(event.get("victimElement", known.get("element", _element(card)))), point, point, team)
 
 func _add_unit(data: Dictionary) -> Node:
 	var id := int(data.get("id",0))
 	if _units.has(id): return _units[id]
-	if str(data.get("cardId", "")) not in UNIT.IDS or str(data.get("team", "")) not in ["blue", "red"]: return null
+	var asset := str(data.get("assetId", data.get("cardId", "")))
+	var kind := str(data.get("kind", "homunculus"))
+	if (kind == "enemy" and asset not in UNIT.ENEMY_IDS) or (kind == "homunculus" and asset not in UNIT.IDS) or kind not in ["enemy", "homunculus"] or str(data.get("team", "")) not in ["blue", "red"]: return null
 	var unit := UNIT.new()
 	_field.add_child(unit)
 	unit.setup(data)
@@ -378,7 +393,7 @@ func _render_snapshot() -> void:
 	for data in _snapshot.get("units", []):
 		if not data is Dictionary: continue
 		var id := int(data.get("id",0))
-		_remember(id, str(data.get("cardId", "")), str(data.get("team", "")), Vector2(float(data.get("x",0)), float(data.get("y",0))))
+		_remember(id, str(data.get("assetId", data.get("cardId", ""))), str(data.get("team", "")), Vector2(float(data.get("x",0)), float(data.get("y",0))), str(data.get("kind", "homunculus")), str(data.get("element", "")))
 		var unit := _add_unit(data)
 		if is_instance_valid(unit):
 			unit.update_state(data)
@@ -399,12 +414,17 @@ func _render_snapshot() -> void:
 			meter.maximum = float(lab.get("maxHp",1000))
 			meter.queue_redraw()
 	var time_left := maxi(0, 180 - int(_snapshot.get("tick", 0)) / 10)
-	_clock.text = "%s  %02d:%02d  %s" % [tr("WOE_BLUE"), time_left / 60, time_left % 60, tr("WOE_RED")]
+	if _is_cd:
+		var elapsed := int(_snapshot.get("tick", 0)) / 10
+		_clock.text = tr("CD_WAVE_STATUS") % [int(_snapshot.get("wave", 0)), int(_snapshot.get("completedWaves", 0)), int(_snapshot.get("enemiesKilled", 0)), int(_snapshot.get("pendingSpawns", 0)), elapsed / 60, elapsed % 60]
+		if _snapshot.get("phase") == "intermission": _notice.text = tr("CD_INTERMISSION") % (float(_snapshot.get("intermissionTicks", 0)) / 10.0)
+	else:
+		_clock.text = "%s  %02d:%02d  %s" % [tr("WOE_BLUE"), time_left / 60, time_left % 60, tr("WOE_RED")]
 	var outcome: Variant = _snapshot.get("result")
 	_finished = outcome is Dictionary
 	if _finished:
 		var winner := str(outcome.get("winner", ""))
-		_result.text = tr("WOE_DRAW") if winner.is_empty() or winner == "<null>" else (tr("WOE_VICTORY") if winner == _team else tr("WOE_DEFEAT"))
+		_result.text = (tr("CD_RESULT") % [int(_snapshot.get("completedWaves", 0)), tr("CD_REASON_" + str(outcome.get("reason", "laboratories")).to_upper())]) if _is_cd else (tr("WOE_DRAW") if winner.is_empty() or winner == "<null>" else (tr("WOE_VICTORY") if winner == _team else tr("WOE_DEFEAT")))
 		_forfeit.disabled = true
 		_selected = -1
 	_update_hud()
@@ -469,7 +489,7 @@ func _action(action: String, values: Dictionary) -> void:
 	_acting = true
 	_action_kind = action
 	_update_hud()
-	var result: Dictionary = await WoeClient.mutate(action, values)
+	var result: Dictionary = await _client.mutate(action, values)
 	if not _valid(): return
 	_acting = false
 	_finish_action(result)
@@ -477,34 +497,48 @@ func _action(action: String, values: Dictionary) -> void:
 func _retry_pending() -> void:
 	if _acting or not _valid(): return
 	_acting = true
-	_action_kind = str(WoeClient.saved_pending().get("action", ""))
-	var result: Dictionary = await WoeClient.retry_pending()
+	_action_kind = str(_client.saved_pending().get("action", ""))
+	var result: Dictionary = await _client.retry_pending()
+	if not _valid(): return
+	_acting = false
+	_finish_action(result)
+
+func _retry_forfeit() -> void:
+	if _acting or not _valid(): return
+	_acting = true
+	_action_kind = "match/forfeit"
+	var result: Dictionary = await _client.retry_forfeit()
 	if not _valid(): return
 	_acting = false
 	_finish_action(result)
 
 func _finish_action(result: Dictionary) -> void:
-	if int(result.get("code",0)) == 200 and WoeClient.valid_match(result.get("data"), str(ConnectionGate.player_id)):
+	if _is_cd and _action_kind == "match/deploy" and int(result.get("code",0)) == 200 and result.get("data", {}).get("accepted", false):
+		_notice.text = ""
+	elif int(result.get("code",0)) == 200 and _client.valid_match(result.get("data"), str(ConnectionGate.player_id)):
 		if _action_kind == "match/forfeit":
 			_forfeited = true
-			WoeClient.save_forfeit(_match_id)
+			_client.save_forfeit(_match_id)
 			_forfeit.disabled = true
 			_selected = -1
 		_accept_state(result.data, false)
 	else:
+		if str(result.get("error", "")) == "ACTION_EXPIRED" and _is_cd:
+			_notice.text = tr("CD_ACTION_EXPIRED")
 		if str(result.get("error", "")) == "FORFEITED":
 			_forfeited = true
-			WoeClient.save_forfeit(_match_id)
+			_client.save_forfeit(_match_id)
 			_forfeit.disabled = true
-		_notice.text = tr("WOE_ARENA_NETWORK") if int(result.get("code",0)) == 0 or int(result.get("code",0)) >= 500 else tr("WOE_ARENA_ACTION_FAILED")
+		if str(result.get("error", "")) != "ACTION_EXPIRED" or not _is_cd:
+			_notice.text = tr("WOE_ARENA_NETWORK") if int(result.get("code",0)) == 0 or int(result.get("code",0)) >= 500 else tr("WOE_ARENA_ACTION_FAILED")
 	_action_kind = ""
-	_poll = 0.05
+	_poll = (4.0 if int(result.get("code", 0)) == 429 else (2.0 if int(result.get("code", 0)) == 0 or int(result.get("code", 0)) >= 500 else 0.85)) if _is_cd else 0.05
 	_update_hud()
 
 func _confirm_forfeit() -> void:
 	if _finished or _forfeited or _acting: return
 	var dialog := ConfirmationDialog.new()
-	dialog.dialog_text = tr("WOE_FORFEIT_CONFIRM")
+	dialog.dialog_text = tr("CD_FORFEIT_CONFIRM") if _is_cd else tr("WOE_FORFEIT_CONFIRM")
 	dialog.confirmed.connect(func(): _action("match/forfeit", {"match_id":_match_id}))
 	dialog.canceled.connect(dialog.queue_free)
 	dialog.confirmed.connect(dialog.queue_free)
@@ -513,9 +547,9 @@ func _confirm_forfeit() -> void:
 
 func _confirm_return() -> void:
 	if _finished:
-		WoeClient.save_match("")
-		WoeClient.save_forfeit("")
-		WoeClient.save_room("")
+		_client.save_match("")
+		_client.save_forfeit("")
+		_client.save_room("")
 		SceneRouter.finish_woe_safely()
 		return
 	var dialog := ConfirmationDialog.new()

@@ -46,7 +46,7 @@ SETTINGS_BACK,Back,Volver
 SETTINGS_LOGOUT,Log out,Cerrar sesión
 SETTINGS_LOGOUT_CONFIRM,Log out of this account?,¿Cerrar la sesión de esta cuenta?
 SETTINGS_LOGOUT_CANCEL,Cancel,Cancelar
-SETTINGS_LOGOUT_RECOVERY,"Finish or recover the active session and pending actions before logging out.","Termina o recupera la sesión activa y las acciones pendientes antes de cerrar sesión."
+SETTINGS_LOGOUT_RECOVERY,"Finish or recover the active session and pending actions before logging out.","Termina o recupera la sesión activa y las acciónes pendientes antes de cerrar sesión."
 SETTINGS_LOGOUT_STORAGE_ERROR,"Could not remove saved credentials. Please try again.","No se han podido eliminar las credenciales guardadas. Inténtalo de nuevo."
 AUTH_LOGOUT_UNCONFIRMED,"Signed out on this device. Server sign-out could not be confirmed.","Sesión cerrada en este dispositivo. No se ha podido confirmar el cierre en el servidor."
 SETTINGS_MUSIC_SOON,Music (Coming Soon),Música (próximamente)
@@ -575,3 +575,32 @@ WOE_DRAW,Draw,Empate
 WOE_VICTORY,Victory,Victoria
 WOE_DEFEAT,Defeat,Derrota
 WOE_FORFEITED_NOTICE,You forfeited. A bot controls your seat.,Te has rendido. Un bot controla tu puesto.
+FOREST_NPC_CORE_DEFENSE_NAME,Core Defense,Defensa del Núcleo
+FOREST_NPC_CORE_DEFENSE_DIALOGUE,Defend the laboratories against endless hordes.,Defiende los laboratorios de hordas infinitas.
+FOREST_ACTION_CORE_DEFENSE,Enter Core Defense,Entrar en Defensa del Núcleo
+CD_TITLE,Core Defense,Defensa del Núcleo
+CD_SOLO,1 vs Hordes,1 contra Hordas
+CD_COOP,2 vs Hordes,2 contra Hordas
+CD_CHOOSE_MODE,Choose a mode or accept an invitation.,Elige un modo o acepta una invitación.
+CD_UNAVAILABLE,Core Defense is unavailable or the connection was interrupted.,Defensa del Núcleo no está disponible o se interrumpió la conexión.
+CD_INVITE_REFRESH,Refresh invitations and friends,Actualizar invitaciónes y amigos
+CD_INVITE_UNAVAILABLE,Invitation unavailable. Retry or refresh.,Invitación no disponible. Reintenta o actualiza.
+CD_INVITE_HINT,Invite an online friend or respond to an invitation.,Invita a un amigo conectado o responde a una invitación.
+CD_INVITED_BY,Invitation from %s,Invitación de %s
+CD_ACCEPT,Accept,Aceptar
+CD_DECLINE,Decline,Rechazar
+CD_PENDING,Pending: %s,Pendiente: %s
+CD_CANCEL_INVITE,Cancel invitation,Cancelar invitación
+CD_INVITE_FRIEND,Invite %s,Invitar a %s
+CD_ACTION_EXPIRED,Action expired. Refresh the authoritative state.,La acción caducó. Actualiza el estado del servidor.
+CD_WAVE_STATUS,Wave %d | Cleared %d | Kills %d | Pending %d | %02d:%02d,Ola %d | Superadas %d | Bajas %d | Pendientes %d | %02d:%02d
+CD_INTERMISSION,Next wave in %.1f seconds,Siguiente ola en %.1f segundos
+CD_RESULT,Waves cleared: %d - %s,Olas superadas: %d - %s
+CD_REASON_LABORATORIES,Defeat,Derrota
+CD_REASON_FORFEIT,Forfeited,Rendición
+CD_REASON_ABANDONED,Abandoned,Abandonada
+CD_FORFEIT_CONFIRM,Forfeit? This ends the run for both players.,¿Rendirse? Esto termina la partida para ambos jugadores.
+CD_INVITE_STATUS_ACCEPTED,Accepted,Aceptada
+CD_INVITE_STATUS_DECLINED,Declined,Rechazada
+CD_INVITE_STATUS_CANCELLED,Cancelled,Cancelada
+CD_INVITE_STATUS_EXPIRED,Expired,Caducada

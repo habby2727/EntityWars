@@ -6,7 +6,7 @@ func _initialize() -> void:
 func _run() -> void:
 	assert(load("res://scripts/main_menu.gd") != null)
 	var client = root.get_node("WoeClient")
-	var private_view := {"match_id":"m","status":"RUNNING","snapshot":{"players":[{"id":"a","team":"blue","slots":["neon"],"zeal":5},{"id":"b","team":"red"}]}}
+	var private_view := {"match_id":"m","status":"RUNNING","snapshot":{"kind":"woe","players":[{"id":"a","team":"blue","slots":["neon"],"zeal":5},{"id":"b","team":"red"}]}}
 	assert(client.valid_match(private_view, "a") and not client.valid_match(private_view, "b"))
 	private_view.snapshot.players[1].slots = ["luny"]
 	assert(not client.valid_match(private_view, "a"))

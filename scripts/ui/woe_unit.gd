@@ -1,10 +1,12 @@
 extends Node2D
 
 const IDS := ["neon", "luny", "mantillo", "nebulynx", "venam", "cedix", "flincho", "solcarp", "hyrox", "astralotl"]
+const ENEMY_IDS := ["noxiris", "vitreous", "mortivane", "hexalith", "mycelion"]
 static var _textures := {}
 var unit_id := 0
 var card_id := ""
 var team := "blue"
+var unit_kind := "homunculus"
 var target_position := Vector2.ZERO
 var hp := 1.0
 var max_hp := 1.0
@@ -21,16 +23,19 @@ var moving := false
 var sprite: Sprite2D
 
 static func frame(card: String, facing: String, index: int) -> Texture2D:
-	if card not in IDS or facing not in ["front", "back"] or index < 1 or index > 3: return null
+	if card not in IDS and card not in ENEMY_IDS: return null
+	if card in ENEMY_IDS: facing = "front"
+	if facing not in ["front", "back"] or index < 1 or index > 3: return null
 	var key := "%s:%s:%d" % [card, facing, index]
 	if _textures.has(key): return _textures[key]
 	# All six PNGs share a canvas. Preserve that registration with one union crop
 	# and scale, so an animation frame cannot shift or resize the creature.
 	var sources := {}
 	var common := Rect2i()
-	for direction in ["front", "back"]:
+	for direction in (["front"] if card in ENEMY_IDS else ["front", "back"]):
 		for number in range(1, 4):
-			var path := "res://assets/forest/woe/homunculi/%s/move_%s_%02d.png" % [card, direction, number]
+			var category := "enemies" if card in ENEMY_IDS else "homunculi"
+			var path := "res://assets/forest/woe/%s/%s/move_%s_%02d.png" % [category, card, direction, number]
 			var source := load(path) as Texture2D
 			if source == null: continue
 			sources["%s:%s:%d" % [card, direction, number]] = source
@@ -47,7 +52,8 @@ static func frame(card: String, facing: String, index: int) -> Texture2D:
 
 func setup(data: Dictionary) -> void:
 	unit_id = int(data.get("id", 0))
-	card_id = str(data.get("cardId", ""))
+	card_id = str(data.get("assetId", data.get("cardId", "")))
+	unit_kind = str(data.get("kind", "homunculus"))
 	team = str(data.get("team", "blue"))
 	visual_offset = float((unit_id * 7) % 19 - 9)
 	target_position = Vector2(float(data.get("x", 0)), float(data.get("y", 0)))
@@ -80,13 +86,13 @@ func die() -> void:
 	death_time = 2.5
 
 func _update_frame() -> void:
-	if not is_instance_valid(sprite) or dying: return
-	var facing := "back" if team == "blue" else "front"
-	var frame_index := 1 + int(animation_time * 6.0) % 3 if moving and not dying else 1
+	if not is_instance_valid(sprite): return
+	var facing := "front" if unit_kind == "enemy" else ("back" if team == "blue" else "front")
+	var frame_index := 3 if dying else (2 if strike_time > 0.0 else 1)
 	var texture := frame(card_id, facing, frame_index)
 	if texture != null:
 		sprite.texture = texture
-		var factor := 56.0 / maxf(1.0, texture.get_height())
+		var factor := (72.0 if unit_kind == "enemy" else 56.0) / maxf(1.0, texture.get_height())
 		sprite.scale = Vector2.ONE * factor
 
 func _process(delta: float) -> void:
@@ -108,7 +114,7 @@ func _process(delta: float) -> void:
 	if is_instance_valid(sprite):
 		var idle := sin(animation_time * (7.0 if moving else 3.0) + float(unit_id)) * (0.9 if moving else 2.0) if not dying else 0.0
 		var recoil := (-5.0 if team == "blue" else 5.0) * (strike_time / 0.18)
-		sprite.position = Vector2(clampf(visual_offset + separation.x, -20.0, 20.0), idle + recoil - 28.0 + separation.y)
+		sprite.position = Vector2(clampf(visual_offset + separation.x, -20.0, 20.0), idle + recoil - (36.0 if unit_kind == "enemy" else 28.0) + separation.y)
 		sprite.modulate = Color(0.72,0.72,0.76,clampf(death_time / 0.5, 0.0, 0.8)) if dying else (Color(2, 2, 2, 1) if flash_time > 0.0 else Color.WHITE)
 
 func _draw() -> void:
