@@ -9,6 +9,9 @@ var target_position := Vector2.ZERO
 var hp := 1.0
 var max_hp := 1.0
 var visual_offset := 0.0
+var separation := Vector2.ZERO
+var desired_separation := Vector2.ZERO
+var bar_rise := 0.0
 var dying := false
 var death_time := 0.0
 var strike_time := 0.0
@@ -51,6 +54,10 @@ func update_state(data: Dictionary) -> void:
 	max_hp = maxf(1.0, float(data.get("maxHp", max_hp)))
 	queue_redraw()
 
+func set_separation(offset: Vector2, bar_offset: float = 0.0) -> void:
+	bar_rise = clampf(bar_offset, 0.0, 24.0)
+	desired_separation = Vector2(clampf(offset.x, -20.0, 20.0), clampf(offset.y, -9.0, 9.0))
+
 func attack() -> void:
 	strike_time = 0.18
 
@@ -83,18 +90,20 @@ func _process(delta: float) -> void:
 	else:
 		moving = position.distance_to(target_position) > 1.0
 		position = position.lerp(target_position, 1.0 - exp(-delta * 7.0))
+	separation = separation.lerp(desired_separation, 1.0 - exp(-delta * 5.0))
+	queue_redraw()
 	strike_time = maxf(0.0, strike_time - delta)
 	flash_time = maxf(0.0, flash_time - delta)
 	_update_frame()
 	if is_instance_valid(sprite):
-		var idle := sin(animation_time * 3.0 + float(unit_id)) * 2.0 if not moving and not dying else 0.0
+		var idle := sin(animation_time * (7.0 if moving else 3.0) + float(unit_id)) * (0.9 if moving else 2.0) if not dying else 0.0
 		var recoil := (-5.0 if team == "blue" else 5.0) * (strike_time / 0.18)
-		sprite.position = Vector2(visual_offset, idle + recoil - 28.0)
-		sprite.modulate = Color(2, 2, 2, 1) if flash_time > 0.0 else Color.WHITE
+		sprite.position = Vector2(clampf(visual_offset + separation.x, -20.0, 20.0), idle + recoil - 28.0 + separation.y)
+		sprite.modulate = Color(0.72,0.72,0.76,clampf(death_time / 0.5, 0.0, 0.8)) if dying else (Color(2, 2, 2, 1) if flash_time > 0.0 else Color.WHITE)
 
 func _draw() -> void:
 	if dying: return
-	var origin := Vector2(visual_offset - 24, -72)
+	var origin := Vector2(clampf(visual_offset + separation.x, -20.0, 20.0) - 24, -72 + separation.y - bar_rise)
 	var border := Color("66bfff") if team == "blue" else Color("ff796c")
 	draw_rect(Rect2(origin - Vector2(2, 2), Vector2(52, 9)), border)
 	for i in range(6):

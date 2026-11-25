@@ -3,6 +3,7 @@ extends Control
 const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080.png")
 const ZEAL := preload("res://assets/forest/woe/zeal.png")
 const UNIT := preload("res://scripts/ui/woe_unit.gd")
+const EFFECTS := preload("res://scripts/ui/woe_effects.gd")
 const ARENA := "res://data/static/woe_arena.json"
 const CARDS := "res://data/static/woe_cards.json"
 const POLL_INTERVAL := 0.5
@@ -22,6 +23,14 @@ class Meter extends Control:
 			var fraction := clampf(value / maxf(1.0, maximum) * segments - i, 0.0, 1.0)
 			if fraction > 0.0: draw_rect(Rect2(rect.position, Vector2(rect.size.x * fraction, rect.size.y)), fill_color)
 
+class DeployMarker extends Button:
+	func _draw() -> void:
+		var center := size * 0.5
+		draw_circle(center, 38.0, Color(1.0, 0.84, 0.2, 0.12))
+		draw_arc(center, 39.0, 0, TAU, 48, Color("ffe778"), 3.0)
+		draw_arc(center, 28.0, 0, TAU, 40, Color("fff3b0"), 2.0)
+		draw_circle(center, 4.0, Color("fff7c9"))
+
 var _identity := ""
 var _match_id := ""
 var _cursor := 0
@@ -40,6 +49,12 @@ var _snapshot := {}
 var _own := {}
 var _team := ""
 var _units := {}
+var _known_units := {}
+var _corpses: Array = []
+var _playback_ready := false
+var _silent_until_seq := 0
+var _last_snapshot_tick := 0
+var _effects: Node2D
 var _cards := {}
 var _lab_bars := {}
 var _lane_buttons := {}
@@ -98,6 +113,8 @@ func _build() -> void:
 	_stage.add_child(bg)
 	_field = Node2D.new()
 	_stage.add_child(_field)
+	_effects = EFFECTS.new()
+	_stage.add_child(_effects)
 	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ARENA))
 	for team in ["blue", "red"]:
 		for lane in ["left", "right"]:
@@ -113,10 +130,10 @@ func _build() -> void:
 			_stage.add_child(meter)
 			_lab_bars[team + ":" + lane] = meter
 			var spawn: Dictionary = data.spawns[team][lane]
-			var marker := Button.new()
+			var marker := DeployMarker.new()
 			marker.position = Vector2(float(spawn.x)-55,float(spawn.y)-55)
 			marker.size = Vector2(110,110)
-			marker.text = "?"
+			marker.text = ""
 			for style in ["normal", "hover", "pressed", "focus", "disabled"]:
 				marker.add_theme_stylebox_override(style, StyleBoxEmpty.new())
 			marker.add_theme_font_size_override("font_size", 48)
@@ -153,6 +170,14 @@ func _build() -> void:
 	for i in range(3):
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(170,120)
+		button.add_theme_font_size_override("font_size", 24)
+		for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+			var style := StyleBoxFlat.new()
+			style.bg_color = Color("173044") if state != "disabled" else Color("202a34")
+			style.border_color = Color("9adbf2") if state != "disabled" else Color("536472")
+			style.set_border_width_all(2)
+			style.set_corner_radius_all(8)
+			button.add_theme_stylebox_override(state, style)
 		button.expand_icon = true
 		button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(_select.bind(i))
@@ -213,6 +238,7 @@ func _poll_state() -> void:
 	if not _valid() or requested_id != _match_id: return
 	_requesting = false
 	if int(result.get("code", 0)) != 200 or not WoeClient.valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.get("match_id", "")) != _match_id:
+		_playback_ready = false
 		_notice.text = tr("WOE_ARENA_NETWORK")
 		if int(result.get("code",0)) == 429: _poll_period = 0.65
 		_backoff = minf(8.0, maxf(1.0, _backoff * 2.0))
@@ -228,53 +254,102 @@ func _poll_state() -> void:
 
 func _accept_state(data: Dictionary, consume_events: bool) -> void:
 	if str(data.get("match_id", "")) != _match_id: return
-	if consume_events:
-		if bool(data.get("resync_required", false)):
-			_clear_visuals()
-			_cursor = int(data.get("cursor", _cursor))
-		else:
-			for event in data.get("events", []):
-				if not event is Dictionary: continue
-				var seq := int(event.get("seq", 0))
-				if seq <= _cursor: continue
-				if seq != _cursor + 1: break
-				_event(event)
-				_cursor = seq
+	var snapshot_tick := int(data.get("snapshot", {}).get("tick", data.get("tick", 0)))
+	var resync := consume_events and bool(data.get("resync_required", false))
+	if consume_events and not _playback_ready:
+		_silent_until_seq = maxi(_silent_until_seq, int(data.get("latest_event_seq", data.get("cursor", _cursor))))
+	if resync:
+		_clear_visuals()
+		_cursor = int(data.get("cursor", _cursor))
+		_playback_ready = false
+	# Reconcile authoritative state first. Events never create or remove live units.
 	if int(data.get("revision", -1)) >= _revision and data.get("snapshot") is Dictionary:
 		_revision = int(data.revision)
 		_snapshot = data.snapshot
+		_last_snapshot_tick = int(_snapshot.get("tick", 0))
 		_render_snapshot()
+	if consume_events and not resync:
+		var shown := 0
+		for event in data.get("events", []):
+			if not event is Dictionary: continue
+			var seq := int(event.get("seq", 0))
+			if seq <= _cursor: continue
+			if seq != _cursor + 1: break
+			_cursor = seq
+			_remember_event(event)
+			# Pages from startup, reconnect and long backlogs advance the cursor silently.
+			if _playback_ready and seq > _silent_until_seq and int(event.get("tick", -100)) >= maxi(snapshot_tick, _last_snapshot_tick) - 5 and shown < 48:
+				_event(event)
+				shown += 1
+	if consume_events: _playback_ready = true
 
 func _clear_visuals() -> void:
 	for child in _field.get_children(): child.queue_free()
 	_units.clear()
+	_corpses.clear()
+	_known_units.clear()
+	if is_instance_valid(_effects): _effects.clear()
+
+func _remember(id: int, card: String, team: String, point: Vector2) -> void:
+	if id <= 0 or card not in UNIT.IDS or team not in ["blue", "red"]: return
+	_known_units[id] = {"cardId":card, "team":team, "position":point}
+	while _known_units.size() > 256: _known_units.erase(_known_units.keys()[0])
+
+func _point(value: Variant) -> Vector2:
+	return Vector2(float(value.get("x", 0)), float(value.get("y", 0))) if value is Dictionary else Vector2.ZERO
+
+func _remember_event(event: Dictionary) -> void:
+	if str(event.get("type", "")) == "spawn":
+		_remember(int(event.get("unit_id", 0)), str(event.get("card_id", "")), str(event.get("team", "")), _point(event.get("position")))
+	elif str(event.get("type", "")) in ["attack", "death"]:
+		_remember(int(event.get("attacker", 0)), str(event.get("cardId", "")), str(event.get("team", "")), _point(event.get("position")))
+
+func _element(card_id: String) -> String:
+	return str(_cards.get(card_id, {}).get("element", ""))
 
 func _event(event: Dictionary) -> void:
 	var kind := str(event.get("type", ""))
 	if kind == "spawn":
-		var pos: Dictionary = event.get("position", {})
-		_add_unit({"id":event.get("unit_id",0),"cardId":event.get("card_id",""),"team":event.get("team",""),"x":pos.get("x",0),"y":pos.get("y",0),"hp":1,"maxHp":1})
+		var point := _point(event.get("position"))
+		_effects.emit_effect("spawn", _element(str(event.get("card_id", ""))), point, point, str(event.get("team", "")))
 	elif kind == "attack":
+		var source := _point(event.get("position"))
+		var target := _point(event.get("targetPosition"))
+		var element := _element(str(event.get("cardId", "")))
 		var attacker: Variant = _units.get(int(event.get("attacker", 0)))
-		if is_instance_valid(attacker): attacker.attack()
+		if is_instance_valid(attacker) and attacker.target_position.distance_to(source) < 80.0: attacker.attack()
 		var victim: Variant = _units.get(int(event.get("target", 0))) if event.get("target") is int or event.get("target") is float else null
-		if is_instance_valid(victim): victim.hit()
+		if is_instance_valid(victim) and victim.target_position.distance_to(target) < 80.0: victim.hit()
+		_effects.emit_effect("charge", element, source, target, str(event.get("team", "")))
+		_effects.emit_effect("strike", element, source, target, str(event.get("team", "")))
+		_effects.emit_effect("lab" if event.get("target") is String else "impact", element, source, target, str(event.get("team", "")))
 		if event.get("target") is String and _lab_bars.has(str(event.target)):
 			var lab: Meter = _lab_bars[str(event.target)]
 			lab.modulate = Color(2,2,2,1)
 			create_tween().tween_property(lab, "modulate", Color.WHITE, 0.3)
-		var point: Dictionary = event.get("targetPosition", {})
-		_damage(Vector2(float(point.get("x",0)),float(point.get("y",0))), int(event.get("damage",0)))
-	elif kind == "death" and event.get("targetKind") == "unit":
+		_damage(target, int(event.get("damage",0)))
+	elif kind == "death" and (event.get("targetKind") == "unit" or event.get("target") is int or event.get("target") is float):
 		var id := int(event.get("target",0))
-		var victim: Variant = _units.get(id)
-		if not is_instance_valid(victim):
-			var point: Dictionary = event.get("victimPosition", event.get("targetPosition", {}))
-			victim = _add_unit({"id":id,"cardId":event.get("victimCardId",""),"team":event.get("victimTeam",""),"x":point.get("x",0),"y":point.get("y",0),"hp":0,"maxHp":1})
-		if is_instance_valid(victim):
-			victim.die()
-			_units.erase(id)
-			_bound_effects()
+		var known: Dictionary = _known_units.get(id, {})
+		var card := str(event.get("victimCardId", known.get("cardId", "")))
+		var team := str(event.get("victimTeam", known.get("team", "")))
+		var raw_point: Variant = event.get("victimPosition", event.get("targetPosition"))
+		if not raw_point is Dictionary or not raw_point.has("x") or not raw_point.has("y"):
+			if known.get("position") is Vector2: raw_point = {"x":known.position.x,"y":known.position.y}
+			else: return
+		var point := _point(raw_point)
+		# A dead unit is rendered only as an independent corpse, never a live unit.
+		if card in UNIT.IDS and team in ["blue", "red"] and not _units.has(id):
+			for old in _corpses.duplicate():
+				if not is_instance_valid(old) or old.is_queued_for_deletion(): _corpses.erase(old)
+			if _corpses.size() >= 32:
+				_corpses.pop_front().queue_free()
+			var corpse := UNIT.new()
+			_field.add_child(corpse)
+			corpse.setup({"id":id,"cardId":card,"team":team,"x":point.x,"y":point.y,"hp":0,"maxHp":1})
+			corpse.die()
+			_corpses.append(corpse)
+			_effects.emit_effect("death", _element(card), point, point, team)
 
 func _add_unit(data: Dictionary) -> Node:
 	var id := int(data.get("id",0))
@@ -285,13 +360,6 @@ func _add_unit(data: Dictionary) -> Node:
 	unit.setup(data)
 	_units[id] = unit
 	return unit
-
-func _bound_effects() -> void:
-	if _field.get_child_count() > 220:
-		for child in _field.get_children():
-			if child is Node2D and child.get("dying") == true:
-				child.queue_free()
-				break
 
 func _damage(point: Vector2, amount: int) -> void:
 	if _field.get_child_count() >= 220: return
@@ -310,6 +378,7 @@ func _render_snapshot() -> void:
 	for data in _snapshot.get("units", []):
 		if not data is Dictionary: continue
 		var id := int(data.get("id",0))
+		_remember(id, str(data.get("cardId", "")), str(data.get("team", "")), Vector2(float(data.get("x",0)), float(data.get("y",0))))
 		var unit := _add_unit(data)
 		if is_instance_valid(unit):
 			unit.update_state(data)
@@ -318,6 +387,7 @@ func _render_snapshot() -> void:
 		if not live.has(id):
 			if is_instance_valid(_units[id]): _units[id].queue_free()
 			_units.erase(id)
+	_separate_units()
 	_own = {}
 	for p in _snapshot.get("players", []):
 		if p is Dictionary and str(p.get("id", "")) == str(ConnectionGate.player_id): _own = p
@@ -339,6 +409,27 @@ func _render_snapshot() -> void:
 		_selected = -1
 	_update_hud()
 
+# Stable, bounded visual spacing based only on nearby authoritative positions.
+func _separate_units() -> void:
+	var ids := _units.keys()
+	ids.sort()
+	for id in ids:
+		var unit: Node2D = _units[id]
+		var rank := 0
+		var neighbors := 0
+		for other_id in ids:
+			if other_id == id: continue
+			var other: Node2D = _units[other_id]
+			if unit.target_position.distance_squared_to(other.target_position) < 45.0 * 45.0:
+				neighbors += 1
+				if other_id < id: rank += 1
+		if neighbors == 0:
+			unit.set_separation(Vector2.ZERO)
+			continue
+		var column := (rank % 5) - 2
+		var row := (rank / 5) % 3
+		unit.set_separation(Vector2(float(column) * 9.0, float(row - 1) * 6.0), float(rank % 3) * 9.0)
+
 func _update_hud() -> void:
 	var zeal := float(_own.get("zeal",0))
 	_zeal_label.text = "%s  %.1f / 10" % [tr("WOE_ZEAL"), zeal]
@@ -353,7 +444,7 @@ func _update_hud() -> void:
 		button.icon = UNIT.frame(id,"front",1)
 		button.text = "%s\n%d" % [id.capitalize(), int(card.get("cost",0))] if not card.is_empty() else ""
 		button.disabled = _finished or _forfeited or _acting or card.is_empty() or zeal < float(card.get("cost",99))
-		button.modulate = Color("fff29c") if _selected == i else Color.WHITE
+		button.modulate = Color("ffe38a") if _selected == i else (Color(0.65,0.7,0.75,1) if button.disabled else Color.WHITE)
 	for key in _lane_buttons:
 		var marker: Button = _lane_buttons[key]
 		var lab: Meter = _lab_bars[key]
