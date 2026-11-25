@@ -522,3 +522,44 @@ FOREST_QUEST_HOURS_MINUTES,%dh %02dm,%dh %02dm
 FOREST_QUEST_ACTIVE_EXISTS,You already have an active mission.,Ya tienes una misión activa.
 FOREST_QUEST_CANCEL_COOLDOWN,This NPC is on cooldown.,Este PNJ está en espera.
 FOREST_QUEST_UNAVAILABLE,This mission is no longer available.,Esta misión ya no está disponible.
+FOREST_NPC_WAR_OF_ENTITIES_NAME,War of Entities,War of Entities
+FOREST_NPC_WAR_OF_ENTITIES_DIALOGUE,Enter the War of Elements and choose your laboratory.,Entra en la Guerra de los Elementos y elige tu laboratorio.
+FOREST_ACTION_WOE,Find a room,Buscar sala
+WOE_TITLE,War of Elements,Guerra de los Elementos
+WOE_CREATE_1V1,Create 1v1,Crear 1v1
+WOE_CREATE_2V2,Create 2v2,Crear 2v2
+WOE_REFRESH,Refresh,Actualizar
+WOE_CODE_HINT,Enter room code,Introduce el código de sala
+WOE_JOIN_CODE,Join by code,Entrar con código
+WOE_JOIN,Join,Entrar
+WOE_RETRY,Retry / Recover,Reintentar / Recuperar
+WOE_BROWSER_HINT,Choose a room or create one.,Elige una sala o crea una.
+WOE_HOST,Host,Anfitrión
+WOE_CODE,Room code,Código de sala
+WOE_COPY_CODE,Copy code,Copiar código
+WOE_REVISION,Revision,Revisión
+WOE_STATUS,Status,Estado
+WOE_BLUE,Blue,Azul
+WOE_RED,Red,Rojo
+WOE_LEFT,Left,Izquierda
+WOE_RIGHT,Right,Derecha
+WOE_EMPTY,Available,Libre
+WOE_NPC,NPC,NPC
+WOE_FILL_BOTS,Fill empty slots with NPCs,Llenar huecos con NPC
+WOE_START,Start,Empezar
+WOE_LEAVE,Leave room,Salir de la sala
+WOE_WAITING,Select your laboratory and wait for the host.,Elige tu laboratorio y espera al anfitrión.
+WOE_INITIALIZED,Match initialized — combat integration pending.,Partida inicializada — integración del combate pendiente.
+WOE_LEAVE_STARTED_CONFIRM,Leaving abandons this match for everyone. Continue?,Salir abandona la partida para todos. ¿Continuar?
+WOE_ERROR_NETWORK,Connection failed. Retry to recover your room or action.,Falló la conexión. Reintenta para recuperar tu sala o acción.
+WOE_ERROR_DISABLED,War of Elements is unavailable.,Guerra de los Elementos no está disponible.
+WOE_ERROR_FULL,This room is full.,Esta sala está llena.
+WOE_ERROR_BUSY,A player or seat is busy.,Un jugador o puesto está ocupado.
+WOE_ERROR_STALE,Room changed. Refreshing.,La sala cambió. Actualizando.
+WOE_ERROR_NOT_FOUND,Room unavailable or expired.,Sala no disponible o caducada.
+WOE_RETRY_PENDING,Retry the pending action before continuing.,Reintenta la acción pendiente antes de continuar.
+WOE_ERROR_PRESENCE,Enter the duel clearing before joining.,Entra en el claro de duelos antes de unirte.
+WOE_ERROR_NOT_FULL,Fill all seats or enable NPCs.,Llena todos los puestos o activa los NPC.
+WOE_ERROR_SEAT_REQUIRED,Every player must select a seat.,Todos los jugadores deben elegir un puesto.
+WOE_ERROR_HOST,Only the host can start.,Solo el anfitrión puede empezar.
+WOE_PLAYERS,Players,Jugadores

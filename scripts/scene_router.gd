@@ -4,6 +4,7 @@ class_name SceneRouter
 const SCENE_MAIN_MENU := "res://scenes/MainMenu.tscn"
 const SCENE_SETTINGS := "res://scenes/ui/Settings.tscn"
 const SCENE_SUMMONER_SELECTION := "res://scenes/ui/SummonerSelection.tscn"
+const SCENE_WOE_PREGAME := "res://scenes/ui/WOEPregame.tscn"
 const SCENE_FOREST_WORLD := "res://scenes/forest/ForestWorld.tscn"
 const FOREST_SUMMONERS := ["wizard", "witch", "cyberghost"]
 const FOREST_PREFERENCES := "user://forest_summoners.cfg"
@@ -21,6 +22,7 @@ const SCENE_COMBAT := "res://scenes/Combat.tscn"
 const SCENE_LOADOUT := "res://scenes/LoadoutGrid.tscn"
 const SCENE_TOP_PLAYERS := "res://scenes/ui/TopPlayers.tscn"
 
+static var _woe_context := {}
 static var _forest_summoner := ""
 static var _forest_owner := ""
 static var _forest_return := {}
@@ -50,6 +52,7 @@ static var logout_notice := ""
 
 static func clear_account_context() -> void:
 	_clear_forest_return()
+	_woe_context.clear()
 	_forest_summoner = ""
 	_forest_owner = ""
 	_next_lab_focus_id = ""
@@ -69,6 +72,29 @@ static func clear_account_context() -> void:
 	_friendly_context.clear()
 	_expedition_context.clear()
 	_expedition_forfeit_notice = false
+
+# Called only after authenticated room admission and the Forest handoff.
+static func begin_woe(room: Dictionary, zone_id: String, foot: Vector2, facing: int) -> void:
+	var tree := _get_tree()
+	var owner := _forest_verified_owner()
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_FOREST_WORLD or not _forest_modes_safe() or not tree.root.get_node("WoeClient").valid_room(room, owner): return
+	if not tree.current_scene.forest_action_allowed("woe", zone_id, foot, facing): return
+	var context := {"verified_owner":owner, "summoner_id":forest_selected_summoner(), "zone_id":zone_id, "foot_position":foot, "facing":facing, "debug":false, "identity_generation":_connection_gate()._generation}
+	if not _valid_forest_context(context): return
+	_forest_return = context
+	_forest_restore.clear()
+	_woe_context = {"room_id":str(room.room_id), "player_id":owner, "generation":_connection_gate()._generation, "base_url":str(_connection_gate().base_url)}
+	_go_to(SCENE_WOE_PREGAME, "WOEPregame")
+
+static func woe_context_valid() -> bool:
+	return not _woe_context.is_empty() and str(_woe_context.get("player_id", "")) == _forest_verified_owner() and int(_woe_context.get("generation", -1)) == int(_connection_gate()._generation) and str(_woe_context.get("base_url", "")) == str(_connection_gate().base_url) and forest_return_available()
+
+static func finish_woe() -> void:
+	if not woe_context_valid(): return
+	_woe_context.clear()
+	_forest_restore = _forest_return.duplicate(true)
+	_forest_return.clear()
+	_go_to(SCENE_FOREST_WORLD, "ForestWorld")
 
 static func begin_friendly_preparation(invite: Dictionary, zone_id: String, foot: Vector2, facing: int, recovery_match: String = "") -> void:
 	var gate := _connection_gate()

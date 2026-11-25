@@ -25,6 +25,7 @@ ScrollbarStyle="*res://scripts/ui/scrollbar_style.gd"
 ConnectionGate="*res://scripts/net/connection_gate.gd"
 SocialClient="*res://scripts/net/social_client.gd"
 DuelClient="*res://scripts/net/duel_client.gd"
+WoeClient="*res://scripts/net/woe_client.gd"
 GlobalChatClient="*res://scripts/net/global_chat_client.gd"
 SpectatorClient="*res://scripts/net/spectator_client.gd"
 

@@ -62,7 +62,17 @@ func setup(data: Dictionary, area: PackedVector2Array, portals: Array, protected
 	_interaction_hint.add_child(label)
 	add_child(_interaction_hint)
 	_interaction_hint.hide()
-	if stationary:
+	if npc_id == "war_of_entities":
+		var nameplate := Label.new()
+		nameplate.name = "Nameplate"
+		nameplate.text = "War of Entities"
+		nameplate.position = Vector2(-110, -155)
+		nameplate.size = Vector2(220, 30)
+		nameplate.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nameplate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		nameplate.add_theme_font_size_override("font_size", 20)
+		add_child(nameplate)
+	elif stationary:
 		var marker := Label.new()
 		marker.text = "!"
 		marker.position = Vector2(-8, -118)
