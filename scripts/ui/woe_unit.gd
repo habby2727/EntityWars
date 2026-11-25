@@ -21,19 +21,29 @@ var moving := false
 var sprite: Sprite2D
 
 static func frame(card: String, facing: String, index: int) -> Texture2D:
-	if card not in IDS or facing not in ["front", "back"]: return null
+	if card not in IDS or facing not in ["front", "back"] or index < 1 or index > 3: return null
 	var key := "%s:%s:%d" % [card, facing, index]
 	if _textures.has(key): return _textures[key]
-	var path := "res://assets/forest/woe/homunculi/%s/move_%s_%02d.png" % [card, facing, index]
-	var texture := load(path) as Texture2D
-	if texture == null: return null
-	var image := texture.get_image()
-	var bounds := image.get_used_rect()
-	var atlas := AtlasTexture.new()
-	atlas.atlas = texture
-	atlas.region = Rect2(bounds) if bounds.size.x > 0 and bounds.size.y > 0 else Rect2(Vector2.ZERO, texture.get_size())
-	_textures[key] = atlas
-	return atlas
+	# All six PNGs share a canvas. Preserve that registration with one union crop
+	# and scale, so an animation frame cannot shift or resize the creature.
+	var sources := {}
+	var common := Rect2i()
+	for direction in ["front", "back"]:
+		for number in range(1, 4):
+			var path := "res://assets/forest/woe/homunculi/%s/move_%s_%02d.png" % [card, direction, number]
+			var source := load(path) as Texture2D
+			if source == null: continue
+			sources["%s:%s:%d" % [card, direction, number]] = source
+			var bounds := source.get_image().get_used_rect()
+			if bounds.size.x > 0 and bounds.size.y > 0:
+				common = bounds if common.size == Vector2i.ZERO else common.merge(bounds)
+	for source_key in sources:
+		var source: Texture2D = sources[source_key]
+		var atlas := AtlasTexture.new()
+		atlas.atlas = source
+		atlas.region = Rect2(common) if common.size != Vector2i.ZERO else Rect2(Vector2.ZERO, source.get_size())
+		_textures[source_key] = atlas
+	return _textures.get(key)
 
 func setup(data: Dictionary) -> void:
 	unit_id = int(data.get("id", 0))

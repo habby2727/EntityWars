@@ -87,7 +87,13 @@ func _run() -> void:
 	var own := {}
 	for player in result.data.snapshot.players:
 		if str(player.id) == str(accounts[0].id): own = player
-	result = await client.mutate("match/deploy", {"match_id":match_id,"slot":0,"card_id":own.slots[0],"lane":"left"})
+	var first_catalog: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/woe_cards.json"))
+	var first_slot := -1
+	for i in range(own.slots.size()):
+		for card in first_catalog.cards:
+			if card.id == own.slots[i] and card.cost <= 5 and first_slot < 0: first_slot = i
+	if not require(first_slot >= 0, "affordable opening card"): return
+	result = await client.mutate("match/deploy", {"match_id":match_id,"slot":first_slot,"card_id":own.slots[first_slot],"lane":"left"})
 	if not require(result.code == 200, "authoritative deployment"): return
 	result = await client.request("/forest/woe/match/state?match_id=" + match_id.uri_encode() + "&after=0")
 	if not require(result.code == 200 and not result.data.events.is_empty(), "event journal"): return

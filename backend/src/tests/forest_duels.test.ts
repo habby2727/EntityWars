@@ -6,6 +6,7 @@ import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
 import Redis from 'ioredis';
 import {createForestDuels} from '../forest/duels';
+import {cardById} from '../woe/catalog';
 import {createForestPresence, loadCatalog} from '../forest/presence';
 
 function migrate(db:Database) {const dir=resolve(import.meta.dir,'../../migrations/sqlite');for(const f of readdirSync(dir).filter(x=>x.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir,f),'utf8'));}
@@ -253,7 +254,7 @@ test.skipIf(!redisBin)('authenticated WOE HTTP routes protect participants and i
   expect((await get(`/forest/woe/match/state?match_id=${start.match_id}&after=0`,c.token)).status).toBe(403);
   const current:any=await (await get('/forest/woe/match/current',a.token)).json();expect(current.match_id).toBe(start.match_id);
   const hand=current.snapshot.players.find((p:any)=>p.id===a.id).slots;
-  const command={match_id:start.match_id,client_action_id:'http-deploy',slot:0,card_id:hand[0],lane:'left'};
+  const slot=hand.findIndex((id:string)=>cardById[id].cost<=5);const command={match_id:start.match_id,client_action_id:'http-deploy',slot,card_id:hand[slot],lane:'left'};
   const deployed=await post('/forest/woe/match/deploy',command,a.token);expect(deployed.status).toBe(200);const response=await deployed.json();
   expect(await (await post('/forest/woe/match/deploy',command,a.token)).json()).toEqual(response);
   expect((await post('/forest/woe/match/deploy',{...command,client_action_id:'stale'},a.token)).status).toBe(409);

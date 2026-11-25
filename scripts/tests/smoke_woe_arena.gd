@@ -13,8 +13,13 @@ func _run() -> void:
 	var script := load("res://scripts/ui/woe_unit.gd")
 	assert(script != null)
 	for card in script.IDS:
+		var region := Rect2()
 		for facing in ["front", "back"]:
-			for i in range(1,4): assert(script.frame(card, facing, i) != null)
+			for i in range(1,4):
+				var texture: AtlasTexture = script.frame(card, facing, i)
+				assert(texture != null)
+				if region.size == Vector2.ZERO: region = texture.region
+				assert(texture.region == region)
 	var unit = script.new()
 	root.add_child(unit)
 	unit.setup({"id":7,"cardId":"neon","team":"blue","x":410,"y":800,"hp":80,"maxHp":160})
@@ -53,6 +58,10 @@ func _run() -> void:
 		arena._resize()
 		assert(arena._stage.scale.is_equal_approx(viewport_size / Vector2(1920,1080)))
 		assert(arena._lane_buttons["blue:left"].size == Vector2(110,110))
+		assert(arena._lane_buttons["blue:left"].position + Vector2(55,55) == Vector2(410,800))
+		assert(arena._lane_buttons["red:right"].position + Vector2(55,55) == Vector2(1510,280))
+		assert((arena._lane_buttons["blue:left"].size * arena._stage.scale).x >= 55.0)
+		assert(arena._lab_bars["blue:left"].position.x + arena._lab_bars["blue:left"].size.x < 535.0)
 	arena._match_id = "m"
 	arena._cards = {"neon":{"cost":2,"element":"mercury"}}
 	arena._snapshot = {"tick":1,"units":[],"laboratories":[],"players":[{"id":str(root.get_node("ConnectionGate").player_id),"team":"blue","zeal":5,"slots":["neon","neon","neon"]}],"result":null}
@@ -121,9 +130,13 @@ func _run() -> void:
 	arena._accept_state({"match_id":"m","revision":4,"snapshot":arena._snapshot,"resync_required":true,"cursor":50},true)
 	assert(arena._cursor == 50 and arena._units.is_empty())
 	var finished: Dictionary = arena._snapshot.duplicate(true)
-	finished.result = {"winner":"blue","reason":"timeout"}
+	finished.tick = 1800
+	finished.result = {"winner":null,"reason":"timeout"}
 	arena._accept_state({"match_id":"m","revision":5,"snapshot":finished,"events":[]},false)
-	assert(arena._finished and arena._forfeit.disabled and arena._buttons[0].disabled)
+	assert(arena._finished and arena._forfeit.disabled and arena._buttons[0].disabled and arena._clock.text.contains("00:00"))
+	finished.result = {"winner":"red","reason":"laboratories"}
+	arena._accept_state({"match_id":"m","revision":6,"snapshot":finished,"events":[]},false)
+	assert(arena._finished and arena._result.text == arena.tr("WOE_DEFEAT"))
 	arena.queue_free()
 	print("WOE_ARENA_SMOKE_PASS")
 	quit(0)

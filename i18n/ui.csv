@@ -566,10 +566,10 @@ WOE_PLAYERS,Players,Jugadores
 
 WOE_FORFEIT,Forfeit,Rendirse
 WOE_RETURN,Return to Forest,Volver al Bosque
-WOE_FORFEIT_CONFIRM,Forfeit this match?,?Rendirse en esta partida?
-WOE_RETURN_CONFIRM,Return to the Forest? The battle will continue.,?Volver al Bosque? La batalla continuar?.
-WOE_ARENA_NETWORK,Reconnecting to the battle?,Reconectando a la batalla?
-WOE_ARENA_ACTION_FAILED,Action unavailable. State refreshed.,Acci?n no disponible. Estado actualizado.
+WOE_FORFEIT_CONFIRM,Forfeit this match?,¿Rendirse en esta partida?
+WOE_RETURN_CONFIRM,Return to the Forest? The battle will continue.,¿Volver al Bosque? La batalla continuará.
+WOE_ARENA_NETWORK,Reconnecting to the battle…,Reconectando a la batalla…
+WOE_ARENA_ACTION_FAILED,Action unavailable. State refreshed.,Acción no disponible. Estado actualizado.
 WOE_ZEAL,Zeal,Celo
 WOE_DRAW,Draw,Empate
 WOE_VICTORY,Victory,Victoria
