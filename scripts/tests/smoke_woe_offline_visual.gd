@@ -27,7 +27,7 @@ func _run() -> void:
 		var arena = current_scene
 		assert(arena.scene_file_path == SceneRouter.SCENE_WOE_ARENA and arena._debug_visual)
 		assert(arena._is_cd == (kind == "core_defense"))
-		assert(arena._own.slots.size() == 3)
+		assert(arena._own.slots.size() == 4)
 		arena._select(0)
 		var marker = arena._lane_buttons["blue:left"]
 		assert(marker.visible and marker.size == Vector2(140, 140))

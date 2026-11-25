@@ -1,5 +1,5 @@
 ﻿import { test, expect } from "bun:test";
-import { arena, cards, cardById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "../woe/catalog";
+import { arena, cards, cardById, cardCost, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "../woe/catalog";
 import { initializeMatch, applyDeployment, advanceTick, getPublicSnapshot, formationPoint, route, move, WOE_MOVEMENT_MULTIPLIER, type MatchState } from "../woe/engine";
 const make = () => initializeMatch("1v1", "seed", ["b", "r"]);
 function deploy(s: MatchState, i: number, slot=0, lane: "left"|"right"="left") { const p=s.controllers[i]; const r=applyDeployment(s,{actionId:`${s.nextUnitId}`,controllerId:p.id,slot,cardId:p.slots[slot],lane}); expect(r.accepted).toBe(true); return r.state; }
@@ -10,15 +10,15 @@ test("catalog and elemental damage",()=>{
  expect(elementalMultiplier("mercury","gold")).toBe(1.18); expect(elementalMultiplier("gold","mercury")).toBe(0.84); expect(elementalMultiplier("gold","sodium")).toBe(1);
  expect(attackDamage(100,0,1.18)).toBe(118); expect(attackDamage(100,0,0.84)).toBe(84); expect(attackDamage(1,20)).toBe(0); expect(attackDamage(20000,0)).toBe(10000);
 });
-test("ten-card rotation cycles all cards, including Cedix, through three slots",()=>{
+test("ten-card rotation cycles all cards, including Cedix, through four slots",()=>{
  let s=make(); const initial=[...s.controllers[0].slots], deployed:string[]=[];
- expect(s.controllers[0].queue.length).toBe(7);
- for(let i=0;i<13;i++) {
+ expect(s.controllers[0].queue.length).toBe(6);
+ for(let i=0;i<14;i++) {
    s.controllers[0].zealTenths=100;
-   const slot=i%3, card=s.controllers[0].slots[slot]; deployed.push(card);
+   const slot=i%4, card=s.controllers[0].slots[slot]; deployed.push(card);
    s=deploy(s,0,slot);
-   expect(s.controllers[0].zealTenths).toBe(100-cardById[card].cost*10);
-   expect(s.controllers[0].slots.length).toBe(3);
+   expect(s.controllers[0].zealTenths).toBe(100-cardCost(cardById[card],'woe')*10);
+   expect(s.controllers[0].slots.length).toBe(4);
  }
  expect(new Set(deployed.slice(0,10))).toEqual(new Set(cards.map(c=>c.id)));
  expect(deployed.slice(10)).toEqual(initial);
@@ -48,7 +48,7 @@ test("snapshots expose only the viewer's hand and zeal",()=>{
    const snapshot=getPublicSnapshot(s,viewer);
    for(const p of snapshot.players) {
      const source=s.controllers.find(c=>c.id===p.id)!;
-     if(p.id===viewer) { expect(p).toEqual({id:p.id,team:p.team,zeal:source.zealTenths/10,slots:source.slots,allowedDeploymentLanes:[s.controllers.filter(c=>c.team===source.team).indexOf(source)===0?'left':'right']}); }
+     if(p.id===viewer) { expect(p).toEqual({id:p.id,team:p.team,zeal:source.zealTenths/10,zeal_regen_ticks:0,slots:source.slots,allowedDeploymentLanes:[s.controllers.filter(c=>c.team===source.team).indexOf(source)===0?'left':'right']}); }
      else { expect(p).toEqual({id:p.id,team:p.team}); }
      expect(p).not.toHaveProperty("queue"); expect(p).not.toHaveProperty("actionIds");
    }
@@ -69,7 +69,7 @@ test("2v2 seat ownership survives serialization and applies to bots and destroye
   expect(getPublicSnapshot(s,p.id).players.find((x:any)=>x.id===p.id)!.allowedDeploymentLanes).toEqual([]);
  }
 });
-test("rerouting beyond the plaza continues across at the same depth",()=>{
+test("rerouting beyond the plaza returns to the plaza before switching lanes",()=>{
  for(const team of ["blue","red"] as const) for(const lane of ["left","right"] as const) {
    let s=make(); const controller=team==="blue"?0:1; s.controllers[controller].zealTenths=100; s=deploy(s,controller,0,lane);
    const u=s.units[0], enemyTeam=team==="blue"?"red":"blue";
@@ -77,12 +77,9 @@ test("rerouting beyond the plaza continues across at the same depth",()=>{
    s.laboratories.find(l=>l.team===enemyTeam && l.lane===lane)!.hp=0;
    const startY=u.position.y; s=advanceTick(s);
    expect(s.units[0].targetLane).toBe(lane==="left"?"right":"left");
-   expect(s.units[0].position.y).toBe(startY);
-   expect(s.units[0].route[0].y).toBe(startY);
-   for(let i=0;i<400 && !s.events.some(e=>e.type==="attack" && typeof e.target==="string");i++) {
-     const oldY=s.units[0].position.y; s=advanceTick(s);
-     expect(team==="blue" ? s.units[0].position.y<=oldY+1e-9 : s.units[0].position.y>=oldY-1e-9).toBe(true);
-   }
+   expect(team==="blue" ? s.units[0].position.y>startY : s.units[0].position.y<startY).toBe(true);
+   expect(s.units[0].route).toContainEqual(formationPoint(arena.plaza,u.id));
+   for(let i=0;i<1000 && !s.events.some(e=>e.type==="attack" && typeof e.target==="string");i++) s=advanceTick(s);
    expect(s.events.some(e=>e.type==="attack" && typeof e.target==="string")).toBe(true);
  }
 });
@@ -90,7 +87,7 @@ test("modes, seeded openings, rotation and independent zeal",()=>{
  for(const mode of ["1v1","2v2"] as const) for(let i=0;i<20;i++){const s=initializeMatch(mode,String(i),mode==="1v1"?["b","r"]:["b","b2","r","r2"]); expect(s.laboratories.length).toBe(4); expect(s.controllers.every(p=>p.slots.some(id=>cardById[id].cost<=3))).toBe(true);}
  let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id].cost<=3), card=p.slots[slot], replacement=p.queue[0]; s=deploy(s,0,slot);
  expect(s.controllers[0].slots[slot]).toBe(replacement); expect(s.controllers[0].queue.at(-1)).toBe(card); expect(s.controllers[0].zealTenths).toBe(50-cardById[card].cost*10);
- s=ticks(s,10); expect(s.controllers[0].zealTenths).toBe(55-cardById[card].cost*10); expect(s.controllers[1].zealTenths).toBe(55); s=ticks(s,200); expect(s.controllers.every(p=>p.zealTenths===100)).toBe(true);
+ s=ticks(s,30); expect(s.controllers[0].zealTenths).toBe(60-cardById[card].cost*10); expect(s.controllers[1].zealTenths).toBe(60); s=ticks(s,240); expect(s.controllers.every(p=>p.zealTenths===100)).toBe(true);
 });
 test("invalid and duplicate actions do not mutate or charge",()=>{
  let s=make(); const p=s.controllers[0], slot=p.slots.findIndex(id=>cardById[id].cost<=3); const cmd={actionId:"x",controllerId:p.id,slot,cardId:p.slots[slot],lane:"left" as const};
@@ -101,9 +98,9 @@ test("invalid and duplicate actions do not mutate or charge",()=>{
 test("bounded spawns and movement",()=>{
  let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); expect(Math.abs(s.units[0].position.x-s.units[1].position.x)).toBeLessThanOrEqual(48); expect(s.units[0].position.y+s.units[1].position.y).toBe(1080); expect(arena.spawns.blue.left.x+arena.spawns.blue.right.x).toBe(1920); const pos=structuredClone(s.units[0].position); s=advanceTick(s); expect(s.units[0].position).not.toEqual(pos);
 });
-test('WOE generates one zeal in two seconds and slows every card equally',()=>{
+test('WOE generates one zeal in three seconds and slows every card equally',()=>{
  let s=make();s.controllers.forEach(p=>p.zealTenths=0);
- s=ticks(s,19);expect(s.controllers.map(p=>p.zealTenths)).toEqual([9,9]);
+ s=ticks(s,29);expect(s.controllers.map(p=>p.zealTenths)).toEqual([0,0]);
  s=advanceTick(s);expect(s.controllers.map(p=>p.zealTenths)).toEqual([10,10]);
  for(const card of cards){
   let sample=make();sample.controllers[0].slots[0]=card.id;sample.controllers[0].zealTenths=100;sample=deploy(sample,0);
@@ -154,6 +151,6 @@ test("unit cap rejects without mutation",()=>{
  let s=make(); s.controllers[0].zealTenths=100; s=deploy(s,0); s.units=Array.from({length:arena.unit_cap},(_,i)=>({...structuredClone(s.units[0]),id:i+1})); s.controllers[0].zealTenths=100; const p=s.controllers[0], before=structuredClone(s); expect(applyDeployment(s,{actionId:"cap",controllerId:p.id,slot:0,cardId:p.slots[0],lane:"left"})).toMatchObject({reason:"UNIT_CAP"}); expect(s).toEqual(before);
 });
 test("seeded automated matches terminate and replay identically",()=>{
- function play(seed:string,mode:"1v1"|"2v2") { let s=initializeMatch(mode,seed,mode==="1v1"?["b","r"]:["b","b2","r","r2"]); while(!s.result && s.tick<1800){ if(s.tick%10===0) for(let i=0;i<s.controllers.length;i++){const p=s.controllers[i], slot=p.slots.findIndex(id=>cardById[id].cost*10<=p.zealTenths); if(slot>=0) s=applyDeployment(s,{actionId:`${s.tick}:${i}`,controllerId:p.id,slot,cardId:p.slots[slot],lane:(Math.floor(s.tick/100)+i)%2?"right":"left"}).state;} s=advanceTick(s); } expect(s.result).not.toBeNull(); return getPublicSnapshot(s); }
+ function play(seed:string,mode:"1v1"|"2v2") { let s=initializeMatch(mode,seed,mode==="1v1"?["b","r"]:["b","b2","r","r2"]); while(!s.result && s.tick<1800){ if(s.tick%10===0) for(let i=0;i<s.controllers.length;i++){const p=s.controllers[i], slot=p.slots.findIndex(id=>cardCost(cardById[id],'woe')*10<=p.zealTenths); if(slot>=0) s=applyDeployment(s,{actionId:`${s.tick}:${i}`,controllerId:p.id,slot,cardId:p.slots[slot],lane:(Math.floor(s.tick/100)+i)%2?"right":"left"}).state;} s=advanceTick(s); } expect(s.result).not.toBeNull(); return getPublicSnapshot(s); }
  for(const mode of ["1v1","2v2"] as const) for(let i=0;i<3;i++) expect(play(String(i),mode)).toEqual(play(String(i),mode));
 });

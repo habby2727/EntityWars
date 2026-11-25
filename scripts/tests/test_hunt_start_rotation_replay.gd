@@ -54,5 +54,23 @@ func _run() -> void:
 	# A duplicate server response confirms the original session.
 	zone._on_api_completed("start-2", true, {"session_id":"committed", "status":"EXPIRED", "duplicate":true})
 	assert(zone._hunt_pending_start_payload.is_empty() and zone._hunt_action_id.is_empty())
+	# Restored previews stay disabled when this rotation was already won.
+	zone._hunt_boundary = 2000
+	zone._hunt_selected = {"id":"hunt_mythic", "available":true}
+	zone._hunt_progress_key = zone._guardian_key()
+	zone._hunt_progress_owner = "player-a"
+	zone._hunt_progress = {"boss_unlocked":true, "rotation_key":101, "rotation_victory":true, "parent_boss_available":false}
+	zone._select_nearby_hunt(zone._hunt_selected, false)
+	assert(zone._hunt_fight.disabled)
+	zone._hunt_progress.rotation_victory = false
+	zone._hunt_progress.parent_boss_available = true
+	zone._select_nearby_hunt(zone._hunt_selected, false)
+	assert(not zone._hunt_fight.disabled)
+	# A guardian response belonging to another account cannot overwrite it.
+	zone._hunt_requests["stale-guardian"] = "guardians"
+	zone._guardian_request_key = zone._guardian_key()
+	zone._guardian_request_owner = "player-b"
+	zone._on_api_completed("stale-guardian", true, {"zone_id":zone._get_zone_id(), "hunt_id":"hunt_mythic", "rotation_victory":true})
+	assert(not zone._hunt_progress.rotation_victory)
 	print("PASS hunt start replay preserves payload across rotation")
 	quit(0)

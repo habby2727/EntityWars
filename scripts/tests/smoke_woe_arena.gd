@@ -52,7 +52,7 @@ func _run() -> void:
 	var arena = arena_script.new()
 	root.add_child(arena)
 	arena._build()
-	assert(arena._buttons.size() == 3 and arena._lab_bars.size() == 4 and arena._lane_buttons.size() == 4)
+	assert(arena._buttons.size() == 4 and arena._lab_bars.size() == 4 and arena._lane_buttons.size() == 4)
 	for viewport_size in [Vector2(1920,1080),Vector2(1280,720),Vector2(960,540)]:
 		arena._canvas.size = viewport_size
 		arena._resize()
@@ -67,6 +67,43 @@ func _run() -> void:
 	arena._snapshot = {"tick":1,"units":[],"laboratories":[],"players":[{"id":str(root.get_node("ConnectionGate").player_id),"team":"blue","zeal":5,"slots":["neon","neon","neon"],"allowedDeploymentLanes":["left"]}],"result":null}
 	arena._render_snapshot()
 	assert(arena._zeal_meter.segments == 10 and arena._buttons[0].icon != null)
+	arena._snapshot.players[0].zeal_regen_ticks = 15
+	arena._render_snapshot()
+	assert(arena._zeal_label.text.contains("5 / 10"))
+	assert(is_equal_approx(arena._zeal_meter.value, 5.5) and arena._zeal_meter.translucent_partial)
+	arena._playback_ready = true
+	arena._process(0.3)
+	assert(absf(arena._zeal_meter.value - 5.6) < 0.001)
+	arena._zeal_sync_ms -= 3000
+	arena._process(0.3)
+	assert(absf(arena._zeal_meter.value - 5.6) < 0.001)
+	arena._snapshot.players[0].zeal = 2
+	arena._snapshot.players[0].zeal_regen_ticks = 18
+	arena._render_snapshot()
+	assert(arena._zeal_label.text.contains("2 / 10") and absf(arena._zeal_meter.value - 2.6) < 0.001)
+	arena._snapshot.players[0].zeal = 5
+	arena._render_snapshot()
+	assert(not arena._buttons[3].visible)
+	arena._cards["solcarp"] = {"cost":5,"woe_cost":7,"element":"gold"}
+	arena._snapshot.players[0].slots.append("solcarp")
+	arena._render_snapshot()
+	assert(arena._buttons[3].visible and arena._buttons[3].disabled and arena._buttons[3].text.ends_with("7"))
+	arena._is_cd = true
+	arena._snapshot.allied_count = 4
+	arena._snapshot.allied_cap = 4
+	arena._snapshot.regeneration_blocked = true
+	arena._render_snapshot()
+	assert(arena._buttons[3].disabled and arena._buttons[3].text.ends_with("5"))
+	var paused: float = arena._zeal_meter.value
+	arena._process(0.5)
+	assert(is_equal_approx(paused, arena._zeal_meter.value))
+	arena._event({"type":"tower_strike","position":{"x":410,"y":220},"targetPosition":{"x":420,"y":250}})
+	assert(arena._effects.effects.back().kind == "tower_strike")
+	arena._is_cd = false
+	arena._snapshot.erase("allied_count")
+	arena._snapshot.erase("allied_cap")
+	arena._snapshot.erase("regeneration_blocked")
+	arena._render_snapshot()
 	arena._select(0)
 	assert(arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible and not arena._lane_buttons["red:left"].visible)
 	arena._accept_state({"match_id":"m","revision":2,"snapshot":arena._snapshot,"events":[{"seq":1,"type":"spawn","unit_id":4,"card_id":"neon","team":"red","position":{"x":100,"y":100}}]},true)

@@ -227,9 +227,8 @@ func _run() -> void:
 		quit(0)
 		return
 	if role == 0:
-		var slot := -1
-		for i in range(3):
-			if not arena._buttons[i].disabled and slot == -1: slot = i
+		var slot := 3
+		if not check(await wait_for(func(): return not arena._buttons[3].disabled, 15.0), "fourth card affordable"): quit(1); return
 		if not check(slot >= 0, "affordable card"): quit(1); return
 		arena._select(slot)
 		if not check(arena._selected == slot and arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:left"].size == Vector2(140,140), "selection and deployment target"): quit(1); return

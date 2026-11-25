@@ -334,7 +334,7 @@ test("guardian authorization and victories use real HTTP and isolated SQLite", a
     expect(won.data.status).toBe("VERIFIED_WIN");
     expect((await request(listPath,undefined,a.data.token)).data.personal_boss_available).toBe(false);
     expect((await offWindow("personal-consumed")).status).toBe(409);
-    expect((await start("scheduled-rematch")).status).toBe(200);
+    expect((await start("scheduled-rematch")).status).toBe(409);
     server.kill(); await server.exited;
     server = spawnServer();
     await wait();
@@ -427,7 +427,7 @@ test("committed personal start replays unchanged after rotation and server resta
   const socket = Bun.serve({port:0,hostname:"127.0.0.1",fetch:()=>new Response()}); const port=socket.port; socket.stop();
   const directory=mkdtempSync(join(tmpdir(),"ew-hunt-rotation-replay-")), dbPath=join(directory,"test.sqlite"), db=new Database(dbPath);
   for(const f of readdirSync(resolve(import.meta.dir,"../../migrations/sqlite")).filter(f=>f.endsWith(".sql")).sort()) db.exec(readFileSync(resolve(import.meta.dir,"../../migrations/sqlite",f),"utf8"));
-  const clockOffset=Math.floor(Date.now()/900000)*900000+120000-Date.now();
+  const clockOffset=Math.floor(Date.now()/900000)*900000+800000-Date.now();
   const env={...process.env,DB_PATH:dbPath,NODE_ENV:"development",BUN_ENV:"development",HOST:"127.0.0.1",PORT:String(port),DATABASE_URL:"postgres://x:x@127.0.0.1:1/test",REDIS_URL:"redis://127.0.0.1:1",AUTH_ACCOUNT_TIMEOUT_MS:"100",TEST_CLOCK_OFFSET:String(clockOffset),WORLD_SECRET:"isolated-rotation-test",LOGIN_RATE_LIMIT_MAX:"100"};
   const spawn=()=>Bun.spawn([process.execPath,"-e","const n=Date.now.bind(Date); Date.now=()=>n()+Number(process.env.TEST_CLOCK_OFFSET); await import('./src/index.ts');"],{cwd:resolve(import.meta.dir,"../.."),env,stdout:"ignore",stderr:"ignore"});
   let server=spawn(); const base=`http://127.0.0.1:${port}`;
@@ -436,16 +436,56 @@ test("committed personal start replays unchanged after rotation and server resta
   try {
     await ready(); let user=(await request("/auth/dev_login",{name:"rotation_replay_isolated"})).data;
     const schedule=(await request("/world/boss-hunts")).data;
+    expect(schedule.bosses.find((b:any)=>b.id==='hunt_mythic').available).toBe(false);
     const hunt="hunt_mythic", zone="zone_chaos";
     const guardians=(await request(`/world/boss-hunts/guardians?zone_id=${zone}&hunt_id=${hunt}`,undefined,user.token)).data.guardians;
     for(const g of guardians) db.query("INSERT INTO solo_guardian_victories (player_id,zone_id,parent_hunt_id,guardian_id,session_id,defeated_at) VALUES (?,?,?,?,?,?)").run(user.player_id,zone,hunt,g.guardian_id,crypto.randomUUID(),Date.now());
     const payload={client_action_id:"rotation-replay",hunt_id:hunt,rotation_key:schedule.rotation_key,zone_id:zone};
+    const expired=await request('/world/boss-hunts/start',{...payload,client_action_id:'expired-before-win'},user.token);expect(expired.status).toBe(200);
+    db.query('UPDATE solo_hunt_sessions SET expires_at=? WHERE session_id=?').run(schedule.server_time_unix_ms-1,expired.data.session_id);
+    await request('/world/boss-hunts/session',undefined,user.token);
+    expect((await request(`/world/boss-hunts/guardians?zone_id=${zone}&hunt_id=${hunt}`,undefined,user.token)).data.personal_boss_available).toBe(true);
     const committed=await request("/world/boss-hunts/start",payload,user.token); expect(committed.status).toBe(200);
     server.kill(); await server.exited; env.TEST_CLOCK_OFFSET=String(clockOffset+900000); server=spawn(); await ready();
     user=(await request("/auth/dev_login",{name:"rotation_replay_isolated"})).data;
     expect((await request("/world/boss-hunts")).data.rotation_key).not.toBe(schedule.rotation_key);
     const replay=await request("/world/boss-hunts/start",payload,user.token);
     expect(replay.status).toBe(200); expect(replay.data).toMatchObject({session_id:committed.data.session_id,duplicate:true});
-    expect((db.query("SELECT COUNT(*) n FROM solo_hunt_sessions WHERE player_id=?").get(user.player_id) as any).n).toBe(1);
+    expect((db.query("SELECT COUNT(*) n FROM solo_hunt_sessions WHERE player_id=?").get(user.player_id) as any).n).toBe(2);
+    // A verified win started in the previous rotation still consumes the
+    // rotation in which the server settled it, even outside the window.
+    const crossed=(await request("/world/boss-hunts")).data;
+    const load=await request('/world/boss-hunts/loadout',{session_id:committed.data.session_id,client_action_id:'crossed-load',entity_id:'sulfur_01',weapon_ids:[null,null],homunculus_id:null,spell_ids:['cinder_fist','furnace_rush','ash_temper','brimstone_crash'],mode:'attack'},user.token);expect(load.status).toBe(200);
+    const combat=JSON.parse((db.query('SELECT combat_state_json FROM solo_hunt_sessions WHERE session_id=?').get(committed.data.session_id) as any).combat_state_json);
+    combat.boss.hp=1;combat.boss.status.stun=100;combat.minion_config.count=0;
+    db.query('UPDATE solo_hunt_sessions SET combat_state_json=? WHERE session_id=?').run(JSON.stringify(combat),committed.data.session_id);
+    let won:any,winningAction:any;
+    for(let turn=1;turn<=10;turn++){
+      winningAction={session_id:committed.data.session_id,client_action_id:`crossed-turn-${turn}`,expected_revision:turn,decision:{turn,spell_id:'cinder_fist',target:'boss',hom_action:'hold'}};
+      won=await request('/world/boss-hunts/turn',winningAction,user.token);if(won.data.status==='VERIFIED_WIN')break;
+    }
+    expect(won.data.status).toBe('VERIFIED_WIN');
+    const rewardCount=(db.query("SELECT COUNT(*) n FROM audit_wallet WHERE related_id=? AND reason='SOLO_HUNT_REWARD'").get(committed.data.session_id) as any).n;
+    expect((await request('/world/boss-hunts/turn',winningAction,user.token)).data).toEqual(won.data);
+    expect((db.query("SELECT COUNT(*) n FROM audit_wallet WHERE related_id=? AND reason='SOLO_HUNT_REWARD'").get(committed.data.session_id) as any).n).toBe(rewardCount);
+    const progress=await request(`/world/boss-hunts/guardians?zone_id=${zone}&hunt_id=${hunt}`,undefined,user.token);
+    expect(progress.data).toMatchObject({rotation_victory:true,parent_boss_available:false,personal_boss_available:false});
+    const other=(await request('/auth/dev_login',{name:'rotation_replay_other'})).data;
+    expect((await request(`/world/boss-hunts/guardians?zone_id=${zone}&hunt_id=${hunt}`,undefined,other.token)).data.rotation_victory).toBe(false);
+    expect((await request(`/world/boss-hunts/guardians?zone_id=zone_crystal&hunt_id=${hunt}`,undefined,user.token)).data.rotation_victory).toBe(false);
+    expect((await request('/world/boss-hunts/start',{...payload,client_action_id:'crossed-fresh',rotation_key:crossed.rotation_key},user.token)).status).toBe(409);
+    const terminalReplay=await request('/world/boss-hunts/start',payload,user.token);expect(terminalReplay.data).toMatchObject({session_id:committed.data.session_id,status:'VERIFIED_WIN',duplicate:true});
+    // Select a later rotation where this boss is scheduled, without waiting
+    // for the wall clock or depending on which rotation happens to be live.
+    let later=crossed.rotation_key+1;
+    while(createHmac('sha256','isolated-rotation-test').update(String(later)).digest().readUInt32BE(0)/0x100000000 >= 0.35) later++;
+    server.kill();await server.exited;env.TEST_CLOCK_OFFSET=String(later*900000+120000-Date.now());server=spawn();await ready();
+    user=(await request('/auth/dev_login',{name:'rotation_replay_isolated'})).data;
+    const next=(await request('/world/boss-hunts')).data;expect(next.rotation_key).toBe(later);expect(next.current_special_id).toBe(hunt);
+    const nextProgress=await request(`/world/boss-hunts/guardians?zone_id=${zone}&hunt_id=${hunt}`,undefined,user.token);
+    expect(nextProgress.data).toMatchObject({rotation_victory:false,parent_boss_available:true});
+    const laterStart=await request('/world/boss-hunts/start',{...payload,client_action_id:'later-scheduled',rotation_key:later},user.token);expect(laterStart.status).toBe(200);
+    db.query("UPDATE solo_hunt_sessions SET status='VERIFIED_WIN', finished_at=? WHERE session_id=?").run(next.server_time_unix_ms,laterStart.data.session_id);
+    expect((await request('/world/boss-hunts/start',{...payload,client_action_id:'later-again',rotation_key:later},user.token)).status).toBe(409);
   } finally {server.kill(); await server.exited; db.close(); rmSync(directory,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 },30000);

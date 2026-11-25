@@ -81,6 +81,7 @@
       "id": "solcarp",
       "element": "gold",
       "cost": 5,
+      "woe_cost": 7,
       "hp": 270,
       "damage": 50,
       "defense": 5,

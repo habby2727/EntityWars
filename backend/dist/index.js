@@ -17654,6 +17654,7 @@ var woe_cards_default = {
       id: "solcarp",
       element: "gold",
       cost: 5,
+      woe_cost: 7,
       hp: 270,
       damage: 50,
       defense: 5,
@@ -17826,13 +17827,16 @@ var ATTACK_INTERVAL_MS = 1000;
 var expected2 = { neon: 2, luny: 3, mantillo: 3, nebulynx: 4, venam: 4, cedix: 4, flincho: 5, solcarp: 5, hyrox: 6, astralotl: 6 };
 var cards = Object.freeze(woe_cards_default.cards.map((raw) => {
   const original = expedition_homunculi_default.homunculi.find((h) => h.id === raw.id);
-  if (!original || original.type !== raw.element || expected2[raw.id] !== raw.cost || !raw.role || [raw.hp, raw.damage, raw.speed, raw.range].some((n) => !Number.isSafeInteger(n) || n <= 0) || !Number.isSafeInteger(raw.defense) || raw.defense < 0)
+  if (!original || original.type !== raw.element || expected2[raw.id] !== raw.cost || !raw.role || [raw.hp, raw.damage, raw.speed, raw.range].some((n) => !Number.isSafeInteger(n) || n <= 0) || "woe_cost" in raw && (!Number.isSafeInteger(raw.woe_cost) || raw.woe_cost <= 0) || !Number.isSafeInteger(raw.defense) || raw.defense < 0)
     throw new Error("INVALID_WOE_CARD");
   return Object.freeze(raw);
 }));
 if (cards.length !== 10 || new Set(cards.map((c) => c.id)).size !== 10)
   throw new Error("INVALID_WOE_CATALOG");
 var cardById = Object.freeze(Object.fromEntries(cards.map((c) => [c.id, c])));
+function cardCost(card, kind) {
+  return kind === "woe" ? card.woe_cost ?? card.cost : card.cost;
+}
 var arena = woe_arena_default;
 function elementalMultiplier(attacker, defender) {
   const relation = types_default.effectiveness[attacker]?.[defender];
@@ -17850,6 +17854,25 @@ function attackDamage(damage, defense, multiplier = 1) {
 var teams = ["blue", "red"];
 var lanes = ["left", "right"];
 var WOE_MOVEMENT_MULTIPLIER = 0.85;
+var ZEAL_REGEN_TICKS = 30;
+function zealProgress(p) {
+  if (p.zealTenths >= 100)
+    return 0;
+  return p.zealRegenTicks === undefined ? Math.min(29, Math.max(0, Math.round(p.zealTenths % 10 * 3))) : Math.min(29, Math.max(0, Math.floor(p.zealRegenTicks)));
+}
+function regenerateZeal(p, allowed) {
+  let progress = zealProgress(p);
+  p.zealTenths = Math.max(0, Math.min(100, Math.floor(p.zealTenths / 10) * 10));
+  if (p.zealTenths >= 100) {
+    p.zealRegenTicks = 0;
+    return;
+  }
+  if (allowed && ++progress >= ZEAL_REGEN_TICKS) {
+    p.zealTenths += 10;
+    progress = 0;
+  }
+  p.zealRegenTicks = progress;
+}
 var enemy = (team) => team === "blue" ? "red" : "blue";
 var labId = (team, lane) => `${team}:${lane}`;
 var copy = (value) => structuredClone(value);
@@ -17872,8 +17895,8 @@ function shuffle(seed) {
     const j = n % (i + 1);
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  if (!deck.slice(0, 3).some((id) => cardById[id].cost <= 3)) {
-    const j = deck.findIndex((id) => cardById[id].cost <= 3);
+  if (!deck.slice(0, 4).some((id) => cardCost(cardById[id], "woe") <= 3)) {
+    const j = deck.findIndex((id) => cardCost(cardById[id], "woe") <= 3);
     [deck[0], deck[j]] = [deck[j], deck[0]];
   }
   return deck;
@@ -17884,7 +17907,7 @@ function initializeMatch(mode, seed, controllerIds) {
   const perTeam = controllerIds.length / 2;
   return { kind: "woe", mode, tick: 0, controllers: controllerIds.map((id, i) => {
     const deck = shuffle(`${seed.length}:${seed}:${id.length}:${id}`);
-    return { id, team: i < perTeam ? "blue" : "red", zealTenths: 50, slots: deck.slice(0, 3), queue: deck.slice(3), actionIds: [] };
+    return { id, team: i < perTeam ? "blue" : "red", zealTenths: 50, zealRegenTicks: 0, slots: deck.slice(0, 4), queue: deck.slice(4), actionIds: [] };
   }), laboratories: teams.flatMap((team) => lanes.map((lane) => ({ id: labId(team, lane), team, lane, hp: arena.laboratory_hp, maxHp: arena.laboratory_hp, position: copy(arena.laboratories[team][lane]) }))), units: [], nextUnitId: 1, events: [], result: null };
 }
 function formationPoint(point, id, endpoint = false) {
@@ -17902,17 +17925,21 @@ function redirectRoute(unit, target) {
   const plazaIndex = arena.approaches[unit.team][unit.lane].length;
   if (unit.waypoint <= plazaIndex)
     return [...copy(unit.route.slice(unit.waypoint, plazaIndex + 1)), ...approach.slice(1)];
-  const y = unit.position.y;
-  const direction = enemy(unit.team) === "red" ? -1 : 1;
-  for (let i = 1;i < approach.length; i++) {
-    const a = approach[i - 1], b = approach[i];
-    if ((y - a.y) * direction >= 0 && (b.y - y) * direction >= 0) {
-      const t = (y - a.y) / (b.y - a.y);
-      const crossing = { x: a.x + (b.x - a.x) * t, y };
-      return [crossing, ...approach.slice(i)];
+  const original = route(unit.team, unit.lane, unit.targetLane, unit.formation ? unit.id : undefined);
+  const plaza = original[plazaIndex];
+  if (dist2(unit.position, plaza) < 0.000001)
+    return approach.slice(1);
+  let segment = plazaIndex, best = Infinity;
+  for (let i = plazaIndex;i < original.length - 1; i++) {
+    const a = original[i], b = original[i + 1], dx = b.x - a.x, dy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((unit.position.x - a.x) * dx + (unit.position.y - a.y) * dy) / (dx * dx + dy * dy)));
+    const d = dist2(unit.position, { x: a.x + t * dx, y: a.y + t * dy });
+    if (d < best) {
+      best = d;
+      segment = i;
     }
   }
-  return [copy(approach[approach.length - 1])];
+  return [...copy(original.slice(plazaIndex, segment + 1).reverse()), ...approach.slice(1)];
 }
 function allowedDeploymentLanes(state, controllerId) {
   const player = state.controllers.find((p) => p.id === controllerId);
@@ -17936,11 +17963,11 @@ function validateDeployment(state, command) {
     return "INVALID_LANE";
   if (state.kind === "woe" && state.mode === "2v2" && ![lanes[state.controllers.filter((p) => p.team === player.team).findIndex((p) => p.id === player.id)]].includes(command.lane))
     return "LANE_NOT_OWNED";
-  if (!Number.isInteger(command.slot) || command.slot < 0 || command.slot >= 3 || player.slots[command.slot] !== command.cardId || !cardById[command.cardId])
+  if (!Number.isInteger(command.slot) || command.slot < 0 || ![3, 4].includes(player.slots.length) || command.slot >= player.slots.length || player.slots[command.slot] !== command.cardId || !cardById[command.cardId])
     return "INVALID_CARD";
   if (!state.laboratories.find((l) => l.team === player.team && l.lane === command.lane && l.hp > 0))
     return "LANE_DESTROYED";
-  if (player.zealTenths < cardById[command.cardId].cost * 10)
+  if (player.zealTenths < cardCost(cardById[command.cardId], state.kind) * 10)
     return "INSUFFICIENT_ZEAL";
   if (state.units.length >= arena.unit_cap)
     return "UNIT_CAP";
@@ -17952,7 +17979,9 @@ function applyDeployment(state, command) {
     return { accepted: false, state, reason };
   const next = copy(state);
   const player = next.controllers.find((p) => p.id === command.controllerId);
-  player.zealTenths -= cardById[command.cardId].cost * 10;
+  if (player.zealTenths >= 100)
+    player.zealRegenTicks = 0;
+  player.zealTenths -= cardCost(cardById[command.cardId], state.kind) * 10;
   player.actionIds.push(command.actionId);
   player.slots[command.slot] = player.queue.shift();
   player.queue.push(command.cardId);
@@ -17988,9 +18017,8 @@ function advanceTick(state) {
   const next = copy(state);
   next.events = [];
   next.tick++;
-  if (next.tick % 2 === 0)
-    for (const player of next.controllers)
-      player.zealTenths = Math.min(100, player.zealTenths + 1);
+  for (const player of next.controllers)
+    regenerateZeal(player, true);
   for (const unit of next.units) {
     if (unit.hp <= 0 || next.result)
       continue;
@@ -17999,10 +18027,11 @@ function advanceTick(state) {
     const card = cardById[unit.cardId];
     let lab = next.laboratories.find((l) => l.team === enemy(unit.team) && l.lane === unit.targetLane);
     if (lab.hp <= 0) {
-      unit.targetLane = unit.targetLane === "left" ? "right" : "left";
-      lab = next.laboratories.find((l) => l.team === enemy(unit.team) && l.lane === unit.targetLane);
-      unit.route = redirectRoute(unit, unit.targetLane);
+      const targetLane = unit.targetLane === "left" ? "right" : "left";
+      unit.route = redirectRoute(unit, targetLane);
       unit.waypoint = 0;
+      unit.targetLane = targetLane;
+      lab = next.laboratories.find((l) => l.team === enemy(unit.team) && l.lane === unit.targetLane);
     }
     const target = nearestTarget(unit, next.units, card.range);
     if (target || lab.hp > 0 && dist2(unit.position, lab.position) <= card.range ** 2) {
@@ -18035,7 +18064,7 @@ function advanceTick(state) {
   return next;
 }
 function getPublicSnapshot(state, viewerId) {
-  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map((u) => ({ id: u.id, controllerId: u.controllerId, team: u.team, lane: u.lane, cardId: u.cardId, hp: u.hp, maxHp: cardById[u.cardId].hp, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), laboratories: state.laboratories, players: state.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: p.zealTenths / 10, slots: p.slots, allowedDeploymentLanes: allowedDeploymentLanes(state, p.id) } : {} })), events: state.events, result: state.result });
+  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map((u) => ({ id: u.id, controllerId: u.controllerId, team: u.team, lane: u.lane, cardId: u.cardId, hp: u.hp, maxHp: cardById[u.cardId].hp, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), laboratories: state.laboratories, players: state.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: Math.floor(p.zealTenths / 10), zeal_regen_ticks: zealProgress(p), slots: p.slots, allowedDeploymentLanes: allowedDeploymentLanes(state, p.id) } : {} })), events: state.events, result: state.result });
 }
 
 // src/woe/lobby.ts
@@ -18374,18 +18403,22 @@ function chooseBotDeployment(state, id, options) {
   const p = state.controllers.find((c) => c.id === id);
   if (!p || state.result)
     return null;
+  const alliesAlive = state.units.filter((u) => u.hp > 0 && u.team === p.team).length;
+  const enemiesAlive = state.units.filter((u) => u.hp > 0 && u.team !== p.team).length;
+  if (alliesAlive > enemiesAlive || alliesAlive === enemiesAlive && alliesAlive >= 3 || alliesAlive === 0 && enemiesAlive === 0 && state.tick < 50)
+    return null;
   const choices = [];
   const bias = [...id].reduce((n, c) => n * 33 + c.charCodeAt(0) >>> 0, 0);
   for (const lane of ["left", "right"])
-    for (let slot = 0;slot < 3; slot++) {
+    for (let slot = 0;slot < p.slots.length; slot++) {
       const card = cardById[p.slots[slot]], cmd = { actionId: `bot:${state.tick}:${id}`, controllerId: id, slot, cardId: card.id, lane };
       if ((options?.validate ?? validateDeployment)(state, cmd))
         continue;
-      const enemies = state.units.filter((u) => u.team !== p.team && u.lane === lane), allies = state.units.filter((u) => u.team === p.team && u.lane === lane);
+      const enemies = state.units.filter((u) => u.hp > 0 && u.team !== p.team && u.lane === lane), allies = state.units.filter((u) => u.hp > 0 && u.team === p.team && u.lane === lane);
       const lab = state.laboratories.find((l) => l.team === p.team && l.lane === lane);
       const counters = enemies.reduce((n, u) => n + elementalMultiplier(card.element, options?.element ? options.element(u.cardId) : cardById[u.cardId].element) - 1, 0);
       const threat = enemies.reduce((n, u) => n + Math.max(0, 1 - Math.abs(u.position.y - lab.position.y) / 700), 0);
-      const score = threat * 5 + enemies.length * 1.5 - allies.length * 1.2 + (1 - lab.hp / lab.maxHp) * 3 + counters * 4 + card.cost * 0.12 + ((bias + state.tick / 10) % 2 === (lane === "left" ? 0 : 1) ? 0.3 : 0) - slot * 0.001;
+      const score = threat * 5 + enemies.length * 1.5 - allies.length * 1.2 + (1 - lab.hp / lab.maxHp) * 3 + counters * 4 + cardCost(card, state.kind) * 0.12 + ((bias + state.tick / 10) % 2 === (lane === "left" ? 0 : 1) ? 0.3 : 0) - slot * 0.001;
       choices.push({ cmd, score });
     }
   choices.sort((a, b) => b.score - a.score);
@@ -18749,6 +18782,7 @@ var core_defense_waves_default = {
   max_hp: 1e4,
   max_damage: 1e4,
   allied_unit_cap: 75,
+  red_lab_protection_radius: 100,
   action_id_limit: 2048
 };
 
@@ -18802,11 +18836,16 @@ function initializeCoreDefense(mode, seed, controllerIds) {
   return { kind: "core_defense", mode, tick: 0, controllers: base.controllers, laboratories: base.laboratories, units: [], nextUnitId: 1, events: [], wave: 1, completedWaves: 0, enemiesSpawned: 0, enemiesKilled: 0, waveSpawned: 0, pendingSpawns: waveCount(1), phase: "wave", intermissionTicks: 0, spawnCooldown: 0, result: null };
 }
 var asWoe = (s) => s;
+function alliedCapacity(s) {
+  const enemies = s.units.filter((u) => u.team === "red" && u.hp > 0).length;
+  return { allied_count: s.units.filter((u) => u.team === "blue" && u.hp > 0).length, allied_cap: enemies < 4 ? 4 : enemies < 8 ? 6 : 8 };
+}
 function validateCoreDefenseDeployment(s, c) {
   const reason = validateDeployment(asWoe(s), c);
   if (reason)
     return reason;
-  if (s.units.filter((u) => u.team === "blue").length >= core_defense_waves_default.allied_unit_cap)
+  const capacity = alliedCapacity(s);
+  if (capacity.allied_count >= capacity.allied_cap || capacity.allied_count >= core_defense_waves_default.allied_unit_cap)
     return "UNIT_CAP";
   return null;
 }
@@ -18842,15 +18881,29 @@ function spawn(s) {
   s.spawnCooldown = core_defense_waves_default.spawn_interval_ticks;
   s.events.push({ type: "spawn", tick: s.tick, team: u.team, cardId: u.cardId, position: clone(u.position), unit_id: u.id, card_id: u.cardId, lane, kind: u.kind, assetId: u.cardId, element: u.element, hp: u.hp, maxHp: u.maxHp });
 }
+function strikeCampingAlly(s, u) {
+  if (u.team !== "blue" || u.hp <= 0)
+    return false;
+  const lab = s.laboratories.find((l) => l.team === "red" && dist22(u.position, l.position) <= core_defense_waves_default.red_lab_protection_radius ** 2);
+  if (!lab)
+    return false;
+  const position = clone(lab.position), targetPosition = clone(u.position);
+  u.hp = 0;
+  s.events.push({ type: "tower_strike", tick: s.tick, team: "red", cardId: "", position, target: u.id, targetPosition, labId: lab.id });
+  s.events.push({ type: "death", tick: s.tick, team: "red", cardId: "", position, target: u.id, targetPosition, targetKind: "unit", victimKind: u.kind, victimAssetId: u.cardId, victimCardId: u.cardId, victimElement: u.element, victimTeam: u.team, victimPosition: targetPosition });
+  return true;
+}
 function advanceCoreDefenseTick(state) {
   if (state.result)
     return state;
   let s = clone(state);
   s.events = [];
   s.tick = plus(s.tick);
-  if (s.phase === "wave")
-    for (const p of s.controllers)
-      p.zealTenths = Math.min(100, p.zealTenths + 1);
+  for (const u of s.units)
+    strikeCampingAlly(s, u);
+  const capacity = alliedCapacity(s);
+  for (const p of s.controllers)
+    regenerateZeal(p, s.phase === "wave" && capacity.allied_count < capacity.allied_cap);
   if (s.phase === "intermission") {
     s.intermissionTicks--;
     if (s.intermissionTicks === 0) {
@@ -18876,10 +18929,11 @@ function advanceCoreDefenseTick(state) {
     if (u.team === "red") {
       lab = s.laboratories.find((l) => l.team === "blue" && l.lane === u.targetLane);
       if (lab.hp <= 0) {
-        u.targetLane = other(u.targetLane);
-        lab = s.laboratories.find((l) => l.team === "blue" && l.lane === u.targetLane);
-        u.route = redirectRoute(u, u.targetLane);
+        const targetLane = other(u.targetLane);
+        u.route = redirectRoute(u, targetLane);
         u.waypoint = 0;
+        u.targetLane = targetLane;
+        lab = s.laboratories.find((l) => l.team === "blue" && l.lane === u.targetLane);
       }
     }
     const target = nearestTarget(u, s.units, u.range);
@@ -18901,8 +18955,10 @@ function advanceCoreDefenseTick(state) {
           }
         }
       }
-    } else
+    } else {
       move(u, u.speed * arena.tick_ms / 1000);
+      strikeCampingAlly(s, u);
+    }
   }
   s.units = s.units.filter((u) => u.hp > 0);
   if (!s.result && s.phase === "wave" && s.pendingSpawns === 0 && !s.units.some((u) => u.kind === "enemy")) {
@@ -18913,7 +18969,8 @@ function advanceCoreDefenseTick(state) {
   return s;
 }
 function getCoreDefenseSnapshot(s, viewerId) {
-  return clone({ kind: s.kind, mode: s.mode, tick: s.tick, wave: s.wave, completedWaves: s.completedWaves, enemiesSpawned: s.enemiesSpawned, enemiesKilled: s.enemiesKilled, pendingSpawns: s.pendingSpawns, phase: s.phase, intermissionTicks: s.intermissionTicks, remainingBlueLabHp: s.laboratories.filter((l) => l.team === "blue").reduce((n, l) => n + l.hp, 0), laboratories: s.laboratories, units: s.units.map((u) => ({ id: u.id, kind: u.kind, assetId: u.cardId, cardId: u.cardId, ...u.kind === "homunculus" ? { controllerId: u.controllerId } : {}, team: u.team, lane: u.lane, hp: u.hp, maxHp: u.maxHp, element: u.element, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), players: s.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: p.zealTenths / 10, slots: p.slots } : {} })), events: s.events, result: s.result });
+  const capacity = alliedCapacity(s);
+  return clone({ kind: s.kind, mode: s.mode, tick: s.tick, wave: s.wave, completedWaves: s.completedWaves, enemiesSpawned: s.enemiesSpawned, enemiesKilled: s.enemiesKilled, pendingSpawns: s.pendingSpawns, phase: s.phase, intermissionTicks: s.intermissionTicks, ...capacity, regeneration_blocked: s.phase !== "wave" || capacity.allied_count >= capacity.allied_cap, remainingBlueLabHp: s.laboratories.filter((l) => l.team === "blue").reduce((n, l) => n + l.hp, 0), laboratories: s.laboratories, units: s.units.map((u) => ({ id: u.id, kind: u.kind, assetId: u.cardId, cardId: u.cardId, ...u.kind === "homunculus" ? { controllerId: u.controllerId } : {}, team: u.team, lane: u.lane, hp: u.hp, maxHp: u.maxHp, element: u.element, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), players: s.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: Math.floor(p.zealTenths / 10), zeal_regen_ticks: zealProgress(p), slots: p.slots } : {} })), events: s.events, result: s.result });
 }
 
 // src/woe/core_defense_lobby.ts
@@ -25996,13 +26053,16 @@ async function startServer() {
             const zoneId = url.searchParams.get("zone_id") ?? "";
             const huntId = url.searchParams.get("hunt_id") ?? "";
             return db.transaction(() => {
-              const definitions = guardianRoster(playerId, zoneId, huntId, Date.now());
+              const now = Date.now();
+              const definitions = guardianRoster(playerId, zoneId, huntId, now);
               if (!definitions)
                 throw new HttpError(400, "Invalid zone or boss hunt.");
               const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId);
               const defeated = new Set(rows.map((row) => row.guardian_id));
               const guardians = definitions.map((definition) => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
-              return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter((g) => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every((g) => g.defeated), personal_boss_available: guardians.length > 0 && guardians.every((g) => g.defeated) && !personalBossWon(playerId, zoneId, huntId) });
+              const unlocked = guardians.length > 0 && guardians.every((g) => g.defeated);
+              const availability = parentBossAvailability(playerId, zoneId, huntId, unlocked, now);
+              return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter((g) => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every((g) => g.defeated), ...availability });
             }).immediate();
           }
           if (req.method == "GET" && url.pathname == "/world/boss-hunts/commons") {
@@ -26314,7 +26374,11 @@ async function startServer() {
                   throw new HttpError(400, "Invalid guardian zone.");
                 if (!globalEvent && boss.tier !== "common" && !definitions)
                   throw new HttpError(409, "Guardian zone required.");
-                const personalAvailable = !globalEvent && !appearance && guardianId === undefined && !!definitions?.length && definitions.every((guardian) => !!db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id)) && !personalBossWon(playerId, zoneId, boss.id);
+                const unlocked = !!definitions?.length && definitions.every((guardian) => !!db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id));
+                const availability = !globalEvent && !appearance && guardianId === undefined && zoneId !== undefined ? parentBossAvailability(playerId, zoneId, boss.id, unlocked, now) : null;
+                if (availability?.rotation_victory)
+                  throw new HttpError(409, "Boss already defeated this rotation.");
+                const personalAvailable = availability?.personal_boss_available ?? false;
                 if (!globalEvent && guardianId === undefined && !personalAvailable && (payload.rotation_key !== schedule.rotation_key || !boss.available))
                   throw new HttpError(409, "Boss hunt is not available for this rotation.");
                 let encounter = appearance ? { ...boss, ...appearance, display_texture_id: appearance.texture_id } : boss;
@@ -26591,6 +26655,13 @@ function expireSoloHunts(playerId, now) {
 }
 function personalBossWon(playerId, zoneId, huntId) {
   return !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL LIMIT 1").get(playerId, zoneId, huntId);
+}
+function parentBossAvailability(playerId, zoneId, huntId, unlocked, now) {
+  const schedule = soloBossSchedule(now), interval = staticData.soloBosses.rotation.interval_seconds * 1000;
+  const start = schedule.rotation_key * interval;
+  const rotationVictory = !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL AND (rotation_key = ? OR (finished_at >= ? AND finished_at < ?)) LIMIT 1").get(playerId, zoneId, huntId, schedule.rotation_key, start, start + interval);
+  const personal = unlocked && !personalBossWon(playerId, zoneId, huntId);
+  return { personal_boss_available: personal, rotation_victory: rotationVictory, parent_boss_available: unlocked && !rotationVictory && (personal || !!schedule.bosses.find((b2) => b2.id === huntId)?.available), rotation_key: schedule.rotation_key };
 }
 function guardianRoster(playerId, zoneId, parentId, now) {
   const saved = db.query("SELECT definitions_json FROM solo_guardian_rosters WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").get(playerId, zoneId, parentId);

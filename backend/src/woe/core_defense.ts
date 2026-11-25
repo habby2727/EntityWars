@@ -1,7 +1,7 @@
 ﻿import enemyData from '../../../data/static/core_defense_enemies.json';
 import waveRules from '../../../data/static/core_defense_waves.json';
 import { arena, cardById, attackDamage, elementalMultiplier, ATTACK_INTERVAL_MS, type Element } from './catalog';
-import { initializeMatch, applyDeployment, validateDeployment, route, redirectRoute, move, nearestTarget, formationPoint, type Unit, type MatchState, type Controller, type Laboratory, type Lane, type DeploymentCommand } from './engine';
+import { initializeMatch, applyDeployment, validateDeployment, route, redirectRoute, move, nearestTarget, formationPoint, regenerateZeal, zealProgress, type Unit, type MatchState, type Controller, type Laboratory, type Lane, type DeploymentCommand } from './engine';
 
 export type CoreDefenseMode = 'solo' | 'coop';
 type PersistedCoreDefenseMode = CoreDefenseMode | 'solo_bot';
@@ -12,7 +12,7 @@ const enemyById: Readonly<Record<string, Readonly<EnemyDefinition>>> = Object.fr
 if (coreDefenseEnemies.length !== 5 || new Set(coreDefenseEnemies.map(e=>e.id)).size !== 5 || coreDefenseEnemies.some(e => !e.role || !Number.isSafeInteger(e.unlock_wave) || e.unlock_wave < 1 || [e.hp,e.damage,e.speed,e.range].some(n=>!Number.isSafeInteger(n)||n<=0) || !Number.isSafeInteger(e.defense) || e.defense<0 || (()=>{try { elementalMultiplier(e.element,e.element); return false; } catch { return true; }})())) throw new Error('INVALID_CORE_DEFENSE_CATALOG');
 
 export interface DefenseUnit extends Unit { kind:'homunculus'|'enemy'; maxHp:number; damage:number; defense:number; speed:number; range:number; element:Element }
-type DefenseEvent = { type:'spawn'|'attack'|'death'; tick:number; team:'blue'|'red'; cardId:string; position:{x:number;y:number}; [key:string]:unknown };
+type DefenseEvent = { type:'spawn'|'attack'|'death'|'tower_strike'; tick:number; team:'blue'|'red'; cardId:string; position:{x:number;y:number}; [key:string]:unknown };
 export interface CoreDefenseState {
  kind:'core_defense'; mode:PersistedCoreDefenseMode; tick:number; controllers:Controller[]; laboratories:Laboratory[]; units:DefenseUnit[]; nextUnitId:number; events:DefenseEvent[];
  wave:number; completedWaves:number; enemiesSpawned:number; enemiesKilled:number; waveSpawned:number; pendingSpawns:number; phase:'wave'|'intermission'|'defeat'; intermissionTicks:number; spawnCooldown:number;
@@ -42,9 +42,14 @@ export function initializeCoreDefense(mode:CoreDefenseMode,seed:string,controlle
  return {kind:'core_defense',mode,tick:0,controllers:base.controllers,laboratories:base.laboratories,units:[],nextUnitId:1,events:[],wave:1,completedWaves:0,enemiesSpawned:0,enemiesKilled:0,waveSpawned:0,pendingSpawns:waveCount(1),phase:'wave',intermissionTicks:0,spawnCooldown:0,result:null};
 }
 const asWoe = (s:CoreDefenseState) => s as unknown as MatchState;
+export function alliedCapacity(s:CoreDefenseState) {
+ const enemies=s.units.filter(u=>u.team==='red'&&u.hp>0).length;
+ return {allied_count:s.units.filter(u=>u.team==='blue'&&u.hp>0).length,allied_cap:enemies<4?4:enemies<8?6:8};
+}
 export function validateCoreDefenseDeployment(s:CoreDefenseState,c:DeploymentCommand):string|null {
  const reason=validateDeployment(asWoe(s),c); if(reason)return reason;
- if(s.units.filter(u=>u.team==='blue').length>=waveRules.allied_unit_cap)return 'UNIT_CAP';
+ const capacity=alliedCapacity(s);
+ if(capacity.allied_count>=capacity.allied_cap || capacity.allied_count>=waveRules.allied_unit_cap)return 'UNIT_CAP';
  return null;
 }
 export function applyCoreDefenseDeployment(s:CoreDefenseState,c:DeploymentCommand): {accepted:true;state:CoreDefenseState}|{accepted:false;state:CoreDefenseState;reason:string} {
@@ -68,10 +73,22 @@ function spawn(s:CoreDefenseState) {
  s.units.push(u);s.waveSpawned++;s.enemiesSpawned=plus(s.enemiesSpawned);s.pendingSpawns--;s.spawnCooldown=waveRules.spawn_interval_ticks;
  s.events.push({type:'spawn',tick:s.tick,team:u.team,cardId:u.cardId,position:clone(u.position),unit_id:u.id,card_id:u.cardId,lane,kind:u.kind,assetId:u.cardId,element:u.element,hp:u.hp,maxHp:u.maxHp});
 }
+function strikeCampingAlly(s:CoreDefenseState,u:DefenseUnit):boolean {
+ if(u.team!=='blue' || u.hp<=0)return false;
+ const lab=s.laboratories.find(l=>l.team==='red' && dist2(u.position,l.position)<=waveRules.red_lab_protection_radius**2);
+ if(!lab)return false;
+ const position=clone(lab.position),targetPosition=clone(u.position);
+ u.hp=0;
+ s.events.push({type:'tower_strike',tick:s.tick,team:'red',cardId:'',position,target:u.id,targetPosition,labId:lab.id});
+ s.events.push({type:'death',tick:s.tick,team:'red',cardId:'',position,target:u.id,targetPosition,targetKind:'unit',victimKind:u.kind,victimAssetId:u.cardId,victimCardId:u.cardId,victimElement:u.element,victimTeam:u.team,victimPosition:targetPosition});
+ return true;
+}
 export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState {
  if(state.result)return state;
  let s=clone(state);s.events=[];s.tick=plus(s.tick);
- if(s.phase==='wave')for(const p of s.controllers)p.zealTenths=Math.min(100,p.zealTenths+1);
+ for(const u of s.units)strikeCampingAlly(s,u);
+ const capacity=alliedCapacity(s);
+ for(const p of s.controllers)regenerateZeal(p,s.phase==='wave' && capacity.allied_count<capacity.allied_cap);
  if(s.phase==='intermission') {
   s.intermissionTicks--;
   if(s.intermissionTicks===0) {s.wave=plus(s.wave);s.waveSpawned=0;s.pendingSpawns=waveCount(s.wave);s.spawnCooldown=0;s.phase='wave';}
@@ -86,7 +103,7 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
   let lab:Laboratory|undefined;
   if(u.team==='red') {
    lab=s.laboratories.find(l=>l.team==='blue'&&l.lane===u.targetLane)!;
-   if(lab.hp<=0) {u.targetLane=other(u.targetLane);lab=s.laboratories.find(l=>l.team==='blue'&&l.lane===u.targetLane)!;u.route=redirectRoute(u,u.targetLane);u.waypoint=0;}
+   if(lab.hp<=0) {const targetLane=other(u.targetLane);u.route=redirectRoute(u,targetLane);u.waypoint=0;u.targetLane=targetLane;lab=s.laboratories.find(l=>l.team==='blue'&&l.lane===u.targetLane)!;}
   }
   const target=nearestTarget(u,s.units,u.range);
   const victim=target ?? (lab && lab.hp>0 && dist2(u.position,lab.position)<=u.range**2 ? lab : undefined);
@@ -101,12 +118,13 @@ export function advanceCoreDefenseTick(state:CoreDefenseState):CoreDefenseState 
      if(!target && s.laboratories.filter(l=>l.team==='blue').every(l=>l.hp===0)){s.result={winner:'red',reason:'laboratories'};s.phase='defeat';}
     }
    }
-  } else move(u,u.speed*arena.tick_ms/1000);
+  } else {move(u,u.speed*arena.tick_ms/1000);strikeCampingAlly(s,u);}
  }
  s.units=s.units.filter(u=>u.hp>0);
  if(!s.result && s.phase==='wave' && s.pendingSpawns===0 && !s.units.some(u=>u.kind==='enemy')) {s.completedWaves=s.wave;s.phase='intermission';s.intermissionTicks=waveRules.intermission_ticks;}
  return s;
 }
 export function getCoreDefenseSnapshot(s:CoreDefenseState,viewerId?:string) {
- return clone({kind:s.kind,mode:s.mode,tick:s.tick,wave:s.wave,completedWaves:s.completedWaves,enemiesSpawned:s.enemiesSpawned,enemiesKilled:s.enemiesKilled,pendingSpawns:s.pendingSpawns,phase:s.phase,intermissionTicks:s.intermissionTicks,remainingBlueLabHp:s.laboratories.filter(l=>l.team==='blue').reduce((n,l)=>n+l.hp,0),laboratories:s.laboratories,units:s.units.map(u=>({id:u.id,kind:u.kind,assetId:u.cardId,cardId:u.cardId,...(u.kind==='homunculus'?{controllerId:u.controllerId}:{}),team:u.team,lane:u.lane,hp:u.hp,maxHp:u.maxHp,element:u.element,x:Math.round(u.position.x*100)/100,y:Math.round(u.position.y*100)/100})),players:s.controllers.map(p=>({id:p.id,team:p.team,...(viewerId===p.id?{zeal:p.zealTenths/10,slots:p.slots}:{})})),events:s.events,result:s.result});
+ const capacity=alliedCapacity(s);
+ return clone({kind:s.kind,mode:s.mode,tick:s.tick,wave:s.wave,completedWaves:s.completedWaves,enemiesSpawned:s.enemiesSpawned,enemiesKilled:s.enemiesKilled,pendingSpawns:s.pendingSpawns,phase:s.phase,intermissionTicks:s.intermissionTicks,...capacity,regeneration_blocked:s.phase!=='wave'||capacity.allied_count>=capacity.allied_cap,remainingBlueLabHp:s.laboratories.filter(l=>l.team==='blue').reduce((n,l)=>n+l.hp,0),laboratories:s.laboratories,units:s.units.map(u=>({id:u.id,kind:u.kind,assetId:u.cardId,cardId:u.cardId,...(u.kind==='homunculus'?{controllerId:u.controllerId}:{}),team:u.team,lane:u.lane,hp:u.hp,maxHp:u.maxHp,element:u.element,x:Math.round(u.position.x*100)/100,y:Math.round(u.position.y*100)/100})),players:s.controllers.map(p=>({id:p.id,team:p.team,...(viewerId===p.id?{zeal:Math.floor(p.zealTenths/10),zeal_regen_ticks:zealProgress(p),slots:p.slots}:{})})),events:s.events,result:s.result});
 }

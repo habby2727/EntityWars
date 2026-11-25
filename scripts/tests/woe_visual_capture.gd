@@ -37,6 +37,14 @@ func _run() -> void:
 			arena._debug_add(asset, team, "enemy" if kind == "core_defense" and team == "red" else "homunculus", 855.0 + float(i % 8) * 30.0, 565.0 if team == "blue" else 515.0)
 		arena._debug_render()
 		arena._select(0)
+		arena.set_process(false)
+		arena._own.zeal = 5
+		arena._own.zeal_regen_ticks = 17
+		arena._sync_zeal_display()
+		if kind == "core_defense":
+			arena._snapshot["allied_count"] = 2
+			arena._snapshot["allied_cap"] = 4
+		arena._update_hud()
 		for size in [Vector2i(1920,1080), Vector2i(1280,720), Vector2i(960,540)]:
 			DisplayServer.window_set_size(size)
 			await create_timer(0.5).timeout

@@ -50,6 +50,11 @@ func _draw() -> void:
 		accent.a = fade * 0.8
 		var point: Vector2 = effect.target
 		var radius := 4.0 + 13.0 * t
+		if effect.kind == "tower_strike":
+			draw_line(effect.source, effect.target, Color(1.0, 0.15, 0.04, fade * 0.85), 12.0)
+			draw_line(effect.source, effect.target, Color(1.0, 0.85, 0.35, fade), 5.0)
+			draw_circle(effect.target, 10.0 + 10.0 * t, Color(1.0, 0.65, 0.12, fade * 0.7))
+			continue
 		if effect.kind in ["strike", "charge"]:
 			point = effect.source
 			if effect.kind == "strike": draw_line(effect.source, effect.source.lerp(effect.target, 0.35), c, 2.0)

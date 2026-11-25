@@ -121,9 +121,8 @@ func _run() -> void:
 	if not check(await wait_file("cd_arena_%d" % (1-role)),"shared arena"): quit(1); return
 	if not check(await wait_for(func(): return arena._snapshot.units.any(func(u): return u.get("kind") == "enemy"),10.0),"enemy snapshot"): quit(1); return
 	if role == 0:
-		var slot := -1
-		for i in range(3):
-			if not arena._buttons[i].disabled and slot < 0: slot = i
+		var slot := 3
+		if not check(await wait_for(func(): return not arena._buttons[3].disabled, 15.0), "fourth card affordable"): quit(1); return
 		if not check(slot >= 0,"affordable card"): quit(1); return
 		arena._select(slot)
 		if not check(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible,"both lanes"): quit(1); return
@@ -142,7 +141,7 @@ func _run() -> void:
 	else:
 		if not check(await wait_file("cd_deployed"),"deployment signal"): quit(1); return
 		var slot := -1
-		for i in range(3):
+		for i in range(4):
 			if not arena._buttons[i].disabled and slot < 0: slot = i
 		if not check(slot >= 0, "coop guest affordable card"): quit(1); return
 		arena._select(slot)

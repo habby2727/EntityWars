@@ -15,6 +15,7 @@ class Meter extends Control:
 	var maximum := 10.0
 	var fill_color := Color("8adfff")
 	var border_color := Color("d9f5ff")
+	var translucent_partial := false
 	func _draw() -> void:
 		draw_rect(Rect2(Vector2.ZERO, size), border_color)
 		var width := (size.x - 4.0) / segments
@@ -22,7 +23,10 @@ class Meter extends Control:
 			var rect := Rect2(2.0 + width * i, 2.0, width - 2.0, size.y - 4.0)
 			draw_rect(rect, Color("203044"))
 			var fraction := clampf(value / maxf(1.0, maximum) * segments - i, 0.0, 1.0)
-			if fraction > 0.0: draw_rect(Rect2(rect.position, Vector2(rect.size.x * fraction, rect.size.y)), fill_color)
+			if fraction > 0.0:
+				var cell_color := fill_color
+				if translucent_partial and fraction < 1.0: cell_color.a *= 0.5
+				draw_rect(Rect2(rect.position, Vector2(rect.size.x * fraction, rect.size.y)), cell_color)
 
 class DeployMarker extends Button:
 	func _draw() -> void:
@@ -62,6 +66,8 @@ var _forfeited := false
 var _selected := -1
 var _selected_card := ""
 var _display_zeal := 0.0
+var _zeal_progress := 0.0
+var _zeal_sync_ms := 0
 var _snapshot := {}
 var _own := {}
 var _team := ""
@@ -189,14 +195,14 @@ func _build() -> void:
 	_result.add_theme_font_size_override("font_size", 38)
 	_stage.add_child(_result)
 	var hud := HBoxContainer.new()
-	hud.position = Vector2(535,930)
-	hud.size = Vector2(850,135)
+	hud.position = Vector2(480,930)
+	hud.size = Vector2(960,135)
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
 	hud.add_theme_constant_override("separation", 8)
 	_stage.add_child(hud)
-	for i in range(3):
+	for i in range(4):
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(170,120)
+		button.custom_minimum_size = Vector2(150,120)
 		button.add_theme_font_size_override("font_size", 24)
 		MENU_ART.button(button)
 		button.expand_icon = true
@@ -218,6 +224,7 @@ func _build() -> void:
 	_zeal_label = Label.new()
 	zeal_title.add_child(_zeal_label)
 	_zeal_meter = Meter.new()
+	_zeal_meter.translucent_partial = true
 	_zeal_meter.custom_minimum_size = Vector2(220,18)
 	zeal_box.add_child(_zeal_meter)
 	_forfeit = Button.new()
@@ -246,7 +253,11 @@ func _process(delta: float) -> void:
 	if _returning: return
 	_seconds += delta
 	if is_instance_valid(_zeal_meter):
-		_display_zeal = lerpf(_display_zeal, float(_own.get("zeal", 0)), 1.0 - exp(-delta * 8.0))
+		var whole := clampi(floori(float(_own.get("zeal", 0))), 0, 10)
+		var fresh := _debug_visual or (Time.get_ticks_msec() - _zeal_sync_ms <= 2000 and _playback_ready)
+		var blocked: bool = _finished or _missing_match or _acting or (_is_cd and (_awaiting_deploy_state or _snapshot.get("phase") == "intermission" or bool(_snapshot.get("regeneration_blocked", false))))
+		if fresh and not blocked and whole < 10: _zeal_progress = minf(0.9999, _zeal_progress + delta / 3.0)
+		_display_zeal = float(whole) + (_zeal_progress if whole < 10 else 0.0)
 		_zeal_meter.value = _display_zeal
 		_zeal_meter.queue_redraw()
 	for marker in _lane_buttons.values():
@@ -384,6 +395,8 @@ func _event(event: Dictionary) -> void:
 			lab.modulate = Color(2,2,2,1)
 			create_tween().tween_property(lab, "modulate", Color.WHITE, 0.3)
 		_damage(target, int(event.get("damage",0)))
+	elif kind == "tower_strike" and _is_cd:
+		_effects.emit_effect("tower_strike", "gold", _point(event.get("position")), _point(event.get("targetPosition")), "red")
 	elif kind == "death" and (event.get("targetKind") == "unit" or event.get("target") is int or event.get("target") is float):
 		var id := int(event.get("target",0))
 		var known: Dictionary = _known_units.get(id, {})
@@ -450,6 +463,7 @@ func _render_snapshot() -> void:
 	for p in _snapshot.get("players", []):
 		if p is Dictionary and str(p.get("id", "")) == str(ConnectionGate.player_id): _own = p
 	_team = str(_own.get("team", ""))
+	_sync_zeal_display()
 	for lab in _snapshot.get("laboratories", []):
 		if lab is Dictionary and _lab_bars.has(str(lab.get("id", ""))):
 			var meter: Meter = _lab_bars[str(lab.id)]
@@ -460,7 +474,8 @@ func _render_snapshot() -> void:
 	if _is_cd:
 		var elapsed := int(_snapshot.get("tick", 0)) / 10
 		_clock.text = tr("CD_WAVE_STATUS") % [int(_snapshot.get("wave", 0)), int(_snapshot.get("completedWaves", 0)), int(_snapshot.get("enemiesKilled", 0)), int(_snapshot.get("pendingSpawns", 0)), elapsed / 60, elapsed % 60]
-		if _snapshot.get("phase") == "intermission": _notice.text = tr("CD_INTERMISSION") % (float(_snapshot.get("intermissionTicks", 0)) / 10.0)
+		if _snapshot.get("phase") == "intermission": _notice.text = tr("CD_INTERMISSION") % (float(_snapshot.get("intermissionTicks", 0)) / 10.0) + "  " + tr("CD_REGEN_PAUSED")
+		elif bool(_snapshot.get("regeneration_blocked", false)): _notice.text = tr("CD_CAP_REACHED")
 	else:
 		_clock.text = "%s  %02d:%02d  %s" % [tr("WOE_BLUE"), time_left / 60, time_left % 60, tr("WOE_RED")]
 	var outcome: Variant = _snapshot.get("result")
@@ -495,20 +510,39 @@ func _separate_units() -> void:
 		var row := (rank / 5) % 3
 		unit.set_separation(Vector2(float(column) * 3.0, float(row - 1) * 2.0), float(rank % 3) * 3.0)
 
+func _card_cost(card: Dictionary) -> float:
+	return float(card.get("cost", 99) if _is_cd else card.get("woe_cost", card.get("cost", 99)))
+
+func _snapshot_zeal_progress() -> float:
+	var old_zeal := float(_own.get("zeal", 0))
+	return clampf(float(_own.get("zeal_regen_ticks", (old_zeal - floorf(old_zeal)) * 30.0)) / 30.0, 0.0, 0.9999)
+
+func _sync_zeal_display() -> void:
+	_zeal_progress = _snapshot_zeal_progress()
+	_zeal_sync_ms = Time.get_ticks_msec()
+	_display_zeal = float(clampi(floori(float(_own.get("zeal", 0))), 0, 10)) + _zeal_progress
+	if is_instance_valid(_zeal_meter):
+		_zeal_meter.value = _display_zeal
+		_zeal_meter.queue_redraw()
+
 func _update_hud() -> void:
-	var zeal := float(_own.get("zeal",0))
-	_zeal_label.text = "%s  %.1f / 10" % [tr("WOE_ZEAL"), zeal]
+	var zeal := clampi(floori(float(_own.get("zeal",0))), 0, 10)
+	_zeal_label.text = "%s  %d / 10" % [tr("WOE_ZEAL"), zeal]
+	if _is_cd and _snapshot.has("allied_cap"):
+		_zeal_label.text += "\n" + (tr("CD_ALLIED_CAP") % [int(_snapshot.get("allied_count", 0)), int(_snapshot.allied_cap)])
+	var capped := _is_cd and _snapshot.has("allied_cap") and int(_snapshot.get("allied_count", 0)) >= int(_snapshot.allied_cap)
 	var slots: Array = _own.get("slots", [])
-	if _selected >= 0 and (_selected >= slots.size() or str(slots[_selected]) != _selected_card or zeal < float(_cards.get(_selected_card, {}).get("cost", 99))):
+	if _selected >= 0 and (_selected >= slots.size() or str(slots[_selected]) != _selected_card or zeal < _card_cost(_cards.get(_selected_card, {})) or capped):
 		_selected = -1
 		_selected_card = ""
-	for i in range(3):
+	for i in range(_buttons.size()):
 		var button := _buttons[i]
+		button.visible = i < slots.size()
 		var id := str(slots[i]) if i < slots.size() else ""
 		var card: Dictionary = _cards.get(id, {})
 		button.icon = UNIT.frame(id,"front",1)
-		button.text = "%s\n%d" % [id.capitalize(), int(card.get("cost",0))] if not card.is_empty() else ""
-		button.disabled = _returning or _finished or _missing_match or _forfeited or _acting or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < float(card.get("cost",99))
+		button.text = "%s\n%d" % [id.capitalize(), int(_card_cost(card))] if not card.is_empty() else ""
+		button.disabled = _returning or _finished or _missing_match or _forfeited or _acting or capped or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < _card_cost(card)
 		button.modulate = Color("ffe38a") if _selected == i else (Color(0.65,0.7,0.75,1) if button.disabled else Color.WHITE)
 	for key in _lane_buttons:
 		var marker: Button = _lane_buttons[key]
@@ -637,7 +671,7 @@ func _return_when_idle() -> void:
 
 # A deliberately visual-only local preview, independent of match persistence and networking.
 func _debug_render() -> void:
-	_snapshot = {"kind":"core_defense" if _is_cd else "woe", "tick":int(_seconds * 10), "wave":1 + int(_seconds / 30), "completedWaves":int(_seconds / 30), "enemiesKilled":0, "pendingSpawns":0, "units":_debug_units, "laboratories":[], "players":[{"id":str(ConnectionGate.player_id), "team":"blue", "zeal":10, "slots":[UNIT.IDS[_debug_index % UNIT.IDS.size()], UNIT.IDS[(_debug_index + 1) % UNIT.IDS.size()], UNIT.IDS[(_debug_index + 2) % UNIT.IDS.size()]]}], "result":null}
+	_snapshot = {"kind":"core_defense" if _is_cd else "woe", "tick":int(_seconds * 10), "wave":1 + int(_seconds / 30), "completedWaves":int(_seconds / 30), "enemiesKilled":0, "pendingSpawns":0, "units":_debug_units, "laboratories":[], "players":[{"id":str(ConnectionGate.player_id), "team":"blue", "zeal":10, "slots":[UNIT.IDS[_debug_index % UNIT.IDS.size()], UNIT.IDS[(_debug_index + 1) % UNIT.IDS.size()], UNIT.IDS[(_debug_index + 2) % UNIT.IDS.size()], UNIT.IDS[(_debug_index + 3) % UNIT.IDS.size()]]}], "result":null}
 	_render_snapshot()
 	_notice.text = tr("WOE_DEBUG_VISUAL")
 

@@ -6,7 +6,7 @@ import {createWoeLobby} from '../woe/lobby';
 import {createWoeMatchService} from '../woe/match_service';
 import {activeWoe} from '../woe/busy';
 import {initializeMatch} from '../woe/engine';
-import {cardById} from '../woe/catalog';
+import {cardById,cardCost} from '../woe/catalog';
 function setup(mode='1v1',players=['a']) {
  const db=new Database(':memory:');db.exec('PRAGMA foreign_keys=ON');const dir=resolve(import.meta.dir,'../../migrations/sqlite');for(const f of readdirSync(dir).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(join(dir,f),'utf8'));
  for(const id of ['a','b','c','d','e'])db.query('INSERT INTO players VALUES (?,?,?,0)').run(id,id,'{}');
@@ -19,7 +19,7 @@ function setup(mode='1v1',players=['a']) {
  return {db,lobby,service,id:start.data.match_id,room,advance:(ms:number)=>now+=ms,disable:()=>enabled=false,enable:()=>enabled=true,now:()=>now};
 }
 test('ticks, bots, restart, lease fence and bounded catch-up',()=>{
- const h=setup();h.service.pulse();const a=h.service.state('a',h.id,'0').data;expect(a.tick).toBe(1);expect(a.events.some((e:any)=>e.type==='spawn')).toBe(true);expect(a.snapshot.players.find((p:any)=>p.id!=='a').slots).toBeUndefined();h.advance(3600_000);const replacement=createWoeMatchService(h.db,()=>true,h.now);replacement.pulse();expect(replacement.state('a',h.id,'0').data.tick).toBe(2);h.disable();h.service.pulse();expect(h.service.state('a',h.id,'0').status).toBe(503);h.enable();expect(h.service.state('a',h.id,'0').data.tick).toBe(2);h.db.close();
+ const h=setup();h.service.pulse();const a=h.service.state('a',h.id,'0').data;expect(a.tick).toBe(1);expect(a.events.some((e:any)=>e.type==='spawn')).toBe(false);expect(a.snapshot.players.find((p:any)=>p.id!=='a').slots).toBeUndefined();h.advance(3600_000);const replacement=createWoeMatchService(h.db,()=>true,h.now);replacement.pulse();expect(replacement.state('a',h.id,'0').data.tick).toBe(2);h.disable();h.service.pulse();expect(h.service.state('a',h.id,'0').status).toBe(503);h.enable();expect(h.service.state('a',h.id,'0').data.tick).toBe(2);h.db.close();
 });
 test('1v1 NPC is one controller and pays the same zeal budget for every deployment',()=>{
  const h=setup();const participants=h.db.query('SELECT controller_id, human, team FROM woe_match_participants WHERE match_id=?').all(h.id) as any[];
@@ -29,31 +29,31 @@ test('1v1 NPC is one controller and pays the same zeal budget for every deployme
  const state=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(h.id) as any).state_json);
  const events=(h.db.query('SELECT event_json FROM woe_match_events WHERE match_id=?').all(h.id) as any[]).map(r=>JSON.parse(r.event_json));
  const spawns=events.filter(e=>e.type==='spawn');expect(spawns.length).toBeGreaterThan(0);expect(spawns.every(e=>e.controller_id===bot.controller_id)).toBe(true);
- const spent=spawns.reduce((n,e)=>n+cardById[e.card_id].cost*10,0);
+ const spent=spawns.reduce((n,e)=>n+cardCost(cardById[e.card_id],'woe')*10,0);
  const botState=state.controllers.find((p:any)=>p.id===bot.controller_id);
- expect(spent+botState.zealTenths).toBeLessThanOrEqual(50+Math.floor(state.tick/2));
- expect(spawns.length).toBeLessThanOrEqual(Math.floor((50+Math.floor(state.tick/2))/20));
- expect(state.controllers.find((p:any)=>p.id==='a').zealTenths).toBe(100);
+ expect(spent+botState.zealTenths).toBeLessThanOrEqual(50+Math.floor(state.tick/30)*10);
+ expect(spawns.length).toBeLessThanOrEqual(Math.floor((50+Math.floor(state.tick/30)*10)/20));
+ expect(state.controllers.find((p:any)=>p.id==='a').zealTenths).toBe(90);
  h.db.close();
 });
 test('deploy is private, validated, idempotent and journaled',()=>{
- const h=setup('1v1',['a','b']);const initial=h.service.state('a',h.id,'0').data,slots=initial.snapshot.players.find((p:any)=>p.id==='a').slots,slot=slots.findIndex((id:string)=>cardById[id].cost<=5),card=slots[slot];const body={match_id:h.id,client_action_id:'one',slot,card_id:card,lane:'left'};const first=h.service.deploy('a',body);expect(first.status).toBe(200);expect(h.service.deploy('a',body)).toEqual(first);expect(h.service.deploy('a',{...body,lane:'right'}).status).toBe(409);expect(h.service.deploy('a',{...body,client_action_id:'stale'}).status).toBe(409);expect(h.service.deploy('b',{...body,client_action_id:'forge',controller_id:'a'}).status).toBe(400);expect(h.service.state('c',h.id,'0').status).toBe(403);h.service.pulse();const page=h.service.state('a',h.id,'0').data;expect(page.events[0]).toMatchObject({seq:1,type:'spawn',card_id:card,controller_id:'a'});expect(h.service.state('a',h.id,'1').data.events.every((x:any)=>x.seq>1)).toBe(true);expect(page.snapshot.units[0].maxHp).toBeGreaterThan(0);h.db.close();
+ const h=setup('1v1',['a','b']);const initial=h.service.state('a',h.id,'0').data,slots=initial.snapshot.players.find((p:any)=>p.id==='a').slots,slot=slots.findIndex((id:string)=>cardCost(cardById[id],'woe')<=5),card=slots[slot];const body={match_id:h.id,client_action_id:'one',slot,card_id:card,lane:'left'};const first=h.service.deploy('a',body);expect(first.status).toBe(200);expect(h.service.deploy('a',body)).toEqual(first);expect(h.service.deploy('a',{...body,lane:'right'}).status).toBe(409);expect(h.service.deploy('a',{...body,client_action_id:'stale'}).status).toBe(409);expect(h.service.deploy('b',{...body,client_action_id:'forge',controller_id:'a'}).status).toBe(400);expect(h.service.state('c',h.id,'0').status).toBe(403);h.service.pulse();const page=h.service.state('a',h.id,'0').data;expect(page.events[0]).toMatchObject({seq:1,type:'spawn',card_id:card,controller_id:'a'});expect(h.service.state('a',h.id,'1').data.events.every((x:any)=>x.seq>1)).toBe(true);expect(page.snapshot.units[0].maxHp).toBeGreaterThan(0);h.db.close();
 });
 test('leave preserves match, forfeit releases reservation and retains result',()=>{
  const h=setup('1v1',['a','b']);expect(h.lobby.leave('a',{room_id:h.room,client_action_id:'leave'}).status).toBe(200);expect(activeWoe(h.db,'a',h.now())).toBe(true);const result=h.service.forfeit('a',{match_id:h.id,client_action_id:'f'});expect(result.data.snapshot.result).toEqual({winner:'red',reason:'forfeit'});expect(activeWoe(h.db,'a',h.now())).toBe(false);expect(h.service.current('a').data.match_id).toBe(h.id);expect(h.service.state('b',h.id,'0').data.events.at(-1).type).toBe('result');h.db.close();
 });
 test('2v2 forfeit enables bot takeover',()=>{
- const h=setup('2v2',['a','b','c']);expect(h.service.forfeit('a',{match_id:h.id,client_action_id:'f'}).status).toBe(200);expect(h.service.state('b',h.id,'0').data.status).toBe('RUNNING');h.service.pulse();const s=h.service.state('b',h.id,'0').data;expect(s.snapshot.units.some((u:any)=>u.controllerId==='a')).toBe(true);expect(h.service.deploy('a',{match_id:h.id,client_action_id:'d',slot:0,card_id:'neon',lane:'left'}).data.error).toBe('FORFEITED');h.db.close();
+ const h=setup('2v2',['a','b','c']);expect(h.service.forfeit('a',{match_id:h.id,client_action_id:'f'}).status).toBe(200);expect(h.service.state('b',h.id,'0').data.status).toBe('RUNNING');for(let i=0;i<51;i++)h.service.pulse();const s=h.service.state('b',h.id,'0').data;expect(s.snapshot.units.some((u:any)=>u.controllerId==='a')).toBe(true);expect(h.service.deploy('a',{match_id:h.id,client_action_id:'d',slot:0,card_id:'neon',lane:'left'}).data.error).toBe('FORFEITED');h.db.close();
 });
 test('2v2 bot takeover and reconnect retain seat lane ownership',()=>{
  const h=setup('2v2',['a','b','c']);
  const a=h.service.state('a',h.id,'0').data.snapshot.players.find((p:any)=>p.id==='a');
  expect(a.allowedDeploymentLanes).toEqual(['left']);
- const slot=a.slots.findIndex((id:string)=>cardById[id].cost<=5);
+ const slot=a.slots.findIndex((id:string)=>cardCost(cardById[id],'woe')<=5);
  const denied=h.service.deploy('a',{match_id:h.id,client_action_id:'wrong-lane',slot,card_id:a.slots[slot],lane:'right'});
  expect(denied.data.error).toBe('LANE_NOT_OWNED');
  expect(h.service.state('a',h.id,'0').data.snapshot.players.find((p:any)=>p.id==='a')).toEqual(a);
- h.service.forfeit('a',{match_id:h.id,client_action_id:'forfeit-seat'});h.service.pulse();
+ h.service.forfeit('a',{match_id:h.id,client_action_id:'forfeit-seat'});for(let i=0;i<51;i++)h.service.pulse();
  const units=h.service.state('b',h.id,'0').data.snapshot.units;
  expect(units.some((u:any)=>u.controllerId==='a')).toBe(true);
  expect(units.filter((u:any)=>u.controllerId==='a').every((u:any)=>u.lane==='left')).toBe(true);

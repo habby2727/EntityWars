@@ -446,6 +446,7 @@ DUEL_UNAVAILABLE,Friendly duels are unavailable,Los duelos amistosos no est?n di
 
 EXPEDITION_RIGHT_LIMIT,Choose left or forward after three consecutive right turns.,Elige izquierda o recto tras tres giros consecutivos a la derecha.
 HUNT_WINDOW_EXPLANATION,Defeat all guardians to earn a first victory opportunity outside the rotation. After victory rematches follow the rotation.,Derrota a todos los guardianes para conseguir una oportunidad hasta tu primera victoria fuera de la rotación. Tras la victoria las revanchas siguen la rotación.
+HUNT_ROTATION_DEFEATED,Already defeated this rotation. Return in a later rotation.,Ya derrotado en esta rotación. Vuelve en una rotación posterior.
 PASSIVE_EFFECT_POWER_FLAT,power,potencia
 PASSIVE_EFFECT_GUARD_FLAT,guard,defensa
 PASSIVE_EFFECT_TEMPO_FLAT,tempo,ritmo
@@ -599,6 +600,9 @@ CD_CANCEL_INVITE,Cancel invitation,Cancelar invitación
 CD_INVITE_FRIEND,Invite %s,Invitar a %s
 CD_ACTION_EXPIRED,Action expired. Refresh the authoritative state.,La acción caducó. Actualiza el estado del servidor.
 CD_WAVE_STATUS,Wave %d | Cleared %d | Kills %d | Pending %d | %02d:%02d,Ola %d | Superadas %d | Bajas %d | Pendientes %d | %02d:%02d
+CD_ALLIED_CAP,Units %d/%d,Unidades %d/%d
+CD_REGEN_PAUSED,Zeal regeneration paused.,Regeneración de fervor detenida.
+CD_CAP_REACHED,Unit cap reached. Zeal regeneration paused.,Límite de unidades alcanzado. Regeneración de fervor detenida.
 CD_INTERMISSION,Next wave in %.1f seconds,Siguiente ola en %.1f segundos
 CD_RESULT,Waves cleared: %d - %s,Olas superadas: %d - %s
 CD_REASON_LABORATORIES,Defeat,Derrota

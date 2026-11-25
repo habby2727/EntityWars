@@ -2975,12 +2975,15 @@ async function startServer(): Promise<void> {
 					const zoneId = url.searchParams.get("zone_id") ?? "";
 					const huntId = url.searchParams.get("hunt_id") ?? "";
 					return db.transaction(() => {
-					const definitions = guardianRoster(playerId, zoneId, huntId, Date.now());
+					const now = Date.now();
+					const definitions = guardianRoster(playerId, zoneId, huntId, now);
 					if (!definitions) throw new HttpError(400, "Invalid zone or boss hunt.");
 					const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId) as { guardian_id: string }[];
 					const defeated = new Set(rows.map(row => row.guardian_id));
 					const guardians = definitions.map(definition => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
-					return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter(g => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every(g => g.defeated), personal_boss_available: guardians.length > 0 && guardians.every(g => g.defeated) && !personalBossWon(playerId, zoneId, huntId) });
+					const unlocked = guardians.length > 0 && guardians.every(g => g.defeated);
+					const availability = parentBossAvailability(playerId, zoneId, huntId, unlocked, now);
+					return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter(g => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every(g => g.defeated), ...availability });
 					}).immediate();
 				}
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts/commons") {
@@ -3213,7 +3216,10 @@ async function startServer(): Promise<void> {
 							const definitions = zoneId === undefined ? null : guardianRoster(playerId, zoneId, boss.id, now);
 							if ((zoneId !== undefined && !definitions) || (guardianId !== undefined && !definitions)) throw new HttpError(400, "Invalid guardian zone.");
 							if (!globalEvent && boss.tier !== "common" && !definitions) throw new HttpError(409, "Guardian zone required.");
-							const personalAvailable = !globalEvent && !appearance && guardianId === undefined && !!definitions?.length && definitions.every(guardian => !!db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id)) && !personalBossWon(playerId, zoneId, boss.id);
+							const unlocked = !!definitions?.length && definitions.every(guardian => !!db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id));
+							const availability = !globalEvent && !appearance && guardianId === undefined && zoneId !== undefined ? parentBossAvailability(playerId, zoneId, boss.id, unlocked, now) : null;
+							if (availability?.rotation_victory) throw new HttpError(409, "Boss already defeated this rotation.");
+							const personalAvailable = availability?.personal_boss_available ?? false;
 							if (!globalEvent && guardianId === undefined && !personalAvailable && (payload.rotation_key !== schedule.rotation_key || !boss.available)) throw new HttpError(409, "Boss hunt is not available for this rotation.");
 							let encounter = appearance ? { ...boss, ...appearance, display_texture_id: appearance.texture_id } : boss;
 							if (guardianId !== undefined) {
@@ -3494,6 +3500,13 @@ function expireSoloHunts(playerId: string, now: number): void {
 // A verified, zone-attributed boss victory is the durable consumption record.
 function personalBossWon(playerId: string, zoneId: string, huntId: string): boolean {
 	return !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL LIMIT 1").get(playerId, zoneId, huntId);
+}
+function parentBossAvailability(playerId: string, zoneId: string, huntId: string, unlocked: boolean, now: number) {
+	const schedule = soloBossSchedule(now), interval = staticData.soloBosses.rotation.interval_seconds * 1000;
+	const start = schedule.rotation_key * interval;
+	const rotationVictory = !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL AND (rotation_key = ? OR (finished_at >= ? AND finished_at < ?)) LIMIT 1").get(playerId, zoneId, huntId, schedule.rotation_key, start, start + interval);
+	const personal = unlocked && !personalBossWon(playerId, zoneId, huntId);
+	return { personal_boss_available: personal, rotation_victory: rotationVictory, parent_boss_available: unlocked && !rotationVictory && (personal || !!schedule.bosses.find(b => b.id === huntId)?.available), rotation_key: schedule.rotation_key };
 }
 
 function guardianRoster(playerId: string, zoneId: string, parentId: string, now: number) {

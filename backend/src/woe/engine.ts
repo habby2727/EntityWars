@@ -1,10 +1,10 @@
-import { arena, cards, cardById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "./catalog";
+import { arena, cards, cardById, cardCost, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "./catalog";
 
 export type Team = "blue" | "red";
 export type Lane = "left" | "right";
 export type Mode = "1v1" | "2v2";
 export interface Point { x: number; y: number }
-export interface Controller { id: string; team: Team; zealTenths: number; slots: string[]; queue: string[]; actionIds: string[] }
+export interface Controller { id: string; team: Team; zealTenths: number; zealRegenTicks?: number; slots: string[]; queue: string[]; actionIds: string[] }
 export interface Laboratory { id: string; team: Team; lane: Lane; hp: number; maxHp: number; position: Point }
 export interface Unit { id: number; controllerId: string; team: Team; lane: Lane; cardId: string; hp: number; position: Point; route: Point[]; waypoint: number; targetLane: Lane; cooldown: number; formation?: boolean }
 export type CombatEvent = { type: "attack" | "death"; attacker?: number; target: number | string; damage?: number; tick: number; team: Team; cardId: string; position: Point; targetPosition: Point; victimCardId?: string | null; victimTeam?: Team; victimPosition?: Point; targetKind?: "unit" | "laboratory" };
@@ -15,6 +15,19 @@ const teams: Team[] = ["blue", "red"];
 const lanes: Lane[] = ["left", "right"];
 // WOE units move more slowly without changing the shared Core Defense catalog.
 export const WOE_MOVEMENT_MULTIPLIER = 0.85;
+export const ZEAL_REGEN_TICKS = 30;
+// Legacy saves stored fractional zeal in tenths; retain it as progress.
+export function zealProgress(p: Controller): number {
+  if (p.zealTenths >= 100) return 0;
+  return p.zealRegenTicks === undefined ? Math.min(29, Math.max(0, Math.round((p.zealTenths % 10) * 3))) : Math.min(29, Math.max(0, Math.floor(p.zealRegenTicks)));
+}
+export function regenerateZeal(p: Controller, allowed: boolean): void {
+  let progress = zealProgress(p);
+  p.zealTenths = Math.max(0, Math.min(100, Math.floor(p.zealTenths / 10) * 10));
+  if (p.zealTenths >= 100) { p.zealRegenTicks = 0; return; }
+  if (allowed && ++progress >= ZEAL_REGEN_TICKS) { p.zealTenths += 10; progress = 0; }
+  p.zealRegenTicks = progress;
+}
 const enemy = (team: Team): Team => team === "blue" ? "red" : "blue";
 const labId = (team: Team, lane: Lane) => `${team}:${lane}`;
 const copy = <T>(value: T): T => structuredClone(value);
@@ -34,8 +47,8 @@ function shuffle(seed: string): string[] {
     n ^= n << 13; n ^= n >>> 17; n ^= n << 5; n >>>= 0;
     const j = n % (i+1); [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  if (!deck.slice(0,3).some(id => cardById[id].cost <= 3)) {
-    const j = deck.findIndex(id => cardById[id].cost <= 3); [deck[0], deck[j]] = [deck[j], deck[0]];
+  if (!deck.slice(0,4).some(id => cardCost(cardById[id], 'woe') <= 3)) {
+    const j = deck.findIndex(id => cardCost(cardById[id], 'woe') <= 3); [deck[0], deck[j]] = [deck[j], deck[0]];
   }
   return deck;
 }
@@ -43,7 +56,7 @@ function shuffle(seed: string): string[] {
 export function initializeMatch(mode: Mode, seed: string, controllerIds: string[]): MatchState {
   if ((mode !== "1v1" && mode !== "2v2") || typeof seed !== "string" || !Array.isArray(controllerIds) || controllerIds.length !== (mode === "1v1" ? 2 : 4) || controllerIds.some(id => typeof id !== "string" || !id || id.length > 128) || new Set(controllerIds).size !== controllerIds.length) throw new Error("INVALID_WOE_MATCH");
   const perTeam = controllerIds.length / 2;
-  return { kind: "woe", mode, tick: 0, controllers: controllerIds.map((id,i) => { const deck = shuffle(`${seed.length}:${seed}:${id.length}:${id}`); return { id, team: i < perTeam ? "blue" : "red", zealTenths: 50, slots: deck.slice(0,3), queue: deck.slice(3), actionIds: [] }; }), laboratories: teams.flatMap(team => lanes.map(lane => ({ id: labId(team,lane), team, lane, hp: arena.laboratory_hp, maxHp: arena.laboratory_hp, position: copy(arena.laboratories[team][lane]) }))), units: [], nextUnitId: 1, events: [], result: null };
+  return { kind: "woe", mode, tick: 0, controllers: controllerIds.map((id,i) => { const deck = shuffle(`${seed.length}:${seed}:${id.length}:${id}`); return { id, team: i < perTeam ? "blue" : "red", zealTenths: 50, zealRegenTicks: 0, slots: deck.slice(0,4), queue: deck.slice(4), actionIds: [] }; }), laboratories: teams.flatMap(team => lanes.map(lane => ({ id: labId(team,lane), team, lane, hp: arena.laboratory_hp, maxHp: arena.laboratory_hp, position: copy(arena.laboratories[team][lane]) }))), units: [], nextUnitId: 1, events: [], result: null };
 }
 // Fixed, bounded slots avoid collision solving and preserve forward progress. The
 // final waypoint stays within the shortest laboratory attack range (65).
@@ -55,24 +68,23 @@ export function route(team: Team, from: Lane, target: Lane, formationId?: number
   const points=[...copy(arena.approaches[team][from]), copy(arena.plaza), ...copy(arena.approaches[enemy(team)][target]).reverse(), copy(arena.spawns[enemy(team)][target])];
   return formationId === undefined ? points : points.map((p,i)=>formationPoint(p,formationId,i===points.length-1));
 }
-// Before the plaza, keep following the current approach. Beyond it, cross to the
-// other approach at the same depth, then continue toward the surviving lab.
+// Retreat along the already-traversed outgoing lane before switching at the plaza.
 export function redirectRoute(unit: Unit, target: Lane): Point[] {
   let approach = [copy(arena.plaza), ...copy(arena.approaches[enemy(unit.team)][target]).reverse(), copy(arena.spawns[enemy(unit.team)][target])];
   if(unit.formation) approach=approach.map((p,i)=>formationPoint(p,unit.id,i===approach.length-1));
   const plazaIndex = arena.approaches[unit.team][unit.lane].length;
   if (unit.waypoint <= plazaIndex) return [...copy(unit.route.slice(unit.waypoint, plazaIndex + 1)), ...approach.slice(1)];
-  const y = unit.position.y;
-  const direction = enemy(unit.team) === "red" ? -1 : 1;
-  for (let i = 1; i < approach.length; i++) {
-    const a = approach[i-1], b = approach[i];
-    if ((y-a.y)*direction >= 0 && (b.y-y)*direction >= 0) {
-      const t = (y-a.y)/(b.y-a.y);
-      const crossing = { x: a.x+(b.x-a.x)*t, y };
-      return [crossing, ...approach.slice(i)];
-    }
+  const original = route(unit.team, unit.lane, unit.targetLane, unit.formation ? unit.id : undefined);
+  const plaza = original[plazaIndex];
+  if (dist2(unit.position, plaza) < 0.000001) return approach.slice(1);
+  let segment=plazaIndex, best=Infinity;
+  for(let i=plazaIndex;i<original.length-1;i++) {
+    const a=original[i],b=original[i+1],dx=b.x-a.x,dy=b.y-a.y;
+    const t=Math.max(0,Math.min(1,((unit.position.x-a.x)*dx+(unit.position.y-a.y)*dy)/(dx*dx+dy*dy)));
+    const d=dist2(unit.position,{x:a.x+t*dx,y:a.y+t*dy});
+    if(d<best){best=d;segment=i;}
   }
-  return [copy(approach[approach.length-1])];
+  return [...copy(original.slice(plazaIndex,segment+1).reverse()), ...approach.slice(1)];
 }
 /** The persisted controller order is the lobby's blue-left, blue-right, red-left, red-right seat order. */
 export function allowedDeploymentLanes(state: MatchState, controllerId: string): Lane[] {
@@ -92,9 +104,9 @@ export function validateDeployment(state: MatchState, command: DeploymentCommand
   if (player.actionIds.includes(command.actionId)) return "DUPLICATE_ACTION_ID";
   if (!lanes.includes(command.lane)) return "INVALID_LANE";
   if (state.kind === 'woe' && state.mode === '2v2' && ![lanes[state.controllers.filter(p => p.team === player.team).findIndex(p => p.id === player.id)]].includes(command.lane)) return "LANE_NOT_OWNED";
-  if (!Number.isInteger(command.slot) || command.slot < 0 || command.slot >= 3 || player.slots[command.slot] !== command.cardId || !cardById[command.cardId]) return "INVALID_CARD";
+  if (!Number.isInteger(command.slot) || command.slot < 0 || ![3,4].includes(player.slots.length) || command.slot >= player.slots.length || player.slots[command.slot] !== command.cardId || !cardById[command.cardId]) return "INVALID_CARD";
   if (!state.laboratories.find(l => l.team === player.team && l.lane === command.lane && l.hp > 0)) return "LANE_DESTROYED";
-  if (player.zealTenths < cardById[command.cardId].cost * 10) return "INSUFFICIENT_ZEAL";
+  if (player.zealTenths < cardCost(cardById[command.cardId], state.kind) * 10) return "INSUFFICIENT_ZEAL";
   if (state.units.length >= arena.unit_cap) return "UNIT_CAP";
   return null;
 }
@@ -102,7 +114,8 @@ export function applyDeployment(state: MatchState, command: DeploymentCommand): 
   const reason = validateDeployment(state,command);
   if (reason) return { accepted: false, state, reason };
   const next = copy(state); const player = next.controllers.find(p => p.id === command.controllerId)!;
-  player.zealTenths -= cardById[command.cardId].cost * 10;
+  if (player.zealTenths >= 100) player.zealRegenTicks = 0;
+  player.zealTenths -= cardCost(cardById[command.cardId], state.kind) * 10;
   player.actionIds.push(command.actionId);
   player.slots[command.slot] = player.queue.shift()!; player.queue.push(command.cardId);
   let targetLane = command.lane;
@@ -123,17 +136,17 @@ function finish(state: MatchState, team: Team) { state.result = { winner: team, 
 export function advanceTick(state: MatchState): MatchState {
   if (state.result) return state;
   const next = copy(state); next.events = []; next.tick++;
-  // One tenth every two ticks: one full zeal per two simulated seconds.
-  if (next.tick % 2 === 0) for (const player of next.controllers) player.zealTenths = Math.min(100, player.zealTenths + 1);
+  for (const player of next.controllers) regenerateZeal(player, true);
   for (const unit of next.units) {
     if (unit.hp <= 0 || next.result) continue;
     if (unit.cooldown > 0) unit.cooldown--;
     const card = cardById[unit.cardId];
     let lab = next.laboratories.find(l => l.team === enemy(unit.team) && l.lane === unit.targetLane)!;
     if (lab.hp <= 0) {
-      unit.targetLane = unit.targetLane === "left" ? "right" : "left";
+      const targetLane = unit.targetLane === "left" ? "right" : "left";
+      unit.route = redirectRoute(unit, targetLane); unit.waypoint = 0;
+      unit.targetLane = targetLane;
       lab = next.laboratories.find(l => l.team === enemy(unit.team) && l.lane === unit.targetLane)!;
-      unit.route = redirectRoute(unit, unit.targetLane); unit.waypoint = 0;
     }
     const target = nearestTarget(unit, next.units, card.range);
     if (target || (lab.hp > 0 && dist2(unit.position,lab.position) <= card.range ** 2)) {
@@ -159,5 +172,5 @@ export function advanceTick(state: MatchState): MatchState {
 }
 /** Pass only an authenticated controller ID; omit it for a public/spectator view. */
 export function getPublicSnapshot(state: MatchState, viewerId?: string) {
-  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, maxHp:cardById[u.cardId].hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, ...(viewerId === p.id ? { zeal:p.zealTenths / 10, slots:p.slots, allowedDeploymentLanes:allowedDeploymentLanes(state,p.id) } : {}) })), events:state.events, result:state.result });
+  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, maxHp:cardById[u.cardId].hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, ...(viewerId === p.id ? { zeal:Math.floor(p.zealTenths / 10), zeal_regen_ticks:zealProgress(p), slots:p.slots, allowedDeploymentLanes:allowedDeploymentLanes(state,p.id) } : {}) })), events:state.events, result:state.result });
 }
