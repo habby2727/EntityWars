@@ -15,6 +15,7 @@ var _poll := 0.0
 var _requesting := false
 var _changing := false
 var _expired := false
+var _transitioning := false
 
 func _ready() -> void:
 	_identity = WoeClient.identity()
@@ -145,6 +146,10 @@ func _render() -> void:
 	var host := str(_room.get("host_id", ""))
 	var mode := str(_room.get("mode", ""))
 	var started := str(_room.get("status", "")) == "STARTED"
+	if started and not _transitioning and _valid():
+		_transitioning = true
+		SceneRouter.enter_woe_match(_room)
+		return
 	_info.text = "%s  %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s" % [tr("WOE_TITLE"),mode,tr("WOE_HOST"),host,tr("WOE_CODE"),_room.get("join_code", ""),tr("WOE_REVISION"),_room.get("revision", 0),tr("WOE_STATUS"),_room.get("status", "")]
 	var player_list: Array[String] = []
 	for member in _room.get("members", []):

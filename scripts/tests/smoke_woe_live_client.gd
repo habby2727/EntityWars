@@ -41,8 +41,11 @@ func _run() -> void:
 	client = root.get_node("WoeClient")
 	gate = root.get_node("ConnectionGate")
 	use_account(0)
-	var result: Dictionary = await client.mutate("leave", {"room_id":OS.get_environment("WOE_TEST_ROOM")})
-	if not require(result.code == 200, "leave fixture room"): return
+	var result: Dictionary = await client.request("/forest/woe/match/current")
+	if not require(result.code == 200 and client.valid_match(result.data, str(accounts[0].id)), "recover fixture match"): return
+	result = await client.mutate("match/forfeit", {"match_id":result.data.match_id})
+	if not require(result.code == 200, "forfeit fixture match"): return
+	client.save_room("")
 	result = await client.mutate("create", {"mode":"1v1"})
 	if not require(result.code == 200 and client.valid_room(result.data, accounts[0].id), "create 1v1"): return
 	var room: Dictionary = result.data
@@ -78,8 +81,19 @@ func _run() -> void:
 	for player in guest_state.snapshot.players:
 		if not require(player.has("slots") == (str(player.id) == str(accounts[1].id)), "guest privacy"): return
 	use_account(0)
-	result = await client.mutate("leave", {"room_id":room_id})
-	if not require(result.code == 200, "leave initialized room"): return
+	result = await client.request("/forest/woe/match/current")
+	if not require(result.code == 200 and client.valid_match(result.data, str(accounts[0].id)), "recover started match"): return
+	var match_id: String = result.data.match_id
+	var own := {}
+	for player in result.data.snapshot.players:
+		if str(player.id) == str(accounts[0].id): own = player
+	result = await client.mutate("match/deploy", {"match_id":match_id,"slot":0,"card_id":own.slots[0],"lane":"left"})
+	if not require(result.code == 200, "authoritative deployment"): return
+	result = await client.request("/forest/woe/match/state?match_id=" + match_id.uri_encode() + "&after=0")
+	if not require(result.code == 200 and not result.data.events.is_empty(), "event journal"): return
+	result = await client.mutate("match/forfeit", {"match_id":match_id})
+	if not require(result.code == 200, "forfeit initialized room"): return
+	client.save_room("")
 	if not await checkpoint("restore"): return
 	gate.base_url = OS.get_environment("WOE_TEST_PROXY")
 	gate._generation += 1
@@ -100,8 +114,24 @@ func _run() -> void:
 	for controller in result.data.controllers:
 		if controller.bot: bots += 1
 	if not require(bots == 3, "three bot controllers"): return
-	result = await client.mutate("leave", {"room_id":room.room_id})
-	if not require(result.code == 200 and client.saved_room().is_empty(), "leave bot room"): return
+	var bot_match_id: String = result.data.match_id
+	var bot_hand := []
+	for player in result.data.snapshot.players:
+		if str(player.id) == str(accounts[0].id): bot_hand = player.slots
+	var card_catalog: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/woe_cards.json"))
+	var affordable := -1
+	for i in range(bot_hand.size()):
+		for card in card_catalog.cards:
+			if card.id == bot_hand[i] and card.cost <= 5 and affordable < 0: affordable = i
+	if not require(affordable >= 0, "affordable bot match card"): return
+	result = await client.mutate("match/deploy", {"match_id":bot_match_id,"slot":affordable,"card_id":bot_hand[affordable],"lane":"right"})
+	if not require(result.code == 503, "lost deploy response"): return
+	var deploy_id := str(client.saved_pending().get("body", {}).get("client_action_id", ""))
+	result = await client.retry_pending()
+	if not require(result.code == 200 and not deploy_id.is_empty() and client.saved_pending().is_empty(), "retry deployment"): return
+	result = await client.mutate("match/forfeit", {"match_id":bot_match_id})
+	if not require(result.code == 200, "forfeit bot room"): return
+	client.save_room("")
 	if not await checkpoint("restore2"): return
 	use_account(1)
 	client.save_room("")

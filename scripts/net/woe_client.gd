@@ -47,13 +47,47 @@ func valid_room(data: Variant, player: String) -> bool:
 		if member is Dictionary and str(member.get("player_id", "")) == player: return true
 	return false
 
-func request(path: String, body: Variant = null) -> Dictionary:
+func saved_match() -> String:
+	if not available(): return ""
+	return str(_config().get_value("matches", account_key(), ""))
+
+func save_match(match_id: String) -> void:
+	if not available(): return
+	var cfg := _config()
+	cfg.set_value("matches", account_key(), match_id)
+	if cfg.save(RECOVERY_FILE) != OK: push_warning("WOE match recovery could not be saved")
+
+func saved_forfeit() -> String:
+	if not available(): return ""
+	return str(_config().get_value("forfeited", account_key(), ""))
+
+func save_forfeit(match_id: String) -> void:
+	if not available(): return
+	var cfg := _config()
+	cfg.set_value("forfeited", account_key(), match_id)
+	if cfg.save(RECOVERY_FILE) != OK: push_warning("WOE forfeit recovery could not be saved")
+
+func valid_match(data: Variant, player: String) -> bool:
+	if not data is Dictionary or not data.get("match_id") is String or str(data.match_id).is_empty(): return false
+	if data.get("status") not in ["RUNNING", "FINISHED"] or not data.get("snapshot") is Dictionary: return false
+	var players: Variant = data.snapshot.get("players")
+	if not players is Array: return false
+	var found := false
+	for entry in players:
+		if not entry is Dictionary: return false
+		if str(entry.get("id", "")) == player:
+			found = entry.get("slots") is Array and entry.has("zeal")
+		elif entry.has("slots") or entry.has("zeal"): return false
+	return found
+
+func request(path: String, body: Variant = null, request_owner: Node = null) -> Dictionary:
 	if not available(): return {"code":0,"error":"WOE_NETWORK"}
 	var key := identity()
 	var http := HTTPRequest.new()
 	http.timeout = 8.0
 	http.max_redirects = 0
-	add_child(http)
+	if is_instance_valid(request_owner): request_owner.add_child(http)
+	else: add_child(http)
 	var err := http.request(str(ConnectionGate.base_url).trim_suffix("/") + path, SocialClient._headers(), HTTPClient.METHOD_GET if body == null else HTTPClient.METHOD_POST, "" if body == null else JSON.stringify(body))
 	if err != OK:
 		http.queue_free()

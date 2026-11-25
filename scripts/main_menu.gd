@@ -35,6 +35,16 @@ func _ready() -> void:
 	if settings_btn:
 		settings_btn.pressed.connect(SceneRouter.go_to_settings)
 	$ExitButton.pressed.connect(_show_exit_confirmation)
+	_recover_woe.call_deferred()
+
+func _recover_woe() -> void:
+	if not WoeClient.available() or WoeClient.saved_match().is_empty(): return
+	var identity: String = WoeClient.identity()
+	var match_id: String = WoeClient.saved_match()
+	var response: Dictionary = await WoeClient.request("/forest/woe/match/current", null, self)
+	if not is_inside_tree() or identity != WoeClient.identity(): return
+	if response.code == 200 and WoeClient.valid_match(response.data, str(ConnectionGate.player_id)) and str(response.data.match_id) == match_id:
+		SceneRouter.recover_woe_after_startup(response.data)
 
 func _exit_tree() -> void:
 	background_video.stop()

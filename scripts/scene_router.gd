@@ -5,6 +5,7 @@ const SCENE_MAIN_MENU := "res://scenes/MainMenu.tscn"
 const SCENE_SETTINGS := "res://scenes/ui/Settings.tscn"
 const SCENE_SUMMONER_SELECTION := "res://scenes/ui/SummonerSelection.tscn"
 const SCENE_WOE_PREGAME := "res://scenes/ui/WOEPregame.tscn"
+const SCENE_WOE_ARENA := "res://scenes/ui/WOEArena.tscn"
 const SCENE_FOREST_WORLD := "res://scenes/forest/ForestWorld.tscn"
 const FOREST_SUMMONERS := ["wizard", "witch", "cyberghost"]
 const FOREST_PREFERENCES := "user://forest_summoners.cfg"
@@ -77,17 +78,58 @@ static func clear_account_context() -> void:
 static func begin_woe(room: Dictionary, zone_id: String, foot: Vector2, facing: int) -> void:
 	var tree := _get_tree()
 	var owner := _forest_verified_owner()
-	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_FOREST_WORLD or not _forest_modes_safe() or not tree.root.get_node("WoeClient").valid_room(room, owner): return
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_FOREST_WORLD or not _forest_modes_safe(): return
+	var client := tree.root.get_node("WoeClient")
+	var is_match: bool = client.valid_match(room, owner)
+	if not is_match and not client.valid_room(room, owner): return
 	if not tree.current_scene.forest_action_allowed("woe", zone_id, foot, facing): return
 	var context := {"verified_owner":owner, "summoner_id":forest_selected_summoner(), "zone_id":zone_id, "foot_position":foot, "facing":facing, "debug":false, "identity_generation":_connection_gate()._generation}
 	if not _valid_forest_context(context): return
 	_forest_return = context
 	_forest_restore.clear()
-	_woe_context = {"room_id":str(room.room_id), "player_id":owner, "generation":_connection_gate()._generation, "base_url":str(_connection_gate().base_url)}
-	_go_to(SCENE_WOE_PREGAME, "WOEPregame")
+	_woe_context = {"room_id":str(room.get("room_id", "")), "player_id":owner, "generation":_connection_gate()._generation, "base_url":str(_connection_gate().base_url)}
+	if is_match:
+		_woe_context.match_id = str(room.match_id)
+		client.save_match(str(room.match_id))
+		_go_to(SCENE_WOE_ARENA, "WOEArena")
+	else:
+		_go_to(SCENE_WOE_PREGAME, "WOEPregame")
 
 static func woe_context_valid() -> bool:
-	return not _woe_context.is_empty() and str(_woe_context.get("player_id", "")) == _forest_verified_owner() and int(_woe_context.get("generation", -1)) == int(_connection_gate()._generation) and str(_woe_context.get("base_url", "")) == str(_connection_gate().base_url) and forest_return_available()
+	return not _woe_context.is_empty() and str(_woe_context.get("player_id", "")) == _forest_verified_owner() and int(_woe_context.get("generation", -1)) == int(_connection_gate()._generation) and str(_woe_context.get("base_url", "")) == str(_connection_gate().base_url) and (bool(_woe_context.get("startup", false)) or forest_return_available())
+
+# Called after a server-confirmed STARTED room response for this member.
+static func enter_woe_match(room: Dictionary) -> void:
+	if not woe_context_valid() or str(room.get("status", "")) != "STARTED": return
+	var tree := _get_tree()
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_WOE_PREGAME: return
+	var client := tree.root.get_node("WoeClient")
+	if not client.valid_room(room, str(_woe_context.player_id)) or str(room.get("room_id", "")) != str(_woe_context.room_id): return
+	var match_id := str(room.get("match_id", ""))
+	if match_id.is_empty() or _woe_context.has("match_id"): return
+	_woe_context.match_id = match_id
+	client.save_match(match_id)
+	_go_to(SCENE_WOE_ARENA, "WOEArena")
+
+# Startup recovery has no Forest position to restore; membership is checked by the server.
+static func recover_woe_after_startup(match: Dictionary) -> bool:
+	var tree := _get_tree()
+	if tree == null or not is_instance_valid(tree.current_scene) or tree.current_scene.scene_file_path != SCENE_MAIN_MENU or not _forest_modes_safe(): return false
+	var owner := _forest_verified_owner()
+	var client := tree.root.get_node("WoeClient")
+	if owner.is_empty() or not _woe_context.is_empty() or not client.valid_match(match, owner): return false
+	if str(match.match_id) != client.saved_match(): return false
+	_woe_context = {"room_id":"", "match_id":str(match.match_id), "player_id":owner, "generation":_connection_gate()._generation, "base_url":str(_connection_gate().base_url), "startup":true}
+	_go_to(SCENE_WOE_ARENA, "WOEArena")
+	return true
+
+static func finish_woe_safely() -> void:
+	if woe_context_valid() and forest_return_available():
+		finish_woe()
+	else:
+		_woe_context.clear()
+		_clear_forest_return()
+		go_to_lab_hub()
 
 static func finish_woe() -> void:
 	if not woe_context_valid(): return

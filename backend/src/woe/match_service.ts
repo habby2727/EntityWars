@@ -12,7 +12,7 @@ export function createWoeMatchService(db:Database, canServe:()=>boolean, clock:(
  const member=(id:string,player:string)=>db.query('SELECT * FROM woe_match_participants WHERE match_id=? AND controller_id=? AND human=1').get(id,player) as any;
  const inTransaction=(f:()=>Result):Result=>{if(!canServe())return fail(503,'FOREST_WOE_UNAVAILABLE');return db.transaction(()=>canServe()?f():fail(503,'FOREST_WOE_UNAVAILABLE')).immediate()};
  function append(id:string, seq:number, events:any[]) {for(const e of events)db.query('INSERT INTO woe_match_events VALUES (?,?,?)').run(id,++seq,JSON.stringify(e));if(seq>EVENT_LIMIT)db.query('DELETE FROM woe_match_events WHERE match_id=? AND seq<=?').run(id,seq-EVENT_LIMIT);return seq}
- function spawnEvent(state:MatchState) {const u=state.units[state.units.length-1];return {type:'spawn',tick:state.tick,unit_id:u.id,card_id:u.cardId,team:u.team,lane:u.lane,position:u.position}}
+ function spawnEvent(state:MatchState) {const u=state.units[state.units.length-1];return {type:'spawn',tick:state.tick,unit_id:u.id,card_id:u.cardId,team:u.team,lane:u.lane,position:u.position,controller_id:u.controllerId}}
  function save(r:any,state:MatchState,events:any[],now:number) {
   if(!canServe())throw new Error('FOREST_WOE_FENCED');
   if(state.result)events.push({type:'result',tick:state.tick,result:state.result});

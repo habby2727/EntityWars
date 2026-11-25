@@ -44,10 +44,10 @@ func _ready() -> void:
 	box.add_child(close)
 	if not WoeClient.saved_pending().is_empty():
 		_status.text = tr("WOE_RETRY_PENDING")
-	elif not WoeClient.saved_room().is_empty():
+	elif not WoeClient.saved_room().is_empty() or not WoeClient.saved_match().is_empty():
 		_recover()
 	else:
-		refresh()
+		_recover_current()
 
 func _process(_delta: float) -> void:
 	if _epoch != WoeClient.identity(): queue_free()
@@ -121,19 +121,43 @@ func _retry() -> void:
 		_recover()
 		return
 	_set_busy(true)
+	var action := str(WoeClient.saved_pending().get("action", ""))
 	var result: Dictionary = await WoeClient.retry_pending()
 	if not _valid(): return
 	_set_busy(false)
-	_complete(result)
+	if action.begins_with("match/") and int(result.get("code",0)) > 0 and int(result.get("code",0)) < 500:
+		_recover_current()
+	else:
+		_complete(result)
 
 func _recover() -> void:
-	if _busy or WoeClient.saved_room().is_empty(): return
+	if _busy: return
+	if WoeClient.saved_room().is_empty():
+		_recover_current()
+		return
 	_set_busy(true)
 	var result: Dictionary = await WoeClient.request("/forest/woe/state?room_id=" + WoeClient.saved_room().uri_encode())
 	if not _valid(): return
 	_set_busy(false)
-	if result.code == 404: WoeClient.save_room("")
+	if result.code == 404:
+		WoeClient.save_room("")
+		_recover_current()
+		return
 	_complete(result)
+
+func _recover_current() -> void:
+	if _busy: return
+	_set_busy(true)
+	var result: Dictionary = await WoeClient.request("/forest/woe/match/current")
+	if not _valid(): return
+	_set_busy(false)
+	if result.code == 200 and WoeClient.valid_match(result.data, str(ConnectionGate.player_id)) and (result.data.status == "RUNNING" or str(result.data.match_id) == WoeClient.saved_match()):
+		admitted.emit(result.data)
+	elif result.code == 200:
+		WoeClient.save_match("")
+		refresh()
+	else:
+		_show_error(result)
 
 func _complete(result: Dictionary) -> void:
 	if int(result.get("code", 0)) == 200 and WoeClient.valid_room(result.get("data"), str(ConnectionGate.player_id)):

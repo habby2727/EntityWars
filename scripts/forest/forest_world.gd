@@ -647,7 +647,7 @@ func _open_npc_action(action: String) -> void:
 
 
 func _woe_admitted(room: Dictionary) -> void:
-	if _handoff_pending or not WoeClient.valid_room(room, str(ConnectionGate.player_id)) or not forest_action_allowed("woe", str(_zones[_zone_index].id), _player.position, _player.facing): return
+	if _handoff_pending or not (WoeClient.valid_room(room, str(ConnectionGate.player_id)) or WoeClient.valid_match(room, str(ConnectionGate.player_id))) or not forest_action_allowed("woe", str(_zones[_zone_index].id), _player.position, _player.facing): return
 	var identity: String = WoeClient.identity()
 	await _prepare_handoff("suspend")
 	if not is_inside_tree(): return
