@@ -4013,10 +4013,10 @@ var require_node = __commonJS((exports, module) => {
     if (useColors2) {
       const c = this.color;
       const colorCode = "\x1B[3" + (c < 8 ? c : "8;5;" + c);
-      const prefix = `  ${colorCode};1m${name} \x1B[0m`;
-      args[0] = prefix + args[0].split(`
+      const prefix2 = `  ${colorCode};1m${name} \x1B[0m`;
+      args[0] = prefix2 + args[0].split(`
 `).join(`
-` + prefix);
+` + prefix2);
       args.push(colorCode + "m+" + module.exports.humanize(this.diff) + "\x1B[0m");
     } else {
       args[0] = getDate() + name + " " + args[0];
@@ -5111,8 +5111,8 @@ var require_autoPipelining = __commonJS((exports) => {
         });
       }), callback);
     }
-    const prefix = client.options.keyPrefix || "";
-    const slotKey = client.isCluster ? client.slots[calculateSlot(`${prefix}${getFirstValueInFlattenedArray(args)}`)].join(",") : "main";
+    const prefix2 = client.options.keyPrefix || "";
+    const slotKey = client.isCluster ? client.slots[calculateSlot(`${prefix2}${getFirstValueInFlattenedArray(args)}`)].join(",") : "main";
     if (!client._autoPipelines.has(slotKey)) {
       const pipeline2 = client.pipeline();
       pipeline2[exports.kExec] = false;
@@ -5813,8 +5813,8 @@ var require_util = __commonJS((exports) => {
   }
   exports.weightSrvRecords = weightSrvRecords;
   function getConnectionName(component, nodeConnectionName) {
-    const prefix = `ioredis-cluster(${component})`;
-    return nodeConnectionName ? `${prefix}:${nodeConnectionName}` : prefix;
+    const prefix2 = `ioredis-cluster(${component})`;
+    return nodeConnectionName ? `${prefix2}:${nodeConnectionName}` : prefix2;
   }
   exports.getConnectionName = getConnectionName;
 });
@@ -6928,9 +6928,9 @@ var require_cluster = __commonJS((exports) => {
             this.manuallyClosing = false;
             this.setStatus("connect");
             if (this.options.enableReadyCheck) {
-              this.readyCheck((err, fail2) => {
-                if (err || fail2) {
-                  debug("Ready check failed (%s). Reconnecting...", err || fail2);
+              this.readyCheck((err, fail4) => {
+                if (err || fail4) {
+                  debug("Ready check failed (%s). Reconnecting...", err || fail4);
                   if (this.status === "connect") {
                     this.disconnect(true);
                   }
@@ -9599,248 +9599,300 @@ var require_built3 = __commonJS((exports, module) => {
   }
   exports.print = print;
 });
-// ../data/homunculi.json
-var homunculi_default = {
-  homunculi: [
-    {
-      id: "cinder",
-      name: "Cinder",
-      rarity: "basic",
-      desc: "Sulfur-leaning familiar. Adds a burst of Power.",
-      buff_atk: 2,
-      buff_def: 0,
-      buff_hp: 0,
-      per_type: {
-        sulfur: {
-          power_flat: 2
-        },
-        mercury: {
-          tempo_flat: 1
-        },
-        sodium: {
-          guard_flat: 1
-        },
-        aether: {
-          power_flat: 2
-        },
-        vitriol: {
-          power_flat: 1,
-          dot_true: 1
-        },
-        gold: {
-          power_flat: 1,
-          reflect_pct: 0.02
-        }
-      }
-    },
-    {
-      id: "silphide",
-      name: "Silphide",
-      rarity: "basic",
-      desc: "Mercury familiar. Adds Tempo and slight evasion (reduces incoming).",
-      buff_atk: 0,
-      buff_def: 1,
-      buff_hp: 1,
-      per_type: {
-        mercury: {
-          tempo_flat: 3,
-          incoming_mult: 0.96
-        },
-        sulfur: {
-          tempo_flat: 1
-        },
-        sodium: {
-          incoming_mult: 0.98
-        },
-        aether: {
-          tempo_flat: 2
-        },
-        vitriol: {
-          tempo_flat: 1,
-          incoming_mult: 0.98
-        },
-        gold: {
-          tempo_flat: 1
-        }
-      }
-    },
-    {
-      id: "sodium",
-      name: "Sodi",
-      rarity: "basic",
-      desc: "Sodium familiar. Adds Guard and stabilizes extremes.",
-      buff_atk: 0,
-      buff_def: 2,
-      buff_hp: 2,
-      per_type: {
-        sodium: {
-          guard_flat: 3
-        },
-        sulfur: {
-          guard_flat: 1
-        },
-        mercury: {
-          guard_flat: 1
-        },
-        aether: {
-          guard_flat: 2
-        },
-        vitriol: {
-          guard_flat: 1
-        },
-        gold: {
-          guard_flat: 1,
-          reflect_pct: 0.01
-        }
-      }
-    },
-    {
-      id: "drakon",
-      name: "Drakon",
-      rarity: "advanced",
-      desc: "Aether familiar. Tweaks rules: raises type advantage slightly for you.",
-      buff_atk: 2,
-      buff_def: 1,
-      buff_hp: 0,
-      per_type: {
-        aether: {
-          type_adv_bonus: 0.1
-        },
-        sulfur: {
-          type_adv_bonus: 0.05
-        },
-        mercury: {
-          type_adv_bonus: 0.05
-        },
-        sodium: {
-          type_adv_bonus: 0.05
-        },
-        vitriol: {
-          type_adv_bonus: 0.05
-        },
-        gold: {
-          type_adv_bonus: 0.05
-        }
-      }
-    },
-    {
-      id: "pyritc",
-      name: "Pyro",
-      rarity: "advanced",
-      desc: "Vitriol familiar. Adds corrosion each round.",
-      buff_atk: 1,
-      buff_def: 0,
-      buff_hp: 2,
-      per_type: {
-        vitriol: {
-          dot_true: 2
-        },
-        sulfur: {
-          dot_true: 1
-        },
-        mercury: {
-          dot_true: 1
-        },
-        sodium: {
-          dot_true: 1
-        },
-        aether: {
-          dot_true: 2
-        },
-        gold: {
-          dot_true: 1
-        }
-      }
-    },
-    {
-      id: "chimera",
-      name: "Chimera",
-      rarity: "advanced",
-      desc: "Gold familiar. Adds reflect and discipline.",
-      buff_atk: 1,
-      buff_def: 2,
-      buff_hp: 0,
-      per_type: {
-        gold: {
-          reflect_pct: 0.06
-        },
-        sulfur: {
-          reflect_pct: 0.02
-        },
-        mercury: {
-          reflect_pct: 0.02
-        },
-        sodium: {
-          reflect_pct: 0.03
-        },
-        aether: {
-          reflect_pct: 0.02
-        },
-        vitriol: {
-          reflect_pct: 0.02
-        }
-      }
-    },
-    {
-      id: "nighty",
-      name: "Nighty",
-      rarity: "advanced",
-      desc: "Build-oriented familiar. Improves item effects slightly.",
-      buff_atk: 0,
-      buff_def: 2,
-      buff_hp: 3,
-      per_type: {
-        sulfur: {
-          item_effect_mult: 1.05
-        },
-        mercury: {
-          item_effect_mult: 1.05
-        },
-        sodium: {
-          item_effect_mult: 1.05
-        },
-        aether: {
-          item_effect_mult: 1.05
-        },
-        vitriol: {
-          item_effect_mult: 1.05
-        },
-        gold: {
-          item_effect_mult: 1.05
-        }
-      }
-    },
-    {
-      id: "mothy",
-      name: "Mothy",
-      rarity: "advanced",
-      desc: "Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).",
-      buff_atk: 2,
-      buff_def: 0,
-      buff_hp: 1,
-      per_type: {
-        sulfur: {
-          type_neutralize: 0.25
-        },
-        mercury: {
-          type_neutralize: 0.25
-        },
-        sodium: {
-          type_neutralize: 0.25
-        },
-        aether: {
-          type_neutralize: 0.25
-        },
-        vitriol: {
-          type_neutralize: 0.25
-        },
-        gold: {
-          type_neutralize: 0.25
-        }
-      }
+
+// src/spectator_service.ts
+import { randomUUID as randomUUID2 } from "crypto";
+
+// src/spectator_guard.ts
+var viewerNames;
+var endViewer = () => {};
+function installSpectatorStartGuard(callback, names) {
+  endViewer = callback;
+  viewerNames = names;
+}
+function spectatorNames(player) {
+  return viewerNames ? { spectators: viewerNames(player) } : {};
+}
+function endSpectatingForStart(player) {
+  endViewer(player);
+}
+
+// src/practice_service.ts
+import { createHmac as createHmac4, randomUUID } from "crypto";
+
+// src/persistent_effects.ts
+function validChance(effect) {
+  if (["burn", "lethargy"].includes(effect?.kind) && (effect.target !== "enemy" || effect.value !== 1 || typeof effect.chance !== "number"))
+    return false;
+  return effect?.chance === undefined || typeof effect.chance === "number" && Number.isFinite(effect.chance) && effect.chance >= 0 && effect.chance <= 1;
+}
+function statusActive(fighter, kind, turn) {
+  const status = fighter?.[`${kind}_effect`];
+  return !!status && status.applied_exchange < turn && turn <= status.expires_exchange;
+}
+function validPersistentFighter(fighter, version, turn) {
+  if (version !== 2)
+    return true;
+  const remaining = fighter?.status?.poison;
+  if (remaining !== undefined && (!Number.isSafeInteger(remaining) || remaining < 0 || remaining > 3))
+    return false;
+  for (const kind of ["burn", "lethargy"]) {
+    const effect = fighter?.[`${kind}_effect`];
+    if (effect && (typeof effect.source !== "string" || !Number.isSafeInteger(effect.applied_exchange) || !Number.isSafeInteger(effect.expires_exchange) || effect.applied_exchange > turn || effect.expires_exchange !== effect.applied_exchange + 2 || effect.expires_exchange <= turn))
+      return false;
+  }
+  const poison = fighter?.poison_effect;
+  return !poison || Number.isSafeInteger(poison.stage) && poison.stage >= 0 && poison.stage <= 2 && Number.isSafeInteger(poison.applied_exchange) && poison.applied_exchange <= turn + 1 && (poison.expires_exchange === undefined || poison.expires_exchange === poison.applied_exchange + 2) && (poison.source === null || typeof poison.source === "string");
+}
+function validPendingDrains(state, sources, targets) {
+  if (state?.combat_rules_version !== 2 || state.pending_drains === undefined)
+    return true;
+  return Array.isArray(state.pending_drains) && state.pending_drains.every((entry) => entry && sources.includes(entry.source) && targets.includes(entry.target) && entry.source !== entry.target && Number.isSafeInteger(entry.due_exchange) && entry.due_exchange > state.turn);
+}
+function applyPersistentStatus(fighter, kind, source, turn) {
+  const key = `${kind}_effect`, previous = fighter[key];
+  if (previous && previous.expires_exchange >= turn)
+    return false;
+  fighter[key] = { source, applied_exchange: turn, expires_exchange: turn + 2 };
+  return true;
+}
+function expirePersistentStatuses(fighter, turn) {
+  const expired = [];
+  for (const kind of ["burn", "lethargy"]) {
+    const key = `${kind}_effect`;
+    if (fighter?.[key]?.expires_exchange <= turn) {
+      delete fighter[key];
+      expired.push(kind);
     }
-  ],
-  max_level: 10
+  }
+  return expired;
+}
+function cleansePersistentStatus(fighter) {
+  for (const kind of ["burn", "lethargy"]) {
+    if (fighter?.[`${kind}_effect`]) {
+      delete fighter[`${kind}_effect`];
+      return kind;
+    }
+  }
+  return null;
+}
+
+// src/expeditions_rules.ts
+import { createHmac } from "crypto";
+// ../data/static/expedition_enemies.json
+var expedition_enemies_default = {
+  enemies: [
+    {
+      id: "dullahan",
+      name: "Dullahan",
+      types: [
+        "aether",
+        "mercury"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/A-M_Dullahan.png",
+      preview_texture: "res://assets/entities/expeditions/preview/A-M_Dullahan.png"
+    },
+    {
+      id: "necromap",
+      name: "Necromap",
+      types: [
+        "aether",
+        "mercury"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/A-M_Necromap.png",
+      preview_texture: "res://assets/entities/expeditions/preview/A-M_Necromap.png"
+    },
+    {
+      id: "scriptor",
+      name: "Scriptor",
+      types: [
+        "aether",
+        "sodium"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/A-SO_Scriptor.png",
+      preview_texture: "res://assets/entities/expeditions/preview/A-SO_Scriptor.png"
+    },
+    {
+      id: "lichcore",
+      name: "Lichcore",
+      types: [
+        "aether",
+        "gold"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/A_G_Lichcore.png",
+      preview_texture: "res://assets/entities/expeditions/preview/A_G_Lichcore.png"
+    },
+    {
+      id: "nullshade",
+      name: "Nullshade",
+      types: [
+        "aether",
+        "sulfur"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/A_SU_Nullshade.png",
+      preview_texture: "res://assets/entities/expeditions/preview/A_SU_Nullshade.png"
+    },
+    {
+      id: "wailbyte",
+      name: "Wailbyte",
+      types: [
+        "aether",
+        "vitriol"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/A_V_Wailbyte.png",
+      preview_texture: "res://assets/entities/expeditions/preview/A_V_Wailbyte.png"
+    },
+    {
+      id: "draugr",
+      name: "Draugr",
+      types: [
+        "gold",
+        "aether"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/G-A_Draugr.png",
+      preview_texture: "res://assets/entities/expeditions/preview/G-A_Draugr.png"
+    },
+    {
+      id: "confessor",
+      name: "Confessor",
+      types: [
+        "gold",
+        "mercury"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/G-M_Confessor.png",
+      preview_texture: "res://assets/entities/expeditions/preview/G-M_Confessor.png"
+    },
+    {
+      id: "goldroot",
+      name: "Goldroot",
+      types: [
+        "gold",
+        "sodium"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/G_SO_Goldroot.png",
+      preview_texture: "res://assets/entities/expeditions/preview/G_SO_Goldroot.png"
+    },
+    {
+      id: "hexwitch",
+      name: "Hexwitch",
+      types: [
+        "mercury",
+        "aether"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/M-A_Hexwitch.png",
+      preview_texture: "res://assets/entities/expeditions/preview/M-A_Hexwitch.png"
+    },
+    {
+      id: "mercjiang",
+      name: "Mercjiang",
+      types: [
+        "mercury",
+        "aether"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/M_A_Mercjiang.png",
+      preview_texture: "res://assets/entities/expeditions/preview/M_A_Mercjiang.png"
+    },
+    {
+      id: "chromurai",
+      name: "Chromurai",
+      types: [
+        "mercury",
+        "gold"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/M_G_Chromurai.png",
+      preview_texture: "res://assets/entities/expeditions/preview/M_G_Chromurai.png"
+    },
+    {
+      id: "argentbane",
+      name: "Argentbane",
+      types: [
+        "mercury",
+        "sodium"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/M_SO_Argentbane.png",
+      preview_texture: "res://assets/entities/expeditions/preview/M_SO_Argentbane.png"
+    },
+    {
+      id: "transurgeon",
+      name: "Transurgeon",
+      types: [
+        "mercury",
+        "vitriol"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/M_V_Transurgeon.png",
+      preview_texture: "res://assets/entities/expeditions/preview/M_V_Transurgeon.png"
+    },
+    {
+      id: "railhunter",
+      name: "Railhunter",
+      types: [
+        "sodium",
+        "mercury"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/SO-M_Railhunter.png",
+      preview_texture: "res://assets/entities/expeditions/preview/SO-M_Railhunter.png"
+    },
+    {
+      id: "ironroot",
+      name: "Ironroot",
+      types: [
+        "sodium",
+        "vitriol"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/SO-V_Ironroot.png",
+      preview_texture: "res://assets/entities/expeditions/preview/SO-V_Ironroot.png"
+    },
+    {
+      id: "saltkeeper",
+      name: "Saltkeeper",
+      types: [
+        "sodium",
+        "vitriol"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/SO-V_Saltkeeper.png",
+      preview_texture: "res://assets/entities/expeditions/preview/SO-V_Saltkeeper.png"
+    },
+    {
+      id: "saltguard",
+      name: "Saltguard",
+      types: [
+        "sodium",
+        "vitriol"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/SO_V_Saltguard.png",
+      preview_texture: "res://assets/entities/expeditions/preview/SO_V_Saltguard.png"
+    },
+    {
+      id: "archmagus",
+      name: "Archmagus",
+      types: [
+        "sulfur",
+        "gold"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/SU-G_Archmagus.png",
+      preview_texture: "res://assets/entities/expeditions/preview/SU-G_Archmagus.png"
+    },
+    {
+      id: "voltengu",
+      name: "Voltengu",
+      types: [
+        "sulfur",
+        "mercury"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/SU_M_Voltengu.png",
+      preview_texture: "res://assets/entities/expeditions/preview/SU_M_Voltengu.png"
+    },
+    {
+      id: "rustmare",
+      name: "Rustmare",
+      types: [
+        "vitriol",
+        "mercury"
+      ],
+      texture: "res://assets/entities/expeditions/gameplay/V-M_Rustmare.png",
+      preview_texture: "res://assets/entities/expeditions/preview/V-M_Rustmare.png"
+    }
+  ]
 };
 // ../data/static/expedition_homunculi.json
 var expedition_homunculi_default = {
@@ -10556,1635 +10608,6 @@ var expedition_homunculi_default = {
     }
   ]
 };
-// ../data/static/mutations.json
-var mutations_default = {
-  mutations: [
-    { id: "catalyst", name: "Catalyst", description: "Power +1.", effects: { power_flat: 1 } },
-    { id: "vitality", name: "Vitality", description: "HP +5.", effects: { hp_flat: 5 } },
-    { id: "resonance", name: "Resonance", description: "+3 percentage points to favorable elemental damage.", effects: { favorable_type_bonus: 0.03 } }
-  ]
-};
-
-// src/expedition_passives.ts
-var expected = {
-  astralotl: ["before_attack", "advantage"],
-  cedix: ["before_attack", "below_half_hp"],
-  crishvin: ["damage_received", "always"],
-  flincho: ["spell_miss", "always"],
-  honin: ["before_exchange", "disadvantage"],
-  hyrox: ["dodge", "always"],
-  luny: ["before_attack", "two_consecutive_spell_hits"],
-  mantillo: ["before_attack", "target_debuffed"],
-  nebulynx: ["inspiration_activated", "always"],
-  neon: ["weapon_switched", "always"],
-  ninux: ["before_exchange", "shielded"],
-  solcarp: ["before_attack", "opening_attack"],
-  venam: ["opponent_poison_damage", "positive_damage"],
-  voltibis: ["before_exchange", "third_exchange"]
-};
-var effectShape = {
-  astralotl: ["power_flat:self:current_attack"],
-  cedix: ["power_flat:self:current_attack"],
-  crishvin: ["guard_flat:self:next_exchange", "poison:target:instant"],
-  flincho: ["accuracy_pct:self:next_exchange", "tempo_flat:self:next_exchange"],
-  honin: ["guard_flat:self:current_exchange", "accuracy_pct:self:current_exchange"],
-  hyrox: ["evasion_pct:self:next_exchange", "tempo_flat:self:next_exchange"],
-  luny: ["power_flat:self:current_attack", "tempo_flat:self:current_exchange"],
-  mantillo: ["power_flat:self:current_attack", "evasion_pct:self:current_exchange"],
-  nebulynx: ["power_flat:self:next_exchange", "tempo_flat:self:next_exchange"],
-  neon: ["guard_flat:self:next_exchange", "tempo_flat:self:next_exchange"],
-  ninux: ["power_flat:self:current_exchange", "guard_flat:self:current_exchange"],
-  solcarp: ["power_flat:self:current_attack", "accuracy_pct:self:current_attack"],
-  venam: ["heal:self:instant"],
-  voltibis: ["guard_flat:self:current_exchange", "tempo_flat:self:current_exchange"]
-};
-var caps = { power_flat: 3, guard_flat: 3, tempo_flat: 2, accuracy_pct: 0.05, evasion_pct: 0.05, poison: 2, heal: 3 };
-var durations = new Set(["current_attack", "current_exchange", "next_exchange", "instant"]);
-var events = new Set(Object.values(expected).map((x) => x[0]));
-var isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
-var own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-var keysAre = (o, keys) => Object.keys(o).length === keys.length && keys.every((k) => own(o, k));
-var safeInt = (v) => Number.isSafeInteger(v) && v >= 0;
-function validatePassiveCatalog(value) {
-  if (!isObject(value) || !Array.isArray(value.homunculi) || value.homunculi.length !== Object.keys(expected).length)
-    throw new Error("INVALID_PASSIVE_CATALOG");
-  const result = new Map;
-  for (const entry of value.homunculi) {
-    if (!isObject(entry) || typeof entry.id !== "string" || !own(expected, entry.id) || result.has(entry.id) || !isObject(entry.passive))
-      throw new Error("INVALID_PASSIVE_CATALOG");
-    const p = entry.passive;
-    if (!keysAre(p, ["name", "description", "event", "condition", "limit", "stacking", "levels", "effects"]) || !isObject(p.name) || !isObject(p.description) || ![p.name, p.description].every((x) => keysAre(x, ["en", "es"]) && [x.en, x.es].every((y) => typeof y === "string" && y.trim().length > 0)) || p.event !== expected[entry.id][0] || p.condition !== expected[entry.id][1] || p.limit !== "once_per_exchange" || p.stacking !== "replace" || JSON.stringify(p.levels) !== "[0,3,6,10]" || !Array.isArray(p.effects) || p.effects.length < 1 || p.effects.length > 2)
-      throw new Error("INVALID_PASSIVE_CATALOG");
-    const seen = new Set;
-    for (const e of p.effects) {
-      if (!isObject(e) || !keysAre(e, ["kind", "target", "duration", "values"]) || typeof e.kind !== "string" || !own(caps, e.kind) || seen.has(e.kind) || !durations.has(e.duration) || !Array.isArray(e.values) || e.values.length !== 4 || e.values.some((v, i) => typeof v !== "number" || !Number.isFinite(v) || v <= 0 || v > caps[e.kind] || i > 0 && v < e.values[i - 1] || !["accuracy_pct", "evasion_pct"].includes(e.kind) && !Number.isInteger(v)))
-        throw new Error("INVALID_PASSIVE_CATALOG");
-      if (e.kind === "poison" && (e.target !== "target" || e.duration !== "instant" || entry.id !== "crishvin") || e.kind === "heal" && (e.target !== "self" || e.duration !== "instant" || entry.id !== "venam") || !["poison", "heal"].includes(e.kind) && (e.target !== "self" || e.duration === "instant"))
-        throw new Error("INVALID_PASSIVE_CATALOG");
-      seen.add(e.kind);
-    }
-    if (JSON.stringify(p.effects.map((e) => `${e.kind}:${e.target}:${e.duration}`)) !== JSON.stringify(effectShape[entry.id]))
-      throw new Error("INVALID_PASSIVE_CATALOG");
-    result.set(entry.id, structuredClone(p));
-  }
-  return result;
-}
-var passives = validatePassiveCatalog(expedition_homunculi_default);
-function scaled(values, level, integer) {
-  const levels = [0, 3, 6, 10];
-  const upper = levels.findIndex((n2) => n2 >= level);
-  if (upper === 0)
-    return values[0];
-  const lower = upper - 1;
-  const n = values[lower] + (values[upper] - values[lower]) * (level - levels[lower]) / (levels[upper] - levels[lower]);
-  return integer ? Math.floor(n + 0.000000001) : Math.round(n * 1e4) / 1e4;
-}
-function evaluateExpeditionPassive(id, level, context, event) {
-  if (typeof id !== "string" || !passives.has(id) || !Number.isInteger(level) || level < 0 || level > 10 || !events.has(event) || !isObject(context) || !isObject(context.fighter) || !isObject(context.target))
-    throw new Error("INVALID_PASSIVE_INPUT");
-  const f = context.fighter;
-  if (!safeInt(context.exchange) || context.exchange < 1 || !safeInt(f.hp) || !safeInt(f.max_hp) || f.max_hp < 1 || f.hp > f.max_hp || !safeInt(f.consecutive_spell_hits) || !safeInt(f.attacks_made) || typeof f.shielded !== "boolean" || typeof context.target.debuffed !== "boolean" || !["advantage", "neutral", "disadvantage"].includes(context.type_relation) || !safeInt(context.poison_damage) || !Array.isArray(context.applied_markers) || context.applied_markers.some((x) => typeof x !== "string"))
-    throw new Error("INVALID_PASSIVE_INPUT");
-  const p = passives.get(id);
-  const marker = `expedition_passive:${id}:${context.exchange}`;
-  if (f.hp === 0 || event !== p.event || context.applied_markers.includes(marker))
-    return null;
-  const matches = {
-    always: true,
-    advantage: context.type_relation === "advantage",
-    below_half_hp: f.hp < f.max_hp / 2,
-    disadvantage: context.type_relation === "disadvantage",
-    two_consecutive_spell_hits: f.consecutive_spell_hits >= 2,
-    target_debuffed: context.target.debuffed,
-    shielded: f.shielded,
-    opening_attack: f.attacks_made === 0,
-    positive_damage: context.poison_damage > 0 && f.hp < f.max_hp,
-    third_exchange: context.exchange % 3 === 0
-  };
-  if (!matches[p.condition])
-    return null;
-  const effects = p.effects.map((e) => {
-    let amount = scaled(e.values, level, !["accuracy_pct", "evasion_pct"].includes(e.kind));
-    if (e.kind === "heal")
-      amount = Math.min(amount, context.poison_damage, f.max_hp - f.hp);
-    return { kind: e.kind, target: e.target, duration: e.duration, amount };
-  });
-  return { marker, exchange: context.exchange, stacking: "replace", limit: "once_per_exchange", effects };
-}
-
-// src/homunculus_experience.ts
-var PVE_VICTORY_XP = 20;
-var MAX_HOMUNCULUS_LEVEL = 10;
-function xpThreshold(level) {
-  if (!Number.isInteger(level) || level < 0 || level > MAX_HOMUNCULUS_LEVEL)
-    throw new RangeError("Invalid homunculus level");
-  if (level === 0)
-    return 0;
-  if (level === 1)
-    return 100;
-  if (level === 2)
-    return 300;
-  if (level === 3)
-    return 550;
-  return Math.round(800 * 1.25 ** (level - 1) - 700);
-}
-function levelFromXp(xp) {
-  if (!Number.isSafeInteger(xp) || xp < 0)
-    throw new RangeError("Invalid homunculus XP");
-  let level = 0;
-  while (level < MAX_HOMUNCULUS_LEVEL && xp >= xpThreshold(level + 1))
-    level++;
-  return level;
-}
-function owned(progress) {
-  return progress?.owned === true;
-}
-function grantXp(progress, amount) {
-  if (!owned(progress))
-    throw new Error("Homunculus is not owned");
-  if (!Number.isSafeInteger(amount) || amount < 0 || !Number.isSafeInteger(progress.xp) || progress.xp < 0 || !Number.isSafeInteger(progress.xp + amount))
-    throw new RangeError("Invalid homunculus XP");
-  const xp = progress.xp + amount;
-  return { ...progress, xp, level: levelFromXp(xp) };
-}
-function normalizeHomunculusProgress(value, originals, expedition, mutations) {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return {};
-  const result = {};
-  for (const [id, raw] of Object.entries(value)) {
-    if (!originals.has(id) && !expedition.has(id) || !raw || typeof raw !== "object" || Array.isArray(raw))
-      continue;
-    const entry = raw;
-    const oldLevel = typeof entry.level === "number" && Number.isInteger(entry.level) && entry.level >= 0 && entry.level <= 10 ? entry.level : 0;
-    const validXp = typeof entry.xp === "number" && Number.isSafeInteger(entry.xp) && entry.xp >= 0;
-    const xp = Math.max(validXp ? entry.xp : 0, xpThreshold(oldLevel));
-    const progress = { level: levelFromXp(xp), xp, owned: originals.has(id) || entry.owned === true };
-    if (typeof entry.mutation_id === "string" && mutations.has(entry.mutation_id)) {
-      progress.mutation_id = entry.mutation_id;
-      progress.mutation_changed_at = typeof entry.mutation_changed_at === "number" && Number.isSafeInteger(entry.mutation_changed_at) && entry.mutation_changed_at >= 0 ? entry.mutation_changed_at : 0;
-    }
-    result[id] = progress;
-  }
-  return result;
-}
-
-// src/homunculus_catalog.ts
-var LEGACY_IDS = ["cinder", "silphide", "sodium", "drakon", "pyritc", "chimera", "nighty", "mothy"];
-var ELEMENTS = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"];
-var SYNERGY_KEYS = new Set(["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"]);
-var object = (v) => !!v && typeof v === "object" && !Array.isArray(v);
-var finite = (v) => typeof v === "number" && Number.isFinite(v);
-function buildHomunculusCombatCatalog(legacy, expedition) {
-  if (!object(legacy) || !Array.isArray(legacy.homunculi) || legacy.homunculi.length !== 8 || !object(expedition))
-    throw new Error("INVALID_HOMUNCULUS_CATALOG");
-  validatePassiveCatalog(expedition);
-  const seen = new Set;
-  const originals = legacy.homunculi.map((h) => {
-    if (!object(h) || !LEGACY_IDS.includes(h.id) || seen.has(h.id) || typeof h.name !== "string" || !h.name.trim() || ![h.buff_hp, h.buff_atk, h.buff_def].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 10) || !object(h.per_type) || Object.keys(h.per_type).length !== ELEMENTS.length || !ELEMENTS.every((type) => object(h.per_type[type]) && Object.entries(h.per_type[type]).every(([key, value]) => SYNERGY_KEYS.has(key) && finite(value) && value >= 0 && value <= 10)))
-      throw new Error("INVALID_HOMUNCULUS_CATALOG");
-    seen.add(h.id);
-    return structuredClone(h);
-  });
-  const additions = expedition.homunculi.map((h) => {
-    if (!object(h) || typeof h.id !== "string" || seen.has(h.id) || typeof h.name !== "string" || !h.name.trim() || !ELEMENTS.includes(h.type) || !Number.isInteger(h.rarity) || h.rarity < 1 || h.rarity > 10)
-      throw new Error("INVALID_HOMUNCULUS_CATALOG");
-    seen.add(h.id);
-    return { id: h.id, name: h.name, rarity: h.rarity, type: h.type, passive: structuredClone(h.passive), buff_hp: 1, buff_atk: 1, buff_def: 1, per_type: Object.fromEntries(ELEMENTS.map((type) => [type, {}])) };
-  });
-  return { originals, expedition: additions, all: [...structuredClone(originals), ...structuredClone(additions)] };
-}
-var catalog = buildHomunculusCombatCatalog(homunculi_default, expedition_homunculi_default);
-var mutationIds = new Set(mutations_default.mutations.map((entry) => entry.id));
-var originals = new Set(catalog.originals.map((h) => h.id));
-var expedition = new Set(catalog.expedition.map((h) => h.id));
-function homunculusCatalog() {
-  return structuredClone(catalog);
-}
-function legacyHomunculusIds() {
-  return new Set(originals);
-}
-function expeditionHomunculusIds() {
-  return new Set(expedition);
-}
-function ownsHomunculus(progress, id) {
-  if (typeof id !== "string" || !originals.has(id) && !expedition.has(id))
-    return false;
-  if (progress !== undefined && !object(progress))
-    return false;
-  const entry = object(progress) && Object.hasOwn(progress, id) ? progress[id] : undefined;
-  if (entry === undefined)
-    return originals.has(id);
-  if (!object(entry) || entry.owned !== undefined && typeof entry.owned !== "boolean" || entry.level !== undefined && (!Number.isInteger(entry.level) || entry.level < 0 || entry.level > 10) || entry.xp !== undefined && (!Number.isSafeInteger(entry.xp) || entry.xp < 0) || entry.mutation_id !== undefined && (typeof entry.mutation_id !== "string" || !mutationIds.has(entry.mutation_id)) || entry.mutation_changed_at !== undefined && (!Number.isSafeInteger(entry.mutation_changed_at) || entry.mutation_changed_at < 0))
-    return false;
-  if (expedition.has(id) && (entry.owned !== true || !Number.isInteger(entry.level) || !Number.isSafeInteger(entry.xp) || entry.mutation_id !== undefined && entry.level < 3 || levelFromXp(entry.xp) !== entry.level))
-    return false;
-  return true;
-}
-function combatHomunculusAllowed(progress, id) {
-  return ownsHomunculus(progress, id);
-}
-function homunculusAttackMultiplier(hom, defenderType, types, neutralizations = []) {
-  if (!object(hom) || typeof hom.id !== "string" || !ELEMENTS.includes(defenderType) || !Array.isArray(neutralizations) || neutralizations.some((n) => !finite(n) || n < 0 || n > 1))
-    throw new Error("INVALID_HOMUNCULUS_ATTACK");
-  if (originals.has(hom.id))
-    return 1;
-  const trusted = catalog.expedition.find((entry) => entry.id === hom.id);
-  if (!trusted || hom.type !== trusted.type || !object(types) || !object(types.effectiveness) || !object(types.effectiveness[trusted.type]))
-    throw new Error("INVALID_HOMUNCULUS_ATTACK");
-  const relation = types.effectiveness[trusted.type][defenderType];
-  if (!finite(relation) || ![0.5, 1, 2].includes(relation))
-    throw new Error("INVALID_HOMUNCULUS_ATTACK");
-  const base = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
-  return 1 + (base - 1) * (1 - Math.max(0, ...neutralizations));
-}
-function homunculusAttackMultiplierById(id, defenderType, types, neutralizations = []) {
-  if (originals.has(id))
-    return 1;
-  const hom = catalog.expedition.find((entry) => entry.id === id);
-  if (!hom)
-    throw new Error("INVALID_HOMUNCULUS_ATTACK");
-  return homunculusAttackMultiplier(hom, defenderType, types, neutralizations);
-}
-
-// src/world_missions.ts
-var DAILY = [
-  { id: "daily_boss", title: "Boss Hunter", description: "Defeat 1 Solo Hunt boss (excluding guardians and global bosses).", target: 1, reward: { essence: 100 } },
-  { id: "daily_damage", title: "Heavy Hitter", description: "Deal 500 HP of damage to Solo Hunt bosses (excluding guardians and global bosses).", target: 500, reward: { essence: 100 } },
-  { id: "daily_elite", title: "Elite Slayer", description: "Defeat 1 Mythic, Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).", target: 1, reward: { essence: 100, core: 1 } }
-];
-var WEEKLY = [
-  { id: "weekly_boss", title: "Boss Hunter", description: "Defeat 5 Solo Hunt bosses (excluding guardians and global bosses).", target: 5, reward: { essence: 300 } },
-  { id: "weekly_elite", title: "Elite Slayer", description: "Defeat 3 Mythic, Rare, Epic or Legendary Solo Hunt bosses (excluding guardians and global bosses).", target: 3, reward: { essence: 250, core: 2 } },
-  { id: "weekly_rare", title: "Rising Threat", description: "Defeat 1 Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).", target: 1, reward: { essence: 200, core: 2 } },
-  { id: "weekly_guardians", title: "Guardian Breaker", description: "Defeat 5 guardians in Solo Hunt.", target: 5, reward: { essence: 300, core: 1 } },
-  { id: "weekly_common", title: "Common Exterminator", description: "Defeat 4 distinct Common boss appearances in their zones.", target: 4, reward: { essence: 250, core: 1 } },
-  { id: "weekly_inspiration", title: "Inspired Warrior", description: "Choose an Inspiration spell in 3 different Solo Hunt boss fights (excluding guardians and global bosses).", target: 3, reward: { essence: 200, core: 2 } }
-];
-var DAY = 86400000;
-var WEEK = 7 * DAY;
-var MONDAY_EPOCH = Date.UTC(1970, 0, 5);
-function period(now, type) {
-  const start = type === "daily" ? Math.floor(now / DAY) * DAY : Math.floor((now - MONDAY_EPOCH) / WEEK) * WEEK + MONDAY_EPOCH;
-  return { key: new Date(start).toISOString().slice(0, 10), next_reset_at: start + (type === "daily" ? DAY : WEEK), week: Math.floor((start - MONDAY_EPOCH) / WEEK) };
-}
-function active(now, type) {
-  if (type === "daily")
-    return DAILY;
-  const week = period(now, type).week;
-  const start = (week % 6 + 6) % 6;
-  return [0, 1, 2].map((i) => WEEKLY[(start + i) % 6]);
-}
-var lastPrune = 0;
-function load(db, player, type, now) {
-  if (now - lastPrune > 3600000) {
-    db.query("DELETE FROM world_mission_progress WHERE (period_type = 'daily' AND period_key <> ?) OR (period_type = 'weekly' AND period_key <> ?)").run(period(now, "daily").key, period(now, "weekly").key);
-    lastPrune = now;
-  }
-  const key = period(now, type).key;
-  const row = db.query("SELECT period_key, progress_json, claimed_json FROM world_mission_progress WHERE player_id = ? AND period_type = ?").get(player, type);
-  if (!row || row.period_key !== key) {
-    db.query("INSERT INTO world_mission_progress (player_id,period_type,period_key,progress_json,claimed_json,updated_at) VALUES (?,?,?,'{}','{}',?) ON CONFLICT(player_id,period_type) DO UPDATE SET period_key=excluded.period_key,progress_json='{}',claimed_json='{}',updated_at=excluded.updated_at").run(player, type, key, now);
-    return { progress: {}, claimed: {} };
-  }
-  return { progress: JSON.parse(row.progress_json), claimed: JSON.parse(row.claimed_json) };
-}
-function save(db, player, type, now, data) {
-  db.query("UPDATE world_mission_progress SET progress_json=?,claimed_json=?,updated_at=? WHERE player_id=? AND period_type=?").run(JSON.stringify(data.progress), JSON.stringify(data.claimed), now, player, type);
-}
-function snapshot(db, player, now) {
-  const result = { server_time_unix_ms: now };
-  for (const type of ["daily", "weekly"]) {
-    const p = period(now, type), d = load(db, player, type, now);
-    result[type] = { period_key: p.key, next_reset_at: p.next_reset_at, missions: active(now, type).map((m) => {
-      const progress = Array.isArray(d.progress[m.id]) ? d.progress[m.id].length : d.progress[m.id] ?? 0;
-      return { ...m, progress, completed: progress >= m.target, claimed: !!d.claimed[m.id] };
-    }) };
-  }
-  return result;
-}
-function record(db, player, now, event) {
-  const tier = (event.tier ?? "").toLowerCase();
-  for (const type of ["daily", "weekly"]) {
-    const data = load(db, player, type, now), enabled = new Map(active(now, type).map((m) => [m.id, m]));
-    const add = (id, n) => {
-      const m = enabled.get(id);
-      if (m && n > 0)
-        data.progress[id] = Math.min(m.target, (data.progress[id] ?? 0) + n);
-    };
-    const unique = (id, key, limit) => {
-      if (!enabled.has(id) || !key)
-        return;
-      const a = data.progress[id] ?? [];
-      if (a.length < limit && !a.includes(key))
-        a.push(key);
-      data.progress[id] = a;
-    };
-    if (event.guardian) {
-      if (event.win)
-        add("weekly_guardians", 1);
-    } else {
-      add("daily_damage", event.damage ?? 0);
-      if (event.win) {
-        add("daily_boss", 1);
-        add("weekly_boss", 1);
-        if (["mythic", "rare", "epic", "legendary"].includes(tier)) {
-          add("daily_elite", 1);
-          add("weekly_elite", 1);
-        }
-        if (["rare", "epic", "legendary"].includes(tier))
-          add("weekly_rare", 1);
-        if (tier === "common" && event.zone && event.appearance)
-          unique("weekly_common", JSON.stringify([event.zone, event.appearance]), 4);
-      }
-      if (event.choose && event.session)
-        unique("weekly_inspiration", event.session, 3);
-    }
-    save(db, player, type, now, data);
-  }
-}
-function bossDamage(events2) {
-  return events2.reduce((sum, e) => sum + (e.actor === "player" && e.target === "boss" && Number.isSafeInteger(e.actual_damage) && e.actual_damage > 0 ? e.actual_damage : 0), 0);
-}
-
-// src/index.ts
-import { Database } from "bun:sqlite";
-
-// src/pvp/ranking.ts
-var PVP_THRESHOLDS = ["Copper", "Quartz", "Amethyst", "Obsidian"].flatMap((league, l) => ["IV", "III", "II", "I"].map((division, d) => ({ league, division, minimum: 1000 + l * 1000 + d * 250 })));
-var clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-var validMp = (mp) => Number.isSafeInteger(mp) && mp >= 0;
-function pvpRank(mp) {
-  if (!validMp(mp))
-    throw new Error("INVALID_MP");
-  return PVP_THRESHOLDS[clamp(Math.floor((mp - 1000) / 250), 0, 15)];
-}
-function pvpRatingDelta(player, opponent, outcome) {
-  if (!validMp(player) || !validMp(opponent) || !["win", "loss", "draw"].includes(outcome))
-    throw new Error("INVALID_RATING_INPUT");
-  if (outcome === "draw")
-    return 0;
-  const rank = pvpRank(player), index = ["Copper", "Quartz", "Amethyst", "Obsidian"].indexOf(rank.league);
-  const adjustment = clamp(Math.round((opponent - player) / 300) * 2, -10, 10);
-  return outcome === "win" ? clamp([24, 22, 20, 18][index] + adjustment, 1, 30) : -Math.min(player, clamp([12, 20, 30, 40][index] - adjustment, 1, 50));
-}
-function pvpSeason(now) {
-  if (!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(new Date(now).getTime()))
-    throw new Error("INVALID_TIME");
-  return new Date(now).toISOString().slice(0, 7);
-}
-function nextPvpSeason(now) {
-  const date = new Date(now);
-  pvpSeason(now);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-}
-function previousPvpSeason(now) {
-  const date = new Date(now);
-  pvpSeason(now);
-  return pvpSeason(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1));
-}
-function createPvpRanking(db, clock = Date.now) {
-  const insert = db.prepare("INSERT OR IGNORE INTO pvp_season_ratings (season, player_id, rating, updated_at) VALUES (?, ?, 1000, ?)");
-  const get = db.prepare("SELECT rating, updated_at FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
-  const list = db.prepare("SELECT r.player_id, p.display_name, r.rating, r.updated_at FROM pvp_season_ratings r JOIN players p ON p.player_id = r.player_id WHERE r.season = ? ORDER BY r.rating DESC, r.player_id ASC");
-  const prune = db.prepare("DELETE FROM pvp_season_ratings WHERE season < ?");
-  let prunedThrough = "";
-  const cache = new Map;
-  const ensure = (season, playerId, now) => {
-    insert.run(season, playerId, now);
-    return get.get(season, playerId);
-  };
-  return {
-    ensure,
-    invalidate() {
-      cache.clear();
-    },
-    leaderboard(playerId, requestedSeason) {
-      const now = clock(), season = pvpSeason(now), previous = previousPvpSeason(now);
-      if (prunedThrough !== previous) {
-        prune.run(previous);
-        prunedThrough = previous;
-      }
-      const viewSeason = requestedSeason ?? season;
-      if (viewSeason !== season && viewSeason !== previous)
-        throw new Error("INVALID_SEASON");
-      if (typeof playerId !== "string" || !playerId)
-        throw new Error("INVALID_PLAYER");
-      const current = ensure(season, playerId, now), division = pvpRank(current.rating);
-      const live = list.all(season);
-      const index = live.findIndex((row) => row.player_id === playerId);
-      const same = (row) => {
-        const rank = pvpRank(row.rating);
-        return rank.league === division.league && rank.division === division.division;
-      };
-      const personal = { mp: current.rating, ...division, global_rank: index + 1, division_rank: live.filter(same).findIndex((row) => row.player_id === playerId) + 1 };
-      for (const key of cache.keys())
-        if (key !== season && key !== previous)
-          cache.delete(key);
-      const cached = (key, rows) => {
-        let entry = cache.get(key);
-        if (!entry || now < entry.time || now - entry.time >= 60000) {
-          entry = { time: now, rows: rows ?? list.all(key) };
-          cache.set(key, entry);
-        }
-        return entry;
-      };
-      const currentCache = cached(season, live), viewCache = cached(viewSeason, viewSeason === season ? live : undefined);
-      const publicRow = (row, rank) => ({ player_id: row.player_id, display_name: row.display_name, mp: row.rating, rank, ...pvpRank(row.rating) });
-      return { season, view_season: viewSeason, previous_season: previous, player: personal, global_top_10: viewCache.rows.slice(0, 10).map((row, i) => publicRow(row, i + 1)), division_top_10: currentCache.rows.filter(same).slice(0, 10).map((row, i) => publicRow(row, i + 1)), thresholds: PVP_THRESHOLDS, updated_at: viewCache.time, next_update_at: Math.min(viewCache.time + 60000, currentCache.time + 60000, nextPvpSeason(now)) };
-    }
-  };
-}
-
-// src/expiring_map.ts
-class ExpiringMap {
-  entries = new Map;
-  cursor;
-  sweep(now) {
-    if (!this.cursor)
-      this.cursor = this.entries.entries();
-    for (let i = 0;i < 16; i++) {
-      const next = this.cursor.next();
-      if (next.done) {
-        this.cursor = undefined;
-        break;
-      }
-      if (next.value[1].expiresAt <= now)
-        this.entries.delete(next.value[0]);
-    }
-  }
-  get(key, now = Date.now()) {
-    this.sweep(now);
-    const entry = this.entries.get(key);
-    if (entry && entry.expiresAt <= now) {
-      this.entries.delete(key);
-      return;
-    }
-    return entry?.value;
-  }
-  set(key, value, expiresAt, now = Date.now()) {
-    this.sweep(now);
-    this.entries.set(key, { value, expiresAt });
-  }
-  delete(key) {
-    this.entries.delete(key);
-  }
-  get size() {
-    return this.entries.size;
-  }
-}
-
-// src/global_chat.ts
-function createGlobalChat(db, clock = Date.now, bridgeEnabled = false, friendIds = () => []) {
-  const presence = new Map;
-  const lastSend = new ExpiringMap;
-  const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
-		CASE WHEN m.source = 'system' THEN 'system' WHEN m.discord_message_id IS NOT NULL THEN 'discord' ELSE 'game' END AS source
-		FROM global_chat_messages m LEFT JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
-  const existing = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
-		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
-  const insert = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?)");
-  const prune = db.query("DELETE FROM global_chat_messages WHERE id NOT IN (SELECT id FROM global_chat_messages ORDER BY id DESC LIMIT 20)");
-  const profile = db.query(`SELECT p.player_id, p.display_name AS username, r.rating
-		FROM players p LEFT JOIN pvp_season_ratings r ON r.player_id = p.player_id AND r.season = ?
-		WHERE p.player_id IN (SELECT value FROM json_each(?))`);
-  function onlineCount() {
-    const now = clock();
-    for (const [id, seen] of presence)
-      if (now - seen >= 45000)
-        presence.delete(id);
-    return presence.size;
-  }
-  return {
-    onlineCount,
-    announceLogin(playerId, registered) {
-      return db.transaction(() => {
-        const player = db.query("SELECT display_name FROM players WHERE player_id = ?").get(playerId);
-        if (!player)
-          throw new Error("Player unavailable for announcement.");
-        const now = clock();
-        const previous = db.query("SELECT announced_at FROM global_chat_announcements WHERE player_id = ?").get(playerId);
-        if (previous && now - previous.announced_at < 20 * 60000)
-          return false;
-        db.query("INSERT INTO global_chat_announcements (player_id, announced_at) VALUES (?, ?) ON CONFLICT(player_id) DO UPDATE SET announced_at = excluded.announced_at").run(playerId, now);
-        const text = `${registered ? "Welcome" : "Welcome back"}, ${player.display_name}!`;
-        const inserted = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, source) VALUES (?, ?, ?, ?, 'Entity Wars', 'system')").run("", crypto.randomUUID(), text, now);
-        if (bridgeEnabled) {
-          db.query("INSERT INTO discord_chat_outbox (message_id, username, text, created_at, source) VALUES (?, 'Entity Wars', ?, ?, 'system')").run(inserted.lastInsertRowid, text, now);
-          db.query("DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)").run();
-        }
-        prune.run();
-        return true;
-      }).immediate();
-    },
-    close() {
-      messages.finalize();
-      existing.finalize();
-      insert.finalize();
-      prune.finalize();
-      profile.finalize();
-    },
-    acceptDiscord(id, name, content) {
-      if (!/^\d{1,32}$/.test(id) || typeof name !== "string" || typeof content !== "string")
-        return false;
-      const clean = (s, limit) => [...s.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").replace(/\s+/gu, " ").trim()].slice(0, limit).join("");
-      const text = clean(content, 200), username = clean(name, 50);
-      if (!text || !username)
-        return false;
-      return db.transaction(() => {
-        const now = clock();
-        if (!db.query("INSERT OR IGNORE INTO discord_chat_seen VALUES (?, ?)").run(id, now).changes)
-          return false;
-        db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, discord_message_id) VALUES (?, ?, ?, ?, ?, ?)").run("", id, text, now, "[Discord] " + username, id);
-        prune.run();
-        db.query("DELETE FROM discord_chat_seen WHERE message_id NOT IN (SELECT message_id FROM discord_chat_seen ORDER BY created_at DESC LIMIT 10000)").run();
-        return true;
-      }).immediate();
-    },
-    state(playerId) {
-      const now = clock();
-      presence.set(playerId, now);
-      onlineCount();
-      const season = pvpSeason(now);
-      const rows = messages.all().reverse();
-      const ids = [...new Set([...presence.keys(), ...rows.filter((row) => row.source === "game").map((row) => row.player_id)])];
-      const profiles = new Map(profile.all(season, JSON.stringify(ids)).map((row) => [row.player_id, { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) }]));
-      const friends = new Set(friendIds(playerId));
-      const online_players = Array.from(presence.keys(), (id) => profiles.get(id)).filter((row) => row !== undefined).map((row) => ({ ...row, is_friend: friends.has(row.player_id) })).sort((a, b) => Number(b.is_friend) - Number(a.is_friend) || a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
-      return { messages: rows.map((row) => ({ ...row, league: row.source !== "game" ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
-    },
-    send(playerId, body) {
-      const text = body?.text;
-      const clientId = body?.client_message_id;
-      if (typeof text !== "string" || !text.trim() || [...text].length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(text) || typeof clientId !== "string" || !clientId.trim() || clientId.length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(clientId)) {
-        return { status: 400, data: { error: "Invalid message or client_message_id." } };
-      }
-      return db.transaction(() => {
-        const previous = existing.get(playerId, clientId);
-        if (previous)
-          return { status: 200, data: { message: previous, duplicate: true } };
-        const now = clock();
-        const last = lastSend.get(playerId, now);
-        if (last !== undefined && now - last < 2000)
-          return { status: 429, data: { error: "Send rate limit exceeded." } };
-        insert.run(playerId, clientId, text, now);
-        prune.run();
-        const message = existing.get(playerId, clientId);
-        if (bridgeEnabled && message) {
-          const row = message;
-          db.query("INSERT INTO discord_chat_outbox (message_id, username, text, created_at) VALUES (?, ?, ?, ?)").run(row.id, row.username, row.text, now);
-          db.query("DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)").run();
-        }
-        lastSend.set(playerId, now, now + 2000, now);
-        return { status: 200, data: { message, duplicate: false } };
-      }).immediate();
-    }
-  };
-}
-
-// src/social/friends.ts
-var PENDING_MS = 30000;
-var REJECT_MS = 120000;
-var validId = (value) => typeof value === "string" && value.length > 0 && value.length <= 128 && value.trim() === value && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
-var error = (status, message) => ({ status, data: { error: message } });
-function createFriends(db, clock = Date.now) {
-  const expire = (now) => db.query("UPDATE friend_requests SET status = 'CANCELLED', updated_at = ? WHERE status = 'PENDING' AND expires_at <= ?").run(now, now);
-  const friendIds = (id) => db.query("SELECT CASE WHEN player_low = ? THEN player_high ELSE player_low END AS id FROM friendships WHERE player_low = ? OR player_high = ?").all(id, id, id).map((row) => row.id);
-  const mutate = (player, body, type, payload, action) => {
-    if (!validId(body?.client_action_id))
-      return error(400, "Invalid client_action_id.");
-    const serialized = JSON.stringify(payload);
-    return db.transaction(() => {
-      const prior = db.query("SELECT action_type, payload_json, status_code, result_json FROM social_actions WHERE player_id = ? AND client_action_id = ?").get(player, body.client_action_id);
-      if (prior)
-        return prior.action_type === type && prior.payload_json === serialized ? { status: prior.status_code, data: JSON.parse(prior.result_json) } : error(409, "Action ID already used.");
-      const now = clock();
-      expire(now);
-      const result = action(now);
-      db.query("INSERT INTO social_actions VALUES (?, ?, ?, ?, ?, ?, ?)").run(player, body.client_action_id, type, serialized, result.status, JSON.stringify(result.data), now);
-      return result;
-    }).immediate();
-  };
-  return {
-    friendIds,
-    state(player) {
-      return db.transaction(() => {
-        const now = clock();
-        expire(now);
-        const friends = db.query(`SELECT p.player_id, p.display_name FROM friendships f JOIN players p ON p.player_id = CASE WHEN f.player_low = ? THEN f.player_high ELSE f.player_low END WHERE f.player_low = ? OR f.player_high = ? ORDER BY p.display_name, p.player_id LIMIT 200`).all(player, player, player);
-        const incoming = db.query(`SELECT r.request_id, r.requester_id, p.display_name AS requester_name, r.created_at, r.expires_at FROM friend_requests r JOIN players p ON p.player_id = r.requester_id WHERE r.recipient_id = ? AND r.status = 'PENDING' ORDER BY r.created_at, r.request_id LIMIT 100`).all(player);
-        const outgoing = db.query(`SELECT r.request_id, r.recipient_id, p.display_name AS recipient_name, r.created_at, r.expires_at FROM friend_requests r JOIN players p ON p.player_id = r.recipient_id WHERE r.requester_id = ? AND r.status = 'PENDING' ORDER BY r.created_at, r.request_id LIMIT 20`).all(player);
-        const cooldowns = db.query(`SELECT recipient_id AS player_id, MAX(CASE WHEN status='DECLINED' THEN updated_at + ? WHEN status IN ('PENDING','CANCELLED') THEN created_at + ? ELSE 0 END) AS cooldown_until FROM friend_requests WHERE requester_id=? AND ((status='DECLINED' AND updated_at + ?>?) OR (status IN ('PENDING','CANCELLED') AND created_at + ?>?)) GROUP BY recipient_id ORDER BY cooldown_until DESC LIMIT 200`).all(REJECT_MS, PENDING_MS, player, REJECT_MS, now, PENDING_MS, now);
-        return { player_id: player, friends, incoming, outgoing, cooldowns, server_time: now };
-      }).immediate();
-    },
-    request(player, body, targetAvailable = true) {
-      if (!validId(body?.target_player_id))
-        return error(400, "Invalid target_player_id.");
-      const target = body.target_player_id;
-      return mutate(player, body, "request", { target_player_id: target }, (now) => {
-        if (player === target)
-          return error(400, "Cannot friend yourself.");
-        if (!targetAvailable || !db.query("SELECT 1 FROM players WHERE player_id = ?").get(target))
-          return error(404, "Target unavailable.");
-        const [low, high] = [player, target].sort();
-        if (db.query("SELECT 1 FROM friendships WHERE player_low = ? AND player_high = ?").get(low, high))
-          return error(409, "Already friends.");
-        const pending = db.query("SELECT expires_at FROM friend_requests WHERE pair_low = ? AND pair_high = ? AND status = 'PENDING'").get(low, high);
-        if (pending)
-          return { status: 409, data: { error: "Request already pending.", expires_at: pending.expires_at, cooldown_until: pending.expires_at, server_time: now } };
-        const cooldown = db.query("SELECT COALESCE(MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED') THEN created_at+? ELSE 0 END),0) deadline FROM friend_requests WHERE requester_id=? AND recipient_id=?").get(REJECT_MS, PENDING_MS, player, target).deadline;
-        if (cooldown > now)
-          return { status: 429, data: { error: "Target cooldown active.", cooldown_until: cooldown, server_time: now } };
-        const count = (sql, ...args) => db.query(sql).get(...args).n;
-        if (count("SELECT count(*) AS n FROM friend_requests WHERE requester_id = ? AND status = 'PENDING'", player) >= 20 || count("SELECT count(*) AS n FROM friend_requests WHERE recipient_id = ? AND status = 'PENDING'", target) >= 100 || friendIds(player).length >= 200 || friendIds(target).length >= 200)
-          return error(429, "Friend request limit reached.");
-        const request_id = crypto.randomUUID();
-        db.query("INSERT INTO friend_requests VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)").run(request_id, player, target, low, high, now, now, now + PENDING_MS);
-        return { status: 200, data: { request_id, status: "PENDING", expires_at: now + PENDING_MS, cooldown_until: now + PENDING_MS, server_time: now } };
-      });
-    },
-    respond(player, body) {
-      if (!validId(body?.request_id) || typeof body?.accept !== "boolean")
-        return error(400, "Invalid request_id or accept.");
-      return mutate(player, body, "respond", { request_id: body.request_id, accept: body.accept }, (now) => {
-        const row = db.query("SELECT * FROM friend_requests WHERE request_id = ? AND recipient_id = ?").get(body.request_id, player);
-        if (!row)
-          return error(404, "Request unavailable.");
-        if (row.status !== "PENDING")
-          return error(409, "Request is no longer pending.");
-        if (body.accept && (friendIds(row.requester_id).length >= 200 || friendIds(player).length >= 200))
-          return error(429, "Friend limit reached.");
-        const status = body.accept ? "ACCEPTED" : "DECLINED";
-        if (body.accept)
-          db.query("INSERT INTO friendships VALUES (?, ?, ?)").run(row.pair_low, row.pair_high, now);
-        db.query("UPDATE friend_requests SET status = ?, updated_at = ? WHERE request_id = ?").run(status, now, row.request_id);
-        return { status: 200, data: { request_id: row.request_id, status, ...body.accept ? {} : { cooldown_until: now + REJECT_MS }, server_time: now } };
-      });
-    },
-    cancel(player, body) {
-      if (!validId(body?.request_id))
-        return error(400, "Invalid request_id.");
-      return mutate(player, body, "cancel", { request_id: body.request_id }, (now) => {
-        const row = db.query("SELECT status, created_at FROM friend_requests WHERE request_id = ? AND requester_id = ?").get(body.request_id, player);
-        if (!row)
-          return error(404, "Request unavailable.");
-        if (row.status !== "PENDING")
-          return error(409, "Request is no longer pending.");
-        db.query("UPDATE friend_requests SET status = 'CANCELLED', updated_at = ? WHERE request_id = ?").run(now, body.request_id);
-        return { status: 200, data: { request_id: body.request_id, status: "CANCELLED", cooldown_until: row.created_at + PENDING_MS, server_time: now } };
-      });
-    }
-  };
-}
-
-// src/forest/presence.ts
-import { readFileSync } from "fs";
-import { resolve } from "path";
-var opposite = { north: "south", south: "north", east: "west", west: "east" };
-var finitePoint = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
-var cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-function inside(p, poly) {
-  let hit = false;
-  for (let i = 0, j = poly.length - 1;i < poly.length; j = i++) {
-    const a = poly[j], b = poly[i];
-    if (Math.abs(cross(a, b, p)) < 0.0000001 && p[0] >= Math.min(a[0], b[0]) - 0.0000001 && p[0] <= Math.max(a[0], b[0]) + 0.0000001 && p[1] >= Math.min(a[1], b[1]) - 0.0000001 && p[1] <= Math.max(a[1], b[1]) + 0.0000001)
-      return true;
-    if (a[1] > p[1] !== b[1] > p[1] && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0])
-      hit = !hit;
-  }
-  return hit;
-}
-function segmentInside(a, b, poly) {
-  if (!inside(a, poly) || !inside(b, poly))
-    return false;
-  const dx = b[0] - a[0], dy = b[1] - a[1], ts = [0, 1];
-  for (let i = 0;i < poly.length; i++) {
-    const c = poly[i], d = poly[(i + 1) % poly.length], ex = d[0] - c[0], ey = d[1] - c[1], den = dx * ey - dy * ex;
-    if (Math.abs(den) < 0.0000000001)
-      continue;
-    const t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / den, u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / den;
-    if (t > 0 && t < 1 && u >= 0 && u <= 1)
-      ts.push(t);
-  }
-  ts.sort((x, y) => x - y);
-  return ts.slice(1).every((t, i) => {
-    const m = (t + ts[i]) / 2;
-    return inside([a[0] + dx * m, a[1] + dy * m], poly);
-  });
-}
-function validateCatalog(c) {
-  if (!c || c.version !== 1 || c.width !== 1920 || c.height !== 1080 || !Array.isArray(c.zones) || c.zones.length !== 6)
-    throw Error("Invalid forest catalog");
-  const zones = new Map;
-  for (const z of c.zones) {
-    if (!z || typeof z.id !== "string" || !/^[a-z_]+$/.test(z.id) || zones.has(z.id) || !Array.isArray(z.polygon) || z.polygon.length < 3 || z.polygon.length > 100 || !z.polygon.every((p) => finitePoint(p) && p[0] >= 0 && p[0] <= 1920 && p[1] >= 0 && p[1] <= 1080) || !finitePoint(z.spawn) || !inside(z.spawn, z.polygon) || !Array.isArray(z.portals))
-      throw Error("Invalid forest zone");
-    let area = 0;
-    for (let i = 0;i < z.polygon.length; i++) {
-      const a = z.polygon[i], b = z.polygon[(i + 1) % z.polygon.length];
-      if (a[0] === b[0] && a[1] === b[1])
-        throw Error("Invalid polygon");
-      area += a[0] * b[1] - b[0] * a[1];
-    }
-    if (Math.abs(area) < 1)
-      throw Error("Invalid polygon");
-    for (let i = 0;i < z.polygon.length; i++)
-      for (let j = i + 1;j < z.polygon.length; j++) {
-        if (j === i + 1 || i === 0 && j === z.polygon.length - 1)
-          continue;
-        const a = z.polygon[i], b = z.polygon[(i + 1) % z.polygon.length], c2 = z.polygon[j], d = z.polygon[(j + 1) % z.polygon.length];
-        const ab1 = cross(a, b, c2), ab2 = cross(a, b, d), cd1 = cross(c2, d, a), cd2 = cross(c2, d, b);
-        if (ab1 * ab2 <= 0 && cd1 * cd2 <= 0 && Math.max(Math.min(a[0], b[0]), Math.min(c2[0], d[0])) <= Math.min(Math.max(a[0], b[0]), Math.max(c2[0], d[0])) && Math.max(Math.min(a[1], b[1]), Math.min(c2[1], d[1])) <= Math.min(Math.max(a[1], b[1]), Math.max(c2[1], d[1])))
-          throw Error("Self-intersecting forest polygon");
-      }
-    zones.set(z.id, z);
-  }
-  let count = 0;
-  for (const z of zones.values()) {
-    const dirs = new Set;
-    for (const p of z.portals) {
-      const dest = zones.get(p.destination), dir = p.direction;
-      if (!Object.hasOwn(opposite, dir) || p.id !== dir || dirs.has(dir) || !Array.isArray(p.corridor) || p.corridor.length !== 4 || !p.corridor.every(Number.isFinite) || p.corridor[0] < 0 || p.corridor[1] < 0 || p.corridor[2] > 1920 || p.corridor[3] > 1080 || p.corridor[0] >= p.corridor[2] || p.corridor[1] >= p.corridor[3] || !dest || !finitePoint(p.arrival) || !inside(p.arrival, dest.polygon) || !dest.portals.some((q) => q.destination === z.id && q.direction === opposite[dir]))
-        throw Error("Invalid forest portal");
-      if (dir === "north" && p.corridor[1] !== 0 || dir === "south" && p.corridor[3] !== 1080 || dir === "west" && p.corridor[0] !== 0 || dir === "east" && p.corridor[2] !== 1920)
-        throw Error("Invalid portal boundary");
-      dirs.add(dir);
-      count++;
-    }
-  }
-  if (count !== 10 || !zones.has("central_clearing") || !inside([960, 760], zones.get("central_clearing").polygon))
-    throw Error("Invalid forest graph");
-  return zones;
-}
-function loadCatalog(path = resolve(import.meta.dir, "../../../data/static/forest_zones.json")) {
-  return validateCatalog(JSON.parse(readFileSync(path, "utf8")));
-}
-var cosmetics = new Set(["wizard", "witch", "cyberghost"]);
-function createForestPresence(zones, authenticate, clock = Date.now, canServe = () => true) {
-  const rooms = new Map([...zones.keys()].map((id) => [id, new Map]));
-  const active2 = new Map, saved = new Map;
-  let fenced = false;
-  const prune = () => {
-    const now = clock();
-    for (const [id, s] of saved)
-      if (s.expires <= now)
-        saved.delete(id);
-  };
-  const send = (s, m) => {
-    if (fenced || !canServe())
-      return;
-    try {
-      if (s.ws.getBufferedAmount() > 65536) {
-        s.ws.close(1008, "slow client");
-        remove(s, 120000);
-        return;
-      }
-      if (s.ws.send(JSON.stringify({ v: 1, ...m })) < 0) {
-        s.ws.close(1008, "slow client");
-        remove(s, 120000);
-      }
-    } catch {
-      remove(s, 120000);
-    }
-  };
-  const broadcast = (s, m) => {
-    if (fenced || !canServe())
-      return;
-    for (const peer of rooms.get(s.state.zone_id).values())
-      if (peer !== s)
-        send(peer, m);
-  };
-  const peers = (s) => [...rooms.get(s.state.zone_id).values()].filter((p) => p !== s).map((p) => ({ ...p.state }));
-  function remove(s, ttl) {
-    if (fenced || !canServe() || active2.get(s.state.player_id) !== s)
-      return;
-    active2.delete(s.state.player_id);
-    if (s.entered) {
-      rooms.get(s.state.zone_id).delete(s.state.player_id);
-      broadcast(s, { type: "peer_leave", player_id: s.state.player_id });
-    }
-    if (ttl) {
-      prune();
-      if (saved.size >= 1024)
-        saved.delete(saved.keys().next().value);
-      saved.set(s.state.player_id, { state: { ...s.state }, expires: clock() + ttl });
-    } else
-      saved.delete(s.state.player_id);
-  }
-  const correction = (s, seq, reason) => send(s, { type: "correction", seq: Number.isSafeInteger(seq) ? seq : 0, zone_id: s.state.zone_id, x: s.state.x, y: s.state.y, facing: s.state.facing, reason });
-  const validSeq = (n) => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647;
-  function open(ws) {
-    if (fenced || !canServe()) {
-      ws.close(1011, "service unavailable");
-      return;
-    }
-    prune();
-    const old = active2.get(ws.data.playerId);
-    if (old) {
-      remove(old, 120000);
-      old.ws.close(1000, "replaced");
-    }
-    if (active2.size >= 512) {
-      ws.close(1013, "capacity");
-      return;
-    }
-    const previous = saved.get(ws.data.playerId);
-    saved.delete(ws.data.playerId);
-    const state = previous ? { ...previous.state, display_name: ws.data.displayName } : { player_id: ws.data.playerId, display_name: ws.data.displayName, zone_id: "central_clearing", x: 960, y: 760, facing: 0, summoner_id: "wizard" };
-    active2.set(state.player_id, { ws, state, entered: false, seq: -1, at: clock(), credit: 24, lastMove: 0, pendingMove: null, lastCosmetic: 0, rateAt: clock(), rate: 0, malformed: 0, checking: false });
-  }
-  function message(ws, raw) {
-    if (fenced || !canServe())
-      return;
-    const s = active2.get(ws.data.playerId);
-    if (!s || s.ws !== ws)
-      return;
-    const now = clock();
-    if (now - s.rateAt >= 1000) {
-      s.rateAt = now;
-      s.rate = 0;
-    }
-    if (++s.rate > 30) {
-      ws.close(1008, "rate limit");
-      remove(s, 120000);
-      return;
-    }
-    if (typeof raw !== "string" || Buffer.byteLength(raw) > 2048) {
-      ws.close(1009, "invalid frame");
-      remove(s, 120000);
-      return;
-    }
-    let m;
-    try {
-      m = JSON.parse(raw);
-    } catch {
-      if (++s.malformed >= 3) {
-        ws.close(1008, "invalid message");
-        remove(s, 120000);
-      }
-      return;
-    }
-    if (!m || typeof m !== "object" || Array.isArray(m) || m.v !== 1 || typeof m.type !== "string") {
-      if (++s.malformed >= 3) {
-        ws.close(1008, "invalid message");
-        remove(s, 120000);
-      }
-      return;
-    }
-    if (m.type === "ping") {
-      send(s, { type: "pong", server_time: now });
-      return;
-    }
-    if (m.type === "leave" || m.type === "suspend") {
-      const kind = m.type;
-      remove(s, kind === "leave" ? 0 : 900000);
-      send(s, { type: "handoff_ack", kind });
-      setTimeout(() => {
-        try {
-          ws.close(1000, kind === "leave" ? "left" : "suspended");
-        } catch {}
-      }, 500).unref();
-      return;
-    }
-    if (m.type === "enter") {
-      if (s.entered || !cosmetics.has(m.summoner_id)) {
-        send(s, { type: "error", error: "INVALID_ENTER" });
-        return;
-      }
-      const room = rooms.get(s.state.zone_id);
-      if (room.size >= 128) {
-        send(s, { type: "error", error: "ROOM_FULL" });
-        return;
-      }
-      s.state.summoner_id = m.summoner_id;
-      s.entered = true;
-      s.at = now;
-      room.set(s.state.player_id, s);
-      send(s, { type: "welcome", self: { ...s.state }, peers: peers(s), server_time: now });
-      if (active2.get(s.state.player_id) === s)
-        broadcast(s, { type: "peer_join", player: { ...s.state } });
-      return;
-    }
-    if (!s.entered) {
-      send(s, { type: "error", error: "ENTER_REQUIRED" });
-      return;
-    }
-    if (m.type === "cosmetic") {
-      if (!cosmetics.has(m.summoner_id)) {
-        send(s, { type: "error", error: "INVALID_COSMETIC" });
-        return;
-      }
-      if (now - s.lastCosmetic >= 200 && s.state.summoner_id !== m.summoner_id) {
-        s.lastCosmetic = now;
-        s.state.summoner_id = m.summoner_id;
-        broadcast(s, { type: "peer_cosmetic", player_id: s.state.player_id, summoner_id: m.summoner_id });
-      }
-      return;
-    }
-    if (m.type !== "move" && m.type !== "portal") {
-      send(s, { type: "error", error: "UNKNOWN_TYPE" });
-      return;
-    }
-    if (!validSeq(m.seq) || m.seq <= s.seq) {
-      correction(s, m.seq, "INVALID_SEQ");
-      return;
-    }
-    s.seq = m.seq;
-    const x = m.type === "move" ? m.x : m.crossing_x, y = m.type === "move" ? m.y : m.crossing_y;
-    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1920 || y < 0 || y > 1080 || m.type === "move" && (!Number.isInteger(m.facing) || m.facing < 0 || m.facing > 3)) {
-      correction(s, m.seq, "INVALID_POSITION");
-      return;
-    }
-    const a = [s.state.x, s.state.y], b = [x, y], zone = zones.get(s.state.zone_id);
-    s.credit = Math.min(79, s.credit + Math.max(0, now - s.at) * 0.22);
-    s.at = now;
-    const distance = Math.hypot(x - a[0], y - a[1]);
-    if (distance > s.credit || !segmentInside(a, b, zone.polygon)) {
-      correction(s, m.seq, "INVALID_MOVEMENT");
-      return;
-    }
-    if (m.type === "move") {
-      s.credit -= distance;
-      s.state.x = x;
-      s.state.y = y;
-      s.state.facing = m.facing;
-      s.pendingMove = { seq: m.seq, x, y, facing: m.facing };
-      if (now - s.lastMove >= 200)
-        flushSession(s, now);
-      return;
-    }
-    const p = zone.portals.find((p2) => p2.direction === m.direction);
-    if (!p || x < p.corridor[0] || x > p.corridor[2] || y < p.corridor[1] || y > p.corridor[3] || !(p.direction === "north" && y === 0 && a[1] > y || p.direction === "south" && y === 1080 && a[1] < y || p.direction === "west" && x === 0 && a[0] > x || p.direction === "east" && x === 1920 && a[0] < x)) {
-      correction(s, m.seq, "INVALID_PORTAL");
-      return;
-    }
-    const destination = rooms.get(p.destination);
-    if (destination.size >= 128) {
-      correction(s, m.seq, "ROOM_FULL");
-      return;
-    }
-    s.pendingMove = null;
-    rooms.get(s.state.zone_id).delete(s.state.player_id);
-    broadcast(s, { type: "peer_leave", player_id: s.state.player_id });
-    s.state.zone_id = p.destination;
-    [s.state.x, s.state.y] = p.arrival;
-    s.credit = 0;
-    s.at = now;
-    destination.set(s.state.player_id, s);
-    send(s, { type: "zone", zone_id: s.state.zone_id, x: s.state.x, y: s.state.y, facing: s.state.facing, peers: peers(s) });
-    if (active2.get(s.state.player_id) === s)
-      broadcast(s, { type: "peer_join", player: { ...s.state } });
-  }
-  function flushSession(s, now) {
-    if (!s.pendingMove || !s.entered || now - s.lastMove < 200)
-      return;
-    const move = s.pendingMove;
-    s.pendingMove = null;
-    s.lastMove = now;
-    broadcast(s, { type: "peer_move", player_id: s.state.player_id, ...move });
-  }
-  function flush() {
-    if (fenced || !canServe())
-      return;
-    const now = clock();
-    for (const s of active2.values())
-      flushSession(s, now);
-  }
-  async function sweep() {
-    if (fenced || !canServe())
-      return;
-    prune();
-    await Promise.all([...active2.values()].map(async (s) => {
-      if (s.checking)
-        return;
-      s.checking = true;
-      try {
-        if (!await authenticate(s.ws.data) && !fenced && canServe() && active2.get(s.state.player_id) === s) {
-          remove(s, 0);
-          s.ws.close(1008, "session ended");
-        }
-      } catch {
-        if (!fenced && canServe() && active2.get(s.state.player_id) === s) {
-          remove(s, 0);
-          s.ws.close(1011, "authentication unavailable");
-        }
-      } finally {
-        s.checking = false;
-      }
-    }));
-  }
-  function evict(playerId) {
-    if (fenced || !canServe())
-      return;
-    const s = active2.get(playerId);
-    if (s) {
-      remove(s, 0);
-      s.ws.close(1008, "session ended");
-    }
-    saved.delete(playerId);
-  }
-  function fence() {
-    if (fenced)
-      return;
-    fenced = true;
-    for (const s of active2.values()) {
-      try {
-        s.ws.close(1011, "service unavailable");
-      } catch {}
-    }
-    active2.clear();
-    saved.clear();
-    for (const room of rooms.values())
-      room.clear();
-  }
-  function peerChat(playerId, message2) {
-    if (fenced || !canServe() || message2.player_id !== playerId || !Number.isSafeInteger(message2.id) || !Number.isSafeInteger(message2.created_at) || typeof message2.text !== "string")
-      return;
-    const session = active2.get(playerId);
-    if (!session?.entered || rooms.get(session.state.zone_id)?.get(playerId) !== session)
-      return;
-    const event = { type: "peer_chat", player_id: playerId, message_id: message2.id, text: message2.text, created_at: message2.created_at, expires_at: message2.created_at + 1e4, server_time: clock() };
-    send(session, event);
-    broadcast(session, event);
-  }
-  return { open, message, peerChat, roomOf(playerId) {
-    if (fenced || !canServe())
-      return null;
-    const s = active2.get(playerId);
-    return s?.entered && rooms.get(s.state.zone_id)?.get(playerId) === s ? s.state.zone_id : null;
-  }, close(ws) {
-    if (fenced)
-      return;
-    const s = active2.get(ws.data.playerId);
-    if (s?.ws === ws)
-      remove(s, 120000);
-  }, sweep, flush, evict, fence };
-}
-
-// src/forest/duels.ts
-var PENDING_MS2 = 30000;
-var REJECT_MS2 = 120000;
-var PREPARING_MS = 180000;
-var RETENTION_MS = 7 * 86400000;
-var validId2 = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
-var fail = (status, error2) => ({ status, data: { error: error2 } });
-function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, combatAvailable = () => true) {
-  const expire = (now) => {
-    db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now, now);
-    db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
-  };
-  const clean = (now) => {
-    expire(now);
-    db.query("DELETE FROM forest_duel_actions WHERE created_at <= ?").run(now - RETENTION_MS);
-    db.query("DELETE FROM forest_duel_invites WHERE status IN ('DECLINED','CANCELLED','EXPIRED') AND updated_at <= ?").run(now - RETENTION_MS);
-  };
-  const row = (id) => db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE i.invite_id=?`).get(id);
-  const busyPvp = (id, now) => !!db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>? UNION ALL SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1 LIMIT 1").get(id, now, id);
-  const reserved = (id) => !!db.query("SELECT 1 FROM forest_duel_reservations WHERE player_id=?").get(id);
-  const mutate = (player, body, type, payload, run) => {
-    if (!canServe())
-      return fail(503, "FOREST_DUELS_UNAVAILABLE");
-    if (!validId2(body?.client_action_id))
-      return fail(400, "INVALID_ACTION_ID");
-    const json = JSON.stringify(payload);
-    return db.transaction(() => {
-      if (!canServe())
-        return fail(503, "FOREST_DUELS_UNAVAILABLE");
-      const now = clock();
-      clean(now);
-      const prior = db.query("SELECT * FROM forest_duel_actions WHERE player_id=? AND client_action_id=?").get(player, body.client_action_id);
-      if (prior)
-        return prior.action_type === type && prior.payload_json === json ? { status: prior.status_code, data: JSON.parse(prior.result_json) } : fail(409, "ACTION_CONFLICT");
-      const count = db.query("SELECT count(*) AS n FROM forest_duel_actions WHERE player_id=?").get(player);
-      if (count.n >= 500)
-        return fail(429, "ACTION_LIMIT");
-      const result = run(now);
-      db.query("INSERT INTO forest_duel_actions VALUES (?,?,?,?,?,?,?)").run(player, body.client_action_id, type, json, result.status, JSON.stringify(result.data), now);
-      return result;
-    }).immediate();
-  };
-  const unlock = (id) => db.query("DELETE FROM forest_duel_reservations WHERE invite_id=?").run(id);
-  return {
-    participants(inviteId) {
-      if (!validId2(inviteId))
-        return [];
-      const i = db.query("SELECT challenger_id,recipient_id FROM forest_duel_invites WHERE invite_id=?").get(inviteId);
-      return i ? [i.challenger_id, i.recipient_id] : [];
-    },
-    challengerFor(recipient, inviteId) {
-      if (!validId2(inviteId))
-        return null;
-      const found = db.query("SELECT challenger_id FROM forest_duel_invites WHERE invite_id=? AND recipient_id=? AND status='PENDING'").get(inviteId, recipient);
-      return found?.challenger_id ?? null;
-    },
-    state(player) {
-      if (!canServe())
-        return fail(503, "FOREST_DUELS_UNAVAILABLE");
-      return db.transaction(() => {
-        if (!canServe())
-          return fail(503, "FOREST_DUELS_UNAVAILABLE");
-        const now = clock();
-        clean(now);
-        const records = db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE (i.challenger_id=? OR i.recipient_id=?) AND i.status IN ('PENDING','ACCEPTED') ORDER BY i.created_at, i.invite_id LIMIT 1`).all(player, player);
-        const started = db.query("SELECT i.invite_id,m.match_id FROM forest_duel_invites i JOIN pvp_matches m ON m.invite_id=i.invite_id WHERE (i.challenger_id=? OR i.recipient_id=?) AND i.status='STARTED' ORDER BY i.updated_at DESC LIMIT 1").get(player, player);
-        for (const record2 of records.filter((r) => r.status === "ACCEPTED")) {
-          const ready = db.query("SELECT player_id FROM forest_duel_ready WHERE invite_id=?").all(record2.invite_id);
-          record2.ready = { player: ready.some((x) => x.player_id === player), enemy: ready.some((x) => x.player_id !== player) };
-        }
-        const cooldowns = db.query("SELECT recipient_id AS player_id, MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED','EXPIRED') THEN created_at+? ELSE 0 END) AS cooldown_until FROM forest_duel_invites WHERE challenger_id=? AND ((status='DECLINED' AND updated_at+?>?) OR (status IN ('PENDING','CANCELLED','EXPIRED') AND created_at+?>?)) GROUP BY recipient_id ORDER BY cooldown_until DESC LIMIT 200").all(REJECT_MS2, PENDING_MS2, player, REJECT_MS2, now, PENDING_MS2, now);
-        return { status: 200, data: { ...started ? { started } : {}, player_id: player, server_time: now, cooldowns, incoming: records.filter((r) => r.status === "PENDING" && r.recipient_id === player), outgoing: records.filter((r) => r.status === "PENDING" && r.challenger_id === player), accepted: records.filter((r) => r.status === "ACCEPTED") } };
-      }).immediate();
-    },
-    request(player, body, targetAvailable = true) {
-      if (!validId2(body?.target_player_id))
-        return fail(400, "INVALID_TARGET");
-      const target = body.target_player_id;
-      return mutate(player, body, "request", { target_player_id: target }, (now) => {
-        if (player === target)
-          return fail(400, "SELF_DUEL");
-        if (!targetAvailable || !db.query("SELECT 1 FROM players WHERE player_id=?").get(target) || !db.query("SELECT 1 FROM players WHERE player_id=?").get(player))
-          return fail(404, "PLAYER_UNAVAILABLE");
-        const cooldown = db.query("SELECT COALESCE(MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED','EXPIRED') THEN created_at+? ELSE 0 END),0) deadline FROM forest_duel_invites WHERE challenger_id=? AND recipient_id=?").get(REJECT_MS2, PENDING_MS2, player, target).deadline;
-        if (cooldown > now)
-          return { status: 429, data: { error: "DUEL_COOLDOWN", cooldown_until: cooldown, server_time: now } };
-        const zone = roomOf(player);
-        if (!zone || roomOf(target) !== zone)
-          return fail(409, "FOREST_ROOM_MISMATCH");
-        if (reserved(player) || reserved(target) || busyPvp(player, now) || busyPvp(target, now))
-          return fail(409, "PLAYER_BUSY");
-        const id = crypto.randomUUID();
-        db.query("INSERT INTO forest_duel_invites VALUES (?,?,?,?,'PENDING',?,?,?)").run(id, player, target, zone, now, now, now + PENDING_MS2);
-        const reserve = db.query("INSERT INTO forest_duel_reservations VALUES (?,?)");
-        reserve.run(player, id);
-        reserve.run(target, id);
-        return { status: 200, data: { invite: row(id), cooldown_until: now + PENDING_MS2, server_time: now } };
-      });
-    },
-    respond(player, body, challengerAvailable = true) {
-      if (!validId2(body?.invite_id) || typeof body?.accept !== "boolean")
-        return fail(400, "INVALID_REQUEST");
-      return mutate(player, body, "respond", { invite_id: body.invite_id, accept: body.accept }, (now) => {
-        const invitation = row(body.invite_id);
-        if (!invitation || invitation.recipient_id !== player)
-          return fail(404, "INVITE_UNAVAILABLE");
-        if (invitation.status !== "PENDING")
-          return fail(409, "INVITE_NOT_PENDING");
-        if (body.accept) {
-          if (!combatAvailable())
-            return fail(503, "PVP_SECRET_REQUIRED");
-          if (!challengerAvailable)
-            return fail(404, "PLAYER_UNAVAILABLE");
-          if (roomOf(player) !== invitation.originating_zone || roomOf(invitation.challenger_id) !== invitation.originating_zone)
-            return fail(409, "FOREST_ROOM_MISMATCH");
-          if (busyPvp(player, now) || busyPvp(invitation.challenger_id, now))
-            return fail(409, "PLAYER_BUSY");
-          db.query("UPDATE forest_duel_invites SET status='ACCEPTED', updated_at=?, expires_at=? WHERE invite_id=?").run(now, now + PREPARING_MS, body.invite_id);
-        } else {
-          db.query("UPDATE forest_duel_invites SET status='DECLINED', updated_at=? WHERE invite_id=?").run(now, body.invite_id);
-          unlock(body.invite_id);
-        }
-        return { status: 200, data: { invite: row(body.invite_id), ...body.accept ? {} : { cooldown_until: now + REJECT_MS2 }, server_time: now } };
-      });
-    },
-    ready(player, body, available = true) {
-      if (!validId2(body?.invite_id) || !body || Object.keys(body).some((k) => !["invite_id", "selection", "client_action_id"].includes(k)))
-        return fail(400, "INVALID_REQUEST");
-      if (!combat)
-        return fail(503, "PVP_SECRET_REQUIRED");
-      return mutate(player, body, "ready", { invite_id: body.invite_id, selection: body.selection }, (now) => {
-        const invitation = row(body.invite_id);
-        if (!invitation || ![invitation.challenger_id, invitation.recipient_id].includes(player))
-          return fail(404, "INVITE_UNAVAILABLE");
-        if (invitation.status === "STARTED") {
-          const found = db.query("SELECT match_id FROM pvp_matches WHERE invite_id=?").get(body.invite_id);
-          return { status: 200, data: { state: "STARTED", match_id: found.match_id } };
-        }
-        if (invitation.status !== "ACCEPTED")
-          return fail(409, "INVITE_NOT_ACTIVE");
-        if (!available)
-          return fail(404, "PLAYER_UNAVAILABLE");
-        if (busyPvp(invitation.challenger_id, now) || busyPvp(invitation.recipient_id, now))
-          return fail(409, "PLAYER_BUSY");
-        const reservations = db.query("SELECT player_id FROM forest_duel_reservations WHERE invite_id=?").all(body.invite_id);
-        if (reservations.length !== 2 || ![invitation.challenger_id, invitation.recipient_id].every((id) => reservations.some((r) => r.player_id === id)))
-          return fail(409, "INVITE_NOT_ACTIVE");
-        const old = db.query("SELECT selection_json FROM forest_duel_ready WHERE invite_id=? AND player_id=?").get(body.invite_id, player);
-        if (old && old.selection_json !== JSON.stringify(body.selection))
-          return fail(409, "READY_CONFLICT");
-        if (!old) {
-          const snapshot2 = combat.snapshot(player, body.selection);
-          if (!snapshot2 || snapshot2.player_id !== player)
-            return fail(400, "UNTRUSTED_SETUP");
-          db.query("INSERT INTO forest_duel_ready VALUES (?,?,?,?)").run(body.invite_id, player, JSON.stringify(snapshot2), JSON.stringify(body.selection));
-        }
-        const ready = db.query("SELECT player_id,snapshot_json FROM forest_duel_ready WHERE invite_id=?").all(body.invite_id);
-        if (ready.length < 2)
-          return { status: 200, data: { state: "WAITING", invite_id: body.invite_id } };
-        const a = ready.find((r) => r.player_id === invitation.challenger_id), b = ready.find((r) => r.player_id === invitation.recipient_id);
-        if (!a || !b)
-          throw new Error("INVALID_READY_STATE");
-        const matchId = combat.start(JSON.parse(a.snapshot_json), JSON.parse(b.snapshot_json), now, body.invite_id);
-        db.query("UPDATE forest_duel_invites SET status='STARTED',updated_at=? WHERE invite_id=? AND status='ACCEPTED'").run(now, body.invite_id);
-        unlock(body.invite_id);
-        return { status: 200, data: { state: "STARTED", match_id: matchId } };
-      });
-    },
-    cancel(player, body) {
-      if (!validId2(body?.invite_id))
-        return fail(400, "INVALID_REQUEST");
-      return mutate(player, body, "cancel", { invite_id: body.invite_id }, (now) => {
-        const invitation = row(body.invite_id);
-        if (!invitation || invitation.challenger_id !== player && !(invitation.recipient_id === player && invitation.status === "ACCEPTED"))
-          return fail(404, "INVITE_UNAVAILABLE");
-        if (!["PENDING", "ACCEPTED"].includes(invitation.status))
-          return fail(409, "INVITE_NOT_ACTIVE");
-        db.query("UPDATE forest_duel_invites SET status='CANCELLED', updated_at=? WHERE invite_id=?").run(now, body.invite_id);
-        unlock(body.invite_id);
-        return { status: 200, data: { invite: row(body.invite_id), cooldown_until: invitation.created_at + PENDING_MS2, server_time: now } };
-      });
-    }
-  };
-}
-
-// src/discord_bridge.ts
-import { ActivityType, Client, GatewayIntentBits, MessageType } from "discord.js";
-function createPresenceUpdater(chat, client) {
-  let lastCount;
-  return (force = false) => {
-    if (!client.user)
-      return;
-    const count = chat.onlineCount();
-    if (!force && count === lastCount)
-      return;
-    client.user.setPresence({ activities: [{ name: `Entity Wars | ${count} online`, type: ActivityType.Playing }] });
-    lastCount = count;
-  };
-}
-function outgoingDiscordMessage(row) {
-  return { content: row.source === "system" ? `Entity Wars: ${row.text}` : `[Game] ${row.username}: ${row.text}`, allowedMentions: { parse: [] }, nonce: String(row.message_id), enforceNonce: true };
-}
-function acceptDiscordMessage(chat, message, guildId, channelId, applicationId) {
-  if (message.guildId !== guildId || message.channelId !== channelId || message.author?.bot || message.author?.id === applicationId || message.webhookId || message.system || ![MessageType.Default, MessageType.Reply].includes(message.type))
-    return false;
-  return chat.acceptDiscord(message.id, message.member?.displayName || message.author?.globalName || message.author?.username || "", message.content);
-}
-function startDiscordBridge(db, chat, env = process.env) {
-  const token = env.DISCORD_BOT_TOKEN;
-  if (!token)
-    return { enabled: false, close() {} };
-  const guild = env.DISCORD_GUILD_ID || "1376365043775438871";
-  const channelId = env.DISCORD_CHANNEL_ID || "1572758122810974360";
-  const app = env.DISCORD_APPLICATION_ID || "1572757742270288033";
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-  const updatePresence = createPresenceUpdater(chat, client);
-  let stopped = false, busy = false, retry = 1000;
-  let loginTimer;
-  client.on("error", () => console.warn("Discord bridge connection error"));
-  client.on("clientReady", () => updatePresence(true));
-  client.on("shardResume", () => updatePresence(true));
-  client.on("messageCreate", (message) => {
-    try {
-      acceptDiscordMessage(chat, message, guild, channelId, app);
-    } catch {
-      console.warn("Discord bridge could not store message");
-    }
-  });
-  async function connect() {
-    if (stopped)
-      return;
-    try {
-      await client.login(token);
-      retry = 1000;
-    } catch {
-      console.warn("Discord bridge login failed; retrying");
-      loginTimer = setTimeout(connect, retry);
-      retry = Math.min(retry * 2, 60000);
-    }
-  }
-  async function dispatch() {
-    if (stopped || busy || !client.isReady())
-      return;
-    busy = true;
-    let row;
-    try {
-      row = db.query("SELECT * FROM discord_chat_outbox WHERE next_attempt <= ? ORDER BY message_id LIMIT 1").get(Date.now());
-      if (!row)
-        return;
-      const channel = await client.channels.fetch(channelId);
-      if (!channel || !("send" in channel) || !("guildId" in channel) || channel.guildId !== guild)
-        throw new Error("channel unavailable");
-      await channel.send(outgoingDiscordMessage(row));
-      db.query("DELETE FROM discord_chat_outbox WHERE message_id = ?").run(row.message_id);
-    } catch {
-      try {
-        if (row)
-          db.query("UPDATE discord_chat_outbox SET attempts = attempts + 1, next_attempt = ? WHERE message_id = ?").run(Date.now() + Math.min(300000, 2000 * 2 ** Math.min(row.attempts, 7)), row.message_id);
-      } catch {}
-      console.warn("Discord bridge dispatch failed; retrying");
-    } finally {
-      busy = false;
-    }
-  }
-  connect();
-  const timer = setInterval(() => void dispatch(), 2000);
-  const presenceTimer = setInterval(updatePresence, 30000);
-  return { enabled: true, close() {
-    stopped = true;
-    clearInterval(timer);
-    clearInterval(presenceTimer);
-    if (loginTimer)
-      clearTimeout(loginTimer);
-    client.destroy();
-  } };
-}
-
-// src/pvp/availability.ts
-function rankedAvailability(env) {
-  if (env.PVP_ENABLED !== "1")
-    return { status: 503, data: { error: "PVP_DISABLED" } };
-  return { status: 503, data: { error: "PVP_SECRET_REQUIRED" } };
-}
-function isRankedRoute(method, path) {
-  return method === "GET" && ["/pvp/queue/state", "/pvp/match/state", "/pvp/leaderboard"].includes(path) || method === "POST" && ["/pvp/queue/join", "/pvp/queue/cancel", "/pvp/match/decision", "/pvp/match/forfeit", "/pvp/match/chat"].includes(path);
-}
-
-// src/pvp/service.ts
-import { createHmac as createHmac3, randomInt, randomUUID } from "crypto";
-
-// src/persistent_effects.ts
-function validChance(effect) {
-  if (["burn", "lethargy"].includes(effect?.kind) && (effect.target !== "enemy" || effect.value !== 1 || typeof effect.chance !== "number"))
-    return false;
-  return effect?.chance === undefined || typeof effect.chance === "number" && Number.isFinite(effect.chance) && effect.chance >= 0 && effect.chance <= 1;
-}
-function statusActive(fighter, kind, turn) {
-  const status = fighter?.[`${kind}_effect`];
-  return !!status && status.applied_exchange < turn && turn <= status.expires_exchange;
-}
-function validPersistentFighter(fighter, version, turn) {
-  if (version !== 2)
-    return true;
-  const remaining = fighter?.status?.poison;
-  if (remaining !== undefined && (!Number.isSafeInteger(remaining) || remaining < 0 || remaining > 3))
-    return false;
-  for (const kind of ["burn", "lethargy"]) {
-    const effect = fighter?.[`${kind}_effect`];
-    if (effect && (typeof effect.source !== "string" || !Number.isSafeInteger(effect.applied_exchange) || !Number.isSafeInteger(effect.expires_exchange) || effect.applied_exchange > turn || effect.expires_exchange !== effect.applied_exchange + 2 || effect.expires_exchange <= turn))
-      return false;
-  }
-  const poison = fighter?.poison_effect;
-  return !poison || Number.isSafeInteger(poison.stage) && poison.stage >= 0 && poison.stage <= 2 && Number.isSafeInteger(poison.applied_exchange) && poison.applied_exchange <= turn + 1 && (poison.expires_exchange === undefined || poison.expires_exchange === poison.applied_exchange + 2) && (poison.source === null || typeof poison.source === "string");
-}
-function validPendingDrains(state, sources, targets) {
-  if (state?.combat_rules_version !== 2 || state.pending_drains === undefined)
-    return true;
-  return Array.isArray(state.pending_drains) && state.pending_drains.every((entry) => entry && sources.includes(entry.source) && targets.includes(entry.target) && entry.source !== entry.target && Number.isSafeInteger(entry.due_exchange) && entry.due_exchange > state.turn);
-}
-function applyPersistentStatus(fighter, kind, source, turn) {
-  const key = `${kind}_effect`, previous = fighter[key];
-  if (previous && previous.expires_exchange >= turn)
-    return false;
-  fighter[key] = { source, applied_exchange: turn, expires_exchange: turn + 2 };
-  return true;
-}
-function expirePersistentStatuses(fighter, turn) {
-  const expired = [];
-  for (const kind of ["burn", "lethargy"]) {
-    const key = `${kind}_effect`;
-    if (fighter?.[key]?.expires_exchange <= turn) {
-      delete fighter[key];
-      expired.push(kind);
-    }
-  }
-  return expired;
-}
-function cleansePersistentStatus(fighter) {
-  for (const kind of ["burn", "lethargy"]) {
-    if (fighter?.[`${kind}_effect`]) {
-      delete fighter[`${kind}_effect`];
-      return kind;
-    }
-  }
-  return null;
-}
-
-// src/expeditions_rules.ts
-import { createHmac } from "crypto";
-// ../data/static/expedition_enemies.json
-var expedition_enemies_default = {
-  enemies: [
-    {
-      id: "dullahan",
-      name: "Dullahan",
-      types: [
-        "aether",
-        "mercury"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/A-M_Dullahan.png",
-      preview_texture: "res://assets/entities/expeditions/preview/A-M_Dullahan.png"
-    },
-    {
-      id: "necromap",
-      name: "Necromap",
-      types: [
-        "aether",
-        "mercury"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/A-M_Necromap.png",
-      preview_texture: "res://assets/entities/expeditions/preview/A-M_Necromap.png"
-    },
-    {
-      id: "scriptor",
-      name: "Scriptor",
-      types: [
-        "aether",
-        "sodium"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/A-SO_Scriptor.png",
-      preview_texture: "res://assets/entities/expeditions/preview/A-SO_Scriptor.png"
-    },
-    {
-      id: "lichcore",
-      name: "Lichcore",
-      types: [
-        "aether",
-        "gold"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/A_G_Lichcore.png",
-      preview_texture: "res://assets/entities/expeditions/preview/A_G_Lichcore.png"
-    },
-    {
-      id: "nullshade",
-      name: "Nullshade",
-      types: [
-        "aether",
-        "sulfur"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/A_SU_Nullshade.png",
-      preview_texture: "res://assets/entities/expeditions/preview/A_SU_Nullshade.png"
-    },
-    {
-      id: "wailbyte",
-      name: "Wailbyte",
-      types: [
-        "aether",
-        "vitriol"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/A_V_Wailbyte.png",
-      preview_texture: "res://assets/entities/expeditions/preview/A_V_Wailbyte.png"
-    },
-    {
-      id: "draugr",
-      name: "Draugr",
-      types: [
-        "gold",
-        "aether"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/G-A_Draugr.png",
-      preview_texture: "res://assets/entities/expeditions/preview/G-A_Draugr.png"
-    },
-    {
-      id: "confessor",
-      name: "Confessor",
-      types: [
-        "gold",
-        "mercury"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/G-M_Confessor.png",
-      preview_texture: "res://assets/entities/expeditions/preview/G-M_Confessor.png"
-    },
-    {
-      id: "goldroot",
-      name: "Goldroot",
-      types: [
-        "gold",
-        "sodium"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/G_SO_Goldroot.png",
-      preview_texture: "res://assets/entities/expeditions/preview/G_SO_Goldroot.png"
-    },
-    {
-      id: "hexwitch",
-      name: "Hexwitch",
-      types: [
-        "mercury",
-        "aether"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/M-A_Hexwitch.png",
-      preview_texture: "res://assets/entities/expeditions/preview/M-A_Hexwitch.png"
-    },
-    {
-      id: "mercjiang",
-      name: "Mercjiang",
-      types: [
-        "mercury",
-        "aether"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/M_A_Mercjiang.png",
-      preview_texture: "res://assets/entities/expeditions/preview/M_A_Mercjiang.png"
-    },
-    {
-      id: "chromurai",
-      name: "Chromurai",
-      types: [
-        "mercury",
-        "gold"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/M_G_Chromurai.png",
-      preview_texture: "res://assets/entities/expeditions/preview/M_G_Chromurai.png"
-    },
-    {
-      id: "argentbane",
-      name: "Argentbane",
-      types: [
-        "mercury",
-        "sodium"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/M_SO_Argentbane.png",
-      preview_texture: "res://assets/entities/expeditions/preview/M_SO_Argentbane.png"
-    },
-    {
-      id: "transurgeon",
-      name: "Transurgeon",
-      types: [
-        "mercury",
-        "vitriol"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/M_V_Transurgeon.png",
-      preview_texture: "res://assets/entities/expeditions/preview/M_V_Transurgeon.png"
-    },
-    {
-      id: "railhunter",
-      name: "Railhunter",
-      types: [
-        "sodium",
-        "mercury"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/SO-M_Railhunter.png",
-      preview_texture: "res://assets/entities/expeditions/preview/SO-M_Railhunter.png"
-    },
-    {
-      id: "ironroot",
-      name: "Ironroot",
-      types: [
-        "sodium",
-        "vitriol"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/SO-V_Ironroot.png",
-      preview_texture: "res://assets/entities/expeditions/preview/SO-V_Ironroot.png"
-    },
-    {
-      id: "saltkeeper",
-      name: "Saltkeeper",
-      types: [
-        "sodium",
-        "vitriol"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/SO-V_Saltkeeper.png",
-      preview_texture: "res://assets/entities/expeditions/preview/SO-V_Saltkeeper.png"
-    },
-    {
-      id: "saltguard",
-      name: "Saltguard",
-      types: [
-        "sodium",
-        "vitriol"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/SO_V_Saltguard.png",
-      preview_texture: "res://assets/entities/expeditions/preview/SO_V_Saltguard.png"
-    },
-    {
-      id: "archmagus",
-      name: "Archmagus",
-      types: [
-        "sulfur",
-        "gold"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/SU-G_Archmagus.png",
-      preview_texture: "res://assets/entities/expeditions/preview/SU-G_Archmagus.png"
-    },
-    {
-      id: "voltengu",
-      name: "Voltengu",
-      types: [
-        "sulfur",
-        "mercury"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/SU_M_Voltengu.png",
-      preview_texture: "res://assets/entities/expeditions/preview/SU_M_Voltengu.png"
-    },
-    {
-      id: "rustmare",
-      name: "Rustmare",
-      types: [
-        "vitriol",
-        "mercury"
-      ],
-      texture: "res://assets/entities/expeditions/gameplay/V-M_Rustmare.png",
-      preview_texture: "res://assets/entities/expeditions/preview/V-M_Rustmare.png"
-    }
-  ]
-};
 // ../data/types.json
 var types_default = {
   types: [
@@ -12341,6 +10764,113 @@ function expeditionDraw(seed, domain, index) {
   if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof domain !== "string" || !domain || !Number.isSafeInteger(index) || index < 0)
     throw new Error("INVALID_EXPEDITION_RNG");
   return createHmac("sha256", seed).update(JSON.stringify(["expedition-v1", domain, index])).digest().readUInt32BE(0) / 4294967296;
+}
+
+// src/expedition_passives.ts
+var expected = {
+  astralotl: ["before_attack", "advantage"],
+  cedix: ["before_attack", "below_half_hp"],
+  crishvin: ["damage_received", "always"],
+  flincho: ["spell_miss", "always"],
+  honin: ["before_exchange", "disadvantage"],
+  hyrox: ["dodge", "always"],
+  luny: ["before_attack", "two_consecutive_spell_hits"],
+  mantillo: ["before_attack", "target_debuffed"],
+  nebulynx: ["inspiration_activated", "always"],
+  neon: ["weapon_switched", "always"],
+  ninux: ["before_exchange", "shielded"],
+  solcarp: ["before_attack", "opening_attack"],
+  venam: ["opponent_poison_damage", "positive_damage"],
+  voltibis: ["before_exchange", "third_exchange"]
+};
+var effectShape = {
+  astralotl: ["power_flat:self:current_attack"],
+  cedix: ["power_flat:self:current_attack"],
+  crishvin: ["guard_flat:self:next_exchange", "poison:target:instant"],
+  flincho: ["accuracy_pct:self:next_exchange", "tempo_flat:self:next_exchange"],
+  honin: ["guard_flat:self:current_exchange", "accuracy_pct:self:current_exchange"],
+  hyrox: ["evasion_pct:self:next_exchange", "tempo_flat:self:next_exchange"],
+  luny: ["power_flat:self:current_attack", "tempo_flat:self:current_exchange"],
+  mantillo: ["power_flat:self:current_attack", "evasion_pct:self:current_exchange"],
+  nebulynx: ["power_flat:self:next_exchange", "tempo_flat:self:next_exchange"],
+  neon: ["guard_flat:self:next_exchange", "tempo_flat:self:next_exchange"],
+  ninux: ["power_flat:self:current_exchange", "guard_flat:self:current_exchange"],
+  solcarp: ["power_flat:self:current_attack", "accuracy_pct:self:current_attack"],
+  venam: ["heal:self:instant"],
+  voltibis: ["guard_flat:self:current_exchange", "tempo_flat:self:current_exchange"]
+};
+var caps = { power_flat: 3, guard_flat: 3, tempo_flat: 2, accuracy_pct: 0.05, evasion_pct: 0.05, poison: 2, heal: 3 };
+var durations = new Set(["current_attack", "current_exchange", "next_exchange", "instant"]);
+var events = new Set(Object.values(expected).map((x) => x[0]));
+var isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+var own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+var keysAre = (o, keys) => Object.keys(o).length === keys.length && keys.every((k) => own(o, k));
+var safeInt = (v) => Number.isSafeInteger(v) && v >= 0;
+function validatePassiveCatalog(value) {
+  if (!isObject(value) || !Array.isArray(value.homunculi) || value.homunculi.length !== Object.keys(expected).length)
+    throw new Error("INVALID_PASSIVE_CATALOG");
+  const result = new Map;
+  for (const entry of value.homunculi) {
+    if (!isObject(entry) || typeof entry.id !== "string" || !own(expected, entry.id) || result.has(entry.id) || !isObject(entry.passive))
+      throw new Error("INVALID_PASSIVE_CATALOG");
+    const p = entry.passive;
+    if (!keysAre(p, ["name", "description", "event", "condition", "limit", "stacking", "levels", "effects"]) || !isObject(p.name) || !isObject(p.description) || ![p.name, p.description].every((x) => keysAre(x, ["en", "es"]) && [x.en, x.es].every((y) => typeof y === "string" && y.trim().length > 0)) || p.event !== expected[entry.id][0] || p.condition !== expected[entry.id][1] || p.limit !== "once_per_exchange" || p.stacking !== "replace" || JSON.stringify(p.levels) !== "[0,3,6,10]" || !Array.isArray(p.effects) || p.effects.length < 1 || p.effects.length > 2)
+      throw new Error("INVALID_PASSIVE_CATALOG");
+    const seen = new Set;
+    for (const e of p.effects) {
+      if (!isObject(e) || !keysAre(e, ["kind", "target", "duration", "values"]) || typeof e.kind !== "string" || !own(caps, e.kind) || seen.has(e.kind) || !durations.has(e.duration) || !Array.isArray(e.values) || e.values.length !== 4 || e.values.some((v, i) => typeof v !== "number" || !Number.isFinite(v) || v <= 0 || v > caps[e.kind] || i > 0 && v < e.values[i - 1] || !["accuracy_pct", "evasion_pct"].includes(e.kind) && !Number.isInteger(v)))
+        throw new Error("INVALID_PASSIVE_CATALOG");
+      if (e.kind === "poison" && (e.target !== "target" || e.duration !== "instant" || entry.id !== "crishvin") || e.kind === "heal" && (e.target !== "self" || e.duration !== "instant" || entry.id !== "venam") || !["poison", "heal"].includes(e.kind) && (e.target !== "self" || e.duration === "instant"))
+        throw new Error("INVALID_PASSIVE_CATALOG");
+      seen.add(e.kind);
+    }
+    if (JSON.stringify(p.effects.map((e) => `${e.kind}:${e.target}:${e.duration}`)) !== JSON.stringify(effectShape[entry.id]))
+      throw new Error("INVALID_PASSIVE_CATALOG");
+    result.set(entry.id, structuredClone(p));
+  }
+  return result;
+}
+var passives = validatePassiveCatalog(expedition_homunculi_default);
+function scaled(values, level, integer) {
+  const levels = [0, 3, 6, 10];
+  const upper = levels.findIndex((n2) => n2 >= level);
+  if (upper === 0)
+    return values[0];
+  const lower = upper - 1;
+  const n = values[lower] + (values[upper] - values[lower]) * (level - levels[lower]) / (levels[upper] - levels[lower]);
+  return integer ? Math.floor(n + 0.000000001) : Math.round(n * 1e4) / 1e4;
+}
+function evaluateExpeditionPassive(id, level, context, event) {
+  if (typeof id !== "string" || !passives.has(id) || !Number.isInteger(level) || level < 0 || level > 10 || !events.has(event) || !isObject(context) || !isObject(context.fighter) || !isObject(context.target))
+    throw new Error("INVALID_PASSIVE_INPUT");
+  const f = context.fighter;
+  if (!safeInt(context.exchange) || context.exchange < 1 || !safeInt(f.hp) || !safeInt(f.max_hp) || f.max_hp < 1 || f.hp > f.max_hp || !safeInt(f.consecutive_spell_hits) || !safeInt(f.attacks_made) || typeof f.shielded !== "boolean" || typeof context.target.debuffed !== "boolean" || !["advantage", "neutral", "disadvantage"].includes(context.type_relation) || !safeInt(context.poison_damage) || !Array.isArray(context.applied_markers) || context.applied_markers.some((x) => typeof x !== "string"))
+    throw new Error("INVALID_PASSIVE_INPUT");
+  const p = passives.get(id);
+  const marker = `expedition_passive:${id}:${context.exchange}`;
+  if (f.hp === 0 || event !== p.event || context.applied_markers.includes(marker))
+    return null;
+  const matches = {
+    always: true,
+    advantage: context.type_relation === "advantage",
+    below_half_hp: f.hp < f.max_hp / 2,
+    disadvantage: context.type_relation === "disadvantage",
+    two_consecutive_spell_hits: f.consecutive_spell_hits >= 2,
+    target_debuffed: context.target.debuffed,
+    shielded: f.shielded,
+    opening_attack: f.attacks_made === 0,
+    positive_damage: context.poison_damage > 0 && f.hp < f.max_hp,
+    third_exchange: context.exchange % 3 === 0
+  };
+  if (!matches[p.condition])
+    return null;
+  const effects = p.effects.map((e) => {
+    let amount = scaled(e.values, level, !["accuracy_pct", "evasion_pct"].includes(e.kind));
+    if (e.kind === "heal")
+      amount = Math.min(amount, context.poison_damage, f.max_hp - f.hp);
+    return { kind: e.kind, target: e.target, duration: e.duration, amount };
+  });
+  return { marker, exchange: context.exchange, stacking: "replace", limit: "once_per_exchange", effects };
 }
 
 // src/combat_event_provenance.ts
@@ -12601,6 +11131,391 @@ function applyCombatPassive(fighter, target, event, types, actorId, targetId, ev
   if (applied.length)
     events2.splice(insertion, 0, { kind: "hom_passive", turn: result.state.exchange, actor: actorId, target: applied[0].target, hom_id: fighter.hom_id ?? result.state.id, passive_id: result.state.id, trigger: event, effects: applied });
 }
+// ../data/homunculi.json
+var homunculi_default = {
+  homunculi: [
+    {
+      id: "cinder",
+      name: "Cinder",
+      rarity: "basic",
+      desc: "Sulfur-leaning familiar. Adds a burst of Power.",
+      buff_atk: 2,
+      buff_def: 0,
+      buff_hp: 0,
+      per_type: {
+        sulfur: {
+          power_flat: 2
+        },
+        mercury: {
+          tempo_flat: 1
+        },
+        sodium: {
+          guard_flat: 1
+        },
+        aether: {
+          power_flat: 2
+        },
+        vitriol: {
+          power_flat: 1,
+          dot_true: 1
+        },
+        gold: {
+          power_flat: 1,
+          reflect_pct: 0.02
+        }
+      }
+    },
+    {
+      id: "silphide",
+      name: "Silphide",
+      rarity: "basic",
+      desc: "Mercury familiar. Adds Tempo and slight evasion (reduces incoming).",
+      buff_atk: 0,
+      buff_def: 1,
+      buff_hp: 1,
+      per_type: {
+        mercury: {
+          tempo_flat: 3,
+          incoming_mult: 0.96
+        },
+        sulfur: {
+          tempo_flat: 1
+        },
+        sodium: {
+          incoming_mult: 0.98
+        },
+        aether: {
+          tempo_flat: 2
+        },
+        vitriol: {
+          tempo_flat: 1,
+          incoming_mult: 0.98
+        },
+        gold: {
+          tempo_flat: 1
+        }
+      }
+    },
+    {
+      id: "sodium",
+      name: "Sodi",
+      rarity: "basic",
+      desc: "Sodium familiar. Adds Guard and stabilizes extremes.",
+      buff_atk: 0,
+      buff_def: 2,
+      buff_hp: 2,
+      per_type: {
+        sodium: {
+          guard_flat: 3
+        },
+        sulfur: {
+          guard_flat: 1
+        },
+        mercury: {
+          guard_flat: 1
+        },
+        aether: {
+          guard_flat: 2
+        },
+        vitriol: {
+          guard_flat: 1
+        },
+        gold: {
+          guard_flat: 1,
+          reflect_pct: 0.01
+        }
+      }
+    },
+    {
+      id: "drakon",
+      name: "Drakon",
+      rarity: "advanced",
+      desc: "Aether familiar. Tweaks rules: raises type advantage slightly for you.",
+      buff_atk: 2,
+      buff_def: 1,
+      buff_hp: 0,
+      per_type: {
+        aether: {
+          type_adv_bonus: 0.1
+        },
+        sulfur: {
+          type_adv_bonus: 0.05
+        },
+        mercury: {
+          type_adv_bonus: 0.05
+        },
+        sodium: {
+          type_adv_bonus: 0.05
+        },
+        vitriol: {
+          type_adv_bonus: 0.05
+        },
+        gold: {
+          type_adv_bonus: 0.05
+        }
+      }
+    },
+    {
+      id: "pyritc",
+      name: "Pyro",
+      rarity: "advanced",
+      desc: "Vitriol familiar. Adds corrosion each round.",
+      buff_atk: 1,
+      buff_def: 0,
+      buff_hp: 2,
+      per_type: {
+        vitriol: {
+          dot_true: 2
+        },
+        sulfur: {
+          dot_true: 1
+        },
+        mercury: {
+          dot_true: 1
+        },
+        sodium: {
+          dot_true: 1
+        },
+        aether: {
+          dot_true: 2
+        },
+        gold: {
+          dot_true: 1
+        }
+      }
+    },
+    {
+      id: "chimera",
+      name: "Chimera",
+      rarity: "advanced",
+      desc: "Gold familiar. Adds reflect and discipline.",
+      buff_atk: 1,
+      buff_def: 2,
+      buff_hp: 0,
+      per_type: {
+        gold: {
+          reflect_pct: 0.06
+        },
+        sulfur: {
+          reflect_pct: 0.02
+        },
+        mercury: {
+          reflect_pct: 0.02
+        },
+        sodium: {
+          reflect_pct: 0.03
+        },
+        aether: {
+          reflect_pct: 0.02
+        },
+        vitriol: {
+          reflect_pct: 0.02
+        }
+      }
+    },
+    {
+      id: "nighty",
+      name: "Nighty",
+      rarity: "advanced",
+      desc: "Build-oriented familiar. Improves item effects slightly.",
+      buff_atk: 0,
+      buff_def: 2,
+      buff_hp: 3,
+      per_type: {
+        sulfur: {
+          item_effect_mult: 1.05
+        },
+        mercury: {
+          item_effect_mult: 1.05
+        },
+        sodium: {
+          item_effect_mult: 1.05
+        },
+        aether: {
+          item_effect_mult: 1.05
+        },
+        vitriol: {
+          item_effect_mult: 1.05
+        },
+        gold: {
+          item_effect_mult: 1.05
+        }
+      }
+    },
+    {
+      id: "mothy",
+      name: "Mothy",
+      rarity: "advanced",
+      desc: "Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).",
+      buff_atk: 2,
+      buff_def: 0,
+      buff_hp: 1,
+      per_type: {
+        sulfur: {
+          type_neutralize: 0.25
+        },
+        mercury: {
+          type_neutralize: 0.25
+        },
+        sodium: {
+          type_neutralize: 0.25
+        },
+        aether: {
+          type_neutralize: 0.25
+        },
+        vitriol: {
+          type_neutralize: 0.25
+        },
+        gold: {
+          type_neutralize: 0.25
+        }
+      }
+    }
+  ],
+  max_level: 10
+};
+// ../data/static/mutations.json
+var mutations_default = {
+  mutations: [
+    { id: "catalyst", name: "Catalyst", description: "Power +1.", effects: { power_flat: 1 } },
+    { id: "vitality", name: "Vitality", description: "HP +5.", effects: { hp_flat: 5 } },
+    { id: "resonance", name: "Resonance", description: "+3 percentage points to favorable elemental damage.", effects: { favorable_type_bonus: 0.03 } }
+  ]
+};
+
+// src/homunculus_experience.ts
+var PVE_VICTORY_XP = 20;
+var MAX_HOMUNCULUS_LEVEL = 10;
+function xpThreshold(level) {
+  if (!Number.isInteger(level) || level < 0 || level > MAX_HOMUNCULUS_LEVEL)
+    throw new RangeError("Invalid homunculus level");
+  if (level === 0)
+    return 0;
+  if (level === 1)
+    return 100;
+  if (level === 2)
+    return 300;
+  if (level === 3)
+    return 550;
+  return Math.round(800 * 1.25 ** (level - 1) - 700);
+}
+function levelFromXp(xp) {
+  if (!Number.isSafeInteger(xp) || xp < 0)
+    throw new RangeError("Invalid homunculus XP");
+  let level = 0;
+  while (level < MAX_HOMUNCULUS_LEVEL && xp >= xpThreshold(level + 1))
+    level++;
+  return level;
+}
+function owned(progress) {
+  return progress?.owned === true;
+}
+function grantXp(progress, amount) {
+  if (!owned(progress))
+    throw new Error("Homunculus is not owned");
+  if (!Number.isSafeInteger(amount) || amount < 0 || !Number.isSafeInteger(progress.xp) || progress.xp < 0 || !Number.isSafeInteger(progress.xp + amount))
+    throw new RangeError("Invalid homunculus XP");
+  const xp = progress.xp + amount;
+  return { ...progress, xp, level: levelFromXp(xp) };
+}
+function normalizeHomunculusProgress(value, originals, expedition, mutations) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return {};
+  const result = {};
+  for (const [id, raw] of Object.entries(value)) {
+    if (!originals.has(id) && !expedition.has(id) || !raw || typeof raw !== "object" || Array.isArray(raw))
+      continue;
+    const entry = raw;
+    const oldLevel = typeof entry.level === "number" && Number.isInteger(entry.level) && entry.level >= 0 && entry.level <= 10 ? entry.level : 0;
+    const validXp = typeof entry.xp === "number" && Number.isSafeInteger(entry.xp) && entry.xp >= 0;
+    const xp = Math.max(validXp ? entry.xp : 0, xpThreshold(oldLevel));
+    const progress = { level: levelFromXp(xp), xp, owned: originals.has(id) || entry.owned === true };
+    if (typeof entry.mutation_id === "string" && mutations.has(entry.mutation_id)) {
+      progress.mutation_id = entry.mutation_id;
+      progress.mutation_changed_at = typeof entry.mutation_changed_at === "number" && Number.isSafeInteger(entry.mutation_changed_at) && entry.mutation_changed_at >= 0 ? entry.mutation_changed_at : 0;
+    }
+    result[id] = progress;
+  }
+  return result;
+}
+
+// src/homunculus_catalog.ts
+var LEGACY_IDS = ["cinder", "silphide", "sodium", "drakon", "pyritc", "chimera", "nighty", "mothy"];
+var ELEMENTS = ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"];
+var SYNERGY_KEYS = new Set(["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"]);
+var object = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+var finite = (v) => typeof v === "number" && Number.isFinite(v);
+function buildHomunculusCombatCatalog(legacy, expedition) {
+  if (!object(legacy) || !Array.isArray(legacy.homunculi) || legacy.homunculi.length !== 8 || !object(expedition))
+    throw new Error("INVALID_HOMUNCULUS_CATALOG");
+  validatePassiveCatalog(expedition);
+  const seen = new Set;
+  const originals = legacy.homunculi.map((h) => {
+    if (!object(h) || !LEGACY_IDS.includes(h.id) || seen.has(h.id) || typeof h.name !== "string" || !h.name.trim() || ![h.buff_hp, h.buff_atk, h.buff_def].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 10) || !object(h.per_type) || Object.keys(h.per_type).length !== ELEMENTS.length || !ELEMENTS.every((type) => object(h.per_type[type]) && Object.entries(h.per_type[type]).every(([key, value]) => SYNERGY_KEYS.has(key) && finite(value) && value >= 0 && value <= 10)))
+      throw new Error("INVALID_HOMUNCULUS_CATALOG");
+    seen.add(h.id);
+    return structuredClone(h);
+  });
+  const additions = expedition.homunculi.map((h) => {
+    if (!object(h) || typeof h.id !== "string" || seen.has(h.id) || typeof h.name !== "string" || !h.name.trim() || !ELEMENTS.includes(h.type) || !Number.isInteger(h.rarity) || h.rarity < 1 || h.rarity > 10)
+      throw new Error("INVALID_HOMUNCULUS_CATALOG");
+    seen.add(h.id);
+    return { id: h.id, name: h.name, rarity: h.rarity, type: h.type, passive: structuredClone(h.passive), buff_hp: 1, buff_atk: 1, buff_def: 1, per_type: Object.fromEntries(ELEMENTS.map((type) => [type, {}])) };
+  });
+  return { originals, expedition: additions, all: [...structuredClone(originals), ...structuredClone(additions)] };
+}
+var catalog = buildHomunculusCombatCatalog(homunculi_default, expedition_homunculi_default);
+var mutationIds = new Set(mutations_default.mutations.map((entry) => entry.id));
+var originals = new Set(catalog.originals.map((h) => h.id));
+var expedition = new Set(catalog.expedition.map((h) => h.id));
+function homunculusCatalog() {
+  return structuredClone(catalog);
+}
+function legacyHomunculusIds() {
+  return new Set(originals);
+}
+function expeditionHomunculusIds() {
+  return new Set(expedition);
+}
+function ownsHomunculus(progress, id) {
+  if (typeof id !== "string" || !originals.has(id) && !expedition.has(id))
+    return false;
+  if (progress !== undefined && !object(progress))
+    return false;
+  const entry = object(progress) && Object.hasOwn(progress, id) ? progress[id] : undefined;
+  if (entry === undefined)
+    return originals.has(id);
+  if (!object(entry) || entry.owned !== undefined && typeof entry.owned !== "boolean" || entry.level !== undefined && (!Number.isInteger(entry.level) || entry.level < 0 || entry.level > 10) || entry.xp !== undefined && (!Number.isSafeInteger(entry.xp) || entry.xp < 0) || entry.mutation_id !== undefined && (typeof entry.mutation_id !== "string" || !mutationIds.has(entry.mutation_id)) || entry.mutation_changed_at !== undefined && (!Number.isSafeInteger(entry.mutation_changed_at) || entry.mutation_changed_at < 0))
+    return false;
+  if (expedition.has(id) && (entry.owned !== true || !Number.isInteger(entry.level) || !Number.isSafeInteger(entry.xp) || entry.mutation_id !== undefined && entry.level < 3 || levelFromXp(entry.xp) !== entry.level))
+    return false;
+  return true;
+}
+function combatHomunculusAllowed(progress, id) {
+  return ownsHomunculus(progress, id);
+}
+function homunculusAttackMultiplier(hom, defenderType, types, neutralizations = []) {
+  if (!object(hom) || typeof hom.id !== "string" || !ELEMENTS.includes(defenderType) || !Array.isArray(neutralizations) || neutralizations.some((n) => !finite(n) || n < 0 || n > 1))
+    throw new Error("INVALID_HOMUNCULUS_ATTACK");
+  if (originals.has(hom.id))
+    return 1;
+  const trusted = catalog.expedition.find((entry) => entry.id === hom.id);
+  if (!trusted || hom.type !== trusted.type || !object(types) || !object(types.effectiveness) || !object(types.effectiveness[trusted.type]))
+    throw new Error("INVALID_HOMUNCULUS_ATTACK");
+  const relation = types.effectiveness[trusted.type][defenderType];
+  if (!finite(relation) || ![0.5, 1, 2].includes(relation))
+    throw new Error("INVALID_HOMUNCULUS_ATTACK");
+  const base = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
+  return 1 + (base - 1) * (1 - Math.max(0, ...neutralizations));
+}
+function homunculusAttackMultiplierById(id, defenderType, types, neutralizations = []) {
+  if (originals.has(id))
+    return 1;
+  const hom = catalog.expedition.find((entry) => entry.id === id);
+  if (!hom)
+    throw new Error("INVALID_HOMUNCULUS_ATTACK");
+  return homunculusAttackMultiplier(hom, defenderType, types, neutralizations);
+}
 
 // src/solo_hunt_combat.ts
 import { createHmac as createHmac2 } from "crypto";
@@ -12721,12 +11636,12 @@ function deterministicDraw(secret, sessionId, turn, draw) {
     throw new Error("Invalid server RNG input");
   return createHmac2("sha256", secret).update(JSON.stringify(["solo-hunt-v1", sessionId, turn, draw])).digest().readUInt32BE(0) / 4294967296;
 }
-function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
-  if (!snapshot2 || typeof snapshot2.player_id !== "string" || !snapshot2.player_id || !Number.isSafeInteger(snapshot2.state_revision) || snapshot2.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some((k) => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)))
+function buildTrustedCombatSetup(snapshot, selection, catalogs, options = {}) {
+  if (!snapshot || typeof snapshot.player_id !== "string" || !snapshot.player_id || !Number.isSafeInteger(snapshot.state_revision) || snapshot.state_revision < 0 || !selection || !catalogs || Object.keys(selection).some((k) => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)))
     return { error: "UNTRUSTED_SETUP" };
   const entity = catalogs.entities?.find((v) => v.id === selection.entity_id);
-  const bossEntity = catalogs.entities?.find((v) => v.id === snapshot2.boss_entity_id);
-  const boss = catalogs.bosses?.find((v) => v.id === snapshot2.boss_id);
+  const bossEntity = catalogs.entities?.find((v) => v.id === snapshot.boss_entity_id);
+  const boss = catalogs.bosses?.find((v) => v.id === snapshot.boss_id);
   if (!entity || !bossEntity || !boss || !Array.isArray(selection.weapon_ids) || selection.weapon_ids.length !== 2 || !Array.isArray(selection.spell_ids) || selection.spell_ids.length !== 4 || new Set(selection.spell_ids).size !== 4 || !["attack", "defense"].includes(selection.mode))
     return { error: "UNTRUSTED_SETUP" };
   if (!Array.isArray(catalogs.spells) || !validBossCatalogEntry(boss, catalogs.spells))
@@ -12736,11 +11651,11 @@ function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
       return { error: "UNTRUSTED_SETUP" };
   if (!(selection.homunculus_id === null || selection.homunculus_id === undefined || selection.homunculus_id === "" || typeof selection.homunculus_id === "string"))
     return { error: "UNTRUSTED_SETUP" };
-  if (selection.homunculus_id && (!combatHomunculusAllowed(snapshot2.homunculus_progress, selection.homunculus_id) || !catalogs.homunculi?.some((v) => v.id === selection.homunculus_id)))
+  if (selection.homunculus_id && (!combatHomunculusAllowed(snapshot.homunculus_progress, selection.homunculus_id) || !catalogs.homunculi?.some((v) => v.id === selection.homunculus_id)))
     return { error: "UNTRUSTED_SETUP" };
   const defaults = catalogs.spells.filter((s) => s.type === entity.type).map((s) => s.id);
-  const learned = snapshot2.spell_progress?.learned_by_entity?.[entity.id] ?? [];
-  const equipped = snapshot2.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
+  const learned = snapshot.spell_progress?.learned_by_entity?.[entity.id] ?? [];
+  const equipped = snapshot.spell_progress?.equipped_by_mode?.[selection.mode]?.[entity.id] ?? defaults;
   if (!Array.isArray(learned) || !options.independentLoadout && (!Array.isArray(equipped) || JSON.stringify(equipped) !== JSON.stringify(selection.spell_ids)) || selection.spell_ids.some((id) => !catalogs.spells.some((s) => s.id === id && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(entity.type) && learned.includes(id)))))
     return { error: "UNTRUSTED_SETUP" };
   if (selection.spell_ids.some((id) => !castableSpell(catalogs.spells.find((s) => s.id === id), entity.type)))
@@ -12768,30 +11683,30 @@ function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
       return null;
     let highest = 0;
     for (const entry of entries) {
-      const record2 = progress[entry.id];
-      if (record2 === undefined)
+      const record = progress[entry.id];
+      if (record === undefined)
         continue;
-      if (!record2 || typeof record2 !== "object" || Array.isArray(record2) || record2.level !== undefined && (!Number.isInteger(record2.level) || record2.level < 0 || record2.level > 10))
+      if (!record || typeof record !== "object" || Array.isArray(record) || record.level !== undefined && (!Number.isInteger(record.level) || record.level < 0 || record.level > 10))
         return null;
-      highest = Math.max(highest, record2.level ?? 0);
+      highest = Math.max(highest, record.level ?? 0);
     }
     return highest;
   };
-  const ownedWeapon = highestLevel(snapshot2.item_progress, catalogs.items.filter((v) => v.slot === "build"));
-  const ownedHom = highestLevel(snapshot2.homunculus_progress, catalogs.homunculi.filter((h) => legacyHomunculusIds().has(h.id) || combatHomunculusAllowed(snapshot2.homunculus_progress, h.id)));
+  const ownedWeapon = highestLevel(snapshot.item_progress, catalogs.items.filter((v) => v.slot === "build"));
+  const ownedHom = highestLevel(snapshot.homunculus_progress, catalogs.homunculi.filter((h) => legacyHomunculusIds().has(h.id) || combatHomunculusAllowed(snapshot.homunculus_progress, h.id)));
   if (ownedWeapon === null || ownedHom === null)
     return { error: "UNTRUSTED_SETUP" };
-  const selectedWeapon = Math.max(0, ...selection.weapon_ids.map((id) => snapshot2.item_progress?.[id]?.level ?? 0));
-  const selectedHom = selection.homunculus_id ? snapshot2.homunculus_progress?.[selection.homunculus_id] : null;
+  const selectedWeapon = Math.max(0, ...selection.weapon_ids.map((id) => snapshot.item_progress?.[id]?.level ?? 0));
+  const selectedHom = selection.homunculus_id ? snapshot.homunculus_progress?.[selection.homunculus_id] : null;
   const mutationBonus = selectedHom?.mutation_id && catalogs.mutations?.some((v) => v.id === selectedHom.mutation_id) ? 0.05 : 0;
   const rating = 0.65 * Math.max(selectedWeapon / 10, ownedWeapon / 20) + 0.35 * Math.min(1, Math.max((selectedHom?.level ?? 0) / 10, ownedHom / 20) + mutationBonus);
   if (!Number.isFinite(rating) || rating < 0 || rating > 1)
     return { error: "UNTRUSTED_SETUP" };
   if (selection.weapon_ids[1]) {
-    const first = buildTrustedCombatSetup(snapshot2, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs, options);
+    const first = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[0], null] }, catalogs, options);
     if (first.error)
       return first;
-    const second = buildTrustedCombatSetup(snapshot2, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs, options);
+    const second = buildTrustedCombatSetup(snapshot, { ...selection, weapon_ids: [selection.weapon_ids[1], null] }, catalogs, options);
     if (second.error)
       return second;
     const base = validated.get(first), other = validated.get(second);
@@ -12800,8 +11715,8 @@ function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
     return Object.freeze(combined);
   }
   const item = selection.weapon_ids[0] ? catalogs.items.find((v) => v.id === selection.weapon_ids[0]) : null;
-  const itemProgress = snapshot2.item_progress?.[selection.weapon_ids[0]] ?? {};
-  const homProgress = snapshot2.homunculus_progress?.[selection.homunculus_id] ?? {};
+  const itemProgress = snapshot.item_progress?.[selection.weapon_ids[0]] ?? {};
+  const homProgress = snapshot.homunculus_progress?.[selection.homunculus_id] ?? {};
   if (typeof itemProgress !== "object" || Array.isArray(itemProgress) || typeof homProgress !== "object" || Array.isArray(homProgress))
     return { error: "UNTRUSTED_SETUP" };
   const validLevel = (v) => v === undefined || Number.isInteger(v) && v >= 0 && v <= 10;
@@ -12836,7 +11751,7 @@ function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
   if (item && itemProgress.fusion) {
     const donor = itemProgress.fusion.donor_id;
     const imprint = catalogs.balance?.forge_fusion_imprints?.[donor];
-    const donorLevel = snapshot2.item_progress?.[donor]?.level;
+    const donorLevel = snapshot.item_progress?.[donor]?.level;
     if (typeof itemProgress.fusion !== "object" || Array.isArray(itemProgress.fusion) || Object.keys(itemProgress.fusion).some((key) => key !== "donor_id") || typeof donor !== "string" || donor === item.id || !catalogs.items.some((entry) => entry.id === donor) || itemLevel < 3 || !Number.isInteger(donorLevel) || donorLevel < 3 || donorLevel > 10 || !imprint || Object.keys(imprint).length !== 1)
       return { error: "UNTRUSTED_SETUP" };
     for (const [key, amount] of Object.entries(imprint)) {
@@ -12860,7 +11775,7 @@ function buildTrustedCombatSetup(snapshot2, selection, catalogs, options = {}) {
   if (Object.entries(synergy).some(([key, value]) => !["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"].includes(key) || typeof value !== "number" || !Number.isFinite(value)))
     return { error: "UNSUPPORTED_MECHANIC" };
   const bonuses = { hp: (hom ? hom.buff_hp + homLevel : 0) + (mutation?.effects.hp_flat ?? 0), atk: (hom ? hom.buff_atk + Math.trunc(homLevel / 5) : 0) + (synergy.power_flat ?? 0) + (mutation?.effects.power_flat ?? 0), def: (hom ? hom.buff_def + Math.trunc(homLevel / 3) : 0) + (synergy.guard_flat ?? 0) + (mutation?.effects.guard_flat ?? 0) };
-  const result = { ancientHunt: options.ancientHunt === true, rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot2.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, ...hom?.passive ? { hom_passive_level: homLevel } : {}, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
+  const result = { ancientHunt: options.ancientHunt === true, rating, scaling: structuredClone(scaling), entity: structuredClone(entity), bossEntity: structuredClone(bossEntity), boss: structuredClone(boss), boss_signatures: structuredClone(boss.signature_pool.map((id) => catalogs.spells.find((s) => s.id === id))), spells: structuredClone(selection.spell_ids.map((id) => catalogs.spells.find((s) => s.id === id))), inspiration_catalog: structuredClone(inspirationCatalog), spell_ids: [...selection.spell_ids], types: structuredClone(catalogs.types), revision: snapshot.state_revision, itemEffects, item_id: item?.id ?? null, hom_id: hom?.id ?? null, ...hom?.passive ? { hom_passive_level: homLevel } : {}, hom_tempo: synergy.tempo_flat ?? 0, hom_synergy: structuredClone(synergy), hom_advantage: Math.max(0, Math.min(0.5, (synergy.type_adv_bonus ?? 0) + (mutation?.effects.favorable_type_bonus ?? 0))), bonuses };
   validated.set(result, structuredClone(result));
   return Object.freeze(result);
 }
@@ -12874,8 +11789,8 @@ function createCombatState(setup, serverRng) {
     player.expedition_passive = newExpeditionPassiveState(setup.hom_id, setup.hom_passive_level);
   const weapons = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects }, { id: null, effects: {} }];
   const activeSlot = weapons[0].id ? 1 : weapons[1].id ? 2 : 1;
-  const active2 = weapons[activeSlot - 1];
-  const activeEffects = scaleWeapon(active2.effects, setup.hom_id ? setup.hom_synergy.item_effect_mult : 1);
+  const active = weapons[activeSlot - 1];
+  const activeEffects = scaleWeapon(active.effects, setup.hom_id ? setup.hom_synergy.item_effect_mult : 1);
   player.atk += setup.bonuses.atk + Math.trunc(activeEffects.power_flat ?? 0);
   player.def += setup.bonuses.def + Math.trunc(activeEffects.guard_flat ?? 0);
   player.max_hp += setup.bonuses.hp;
@@ -12892,7 +11807,7 @@ function createCombatState(setup, serverRng) {
     bossFighter.hp = bossFighter.max_hp = Math.round(cap * (0.8 + 0.2 * setup.rating));
   }
   bossFighter.def = Math.round(bossFighter.def * (1 + setup.rating * setup.scaling.max_defense_bonus));
-  return { combat_rules_version: 2, physical_anomaly: null, player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active2.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
+  return { combat_rules_version: 2, physical_anomaly: null, player, boss: bossFighter, boss_id: setup.boss.id, boss_tier: setup.boss.tier, minion_config: minionConfig, minions: [], summoned: false, boss_actions_taken: 0, boss_intent: "Strike", boss_shield_config: { reduction: setup.boss.shield_reduction, turns: setup.boss.shield_turns, heal_ratio: setup.boss.shield_heal_ratio }, boss_shield_turns: 0, boss_shield_cooldown: 0, boss_shield_phases: [], selected_signature: signature.id, boss_signature: structuredClone(signature), boss_cooldowns: {}, fury_mult: setup.boss.fury_mult, fury_pending: false, power_turn_active: false, power_turn_used: false, power_turn_eligible: 0, spell_ids: [...setup.spell_ids], original_spell_ids: [...setup.spell_ids], spells: structuredClone(setup.spells), inspiration_catalog: structuredClone(setup.inspiration_catalog), inspiration_offers: [], temporary_spell_id: null, temporary_replaced_slot: null, types: structuredClone(setup.types), weapons: structuredClone(weapons), active_weapon_slot: activeSlot, item_id: active.id, item_effects: activeEffects, weapon_defenses: {}, other_defenses: {}, hom_id: setup.hom_id, hom_bonuses: setup.bonuses, hom_synergy: setup.hom_synergy, hom_advantage: setup.hom_advantage, hom_tempo: setup.hom_tempo, hom_spent: !setup.hom_id, hom_energy: 0, cooldowns: {}, turn: 0, rng_counter: serverRng ? 1 : 0, terminal_result: null };
 }
 function scaleWeapon(effects, multiplier = 1) {
   const factor = Math.max(0, Math.min(2, multiplier ?? 1));
@@ -13744,10 +12659,10 @@ function resolveCombatTurn(state, decision, rng) {
     } while (next.combat_rules_version === 2 && poisonFighters.some((fighter) => !ticked.has(fighter) && fighter.hp > 0 && fighter.status.poison > 0));
     if (next.hom_id && !next.hom_spent)
       next.hom_energy = Math.min(6, next.hom_energy + 1);
-  } catch (error2) {
-    if (error2 instanceof Error && error2.message === "UNSUPPORTED_MECHANIC")
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNSUPPORTED_MECHANIC")
       return { error: "UNSUPPORTED_MECHANIC" };
-    throw error2;
+    throw error;
   }
   if (next.player.expedition_passive)
     next.player.expedition_passive = finishPassiveExchange(next.player.expedition_passive);
@@ -13966,26 +12881,26 @@ function effectiveWeapon(item, progress, catalogs) {
   }
   return { ...structuredClone(item), forge_level: level, effects };
 }
-function fighter(snapshot2, catalogs) {
-  if (!snapshot2 || typeof snapshot2.player_id !== "string" || !snapshot2.player_id || typeof snapshot2.entity_id !== "string" || !Array.isArray(snapshot2.weapon_ids) || snapshot2.weapon_ids.length !== 2 || !Array.isArray(snapshot2.spell_ids) || snapshot2.spell_ids.length !== 4 || new Set(snapshot2.spell_ids).size !== 4 || !snapshot2.spell_ids.every((id) => typeof id === "string" && id.length > 0) || !(snapshot2.homunculus_id === null || typeof snapshot2.homunculus_id === "string"))
+function fighter(snapshot, catalogs) {
+  if (!snapshot || typeof snapshot.player_id !== "string" || !snapshot.player_id || typeof snapshot.entity_id !== "string" || !Array.isArray(snapshot.weapon_ids) || snapshot.weapon_ids.length !== 2 || !Array.isArray(snapshot.spell_ids) || snapshot.spell_ids.length !== 4 || new Set(snapshot.spell_ids).size !== 4 || !snapshot.spell_ids.every((id) => typeof id === "string" && id.length > 0) || !(snapshot.homunculus_id === null || typeof snapshot.homunculus_id === "string"))
     return null;
-  if (![snapshot2.item_progress ?? {}, snapshot2.homunculus_progress ?? {}, snapshot2.spell_progress ?? {}].every(object2) || snapshot2.weapon_ids.some((id) => id !== null && (typeof id !== "string" || !id)))
+  if (![snapshot.item_progress ?? {}, snapshot.homunculus_progress ?? {}, snapshot.spell_progress ?? {}].every(object2) || snapshot.weapon_ids.some((id) => id !== null && (typeof id !== "string" || !id)))
     return null;
-  if (snapshot2.homunculus_id !== null && !combatHomunculusAllowed(snapshot2.homunculus_progress, snapshot2.homunculus_id))
+  if (snapshot.homunculus_id !== null && !combatHomunculusAllowed(snapshot.homunculus_progress, snapshot.homunculus_id))
     return null;
-  const entity = catalogs.entities.find((e) => e?.id === snapshot2.entity_id);
+  const entity = catalogs.entities.find((e) => e?.id === snapshot.entity_id);
   if (!entity || typeof entity.name !== "string" || typeof entity.type !== "string" || !object2(entity.base_stats) || ![entity.base_stats.hp, entity.base_stats.power, entity.base_stats.guard].every(number) || entity.base_stats.hp <= 0 || entity.base_stats.power < 0 || entity.base_stats.guard < 0)
     return null;
-  const weapons = snapshot2.weapon_ids.map((id) => id === null ? null : catalogs.items.find((i) => i?.id === id && i.slot === "build"));
-  if (weapons.some((w) => w === undefined) || snapshot2.weapon_ids[0] !== null && snapshot2.weapon_ids[0] === snapshot2.weapon_ids[1])
+  const weapons = snapshot.weapon_ids.map((id) => id === null ? null : catalogs.items.find((i) => i?.id === id && i.slot === "build"));
+  if (weapons.some((w) => w === undefined) || snapshot.weapon_ids[0] !== null && snapshot.weapon_ids[0] === snapshot.weapon_ids[1])
     return null;
-  const hom = snapshot2.homunculus_id === null ? null : catalogs.homunculi.find((h) => h?.id === snapshot2.homunculus_id);
+  const hom = snapshot.homunculus_id === null ? null : catalogs.homunculi.find((h) => h?.id === snapshot.homunculus_id);
   if (hom === undefined)
     return null;
-  const spells = snapshot2.spell_ids.map((id) => catalogs.spells.find((s) => s?.id === id && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type))));
+  const spells = snapshot.spell_ids.map((id) => catalogs.spells.find((s) => s?.id === id && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type))));
   if (spells.some((s) => !s || !["attack", "support"].includes(s.category) || !number(s.power_mult) || s.power_mult < 0 || !number(s.accuracy) || s.accuracy < 0 || s.accuracy > 1 || !Number.isSafeInteger(s.cooldown_turns) || s.cooldown_turns < 0 || !Array.isArray(s.effects) || s.effects.some((e) => !object2(e) || typeof e.kind !== "string" || !number(e.value) || !["self", "enemy"].includes(e.target))))
     return null;
-  const itemProgress = snapshot2.item_progress ?? {}, homProgress = snapshot2.homunculus_progress ?? {};
+  const itemProgress = snapshot.item_progress ?? {}, homProgress = snapshot.homunculus_progress ?? {};
   if (Object.values(itemProgress).some((e) => !object2(e) || !validLevel(e.level)) || Object.values(homProgress).some((e) => !object2(e) || !validLevel(e.level)))
     return null;
   const entry = hom ? homProgress[hom.id] ?? {} : {};
@@ -14001,7 +12916,7 @@ function fighter(snapshot2, catalogs) {
     return null;
   const level = entry.level ?? 0, me = mutation?.effects ?? {};
   const hom_bonus = hom ? { hp_flat: hom.buff_hp + level + (me.hp_flat ?? 0), power_flat: hom.buff_atk + Math.trunc(level / 5) + (me.power_flat ?? 0), guard_flat: hom.buff_def + Math.trunc(level / 3) + (me.guard_flat ?? 0), favorable_type_bonus: me.favorable_type_bonus ?? 0 } : { hp_flat: 0, power_flat: 0, guard_flat: 0, favorable_type_bonus: 0 };
-  const base = structuredClone({ player_id: snapshot2.player_id, entity, weapons: weapons.map((w) => effectiveWeapon(w, itemProgress, catalogs)), homunculus: hom, spells, item_progress: itemProgress, homunculus_progress: homProgress, spell_progress: snapshot2.spell_progress ?? {}, active_weapon_slot: 1, spell_cooldowns: {}, hom_energy: 0, hom_spent: hom === null, ultra_used: false, id: entity.id, name: entity.name, type: entity.type, hp: 0, max_hp: 0, atk: 0, def: 0, hom_id: hom?.id ?? "", hom_name: hom?.name ?? "", hom_max_energy: 6, hom_ready_at: 3, hom_synergy: synergy, hom_bonus, mutation, mods: { atk_flat: 0, def_flat: 0 }, item_fx: {}, active_weapon: null, status: statusInitial(), spell_ids: [...snapshot2.spell_ids], original_spell_ids: [...snapshot2.spell_ids], inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false, inspiration_offers: [], inspiration_catalog: catalogs.spells.filter((s) => !snapshot2.spell_ids.includes(s.id) && ["attack", "support"].includes(s.category) && number(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && number(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isSafeInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e) => object2(e) && supportedEffects.has(e.kind) && validChance(e) && number(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["self", "enemy"].includes(e.target) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e))) && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type))).sort((a, b) => a.id.localeCompare(b.id)), temporary_spell_id: "", temporary_replaced_slot: -1, spell_hit_this_exchange: false, spell_hit_last_exchange: false, spell_neutralize_pending: 0, spell_neutralize_active: 0 });
+  const base = structuredClone({ player_id: snapshot.player_id, entity, weapons: weapons.map((w) => effectiveWeapon(w, itemProgress, catalogs)), homunculus: hom, spells, item_progress: itemProgress, homunculus_progress: homProgress, spell_progress: snapshot.spell_progress ?? {}, active_weapon_slot: 1, spell_cooldowns: {}, hom_energy: 0, hom_spent: hom === null, ultra_used: false, id: entity.id, name: entity.name, type: entity.type, hp: 0, max_hp: 0, atk: 0, def: 0, hom_id: hom?.id ?? "", hom_name: hom?.name ?? "", hom_max_energy: 6, hom_ready_at: 3, hom_synergy: synergy, hom_bonus, mutation, mods: { atk_flat: 0, def_flat: 0 }, item_fx: {}, active_weapon: null, status: statusInitial(), spell_ids: [...snapshot.spell_ids], original_spell_ids: [...snapshot.spell_ids], inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false, inspiration_offers: [], inspiration_catalog: catalogs.spells.filter((s) => !snapshot.spell_ids.includes(s.id) && ["attack", "support"].includes(s.category) && number(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && number(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isSafeInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e) => object2(e) && supportedEffects.has(e.kind) && validChance(e) && number(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["self", "enemy"].includes(e.target) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e))) && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type))).sort((a, b) => a.id.localeCompare(b.id)), temporary_spell_id: "", temporary_replaced_slot: -1, spell_hit_this_exchange: false, spell_hit_last_exchange: false, spell_neutralize_pending: 0, spell_neutralize_active: 0 });
   if (hom?.passive)
     base.expedition_passive = newExpeditionPassiveState(hom.id, level);
   base.name = displayName(base.name);
@@ -14022,11 +12937,11 @@ function createPvpCombatState(left, right, catalogs) {
     return { error: "UNTRUSTED_SETUP" };
   }
 }
-function createPvpFighter(snapshot2, catalogs) {
+function createPvpFighter(snapshot, catalogs) {
   if (!catalogs || ![catalogs.entities, catalogs.items, catalogs.spells, catalogs.homunculi].every(validCatalog) || catalogs.mutations !== undefined && !validCatalog(catalogs.mutations))
     return { error: "UNTRUSTED_SETUP" };
   try {
-    return fighter(snapshot2, catalogs) ?? { error: "UNTRUSTED_SETUP" };
+    return fighter(snapshot, catalogs) ?? { error: "UNTRUSTED_SETUP" };
   } catch {
     return { error: "UNTRUSTED_SETUP" };
   }
@@ -14953,18 +13868,18 @@ function normalSpellMultiplier(input) {
 }
 function normalDirectDamage(input) {
   const round = (n) => n < 0 ? -Math.round(-n) : Math.round(n);
-  const clamp2 = (n, low, high) => Math.max(low, Math.min(high, n));
+  const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
   let attack = Math.trunc(input.attack);
   if ((input.attack_down ?? 0) > 0)
     attack = round(attack * (1 - input.attack_down));
   if ((input.attack_boost ?? 0) > 0)
     attack = round(attack * (1 + input.attack_boost));
   let damage = Math.max(1, round((attack - Math.trunc(input.defense * 0.5)) * input.type_multiplier * input.power * (input.anomaly_multiplier ?? 1)));
-  damage = Math.max(1, round(damage * clamp2(input.incoming_multiplier ?? 1, 0.1, 1)));
+  damage = Math.max(1, round(damage * clamp(input.incoming_multiplier ?? 1, 0.1, 1)));
   if ((input.vulnerability ?? 0) > 0)
     damage = round(damage * (1 + input.vulnerability));
   if ((input.shield ?? 0) > 0)
-    damage = round(damage * (1 - input.shield * (1 - clamp2(input.dispel ?? 0, 0, 1)) * (1 - clamp2(input.pierce ?? 0, 0, 1))));
+    damage = round(damage * (1 - input.shield * (1 - clamp(input.dispel ?? 0, 0, 1)) * (1 - clamp(input.pierce ?? 0, 0, 1))));
   return input.ultra ? damage * 2 : damage;
 }
 function normalActionCooldowns(cooldowns, spell) {
@@ -15016,12 +13931,3918 @@ function publicIncomingDrains(combat, target) {
   return (combat?.pending_drains ?? []).filter((entry) => entry?.target === target && Number.isSafeInteger(entry.due_exchange) && entry.due_exchange > combat.turn).map((entry) => ({ remaining: entry.due_exchange - combat.turn }));
 }
 
+// src/pvp/projection.ts
+function sanitizePvpEvent(entry, viewer, seq) {
+  const rel = (v) => v === viewer ? "player" : v === "left" || v === "right" ? "enemy" : undefined;
+  const out = { id: seq, kind: entry.kind, turn: entry.turn };
+  for (const key of ["category", "verb", "suffix", "spell_id", "spell_name", "show_spell_link", "effectiveness", "actor_kind", "damage", "actual_damage", "amount", "hp", "status", "value", "previous", "remaining", "boosted", "result"])
+    if (["string", "number", "boolean"].includes(typeof entry[key]) || entry[key] === null)
+      out[key] = entry[key];
+  if (entry.side)
+    out.actor = rel(entry.side);
+  if (entry.target_side)
+    out.target = rel(entry.target_side);
+  if (entry.kind === "poison") {
+    out.source = rel(entry.source) ?? null;
+    out.victim = rel(entry.victim);
+  }
+  if (entry.kind === "hom_passive") {
+    out.actor = rel(entry.actor);
+    out.target = rel(entry.target);
+    for (const key of ["hom_id", "passive_id", "trigger"])
+      if (typeof entry[key] === "string")
+        out[key] = entry[key];
+    if (Array.isArray(entry.effects))
+      out.effects = entry.effects.filter((effect) => effect && ["left", "right"].includes(effect.target) && typeof effect.kind === "string" && typeof effect.amount === "number" && Number.isFinite(effect.amount)).map((effect) => ({ kind: effect.kind, target: rel(effect.target), amount: effect.amount, unit: effect.unit, duration: effect.duration, remaining: effect.remaining }));
+  }
+  if (["left", "right"].includes(entry.result))
+    out.result = rel(entry.result);
+  return out;
+}
+function projectPvpFighter(state, side, viewer, identity) {
+  const f = state.fighters[side];
+  const status = {}, statusView = publicCombatStatus(f, state.turn);
+  for (const k of ["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"])
+    if (typeof statusView.status[k] === "number")
+      status[k] = statusView.status[k];
+  if (f.status?.hybrid_mark)
+    status.hybrid_mark = { owner: f.status.hybrid_mark.owner === viewer ? "player" : "enemy", remaining: f.status.hybrid_mark.remaining };
+  const delayed_damage = (state.strategic_delayed ?? []).filter((entry) => entry.target === side).map((entry) => ({ amount: entry.amount, due_turn: entry.due_turn }));
+  return { player_id: identity.player_id, display_name: identity.display_name, entity_id: f.id, name: f.name, type: f.type, hp: f.hp, max_hp: f.max_hp, atk: f.atk, def: f.def, status, defense_presentation: statusView.defense_presentation, persistent_statuses: statusView.persistent_statuses, passive_modifiers: statusView.passive_modifiers, pending_drain: publicIncomingDrains(state, side), spell_neutralize_active: f.spell_neutralize_active, spell_neutralize_pending: f.spell_neutralize_pending, delayed_damage, active_weapon_slot: f.active_weapon_slot, weapon_ids: f.weapons.map((weapon) => weapon?.id ?? null), hom_id: f.hom_id, hom_name: f.hom_name, hom_energy: f.hom_energy, hom_max_energy: f.hom_max_energy, hom_ready_at: f.hom_ready_at, hom_spent: f.hom_spent, ultra_used: f.ultra_used, inspiration: f.inspiration, inspiration_pending: !!f.inspiration_pending, inspiration_used_this_battle: !!f.inspiration_used_this_battle, ...f.strategic_trap ? { trap: { value: f.strategic_trap.value, expires_turn: f.strategic_trap.expires_turn } } : {}, ...f.strategic_heal_suppression ? { heal_suppression: { expires_turn: f.strategic_heal_suppression.expires_turn } } : {}, ...side === viewer ? { spell_ids: [...f.spell_ids], spell_cooldowns: { ...f.spell_cooldowns }, inspiration_offers: f.inspiration_pending ? [...f.inspiration_offers] : [] } : {} };
+}
+
+// src/dungeon_combat.ts
+import { createHmac as createHmac3 } from "crypto";
+function dungeonSeason(timeMs) {
+  if (!Number.isSafeInteger(timeMs) || timeMs < 0)
+    throw new Error("INVALID_DUNGEON_TIME");
+  const date = new Date(timeMs);
+  if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999)
+    throw new Error("INVALID_DUNGEON_TIME");
+  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+function dungeonLeaderboard(db, season, playerId) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(season) || typeof playerId !== "string" || !playerId || playerId.length > 256)
+    throw new Error("INVALID_DUNGEON_LEADERBOARD");
+  const ranking = `WITH ranked AS (
+    SELECT b.player_id, p.display_name, b.cleared_floor, b.total_turns, b.achieved_at,
+      ROW_NUMBER() OVER (ORDER BY b.cleared_floor DESC, b.total_turns ASC, b.achieved_at ASC, b.player_id ASC) AS rank
+    FROM dungeon_monthly_best b JOIN players p ON p.player_id = b.player_id WHERE b.season = ?
+  )`;
+  const leaders = db.query(`${ranking} SELECT * FROM ranked ORDER BY rank LIMIT 50`).all(season);
+  const player = db.query(`${ranking} SELECT * FROM ranked WHERE player_id = ?`).get(season, playerId) ?? null;
+  return { season, leaders, player };
+}
+function generateDungeonEncounter(seed, runId, floor, enabled) {
+  if (!enabled || floor < 5 || floor % 10 === 0)
+    return null;
+  const draw = (domain) => createHmac3("sha256", seed).update(JSON.stringify(["dungeon-encounter-v1", runId, floor, domain])).digest().readUInt32BE(0);
+  if (draw("chance") >= Math.floor(4294967296 * 0.1))
+    return null;
+  return [
+    { kind: "corrupted_fog", label: "CORRUPTED FOG", hint: "Player starts vulnerable by 10%." },
+    { kind: "crystal_bastion", label: "CRYSTAL BASTION", hint: "Enemy starts with a 15% shield." },
+    { kind: "arcane_instability", label: "ARCANE INSTABILITY", hint: "Both fighters start with 10% attack boost." }
+  ][draw("variant") % 3];
+}
+function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous, elitesEnabled = false, tacticsEnabled = false, trackBase = elitesEnabled) {
+  if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1))
+    throw new Error("INVALID_DUNGEON_SETUP");
+  const draw = (domain) => createHmac3("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
+  const entities = [...catalogs.entities].filter((e) => e && typeof e.id === "string" && typeof e.type === "string" && e.base_stats && [e.base_stats.hp, e.base_stats.power, e.base_stats.guard].every((v) => Number.isSafeInteger(v) && v > 0)).sort((a, b) => a.id.localeCompare(b.id));
+  const homunculi = [...catalogs.homunculi].filter((h) => h && typeof h.id === "string").sort((a, b) => a.id.localeCompare(b.id));
+  if (!entities.length || !homunculi.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  const otherEntities = entities.filter((e) => e.id !== previous?.entity_id);
+  const otherHomunculi = homunculi.filter((h) => h.id !== previous?.homunculus_id);
+  const entityChoices = otherEntities.length ? otherEntities : entities;
+  const homChoices = otherHomunculi.length ? otherHomunculi : homunculi;
+  const entity = entityChoices[draw("entity") % entityChoices.length];
+  const homunculus = homChoices[draw("homunculus") % homChoices.length];
+  const candidates = catalogs.spells.filter((s) => s && typeof s.id === "string" && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type) && Number.isInteger(s.tower_level_required) && s.research_cost && Number.isInteger(s.research_time_sec) && s.research_time_sec > 0) && Array.isArray(s.effects) && s.effects.every((e) => (DUNGEON_GENERATED_EFFECTS.has(e.kind) || e.kind === "life_leech" && e.health_drain === true) && validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && Number.isFinite(s.accuracy) && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0).sort((a, b) => a.id.localeCompare(b.id));
+  const unique = [...new Map(candidates.map((s) => [s.id, s])).values()];
+  const advanced = unique.filter((s) => s.type === "universal" || s.type === "hybrid");
+  if (unique.length < 4 || !advanced.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  const attack = unique.filter((s) => s.category === "attack" && s.cooldown_turns === 0 && s.power_mult > 0);
+  if (!attack.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  const chosen = [attack[draw("basic") % attack.length]];
+  if (floor >= 8) {
+    const pairs = [];
+    for (const setup of unique)
+      for (const follow of unique) {
+        if (setup.id === follow.id || setup.id === chosen[0].id || follow.id === chosen[0].id)
+          continue;
+        const has = (s, k, target) => s.effects.some((e) => e.kind === k && (!target || e.target === target));
+        if (has(setup, "poison", "enemy") && has(follow, "bonus_if_poisoned") || has(setup, "shield", "self") && has(follow, "ward_convert") || has(setup, "vuln", "enemy") && follow.category === "attack" && follow.power_mult >= 0.9)
+          pairs.push([setup, follow]);
+      }
+    const usable = pairs.filter((pair) => pair.some((s) => ["universal", "hybrid"].includes(s.type)));
+    if (usable.length)
+      chosen.push(...usable[draw("combo") % usable.length]);
+  }
+  const advancedChoices = advanced.filter((s) => s.id !== chosen[0].id);
+  if (!advancedChoices.length)
+    throw new Error("INVALID_DUNGEON_CATALOG");
+  if (chosen.length === 1)
+    chosen.push(advancedChoices[draw("advanced") % advancedChoices.length]);
+  const remaining = unique.filter((s) => !chosen.some((c) => c.id === s.id));
+  while (chosen.length < 4)
+    chosen.push(remaining.splice(draw(`spell-${chosen.length}`) % remaining.length, 1)[0]);
+  if (previous?.spell_ids && chosen.every((s) => previous.spell_ids.includes(s.id))) {
+    const alternatives = remaining.filter((s) => !previous.spell_ids.includes(s.id));
+    if (alternatives.length)
+      chosen[3] = alternatives[draw("variety") % alternatives.length];
+  }
+  const scale = (base2, rate) => Math.min(90000, Math.round(base2 * Math.pow(1 + rate, floor - 1)));
+  if (previous && [previous.hp, previous.attack, previous.defense].some((v) => !Number.isSafeInteger(v) || v < 0 || v >= 1e5))
+    throw new Error("DUNGEON_DIFFICULTY_LIMIT");
+  const hp = Math.max(scale(entity.base_stats.hp, growth.hp), (previous?.hp ?? -1) + 1);
+  const npcAttack = Math.max(scale(entity.base_stats.power, growth.attack), (previous?.attack ?? -1) + 1);
+  const defense = Math.max(scale(entity.base_stats.guard, growth.defense), (previous?.defense ?? -1) + 1);
+  const base = { hp, attack: npcAttack, defense };
+  const variants = [
+    { kind: "bulwark", label: "BULWARK", modifiers: { hp: 1.2, attack: 1, defense: 1.12 } },
+    { kind: "reaver", label: "REAVER", modifiers: { hp: 1.12, attack: 1.1, defense: 1 } },
+    { kind: "alchemist", label: "ALCHEMIST", modifiers: { hp: 1.15, attack: 1.05, defense: 1.05 } }
+  ];
+  const elite = elitesEnabled && floor % 10 === 0 ? variants[draw("elite") % variants.length] : null;
+  const effective = elite ? Object.fromEntries(Object.entries(base).map(([key, value]) => [key, Math.min(99999, Math.round(value * elite.modifiers[key]))])) : base;
+  const personalities = ["AGGRESSIVE", "DEFENSIVE", "OPPORTUNIST", "ALCHEMIST"];
+  const npc_personality = elite ? { bulwark: "DEFENSIVE", reaver: "AGGRESSIVE", alchemist: "ALCHEMIST" }[elite.kind] : personalities[draw("personality") % personalities.length];
+  return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map((s) => s.id), ...effective, ...trackBase ? { base_stats: base, elite } : {}, ...tacticsEnabled ? { npc_personality } : {} };
+}
+function dungeonPreviousBase(combat, homunculi) {
+  const base = combat.npc_base_stats;
+  if (!base)
+    return null;
+  if (![base.hp, base.attack, base.defense].every((n) => Number.isSafeInteger(n) && n >= 0))
+    throw new Error("INVALID_DUNGEON_BASE");
+  if (combat.npc_base_stats_version === 2)
+    return { hp: base.hp, attack: base.attack, defense: base.defense };
+  if (combat.npc_base_stats_version !== undefined || !Number.isSafeInteger(combat.floor) || combat.floor < 1 || combat.floor > 1000)
+    throw new Error("INVALID_DUNGEON_BASE");
+  const hom = homunculi.find((h) => h.id === combat.npc?.hom_id);
+  if (!hom)
+    throw new Error("INVALID_DUNGEON_BASE");
+  const level = Math.min(10, Math.floor((combat.floor - 1) / 3));
+  const result = { hp: base.hp - (hom.buff_hp ?? 0) - level, attack: base.attack - (hom.buff_atk ?? 0) - Math.floor(level / 5), defense: base.defense - (hom.buff_def ?? 0) - Math.floor(level / 3) };
+  if (Object.values(result).some((n) => !Number.isSafeInteger(n) || n < 1))
+    throw new Error("INVALID_DUNGEON_BASE");
+  return result;
+}
+function chooseDungeonNpcSpell(floor, equippedIds, spells, cooldowns, npc, target, roll, context = {}) {
+  if (!Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !Array.isArray(equippedIds) || equippedIds.length !== 4 || new Set(equippedIds).size !== 4 || !Array.isArray(spells) || !cooldowns || typeof cooldowns !== "object" || !npc || !target || typeof roll !== "number" || !Number.isFinite(roll) || roll < 0 || roll >= 1)
+    throw new Error("INVALID_DUNGEON_DECISION");
+  const legal = equippedIds.map((id) => spells.find((s) => s?.id === id)).filter((s) => s && (npc.expedition_types ? expeditionSpellLegal(s, npc.expedition_types) : s.type === npc.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(npc.type)) && Array.isArray(s.effects) && s.effects.every((e) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && Number.isFinite(s.power_mult) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Number.isInteger(cooldowns[s.id] ?? 0) && (cooldowns[s.id] ?? 0) === 0);
+  if (legal.length === 0)
+    throw new Error("NO_AVAILABLE_DUNGEON_SPELL");
+  if (floor <= 3 && !npc.expedition_types)
+    return legal[Math.floor(roll * legal.length)].id;
+  if (npc.expedition_types && context.tactical_tier === "normal") {
+    const attacks = legal.filter((s) => s.category === "attack");
+    const pool = attacks.length ? attacks : legal;
+    return pool[Math.floor(roll * pool.length)].id;
+  }
+  const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
+  const enemyShield = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "shield") : enemyStatus.shield ?? 0;
+  const enemyReflect = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "reflect") : enemyStatus.reflect ?? 0;
+  const allMoves = equippedIds.map((id) => spells.find((s) => s?.id === id)).filter(Boolean);
+  const has = (s, kind) => s.effects.some((e) => e.kind === kind);
+  const poisonFollow = allMoves.some((s) => has(s, "bonus_if_poisoned") && (cooldowns[s.id] ?? 0) <= 1);
+  const wardFollow = allMoves.some((s) => has(s, "ward_convert") && (cooldowns[s.id] ?? 0) <= 1);
+  const estimate = (s) => {
+    const relation = context.types?.effectiveness?.[s.type]?.[target.type] ?? 1;
+    let typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
+    if (s.type === "hybrid") {
+      const factor = (type) => {
+        const value = context.types?.effectiveness?.[type]?.[target.type] ?? 1;
+        return value > 1 ? 1.25 : value < 1 ? 0.8 : 1;
+      };
+      typeMultiplier = Math.max(0.8, Math.min(1.25, Math.pow(factor(s.primary_type), 0.65) * Math.pow(factor(s.secondary_type), 0.35)));
+    } else if (context.personality && s.type === "universal")
+      typeMultiplier = 1;
+    const poison = s.effects.find((e) => e.kind === "bonus_if_poisoned");
+    const power = s.power_mult * (poison && enemyStatus.poison > 0 ? 1 + poison.value : 1);
+    const base = Math.max(1, Math.round(((npc.atk ?? 0) * (1 + (ownStatus.atk_boost ?? 0) - (ownStatus.atk_down ?? 0)) - Math.trunc((target.def ?? 0) * 0.5)) * typeMultiplier * physicalAnomalyMultiplier(context.anomaly, npc.type) * power * (1 + (enemyStatus.vuln ?? 0))));
+    return enemyShield > 0 ? Math.max(0, Math.round(base * (1 - enemyShield))) : base;
+  };
+  const lethalAvailable = legal.some((s) => s.category === "attack" && estimate(s) >= target.hp && s.accuracy > 0);
+  const scored = legal.map((spell) => {
+    let score = spell.category === "attack" ? spell.power_mult * spell.accuracy * 100 : 20;
+    if (npc.expedition_types && spell.category === "attack")
+      score += estimate(spell) * spell.accuracy * 2;
+    if (lethalAvailable && spell.category === "attack" && estimate(spell) >= target.hp)
+      score += 1000;
+    for (const effect of spell.effects) {
+      if (effect.kind === "heal")
+        score += npc.hp < npc.max_hp * 0.6 ? Math.min(effect.value ?? 0, npc.max_hp - npc.hp) * 3 : -70;
+      if (effect.kind === "shield" && !(ownStatus.shield > 0))
+        score += 35 + (floor >= 8 && wardFollow ? 75 : 0);
+      if (effect.kind === "poison" && effect.target === "enemy" && !(enemyStatus.poison > 0))
+        score += npc.combat_rules_version === 2 ? (effect.chance ?? 1) * (35 + Math.min(40, Math.round((target.max_hp ?? 0) * 0.135)) + (floor >= 8 && poisonFollow ? 80 : 0)) : 35 + (floor >= 8 && poisonFollow ? 80 : 0);
+      if (effect.kind === "burn" && !target.burn_effect)
+        score += (effect.chance ?? 1) * (30 + 100 * Math.max(effectiveTimedDefense(target, "shield"), effectiveTimedDefense(target, "reflect")));
+      if (effect.kind === "lethargy" && !target.lethargy_effect)
+        score += (effect.chance ?? 1) * 45;
+      if (effect.kind === "vuln" && effect.target === "enemy" && !(enemyStatus.vuln > 0))
+        score += 25;
+      if (floor >= 8 && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(effect.kind) && enemyStatus.poison > 0)
+        score += 65;
+      if (floor >= 8 && ["bonus_if_shielded", "ward_convert"].includes(effect.kind) && ownStatus.shield > 0)
+        score += 90;
+      if (npc.expedition_types && effect.kind === "hybrid_mark" && !enemyStatus.hybrid_mark && allMoves.some((s) => s.id !== spell.id && has(s, "bonus_if_marked") && (cooldowns[s.id] ?? 0) <= 1))
+        score += 75;
+      if (npc.expedition_types && effect.kind === "bonus_if_marked" && enemyStatus.hybrid_mark?.owner === "npc")
+        score += 90;
+      if (effect.kind === "counter_trap")
+        score += npc.strategic_trap ? -100 : 20;
+      if (effect.kind === "hom_energy_siphon")
+        score += npc.hom_id && target.hom_id && target.hom_energy > 0 && npc.hom_energy < 6 ? 25 : -60;
+      if (effect.kind === "physical_anomaly") {
+        const anomaly = context.anomaly;
+        const proposed = effect.favored_type === undefined ? spell : effect;
+        score += proposed.favored_type === npc.type ? 30 : 0;
+        score += proposed.weakened_type === target.type ? 30 : 0;
+        score -= proposed.favored_type === target.type ? 60 : 0;
+        score -= proposed.weakened_type === npc.type ? 60 : 0;
+        if (anomaly?.favored_type === proposed.favored_type && anomaly?.weakened_type === proposed.weakened_type)
+          score -= 120;
+        else if (anomaly?.favored_type === npc.type || anomaly?.weakened_type === target.type)
+          score -= 80;
+      }
+      if (effect.kind === "cooldown_jam" && floor >= 15)
+        score += (!npc.expedition_types || !context.tactical_tier) && (target.spell_ids ?? []).some((id) => (target.cooldowns?.[id] ?? 0) === 0 && spells.some((s) => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1)) ? 35 : 0;
+      if (floor >= 15 && effect.kind === "atk_down" && !(enemyStatus.atk_down > 0))
+        score += 25;
+    }
+    if (floor >= 15 && enemyStatus.vuln > 0 && spell.category === "attack")
+      score += spell.power_mult * 20;
+    if (floor >= 8 && spell.category === "support" && npc.hp < npc.max_hp * 0.3 && !has(spell, "heal"))
+      score -= 35;
+    if (npc.expedition_types && context.tactical_tier && floor >= 5) {
+      for (const effect of spell.effects) {
+        if (["shield", "reflect", "atk_boost"].includes(effect.kind) && effect.target === "self" && (ownStatus[effect.kind] ?? 0) > 0)
+          score -= 100;
+        if (["poison", "vuln", "atk_down"].includes(effect.kind) && effect.target === "enemy" && (enemyStatus[effect.kind] ?? 0) > 0)
+          score -= 75;
+      }
+      if (floor >= 8) {
+        const debuffed = ["poison", "stun", "vuln", "atk_down", "misalign_next"].some((k) => (ownStatus[k] ?? 0) > 0) || !!npc.burn_effect || !!npc.lethargy_effect;
+        if (has(spell, "cleanse_one") || has(spell, "debuff_transfer"))
+          score += debuffed ? 175 : -60;
+        if (spell.category === "attack" && enemyReflect > 0)
+          score -= Math.min(150, estimate(spell) * enemyReflect * (npc.hp < npc.max_hp * 0.4 ? 5 : 2));
+        if ((has(spell, "pierce_ward") || has(spell, "ward_dispel")) && enemyShield > 0)
+          score += 65;
+      }
+      if (floor >= 15 && spell.category === "attack")
+        score += estimate(spell) * spell.accuracy;
+    }
+    const personality = context.personality;
+    if (personality) {
+      const attack = spell.category === "attack", injured = npc.hp < npc.max_hp, shielded = ownStatus.shield > 0;
+      const usefulHeal = spell.effects.some((e) => e.kind === "heal" && e.target === "self" && injured);
+      const usefulShield = spell.effects.some((e) => e.kind === "shield" && e.target === "self" && !shielded);
+      if (spell.category === "support" && has(spell, "heal") && !injured)
+        score -= 1000;
+      if (personality === "AGGRESSIVE" && attack)
+        score += 35 + Math.round(25 * spell.accuracy);
+      if (personality === "DEFENSIVE") {
+        if (usefulHeal && npc.hp < npc.max_hp * 0.8)
+          score += 60;
+        else if (usefulShield && npc.hp < npc.max_hp * 0.8)
+          score += 45;
+        else if (attack && (!injured || shielded))
+          score += 35;
+      }
+      if (personality === "OPPORTUNIST") {
+        if (attack && (enemyStatus.poison > 0 && spell.effects.some((e) => ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(e.kind)) || enemyStatus.hybrid_mark?.owner === "npc" || enemyStatus.vuln > 0 || target.hp < target.max_hp * 0.35))
+          score += 60;
+        if (spell.category === "support" && spell.effects.some((e) => ["poison", "vuln"].includes(e.kind) && e.target === "enemy") && !allMoves.some((s) => s.id !== spell.id && s.category === "attack" && (cooldowns[s.id] ?? 0) <= 1))
+          score -= 120;
+      }
+      if (personality === "ALCHEMIST") {
+        const availableFollow = (kind) => allMoves.some((s) => s.id !== spell.id && (cooldowns[s.id] ?? 0) <= 1 && has(s, kind));
+        const combo = spell.effects.some((e) => e.kind === "poison" && e.target === "enemy" && !(enemyStatus.poison > 0) && availableFollow("bonus_if_poisoned") || e.kind === "shield" && e.target === "self" && !shielded && availableFollow("ward_convert"));
+        if (spell.category === "support" && spell.effects.some((e) => e.kind === "poison" && e.target === "enemy") && !combo)
+          score -= 120;
+        const strategic = spell.effects.some((e) => ["vuln", "atk_down", "cooldown_jam"].includes(e.kind) && e.target === "enemy" && !(enemyStatus[e.kind] > 0));
+        const anomaly = spell.effects.some((e) => e.kind === "physical_anomaly") && spell.favored_type === npc.type && !(context.anomaly?.favored_type === spell.favored_type && context.anomaly?.weakened_type === spell.weakened_type);
+        if (combo || anomaly)
+          score += 60;
+        else if (strategic)
+          score += 30;
+      }
+    }
+    return { id: spell.id, score };
+  });
+  const best = Math.max(...scored.map((s) => s.score));
+  const tied = scored.filter((s) => s.score === best);
+  return tied[Math.floor(roll * tied.length)].id;
+}
+var DUNGEON_GENERATED_EFFECTS = new Set(["burn", "lethargy", "atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
+var DUNGEON_EFFECTS = new Set([...DUNGEON_GENERATED_EFFECTS, "hom_stun", "type_neutralize", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "ward_dispel", "shield_by_order", "poison_on_reflect"]);
+var validEffect = (e) => e && DUNGEON_EFFECTS.has(e.kind) && validChance(e) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["threshold", "max_heal", "second_value"].every((k) => e[k] === undefined || typeof e[k] === "number" && Number.isFinite(e[k]) && e[k] >= 0) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
+var DUNGEON_ITEMS = new Set(["power_flat", "guard_flat", "true_on_hit", "dot_true", "vuln_on_hit", "tempo_flat", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
+function expeditionSpellLegal(s, types) {
+  if (!s || !Array.isArray(types) || types.length !== 2)
+    return false;
+  if (s.type === "hybrid")
+    return types.includes(s.primary_type) && types.includes(s.secondary_type) && s.primary_type !== s.secondary_type && types.every((t) => s.eligible_types?.includes(t));
+  if (s.type === "universal")
+    return types.every((t) => s.eligible_types?.includes(t));
+  return types.includes(s.type);
+}
+function expeditionSpellSupported(s, types) {
+  return expeditionSpellLegal(s, types) && dungeonInspirationCandidatesForTypes(types, [], [s]).length === 1;
+}
+function dungeonInspirationCandidatesForTypes(types, equipped, spells) {
+  return spells.filter((s) => expeditionSpellLegal(s, types) && types.some((t) => dungeonInspirationCandidates(t, equipped, [s]).length === 1));
+}
+function dungeonEliteTrait(state) {
+  if (state.elite_traits_enabled !== true || state.elites_enabled !== true || !Number.isInteger(state.floor) || state.floor % 10 !== 0)
+    return null;
+  const traits = { bulwark: { trait: "aegis_protocol", label: "AEGIS PROTOCOL", status: "shield", value: 0.15, target: "npc", hint: "At 70% HP or below, gains 15% shield." }, reaver: { trait: "bloodrush", label: "BLOODRUSH", status: "atk_boost", value: 0.15, target: "npc", hint: "At 50% HP or below, gains 15% attack for the next spell hit." }, alchemist: { trait: "catalytic_exposure", label: "CATALYTIC EXPOSURE", status: "vuln", value: 0.12, target: "player", hint: "A damaging spell hit can apply 12% vulnerability." } };
+  const kind = state.elite?.kind, trait = traits[kind];
+  const expected2 = { bulwark: [1.2, 1, 1.12], reaver: [1.12, 1.1, 1], alchemist: [1.15, 1.05, 1.05] };
+  const modifiers = state.elite?.modifiers;
+  return trait && state.elite?.label === kind.toUpperCase() && modifiers && [modifiers.hp, modifiers.attack, modifiers.defense].every((value, i) => value === expected2[kind][i]) ? trait : null;
+}
+function dungeonInspirationCandidates(type, equipped, spells) {
+  const seen = new Set;
+  return spells.filter((s) => s && typeof s.id === "string" && !seen.has(s.id) && !equipped.includes(s.id) && (s.type === type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(type)) && ["attack", "support"].includes(s.category) && Number.isFinite(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && !!seen.add(s.id));
+}
+function hydrateDungeonInspiration(state, spells) {
+  if (!state?.player || !state?.npc || !Array.isArray(spells))
+    return false;
+  for (const who of ["player", "npc"]) {
+    const fighter2 = state[who];
+    if (!Array.isArray(fighter2.spell_ids) || fighter2.spell_ids.length !== 4 || typeof fighter2.type !== "string")
+      return false;
+    const candidates = dungeonInspirationCandidates(fighter2.type, fighter2.original_spell_ids ?? fighter2.spell_ids, spells);
+    if (candidates.length < 3)
+      return false;
+    state.inspiration_catalog ??= {};
+    state.inspiration_catalog[who] = candidates;
+    fighter2.inspiration ??= 0;
+    fighter2.inspiration_pending ??= false;
+    fighter2.inspiration_used ??= false;
+    fighter2.inspiration_offers ??= [];
+    fighter2.original_spell_ids ??= [...fighter2.spell_ids];
+    fighter2.temporary_spell_id ??= null;
+    fighter2.temporary_replaced_slot ??= null;
+  }
+  state.inspiration_catalog_version = 2;
+  return true;
+}
+function restoreDungeonInspiration(state, fighter2) {
+  if (fighter2.temporary_spell_id) {
+    delete fighter2.cooldowns[fighter2.temporary_spell_id];
+    fighter2.spell_ids = [...fighter2.original_spell_ids];
+    const id = fighter2.temporary_spell_id;
+    if (!state.player.spell_ids.includes(id) && !state.npc.spell_ids.includes(id))
+      state.spells = state.spells.filter((s) => s.id !== id);
+  }
+  fighter2.inspiration_pending = false;
+  fighter2.inspiration_offers = [];
+  fighter2.temporary_spell_id = null;
+  fighter2.temporary_replaced_slot = null;
+}
+function createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot = 0) {
+  if (!setup?.entity?.base_stats || !Array.isArray(setup.spell_ids) || setup.spell_ids.length !== 4 || new Set(setup.spell_ids).size !== 4 || !enemy || !catalogs || !Array.isArray(enemy.spell_ids) || enemy.spell_ids.length !== 4 || !Array.isArray(catalogs.spells) || !Array.isArray(catalogs.homunculi) || !catalogs.types?.effectiveness)
+    return { error: "UNTRUSTED_SETUP" };
+  const equipment = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects ?? {} }, { id: null, effects: {} }];
+  if (!Array.isArray(equipment) || equipment.length !== 2 || equipment.some((w) => !w || !w.effects || Object.entries(w.effects).some(([key, value]) => !DUNGEON_ITEMS.has(key) && value !== 0)))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const factor = Math.max(0, Math.min(2, setup.hom_id ? setup.hom_synergy?.item_effect_mult ?? 1 : 1));
+  const weapons = equipment.map((w) => ({ id: w.id ?? null, effects: Object.fromEntries(Object.entries(w.effects).map(([key, value]) => [key, value * factor])) }));
+  const activeSlot = [1, 2].includes(previousActiveSlot) && weapons[previousActiveSlot - 1]?.id ? previousActiveSlot : weapons[0].id ? 1 : weapons[1].id ? 2 : 0;
+  const effects = activeSlot ? weapons[activeSlot - 1].effects : {};
+  const spells = [...setup.spell_ids, ...enemy.spell_ids].map((id) => catalogs.spells.find((s) => s.id === id));
+  if (spells.some((s) => !s || !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const expedition2 = enemy.combat_mode === "expedition";
+  if (expedition2 && (!Array.isArray(enemy.types) || enemy.types.length !== 2 || enemy.type !== enemy.types[0] || enemy.types[0] === enemy.types[1] || enemy.types.some((t) => !catalogs.types.effectiveness[t]) || !expeditionCaptures.some((h) => h.id === enemy.homunculus_id) || !Number.isInteger(enemy.homunculus_level) || enemy.homunculus_level < 0 || enemy.homunculus_level > 10 || new Set(enemy.spell_ids).size !== 4))
+    return { error: "UNTRUSTED_SETUP" };
+  if (spells.some((s, i) => i >= 4 && expedition2 ? !expeditionSpellSupported(s, enemy.types) : !(s.type === (i < 4 ? setup.entity.type : enemy.type) || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(i < 4 ? setup.entity.type : enemy.type))))
+    return { error: "UNTRUSTED_SETUP" };
+  const hom = expedition2 ? expeditionCaptures.find((h) => h.id === enemy.homunculus_id) : catalogs.homunculi.find((h) => h.id === enemy.homunculus_id);
+  if (!expedition2 && (!hom || !Number.isInteger(enemy.homunculus_level) || enemy.homunculus_level < 0 || enemy.homunculus_level > 10) || [enemy.hp, enemy.attack, enemy.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
+    return { error: "UNTRUSTED_SETUP" };
+  if (enemy.base_stats && [enemy.base_stats.hp, enemy.base_stats.attack, enemy.base_stats.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
+    return { error: "UNTRUSTED_SETUP" };
+  const stats = setup.entity.base_stats, bonus = setup.bonuses ?? {};
+  const npcTempo = catalogs.entities?.find((entity) => entity.id === enemy.entity_id)?.base_stats?.tempo ?? 10;
+  const npcHp = enemy.hp + (hom?.buff_hp ?? 0) + enemy.homunculus_level;
+  const player = { id: setup.entity.id, type: setup.entity.type, tempo: stats.tempo ?? 10, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + Math.trunc(effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + Math.trunc(effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
+  if (setup.hom_passive_level !== undefined)
+    player.expedition_passive = newExpeditionPassiveState(setup.hom_id, setup.hom_passive_level);
+  const npcBaseAttack = enemy.attack - (expedition2 ? enemy.item_power_allocated : 0);
+  const npcBaseGuard = enemy.defense - (expedition2 ? enemy.item_guard_allocated : 0);
+  const npc = { id: enemy.entity_id, type: enemy.type, ...expedition2 ? { expedition_types: [...enemy.types] } : {}, tempo: npcTempo, hp: npcHp, max_hp: npcHp, atk: npcBaseAttack + (expedition2 ? enemy.item_power_allocated : 0) + (hom?.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: npcBaseGuard + (expedition2 ? enemy.item_guard_allocated : 0) + (hom?.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom?.id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
+  if (expedition2)
+    npc.expedition_passive = newExpeditionPassiveState(enemy.homunculus_id, enemy.homunculus_level);
+  if (!enemy.elite && enemy.special_encounter?.kind === "corrupted_fog")
+    Object.assign(player.status, { vuln: 0.1 });
+  if (!enemy.elite && enemy.special_encounter?.kind === "crystal_bastion")
+    Object.assign(npc.status, { shield: 0.15 });
+  if (!enemy.elite && enemy.special_encounter?.kind === "arcane_instability") {
+    Object.assign(player.status, { atk_boost: 0.1 });
+    Object.assign(npc.status, { atk_boost: 0.1 });
+  }
+  if (enemy.elite) {
+    npc.hp = npc.max_hp = Math.min(99999, npc.max_hp);
+    npc.atk = Math.min(99999, npc.atk);
+    npc.def = Math.min(99999, npc.def);
+  }
+  const inspirationCatalog = { player: dungeonInspirationCandidates(player.type, player.spell_ids, catalogs.spells), npc: expedition2 ? dungeonInspirationCandidatesForTypes(enemy.types, npc.spell_ids, catalogs.spells) : dungeonInspirationCandidates(npc.type, npc.spell_ids, catalogs.spells) };
+  if (inspirationCatalog.player.length < 3 || inspirationCatalog.npc.length < 3)
+    return { error: "UNSUPPORTED_MECHANIC" };
+  for (const fighter2 of [player, npc])
+    Object.assign(fighter2, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter2.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
+  return { combat_rules_version: 2, player, npc, ...!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}, ...enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}, ...enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}, inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, hom_synergy: structuredClone(setup.hom_id ? setup.hom_synergy ?? {} : {}), hom_advantage: setup.hom_id ? setup.hom_advantage ?? 0 : 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
+}
+function createDungeonBlessing(seed, runId, floor, hasHom) {
+  if (floor < 3 || floor % 3 !== 0)
+    return null;
+  const tier = Math.min(7, Math.floor(floor / 3));
+  const offers = ["elemental_surge", hasHom ? "homunculus_resonance" : "player_shield", "toxin_ward"];
+  for (let i = offers.length - 1;i > 0; i--) {
+    const draw = createHmac3("sha256", seed).update(JSON.stringify(["dungeon-blessing-v1", runId, floor, i])).digest().readUInt32BE(0);
+    const j = draw % (i + 1);
+    [offers[i], offers[j]] = [offers[j], offers[i]];
+  }
+  return { tier, offers, pending: true, selected: null, spell_count: 0, procs: 0, poison_remainder: 0, shield_used: false };
+}
+function publicDungeonBlessing(blessing) {
+  if (!blessing)
+    return null;
+  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * (tier - 1));
+  const metadata = {
+    elemental_surge: { id: "elemental_surge", name: "Elemental Surge", description: `Direct elemental spell damage +${pct}%.` },
+    homunculus_resonance: { id: "homunculus_resonance", name: "Homunculus Resonance", description: `+1 hom energy after ${tier < 3 ? 3 : 2} successful spells, up to ${tier < 5 ? 1 : 2} times this floor.` },
+    player_shield: { id: "player_shield", name: "Protective Ward", description: `Reduce one incoming direct hit by ${pct}%.` },
+    toxin_ward: { id: "toxin_ward", name: "Toxin Ward", description: `Poison tick damage reduced by ${ward}%, minimum 1 damage.` }
+  };
+  return { tier, pending: blessing.pending, offers: blessing.pending ? blessing.offers.map((id) => metadata[id]) : [], selected: blessing.selected ? metadata[blessing.selected] : null };
+}
+function resolveDungeonBlessing(state, decision) {
+  const b = state?.blessing;
+  if (!state || state.terminal_result || !b?.pending || !decision || typeof decision !== "object" || Array.isArray(decision) || Object.keys(decision).sort().join(",") !== "blessing_id" || typeof decision.blessing_id !== "string" || !b.offers.includes(decision.blessing_id))
+    return { error: "INVALID_DECISION" };
+  const next = structuredClone(state);
+  next.blessing.pending = false;
+  next.blessing.selected = decision.blessing_id;
+  return { next_state: next, events: [{ kind: "blessing_selected", actor: "player", blessing_id: decision.blessing_id }] };
+}
+function resolveDungeonTurn(state, decision, rng) {
+  if (!state || state.terminal_result || state.blessing?.pending || state.player?.inspiration_pending || !decision || typeof decision !== "object" || Object.keys(decision).some((k) => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function")
+    return { error: "INVALID_DECISION" };
+  if ([state.player, state.npc].some((fighter2) => !validPersistentFighter(fighter2, state.combat_rules_version, state.turn)))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  if (!validPendingDrains(state, ["player", "npc"], ["player", "npc"]))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const switching = decision.switch_slot !== undefined;
+  if (switching && (decision.spell_id !== undefined || decision.hom_action !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id))
+    return { error: "INVALID_DECISION" };
+  const spell = switching ? null : state.spells.find((s) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
+  if (!switching && (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3)))
+    return { error: "INVALID_DECISION" };
+  if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
+    return { error: "UNSUPPORTED_MECHANIC" };
+  const next = structuredClone(state), events2 = [];
+  if (next.combat_rules_version === 2)
+    for (const fighter2 of [next.player, next.npc]) {
+      fighter2.combat_rules_version = 2;
+      fighter2.combat_exchange = decision.turn;
+    }
+  const firePassive = (event, poisonDamage = 0, attack = null) => applyTimedAwarePassive(next.player, next.npc, event, next.types, "player", "npc", events2, poisonDamage, attack);
+  const fireNpcPassive = (event, poisonDamage = 0, attack = null) => applyTimedAwarePassive(next.npc, next.player, event, next.types, "npc", "player", events2, poisonDamage, attack);
+  const modifiers = (fighter2 = next.player) => fighter2.expedition_passive ? passiveModifiers(fighter2.expedition_passive) : {};
+  if (next.player.expedition_passive) {
+    next.player.expedition_passive = beginPassiveExchange(next.player.expedition_passive, decision.turn);
+    firePassive("before_exchange");
+  }
+  if (next.npc.expedition_passive) {
+    next.npc.expedition_passive = beginPassiveExchange(next.npc.expedition_passive, decision.turn);
+    fireNpcPassive("before_exchange");
+  }
+  let vitriolCorrosionUsed = 0, npcVitriolCorrosionUsed = 0;
+  for (const fighter2 of [next.player, next.npc]) {
+    fighter2.spell_hit_last_exchange = fighter2.spell_hit_this_exchange ?? false;
+    fighter2.spell_hit_this_exchange = false;
+    fighter2.spell_neutralize_active = fighter2.spell_neutralize_pending ?? 0;
+    fighter2.spell_neutralize_pending = 0;
+  }
+  next.weapon_defenses ??= {};
+  next.other_defenses ??= {};
+  if (next.combat_mode === "expedition") {
+    next.npc_weapon_defenses ??= {};
+    next.npc_other_defenses ??= {};
+  }
+  const npcEffects = next.combat_mode === "expedition" ? next.npc.item_effects ?? {} : {};
+  const pendingJams = [];
+  let counter = next.rng_counter;
+  const draw = () => {
+    const value = rng(decision.turn, counter++);
+    if (!Number.isFinite(value) || value < 0 || value >= 1)
+      throw new Error("INVALID_RNG");
+    return value;
+  };
+  let npcSpell;
+  try {
+    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? { normal: 1, difficult: 5, very_difficult: 8, exceptional: 15 }[next.tactical_tier] ?? Math.max(8, Math.min(1000, next.floor)) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
+    npcSpell = next.spells.find((s) => s.id === npcId);
+  } catch (err) {
+    if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL")
+      throw err;
+    npcSpell = { id: "basic_attack", type: next.npc.type, category: "attack", accuracy: 0.9, power_mult: 1, cooldown_turns: 0, effects: [] };
+  }
+  const clearDefense = (fighter2, field) => {
+    delete fighter2.status[field];
+    if (fighter2 === next.player) {
+      delete next.weapon_defenses[field];
+      delete next.other_defenses[field];
+    } else if (fighter2 === next.npc && next.combat_mode === "expedition") {
+      delete next.npc_weapon_defenses[field];
+      delete next.npc_other_defenses[field];
+    }
+  };
+  const applyDefense = (fighter2, field, value) => {
+    if (fighter2 === next.player && next.weapon_defenses[field] !== undefined)
+      next.other_defenses[field] = Math.max(next.other_defenses[field] ?? 0, value);
+    else if (fighter2 === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses[field] !== undefined)
+      next.npc_other_defenses[field] = Math.max(next.npc_other_defenses[field] ?? 0, value);
+    fighter2.status[field] = Math.max(fighter2.status[field] ?? 0, value);
+  };
+  const awardInspiration = (actor, who, source) => {
+    if (actor.inspiration_used || actor.inspiration_pending || actor.inspiration >= 3)
+      return;
+    actor.inspiration = Math.min(3, (actor.inspiration ?? 0) + 1);
+    events2.push({ kind: "inspiration", actor: who, value: actor.inspiration, source });
+  };
+  const triggerEliteTrait = (timing, directDamage = 0) => {
+    const trait = dungeonEliteTrait(next);
+    if (!trait || next.elite_trait_used || next.player.hp <= 0 || next.npc.hp <= 0)
+      return;
+    if (timing === "hit" ? trait.trait !== "catalytic_exposure" || directDamage <= 0 : trait.trait === "catalytic_exposure" || next.npc.hp > next.npc.max_hp * (trait.trait === "aegis_protocol" ? 0.7 : 0.5))
+      return;
+    const recipient = next[trait.target], previous = recipient.status[trait.status] ?? 0;
+    if (previous >= trait.value)
+      return;
+    recipient.status[trait.status] = trait.value;
+    next.elite_trait_used = true;
+    events2.push({ kind: "elite_trait_triggered", actor: "npc", target: trait.target, trait: trait.trait, label: trait.label });
+    events2.push({ kind: "status_applied", actor: "npc", target: trait.target, status: trait.status, previous, value: trait.value, source: "elite" });
+  };
+  const act = (actor, target, chosen, who) => {
+    if (actor.hp <= 0 || target.hp <= 0)
+      return;
+    actor.cooldowns[chosen.id] = chosen.cooldown_turns + 1;
+    if (chosen.category === "attack" && who === "player" && (modifiers(target).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(target).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) {
+      events2.push({ kind: "evade", actor: "npc", target: "player" });
+      fireNpcPassive("dodge");
+      return;
+    }
+    if (chosen.category === "attack" && who === "npc" && (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) > 0 && draw() < Math.min(1, (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0))) {
+      if (actor.expedition_types && actor.hom_id)
+        actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+      events2.push({ kind: "evade", actor: "player", target: "npc" });
+      firePassive("dodge");
+      return;
+    }
+    const poisonedBefore = (target.status.poison ?? 0) > 0;
+    const mark = target.status.hybrid_mark;
+    const marked = mark?.owner === who && mark.remaining > 0;
+    if (marked && --mark.remaining <= 0)
+      delete target.status.hybrid_mark;
+    if (chosen.category === "attack") {
+      if (who === "player")
+        firePassive("before_attack", 0, chosen);
+      else
+        fireNpcPassive("before_attack", 0, chosen);
+    }
+    let accuracy = chosen.accuracy;
+    if (chosen.category === "attack") {
+      accuracy = Math.max(0, Math.min(1, accuracy + (actor.status.focus_next ?? 0) - (actor.status.misalign_next ?? 0) + (modifiers(actor).accuracy_pct ?? 0)));
+      delete actor.status.focus_next;
+      delete actor.status.misalign_next;
+    } else
+      accuracy = Math.max(0, Math.min(1, accuracy + (modifiers(actor).accuracy_pct ?? 0)));
+    if (statusActive(actor, "lethargy", decision.turn))
+      accuracy = Math.max(0, accuracy - 0.15);
+    const hit = draw() < accuracy;
+    events2.push({ kind: "spell", actor: who, spell_id: chosen.id, hit });
+    if (who === "npc" && actor.expedition_types && actor.hom_id)
+      actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+    if (chosen.category === "attack" && actor.expedition_passive) {
+      actor.expedition_passive = recordPassiveSpellHit(actor.expedition_passive, hit);
+      if (!hit) {
+        actor.expedition_passive = finishPassiveAttack(actor.expedition_passive);
+        (who === "player" ? firePassive : fireNpcPassive)("spell_miss");
+      }
+    }
+    if (!hit) {
+      if (chosen.category !== "attack")
+        (who === "player" ? firePassive : fireNpcPassive)("spell_miss");
+      return;
+    }
+    let directDamage = 0, unblessedDirectDamage = 0;
+    const previousWard = actor === next.player && next.weapon_defenses.shield !== undefined ? next.other_defenses.shield ?? 0 : actor === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses.shield !== undefined ? next.npc_other_defenses.shield ?? 0 : actor.status.shield ?? 0;
+    if (chosen.category === "attack") {
+      const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
+      let mult = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
+      if (chosen.type === "hybrid") {
+        const factor = (type) => {
+          const value = next.types.effectiveness[type]?.[target.type] ?? 1;
+          return value > 1 ? 1.25 : value < 1 ? 0.8 : 1;
+        };
+        mult = Math.max(0.8, Math.min(1.25, Math.pow(factor(chosen.primary_type), 0.65) * Math.pow(factor(chosen.secondary_type), 0.35)));
+      } else if (chosen.type === "universal")
+        mult = 1;
+      if (target.expedition_types && chosen.type !== "universal") {
+        if (chosen.type === "hybrid")
+          mult = Math.pow(expeditionDualTypeMultiplier(chosen.primary_type, target.expedition_types), 0.65) * Math.pow(expeditionDualTypeMultiplier(chosen.secondary_type, target.expedition_types), 0.35);
+        else
+          mult = expeditionDualTypeMultiplier(chosen.type, target.expedition_types);
+      }
+      if ((who === "player" && chosen.type === actor.type || who === "npc" && actor.expedition_types?.includes(chosen.type)) && (target.expedition_types ? mult < 1 : relation < 1))
+        mult = Math.min(1, mult + (who === "player" ? next.item_effects?.disadvantage_reduction ?? 0 : npcEffects.disadvantage_reduction ?? 0));
+      if (who === "player" && chosen.type !== "universal" && mult > 1)
+        mult += next.hom_advantage ?? 0;
+      if (chosen.type !== "universal")
+        mult = 1 + (mult - 1) * (1 - Math.max(actor.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0));
+      const poisonBonus = chosen.effects.find((e) => e.kind === "bonus_if_poisoned");
+      let power = chosen.power_mult * (poisonBonus && poisonedBefore ? 1 + poisonBonus.value : 1);
+      for (const effect of chosen.effects) {
+        if (effect.kind === "bonus_if_hit_last_exchange" && actor.spell_hit_last_exchange)
+          power *= 1 + effect.value;
+        if (effect.kind === "bonus_power_if_poisoned" && poisonedBefore || effect.kind === "bonus_if_shielded" && effectiveTimedDefense(actor, "shield") > 0 || effect.kind === "bonus_if_low_hp" && actor.hp < actor.max_hp * (effect.threshold ?? 0.4) || effect.kind === "bonus_power_if_hit_last_exchange" && actor.spell_hit_last_exchange || effect.kind === "bonus_if_marked" && marked)
+          power += effect.value;
+      }
+      const anomalyFactor = actor.expedition_types && chosen.type === "hybrid" ? Math.pow(physicalAnomalyMultiplier(next.physical_anomaly, chosen.primary_type), 0.65) * Math.pow(physicalAnomalyMultiplier(next.physical_anomaly, chosen.secondary_type), 0.35) : physicalAnomalyMultiplier(next.physical_anomaly, actor.expedition_types && actor.expedition_types.includes(chosen.type) ? chosen.type : actor.type);
+      const base = ((actor.atk + (modifiers(actor).power_flat ?? 0)) * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc((target.def + (modifiers(target).guard_flat ?? 0)) * 0.5)) * mult * anomalyFactor * (1 + (target.status.vuln ?? 0));
+      for (const [fighter2, id, fields] of [[actor, who, ["atk_boost", "atk_down"]], [target, who === "player" ? "npc" : "player", ["vuln"]]]) {
+        for (const status of fields) {
+          const previous = fighter2.status[status] ?? 0;
+          if (previous > 0) {
+            delete fighter2.status[status];
+            events2.push({ kind: "status_consumed", target: id, status, previous, remaining: 0 });
+          }
+        }
+      }
+      const shield = effectiveTimedDefense(target, "shield");
+      const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
+      let unblessedDamage = Math.max(1, Math.round(base * power));
+      let damage = Math.max(1, Math.round(base * power * (who === "player" && next.blessing?.selected === "elemental_surge" && ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold", "hybrid"].includes(chosen.type) ? 1 + Math.min(10, 4 + next.blessing.tier) / 100 : 1)));
+      if (who === "npc") {
+        const incoming = Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1));
+        damage = Math.max(1, Math.round(damage * incoming));
+        unblessedDamage = Math.max(1, Math.round(unblessedDamage * incoming));
+      }
+      if (who === "npc" && next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
+        damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
+        next.blessing.shield_used = true;
+      }
+      if (shield > 0) {
+        const dispel = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "ward_dispel")?.value ?? 0));
+        const pierce = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "pierce_ward")?.value ?? 0));
+        unblessedDamage = Math.max(0, Math.round(unblessedDamage * (1 - shield * (1 - dispel) * (1 - pierce))));
+        damage = Math.max(0, Math.round(damage * (1 - shield * (1 - dispel) * (1 - pierce))));
+        if ((target.status.shield ?? 0) > 0)
+          clearDefense(target, "shield");
+      }
+      directDamage = Math.min(target.hp, damage);
+      unblessedDirectDamage = who === "player" && next.blessing?.selected === "elemental_surge" ? Math.min(target.hp, unblessedDamage) : directDamage;
+      target.hp = Math.max(0, target.hp - damage);
+      if (directDamage > 0)
+        (who === "npc" ? firePassive : fireNpcPassive)("damage_received");
+      if (directDamage > 0)
+        target.spell_hit_this_exchange = true;
+      events2.push({ kind: "damage", actor: who, amount: damage, hp: target.hp, target_status: structuredClone(target.status) });
+      if (effectiveTimedDefense(target, "reflect") > 0) {
+        const ignoreChance = who === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
+        const ignored = ignoreChance > 0 && draw() < Math.min(1, ignoreChance);
+        const amount = ignored ? 0 : Math.min(actor.hp, Math.round((who === "player" && next.blessing?.selected === "elemental_surge" ? unblessedDamage : damage) * effectiveTimedDefense(target, "reflect")));
+        actor.hp -= amount;
+        if (amount > 0)
+          (who === "player" ? firePassive : fireNpcPassive)("damage_received");
+        if ((target.status.reflect ?? 0) > 0)
+          clearDefense(target, "reflect");
+        if (amount > 0)
+          actor.spell_hit_this_exchange = true;
+        const poison = target.status.poison_on_reflect ?? 0;
+        if (!ignored && poison > 0) {
+          const previous = actor.status.poison ?? 0;
+          actor.status.poison = Math.max(previous, poison);
+          recordPoisonChange(actor, previous, typeof target.poison_reflect_source === "string" ? target.poison_reflect_source : null);
+          if (actor.status.poison > previous)
+            events2.push({ kind: "status_applied", actor: who === "player" ? "npc" : "player", target: who, status: "poison", previous, value: actor.status.poison, source: "poison_on_reflect" });
+        }
+        delete target.status.poison_on_reflect;
+        delete target.poison_reflect_source;
+        events2.push({ kind: "reflect", actor: who === "player" ? "npc" : "player", target: who, amount, hp: actor.hp, ignored });
+      }
+      if (who === "player") {
+        for (const key of ["true_on_hit", "dot_true"]) {
+          let amount = Math.min(target.hp, Math.max(0, Math.trunc(next.item_effects?.[key] ?? 0)));
+          if (key === "dot_true" && next.item_id === "vitriol_vial") {
+            amount = Math.min(amount, 4 - vitriolCorrosionUsed);
+            vitriolCorrosionUsed += amount;
+          }
+          if (amount > 0) {
+            target.hp -= amount;
+            events2.push({ kind: key, actor: who, target: "npc", amount, hp: target.hp });
+          }
+        }
+        if ((next.item_effects?.dot_true ?? 0) > 0 && (next.item_effects?.vuln_on_hit ?? 0) > 0)
+          target.status.vuln = Math.max(target.status.vuln ?? 0, Math.min(1, next.item_effects.vuln_on_hit));
+        const homDot = Math.min(target.hp, Math.max(0, Math.trunc(next.hom_synergy?.dot_true ?? 0)));
+        if (homDot > 0) {
+          target.hp -= homDot;
+          if (next.combat_rules_version === 2)
+            events2.push({ kind: "hom_passive", turn: decision.turn, actor: who, target: "npc", hom_id: next.player.hom_id, passive_id: next.player.hom_id, trigger: "spell_hit", effects: [{ kind: "dot_true", target: "npc", amount: homDot, unit: "hp", duration: "instant", remaining: 0 }] });
+          events2.push({ kind: "hom_dot", actor: who, target: "npc", amount: homDot, hp: target.hp });
+        }
+      }
+      if (who === "npc" && next.combat_mode === "expedition") {
+        for (const key of ["true_on_hit", "dot_true"]) {
+          let amount = Math.min(target.hp, Math.max(0, Math.trunc(npcEffects[key] ?? 0)));
+          if (key === "dot_true" && next.npc.item_id === "vitriol_vial") {
+            amount = Math.min(amount, 4 - npcVitriolCorrosionUsed);
+            npcVitriolCorrosionUsed += amount;
+          }
+          if (amount > 0) {
+            target.hp -= amount;
+            events2.push({ kind: key, actor: who, target: "player", amount, hp: target.hp, item_id: next.npc.item_id });
+            firePassive("damage_received");
+          }
+        }
+        if ((npcEffects.dot_true ?? 0) > 0 && (npcEffects.vuln_on_hit ?? 0) > 0) {
+          const previous = target.status.vuln ?? 0;
+          target.status.vuln = Math.max(previous, Math.min(1, npcEffects.vuln_on_hit));
+          if (target.status.vuln > previous)
+            events2.push({ kind: "status_applied", actor: "npc", target: "player", status: "vuln", previous, value: target.status.vuln, source: "weapon", item_id: next.npc.item_id });
+        }
+      }
+      if (poisonBonus && target.status.poison > 0 && directDamage > baseline)
+        events2.push({ kind: "combo_trigger", actor: who, target: who === "player" ? "npc" : "player", source_spell_id: chosen.id, prerequisite: "poison", actual_bonus_damage: directDamage - baseline, resulting_status: { poison: target.status.poison } });
+    }
+    if (chosen.type === "hybrid" && marked)
+      delete target.status.hybrid_mark;
+    const conversion = chosen.effects.find((e) => e.kind === "ward_convert");
+    if (chosen.category === "attack" && conversion && previousWard > 0) {
+      if (actor === next.player && next.weapon_defenses.shield !== undefined) {
+        delete next.other_defenses.shield;
+        actor.status.shield = next.weapon_defenses.shield;
+      } else if (actor === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses.shield !== undefined) {
+        delete next.npc_other_defenses.shield;
+        actor.status.shield = next.npc_weapon_defenses.shield;
+      } else
+        delete actor.status.shield;
+      const amount = Math.min(target.hp, Math.floor(target.max_hp * 0.2), Math.floor(actor.max_hp * previousWard * conversion.value));
+      target.hp -= amount;
+      events2.push({ kind: "ward_convert", actor: who, target: who === "player" ? "npc" : "player", shield: previousWard, amount, hp: target.hp });
+    }
+    for (const e of chosen.effects) {
+      if (e.chance !== undefined && draw() >= e.chance)
+        continue;
+      if (e.kind === "burn" || e.kind === "lethargy") {
+        if (applyPersistentStatus(target, e.kind, who, decision.turn)) {
+          events2.push({ kind: "status_applied", actor: who, target: who === "player" ? "npc" : "player", status: e.kind, expires_exchange: decision.turn + 2, spell_id: chosen.id });
+          awardInspiration(actor, who, e.kind);
+        }
+        continue;
+      }
+      if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(e.kind))
+        continue;
+      if (e.kind === "physical_anomaly") {
+        next.physical_anomaly = castPhysicalAnomaly(chosen, decision.turn);
+        events2.push({ kind: "physical_anomaly_cast", actor: who, anomaly: structuredClone(next.physical_anomaly) });
+        continue;
+      }
+      if (e.kind === "debuff_transfer" || e.kind === "buff_steal") {
+        const previousEvents = events2.length;
+        const previousPoison = target.status.poison ?? 0;
+        transferStrategicStatus(e.kind, actor, target, who, who === "player" ? "npc" : "player", { vuln: "vuln", shield: "shield", reflect: "reflect" }, events2, clearDefense, applyDefense);
+        recordPoisonChange(target, previousPoison, who);
+        recordPoisonChange(actor, actor.status.poison ?? 0, null);
+        const changed = events2[previousEvents];
+        if (e.kind === "debuff_transfer" && changed && ["poison", "vuln", "atk_down"].includes(changed.status) && changed.value > changed.previous)
+          awardInspiration(actor, who, e.kind);
+        continue;
+      }
+      if (e.kind === "cooldown_jam") {
+        pendingJams.push({ target, actor: who, targetId: who === "player" ? "npc" : "player" });
+        continue;
+      }
+      if (e.kind === "hom_energy_siphon") {
+        const amount = actor.hom_id && target.hom_id ? Math.min(2, target.hom_energy, 6 - actor.hom_energy) : 0;
+        if (amount > 0) {
+          target.hom_energy -= amount;
+          actor.hom_energy += amount;
+          events2.push({ kind: "hom_energy_siphon", actor: who, target: who === "player" ? "npc" : "player", amount, actor_energy: actor.hom_energy, target_energy: target.hom_energy });
+        }
+        continue;
+      }
+      if (e.kind === "delayed_damage") {
+        if (chosen.category === "attack")
+          queueDelayedDamage(next, who, who === "player" ? "npc" : "player", e.value, unblessedDirectDamage, decision.turn, events2);
+        continue;
+      }
+      if (e.kind === "ward_convert")
+        continue;
+      if (e.kind === "counter_trap") {
+        actor.strategic_trap = { value: e.value, activated_turn: decision.turn, expires_turn: decision.turn + 2 };
+        events2.push({ kind: "counter_trap_armed", actor: who, target: who, value: e.value, expires_turn: decision.turn + 2 });
+        continue;
+      }
+      if (e.kind === "heal_suppression") {
+        target.strategic_heal_suppression = { expires_turn: decision.turn + 2 };
+        events2.push({ kind: "heal_suppression_applied", actor: who, target: who === "player" ? "npc" : "player", value: e.value, expires_turn: decision.turn + 2 });
+        continue;
+      }
+      const recipient = e.target === "self" ? actor : target;
+      const recipientId = recipient === next.player ? "player" : "npc";
+      if (e.kind === "type_neutralize") {
+        recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, e.value);
+        continue;
+      }
+      if (e.kind === "cleanse_one") {
+        const field = ["poison", "stun", "vuln", "atk_down", "misalign_next"].find((key) => (recipient.status[key] ?? 0) > 0);
+        if (field) {
+          events2.push({ kind: "status_cleansed", actor: who, target: recipientId, status: field, previous: recipient.status[field] });
+          delete recipient.status[field];
+          if (field === "poison")
+            recordPoisonChange(recipient, 0, null);
+        } else {
+          const status = cleansePersistentStatus(recipient);
+          if (status)
+            events2.push({ kind: "status_cleansed", actor: who, target: recipientId, status });
+        }
+        continue;
+      }
+      if (e.kind === "recoil") {
+        const amount = Math.min(recipient.hp, Math.trunc(e.value));
+        recipient.hp -= amount;
+        if (amount > 0)
+          recipient.spell_hit_this_exchange = true;
+        events2.push({ kind: "recoil", actor: who, target: recipientId, amount, hp: recipient.hp });
+        continue;
+      }
+      if (e.kind === "consume_poison") {
+        if (poisonedBefore) {
+          recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(e.value));
+          recordPoisonChange(recipient, recipient.status.poison, null);
+        }
+        continue;
+      }
+      if (e.kind === "life_leech" && !e.health_drain) {
+        const before = recipient.hp;
+        if (before > 0)
+          recipient.hp = Math.min(recipient.max_hp, before + strategicHeal(recipient, Math.min(e.max_heal ?? 0, Math.floor(directDamage * e.value))));
+        if (recipient.hp > before)
+          events2.push({ kind: "heal", actor: who, target: recipientId, amount: recipient.hp - before, hp: recipient.hp });
+        continue;
+      }
+      if (e.kind === "life_leech" && e.health_drain === true) {
+        const drainAmount = next.combat_rules_version === 2 && chosen.id === "brine_mend" ? Math.round(target.hp * 0.06) : e.max_heal ?? 0;
+        if (next.combat_rules_version === 2 && chosen.id === "brine_mend") {
+          next.pending_drains ??= [];
+          next.pending_drains.push({ source: who, target: who === "player" ? "npc" : "player", due_exchange: decision.turn + 1 });
+        }
+        const { damage, healed } = drainHealth(actor, target, drainAmount, effectiveTimedDefense(target, "shield"), who === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
+        if (effectiveTimedDefense(target, "shield") > 0 && (target.status.shield ?? 0) > 0)
+          clearDefense(target, "shield");
+        if (damage > 0)
+          target.spell_hit_this_exchange = true;
+        events2.push({ kind: "damage", actor: who, target: who === "player" ? "npc" : "player", amount: damage, hp: target.hp, spell_id: chosen.id });
+        if (damage > 0)
+          (who === "player" ? fireNpcPassive : firePassive)("damage_received");
+        events2.push({ kind: "heal", actor: who, target: who, amount: healed, hp: actor.hp, spell_id: chosen.id });
+        const reflect = effectiveTimedDefense(target, "reflect");
+        if (damage > 0 && reflect > 0) {
+          const chance = who === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
+          const ignored = chance > 0 && draw() < Math.min(1, chance);
+          const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(damage * reflect));
+          actor.hp -= reflected;
+          if (reflected > 0)
+            (who === "player" ? firePassive : fireNpcPassive)("damage_received");
+          if ((target.status.reflect ?? 0) > 0)
+            clearDefense(target, "reflect");
+          const poison = target.status.poison_on_reflect ?? 0;
+          if (!ignored && poison > 0) {
+            const previous = actor.status.poison ?? 0;
+            actor.status.poison = Math.max(previous, poison);
+            recordPoisonChange(actor, previous, typeof target.poison_reflect_source === "string" ? target.poison_reflect_source : null);
+          }
+          delete target.status.poison_on_reflect;
+          delete target.poison_reflect_source;
+          events2.push({ kind: "reflect", actor: who === "player" ? "npc" : "player", target: who, amount: reflected, hp: actor.hp, ignored });
+        }
+        continue;
+      }
+      if (["shield", "reflect"].includes(e.kind) && e.duration_exchanges) {
+        applyTimedDefense(recipient, e.kind, e.value, decision.turn, e.duration_exchanges);
+        events2.push({ kind: "status_applied", actor: who, target: recipientId, status: e.kind, value: e.value, spell_id: chosen.id });
+        continue;
+      }
+      if (e.kind === "hybrid_mark") {
+        const before = JSON.stringify(recipient.status.hybrid_mark ?? {});
+        recipient.status.hybrid_mark = { owner: who, remaining: Math.trunc(e.value) };
+        if (before !== JSON.stringify(recipient.status.hybrid_mark) && recipient === target)
+          awardInspiration(actor, who, e.kind);
+        events2.push({ kind: "status_applied", actor: who, target: recipientId, status: "hybrid_mark", value: structuredClone(recipient.status.hybrid_mark) });
+        continue;
+      }
+      if (e.kind === "tempo_shift") {
+        const previous = recipient.status.tempo_bonus ?? 0;
+        recipient.status.tempo_bonus = e.value;
+        if (recipient === target && e.value < 0 && e.value < previous)
+          awardInspiration(actor, who, e.kind);
+        events2.push({ kind: "status_applied", actor: who, target: recipientId, status: "tempo_bonus", previous, value: e.value });
+        continue;
+      }
+      if (e.kind === "shield_by_order") {
+        applyDefense(recipient, "shield", who === "player" === playerFirst ? e.value : e.second_value ?? e.value);
+        continue;
+      }
+      if (e.kind === "heal") {
+        const before = recipient.hp;
+        if (before > 0)
+          recipient.hp = Math.min(recipient.max_hp, before + strategicHeal(recipient, e.value));
+        if (recipient.hp > before)
+          events2.push({ kind: "heal", actor: who, target: recipientId, amount: recipient.hp - before, hp: recipient.hp, spell_id: chosen.id });
+      } else {
+        const previous = recipient.status[e.kind] ?? 0;
+        if (["shield", "reflect"].includes(e.kind))
+          applyDefense(recipient, e.kind, e.value);
+        else
+          recipient.status[e.kind] = Math.max(previous, e.value);
+        if (e.kind === "poison")
+          recordPoisonChange(recipient, previous, who);
+        if (e.kind === "poison_on_reflect" && recipient.status[e.kind] > previous)
+          recipient.poison_reflect_source = who;
+        if (recipient.status[e.kind] !== previous)
+          events2.push({ kind: "status_applied", actor: who, target: recipientId, status: e.kind, previous, value: recipient.status[e.kind], spell_id: chosen.id });
+        if (recipient === target && ["poison", "vuln", "atk_down", "hom_stun", "misalign_next"].includes(e.kind) && recipient.status[e.kind] > previous)
+          awardInspiration(actor, who, e.kind);
+      }
+    }
+    if (chosen.category === "attack" && actor.expedition_passive)
+      actor.expedition_passive = finishPassiveAttack(actor.expedition_passive);
+    if (chosen.category === "attack")
+      strategicCounter(target, actor, who === "player" ? "npc" : "player", who, unblessedDirectDamage, decision.turn, events2);
+    if (who === "npc" && chosen.category === "attack")
+      triggerEliteTrait("hit", directDamage);
+    if (actor.hom_id && !(who === "npc" && actor.expedition_types))
+      actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+    if (who === "player" && actor.hom_id && next.blessing?.selected === "homunculus_resonance") {
+      const b = next.blessing, threshold = b.tier < 3 ? 3 : 2, limit = b.tier < 5 ? 1 : 2;
+      if (b.procs < limit && ++b.spell_count >= threshold) {
+        b.spell_count = 0;
+        b.procs++;
+        const before = actor.hom_energy;
+        actor.hom_energy = Math.min(6, actor.hom_energy + 1);
+        events2.push({ kind: "blessing_energy", actor: who, amount: actor.hom_energy - before, energy: actor.hom_energy });
+      }
+    }
+  };
+  const playerAction = () => {
+    if (switching) {
+      const old = next.item_effects ?? {}, weapon = next.weapons[decision.switch_slot - 1];
+      for (const field of ["shield", "reflect"])
+        if (next.weapon_defenses[field] !== undefined) {
+          if ((next.other_defenses[field] ?? 0) > 0)
+            next.player.status[field] = next.other_defenses[field];
+          else
+            delete next.player.status[field];
+          delete next.weapon_defenses[field];
+          delete next.other_defenses[field];
+        }
+      next.player.atk += Math.trunc(weapon.effects.power_flat ?? 0) - Math.trunc(old.power_flat ?? 0);
+      next.player.def += Math.trunc(weapon.effects.guard_flat ?? 0) - Math.trunc(old.guard_flat ?? 0);
+      next.active_weapon_slot = decision.switch_slot;
+      next.item_id = weapon.id;
+      next.item_effects = weapon.effects;
+      events2.push({ kind: "switch", actor: "player", slot: decision.switch_slot, item_id: weapon.id });
+      firePassive("weapon_switched");
+    } else
+      act(next.player, next.npc, spell, "player");
+    if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) {
+      if (next.player.status.hom_stun > 0) {
+        next.player.status.hom_stun--;
+        events2.push({ kind: "status_consumed", target: "player", status: "hom_stun", remaining: next.player.status.hom_stun });
+      } else if ((modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) {
+        events2.push({ kind: "evade", actor: "npc", target: "player" });
+        fireNpcPassive("dodge");
+      } else if (draw() < 0.95) {
+        const neutralizations = [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0];
+        const homFactor = (type) => homunculusAttackMultiplierById(next.player.hom_id, type, next.types, neutralizations);
+        const factor = next.npc.expedition_types ? Math.sqrt(homFactor(next.npc.expedition_types[0]) * homFactor(next.npc.expedition_types[1])) : homFactor(next.npc.type);
+        let damage = Math.max(1, Math.round((next.player.atk + (modifiers().power_flat ?? 0)) * (next.player.hom_energy >= 6 ? 0.6 : 0.4) * factor));
+        if (effectiveTimedDefense(next.npc, "shield") > 0) {
+          damage = Math.max(0, Math.round(damage * (1 - effectiveTimedDefense(next.npc, "shield"))));
+          if ((next.npc.status.shield ?? 0) > 0)
+            clearDefense(next.npc, "shield");
+        }
+        next.npc.hp = Math.max(0, next.npc.hp - damage);
+        if (damage > 0)
+          fireNpcPassive("damage_received");
+        events2.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp });
+        const reflect = statusActive(next.npc, "burn", decision.turn) ? 0 : next.npc.timed_defenses?.reflect?.value ?? 0;
+        if (reflect > 0) {
+          const ignored = (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < next.item_effects.ignore_reflect_chance;
+          const amount = ignored ? 0 : Math.min(next.player.hp, Math.round(damage * reflect));
+          next.player.hp -= amount;
+          if (amount > 0)
+            firePassive("damage_received");
+          events2.push({ kind: "reflect", actor: "npc", target: "player", amount, hp: next.player.hp, ignored });
+        }
+      } else
+        events2.push({ kind: "hom_miss", actor: "player" });
+      next.player.hom_energy = 0;
+    }
+  };
+  const npcAction = () => {
+    act(next.npc, next.player, npcSpell, "npc");
+    const homFactor = next.npc.expedition_types ? homunculusAttackMultiplierById(next.npc.hom_id, next.player.type, next.types, [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]) : 1;
+    const earlyHomDamage = Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * 0.4 * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) * (1 - (next.player.status.shield ?? 0))));
+    const spendHom = !next.npc.expedition_types || next.npc.hom_energy >= 6 || next.player.hp <= earlyHomDamage || next.npc.hp <= next.npc.max_hp * 0.3 || (next.player.status.shield ?? 0) > 0 && next.npc.hom_energy >= 5;
+    if (next.npc.hom_id && next.npc.hom_energy >= 3 && spendHom && next.npc.hp > 0 && next.player.hp > 0) {
+      if (next.npc.status.hom_stun > 0) {
+        next.npc.status.hom_stun--;
+        events2.push({ kind: "status_consumed", target: "npc", status: "hom_stun", remaining: next.npc.status.hom_stun });
+      } else if ((next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) > 0 && draw() < Math.min(1, (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0))) {
+        events2.push({ kind: "evade", actor: "player", target: "npc" });
+        firePassive("dodge");
+      } else if (draw() < 0.95) {
+        let damage = Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * (next.npc.hom_energy >= 6 ? 0.6 : 0.4) * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1))));
+        if (next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
+          damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
+          next.blessing.shield_used = true;
+        }
+        if (effectiveTimedDefense(next.player, "shield") > 0) {
+          damage = Math.max(0, Math.round(damage * (1 - effectiveTimedDefense(next.player, "shield"))));
+          if ((next.player.status.shield ?? 0) > 0)
+            clearDefense(next.player, "shield");
+        }
+        next.player.hp = Math.max(0, next.player.hp - damage);
+        if (damage > 0)
+          firePassive("damage_received");
+        events2.push({ kind: "hom_attack", actor: "npc", amount: damage, hp: next.player.hp });
+        const reflect = statusActive(next.player, "burn", decision.turn) ? 0 : next.player.timed_defenses?.reflect?.value ?? 0;
+        if (reflect > 0) {
+          const ignored = (npcEffects.ignore_reflect_chance ?? 0) > 0 && draw() < npcEffects.ignore_reflect_chance;
+          const amount = ignored ? 0 : Math.min(next.npc.hp, Math.round(damage * reflect));
+          next.npc.hp -= amount;
+          if (amount > 0)
+            fireNpcPassive("damage_received");
+          events2.push({ kind: "reflect", actor: "player", target: "npc", amount, hp: next.npc.hp, ignored });
+        }
+      } else
+        events2.push({ kind: "hom_miss", actor: "npc" });
+      next.npc.hom_energy = 0;
+    }
+  };
+  if (!switching && next.player.expedition_passive?.id === "luny" && (next.player.status.stun ?? 0) <= 0 && spell.category === "attack" && spell.power_mult > 0)
+    firePassive("before_attack", 0, spell);
+  if (next.npc.expedition_passive?.id === "luny" && (next.npc.status.stun ?? 0) <= 0 && npcSpell.category === "attack" && npcSpell.power_mult > 0)
+    fireNpcPassive("before_attack", 0, npcSpell);
+  const playerFirst = (next.player.tempo ?? 10) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_tempo ?? 0) + (modifiers().tempo_flat ?? 0) + (next.player.status.tempo_bonus ?? 0) >= (next.npc.tempo ?? 10) + (npcEffects.tempo_flat ?? 0) + (modifiers(next.npc).tempo_flat ?? 0) + (next.npc.status.tempo_bonus ?? 0);
+  delete next.player.status.tempo_bonus;
+  delete next.npc.status.tempo_bonus;
+  if (playerFirst) {
+    playerAction();
+    npcAction();
+  } else {
+    npcAction();
+    if (next.player.hp > 0 && next.npc.hp > 0)
+      playerAction();
+  }
+  if (next.pending_drains?.length) {
+    const future = [];
+    for (const pending of next.pending_drains) {
+      if (pending.due_exchange > decision.turn) {
+        future.push(pending);
+        continue;
+      }
+      const actor = next[pending.source], target = next[pending.target];
+      if (!actor || !target || actor.hp <= 0 || target.hp <= 0)
+        continue;
+      const shield = effectiveTimedDefense(target, "shield");
+      const { damage, healed } = drainHealth(actor, target, Math.round(target.hp * 0.06), shield, pending.source === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
+      if (shield > 0 && (target.status.shield ?? 0) > 0)
+        clearDefense(target, "shield");
+      if (damage > 0) {
+        target.spell_hit_this_exchange = true;
+        (pending.source === "player" ? fireNpcPassive : firePassive)("damage_received");
+      }
+      events2.push({ kind: "damage", actor: pending.source, target: pending.target, amount: damage, actual_damage: damage, hp: target.hp, spell_id: "brine_mend", source: "pending_drain" });
+      events2.push({ kind: "heal", actor: pending.source, target: pending.source, amount: healed, hp: actor.hp, spell_id: "brine_mend", source: "pending_drain" });
+      const reflect = effectiveTimedDefense(target, "reflect");
+      if (damage > 0 && reflect > 0) {
+        const chance = pending.source === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
+        const ignored = chance > 0 && draw() < Math.min(1, chance);
+        const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(damage * reflect));
+        actor.hp -= reflected;
+        if (reflected > 0)
+          (pending.source === "player" ? firePassive : fireNpcPassive)("damage_received");
+        if ((target.status.reflect ?? 0) > 0)
+          clearDefense(target, "reflect");
+        const poison = target.status.poison_on_reflect ?? 0;
+        if (!ignored && poison > 0) {
+          const previous = actor.status.poison ?? 0;
+          actor.status.poison = Math.max(previous, poison);
+          recordPoisonChange(actor, previous, target.poison_reflect_source ?? null);
+        }
+        delete target.status.poison_on_reflect;
+        delete target.poison_reflect_source;
+        events2.push({ kind: "reflect", actor: pending.target, target: pending.source, amount: reflected, hp: actor.hp, ignored });
+      }
+    }
+    next.pending_drains = future;
+  }
+  const poisonFighters = [next.player, next.npc], ticked = new Set;
+  do {
+    for (const fighter2 of poisonFighters)
+      if (!ticked.has(fighter2) && fighter2.hp > 0 && fighter2.status.poison > 0) {
+        ticked.add(fighter2);
+        let tick = poisonTickDamage(fighter2);
+        if (fighter2 === next.player && next.blessing?.selected === "toxin_ward") {
+          const b = next.blessing, mitigation = tick * Math.min(50, 20 + 5 * (b.tier - 1)) + b.poison_remainder;
+          const prevented = Math.min(Math.max(0, tick - 1), Math.floor(mitigation / 100));
+          b.poison_remainder = mitigation % 100;
+          tick -= prevented;
+        }
+        const amount = Math.min(tick, fighter2.hp);
+        const victim = fighter2 === next.player ? "player" : "npc";
+        const provenance = poisonTickMetadata(fighter2, victim, ["player", "npc"], amount, decision.turn);
+        fighter2.hp -= amount;
+        fighter2.spell_hit_this_exchange = true;
+        fighter2.status.poison--;
+        events2.push({ kind: "poison", target: fighter2.id, side: victim, amount, hp: fighter2.hp, remaining: fighter2.status.poison, ...provenance });
+        if (provenance.source === "player" && victim === "npc" && amount > 0)
+          firePassive("opponent_poison_damage", amount);
+        if (provenance.source === "npc" && victim === "player" && amount > 0) {
+          firePassive("damage_received");
+          fireNpcPassive("opponent_poison_damage", amount);
+        }
+        if (provenance.source === "player" && victim === "npc" && amount > 0)
+          fireNpcPassive("damage_received");
+        recordPoisonChange(fighter2, fighter2.status.poison, null);
+      }
+  } while (next.combat_rules_version === 2 && poisonFighters.some((fighter2) => !ticked.has(fighter2) && fighter2.hp > 0 && fighter2.status.poison > 0));
+  for (const fighter2 of poisonFighters)
+    for (const id of Object.keys(fighter2.cooldowns))
+      fighter2.cooldowns[id] = Math.max(0, fighter2.cooldowns[id] - 1);
+  finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events2);
+  triggerEliteTrait("end");
+  for (const jam of pendingJams)
+    jamStrategicCooldown(jam.target.spell_ids.map((id) => next.spells.find((s) => s.id === id)), jam.target.cooldowns, jam.actor, jam.targetId, events2);
+  next.turn++;
+  next.rng_counter = counter;
+  for (const fighter2 of [next.player, next.npc]) {
+    expireTimedDefenses(fighter2, next.turn);
+    for (const status of expirePersistentStatuses(fighter2, next.turn))
+      events2.push({ kind: "status_expired", target: fighter2 === next.player ? "player" : "npc", status });
+  }
+  if (next.player.hp > 0 && next.npc.hp > 0 && next.turn % 2 === 1) {
+    const homReflect = Math.max(0, Math.min(1, next.hom_synergy?.reflect_pct ?? 0));
+    if (homReflect > 0) {
+      const previous = next.player.status.reflect ?? 0;
+      applyDefense(next.player, "reflect", homReflect);
+      if (next.combat_rules_version === 2 && next.player.status.reflect > previous)
+        events2.push({ kind: "hom_passive", turn: next.turn, actor: "player", target: "player", hom_id: next.player.hom_id, passive_id: next.player.hom_id, trigger: "round_start", effects: [{ kind: "reflect_pct", target: "player", amount: homReflect, unit: "fraction", duration: "until_consumed", remaining: 0 }] });
+      events2.push({ kind: "status_applied", actor: "player", target: "player", status: "reflect", value: next.player.status.reflect, source: "homunculus" });
+    }
+    for (const [effect, field] of [["ward_pct", "shield"], ["reflect_pct", "reflect"]]) {
+      const value = Math.max(0, Math.min(1, next.item_effects?.[effect] ?? 0));
+      if (value > 0) {
+        if (next.weapon_defenses[field] === undefined)
+          next.other_defenses[field] = next.player.status[field] ?? 0;
+        next.weapon_defenses[field] = Math.max(next.weapon_defenses[field] ?? 0, value);
+        next.player.status[field] = Math.max(next.other_defenses[field] ?? 0, next.weapon_defenses[field]);
+        events2.push({ kind: "status_applied", actor: "player", target: "player", status: field, value: next.player.status[field], source: "weapon" });
+      }
+    }
+    if (next.turn === 1 && next.player.hp > next.npc.hp && (next.item_effects?.tempo_on_win ?? 0) > 0)
+      next.player.status.tempo_bonus = next.item_effects.tempo_on_win;
+    if (next.combat_mode === "expedition") {
+      for (const [effect, field] of [["ward_pct", "shield"], ["reflect_pct", "reflect"]]) {
+        const value = Math.max(0, Math.min(1, npcEffects[effect] ?? 0));
+        if (value > 0) {
+          if (next.npc_weapon_defenses[field] === undefined)
+            next.npc_other_defenses[field] = next.npc.status[field] ?? 0;
+          next.npc_weapon_defenses[field] = Math.max(next.npc_weapon_defenses[field] ?? 0, value);
+          next.npc.status[field] = Math.max(next.npc_other_defenses[field] ?? 0, next.npc_weapon_defenses[field]);
+          events2.push({ kind: "status_applied", actor: "npc", target: "npc", status: field, value: next.npc.status[field], source: "weapon", item_id: next.npc.item_id });
+        }
+      }
+      if (next.turn === 1 && next.npc.hp > next.player.hp && (npcEffects.tempo_on_win ?? 0) > 0)
+        next.npc.status.tempo_bonus = npcEffects.tempo_on_win;
+    }
+  }
+  next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
+  if (next.terminal_result) {
+    delete next.player.expedition_passive;
+    delete next.npc.expedition_passive;
+    next.strategic_delayed = [];
+    for (const fighter2 of [next.player, next.npc]) {
+      delete fighter2.strategic_trap;
+      delete fighter2.strategic_heal_suppression;
+      restoreDungeonInspiration(next, fighter2);
+    }
+  } else {
+    for (const who of ["npc", "player"]) {
+      const fighter2 = next[who];
+      if (fighter2.hp <= 0 || fighter2.inspiration_used || fighter2.inspiration_pending || fighter2.inspiration < 3)
+        continue;
+      const choices = (next.inspiration_catalog?.[who] ?? []).filter((s) => !fighter2.spell_ids.includes(s.id));
+      if (choices.length < 3)
+        return { error: "UNSUPPORTED_MECHANIC" };
+      fighter2.inspiration_offers = [];
+      for (let i = 0;i < 3; i++)
+        fighter2.inspiration_offers.push(choices.splice(Math.floor(draw() * choices.length), 1)[0].id);
+      fighter2.inspiration_pending = true;
+      events2.push({ kind: "inspiration_offered", actor: who, ...who === "player" ? { offers: [...fighter2.inspiration_offers] } : {} });
+      if (who === "npc") {
+        const selected = fighter2.inspiration_offers[Math.floor(draw() * 3)];
+        const chosen = next.inspiration_catalog.npc.find((s) => s.id === selected);
+        const availableSlots = fighter2.expedition_types && !(chosen.category === "attack" && chosen.cooldown_turns === 0) ? fighter2.spell_ids.map((id, index) => ({ index, spell: next.spells.find((s) => s.id === id) })).filter((entry, _i, all) => !(entry.spell?.category === "attack" && entry.spell.cooldown_turns === 0 && all.filter((other) => other.spell?.category === "attack" && other.spell.cooldown_turns === 0).length === 1)).map((entry) => entry.index) : [0, 1, 2, 3];
+        const slot = availableSlots[Math.floor(draw() * availableSlots.length)];
+        fighter2.spell_ids[slot] = selected;
+        fighter2.temporary_spell_id = selected;
+        fighter2.temporary_replaced_slot = slot;
+        if (!next.spells.some((s) => s.id === selected))
+          next.spells.push(structuredClone(chosen));
+        fighter2.inspiration_used = true;
+        fighter2.inspiration_pending = false;
+        fighter2.inspiration_offers = [];
+        events2.push({ kind: "inspiration_chosen", actor: who, spell_id: selected, slot, activation: recordInspirationActivation(fighter2, who, next.turn) });
+        fireNpcPassive("inspiration_activated");
+      }
+    }
+  }
+  if (next.player.expedition_passive)
+    next.player.expedition_passive = finishPassiveExchange(next.player.expedition_passive);
+  if (next.npc.expedition_passive)
+    next.npc.expedition_passive = finishPassiveExchange(next.npc.expedition_passive);
+  next.rng_counter = counter;
+  next.physical_anomaly = next.terminal_result ? null : tickPhysicalAnomaly(next.physical_anomaly, next.turn);
+  return { next_state: next, events: events2, terminal_result: next.terminal_result };
+}
+function resolveDungeonInspiration(state, decision, rng) {
+  const fighter2 = state?.player;
+  if (!state || state.terminal_result || state.blessing?.pending || !fighter2?.inspiration_pending || fighter2.inspiration_used || !Array.isArray(fighter2.inspiration_offers) || fighter2.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function")
+    return { error: "INVALID_DECISION" };
+  const keys = Object.keys(decision).sort().join(",");
+  if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && typeof decision.spell_id === "string" && fighter2.inspiration_offers.includes(decision.spell_id)))
+    return { error: "INVALID_DECISION" };
+  const next = structuredClone(state), p = next.player, events2 = [];
+  if (decision.kind === "choose") {
+    const spell = next.inspiration_catalog?.player?.find((s) => s.id === decision.spell_id);
+    if (!spell || !dungeonInspirationCandidates(p.type, p.spell_ids, [spell]).length)
+      return { error: "INVALID_DECISION" };
+    const roll = rng(next.turn, next.rng_counter);
+    if (!Number.isFinite(roll) || roll < 0 || roll >= 1)
+      throw new Error("INVALID_RNG");
+    const slot = Math.floor(roll * 4);
+    next.rng_counter++;
+    p.spell_ids[slot] = spell.id;
+    p.temporary_spell_id = spell.id;
+    p.temporary_replaced_slot = slot;
+    if (!next.spells.some((s) => s.id === spell.id))
+      next.spells.push(structuredClone(spell));
+    events2.push({ kind: "inspiration_chosen", actor: "player", spell_id: spell.id, slot, activation: recordInspirationActivation(p, "player", next.turn) });
+    applyTimedAwarePassive(p, next.npc, "inspiration_activated", next.types, "player", "npc", events2);
+  } else
+    events2.push({ kind: "inspiration_declined", actor: "player" });
+  p.inspiration_used = true;
+  p.inspiration_pending = false;
+  p.inspiration_offers = [];
+  return { next_state: next, events: events2 };
+}
+
+// src/practice_service.ts
+var IDLE = 60 * 60000;
+var RETENTION = 7 * 86400000;
+var MAX_REVISION = 500;
+function activePractice(db, player, now) {
+  return !!db.query("SELECT 1 FROM practice_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now);
+}
+function otherCombat(db, player, now) {
+  return !!(db.query("SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1").get(player) || db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(player, now) || db.query("SELECT 1 FROM dungeon_runs WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE' AND heartbeat_at>?").get(player, now - 240000));
+}
+function createPracticeService(db, catalogs, secret, snapshot, reward, clock = Date.now) {
+  if (secret.length < 32)
+    throw new Error("PVP_SECRET_REQUIRED");
+  const expire = (now, player) => {
+    if (player)
+      db.query("UPDATE practice_sessions SET status='FINISHED',result_json=?,updated_at=expires_at WHERE player_id=? AND status='ACTIVE' AND expires_at<=?").run(JSON.stringify({ result: "loss", reason: "timeout" }), player, now);
+    db.query("UPDATE practice_sessions SET status='FINISHED',result_json=?,updated_at=expires_at WHERE match_id IN (SELECT match_id FROM practice_sessions WHERE status='ACTIVE' AND expires_at<=? LIMIT 100)").run(JSON.stringify({ result: "loss", reason: "timeout" }), now);
+    db.query("DELETE FROM practice_events WHERE match_id IN (SELECT match_id FROM practice_sessions WHERE status='FINISHED' AND updated_at<=? LIMIT 50)").run(now - RETENTION);
+    db.query("DELETE FROM practice_actions WHERE match_id IN (SELECT match_id FROM practice_sessions WHERE status='FINISHED' AND updated_at<=? LIMIT 50)").run(now - RETENTION);
+    db.query("DELETE FROM practice_sessions WHERE match_id IN (SELECT match_id FROM practice_sessions WHERE status='FINISHED' AND updated_at<=? LIMIT 50)").run(now - RETENTION);
+    db.query("DELETE FROM practice_daily_xp WHERE rowid IN (SELECT rowid FROM practice_daily_xp WHERE day<? LIMIT 100)").run(Math.floor((now - RETENTION) / 86400000));
+  };
+  const draw = (id, battle, turn, n, domain = "combat") => createHmac4("sha256", secret).update(JSON.stringify(["practice-v1", domain, id, battle, turn, n])).digest().readUInt32BE(0) / 4294967296;
+  const get = (id, player) => {
+    const row = db.query("SELECT * FROM practice_sessions WHERE match_id=? AND player_id=?").get(id, player);
+    if (!row)
+      throw new Error("MATCH_NOT_FOUND");
+    return row;
+  };
+  const dto = (row, after = 0) => {
+    const s = JSON.parse(row.combat_json), outcome = row.result_json ? JSON.parse(row.result_json) : null;
+    const anomaly = s.physical_anomaly ? (({ id, favored_type, weakened_type, remaining_exchanges }) => ({ id, favored_type, weakened_type, remaining_exchanges }))(s.physical_anomaly) : null;
+    return { ...spectatorNames(row.player_id), match_id: row.match_id, kind: "practice", status: row.status, combat_revision: row.revision, deadline: null, turn: s.turn, round: s.round, battle_index: s.battle_index, sudden_death: s.sudden_death, physical_anomaly: anomaly, score: { player: s.wins.left, enemy: s.wins.right }, player: projectPvpFighter(s, "left", "left", { player_id: row.player_id, display_name: s.fighters.left.name }), enemy: projectPvpFighter(s, "right", "left", { player_id: "practice_npc", display_name: s.fighters.right.name }), ready: { player: false, enemy: false }, result: outcome, events: db.query("SELECT seq,payload_json FROM practice_events WHERE match_id=? AND seq>? ORDER BY seq LIMIT 500").all(row.match_id, after).map((e) => sanitizePvpEvent(JSON.parse(e.payload_json), "left", e.seq)) };
+  };
+  const writeEvents = (id, events2) => {
+    let seq = db.query("SELECT COALESCE(MAX(seq),0) n FROM practice_events WHERE match_id=?").get(id).n;
+    const ins = db.query("INSERT INTO practice_events VALUES (?,?,?)");
+    for (const e of events2)
+      ins.run(id, ++seq, JSON.stringify(e));
+  };
+  const npc = (id) => {
+    const entities = [...catalogs.entities].sort((a, b) => a.id.localeCompare(b.id));
+    const offset = Math.floor(draw(id, 0, 0, 0, "setup") * entities.length);
+    for (let i = 0;i < entities.length; i++) {
+      const entity = entities[(i + offset) % entities.length];
+      const spells = catalogs.spells.filter((s) => s.type === entity.type && Array.isArray(s.effects));
+      const attack = spells.find((s) => s.category === "attack" && s.cooldown_turns === 0 && s.accuracy >= 0.9);
+      if (!attack || spells.length < 4)
+        continue;
+      const selected = [attack, ...spells.filter((s) => s.id !== attack.id)].slice(0, 4);
+      const candidate = { player_id: "practice:" + id, entity_id: entity.id, weapon_ids: [null, null], homunculus_id: null, spell_ids: selected.map((s) => s.id), item_progress: {}, homunculus_progress: {}, spell_progress: {} };
+      if (!("error" in createPvpFighter(candidate, catalogs)))
+        return candidate;
+    }
+    throw new Error("PVP_CATALOG_UNAVAILABLE");
+  };
+  const transact = (player, actionId, request, perform) => {
+    if (typeof actionId !== "string" || !actionId.trim() || actionId.length > 64 || /[\u0000-\u001f\u007f-\u009f]/u.test(actionId))
+      throw new Error("INVALID_ACTION_ID");
+    return db.transaction(() => {
+      const payload = JSON.stringify(request), old = db.query("SELECT request_json,response_json FROM practice_actions WHERE player_id=? AND action_id=?").get(player, actionId);
+      if (old) {
+        if (old.request_json !== payload)
+          throw new Error("ACTION_CONFLICT");
+        return JSON.parse(old.response_json);
+      }
+      const now = clock();
+      expire(now, player);
+      const result = perform(now);
+      const count = db.query("SELECT count(*) n FROM practice_actions WHERE match_id=?").get(result.match_id).n;
+      if (count >= 1024)
+        throw new Error("ACTION_LIMIT");
+      db.query("INSERT INTO practice_actions VALUES (?,?,?,?,?)").run(player, actionId, result.match_id, payload, JSON.stringify(result));
+      return result;
+    }).immediate();
+  };
+  return {
+    start(player, actionId, selection) {
+      return transact(player, actionId, { kind: "start", selection }, (now) => {
+        endSpectatingForStart(player);
+        if (activePractice(db, player, now) || otherCombat(db, player, now))
+          throw new Error("PLAYER_BUSY");
+        const own2 = snapshot(player, selection);
+        if (!own2 || own2.player_id !== player)
+          throw new Error("UNTRUSTED_SETUP");
+        const id = randomUUID(), state = createPvpCombatState(own2, npc(id), catalogs);
+        if ("error" in state)
+          throw new Error(state.error);
+        db.query("INSERT INTO practice_sessions VALUES (?,?,'ACTIVE',1,?,?,NULL,?,?,?)").run(id, player, JSON.stringify(state), JSON.stringify(own2), now, now, now + IDLE);
+        return dto(get(id, player));
+      });
+    },
+    state(player, id, after) {
+      if (!Number.isSafeInteger(after) || after < 0)
+        throw new Error("INVALID_CURSOR");
+      return db.transaction(() => {
+        expire(clock(), player);
+        const row = id ? get(id, player) : db.query("SELECT * FROM practice_sessions WHERE player_id=? AND status='ACTIVE'").get(player);
+        return row ? dto(row, after) : { match: null };
+      }).immediate();
+    },
+    decide(player, id, actionId, revision, decision) {
+      return transact(player, actionId, { kind: "decision", id, revision, decision }, (now) => {
+        const row = get(id, player);
+        if (row.status !== "ACTIVE")
+          throw new Error("MATCH_FINISHED");
+        if (revision !== row.revision || !Number.isSafeInteger(revision))
+          throw new Error("STALE_REVISION");
+        let s = JSON.parse(row.combat_json), events2 = [];
+        const rng = (turn, n) => draw(id, s.battle_index, turn, n);
+        if (s.fighters.left.inspiration_pending) {
+          const out = resolvePvpInspiration(s, "left", decision, rng);
+          if ("error" in out)
+            throw new Error(out.error);
+          s = out.state;
+          events2.push(...out.events);
+        } else {
+          if ("error" in validatePvpDecision(s, "left", decision))
+            throw new Error("INVALID_DECISION");
+          const f = s.fighters.right, target = s.fighters.left;
+          const adapt = (x) => ({ ...x, cooldowns: x.spell_cooldowns, status: { ...x.status, shield: x.status.shield_pct, reflect: x.status.reflect_pct, vuln: x.status.vuln_pct }, combat_rules_version: 2 });
+          let selected;
+          try {
+            selected = chooseDungeonNpcSpell(10, f.spell_ids, f.spells, f.spell_cooldowns, adapt(f), adapt(target), draw(id, s.battle_index, s.turn, 0, "npc"), { types: s.types, anomaly: s.physical_anomaly });
+          } catch {
+            selected = "";
+          }
+          let opponent = { turn: s.turn + 1, spell_id: selected };
+          if ("error" in validatePvpDecision(s, "right", opponent)) {
+            const legal = f.spell_ids.find((spell_id) => !("error" in validatePvpDecision(s, "right", { turn: s.turn + 1, spell_id })));
+            if (!legal)
+              throw new Error("INVALID_DECISION");
+            opponent = { turn: s.turn + 1, spell_id: legal };
+          }
+          const out = resolvePvpExchange(s, decision, opponent, rng);
+          if ("error" in out)
+            throw new Error(out.error);
+          s = out.state;
+          events2.push(...out.events);
+        }
+        if (s.fighters.right.inspiration_pending) {
+          const out = resolvePvpInspiration(s, "right", { kind: "decline" }, rng);
+          if ("error" in out)
+            throw new Error(out.error);
+          s = out.state;
+          events2.push(...out.events);
+        }
+        let result = null;
+        if (s.match_result || revision >= MAX_REVISION) {
+          result = { result: s.match_result === "left" ? "win" : s.match_result === "draw" ? "draw" : "loss" };
+          if (s.match_result === "left") {
+            const day = Math.floor(now / 86400000);
+            const used = db.query("SELECT xp FROM practice_daily_xp WHERE player_id=? AND day=?").get(player, day)?.xp ?? 0;
+            const allowance = Math.min(20, 60 - used);
+            const xp = allowance > 0 ? reward(player, row.snapshot_json, now, allowance) : undefined;
+            if (xp) {
+              result.homunculus_xp = xp;
+              if (xp.xp_granted > 0)
+                db.query("INSERT INTO practice_daily_xp VALUES (?,?,?) ON CONFLICT(player_id,day) DO UPDATE SET xp=xp+excluded.xp").run(player, day, xp.xp_granted);
+            }
+          }
+        }
+        writeEvents(id, events2);
+        db.query("UPDATE practice_sessions SET combat_json=?,revision=revision+1,status=?,result_json=?,updated_at=?,expires_at=? WHERE match_id=?").run(JSON.stringify(s), result ? "FINISHED" : "ACTIVE", result ? JSON.stringify(result) : null, now, now + IDLE, id);
+        return dto(get(id, player));
+      });
+    },
+    forfeit(player, id, actionId) {
+      return transact(player, actionId, { kind: "forfeit", id }, (now) => {
+        const row = get(id, player);
+        if (row.status === "ACTIVE") {
+          writeEvents(id, [{ kind: "forfeit", side: "left", result: "right", turn: JSON.parse(row.combat_json).turn }]);
+          db.query("UPDATE practice_sessions SET status='FINISHED',revision=revision+1,result_json=?,updated_at=? WHERE match_id=?").run(JSON.stringify({ result: "loss", reason: "forfeit" }), now, id);
+        }
+        return dto(get(id, player));
+      });
+    },
+    sweep() {
+      db.transaction(() => expire(clock())).immediate();
+    }
+  };
+}
+
+// src/spectator_service.ts
+function createSpectatorService(options) {
+  const { db } = options, clock = options.clock ?? Date.now;
+  const observations = new Map, byViewer = new Map;
+  const prune = () => {
+    const now = clock();
+    for (const entry of observations.values())
+      if (entry.expires <= now)
+        drop(entry);
+  };
+  const drop = (entry) => {
+    if (observations.get(entry.id) !== entry)
+      return;
+    observations.delete(entry.id);
+    if (byViewer.get(entry.viewer) === entry.id)
+      byViewer.delete(entry.viewer);
+  };
+  const friend = (a, b) => {
+    const [low, high] = [a, b].sort();
+    return !!db.query("SELECT 1 FROM friendships WHERE player_low=? AND player_high=?").get(low, high);
+  };
+  const protectedCombat = (player, now) => activePractice(db, player, now) || otherCombat(db, player, now);
+  const same = (a, b) => a.mode === b.mode && a.id === b.id && a.encounter === b.encounter;
+  const validId = (id) => typeof id === "string" && id.length > 0 && id.length <= 128 && !/[\u0000-\u001f\u007f-\u009f]/u.test(id);
+  return {
+    async start(viewer, target) {
+      if (!validId(viewer) || !validId(target) || viewer === target)
+        throw new Error("INVALID_TARGET");
+      prune();
+      if (!friend(viewer, target) || !options.online(target))
+        throw new Error("SPECTATOR_UNAVAILABLE");
+      let allowed = false;
+      try {
+        allowed = await options.enabledAccount(target);
+      } catch {}
+      if (!allowed)
+        throw new Error("SPECTATOR_UNAVAILABLE");
+      const now = clock();
+      prune();
+      if (!friend(viewer, target) || !options.online(target) || protectedCombat(viewer, now))
+        throw new Error("SPECTATOR_UNAVAILABLE");
+      const combat = options.locate(target, now);
+      if (!combat)
+        throw new Error("SPECTATOR_UNAVAILABLE");
+      const oldId = byViewer.get(viewer), old = oldId ? observations.get(oldId) : undefined;
+      const viewers = [...observations.values()].filter((x) => same(x.combat, combat) && x.viewer !== viewer).length;
+      if (viewers >= 8 || observations.size >= 512 && !old)
+        throw new Error("SPECTATOR_CAPACITY");
+      if (old)
+        drop(old);
+      const entry = { id: randomUUID2(), viewer, target, combat, expires: now + 30000 };
+      observations.set(entry.id, entry);
+      byViewer.set(viewer, entry.id);
+      return { observation_id: entry.id, mode: combat.mode };
+    },
+    async state(viewer, id, after) {
+      if (!validId(id) || !Number.isSafeInteger(after) || after < 0)
+        throw new Error("INVALID_REQUEST");
+      prune();
+      const entry = observations.get(id);
+      if (!entry || entry.viewer !== viewer)
+        throw new Error("OBSERVATION_NOT_FOUND");
+      if (!friend(viewer, entry.target) || !options.online(entry.target)) {
+        drop(entry);
+        throw new Error("OBSERVATION_CLOSED");
+      }
+      let allowed = false;
+      try {
+        allowed = await options.enabledAccount(entry.target);
+      } catch {}
+      if (!allowed) {
+        drop(entry);
+        throw new Error("OBSERVATION_CLOSED");
+      }
+      const now = clock();
+      prune();
+      if (observations.get(id) !== entry || !friend(viewer, entry.target) || !options.online(entry.target) || protectedCombat(viewer, now)) {
+        drop(entry);
+        throw new Error("OBSERVATION_CLOSED");
+      }
+      const projection = db.transaction(() => options.project(entry.target, entry.combat, after, now))();
+      if (!projection) {
+        drop(entry);
+        throw new Error("OBSERVATION_CLOSED");
+      }
+      const current = options.locate(entry.target, now);
+      if (current && !same(current, entry.combat) && !projection.terminal) {
+        drop(entry);
+        throw new Error("OBSERVATION_CLOSED");
+      }
+      entry.expires = now + 30000;
+      if (projection.closed)
+        drop(entry);
+      return { observation_id: id, mode: entry.combat.mode, ...projection };
+    },
+    leave(viewer, id) {
+      prune();
+      const entry = observations.get(id);
+      if (!entry || entry.viewer !== viewer)
+        throw new Error("OBSERVATION_NOT_FOUND");
+      drop(entry);
+      return { ok: true };
+    },
+    endViewer(player) {
+      const id = byViewer.get(player);
+      if (id) {
+        const entry = observations.get(id);
+        if (entry)
+          drop(entry);
+      }
+    },
+    endForPlayer(player) {
+      const id = byViewer.get(player);
+      if (id) {
+        const entry = observations.get(id);
+        if (entry)
+          drop(entry);
+      }
+      for (const entry of observations.values())
+        if (entry.target === player)
+          drop(entry);
+    },
+    namesForTarget(target) {
+      prune();
+      const ids = [...observations.values()].filter((x) => x.target === target).map((x) => x.viewer);
+      if (!ids.length)
+        return [];
+      return db.query("SELECT p.display_name FROM players p WHERE p.player_id IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM friendships f WHERE f.player_low=MIN(p.player_id,?) AND f.player_high=MAX(p.player_id,?)) ORDER BY p.display_name,p.player_id").all(JSON.stringify(ids), target, target).map((x) => x.display_name);
+    }
+  };
+}
+
+// src/spectator_discovery.ts
+function spectatableActivities(db, friends, now) {
+  if (!friends.length)
+    return new Map;
+  const rows = db.query(`WITH requested(id) AS (SELECT value FROM json_each(?)), candidates AS (
+    SELECT p.player_id, m.kind AS mode, 0 AS priority, m.created_at AS started
+      FROM requested r JOIN pvp_match_players p ON p.player_id=r.id AND p.active=1
+      JOIN pvp_matches m ON m.match_id=p.match_id AND m.status='ACTIVE'
+    UNION ALL
+    SELECT s.player_id, 'practice', 1, s.created_at FROM requested r
+      JOIN practice_sessions s ON s.player_id=r.id AND s.status='ACTIVE' AND s.expires_at>?
+    UNION ALL
+    SELECT s.player_id, 'hunt', 2, s.started_at FROM requested r
+      JOIN solo_hunt_sessions s ON s.player_id=r.id AND s.status='ACTIVE' AND s.expires_at>? AND s.combat_state_json IS NOT NULL
+    UNION ALL
+    SELECT d.player_id, 'dungeon', 3, d.started_at FROM requested r
+      JOIN dungeon_runs d ON d.player_id=r.id AND d.status='ACTIVE' AND d.expires_at>? AND d.combat_state_json IS NOT NULL
+      WHERE json_valid(d.combat_state_json) AND json_extract(d.combat_state_json,'$.terminal_result') IS NULL
+    UNION ALL
+    SELECT e.player_id, 'expedition', 4, e.started_at FROM requested r
+      JOIN expedition_runs e ON e.player_id=r.id AND e.status='ACTIVE' AND e.heartbeat_at>?
+      WHERE json_valid(e.state_json) AND json_extract(e.state_json,'$.phase')='COMBAT'
+  ), ranked AS (SELECT player_id,mode,ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY priority,started DESC) AS position FROM candidates)
+  SELECT player_id,mode FROM ranked WHERE position=1`).all(JSON.stringify(friends), now, now, now, now - 240000);
+  return new Map(rows.map((row) => [row.player_id, row.mode]));
+}
+
+// src/solo_hunt_retention.ts
+import { gzipSync, gunzipSync } from "zlib";
+var prefix = "gz1:";
+function readHuntCombat(value) {
+  return JSON.parse(value.startsWith(prefix) ? gunzipSync(Buffer.from(value.slice(prefix.length), "base64")).toString("utf8") : value);
+}
+function maintainSoloHunts(db, now) {
+  const candidates = db.query(`SELECT session_id, combat_state_json FROM solo_hunt_sessions
+		WHERE global_event_id IS NULL AND status IN ('VERIFIED_LOSS', 'FORFEIT', 'EXPIRED') AND compacted_at IS NULL
+		AND (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) <= ?
+		ORDER BY (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) LIMIT 50`).all(now - 7200000);
+  const prepared = candidates.map((row) => {
+    const value = row.combat_state_json;
+    const compressed = value ? prefix + gzipSync(Buffer.from(value)).toString("base64") : value;
+    return { ...row, compressed: compressed && value && compressed.length >= value.length ? value : compressed };
+  });
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const expired = db.query(`UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE session_id IN (
+			SELECT session_id FROM solo_hunt_sessions WHERE status = 'ACTIVE' AND global_event_id IS NULL AND expires_at <= ? ORDER BY expires_at LIMIT 50
+		) AND status = 'ACTIVE' AND global_event_id IS NULL`).run(now, now).changes;
+    const update = db.query("UPDATE solo_hunt_sessions SET player_snapshot_json = '{}', combat_state_json = ?, compacted_at = ? WHERE session_id = ? AND combat_state_json IS ? AND compacted_at IS NULL AND global_event_id IS NULL AND status IN ('VERIFIED_LOSS', 'FORFEIT', 'EXPIRED') AND (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) <= ?");
+    let compacted = 0;
+    for (const row of prepared) {
+      compacted += update.run(row.compressed, now, row.session_id, row.combat_state_json, now - 7200000).changes;
+    }
+    db.exec("COMMIT");
+    return { expired, compacted };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+// src/spectator_adapters.ts
+var pick = (value, keys) => Object.fromEntries(keys.filter((k) => value?.[k] !== undefined).map((k) => [k, value[k]]));
+var fighterKeys = ["id", "name", "type", "expedition_types", "texture", "hom_id", "hom_name", "hom_type", "hom_texture", "hp", "max_hp", "atk", "def", "status", "persistent_statuses", "passive_modifiers", "defense_presentation", "pending_drain", "spell_neutralize_active", "spell_neutralize_pending", "strategic_trap", "strategic_heal_suppression", "hom_energy", "hom_spent", "item_id", "inspiration", "inspiration_used", "active_weapon_slot"];
+var ownKeys = [...fighterKeys, "spell_ids", "cooldowns"];
+var statusKeys = ["poison", "stun", "shield", "shield_pct", "reflect", "reflect_pct", "atk_boost", "atk_down", "vuln", "vuln_pct", "hom_stun", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"];
+var publicFighter = (entry, keys) => {
+  const out = pick(entry, keys);
+  out.status = Object.fromEntries(statusKeys.filter((k) => typeof entry?.status?.[k] === "number" && Number.isFinite(entry.status[k])).map((k) => [k, entry.status[k]]));
+  if (["player", "npc", "boss", "left", "right"].includes(entry?.status?.hybrid_mark?.owner) && Number.isSafeInteger(entry?.status?.hybrid_mark?.remaining))
+    out.status.hybrid_mark = pick(entry.status.hybrid_mark, ["owner", "remaining"]);
+  out.persistent_statuses = Object.fromEntries(["poison", "burn", "lethargy"].filter((k) => entry?.persistent_statuses?.[k]).map((k) => [k, pick(entry.persistent_statuses[k], ["stage", "remaining"])]));
+  out.defense_presentation = Object.fromEntries(["shield", "shield_pct", "reflect", "reflect_pct"].filter((k) => entry?.defense_presentation?.[k]).map((k) => [k, pick(entry.defense_presentation[k], ["value", "remaining"])]));
+  out.passive_modifiers = Array.isArray(entry?.passive_modifiers) ? entry.passive_modifiers.slice(0, 32).map((x) => pick(x, ["kind", "amount", "duration", "remaining"])) : [];
+  out.pending_drain = Array.isArray(entry?.pending_drain) ? entry.pending_drain.slice(0, 32).map((x) => pick(x, ["remaining"])) : [];
+  if (entry?.strategic_trap)
+    out.strategic_trap = pick(entry.strategic_trap, ["value", "expires_turn"]);
+  if (entry?.strategic_heal_suppression)
+    out.strategic_heal_suppression = pick(entry.strategic_heal_suppression, ["expires_turn"]);
+  return out;
+};
+var eventKeys = ["kind", "turn", "actor", "target", "side", "target_side", "actor_kind", "category", "verb", "suffix", "spell_id", "spell_name", "show_spell_link", "amount", "damage", "actual_damage", "hp", "status", "value", "remaining", "previous", "effectiveness", "result", "hom_id", "passive_id", "trigger", "hit", "slot", "action", "source", "item_id", "boosted", "actual_bonus_damage", "duration"];
+var publicEvents = new Set(["player_cast", "spell", "support_hit", "damage", "true_damage", "reflect", "corrosion", "hom_corrosion", "hom_damage", "status_tick", "heal", "miss", "evade", "hom_miss", "hom_attack", "hom_dot", "hom_passive", "true_on_hit", "dot_true", "delayed_damage", "poison", "burn", "lethargy", "recoil", "switch", "inspiration", "inspiration_offered", "inspiration_chosen", "inspiration_declined", "inspiration_activated", "physical_anomaly_cast", "counter_trap_armed", "heal_suppression_applied", "heal_suppression_expired", "cooldown_jam", "buff_steal", "debuff_transfer", "ward_convert", "hom_energy_siphon", "combo_trigger", "boss_action", "boss_special_cast", "combat_terminal", "status_snapshot", "boss_intent", "status_applied", "status_changed", "status_consumed", "status_cleansed", "status_expired", "elite_trait_triggered", "elemental_proc", "elemental_heal"]);
+var eventView = (event, id) => {
+  if (!publicEvents.has(event?.kind) && !String(event?.kind ?? "").startsWith("boss_shield"))
+    return { id, kind: "event" };
+  const result = pick(event, eventKeys);
+  for (const key of Object.keys(result))
+    if (!["string", "number", "boolean"].includes(typeof result[key]) && result[key] !== null || typeof result[key] === "number" && !Number.isFinite(result[key]))
+      delete result[key];
+  if (String(event?.kind ?? "").startsWith("inspiration_")) {
+    delete result.spell_id;
+    delete result.spell_name;
+  }
+  if (event?.anomaly)
+    result.anomaly = anomaly(event.anomaly);
+  if (Array.isArray(event?.effects))
+    result.effects = event.effects.slice(0, 16).filter((e) => e && typeof e.kind === "string" && ["player", "npc", "boss", "left", "right"].includes(e.target)).map((e) => pick(e, ["kind", "target", "amount", "unit", "duration", "remaining"]));
+  if (event?.target_status && typeof event.target_status === "object")
+    result.target_status = pick(event.target_status, ["poison", "stun", "shield_pct", "reflect_pct", "atk_boost", "atk_down", "vuln_pct", "hom_stun", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"]);
+  return { ...result, id };
+};
+var anomaly = (value) => value ? pick(value, ["id", "favored_type", "weakened_type", "remaining_exchanges"]) : null;
+function createSpectatorAdapters(db, presentation) {
+  const locate = (target, now) => {
+    const mode = spectatableActivities(db, [target], now).get(target);
+    if (mode === "ranked" || mode === "friendly") {
+      const row = db.query("SELECT m.match_id FROM pvp_match_players p JOIN pvp_matches m ON m.match_id=p.match_id WHERE p.player_id=? AND p.active=1 AND m.status='ACTIVE'").get(target);
+      return row ? { mode, id: row.match_id, encounter: "0" } : null;
+    }
+    if (mode === "practice") {
+      const row = db.query("SELECT match_id FROM practice_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(target, now);
+      return row ? { mode, id: row.match_id, encounter: "0" } : null;
+    }
+    if (mode === "hunt") {
+      const row = db.query("SELECT session_id FROM solo_hunt_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>? AND combat_state_json IS NOT NULL").get(target, now);
+      return row ? { mode, id: row.session_id, encounter: "0" } : null;
+    }
+    if (mode === "dungeon") {
+      const row = db.query("SELECT run_id,combat_state_json FROM dungeon_runs WHERE player_id=? AND status='ACTIVE' AND expires_at>? AND combat_state_json IS NOT NULL").get(target, now);
+      if (!row)
+        return null;
+      return { mode, id: row.run_id, encounter: String(JSON.parse(row.combat_state_json).floor) };
+    }
+    if (mode === "expedition") {
+      const row = db.query("SELECT run_id,state_json FROM expedition_runs WHERE player_id=? AND status='ACTIVE' AND heartbeat_at>?").get(target, now - 240000);
+      if (!row)
+        return null;
+      const state = JSON.parse(row.state_json);
+      return { mode, id: row.run_id, encounter: String(state.depth) };
+    }
+    return null;
+  };
+  const readEvents = (table, id, after, encounter) => {
+    const isPve = table === "spectator_events";
+    const where = isPve ? "mode=? AND session_id=? AND encounter=?" : "match_id=?" + (table === "pvp_events" ? " AND visibility='public'" : "");
+    const args = isPve ? [encounter.split(":")[0], id, encounter.split(":").slice(1).join(":")] : [id];
+    const bounds = db.query(`SELECT MIN(seq) lo,MAX(seq) hi FROM ${table} WHERE ${where}`).get(...args);
+    const gap = after > 0 && bounds.lo !== null && after < bounds.lo;
+    const initial = after === 0 || gap;
+    const entries = initial ? db.query(`SELECT seq,payload_json FROM ${table} WHERE ${where} ORDER BY seq DESC LIMIT 250`).all(...args) : db.query(`SELECT seq,payload_json FROM ${table} WHERE ${where} AND seq>? ORDER BY seq LIMIT 250`).all(...args, after);
+    if (initial)
+      entries.reverse();
+    const last = entries.at(-1)?.seq ?? after;
+    return { entries, gap, more: bounds.hi !== null && last < bounds.hi };
+  };
+  const playerName = (id) => db.query("SELECT display_name FROM players WHERE player_id=?").get(id)?.display_name ?? "";
+  const project = (target, c, after, now) => {
+    if (c.mode === "ranked" || c.mode === "friendly" || c.mode === "practice") {
+      const practice = c.mode === "practice";
+      const row = practice ? db.query("SELECT *,combat_json AS combat_state_json,'LEFT' AS side FROM practice_sessions WHERE match_id=? AND player_id=?").get(c.id, target) : db.query("SELECT m.*,p.side FROM pvp_matches m JOIN pvp_match_players p ON p.match_id=m.match_id WHERE m.match_id=? AND p.player_id=? AND m.kind=?").get(c.id, target, c.mode);
+      if (!row || practice && row.status === "ACTIVE" && row.expires_at <= now)
+        return null;
+      const state = JSON.parse(row.combat_state_json), side = row.side.toLowerCase(), enemy = side === "left" ? "right" : "left";
+      const identities = practice ? [{ side: "LEFT", player_id: target, display_name: playerName(target) }, { side: "RIGHT", player_id: "practice_npc", display_name: state.fighters.right.name }] : db.query("SELECT p.side,p.player_id,u.display_name FROM pvp_match_players p JOIN players u ON u.player_id=p.player_id WHERE p.match_id=?").all(c.id);
+      const identity = (s) => identities.find((x) => x.side.toLowerCase() === s);
+      if (!identity(side) || !identity(enemy))
+        return null;
+      const own2 = projectPvpFighter(state, side, side, identity(side));
+      delete own2.inspiration_offers;
+      const original = state.fighters[side].original_spell_ids;
+      if (Array.isArray(original) && original.length === 4) {
+        own2.spell_ids = [...original];
+        own2.spell_cooldowns = Object.fromEntries(original.map((id) => [id, state.fighters[side].spell_cooldowns?.[id] ?? 0]));
+      } else {
+        own2.spell_ids = ["", "", "", ""];
+        own2.spell_cooldowns = {};
+      }
+      const rival = projectPvpFighter(state, enemy, side, identity(enemy));
+      const batch = readEvents(practice ? "practice_events" : "pvp_events", c.id, after);
+      const events2 = batch.entries.map((e) => {
+        const out = sanitizePvpEvent(JSON.parse(e.payload_json), side, e.seq);
+        if (String(out.kind ?? "").startsWith("inspiration_")) {
+          delete out.spell_id;
+          delete out.spell_name;
+        }
+        return out;
+      });
+      const final = row.result_json ? JSON.parse(row.result_json) : null;
+      const outcome = practice ? final?.result : final?.result === "draw" ? "draw" : final?.result === side ? "win" : "loss";
+      return { snapshot: { match_id: c.id, kind: c.mode, status: row.status, combat_revision: row.revision, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly(state.physical_anomaly), score: { player: state.wins[side], enemy: state.wins[enemy] }, player: own2, enemy: rival, ready: { player: false, enemy: false }, result: final ? { result: outcome } : null }, events: events2, cursor_reset: batch.gap, terminal: row.status !== "ACTIVE", closed: row.status !== "ACTIVE" && !batch.more };
+    }
+    if (c.mode === "hunt") {
+      const row = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id=? AND player_id=?").get(c.id, target);
+      if (!row?.combat_state_json || row.status === "ACTIVE" && row.expires_at <= now)
+        return null;
+      const rawCombat = readHuntCombat(row.combat_state_json);
+      const projected = presentation.hunt(rawCombat);
+      const combat = { ...pick(projected, ["turn", "terminal_result"]), physical_anomaly: anomaly(projected.physical_anomaly), strategic_delayed: (projected.strategic_delayed ?? []).map((x) => pick(x, ["actor", "target", "amount", "due_turn"])), player: publicFighter(projected.player, [...fighterKeys, "homunculus_id", "homunculus_energy", "homunculus_spent"]), boss: publicFighter(projected.boss, [...fighterKeys, "tier", "intent", "intent_spell_id"]), minions: (projected.minions ?? []).map((x) => publicFighter(x, fighterKeys)), moves: (projected.moves ?? []).map((x) => pick(x, ["id", "name", "type", "category", "power_mult", "accuracy", "cooldown_remaining"])), shield: pick(projected.shield, ["turns", "reduction", "suppressed"]), fury: pick(projected.fury, ["pending", "multiplier"]), power_turn: pick(projected.power_turn, ["active", "used"]) };
+      const boss = pick(JSON.parse(row.boss_snapshot_json), ["id", "name", "tier", "texture_id", "texture_variants", "minion_texture_id"]);
+      const frozen = JSON.parse(row.combat_loadout_json);
+      const loadout = pick(frozen, ["entity_id", "weapon_ids", "homunculus_id"]);
+      if (Array.isArray(frozen.spell_ids) && frozen.spell_ids.length === 4)
+        combat.moves = frozen.spell_ids.map((id) => {
+          const spell = (rawCombat.spells ?? []).find((x) => x.id === id);
+          return { id, ...pick(spell, ["name", "type", "category", "power_mult", "accuracy"]), cooldown_remaining: rawCombat.cooldowns?.[id] ?? 0 };
+        });
+      else
+        combat.moves = Array.from({ length: 4 }, () => ({ id: "" }));
+      const batch = readEvents("spectator_events", c.id, after, "hunt:0");
+      const events2 = batch.entries.map((e) => eventView(JSON.parse(e.payload_json), e.seq));
+      const zone = row.global_event_id ? db.query("SELECT zone_id FROM global_boss_events WHERE event_id=?").get(row.global_event_id)?.zone_id : row.guardian_zone_id;
+      return { snapshot: { session_id: c.id, status: row.status, combat_revision: row.combat_revision, boss_definition: boss, combat_loadout: loadout, combat_state: combat, zone_id: zone ?? "" }, events: events2, cursor_reset: batch.gap, terminal: row.status !== "ACTIVE", closed: row.status !== "ACTIVE" && !batch.more };
+    }
+    if (c.mode === "dungeon" || c.mode === "expedition") {
+      const expedition2 = c.mode === "expedition";
+      const row = expedition2 ? db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(c.id, target) : db.query("SELECT * FROM dungeon_runs WHERE run_id=? AND player_id=?").get(c.id, target);
+      if (!row || row.status === "ACTIVE" && (expedition2 ? !(row.heartbeat_at > now - 240000) : row.expires_at <= now))
+        return null;
+      let state = expedition2 ? row.state_json ? JSON.parse(row.state_json) : null : null;
+      if (expedition2 && state && row.loadout_json)
+        state.frozen_spells = JSON.parse(row.loadout_json)?.spell_ids;
+      if (expedition2 && (!state?.combat || String(state.depth) !== c.encounter || state.phase !== "COMBAT")) {
+        const last = db.query("SELECT combat_json FROM spectator_final_combats WHERE mode='expedition' AND session_id=? AND encounter=?").get(c.id, c.encounter);
+        if (last)
+          state = { ...JSON.parse(last.combat_json), phase: "FINISHED" };
+      }
+      let combat = expedition2 ? state?.combat : row.combat_state_json ? JSON.parse(row.combat_state_json) : null;
+      if (!expedition2 && (!combat || String(combat.floor) !== c.encounter)) {
+        const last = db.query("SELECT combat_json FROM spectator_final_combats WHERE mode='dungeon' AND session_id=? AND encounter=?").get(c.id, c.encounter);
+        combat = last ? JSON.parse(last.combat_json) : null;
+      }
+      if (!combat || String(expedition2 ? state.depth : combat.floor) !== c.encounter)
+        return null;
+      const visible = expedition2 ? presentation.expedition(combat) : presentation.dungeon(combat);
+      const own2 = publicFighter(visible.player, ownKeys), enemy = publicFighter(visible.npc, fighterKeys);
+      const frozen = expedition2 ? state?.frozen_spells : row.loadout_json ? JSON.parse(row.loadout_json)?.spell_ids : null;
+      const original = Array.isArray(frozen) && frozen.length === 4 ? frozen : combat.player.original_spell_ids;
+      if (Array.isArray(original) && original.length === 4) {
+        own2.spell_ids = [...original];
+        own2.cooldowns = Object.fromEntries(original.map((id) => [id, visible.player.cooldowns?.[id] ?? 0]));
+      } else {
+        own2.spell_ids = ["", "", "", ""];
+        own2.cooldowns = {};
+      }
+      if (Array.isArray(visible.npc.weapons))
+        enemy.weapons = visible.npc.weapons.map((w) => w ? pick(w, ["id"]) : null);
+      const combatState = { player: own2, npc: enemy, ...pick(visible, ["floor", "turn", "terminal_result", "weapons", "active_weapon_slot", "item_id"]), strategic_delayed: (visible.strategic_delayed ?? []).map((entry) => pick(entry, ["actor", "target", "amount", "due_turn"])), physical_anomaly: anomaly(visible.physical_anomaly) };
+      if (!expedition2 && visible.special_encounter)
+        combatState.special_encounter = pick(visible.special_encounter, ["kind", "label", "hint"]);
+      if (!expedition2 && visible.elite)
+        combatState.elite = { ...pick(visible.elite, ["label"]), modifiers: pick(visible.elite.modifiers, ["hp", "attack", "defense"]) };
+      if (!expedition2 && visible.elite_trait)
+        combatState.elite_trait = pick(visible.elite_trait, ["trait", "label", "hint", "used"]);
+      const log = expedition2 ? state.log ?? [] : [];
+      const base = expedition2 ? state.log_base ?? 0 : 0;
+      const gap = expedition2 && after > 0 && after < base;
+      const start = expedition2 && (after === 0 || gap) ? Math.max(base, base + log.length - 250) : after;
+      const batch = expedition2 ? null : readEvents("spectator_events", c.id, after, "dungeon:" + c.encounter);
+      const events2 = expedition2 ? log.slice(Math.max(0, start - base), Math.max(0, start - base) + 250).map((e, i) => eventView(e, start + i + 1)) : batch.entries.map((e) => eventView(JSON.parse(e.payload_json), e.seq));
+      const more = expedition2 ? start + events2.length < base + log.length : batch.more;
+      const terminal = expedition2 ? state.phase !== "COMBAT" || row.status !== "ACTIVE" : !!combat.terminal_result || row.status !== "ACTIVE";
+      const closed = terminal && !more;
+      return { snapshot: { status: closed ? "FINISHED" : "ACTIVE", combat_revision: expedition2 ? row.revision : row.combat_revision, combat_state: combatState, ...expedition2 ? { phase: state.phase, depth: state.depth, background_key: state.background } : { phase: closed ? "FINISHED" : "COMBAT", floor: combat.floor } }, events: events2, cursor_reset: expedition2 ? gap : batch.gap, terminal, closed };
+    }
+    return null;
+  };
+  return { locate, project };
+}
+
+// src/spectator_events.ts
+function recordSpectatorEvents(db, mode, session, encounter, revision, events2, now) {
+  if (!Number.isSafeInteger(revision) || revision < 1 || !Array.isArray(events2))
+    throw new Error("INVALID_SPECTATOR_EVENTS");
+  const insert = db.query("INSERT INTO spectator_events(mode,session_id,encounter,seq,payload_json,created_at) VALUES (?,?,?,?,?,?)");
+  events2.slice(-511).forEach((event, index) => insert.run(mode, session, encounter, revision * 512 + index, JSON.stringify(event), now));
+  db.query("DELETE FROM spectator_events WHERE mode=? AND session_id=? AND encounter=? AND seq <= COALESCE((SELECT seq FROM spectator_events WHERE mode=? AND session_id=? AND encounter=? ORDER BY seq DESC LIMIT 1 OFFSET 512),-1)").run(mode, session, encounter, mode, session, encounter);
+  db.query("DELETE FROM spectator_events WHERE rowid IN (SELECT rowid FROM spectator_events WHERE created_at<? ORDER BY created_at LIMIT 50)").run(now - 86400000);
+}
+
+// src/expeditions_service.ts
+import { createHmac as createHmac5, randomBytes } from "crypto";
+import { gzipSync as gzipSync2, gunzipSync as gunzipSync2 } from "zlib";
+
+// src/expeditions_combat.ts
+var ITEM_EFFECTS = new Set(["power_flat", "guard_flat", "tempo_flat", "true_on_hit", "dot_true", "vuln_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
+function expeditionItemEffects(item, level) {
+  if (!item || typeof item.id !== "string" || !item.id || item.slot !== "build" || !Number.isInteger(level) || level < 0 || level > 10 || !item.effects || typeof item.effects !== "object" || Array.isArray(item.effects))
+    throw new Error("INVALID_EXPEDITION_ITEM");
+  const result = {};
+  for (const [key, values] of Object.entries(item.effects)) {
+    if (!ITEM_EFFECTS.has(key) || !Array.isArray(values) || !values.length || values.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0))
+      throw new Error("INVALID_EXPEDITION_ITEM");
+    const value = level === 0 && values.length === 10 && key in (item.base_effects ?? {}) ? item.base_effects[key] : values[Math.min(Math.max(0, level - 1), values.length - 1)];
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+      throw new Error("INVALID_EXPEDITION_ITEM");
+    result[key] = value;
+  }
+  if (!Object.keys(result).length || Object.entries(item.base_effects ?? {}).some(([key, value]) => !ITEM_EFFECTS.has(key) || !Object.hasOwn(item.effects, key) || typeof value !== "number" || !Number.isFinite(value) || value < 0))
+    throw new Error("INVALID_EXPEDITION_ITEM");
+  return result;
+}
+function chooseNpcItem(seed, key, setup, npcSpells, npcTypes, hom, personality, catalogs, level) {
+  const items = catalogs.items?.filter((item) => item.slot === "build") ?? [];
+  if (items.length !== 8 || new Set(items.map((item) => item.id)).size !== 8)
+    throw new Error("INVALID_EXPEDITION_ITEM_CATALOG");
+  const spells = setup.spells ?? [];
+  const attacks = spells.filter((s) => s.category === "attack");
+  const offense = attacks.reduce((sum, s) => sum + Math.max(0, s.power_mult ?? 0) * (s.accuracy ?? 0), 0) / Math.max(1, spells.length);
+  const has = (list, effect) => list.some((s) => s.effects?.some((e) => e.kind === effect));
+  const playerItems = (setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects ?? {} }]).filter((w) => w?.id);
+  const effectMax = (name) => Math.max(0, ...playerItems.map((w) => w.effects?.[name] ?? 0));
+  const playerReflect = has(spells, "reflect") || effectMax("reflect_pct") > 0 || (setup.hom_synergy?.reflect_pct ?? 0) > 0;
+  const defensive = has(spells, "shield") || has(spells, "heal") || effectMax("guard_flat") > 1 || effectMax("ward_pct") > 0;
+  const tempoPressure = Math.max(0, Math.min(1, ((setup.entity.base_stats.tempo ?? 10) + effectMax("tempo_flat") + (setup.hom_tempo ?? 0) - 10) / 20));
+  const hasDisadvantage = npcTypes.some((t) => (catalogs.types.effectiveness[t]?.[setup.entity.type] ?? 1) < 1);
+  const passive = catalogs.homunculi?.find((entry) => entry.id === hom.id)?.passive;
+  const synergy = has(npcSpells, "poison") || has(npcSpells, "vuln") || passive?.event === "before_attack" || passive?.effects?.some((effect) => ["poison", "vuln", "power_flat"].includes(effect.kind));
+  const ranked = items.map((item) => {
+    const fx = expeditionItemEffects(item, level);
+    const score = 1 + (fx.evasion_pct ?? 0) * (4 + offense * 5) + (fx.ward_pct ?? 0) * (3 + offense * 5) + (fx.reflect_pct ?? 0) * (2 + offense * 6) + (fx.ignore_reflect_chance ?? 0) * (playerReflect ? 7 : 0.4) + (fx.guard_flat ?? 0) * (0.08 + offense * 0.08) + (fx.true_on_hit ?? 0) * (defensive ? 0.65 : 0.22) + (fx.dot_true ?? 0) * (defensive || synergy ? 0.5 : 0.2) + (fx.vuln_on_hit ?? 0) * (synergy ? 4 : 1) + (fx.tempo_flat ?? 0) * (0.08 + tempoPressure * 0.42) + (fx.tempo_on_win ?? 0) * (0.06 + tempoPressure * 0.35) + (fx.disadvantage_reduction ?? 0) * (hasDisadvantage ? 4 : 0.3) + (fx.power_flat ?? 0) * (personality === "OPPORTUNIST" ? 0.12 : 0.07);
+    return { item, effects: fx, score };
+  }).sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id));
+  const pool = ranked.filter((v, i) => i < 4 && v.score >= ranked[0].score * 0.7);
+  const choice = pool[Math.floor(expeditionDraw(seed, JSON.stringify(["npc-item", key]), 0) * pool.length)];
+  return { item_id: choice.item.id, item_level: level, item_effects: choice.effects };
+}
+function buildExpeditionEnemy(seed, encounterKey, depth, capturable, setup, catalogs, enemyId, homId, npcItemLevel = 0, difficultyDepth = depth) {
+  if (!encounterKey || !Number.isSafeInteger(depth) || depth < 1 || !Number.isSafeInteger(difficultyDepth) || difficultyDepth < 1 || typeof capturable !== "boolean" || !setup?.entity?.base_stats || !Array.isArray(setup.spells) || !Array.isArray(setup.spell_ids) || !Array.isArray(catalogs?.spells))
+    throw new Error("INVALID_EXPEDITION_SETUP");
+  const draw = (label) => expeditionDraw(seed, JSON.stringify([encounterKey, depth, label]), 0);
+  const enemy = enemyId === undefined ? expeditionEnemies[Math.floor(draw("enemy") * expeditionEnemies.length)] : expeditionEnemies.find((e) => e.id === enemyId);
+  if (!enemy)
+    throw new Error("INVALID_EXPEDITION_ENEMY");
+  const hom = homId === undefined ? expeditionCaptures[Math.floor(draw("homunculus") * expeditionCaptures.length)] : expeditionCaptures.find((h) => h.id === homId);
+  if (!hom)
+    throw new Error("INVALID_EXPEDITION_HOMUNCULUS");
+  const candidates = catalogs.spells.filter((s) => expeditionSpellSupported(s, enemy.types)).sort((a, b) => a.id.localeCompare(b.id));
+  const basic = candidates.filter((s) => s.category === "attack" && s.cooldown_turns === 0 && s.power_mult > 0);
+  if (!basic.length)
+    throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
+  const relation = (type) => catalogs.types?.effectiveness?.[type]?.[setup.entity.type] ?? 1;
+  const pick2 = (list, label) => list[Math.floor(draw(label) * list.length)];
+  const preferredBasic = [...basic].sort((a, b) => relation(b.type) - relation(a.type));
+  const bestRelation = relation(preferredBasic[0].type);
+  const selected = [pick2(preferredBasic.filter((s) => relation(s.type) === bestRelation), "basic")];
+  const has = (spell, kind, target) => spell.effects.some((effect) => effect.kind === kind && (!target || effect.target === target));
+  const pairs = [];
+  for (const a of candidates)
+    for (const b of candidates) {
+      if (a.id === b.id || selected.some((s) => s.id === a.id || s.id === b.id))
+        continue;
+      if (has(a, "poison", "enemy") && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].some((k) => has(b, k)) || has(a, "shield", "self") && ["ward_convert", "bonus_if_shielded"].some((k) => has(b, k)) || has(a, "hybrid_mark", "enemy") && has(b, "bonus_if_marked") || has(a, "vuln", "enemy") && b.category === "attack" && b.power_mult >= 0.9)
+        pairs.push([a, b]);
+    }
+  const advancedPairs = pairs.filter((pair) => pair.some((s) => s.type === "hybrid"));
+  const markPairs = advancedPairs.filter((pair) => has(pair[0], "hybrid_mark") && has(pair[1], "bonus_if_marked"));
+  if (pairs.length)
+    selected.push(...pick2(markPairs.length ? markPairs : advancedPairs.length ? advancedPairs : pairs, "combo"));
+  const remaining = () => candidates.filter((s) => !selected.some((x) => x.id === s.id));
+  if (selected.length < 4) {
+    const advanced = remaining().filter((s) => ["hybrid", "universal"].includes(s.type));
+    if (advanced.length)
+      selected.push(pick2(advanced, "advanced"));
+  }
+  while (selected.length < 4) {
+    const available = remaining();
+    if (!available.length)
+      throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
+    selected.push(pick2(available, `spell-${selected.length}`));
+  }
+  const base = setup.entity.base_stats, bonus = setup.bonuses ?? {};
+  const weapons = Array.isArray(setup.weapons) ? setup.weapons.filter((w) => w.id).map((w) => w.effects) : [setup.itemEffects ?? {}];
+  const factor = Math.max(0, Math.min(2, setup.hom_id ? setup.hom_synergy?.item_effect_mult ?? 1 : 1));
+  const weaponPower = Math.max(0, ...weapons.map((w) => w?.power_flat ?? 0));
+  const weaponGuard = Math.max(0, ...weapons.map((w) => w?.guard_flat ?? 0));
+  const hp = base.hp + (bonus.hp ?? 0), attack = base.power + (bonus.atk ?? 0) + Math.trunc(weaponPower * factor), defense = base.guard + (bonus.def ?? 0) + Math.trunc(weaponGuard * factor);
+  if (![hp, attack, defense].every((v) => Number.isFinite(v) && v > 0))
+    throw new Error("INVALID_EXPEDITION_SETUP");
+  const spellQuality = setup.spells.reduce((sum, s) => sum + (s.category === "attack" ? Math.min(1.5, s.power_mult * s.accuracy) : 0.65), 0) / 4;
+  const growth = 1 + Math.min(0.55, Math.log2(difficultyDepth) * 0.035);
+  const threat = (capturable ? 1.12 : 1) * growth;
+  const personality = capturable ? "ALCHEMIST" : "OPPORTUNIST";
+  const equipment = chooseNpcItem(seed, encounterKey, setup, selected, enemy.types, hom, personality, catalogs, npcItemLevel);
+  const attackBudget = Math.max(1, Math.round(attack * (0.6 + Math.min(0.15, spellQuality * 0.1)) * threat));
+  const defenseBudget = Math.min(1e5, Math.max(1, Math.round(defense * 0.82 * threat)) + Math.min(26, 2 * (difficultyDepth - 1)));
+  const item_power_allocated = Math.trunc(equipment.item_effects.power_flat ?? 0);
+  const item_guard_allocated = Math.trunc(equipment.item_effects.guard_flat ?? 0);
+  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((difficultyDepth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth) + Math.min(40, (difficultyDepth - 1) * 5)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map((s) => s.id), npc_personality: personality };
+}
+function createExpeditionCombatState(setup, enemy, catalogs, previousActiveSlot = 0) {
+  if (enemy?.combat_mode !== "expedition")
+    return { error: "UNTRUSTED_SETUP" };
+  const manifest = expeditionEnemies.find((e) => e.id === enemy.entity_id);
+  if (!manifest || JSON.stringify(manifest.types) !== JSON.stringify(enemy.types) || enemy.texture !== manifest.texture || enemy.preview_texture !== manifest.preview_texture)
+    return { error: "UNTRUSTED_SETUP" };
+  const item = catalogs.items?.find((entry) => entry.id === enemy.item_id && entry.slot === "build");
+  let effects;
+  try {
+    effects = expeditionItemEffects(item, enemy.item_level);
+  } catch {
+    return { error: "UNTRUSTED_SETUP" };
+  }
+  if (JSON.stringify(Object.entries(effects).sort()) !== JSON.stringify(Object.entries(enemy.item_effects ?? {}).sort()))
+    return { error: "UNTRUSTED_SETUP" };
+  if (![enemy.item_power_allocated, enemy.item_guard_allocated].every(Number.isSafeInteger) || enemy.item_power_allocated !== Math.trunc(effects.power_flat ?? 0) || enemy.item_guard_allocated !== Math.trunc(effects.guard_flat ?? 0))
+    return { error: "UNTRUSTED_SETUP" };
+  const state = createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot);
+  if (!state.error) {
+    const hom = expeditionCaptures.find((h) => h.id === enemy.homunculus_id);
+    state.npc.item_id = item.id;
+    state.npc.item_level = enemy.item_level;
+    state.npc.item_effects = effects;
+    state.npc.weapons = [{ id: item.id, level: enemy.item_level }];
+    state.tactics_enabled = true;
+    state.tactical_tier = enemy.tactical_tier ?? "normal";
+    state.combat_mode = "expedition";
+    state.npc.texture = manifest.texture;
+    state.npc.preview_texture = manifest.preview_texture;
+    state.npc.capturable = enemy.capturable;
+    state.npc.hom_type = hom.type;
+    state.npc.hom_texture = hom.combat_texture;
+  }
+  return state;
+}
+function resolveExpeditionTurn(state, decision, rng) {
+  return state?.combat_mode === "expedition" ? resolveDungeonTurn(state, decision, rng) : { error: "UNTRUSTED_SETUP" };
+}
+function resolveExpeditionInspiration(state, decision, rng) {
+  return state?.combat_mode === "expedition" ? resolveDungeonInspiration(state, decision, rng) : { error: "UNTRUSTED_SETUP" };
+}
+
+// src/expeditions_backgrounds.ts
+var EXPEDITION_BACKGROUNDS = Object.freeze([
+  "Ashen_Monastery_12s_1080p_Godot.ogv",
+  "Astral_Throne_15s_1080p_Godot.ogv",
+  "Eclipsed_Ziggurat_15s_1080p_Godot.ogv",
+  "Hollow_Carnival_12s_1080p_Godot.ogv",
+  "Hollow_Necropolis_12s_1080p_Godot.ogv",
+  "Ironroot_Forest_12s_1080p.ogv",
+  "Leviathan_Ossuary_12s_1080p_Godot.ogv",
+  "Mirror_Tribunal_12s_1080p_Godot.ogv",
+  "Quicksilver_Docks_12s_1080p.ogv",
+  "Salt_Cathedral_12s_1080p_Godot.ogv",
+  "Sunken_Archive_15s_1080p_Godot.ogv",
+  "The_Bismuth_Badlands_12s_Godot.ogv",
+  "The_Blackwater_Baths_12s_Godot.ogv",
+  "The_Celestial_Loom_12s_Godot.ogv",
+  "The_Crimson_Pagoda_12s.ogv",
+  "The_Forgotten_Menagerie_12s_Godot.ogv",
+  "The_Frozen_Clocktower_12s_Godot.ogv",
+  "The_Gilded_Apiary_12s_Godot.ogv",
+  "The_Golden_Basilica_12s.ogv",
+  "The_Lunar_Salt_Flats_12s_Godot.ogv",
+  "The_Mycelial_Underworks_15s_Godot.ogv",
+  "The_Neon_Reliquary_12s_Godot.ogv",
+  "The_Obsidian_Rail_Terminus_12s_Godot.ogv",
+  "The_Skyborne_Aether_Gardens_15s_Godot.ogv",
+  "The_Transmutation_Foundry_12s_Godot.ogv",
+  "Vitriol_Marshes_12s_1080p_Godot.ogv"
+]);
+if (EXPEDITION_BACKGROUNDS.length !== 26 || new Set(EXPEDITION_BACKGROUNDS).size !== 26 || EXPEDITION_BACKGROUNDS.some((key) => !/^[A-Za-z0-9_]+\.ogv$/.test(key)))
+  throw new Error("INVALID_EXPEDITION_BACKGROUNDS");
+function expeditionBackgroundAt(seed, runId, index) {
+  if (!runId || !Number.isSafeInteger(index) || index < 0)
+    throw new Error("INVALID_EXPEDITION_BACKGROUND_INDEX");
+  const cycle = Math.floor(index / EXPEDITION_BACKGROUNDS.length);
+  const shuffle = (n) => {
+    const permutation2 = [...EXPEDITION_BACKGROUNDS];
+    for (let i = permutation2.length - 1;i > 0; i--) {
+      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["background", runId, n]), i) * (i + 1));
+      [permutation2[i], permutation2[j]] = [permutation2[j], permutation2[i]];
+    }
+    return permutation2;
+  };
+  const permutation = shuffle(cycle);
+  if (cycle > 0 && permutation[0] === shuffle(cycle - 1).at(-1))
+    [permutation[0], permutation[1]] = [permutation[1], permutation[0]];
+  return permutation[index % permutation.length];
+}
+
+// src/expeditions_service.ts
+class ExpeditionError extends Error {
+  status;
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+var fail = (status, message) => {
+  throw new ExpeditionError(status, message);
+};
+var canonical = (v) => Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}` : JSON.stringify(v) ?? "null";
+var replayPrefix = "gz1:";
+var readReplay = (value) => JSON.parse(value.startsWith(replayPrefix) ? gunzipSync2(Buffer.from(value.slice(replayPrefix.length), "base64")).toString("utf8") : value);
+var EXPEDITION_REPLAY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+var EXPEDITION_LEASE_EXPIRY_MS = 240000;
+var EXPEDITION_MAX_REVISION = 1e4;
+function maintainExpeditionReplays(db, now) {
+  return db.transaction(() => {
+    let changed = 0;
+    const legacy = db.query(`SELECT player_id,client_action_id,payload_json,result_state_json FROM action_log
+      WHERE action_type GLOB 'EXPEDITION_*' AND expedition_run_id IS NULL LIMIT 50`).all();
+    const attach = db.prepare("UPDATE action_log SET expedition_run_id=?,expedition_replay_compacted=? WHERE player_id=? AND client_action_id=? AND expedition_run_id IS NULL");
+    for (const row of legacy) {
+      let runId = "";
+      try {
+        runId = JSON.parse(row.payload_json)?.run_id ?? (row.result_state_json ? readReplay(row.result_state_json)?.session?.run_id : "") ?? "";
+      } catch {}
+      if (typeof runId !== "string")
+        runId = "";
+      changed += attach.run(runId, !row.result_state_json || row.result_state_json.startsWith(replayPrefix) ? 1 : 0, row.player_id, row.client_action_id).changes;
+    }
+    if (!db.query("SELECT 1 FROM action_log WHERE action_type GLOB 'EXPEDITION_*' AND expedition_run_id IS NULL LIMIT 1").get()) {
+      const finished = db.query("SELECT run_id FROM expedition_runs WHERE status <> 'ACTIVE' AND replay_compacted_at IS NULL AND finished_at <= ? ORDER BY finished_at LIMIT 1").get(now - 2 * 60 * 60 * 1000);
+      if (finished) {
+        const rows = db.query("SELECT player_id,client_action_id,result_state_json FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' AND expedition_replay_compacted=0 LIMIT 50").all(finished.run_id);
+        const update = db.prepare("UPDATE action_log SET result_state_json=?,expedition_replay_compacted=1 WHERE player_id=? AND client_action_id=? AND expedition_replay_compacted=0");
+        for (const row of rows) {
+          const result = row.result_state_json && !row.result_state_json.startsWith(replayPrefix) ? replayPrefix + gzipSync2(Buffer.from(row.result_state_json)).toString("base64") : row.result_state_json;
+          changed += update.run(result, row.player_id, row.client_action_id).changes;
+        }
+        if (!db.query("SELECT 1 FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' AND expedition_replay_compacted=0 LIMIT 1").get(finished.run_id))
+          changed += db.query("UPDATE expedition_runs SET replay_compacted_at=? WHERE run_id=? AND replay_compacted_at IS NULL").run(now, finished.run_id).changes;
+      }
+      const expired = db.query("SELECT run_id FROM expedition_runs WHERE status <> 'ACTIVE' AND finished_at <= ? ORDER BY finished_at LIMIT 1").get(now - EXPEDITION_REPLAY_RETENTION_MS);
+      if (expired) {
+        changed += db.query("DELETE FROM action_log WHERE rowid IN (SELECT rowid FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' LIMIT 50)").run(expired.run_id).changes;
+        if (!db.query("SELECT 1 FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' LIMIT 1").get(expired.run_id))
+          changed += db.query("DELETE FROM expedition_runs WHERE run_id=? AND status <> 'ACTIVE' AND finished_at <= ?").run(expired.run_id, now - EXPEDITION_REPLAY_RETENTION_MS).changes;
+      }
+      changed += db.query("DELETE FROM action_log WHERE rowid IN (SELECT rowid FROM action_log WHERE expedition_run_id='' AND action_type GLOB 'EXPEDITION_*' AND created_at <= ? LIMIT 50)").run(now - EXPEDITION_REPLAY_RETENTION_MS).changes;
+    }
+    return changed;
+  }).immediate();
+}
+function expeditionEnemyAt(seed, runId, index) {
+  if (!runId || !Number.isSafeInteger(index) || index < 0)
+    throw new Error("INVALID_EXPEDITION_ENEMY_INDEX");
+  const cycle = Math.floor(index / expeditionEnemies.length);
+  const shuffle = (n) => {
+    const bag2 = expeditionEnemies.map((e) => e.id);
+    for (let i = bag2.length - 1;i > 0; i--) {
+      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["enemy-bag", runId, n]), i) * (i + 1));
+      [bag2[i], bag2[j]] = [bag2[j], bag2[i]];
+    }
+    return bag2;
+  };
+  const bag = shuffle(cycle);
+  if (cycle && bag[0] === shuffle(cycle - 1).at(-1))
+    [bag[0], bag[1]] = [bag[1], bag[0]];
+  return bag[index % bag.length];
+}
+function expeditionHomunculusAt(seed, runId, index) {
+  if (!runId || !Number.isSafeInteger(index) || index < 0)
+    throw new Error("INVALID_EXPEDITION_HOMUNCULUS_INDEX");
+  const cycle = Math.floor(index / expeditionCaptures.length);
+  const shuffle = (n) => {
+    const bag2 = expeditionCaptures.map((h) => h.id);
+    for (let i = bag2.length - 1;i > 0; i--) {
+      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["homunculus-bag", runId, n]), i) * (i + 1));
+      [bag2[i], bag2[j]] = [bag2[j], bag2[i]];
+    }
+    return bag2;
+  };
+  const bag = shuffle(cycle);
+  if (cycle && bag[0] === shuffle(cycle - 1).at(-1))
+    [bag[0], bag[1]] = [bag[1], bag[0]];
+  return bag[index % bag.length];
+}
+function expeditionVictoryTier(depth, enemy, _setup) {
+  const capturable = enemy.capturable === true;
+  if (depth >= (capturable ? 30 : 35))
+    return "exceptional";
+  if (depth >= (capturable ? 12 : 15))
+    return "very_difficult";
+  if (depth >= (capturable ? 4 : 5))
+    return "difficult";
+  return "normal";
+}
+function expeditionVictoryGrants(tier, roll) {
+  const amounts = { normal: [30, 0], difficult: [45, 1], very_difficult: [60, 1], exceptional: [90, 2] };
+  if (!amounts[tier] || !(roll >= 0 && roll < 1))
+    throw new Error("INVALID_EXPEDITION_REWARD");
+  const [essence, core] = amounts[tier];
+  return { essence, ...core ? { core } : {}, ...roll < 0.08 ? { arcane_shard: 1 } : roll < 0.1 ? { time_crystal: 1 } : {} };
+}
+var publicEvent = (event) => {
+  if (event?.kind === "inspiration_chosen" && event.actor === "npc") {
+    const { spell_id, slot, ...visible } = event;
+    return visible;
+  }
+  return event;
+};
+function publicExpeditionCombat(combat) {
+  const { spell_ids, original_spell_ids, cooldowns, inspiration_offers, temporary_spell_id, temporary_replaced_slot, ...npc } = combat.npc;
+  return { player: { ...combat.player, ...publicCombatStatus(combat.player, combat.turn), pending_drain: publicIncomingDrains(combat, "player") }, npc: { ...npc, ...publicCombatStatus(npc, combat.turn), pending_drain: publicIncomingDrains(combat, "npc") }, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((w) => ({ id: w.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+}
+function publicSession(row, state) {
+  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e, choice) => ({ choice, id: e.entity_id, name: e.name, types: e.types, preview_texture: e.preview_texture, capturable: e.capturable })) : [], ...state.combat && state.phase !== "REWARD" ? { combat_state: publicExpeditionCombat(state.combat), battle_log: state.log.map(publicEvent) } : {}, ...state.phase === "REWARD" ? { reward_homunculus: (() => {
+    const h = expeditionCaptures.find((h2) => h2.id === state.selected?.homunculus_id);
+    return h ? { id: h.id, name: h.name, type: h.type, preview_texture: h.preview_texture, combat_texture: h.combat_texture } : null;
+  })(), capture_candidate: state.candidate ? { id: state.candidate.id, name: state.candidate.name, type: state.candidate.type, rarity: state.candidate.rarity, preview_texture: state.candidate.preview_texture } : null, capture_attempts: state.capture_attempts ?? 0, capture_attempts_remaining: state.capture_closed === true ? 0 : Math.max(0, 3 - (state.capture_attempts ?? 0)), capture_closed: state.capture_closed === true, ...state.victory_reward ? { victory_reward: state.victory_reward } : {} } : {}, ...state.latest_reward ? { latest_reward: state.latest_reward } : {}, ...state.phase === "ROUTE" ? { directions: ["left", "forward", "right"], allowed_directions: (state.consecutive_right ?? 0) >= 3 ? ["left", "forward"] : ["left", "forward", "right"], consecutive_right: state.consecutive_right ?? 0, last_direction: state.last_direction ?? null } : {} };
+}
+function createExpeditionService(options) {
+  const { db, secret, catalogs } = options;
+  const seedFor = (runId) => createHmac5("sha256", secret).update("expedition:" + runId).digest();
+  const cooldown = (playerId, now) => Math.max(0, (db.query("SELECT cooldown_until FROM expedition_player_cooldowns WHERE player_id=?").get(playerId)?.cooldown_until ?? 0) - now);
+  const balance = (playerId, now) => {
+    db.query("INSERT OR IGNORE INTO expedition_balances(player_id) VALUES(?)").run(playerId);
+    const row = db.query("SELECT mana,crystals,regen_at FROM expedition_balances WHERE player_id=?").get(playerId);
+    if (!row || !Number.isInteger(row.crystals) || row.crystals < 0 || row.crystals > EXPEDITION_CRYSTAL_CAP)
+      throw new Error("INVALID_EXPEDITION_BALANCE");
+    const regenerated = regenerateExpeditionMana(row, now);
+    if (row.mana !== regenerated.mana || row.regen_at !== regenerated.regen_at)
+      db.query("UPDATE expedition_balances SET mana=?,regen_at=? WHERE player_id=?").run(regenerated.mana, regenerated.regen_at, playerId);
+    return { ...regenerated, crystals: row.crystals };
+  };
+  const saveBalance = (playerId, value) => {
+    if (!Number.isInteger(value.crystals) || value.crystals < 0 || value.crystals > EXPEDITION_CRYSTAL_CAP)
+      throw new Error("INVALID_EXPEDITION_BALANCE");
+    if (db.query("UPDATE expedition_balances SET mana=?,regen_at=?,crystals=? WHERE player_id=?").run(value.mana, value.regen_at, value.crystals, playerId).changes !== 1)
+      throw new Error("EXPEDITION_BALANCE_UNAVAILABLE");
+  };
+  const leaseHash = (lease) => createHmac5("sha256", secret).update("expedition-lease:" + lease).digest("hex");
+  const validLease = (row, lease, now) => typeof lease === "string" && /^[a-f0-9]{64}$/.test(lease) && row.lease_hash === leaseHash(lease) && Number.isSafeInteger(row.heartbeat_at) && now < row.heartbeat_at + EXPEDITION_LEASE_EXPIRY_MS;
+  const abandon = (row, now) => {
+    const deadline = Number.isSafeInteger(row.heartbeat_at) ? row.heartbeat_at + EXPEDITION_LEASE_EXPIRY_MS : now;
+    const closedAt = Math.min(now, deadline);
+    if (db.query("UPDATE expedition_runs SET status='ABANDONED',revision=revision+1,snapshot_json=NULL,loadout_json=NULL,setup_json=NULL,state_json=NULL,lease_hash=NULL,updated_at=?,finished_at=? WHERE run_id=? AND status='ACTIVE'").run(now, closedAt, row.run_id).changes !== 1)
+      return;
+    const pool = balance(row.player_id, closedAt);
+    if (pool.mana > 0)
+      saveBalance(row.player_id, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), closedAt), crystals: pool.crystals });
+    db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(row.player_id, closedAt + EXPEDITION_EXIT_COOLDOWN_MS);
+  };
+  const purchaseWindow = (playerId, now) => {
+    const row = db.query("SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM action_log WHERE player_id=? AND action_type='EXPEDITION_BUY_MANA' AND created_at>?").get(playerId, now - 86400000);
+    return { remaining: Math.max(0, 12 - row.count), next: row.count >= 12 ? row.oldest + 86400000 : null };
+  };
+  const response = (playerId, now, row, state2, events2) => {
+    const pool = balance(playerId, now), purchases = purchaseWindow(playerId, now);
+    return { ...spectatorNames(playerId), session: row && state2 ? publicSession(row, state2) : null, mana: pool.mana, crystals: pool.crystals, mana_purchases_remaining: purchases.remaining, next_mana_purchase_at: purchases.next, next_regeneration_at: pool.regen_at || null, remaining_cooldown_ms: cooldown(playerId, now), server_time_unix_ms: now, ...events2 ? { events: events2.map(publicEvent) } : {} };
+  };
+  const makeNode = (state2, setup, runId, seed) => {
+    const background = expeditionBackgroundAt(seed, runId, state2.background_cursor++);
+    const choices = [0, 1].map(() => {
+      const cursor = state2.enemy_cursor++, id = expeditionEnemyAt(seed, runId, cursor);
+      const key = `${runId}:node:${state2.depth}:enemy:${cursor}`;
+      const capturable = expeditionDraw(seed, JSON.stringify(["capturable", key]), 0) < 0.35;
+      return buildExpeditionEnemy(seed, key, state2.depth, capturable, setup, catalogs, id, expeditionHomunculusAt(seed, runId, cursor), state2.npc_item_level ?? 0, state2.difficulty_depth ?? state2.depth);
+    });
+    if (choices[0].entity_id === choices[1].entity_id || state2.background && state2.background === background)
+      throw new Error("INVALID_EXPEDITION_ROTATION");
+    Object.assign(state2, { background, choices, phase: "EXPLORE", combat: null, log: [], candidate: null });
+  };
+  const validAction = (action2, body) => {
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      fail(400, "Invalid expedition action.");
+    const start = action2 === "start";
+    const fields = start ? ["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"] : ["run_id", "expected_revision", ...action2 === "select" ? ["choice"] : action2 === "advance" ? ["direction"] : ["turn", "inspiration"].includes(action2) ? ["decision"] : []];
+    if (Object.keys(body).some((k) => !["client_action_id", ...fields].includes(k)) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64)
+      fail(400, "Invalid expedition action.");
+    if (start) {
+      if (typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || typeof body.homunculus_id === "string" && !!body.homunculus_id) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id) => typeof id !== "string" || !id) || !["attack", "defense"].includes(body.mode))
+        fail(400, "Invalid expedition loadout.");
+    } else if (typeof body.run_id !== "string" || !body.run_id || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || action2 === "select" && ![0, 1].includes(body.choice) || action2 === "advance" && !["left", "forward", "right"].includes(body.direction) || ["turn", "inspiration"].includes(action2) && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))
+      fail(400, "Invalid expedition action.");
+  };
+  function state(playerId, lease) {
+    return db.transaction(() => {
+      const now = Date.now(), row = db.query("SELECT * FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId);
+      if (row && !validLease(row, lease, now)) {
+        abandon(row, now);
+        return response(playerId, now);
+      }
+      return response(playerId, now, row, row ? JSON.parse(row.state_json) : null);
+    }).immediate();
+  }
+  function heartbeat(playerId, lease, body) {
+    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).join(",") !== "run_id" || typeof body.run_id !== "string" || !body.run_id)
+      fail(400, "Invalid expedition heartbeat.");
+    const result = db.transaction(() => {
+      const now = Date.now(), row = db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
+      if (!row || row.status !== "ACTIVE")
+        return false;
+      if (!validLease(row, lease, now)) {
+        abandon(row, now);
+        return false;
+      }
+      db.query("UPDATE expedition_runs SET heartbeat_at=? WHERE run_id=? AND status='ACTIVE'").run(now, row.run_id);
+      return { server_time_unix_ms: now, expires_at: now + EXPEDITION_LEASE_EXPIRY_MS };
+    }).immediate();
+    if (!result)
+      fail(409, "Expedition lease expired or unavailable.");
+    return result;
+  }
+  function expireLeases(now = Date.now()) {
+    return db.transaction(() => {
+      const rows = db.query("SELECT * FROM expedition_runs WHERE status='ACTIVE' AND (heartbeat_at IS NULL OR heartbeat_at<=?) ORDER BY heartbeat_at LIMIT 50").all(now - EXPEDITION_LEASE_EXPIRY_MS);
+      for (const row of rows)
+        abandon(row, now);
+      return rows.length;
+    }).immediate();
+  }
+  function action(playerId, action2, body, lease) {
+    if (!["start", "select", "turn", "inspiration", "capture", "skip", "advance", "exit", "buy_mana"].includes(action2))
+      fail(404, "Unknown expedition action.");
+    validAction(action2, body);
+    const actionId = body.client_action_id.trim(), actionType = `EXPEDITION_${action2.toUpperCase()}`, payload = { ...body };
+    delete payload.client_action_id;
+    const outcome = db.transaction(() => {
+      const now = Date.now();
+      const live = action2 === "start" ? db.query("SELECT * FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId) : db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
+      if (live?.status === "ACTIVE" && !validLease(live, lease, now)) {
+        abandon(live, now);
+        return { leaseRejected: true };
+      }
+      const prior = db.query("SELECT action_type,payload_json,result_state_json FROM action_log WHERE player_id=? AND client_action_id=?").get(playerId, actionId);
+      if (prior) {
+        if (prior.action_type !== actionType || canonical(JSON.parse(prior.payload_json)) !== canonical(payload))
+          fail(409, "Action ID already used with different content.");
+        if (!prior.result_state_json)
+          fail(409, "Expedition action no longer available.");
+        const replay = readReplay(prior.result_state_json);
+        const replayRun = replay?.session?.run_id ?? body.run_id;
+        const replayRow = replayRun ? db.query("SELECT status,lease_hash FROM expedition_runs WHERE run_id=? AND player_id=?").get(replayRun, playerId) : null;
+        if (replayRow?.status !== "ACTIVE" && !(action2 === "exit" && replayRow?.status === "EXIT" && typeof lease === "string" && replayRow.lease_hash === leaseHash(lease)))
+          fail(409, "Expedition action no longer available.");
+        return action2 === "start" ? { ...replay, lease } : replay;
+      }
+      if (live?.status === "ACTIVE" && live.revision >= EXPEDITION_MAX_REVISION && action2 !== "exit") {
+        abandon(live, now);
+        return { limitReached: true };
+      }
+      let row, state2, events2 = [];
+      if (action2 === "start") {
+        endSpectatingForStart(playerId);
+        if (activePractice(db, playerId, now))
+          fail(409, "Practice is active.");
+        if (cooldown(playerId, now) > 0)
+          fail(409, "Expedition exit cooldown active.");
+        if (db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId))
+          fail(409, "An active expedition already exists.");
+        if (balance(playerId, now).mana < 1)
+          fail(409, "Not enough expedition mana.");
+        const player = options.getPlayer(playerId);
+        const snapshot = { state_revision: player.state_revision, item_progress: player.item_progress ?? {}, homunculus_progress: player.homunculus_progress ?? {}, spell_progress: player.spell_progress ?? {}, research_flags: player.research_flags ?? {} };
+        const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
+        const setup = options.makeSetup(playerId, snapshot, selection);
+        if (setup?.error)
+          fail(400, "Invalid or unsupported expedition loadout.");
+        const runId = crypto.randomUUID(), newLease = randomBytes(32).toString("hex");
+        state2 = { phase: "EXPLORE", depth: 1, difficulty_depth: 1, enemy_cursor: 0, background_cursor: 0, npc_item_level: Math.max(0, ...selection.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, snapshot.item_progress?.[id]?.level ?? 0)))) };
+        makeNode(state2, setup, runId, seedFor(runId));
+        row = { run_id: runId, player_id: playerId, status: "ACTIVE", revision: 1, loadout_json: JSON.stringify(selection), newLease };
+        db.query("INSERT INTO expedition_runs(run_id,player_id,status,revision,snapshot_json,loadout_json,setup_json,state_json,started_at,updated_at,lease_hash,heartbeat_at) VALUES(?,?,'ACTIVE',1,?,?,?,?,?,?,?,?)").run(runId, playerId, JSON.stringify(snapshot), row.loadout_json, JSON.stringify(setup), JSON.stringify(state2), now, now, leaseHash(newLease), now);
+      } else {
+        row = db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
+        if (!row)
+          fail(404, "Expedition not found.");
+        if (row.status !== "ACTIVE" || row.revision !== body.expected_revision)
+          fail(409, "Expedition unavailable or stale.");
+        state2 = JSON.parse(row.state_json);
+        const seed = seedFor(row.run_id);
+        if (action2 === "buy_mana") {
+          const pool = balance(playerId, now);
+          if (pool.mana > EXPEDITION_MANA_CAP - 1)
+            fail(400, "Expedition mana is full.");
+          if (purchaseWindow(playerId, now).remaining < 1)
+            fail(400, "Expedition mana purchase limit reached.");
+          options.spendManaEssence(playerId, actionId, now);
+          saveBalance(playerId, { ...changeExpeditionMana(pool, 1, now), crystals: pool.crystals });
+        } else if (action2 === "select") {
+          if (balance(playerId, now).mana < 0.3)
+            fail(400, "Not enough expedition mana.");
+          if (state2.phase !== "EXPLORE")
+            fail(409, "Enemy selection unavailable.");
+          let selected = state2.choices[body.choice];
+          const setup = JSON.parse(row.setup_json);
+          if (!selected.item_id) {
+            const frozen = JSON.parse(row.snapshot_json), loadout = JSON.parse(row.loadout_json);
+            state2.npc_item_level ??= Math.max(0, ...loadout.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0))));
+            const cursor = state2.enemy_cursor - 2 + body.choice;
+            const key = `${row.run_id}:node:${state2.depth}:enemy:${cursor}`;
+            selected = buildExpeditionEnemy(seed, key, state2.depth, selected.capturable, setup, catalogs, selected.entity_id, selected.homunculus_id, state2.npc_item_level, state2.difficulty_depth ?? state2.depth);
+          }
+          const tacticalTier = expeditionVictoryTier(state2.difficulty_depth ?? state2.depth, selected, setup);
+          selected = { ...selected, tactical_tier: tacticalTier };
+          const combat = createExpeditionCombatState(setup, selected, catalogs);
+          if (combat.error)
+            fail(409, "Expedition combat unavailable.");
+          state2.victory_tier = tacticalTier;
+          state2.victory_reward = null;
+          state2.phase = "COMBAT";
+          state2.combat = combat;
+          state2.selected = selected;
+          state2.choices = [];
+          state2.log = [];
+        } else if (action2 === "turn" || action2 === "inspiration") {
+          if (state2.phase !== "COMBAT")
+            fail(409, "Expedition combat unavailable.");
+          const draw = (turn, count) => deterministicDraw(seed, `${row.run_id}:${state2.depth}`, turn, count);
+          const result2 = action2 === "turn" ? resolveExpeditionTurn(state2.combat, body.decision, draw) : resolveExpeditionInspiration(state2.combat, body.decision, draw);
+          if (result2.error)
+            fail(400, result2.error);
+          state2.combat = result2.next_state;
+          events2 = result2.events;
+          state2.log.push(...events2);
+          if (Bun.env.SPECTATOR_ENABLED === "1" && state2.combat.terminal_result) {
+            db.query("INSERT OR REPLACE INTO spectator_final_combats(mode,session_id,encounter,combat_json,created_at) VALUES ('expedition',?,?,?,?)").run(row.run_id, String(state2.depth), JSON.stringify({ combat: state2.combat, log: state2.log.slice(-512), log_base: Math.max(0, state2.log.length - 512), depth: state2.depth, background: state2.background, frozen_spells: JSON.parse(row.loadout_json)?.spell_ids }), now);
+            db.query("DELETE FROM spectator_final_combats WHERE rowid IN (SELECT rowid FROM spectator_final_combats WHERE created_at<? ORDER BY created_at LIMIT 50)").run(now - 86400000);
+          }
+          if (state2.combat.terminal_result === "WIN") {
+            const pool = balance(playerId, now);
+            if (pool.mana < 0.3)
+              fail(400, "Not enough expedition mana.");
+            saveBalance(playerId, { ...changeExpeditionMana(pool, -0.3, now), crystals: pool.crystals });
+            state2.phase = "REWARD";
+            state2.candidate = state2.selected.capturable ? expeditionCaptures.find((h) => h.id === state2.selected.homunculus_id) : null;
+            state2.capture_attempts = 0;
+            state2.capture_closed = false;
+            options.awardVictory(playerId, row.loadout_json, now);
+            const tier = state2.victory_tier ?? expeditionVictoryTier(state2.difficulty_depth ?? state2.depth, state2.selected, JSON.parse(row.setup_json));
+            const rewardId = `${row.run_id}:${state2.depth}:victory`;
+            const roll = expeditionDraw(seed, JSON.stringify(["victory-loot", row.run_id, state2.depth]), 0);
+            const grants = options.grantVictoryLoot(playerId, expeditionVictoryGrants(tier, roll), rewardId, now);
+            state2.victory_reward = { reward_id: rewardId, tier, grants };
+            options.questProgress?.({ kind: "victory", playerId, now, runId: row.run_id, depth: state2.depth, difficultyDepth: state2.difficulty_depth ?? state2.depth, tier, enemyId: state2.selected.entity_id });
+          } else if (state2.combat.terminal_result === "LOSS") {
+            const pool = balance(playerId, now);
+            if (pool.mana > 0)
+              saveBalance(playerId, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), now), crystals: pool.crystals });
+            state2.phase = "LOSS";
+            row.status = "LOSS";
+          }
+        } else if (action2 === "capture") {
+          const attempts = state2.capture_attempts ?? 0;
+          if (state2.phase !== "REWARD" || !state2.selected?.capturable || !state2.candidate || state2.capture_closed === true || !Number.isInteger(attempts) || attempts < 0 || attempts >= 3)
+            fail(409, "Capture unavailable.");
+          const candidate = expeditionCaptures.find((h) => h.id === state2.candidate.id);
+          if (!candidate || candidate.id !== state2.selected.homunculus_id || candidate.rarity !== state2.candidate.rarity || candidate.preview_texture !== state2.candidate.preview_texture)
+            fail(409, "Invalid capture candidate.");
+          const pool = balance(playerId, now);
+          if (pool.crystals < 1)
+            fail(409, "Not enough capture crystals.");
+          const attempt = attempts + 1;
+          const success = expeditionDraw(seed, JSON.stringify(["capture", row.run_id, state2.depth, candidate.id]), attempt - 1) < expeditionCaptureChance(candidate.rarity);
+          saveBalance(playerId, { ...pool, crystals: pool.crystals - 1 });
+          state2.capture_attempts = attempt;
+          state2.capture_closed = success || attempt >= 3;
+          const capture = success ? options.captureHomunculus(playerId, candidate.id, now) : null;
+          if (success)
+            options.questProgress?.({ kind: "capture", playerId, now, runId: row.run_id, depth: state2.depth, homunculusId: candidate.id, success: true });
+          const event = { reward_id: `${row.run_id}:${state2.depth}:capture:${attempt}`, kind: success ? "capture_success" : "capture_failure", candidate_id: candidate.id, attempt, remaining_attempts: success ? 0 : 3 - attempt, ...success ? { preview_texture: candidate.preview_texture, duplicate: capture.duplicate, duplicate_xp: capture.duplicate ? 20 : 0 } : {} };
+          state2.latest_reward = event;
+          events2 = [event];
+        } else if (action2 === "skip") {
+          if (state2.phase !== "REWARD")
+            fail(409, "Reward decision unavailable.");
+          state2.phase = "ROUTE";
+          state2.combat = null;
+          state2.log = [];
+          state2.selected = null;
+          state2.candidate = null;
+        } else if (action2 === "advance") {
+          const difficultyDepth = (state2.difficulty_depth ?? state2.depth) + (body.direction === "left" ? 1 : body.direction === "forward" ? 2 : 0);
+          if (state2.phase !== "ROUTE" || !Number.isSafeInteger(state2.depth + 1) || !Number.isSafeInteger(difficultyDepth) || body.direction === "right" && (state2.consecutive_right ?? 0) >= 3)
+            fail(409, "Route unavailable.");
+          const pool = balance(playerId, now);
+          const granted = pool.crystals < EXPEDITION_CRYSTAL_CAP && expeditionDraw(seed, JSON.stringify(["crystal-drop", row.run_id, state2.depth]), 0) < 0.5;
+          if (granted)
+            saveBalance(playerId, { ...pool, crystals: pool.crystals + 1 });
+          const reward = { reward_id: `${row.run_id}:${state2.depth}:crystal`, kind: "crystal_drop", granted, amount: granted ? 1 : 0, ...granted ? { asset_key: "res://assets/entities/expeditions/capture.png" } : {} };
+          state2.latest_reward = reward;
+          events2 = [reward];
+          state2.depth++;
+          state2.difficulty_depth = difficultyDepth;
+          state2.last_direction = body.direction;
+          state2.consecutive_right = body.direction === "right" ? (state2.consecutive_right ?? 0) + 1 : 0;
+          if (state2.npc_item_level === undefined) {
+            const frozen = JSON.parse(row.snapshot_json), loadout = JSON.parse(row.loadout_json);
+            state2.npc_item_level = Math.max(0, ...loadout.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0))));
+          }
+          makeNode(state2, JSON.parse(row.setup_json), row.run_id, seed);
+        } else {
+          const pool = balance(playerId, now);
+          if (pool.mana > 0)
+            saveBalance(playerId, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), now), crystals: pool.crystals });
+          db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(playerId, now + EXPEDITION_EXIT_COOLDOWN_MS);
+          row.status = "EXIT";
+        }
+        const oldRevision = row.revision;
+        row.revision++;
+        const terminal = row.status !== "ACTIVE";
+        const updated = db.query("UPDATE expedition_runs SET status=?,revision=?,snapshot_json=CASE WHEN ? THEN NULL ELSE snapshot_json END,loadout_json=CASE WHEN ? THEN NULL ELSE loadout_json END,setup_json=CASE WHEN ? THEN NULL ELSE setup_json END,state_json=?,updated_at=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND revision=?").run(row.status, row.revision, terminal ? 1 : 0, terminal ? 1 : 0, terminal ? 1 : 0, terminal ? null : JSON.stringify(state2), now, terminal ? now : null, row.run_id, playerId, oldRevision);
+        if (updated.changes !== 1)
+          fail(409, "Expedition changed.");
+      }
+      db.query("INSERT INTO action_log(player_id,client_action_id,action_type,payload_json,result_state_json,created_at,expedition_run_id) VALUES(?,?,?,?,NULL,?,?)").run(playerId, actionId, actionType, JSON.stringify(payload), now, row.run_id);
+      const result = response(playerId, now, row.status === "EXIT" ? null : row, row.status === "EXIT" ? null : state2, events2);
+      db.query("UPDATE action_log SET result_state_json=? WHERE player_id=? AND client_action_id=?").run(JSON.stringify(result), playerId, actionId);
+      return action2 === "start" ? { ...result, lease: row.newLease } : result;
+    }).immediate();
+    if (outcome.leaseRejected)
+      fail(409, "Expedition lease expired or unavailable.");
+    if (outcome.limitReached)
+      fail(409, "Expedition action limit reached.");
+    return outcome;
+  }
+  return { state, action, heartbeat, expireLeases };
+}
+
+// src/world_missions.ts
+var DAILY = [
+  { id: "daily_boss", title: "Boss Hunter", description: "Defeat 1 Solo Hunt boss (excluding guardians and global bosses).", target: 1, reward: { essence: 100 } },
+  { id: "daily_damage", title: "Heavy Hitter", description: "Deal 500 HP of damage to Solo Hunt bosses (excluding guardians and global bosses).", target: 500, reward: { essence: 100 } },
+  { id: "daily_elite", title: "Elite Slayer", description: "Defeat 1 Mythic, Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).", target: 1, reward: { essence: 100, core: 1 } }
+];
+var WEEKLY = [
+  { id: "weekly_boss", title: "Boss Hunter", description: "Defeat 5 Solo Hunt bosses (excluding guardians and global bosses).", target: 5, reward: { essence: 300 } },
+  { id: "weekly_elite", title: "Elite Slayer", description: "Defeat 3 Mythic, Rare, Epic or Legendary Solo Hunt bosses (excluding guardians and global bosses).", target: 3, reward: { essence: 250, core: 2 } },
+  { id: "weekly_rare", title: "Rising Threat", description: "Defeat 1 Rare, Epic or Legendary Solo Hunt boss (excluding guardians and global bosses).", target: 1, reward: { essence: 200, core: 2 } },
+  { id: "weekly_guardians", title: "Guardian Breaker", description: "Defeat 5 guardians in Solo Hunt.", target: 5, reward: { essence: 300, core: 1 } },
+  { id: "weekly_common", title: "Common Exterminator", description: "Defeat 4 distinct Common boss appearances in their zones.", target: 4, reward: { essence: 250, core: 1 } },
+  { id: "weekly_inspiration", title: "Inspired Warrior", description: "Choose an Inspiration spell in 3 different Solo Hunt boss fights (excluding guardians and global bosses).", target: 3, reward: { essence: 200, core: 2 } }
+];
+var DAY = 86400000;
+var WEEK = 7 * DAY;
+var MONDAY_EPOCH = Date.UTC(1970, 0, 5);
+function period(now, type) {
+  const start = type === "daily" ? Math.floor(now / DAY) * DAY : Math.floor((now - MONDAY_EPOCH) / WEEK) * WEEK + MONDAY_EPOCH;
+  return { key: new Date(start).toISOString().slice(0, 10), next_reset_at: start + (type === "daily" ? DAY : WEEK), week: Math.floor((start - MONDAY_EPOCH) / WEEK) };
+}
+function active(now, type) {
+  if (type === "daily")
+    return DAILY;
+  const week = period(now, type).week;
+  const start = (week % 6 + 6) % 6;
+  return [0, 1, 2].map((i) => WEEKLY[(start + i) % 6]);
+}
+var lastPrune = 0;
+function load(db, player, type, now) {
+  if (now - lastPrune > 3600000) {
+    db.query("DELETE FROM world_mission_progress WHERE (period_type = 'daily' AND period_key <> ?) OR (period_type = 'weekly' AND period_key <> ?)").run(period(now, "daily").key, period(now, "weekly").key);
+    lastPrune = now;
+  }
+  const key = period(now, type).key;
+  const row = db.query("SELECT period_key, progress_json, claimed_json FROM world_mission_progress WHERE player_id = ? AND period_type = ?").get(player, type);
+  if (!row || row.period_key !== key) {
+    db.query("INSERT INTO world_mission_progress (player_id,period_type,period_key,progress_json,claimed_json,updated_at) VALUES (?,?,?,'{}','{}',?) ON CONFLICT(player_id,period_type) DO UPDATE SET period_key=excluded.period_key,progress_json='{}',claimed_json='{}',updated_at=excluded.updated_at").run(player, type, key, now);
+    return { progress: {}, claimed: {} };
+  }
+  return { progress: JSON.parse(row.progress_json), claimed: JSON.parse(row.claimed_json) };
+}
+function save(db, player, type, now, data) {
+  db.query("UPDATE world_mission_progress SET progress_json=?,claimed_json=?,updated_at=? WHERE player_id=? AND period_type=?").run(JSON.stringify(data.progress), JSON.stringify(data.claimed), now, player, type);
+}
+function snapshot(db, player, now) {
+  const result = { server_time_unix_ms: now };
+  for (const type of ["daily", "weekly"]) {
+    const p = period(now, type), d = load(db, player, type, now);
+    result[type] = { period_key: p.key, next_reset_at: p.next_reset_at, missions: active(now, type).map((m) => {
+      const progress = Array.isArray(d.progress[m.id]) ? d.progress[m.id].length : d.progress[m.id] ?? 0;
+      return { ...m, progress, completed: progress >= m.target, claimed: !!d.claimed[m.id] };
+    }) };
+  }
+  return result;
+}
+function record(db, player, now, event) {
+  const tier = (event.tier ?? "").toLowerCase();
+  for (const type of ["daily", "weekly"]) {
+    const data = load(db, player, type, now), enabled = new Map(active(now, type).map((m) => [m.id, m]));
+    const add = (id, n) => {
+      const m = enabled.get(id);
+      if (m && n > 0)
+        data.progress[id] = Math.min(m.target, (data.progress[id] ?? 0) + n);
+    };
+    const unique = (id, key, limit) => {
+      if (!enabled.has(id) || !key)
+        return;
+      const a = data.progress[id] ?? [];
+      if (a.length < limit && !a.includes(key))
+        a.push(key);
+      data.progress[id] = a;
+    };
+    if (event.guardian) {
+      if (event.win)
+        add("weekly_guardians", 1);
+    } else {
+      add("daily_damage", event.damage ?? 0);
+      if (event.win) {
+        add("daily_boss", 1);
+        add("weekly_boss", 1);
+        if (["mythic", "rare", "epic", "legendary"].includes(tier)) {
+          add("daily_elite", 1);
+          add("weekly_elite", 1);
+        }
+        if (["rare", "epic", "legendary"].includes(tier))
+          add("weekly_rare", 1);
+        if (tier === "common" && event.zone && event.appearance)
+          unique("weekly_common", JSON.stringify([event.zone, event.appearance]), 4);
+      }
+      if (event.choose && event.session)
+        unique("weekly_inspiration", event.session, 3);
+    }
+    save(db, player, type, now, data);
+  }
+}
+function bossDamage(events2) {
+  return events2.reduce((sum, e) => sum + (e.actor === "player" && e.target === "boss" && Number.isSafeInteger(e.actual_damage) && e.actual_damage > 0 ? e.actual_damage : 0), 0);
+}
+
+// src/index.ts
+import { Database } from "bun:sqlite";
+
+// src/pvp/ranking.ts
+var PVP_THRESHOLDS = ["Copper", "Quartz", "Amethyst", "Obsidian"].flatMap((league, l) => ["IV", "III", "II", "I"].map((division, d) => ({ league, division, minimum: 1000 + l * 1000 + d * 250 })));
+var clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+var validMp = (mp) => Number.isSafeInteger(mp) && mp >= 0;
+function pvpRank(mp) {
+  if (!validMp(mp))
+    throw new Error("INVALID_MP");
+  return PVP_THRESHOLDS[clamp(Math.floor((mp - 1000) / 250), 0, 15)];
+}
+function pvpRatingDelta(player, opponent, outcome) {
+  if (!validMp(player) || !validMp(opponent) || !["win", "loss", "draw"].includes(outcome))
+    throw new Error("INVALID_RATING_INPUT");
+  if (outcome === "draw")
+    return 0;
+  const rank = pvpRank(player), index = ["Copper", "Quartz", "Amethyst", "Obsidian"].indexOf(rank.league);
+  const adjustment = clamp(Math.round((opponent - player) / 300) * 2, -10, 10);
+  return outcome === "win" ? clamp([24, 22, 20, 18][index] + adjustment, 1, 30) : -Math.min(player, clamp([12, 20, 30, 40][index] - adjustment, 1, 50));
+}
+function pvpSeason(now) {
+  if (!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(new Date(now).getTime()))
+    throw new Error("INVALID_TIME");
+  return new Date(now).toISOString().slice(0, 7);
+}
+function nextPvpSeason(now) {
+  const date = new Date(now);
+  pvpSeason(now);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+}
+function previousPvpSeason(now) {
+  const date = new Date(now);
+  pvpSeason(now);
+  return pvpSeason(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1));
+}
+function createPvpRanking(db, clock = Date.now) {
+  const insert = db.prepare("INSERT OR IGNORE INTO pvp_season_ratings (season, player_id, rating, updated_at) VALUES (?, ?, 1000, ?)");
+  const get = db.prepare("SELECT rating, updated_at FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
+  const list = db.prepare("SELECT r.player_id, p.display_name, r.rating, r.updated_at FROM pvp_season_ratings r JOIN players p ON p.player_id = r.player_id WHERE r.season = ? ORDER BY r.rating DESC, r.player_id ASC");
+  const prune = db.prepare("DELETE FROM pvp_season_ratings WHERE season < ?");
+  let prunedThrough = "";
+  const cache = new Map;
+  const ensure = (season, playerId, now) => {
+    insert.run(season, playerId, now);
+    return get.get(season, playerId);
+  };
+  return {
+    ensure,
+    invalidate() {
+      cache.clear();
+    },
+    leaderboard(playerId, requestedSeason) {
+      const now = clock(), season = pvpSeason(now), previous = previousPvpSeason(now);
+      if (prunedThrough !== previous) {
+        prune.run(previous);
+        prunedThrough = previous;
+      }
+      const viewSeason = requestedSeason ?? season;
+      if (viewSeason !== season && viewSeason !== previous)
+        throw new Error("INVALID_SEASON");
+      if (typeof playerId !== "string" || !playerId)
+        throw new Error("INVALID_PLAYER");
+      const current = ensure(season, playerId, now), division = pvpRank(current.rating);
+      const live = list.all(season);
+      const index = live.findIndex((row) => row.player_id === playerId);
+      const same = (row) => {
+        const rank = pvpRank(row.rating);
+        return rank.league === division.league && rank.division === division.division;
+      };
+      const personal = { mp: current.rating, ...division, global_rank: index + 1, division_rank: live.filter(same).findIndex((row) => row.player_id === playerId) + 1 };
+      for (const key of cache.keys())
+        if (key !== season && key !== previous)
+          cache.delete(key);
+      const cached = (key, rows) => {
+        let entry = cache.get(key);
+        if (!entry || now < entry.time || now - entry.time >= 60000) {
+          entry = { time: now, rows: rows ?? list.all(key) };
+          cache.set(key, entry);
+        }
+        return entry;
+      };
+      const currentCache = cached(season, live), viewCache = cached(viewSeason, viewSeason === season ? live : undefined);
+      const publicRow = (row, rank) => ({ player_id: row.player_id, display_name: row.display_name, mp: row.rating, rank, ...pvpRank(row.rating) });
+      return { season, view_season: viewSeason, previous_season: previous, player: personal, global_top_10: viewCache.rows.slice(0, 10).map((row, i) => publicRow(row, i + 1)), division_top_10: currentCache.rows.filter(same).slice(0, 10).map((row, i) => publicRow(row, i + 1)), thresholds: PVP_THRESHOLDS, updated_at: viewCache.time, next_update_at: Math.min(viewCache.time + 60000, currentCache.time + 60000, nextPvpSeason(now)) };
+    }
+  };
+}
+
+// src/expiring_map.ts
+class ExpiringMap {
+  entries = new Map;
+  cursor;
+  sweep(now) {
+    if (!this.cursor)
+      this.cursor = this.entries.entries();
+    for (let i = 0;i < 16; i++) {
+      const next = this.cursor.next();
+      if (next.done) {
+        this.cursor = undefined;
+        break;
+      }
+      if (next.value[1].expiresAt <= now)
+        this.entries.delete(next.value[0]);
+    }
+  }
+  get(key, now = Date.now()) {
+    this.sweep(now);
+    const entry = this.entries.get(key);
+    if (entry && entry.expiresAt <= now) {
+      this.entries.delete(key);
+      return;
+    }
+    return entry?.value;
+  }
+  set(key, value, expiresAt, now = Date.now()) {
+    this.sweep(now);
+    this.entries.set(key, { value, expiresAt });
+  }
+  delete(key) {
+    this.entries.delete(key);
+  }
+  get size() {
+    return this.entries.size;
+  }
+}
+
+// src/global_chat.ts
+function createGlobalChat(db, clock = Date.now, bridgeEnabled = false, friendIds = () => [], activity, observers) {
+  const presence = new Map;
+  const lastSend = new ExpiringMap;
+  const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
+		CASE WHEN m.source = 'system' THEN 'system' WHEN m.discord_message_id IS NOT NULL THEN 'discord' ELSE 'game' END AS source
+		FROM global_chat_messages m LEFT JOIN players p ON p.player_id = m.player_id ORDER BY m.id DESC LIMIT 20`);
+  const existing = db.query(`SELECT m.id, m.player_id, p.display_name AS username, m.text, m.created_at, m.client_message_id
+		FROM global_chat_messages m JOIN players p ON p.player_id = m.player_id WHERE m.player_id = ? AND m.client_message_id = ?`);
+  const insert = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?)");
+  const prune = db.query("DELETE FROM global_chat_messages WHERE id NOT IN (SELECT id FROM global_chat_messages ORDER BY id DESC LIMIT 20)");
+  const profile = db.query(`SELECT p.player_id, p.display_name AS username, r.rating
+		FROM players p LEFT JOIN pvp_season_ratings r ON r.player_id = p.player_id AND r.season = ?
+		WHERE p.player_id IN (SELECT value FROM json_each(?))`);
+  function onlineCount() {
+    const now = clock();
+    for (const [id, seen] of presence)
+      if (now - seen >= 45000)
+        presence.delete(id);
+    return presence.size;
+  }
+  return {
+    onlineCount,
+    isOnline(id) {
+      const seen = presence.get(id);
+      return seen !== undefined && clock() - seen < 45000;
+    },
+    announceLogin(playerId, registered) {
+      return db.transaction(() => {
+        const player = db.query("SELECT display_name FROM players WHERE player_id = ?").get(playerId);
+        if (!player)
+          throw new Error("Player unavailable for announcement.");
+        const now = clock();
+        const previous = db.query("SELECT announced_at FROM global_chat_announcements WHERE player_id = ?").get(playerId);
+        if (previous && now - previous.announced_at < 20 * 60000)
+          return false;
+        db.query("INSERT INTO global_chat_announcements (player_id, announced_at) VALUES (?, ?) ON CONFLICT(player_id) DO UPDATE SET announced_at = excluded.announced_at").run(playerId, now);
+        const text = `${registered ? "Welcome" : "Welcome back"}, ${player.display_name}!`;
+        const inserted = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, source) VALUES (?, ?, ?, ?, 'Entity Wars', 'system')").run("", crypto.randomUUID(), text, now);
+        if (bridgeEnabled) {
+          db.query("INSERT INTO discord_chat_outbox (message_id, username, text, created_at, source) VALUES (?, 'Entity Wars', ?, ?, 'system')").run(inserted.lastInsertRowid, text, now);
+          db.query("DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)").run();
+        }
+        prune.run();
+        return true;
+      }).immediate();
+    },
+    close() {
+      messages.finalize();
+      existing.finalize();
+      insert.finalize();
+      prune.finalize();
+      profile.finalize();
+    },
+    acceptDiscord(id, name, content) {
+      if (!/^\d{1,32}$/.test(id) || typeof name !== "string" || typeof content !== "string")
+        return false;
+      const clean = (s, limit) => [...s.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").replace(/\s+/gu, " ").trim()].slice(0, limit).join("");
+      const text = clean(content, 200), username = clean(name, 50);
+      if (!text || !username)
+        return false;
+      return db.transaction(() => {
+        const now = clock();
+        if (!db.query("INSERT OR IGNORE INTO discord_chat_seen VALUES (?, ?)").run(id, now).changes)
+          return false;
+        db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, discord_message_id) VALUES (?, ?, ?, ?, ?, ?)").run("", id, text, now, "[Discord] " + username, id);
+        prune.run();
+        db.query("DELETE FROM discord_chat_seen WHERE message_id NOT IN (SELECT message_id FROM discord_chat_seen ORDER BY created_at DESC LIMIT 10000)").run();
+        return true;
+      }).immediate();
+    },
+    state(playerId) {
+      const now = clock();
+      presence.set(playerId, now);
+      onlineCount();
+      const season = pvpSeason(now);
+      const rows = messages.all().reverse();
+      const ids = [...new Set([...presence.keys(), ...rows.filter((row) => row.source === "game").map((row) => row.player_id)])];
+      const profiles = new Map(profile.all(season, JSON.stringify(ids)).map((row) => [row.player_id, { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) }]));
+      const friends = new Set(friendIds(playerId));
+      const activities = activity ? activity([...presence.keys()].filter((id) => friends.has(id)), now) : new Map;
+      const online_players = Array.from(presence.keys(), (id) => profiles.get(id)).filter((row) => row !== undefined).map((row) => ({ ...row, is_friend: friends.has(row.player_id), ...activities.has(row.player_id) ? { spectatable_activity: activities.get(row.player_id) } : {} })).sort((a, b) => Number(b.is_friend) - Number(a.is_friend) || a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
+      return { ...observers ? { spectators: observers(playerId) } : {}, messages: rows.map((row) => ({ ...row, league: row.source !== "game" ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
+    },
+    send(playerId, body) {
+      const text = body?.text;
+      const clientId = body?.client_message_id;
+      if (typeof text !== "string" || !text.trim() || [...text].length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(text) || typeof clientId !== "string" || !clientId.trim() || clientId.length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(clientId)) {
+        return { status: 400, data: { error: "Invalid message or client_message_id." } };
+      }
+      return db.transaction(() => {
+        const previous = existing.get(playerId, clientId);
+        if (previous)
+          return { status: 200, data: { message: previous, duplicate: true } };
+        const now = clock();
+        const last = lastSend.get(playerId, now);
+        if (last !== undefined && now - last < 2000)
+          return { status: 429, data: { error: "Send rate limit exceeded." } };
+        insert.run(playerId, clientId, text, now);
+        prune.run();
+        const message = existing.get(playerId, clientId);
+        if (bridgeEnabled && message) {
+          const row = message;
+          db.query("INSERT INTO discord_chat_outbox (message_id, username, text, created_at) VALUES (?, ?, ?, ?)").run(row.id, row.username, row.text, now);
+          db.query("DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)").run();
+        }
+        lastSend.set(playerId, now, now + 2000, now);
+        return { status: 200, data: { message, duplicate: false } };
+      }).immediate();
+    }
+  };
+}
+
+// src/social/friends.ts
+var PENDING_MS = 30000;
+var REJECT_MS = 120000;
+var validId = (value) => typeof value === "string" && value.length > 0 && value.length <= 128 && value.trim() === value && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+var error = (status, message) => ({ status, data: { error: message } });
+function createFriends(db, clock = Date.now) {
+  const expire = (now) => db.query("UPDATE friend_requests SET status = 'CANCELLED', updated_at = ? WHERE status = 'PENDING' AND expires_at <= ?").run(now, now);
+  const friendIds = (id) => db.query("SELECT CASE WHEN player_low = ? THEN player_high ELSE player_low END AS id FROM friendships WHERE player_low = ? OR player_high = ?").all(id, id, id).map((row) => row.id);
+  const mutate = (player, body, type, payload, action) => {
+    if (!validId(body?.client_action_id))
+      return error(400, "Invalid client_action_id.");
+    const serialized = JSON.stringify(payload);
+    return db.transaction(() => {
+      const prior = db.query("SELECT action_type, payload_json, status_code, result_json FROM social_actions WHERE player_id = ? AND client_action_id = ?").get(player, body.client_action_id);
+      if (prior)
+        return prior.action_type === type && prior.payload_json === serialized ? { status: prior.status_code, data: JSON.parse(prior.result_json) } : error(409, "Action ID already used.");
+      const now = clock();
+      expire(now);
+      const result = action(now);
+      db.query("INSERT INTO social_actions VALUES (?, ?, ?, ?, ?, ?, ?)").run(player, body.client_action_id, type, serialized, result.status, JSON.stringify(result.data), now);
+      return result;
+    }).immediate();
+  };
+  return {
+    friendIds,
+    state(player) {
+      return db.transaction(() => {
+        const now = clock();
+        expire(now);
+        const friends = db.query(`SELECT p.player_id, p.display_name FROM friendships f JOIN players p ON p.player_id = CASE WHEN f.player_low = ? THEN f.player_high ELSE f.player_low END WHERE f.player_low = ? OR f.player_high = ? ORDER BY p.display_name, p.player_id LIMIT 200`).all(player, player, player);
+        const incoming = db.query(`SELECT r.request_id, r.requester_id, p.display_name AS requester_name, r.created_at, r.expires_at FROM friend_requests r JOIN players p ON p.player_id = r.requester_id WHERE r.recipient_id = ? AND r.status = 'PENDING' ORDER BY r.created_at, r.request_id LIMIT 100`).all(player);
+        const outgoing = db.query(`SELECT r.request_id, r.recipient_id, p.display_name AS recipient_name, r.created_at, r.expires_at FROM friend_requests r JOIN players p ON p.player_id = r.recipient_id WHERE r.requester_id = ? AND r.status = 'PENDING' ORDER BY r.created_at, r.request_id LIMIT 20`).all(player);
+        const cooldowns = db.query(`SELECT recipient_id AS player_id, MAX(CASE WHEN status='DECLINED' THEN updated_at + ? WHEN status IN ('PENDING','CANCELLED') THEN created_at + ? ELSE 0 END) AS cooldown_until FROM friend_requests WHERE requester_id=? AND ((status='DECLINED' AND updated_at + ?>?) OR (status IN ('PENDING','CANCELLED') AND created_at + ?>?)) GROUP BY recipient_id ORDER BY cooldown_until DESC LIMIT 200`).all(REJECT_MS, PENDING_MS, player, REJECT_MS, now, PENDING_MS, now);
+        return { player_id: player, friends, incoming, outgoing, cooldowns, server_time: now };
+      }).immediate();
+    },
+    request(player, body, targetAvailable = true, busy = false) {
+      if (!validId(body?.target_player_id))
+        return error(400, "Invalid target_player_id.");
+      const target = body.target_player_id;
+      return mutate(player, body, "request", { target_player_id: target }, (now) => {
+        if (player === target)
+          return error(400, "Cannot friend yourself.");
+        if (busy)
+          return error(409, "Player busy.");
+        if (!targetAvailable || !db.query("SELECT 1 FROM players WHERE player_id = ?").get(target))
+          return error(404, "Target unavailable.");
+        const [low, high] = [player, target].sort();
+        if (db.query("SELECT 1 FROM friendships WHERE player_low = ? AND player_high = ?").get(low, high))
+          return error(409, "Already friends.");
+        const pending = db.query("SELECT expires_at FROM friend_requests WHERE pair_low = ? AND pair_high = ? AND status = 'PENDING'").get(low, high);
+        if (pending)
+          return { status: 409, data: { error: "Request already pending.", expires_at: pending.expires_at, cooldown_until: pending.expires_at, server_time: now } };
+        const cooldown = db.query("SELECT COALESCE(MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED') THEN created_at+? ELSE 0 END),0) deadline FROM friend_requests WHERE requester_id=? AND recipient_id=?").get(REJECT_MS, PENDING_MS, player, target).deadline;
+        if (cooldown > now)
+          return { status: 429, data: { error: "Target cooldown active.", cooldown_until: cooldown, server_time: now } };
+        const count = (sql, ...args) => db.query(sql).get(...args).n;
+        if (count("SELECT count(*) AS n FROM friend_requests WHERE requester_id = ? AND status = 'PENDING'", player) >= 20 || count("SELECT count(*) AS n FROM friend_requests WHERE recipient_id = ? AND status = 'PENDING'", target) >= 100 || friendIds(player).length >= 200 || friendIds(target).length >= 200)
+          return error(429, "Friend request limit reached.");
+        const request_id = crypto.randomUUID();
+        db.query("INSERT INTO friend_requests VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)").run(request_id, player, target, low, high, now, now, now + PENDING_MS);
+        return { status: 200, data: { request_id, status: "PENDING", expires_at: now + PENDING_MS, cooldown_until: now + PENDING_MS, server_time: now } };
+      });
+    },
+    respond(player, body) {
+      if (!validId(body?.request_id) || typeof body?.accept !== "boolean")
+        return error(400, "Invalid request_id or accept.");
+      return mutate(player, body, "respond", { request_id: body.request_id, accept: body.accept }, (now) => {
+        const row = db.query("SELECT * FROM friend_requests WHERE request_id = ? AND recipient_id = ?").get(body.request_id, player);
+        if (!row)
+          return error(404, "Request unavailable.");
+        if (row.status !== "PENDING")
+          return error(409, "Request is no longer pending.");
+        if (body.accept && (friendIds(row.requester_id).length >= 200 || friendIds(player).length >= 200))
+          return error(429, "Friend limit reached.");
+        const status = body.accept ? "ACCEPTED" : "DECLINED";
+        if (body.accept)
+          db.query("INSERT INTO friendships VALUES (?, ?, ?)").run(row.pair_low, row.pair_high, now);
+        db.query("UPDATE friend_requests SET status = ?, updated_at = ? WHERE request_id = ?").run(status, now, row.request_id);
+        return { status: 200, data: { request_id: row.request_id, status, ...body.accept ? {} : { cooldown_until: now + REJECT_MS }, server_time: now } };
+      });
+    },
+    cancel(player, body) {
+      if (!validId(body?.request_id))
+        return error(400, "Invalid request_id.");
+      return mutate(player, body, "cancel", { request_id: body.request_id }, (now) => {
+        const row = db.query("SELECT status, created_at FROM friend_requests WHERE request_id = ? AND requester_id = ?").get(body.request_id, player);
+        if (!row)
+          return error(404, "Request unavailable.");
+        if (row.status !== "PENDING")
+          return error(409, "Request is no longer pending.");
+        db.query("UPDATE friend_requests SET status = 'CANCELLED', updated_at = ? WHERE request_id = ?").run(now, body.request_id);
+        return { status: 200, data: { request_id: body.request_id, status: "CANCELLED", cooldown_until: row.created_at + PENDING_MS, server_time: now } };
+      });
+    }
+  };
+}
+
+// src/forest/presence.ts
+import { readFileSync } from "fs";
+import { resolve } from "path";
+var opposite = { north: "south", south: "north", east: "west", west: "east" };
+var finitePoint = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+var cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+function inside(p, poly) {
+  let hit = false;
+  for (let i = 0, j = poly.length - 1;i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i];
+    if (Math.abs(cross(a, b, p)) < 0.0000001 && p[0] >= Math.min(a[0], b[0]) - 0.0000001 && p[0] <= Math.max(a[0], b[0]) + 0.0000001 && p[1] >= Math.min(a[1], b[1]) - 0.0000001 && p[1] <= Math.max(a[1], b[1]) + 0.0000001)
+      return true;
+    if (a[1] > p[1] !== b[1] > p[1] && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0])
+      hit = !hit;
+  }
+  return hit;
+}
+function segmentInside(a, b, poly) {
+  if (!inside(a, poly) || !inside(b, poly))
+    return false;
+  const dx = b[0] - a[0], dy = b[1] - a[1], ts = [0, 1];
+  for (let i = 0;i < poly.length; i++) {
+    const c = poly[i], d = poly[(i + 1) % poly.length], ex = d[0] - c[0], ey = d[1] - c[1], den = dx * ey - dy * ex;
+    if (Math.abs(den) < 0.0000000001)
+      continue;
+    const t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / den, u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / den;
+    if (t > 0 && t < 1 && u >= 0 && u <= 1)
+      ts.push(t);
+  }
+  ts.sort((x, y) => x - y);
+  return ts.slice(1).every((t, i) => {
+    const m = (t + ts[i]) / 2;
+    return inside([a[0] + dx * m, a[1] + dy * m], poly);
+  });
+}
+function validateCatalog(c) {
+  if (!c || c.version !== 1 || c.width !== 1920 || c.height !== 1080 || !Array.isArray(c.zones) || c.zones.length !== 6)
+    throw Error("Invalid forest catalog");
+  const zones = new Map;
+  for (const z of c.zones) {
+    if (!z || typeof z.id !== "string" || !/^[a-z_]+$/.test(z.id) || zones.has(z.id) || !Array.isArray(z.polygon) || z.polygon.length < 3 || z.polygon.length > 100 || !z.polygon.every((p) => finitePoint(p) && p[0] >= 0 && p[0] <= 1920 && p[1] >= 0 && p[1] <= 1080) || !finitePoint(z.spawn) || !inside(z.spawn, z.polygon) || !Array.isArray(z.portals))
+      throw Error("Invalid forest zone");
+    let area = 0;
+    for (let i = 0;i < z.polygon.length; i++) {
+      const a = z.polygon[i], b = z.polygon[(i + 1) % z.polygon.length];
+      if (a[0] === b[0] && a[1] === b[1])
+        throw Error("Invalid polygon");
+      area += a[0] * b[1] - b[0] * a[1];
+    }
+    if (Math.abs(area) < 1)
+      throw Error("Invalid polygon");
+    for (let i = 0;i < z.polygon.length; i++)
+      for (let j = i + 1;j < z.polygon.length; j++) {
+        if (j === i + 1 || i === 0 && j === z.polygon.length - 1)
+          continue;
+        const a = z.polygon[i], b = z.polygon[(i + 1) % z.polygon.length], c2 = z.polygon[j], d = z.polygon[(j + 1) % z.polygon.length];
+        const ab1 = cross(a, b, c2), ab2 = cross(a, b, d), cd1 = cross(c2, d, a), cd2 = cross(c2, d, b);
+        if (ab1 * ab2 <= 0 && cd1 * cd2 <= 0 && Math.max(Math.min(a[0], b[0]), Math.min(c2[0], d[0])) <= Math.min(Math.max(a[0], b[0]), Math.max(c2[0], d[0])) && Math.max(Math.min(a[1], b[1]), Math.min(c2[1], d[1])) <= Math.min(Math.max(a[1], b[1]), Math.max(c2[1], d[1])))
+          throw Error("Self-intersecting forest polygon");
+      }
+    zones.set(z.id, z);
+  }
+  let count = 0;
+  for (const z of zones.values()) {
+    const dirs = new Set;
+    for (const p of z.portals) {
+      const dest = zones.get(p.destination), dir = p.direction;
+      if (!Object.hasOwn(opposite, dir) || p.id !== dir || dirs.has(dir) || !Array.isArray(p.corridor) || p.corridor.length !== 4 || !p.corridor.every(Number.isFinite) || p.corridor[0] < 0 || p.corridor[1] < 0 || p.corridor[2] > 1920 || p.corridor[3] > 1080 || p.corridor[0] >= p.corridor[2] || p.corridor[1] >= p.corridor[3] || !dest || !finitePoint(p.arrival) || !inside(p.arrival, dest.polygon) || !dest.portals.some((q) => q.destination === z.id && q.direction === opposite[dir]))
+        throw Error("Invalid forest portal");
+      if (dir === "north" && p.corridor[1] !== 0 || dir === "south" && p.corridor[3] !== 1080 || dir === "west" && p.corridor[0] !== 0 || dir === "east" && p.corridor[2] !== 1920)
+        throw Error("Invalid portal boundary");
+      dirs.add(dir);
+      count++;
+    }
+  }
+  if (count !== 10 || !zones.has("central_clearing") || !inside([960, 760], zones.get("central_clearing").polygon))
+    throw Error("Invalid forest graph");
+  return zones;
+}
+function loadCatalog(path = resolve(import.meta.dir, "../../../data/static/forest_zones.json")) {
+  return validateCatalog(JSON.parse(readFileSync(path, "utf8")));
+}
+var BUSY_LEASE_MS = 90000;
+var MAX_BUSY = 768;
+var cosmetics = new Set(["wizard", "witch", "cyberghost"]);
+function createForestPresence(zones, authenticate, clock = Date.now, canServe = () => true) {
+  const rooms = new Map([...zones.keys()].map((id) => [id, new Map]));
+  const active2 = new Map, saved = new Map, busy = new Map;
+  let fenced = false;
+  const prune = () => {
+    const now = clock();
+    for (const [id, s] of saved)
+      if (s.expires <= now)
+        saved.delete(id);
+    for (const [id, b] of busy)
+      if (b.expires <= now)
+        dropBusy(id, b);
+  };
+  const send = (s, m) => {
+    if (fenced || !canServe())
+      return;
+    try {
+      if (s.ws.getBufferedAmount() > 65536) {
+        s.ws.close(1008, "slow client");
+        remove(s, 120000);
+        return;
+      }
+      if (s.ws.send(JSON.stringify({ v: 1, ...m })) < 0) {
+        s.ws.close(1008, "slow client");
+        remove(s, 120000);
+      }
+    } catch {
+      remove(s, 120000);
+    }
+  };
+  const broadcast = (s, m) => {
+    if (fenced || !canServe())
+      return;
+    for (const peer of rooms.get(s.state.zone_id).values())
+      if (peer !== s)
+        send(peer, m);
+  };
+  const busyNotice = (b, entering) => {
+    if (fenced || !canServe())
+      return;
+    for (const peer of rooms.get(b.state.zone_id).values()) {
+      if (peer.state.player_id === b.state.player_id)
+        continue;
+      if (peer.busyProtocol)
+        send(peer, { type: "peer_busy", player: { ...b.state, busy: !entering } });
+      else
+        send(peer, entering ? { type: "peer_join", player: { ...b.state } } : { type: "peer_leave", player_id: b.state.player_id });
+    }
+  };
+  function dropBusy(id, b) {
+    if (busy.get(id) !== b)
+      return;
+    busy.delete(id);
+    if (fenced || !canServe())
+      return;
+    for (const peer of rooms.get(b.state.zone_id).values())
+      if (peer.busyProtocol && peer.state.player_id !== id)
+        send(peer, { type: "peer_leave", player_id: id });
+  }
+  const countRoom = (zone) => rooms.get(zone).size + [...busy.values()].filter((b) => b.state.zone_id === zone).length;
+  const peers = (s) => [...rooms.get(s.state.zone_id).values()].filter((p) => p !== s).map((p) => ({ ...p.state })).concat(s.busyProtocol ? [...busy.values()].filter((b) => b.state.zone_id === s.state.zone_id && b.state.player_id !== s.state.player_id).map((b) => ({ ...b.state, busy: true })) : []);
+  function remove(s, ttl) {
+    if (fenced || !canServe() || active2.get(s.state.player_id) !== s)
+      return;
+    active2.delete(s.state.player_id);
+    if (s.entered) {
+      rooms.get(s.state.zone_id).delete(s.state.player_id);
+      broadcast(s, { type: "peer_leave", player_id: s.state.player_id });
+    }
+    if (ttl) {
+      prune();
+      if (saved.size >= 1024)
+        saved.delete(saved.keys().next().value);
+      saved.set(s.state.player_id, { state: { ...s.state }, expires: clock() + ttl });
+    } else
+      saved.delete(s.state.player_id);
+  }
+  const correction = (s, seq, reason) => send(s, { type: "correction", seq: Number.isSafeInteger(seq) ? seq : 0, zone_id: s.state.zone_id, x: s.state.x, y: s.state.y, facing: s.state.facing, reason });
+  const validSeq = (n) => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647;
+  function open(ws) {
+    if (fenced || !canServe()) {
+      ws.close(1011, "service unavailable");
+      return;
+    }
+    prune();
+    const old = active2.get(ws.data.playerId);
+    if (old) {
+      remove(old, 120000);
+      old.ws.close(1000, "replaced");
+    }
+    if (active2.size >= 512) {
+      ws.close(1013, "capacity");
+      return;
+    }
+    const occupied = busy.get(ws.data.playerId), previous = saved.get(ws.data.playerId);
+    if (!occupied)
+      saved.delete(ws.data.playerId);
+    const state = occupied ? { ...occupied.state, display_name: ws.data.displayName } : previous ? { ...previous.state, display_name: ws.data.displayName } : { player_id: ws.data.playerId, display_name: ws.data.displayName, zone_id: "central_clearing", x: 960, y: 760, facing: 0, summoner_id: "wizard" };
+    active2.set(state.player_id, { ws, state, entered: false, seq: -1, at: clock(), credit: 24, lastMove: 0, pendingMove: null, lastCosmetic: 0, rateAt: clock(), rate: 0, malformed: 0, checking: false, busyProtocol: false });
+  }
+  function message(ws, raw) {
+    if (fenced || !canServe())
+      return;
+    const s = active2.get(ws.data.playerId);
+    if (!s || s.ws !== ws)
+      return;
+    const now = clock();
+    if (now - s.rateAt >= 1000) {
+      s.rateAt = now;
+      s.rate = 0;
+    }
+    if (++s.rate > 30) {
+      ws.close(1008, "rate limit");
+      remove(s, 120000);
+      return;
+    }
+    if (typeof raw !== "string" || Buffer.byteLength(raw) > 2048) {
+      ws.close(1009, "invalid frame");
+      remove(s, 120000);
+      return;
+    }
+    let m;
+    try {
+      m = JSON.parse(raw);
+    } catch {
+      if (++s.malformed >= 3) {
+        ws.close(1008, "invalid message");
+        remove(s, 120000);
+      }
+      return;
+    }
+    if (!m || typeof m !== "object" || Array.isArray(m) || m.v !== 1 || typeof m.type !== "string") {
+      if (++s.malformed >= 3) {
+        ws.close(1008, "invalid message");
+        remove(s, 120000);
+      }
+      return;
+    }
+    if (m.type === "ping") {
+      send(s, { type: "pong", server_time: now });
+      return;
+    }
+    if (m.type === "leave" || m.type === "suspend") {
+      const kind = m.type;
+      prune();
+      if (kind === "suspend" && s.entered && busy.size < MAX_BUSY) {
+        active2.delete(s.state.player_id);
+        rooms.get(s.state.zone_id).delete(s.state.player_id);
+        s.pendingMove = null;
+        prune();
+        if (saved.size >= 1024)
+          saved.delete(saved.keys().next().value);
+        saved.set(s.state.player_id, { state: { ...s.state }, expires: now + 900000 });
+        const record2 = { state: { ...s.state }, auth: { ...ws.data }, expires: now + BUSY_LEASE_MS, checking: false };
+        busy.set(s.state.player_id, record2);
+        busyNotice(record2, false);
+      } else {
+        remove(s, kind === "leave" ? 0 : 900000);
+        if (kind === "leave") {
+          const record2 = busy.get(s.state.player_id);
+          if (record2)
+            dropBusy(s.state.player_id, record2);
+        }
+      }
+      send(s, { type: "handoff_ack", kind });
+      setTimeout(() => {
+        try {
+          ws.close(1000, kind === "leave" ? "left" : "suspended");
+        } catch {}
+      }, 500).unref();
+      return;
+    }
+    if (m.type === "enter") {
+      if (s.entered || !cosmetics.has(m.summoner_id)) {
+        send(s, { type: "error", error: "INVALID_ENTER" });
+        return;
+      }
+      prune();
+      const ownBusy = busy.get(s.state.player_id);
+      if (ownBusy)
+        s.state = { ...ownBusy.state, display_name: ws.data.displayName };
+      const room = rooms.get(s.state.zone_id);
+      if (countRoom(s.state.zone_id) - (ownBusy ? 1 : 0) >= 128) {
+        send(s, { type: "error", error: "ROOM_FULL" });
+        return;
+      }
+      s.busyProtocol = m.busy_protocol === 1;
+      s.state.summoner_id = m.summoner_id;
+      s.entered = true;
+      s.at = now;
+      s.seq = -1;
+      if (ownBusy) {
+        busy.delete(s.state.player_id);
+        saved.delete(s.state.player_id);
+      }
+      room.set(s.state.player_id, s);
+      send(s, { type: "welcome", self: { ...s.state }, peers: peers(s), server_time: now });
+      if (active2.get(s.state.player_id) === s) {
+        if (ownBusy)
+          busyNotice({ ...ownBusy, state: { ...s.state } }, true);
+        else
+          broadcast(s, { type: "peer_join", player: { ...s.state } });
+      }
+      return;
+    }
+    if (!s.entered) {
+      send(s, { type: "error", error: "ENTER_REQUIRED" });
+      return;
+    }
+    if (m.type === "cosmetic") {
+      if (!cosmetics.has(m.summoner_id)) {
+        send(s, { type: "error", error: "INVALID_COSMETIC" });
+        return;
+      }
+      if (now - s.lastCosmetic >= 200 && s.state.summoner_id !== m.summoner_id) {
+        s.lastCosmetic = now;
+        s.state.summoner_id = m.summoner_id;
+        broadcast(s, { type: "peer_cosmetic", player_id: s.state.player_id, summoner_id: m.summoner_id });
+      }
+      return;
+    }
+    if (m.type !== "move" && m.type !== "portal") {
+      send(s, { type: "error", error: "UNKNOWN_TYPE" });
+      return;
+    }
+    if (!validSeq(m.seq) || m.seq <= s.seq) {
+      correction(s, m.seq, "INVALID_SEQ");
+      return;
+    }
+    s.seq = m.seq;
+    const x = m.type === "move" ? m.x : m.crossing_x, y = m.type === "move" ? m.y : m.crossing_y;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1920 || y < 0 || y > 1080 || m.type === "move" && (!Number.isInteger(m.facing) || m.facing < 0 || m.facing > 3)) {
+      correction(s, m.seq, "INVALID_POSITION");
+      return;
+    }
+    const a = [s.state.x, s.state.y], b = [x, y], zone = zones.get(s.state.zone_id);
+    s.credit = Math.min(79, s.credit + Math.max(0, now - s.at) * 0.22);
+    s.at = now;
+    const distance = Math.hypot(x - a[0], y - a[1]);
+    if (distance > s.credit || !segmentInside(a, b, zone.polygon)) {
+      correction(s, m.seq, "INVALID_MOVEMENT");
+      return;
+    }
+    if (m.type === "move") {
+      s.credit -= distance;
+      s.state.x = x;
+      s.state.y = y;
+      s.state.facing = m.facing;
+      s.pendingMove = { seq: m.seq, x, y, facing: m.facing };
+      if (now - s.lastMove >= 200)
+        flushSession(s, now);
+      return;
+    }
+    const p = zone.portals.find((p2) => p2.direction === m.direction);
+    if (!p || x < p.corridor[0] || x > p.corridor[2] || y < p.corridor[1] || y > p.corridor[3] || !(p.direction === "north" && y === 0 && a[1] > y || p.direction === "south" && y === 1080 && a[1] < y || p.direction === "west" && x === 0 && a[0] > x || p.direction === "east" && x === 1920 && a[0] < x)) {
+      correction(s, m.seq, "INVALID_PORTAL");
+      return;
+    }
+    prune();
+    const destination = rooms.get(p.destination);
+    if (countRoom(p.destination) >= 128) {
+      correction(s, m.seq, "ROOM_FULL");
+      return;
+    }
+    s.pendingMove = null;
+    rooms.get(s.state.zone_id).delete(s.state.player_id);
+    broadcast(s, { type: "peer_leave", player_id: s.state.player_id });
+    s.state.zone_id = p.destination;
+    [s.state.x, s.state.y] = p.arrival;
+    s.credit = 0;
+    s.at = now;
+    destination.set(s.state.player_id, s);
+    send(s, { type: "zone", zone_id: s.state.zone_id, x: s.state.x, y: s.state.y, facing: s.state.facing, peers: peers(s) });
+    if (active2.get(s.state.player_id) === s)
+      broadcast(s, { type: "peer_join", player: { ...s.state } });
+  }
+  function flushSession(s, now) {
+    if (!s.pendingMove || !s.entered || now - s.lastMove < 200)
+      return;
+    const move = s.pendingMove;
+    s.pendingMove = null;
+    s.lastMove = now;
+    broadcast(s, { type: "peer_move", player_id: s.state.player_id, ...move });
+  }
+  function flush() {
+    if (fenced || !canServe())
+      return;
+    const now = clock();
+    for (const s of active2.values())
+      flushSession(s, now);
+  }
+  async function sweep() {
+    if (fenced || !canServe())
+      return;
+    prune();
+    await Promise.all([...active2.values()].map(async (s) => {
+      if (s.checking)
+        return;
+      s.checking = true;
+      try {
+        if (!await authenticate(s.ws.data) && !fenced && canServe() && active2.get(s.state.player_id) === s)
+          evict(s.state.player_id);
+      } catch {
+        if (!fenced && canServe() && active2.get(s.state.player_id) === s) {
+          remove(s, 0);
+          const b = busy.get(s.state.player_id);
+          if (b)
+            dropBusy(s.state.player_id, b);
+          s.ws.close(1011, "authentication unavailable");
+        }
+      } finally {
+        s.checking = false;
+      }
+    }).concat([...busy.values()].map(async (b) => {
+      if (b.checking)
+        return;
+      b.checking = true;
+      const auth = b.auth;
+      try {
+        if (!await authenticate(auth) && b.auth === auth && !fenced && canServe() && busy.get(b.state.player_id) === b) {
+          saved.delete(b.state.player_id);
+          dropBusy(b.state.player_id, b);
+        }
+      } catch {
+        if (b.auth === auth && !fenced && canServe() && busy.get(b.state.player_id) === b) {
+          saved.delete(b.state.player_id);
+          dropBusy(b.state.player_id, b);
+        }
+      } finally {
+        b.checking = false;
+      }
+    })));
+  }
+  function evict(playerId) {
+    if (fenced || !canServe())
+      return;
+    const s = active2.get(playerId);
+    if (s) {
+      remove(s, 0);
+      s.ws.close(1008, "session ended");
+    }
+    saved.delete(playerId);
+    const b = busy.get(playerId);
+    if (b)
+      dropBusy(playerId, b);
+  }
+  function fence() {
+    if (fenced)
+      return;
+    fenced = true;
+    for (const s of active2.values()) {
+      try {
+        s.ws.close(1011, "service unavailable");
+      } catch {}
+    }
+    active2.clear();
+    saved.clear();
+    busy.clear();
+    for (const room of rooms.values())
+      room.clear();
+  }
+  function peerChat(playerId, message2) {
+    if (fenced || !canServe() || message2.player_id !== playerId || !Number.isSafeInteger(message2.id) || !Number.isSafeInteger(message2.created_at) || typeof message2.text !== "string")
+      return;
+    const session = active2.get(playerId);
+    if (!session?.entered || rooms.get(session.state.zone_id)?.get(playerId) !== session)
+      return;
+    const event = { type: "peer_chat", player_id: playerId, message_id: message2.id, text: message2.text, created_at: message2.created_at, expires_at: message2.created_at + 1e4, server_time: clock() };
+    send(session, event);
+    broadcast(session, event);
+  }
+  return { open, message, peerChat, positionOf(playerId) {
+    if (fenced || !canServe() || busy.has(playerId))
+      return null;
+    const s = active2.get(playerId);
+    return s?.entered && rooms.get(s.state.zone_id)?.get(playerId) === s ? { zone_id: s.state.zone_id, x: s.state.x, y: s.state.y } : null;
+  }, renewBusy(playerId, token) {
+    if (fenced || !canServe() || !token)
+      return;
+    prune();
+    const b = busy.get(playerId);
+    if (b) {
+      b.auth = { ...b.auth, token };
+      b.expires = clock() + BUSY_LEASE_MS;
+    }
+  }, isBusy(playerId) {
+    if (fenced || !canServe())
+      return false;
+    prune();
+    return busy.has(playerId);
+  }, roomOf(playerId) {
+    if (fenced || !canServe())
+      return null;
+    const s = active2.get(playerId);
+    return s?.entered && rooms.get(s.state.zone_id)?.get(playerId) === s ? s.state.zone_id : null;
+  }, close(ws) {
+    if (fenced)
+      return;
+    const s = active2.get(ws.data.playerId);
+    if (s?.ws === ws)
+      remove(s, 120000);
+  }, sweep, flush, evict, fence };
+}
+
+// src/forest/duels.ts
+var PENDING_MS2 = 30000;
+var REJECT_MS2 = 120000;
+var PREPARING_MS = 180000;
+var RETENTION_MS = 7 * 86400000;
+var validId2 = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
+var fail2 = (status, error2) => ({ status, data: { error: error2 } });
+function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, combatAvailable = () => true) {
+  const expire = (now) => {
+    db.query("UPDATE forest_duel_invites SET status='EXPIRED', updated_at=? WHERE status IN ('PENDING','ACCEPTED') AND expires_at<=?").run(now, now);
+    db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
+  };
+  const clean = (now) => {
+    expire(now);
+    db.query("DELETE FROM forest_duel_actions WHERE created_at <= ?").run(now - RETENTION_MS);
+    db.query("DELETE FROM forest_duel_invites WHERE status IN ('DECLINED','CANCELLED','EXPIRED') AND updated_at <= ?").run(now - RETENTION_MS);
+  };
+  const row = (id) => db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE i.invite_id=?`).get(id);
+  const busyPvp = (id, now) => !!db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>? UNION ALL SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1 LIMIT 1").get(id, now, id);
+  const reserved = (id) => !!db.query("SELECT 1 FROM forest_duel_reservations WHERE player_id=?").get(id);
+  const mutate = (player, body, type, payload, run) => {
+    if (!canServe())
+      return fail2(503, "FOREST_DUELS_UNAVAILABLE");
+    if (!validId2(body?.client_action_id))
+      return fail2(400, "INVALID_ACTION_ID");
+    const json = JSON.stringify(payload);
+    return db.transaction(() => {
+      if (!canServe())
+        return fail2(503, "FOREST_DUELS_UNAVAILABLE");
+      const now = clock();
+      clean(now);
+      const prior = db.query("SELECT * FROM forest_duel_actions WHERE player_id=? AND client_action_id=?").get(player, body.client_action_id);
+      if (prior)
+        return prior.action_type === type && prior.payload_json === json ? { status: prior.status_code, data: JSON.parse(prior.result_json) } : fail2(409, "ACTION_CONFLICT");
+      const count = db.query("SELECT count(*) AS n FROM forest_duel_actions WHERE player_id=?").get(player);
+      if (count.n >= 500)
+        return fail2(429, "ACTION_LIMIT");
+      const result = run(now);
+      db.query("INSERT INTO forest_duel_actions VALUES (?,?,?,?,?,?,?)").run(player, body.client_action_id, type, json, result.status, JSON.stringify(result.data), now);
+      return result;
+    }).immediate();
+  };
+  const unlock = (id) => db.query("DELETE FROM forest_duel_reservations WHERE invite_id=?").run(id);
+  return {
+    participants(inviteId) {
+      if (!validId2(inviteId))
+        return [];
+      const i = db.query("SELECT challenger_id,recipient_id FROM forest_duel_invites WHERE invite_id=?").get(inviteId);
+      return i ? [i.challenger_id, i.recipient_id] : [];
+    },
+    challengerFor(recipient, inviteId) {
+      if (!validId2(inviteId))
+        return null;
+      const found = db.query("SELECT challenger_id FROM forest_duel_invites WHERE invite_id=? AND recipient_id=? AND status='PENDING'").get(inviteId, recipient);
+      return found?.challenger_id ?? null;
+    },
+    state(player) {
+      if (!canServe())
+        return fail2(503, "FOREST_DUELS_UNAVAILABLE");
+      return db.transaction(() => {
+        if (!canServe())
+          return fail2(503, "FOREST_DUELS_UNAVAILABLE");
+        const now = clock();
+        clean(now);
+        const records = db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE (i.challenger_id=? OR i.recipient_id=?) AND i.status IN ('PENDING','ACCEPTED') ORDER BY i.created_at, i.invite_id LIMIT 1`).all(player, player);
+        const started = db.query("SELECT i.invite_id,m.match_id FROM forest_duel_invites i JOIN pvp_matches m ON m.invite_id=i.invite_id WHERE (i.challenger_id=? OR i.recipient_id=?) AND i.status='STARTED' ORDER BY i.updated_at DESC LIMIT 1").get(player, player);
+        for (const record2 of records.filter((r) => r.status === "ACCEPTED")) {
+          const ready = db.query("SELECT player_id FROM forest_duel_ready WHERE invite_id=?").all(record2.invite_id);
+          record2.ready = { player: ready.some((x) => x.player_id === player), enemy: ready.some((x) => x.player_id !== player) };
+        }
+        const cooldowns = db.query("SELECT recipient_id AS player_id, MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED','EXPIRED') THEN created_at+? ELSE 0 END) AS cooldown_until FROM forest_duel_invites WHERE challenger_id=? AND ((status='DECLINED' AND updated_at+?>?) OR (status IN ('PENDING','CANCELLED','EXPIRED') AND created_at+?>?)) GROUP BY recipient_id ORDER BY cooldown_until DESC LIMIT 200").all(REJECT_MS2, PENDING_MS2, player, REJECT_MS2, now, PENDING_MS2, now);
+        return { status: 200, data: { ...started ? { started } : {}, player_id: player, server_time: now, cooldowns, incoming: records.filter((r) => r.status === "PENDING" && r.recipient_id === player), outgoing: records.filter((r) => r.status === "PENDING" && r.challenger_id === player), accepted: records.filter((r) => r.status === "ACCEPTED") } };
+      }).immediate();
+    },
+    request(player, body, targetAvailable = true) {
+      if (!validId2(body?.target_player_id))
+        return fail2(400, "INVALID_TARGET");
+      const target = body.target_player_id;
+      return mutate(player, body, "request", { target_player_id: target }, (now) => {
+        if (player === target)
+          return fail2(400, "SELF_DUEL");
+        if (!targetAvailable || !db.query("SELECT 1 FROM players WHERE player_id=?").get(target) || !db.query("SELECT 1 FROM players WHERE player_id=?").get(player))
+          return fail2(404, "PLAYER_UNAVAILABLE");
+        const cooldown = db.query("SELECT COALESCE(MAX(CASE WHEN status='DECLINED' THEN updated_at+? WHEN status IN ('PENDING','CANCELLED','EXPIRED') THEN created_at+? ELSE 0 END),0) deadline FROM forest_duel_invites WHERE challenger_id=? AND recipient_id=?").get(REJECT_MS2, PENDING_MS2, player, target).deadline;
+        if (cooldown > now)
+          return { status: 429, data: { error: "DUEL_COOLDOWN", cooldown_until: cooldown, server_time: now } };
+        const zone = roomOf(player);
+        if (!zone || roomOf(target) !== zone)
+          return fail2(409, "FOREST_ROOM_MISMATCH");
+        if (reserved(player) || reserved(target) || busyPvp(player, now) || busyPvp(target, now))
+          return fail2(409, "PLAYER_BUSY");
+        const id = crypto.randomUUID();
+        db.query("INSERT INTO forest_duel_invites VALUES (?,?,?,?,'PENDING',?,?,?)").run(id, player, target, zone, now, now, now + PENDING_MS2);
+        const reserve = db.query("INSERT INTO forest_duel_reservations VALUES (?,?)");
+        reserve.run(player, id);
+        reserve.run(target, id);
+        return { status: 200, data: { invite: row(id), cooldown_until: now + PENDING_MS2, server_time: now } };
+      });
+    },
+    respond(player, body, challengerAvailable = true) {
+      if (!validId2(body?.invite_id) || typeof body?.accept !== "boolean")
+        return fail2(400, "INVALID_REQUEST");
+      return mutate(player, body, "respond", { invite_id: body.invite_id, accept: body.accept }, (now) => {
+        const invitation = row(body.invite_id);
+        if (!invitation || invitation.recipient_id !== player)
+          return fail2(404, "INVITE_UNAVAILABLE");
+        if (invitation.status !== "PENDING")
+          return fail2(409, "INVITE_NOT_PENDING");
+        if (body.accept) {
+          if (!combatAvailable())
+            return fail2(503, "PVP_SECRET_REQUIRED");
+          if (!challengerAvailable)
+            return fail2(404, "PLAYER_UNAVAILABLE");
+          if (roomOf(player) !== invitation.originating_zone || roomOf(invitation.challenger_id) !== invitation.originating_zone)
+            return fail2(409, "FOREST_ROOM_MISMATCH");
+          if (busyPvp(player, now) || busyPvp(invitation.challenger_id, now))
+            return fail2(409, "PLAYER_BUSY");
+          db.query("UPDATE forest_duel_invites SET status='ACCEPTED', updated_at=?, expires_at=? WHERE invite_id=?").run(now, now + PREPARING_MS, body.invite_id);
+        } else {
+          db.query("UPDATE forest_duel_invites SET status='DECLINED', updated_at=? WHERE invite_id=?").run(now, body.invite_id);
+          unlock(body.invite_id);
+        }
+        return { status: 200, data: { invite: row(body.invite_id), ...body.accept ? {} : { cooldown_until: now + REJECT_MS2 }, server_time: now } };
+      });
+    },
+    ready(player, body, available = true) {
+      if (!validId2(body?.invite_id) || !body || Object.keys(body).some((k) => !["invite_id", "selection", "client_action_id", "playback_protocol"].includes(k)) || body.playback_protocol !== undefined && body.playback_protocol !== 1)
+        return fail2(400, "INVALID_REQUEST");
+      if (!combat)
+        return fail2(503, "PVP_SECRET_REQUIRED");
+      return mutate(player, body, "ready", { invite_id: body.invite_id, selection: body.selection, ...body.playback_protocol === undefined ? {} : { playback_protocol: body.playback_protocol } }, (now) => {
+        const invitation = row(body.invite_id);
+        if (!invitation || ![invitation.challenger_id, invitation.recipient_id].includes(player))
+          return fail2(404, "INVITE_UNAVAILABLE");
+        if (invitation.status === "STARTED") {
+          const old2 = db.query("SELECT selection_json,playback_protocol FROM forest_duel_ready WHERE invite_id=? AND player_id=?").get(body.invite_id, player);
+          if (!old2 || old2.selection_json !== JSON.stringify(body.selection) || old2.playback_protocol !== (body.playback_protocol ?? 0))
+            return fail2(409, "READY_CONFLICT");
+          const found = db.query("SELECT match_id FROM pvp_matches WHERE invite_id=?").get(body.invite_id);
+          return { status: 200, data: { state: "STARTED", match_id: found.match_id } };
+        }
+        if (activePractice(db, invitation.challenger_id, now) || activePractice(db, invitation.recipient_id, now))
+          return fail2(409, "PLAYER_BUSY");
+        if (invitation.status !== "ACCEPTED")
+          return fail2(409, "INVITE_NOT_ACTIVE");
+        if (!available)
+          return fail2(404, "PLAYER_UNAVAILABLE");
+        if (busyPvp(invitation.challenger_id, now) || busyPvp(invitation.recipient_id, now))
+          return fail2(409, "PLAYER_BUSY");
+        const reservations = db.query("SELECT player_id FROM forest_duel_reservations WHERE invite_id=?").all(body.invite_id);
+        if (reservations.length !== 2 || ![invitation.challenger_id, invitation.recipient_id].every((id) => reservations.some((r) => r.player_id === id)))
+          return fail2(409, "INVITE_NOT_ACTIVE");
+        const old = db.query("SELECT selection_json,playback_protocol FROM forest_duel_ready WHERE invite_id=? AND player_id=?").get(body.invite_id, player);
+        if (old && (old.selection_json !== JSON.stringify(body.selection) || old.playback_protocol !== (body.playback_protocol ?? 0)))
+          return fail2(409, "READY_CONFLICT");
+        if (!old) {
+          endSpectatingForStart(player);
+          const snapshot2 = combat.snapshot(player, body.selection);
+          if (!snapshot2 || snapshot2.player_id !== player)
+            return fail2(400, "UNTRUSTED_SETUP");
+          db.query("INSERT INTO forest_duel_ready (invite_id,player_id,snapshot_json,selection_json,playback_protocol) VALUES (?,?,?,?,?)").run(body.invite_id, player, JSON.stringify(snapshot2), JSON.stringify(body.selection), body.playback_protocol ?? 0);
+        }
+        const ready = db.query("SELECT player_id,snapshot_json,playback_protocol FROM forest_duel_ready WHERE invite_id=?").all(body.invite_id);
+        if (ready.length < 2)
+          return { status: 200, data: { state: "WAITING", invite_id: body.invite_id } };
+        const a = ready.find((r) => r.player_id === invitation.challenger_id), b = ready.find((r) => r.player_id === invitation.recipient_id);
+        if (!a || !b)
+          throw new Error("INVALID_READY_STATE");
+        const matchId = combat.start(JSON.parse(a.snapshot_json), JSON.parse(b.snapshot_json), now, body.invite_id, a.playback_protocol === 1 && b.playback_protocol === 1 ? 1 : 0);
+        db.query("UPDATE forest_duel_invites SET status='STARTED',updated_at=? WHERE invite_id=? AND status='ACCEPTED'").run(now, body.invite_id);
+        unlock(body.invite_id);
+        return { status: 200, data: { state: "STARTED", match_id: matchId } };
+      });
+    },
+    cancel(player, body) {
+      if (!validId2(body?.invite_id))
+        return fail2(400, "INVALID_REQUEST");
+      return mutate(player, body, "cancel", { invite_id: body.invite_id }, (now) => {
+        const invitation = row(body.invite_id);
+        if (!invitation || invitation.challenger_id !== player && !(invitation.recipient_id === player && invitation.status === "ACCEPTED"))
+          return fail2(404, "INVITE_UNAVAILABLE");
+        if (!["PENDING", "ACCEPTED"].includes(invitation.status))
+          return fail2(409, "INVITE_NOT_ACTIVE");
+        db.query("UPDATE forest_duel_invites SET status='CANCELLED', updated_at=? WHERE invite_id=?").run(now, body.invite_id);
+        unlock(body.invite_id);
+        return { status: 200, data: { invite: row(body.invite_id), cooldown_until: invitation.created_at + PENDING_MS2, server_time: now } };
+      });
+    }
+  };
+}
+
+// src/forest_quests.ts
+import { createHmac as createHmac6 } from "crypto";
+var DAY2 = 86400000;
+var durations2 = { easy: 4 * 3600000, medium: 8 * 3600000, hard: 12 * 3600000 };
+var dailyDeadline = (q) => Date.parse(q.day + "T00:00:00Z") + DAY2;
+var availableDuration = (q, now) => Math.max(0, Math.min(durations2[q.difficulty] ?? 0, dailyDeadline(q) - now));
+var objectives = {
+  easy: [["wins", 3], ["streak", 2], ["depth", 4]],
+  medium: [["captures", 1], ["difficult", 3], ["streak", 5], ["distinct", 3]],
+  hard: [["captures", 2], ["depth", 10], ["very_difficult", 2], ["streak", 8]]
+};
+
+class ForestQuestError extends Error {
+  status;
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+var fail3 = (status, message) => {
+  throw new ForestQuestError(status, message);
+};
+function createForestQuests(o) {
+  const { db } = o, clock = o.clock ?? Date.now;
+  const npcByZone = new Map(o.npcs.map((n) => [n.zone, n])), npcById = new Map(o.npcs.map((n) => [n.id, n]));
+  const row = (id, player) => db.query("SELECT * FROM forest_quests WHERE id=? AND player_id=?").get(id, player);
+  const visible = (q, now) => ({ quest_id: q.id, npc_id: q.npc_id, state: q.state, objective: q.objective, difficulty: q.difficulty, target: q.target, progress: q.progress, accepted_at: q.accepted_at, expires_at: q.expires_at, completed_at: q.completed_at, ...q.state === "OFFERED" ? { available_duration_ms: availableDuration(q, now) } : {}, ...q.state === "COMPLETED" ? { reward: JSON.parse(q.reward) } : {}, server_time_unix_ms: now });
+  const cleanup = (now) => {
+    db.query("DELETE FROM forest_quest_actions WHERE rowid IN (SELECT rowid FROM forest_quest_actions WHERE created_at<? LIMIT 50)").run(now - 7 * DAY2);
+    db.query("DELETE FROM forest_quests WHERE rowid IN (SELECT rowid FROM forest_quests WHERE expires_at<? AND (state<>'COMPLETED' OR completed_at<?) LIMIT 50)").run(now - 7 * DAY2, now - DAY2);
+  };
+  const expire = (player, now) => {
+    db.query("UPDATE forest_quests SET state='EXPIRED' WHERE player_id=? AND state IN ('OFFERED','ACTIVE') AND expires_at<=?").run(player, now);
+    db.query("UPDATE forest_quests SET state='EXPIRED' WHERE player_id=? AND state='COMPLETED' AND completed_at+?<=?").run(player, DAY2, now);
+  };
+  const offer = (player, npc, now) => {
+    const day = new Date(now).toISOString().slice(0, 10), end = Date.parse(day + "T00:00:00Z") + DAY2;
+    let q = db.query("SELECT * FROM forest_quests WHERE player_id=? AND npc_id=? AND day=?").get(player, npc.id, day);
+    if (!q) {
+      const bytes = createHmac6("sha256", o.secret).update(JSON.stringify(["forest-quest-v1", player, npc.id, day])).digest();
+      const difficulty = ["easy", "medium", "hard"][bytes.readUInt32BE(0) % 3], pool = objectives[difficulty], [objective, target] = pool[bytes.readUInt32BE(4) % pool.length];
+      const option = bytes.readUInt32BE(8) % (difficulty === "hard" ? 3 : difficulty === "medium" ? 2 : 1);
+      const amount = bytes.readUInt32BE(12);
+      const reward = difficulty === "easy" ? { essence: 100 + amount % 51 } : difficulty === "medium" ? option === 0 ? { essence: 150 + amount % 101 } : { core: 1 + amount % 2 } : option === 0 ? { essence: 250 + amount % 51 } : option === 1 ? { core: 2 + amount % 2 } : { arcane_shard: 1 };
+      const id = createHmac6("sha256", o.secret).update(JSON.stringify(["forest-quest-id-v1", player, npc.id, day])).digest("hex");
+      db.query("INSERT INTO forest_quests(id,player_id,npc_id,day,objective,difficulty,target,reward,expires_at) VALUES(?,?,?,?,?,?,?,?,?)").run(id, player, npc.id, day, objective, difficulty, target, JSON.stringify(reward), end);
+      q = row(id, player);
+    }
+    return q;
+  };
+  const availability = (player, q, now) => {
+    const active2 = db.query("SELECT id,npc_id,expires_at FROM forest_quests WHERE player_id=? AND state='ACTIVE' AND expires_at>? LIMIT 1").get(player, now);
+    const cooldown = q ? db.query("SELECT MAX(cancelled_until) AS until FROM forest_quests WHERE player_id=? AND npc_id=?").get(player, q.npc_id).until ?? 0 : 0;
+    return { active_quest: active2 ? { quest_id: active2.id, npc_id: active2.npc_id, zone: npcById.get(active2.npc_id)?.zone ?? "", expires_at: active2.expires_at } : null, can_accept: !!q && q.state === "OFFERED" && availableDuration(q, now) > 0 && !active2 && cooldown <= now, cooldown_until: cooldown };
+  };
+  const current = (player, now) => {
+    const p = o.position(player);
+    if (!p)
+      fail3(409, "FOREST_POSITION_REQUIRED");
+    const npc = npcByZone.get(p.zone_id);
+    if (!npc)
+      fail3(409, "FOREST_POSITION_REQUIRED");
+    expire(player, now);
+    const old = db.query("SELECT * FROM forest_quests WHERE player_id=? AND npc_id=? AND state='COMPLETED' AND completed_at+?>? ORDER BY completed_at LIMIT 1").get(player, npc.id, DAY2, now);
+    const q = old ?? offer(player, npc, now);
+    return { quest: ["OFFERED", "ACTIVE", "COMPLETED"].includes(q.state) ? visible(q, now) : null, server_time_unix_ms: now, ...availability(player, q, now) };
+  };
+  const get = (player) => db.transaction(() => {
+    const now = clock();
+    cleanup(now);
+    return current(player, now);
+  }).immediate();
+  const action = (player, kind, body) => {
+    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).sort().join(",") !== "client_action_id,quest_id" || typeof body.quest_id !== "string" || !/^[a-f0-9]{64}$/.test(body.quest_id) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.length > 64)
+      fail3(400, "INVALID_QUEST_ACTION");
+    return db.transaction(() => {
+      const now = clock(), id = body.client_action_id;
+      const prior = db.query("SELECT * FROM forest_quest_actions WHERE player_id=? AND action_id=?").get(player, id);
+      if (prior) {
+        if (prior.action !== kind || prior.quest_id !== body.quest_id)
+          fail3(409, "ACTION_ID_REUSED");
+        return JSON.parse(prior.result);
+      }
+      expire(player, now);
+      const q = row(body.quest_id, player);
+      if (!q)
+        fail3(404, "QUEST_NOT_FOUND");
+      const p = o.position(player), npc = npcById.get(q.npc_id);
+      if (!p || !npc || p.zone_id !== npc.zone || Math.hypot(p.x - npc.position[0], p.y - npc.position[1]) > 175)
+        fail3(409, "QUEST_OUT_OF_RANGE");
+      if (kind === "accept") {
+        if (q.state !== "OFFERED" || availableDuration(q, now) <= 0)
+          fail3(409, "QUEST_UNAVAILABLE");
+        const a = availability(player, q, now);
+        if (a.cooldown_until > now)
+          fail3(409, "QUEST_CANCEL_COOLDOWN");
+        if (a.active_quest)
+          fail3(409, "QUEST_ACTIVE_EXISTS");
+        q.state = "ACTIVE";
+        q.accepted_at = now;
+        q.expires_at = now + availableDuration(q, now);
+        db.query("UPDATE forest_quests SET state='ACTIVE',accepted_at=?,expires_at=? WHERE id=?").run(now, q.expires_at, q.id);
+      } else if (kind === "cancel") {
+        if (q.state !== "ACTIVE" || now >= q.expires_at)
+          fail3(409, "QUEST_UNAVAILABLE");
+        q.state = "OFFERED";
+        q.progress = 0;
+        q.progress_data = "{}";
+        q.accepted_at = null;
+        q.expires_at = dailyDeadline(q);
+        q.cancelled_until = now + 3 * 3600000;
+        db.query("UPDATE forest_quests SET state='OFFERED',progress=0,progress_data='{}',accepted_at=NULL,expires_at=?,cancelled_until=? WHERE id=?").run(q.expires_at, q.cancelled_until, q.id);
+      } else {
+        if (q.state !== "COMPLETED" || now >= q.completed_at + DAY2)
+          fail3(409, "QUEST_UNAVAILABLE");
+        o.grant(player, JSON.parse(q.reward), q.id, now);
+        q.state = "CLAIMED";
+        q.claimed_at = now;
+        db.query("UPDATE forest_quests SET state='CLAIMED',claimed_at=? WHERE id=?").run(now, q.id);
+      }
+      const result = { quest: visible(q, now), server_time_unix_ms: now, ...availability(player, q, now) };
+      db.query("INSERT INTO forest_quest_actions VALUES(?,?,?,?,?,?)").run(player, id, kind, q.id, JSON.stringify(result), now);
+      return result;
+    }).immediate();
+  };
+  const progress = (e) => {
+    const rows = db.query("SELECT * FROM forest_quests WHERE player_id=? AND state='ACTIVE' AND accepted_at<=? AND expires_at>?").all(e.playerId, e.now, e.now);
+    for (const q of rows) {
+      let data = JSON.parse(q.progress_data), value = q.progress;
+      if (e.kind === "capture") {
+        if (q.objective === "captures")
+          value++;
+      } else {
+        switch (q.objective) {
+          case "wins":
+            value++;
+            break;
+          case "depth":
+            if (e.depth >= q.target)
+              value = q.target;
+            break;
+          case "difficult":
+            if (["difficult", "very_difficult", "exceptional"].includes(e.tier))
+              value++;
+            break;
+          case "very_difficult":
+            if (["very_difficult", "exceptional"].includes(e.tier))
+              value++;
+            break;
+          case "streak":
+            if (data.runId !== e.runId) {
+              data = { runId: e.runId };
+              value = 0;
+            }
+            value++;
+            break;
+          case "distinct":
+            data.enemies ??= [];
+            if (!data.enemies.includes(e.enemyId)) {
+              data.enemies.push(e.enemyId);
+              value++;
+            }
+            break;
+        }
+      }
+      value = Math.min(q.target, value);
+      db.query("UPDATE forest_quests SET progress=?,progress_data=?,state=?,completed_at=? WHERE id=?").run(value, JSON.stringify(data), value >= q.target ? "COMPLETED" : "ACTIVE", value >= q.target ? e.now : null, q.id);
+    }
+  };
+  return { get, action, progress };
+}
+
+// src/discord_bridge.ts
+import { ActivityType, Client, GatewayIntentBits, MessageType } from "discord.js";
+function createPresenceUpdater(chat, client) {
+  let lastCount;
+  return (force = false) => {
+    if (!client.user)
+      return;
+    const count = chat.onlineCount();
+    if (!force && count === lastCount)
+      return;
+    client.user.setPresence({ activities: [{ name: `Entity Wars | ${count} online`, type: ActivityType.Playing }] });
+    lastCount = count;
+  };
+}
+function outgoingDiscordMessage(row) {
+  return { content: row.source === "system" ? `Entity Wars: ${row.text}` : `[Game] ${row.username}: ${row.text}`, allowedMentions: { parse: [] }, nonce: String(row.message_id), enforceNonce: true };
+}
+function acceptDiscordMessage(chat, message, guildId, channelId, applicationId) {
+  if (message.guildId !== guildId || message.channelId !== channelId || message.author?.bot || message.author?.id === applicationId || message.webhookId || message.system || ![MessageType.Default, MessageType.Reply].includes(message.type))
+    return false;
+  return chat.acceptDiscord(message.id, message.member?.displayName || message.author?.globalName || message.author?.username || "", message.content);
+}
+function startDiscordBridge(db, chat, env = process.env) {
+  const token = env.DISCORD_BOT_TOKEN;
+  if (!token)
+    return { enabled: false, close() {} };
+  const guild = env.DISCORD_GUILD_ID || "1376365043775438871";
+  const channelId = env.DISCORD_CHANNEL_ID || "1572758122810974360";
+  const app = env.DISCORD_APPLICATION_ID || "1572757742270288033";
+  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+  const updatePresence = createPresenceUpdater(chat, client);
+  let stopped = false, busy = false, retry = 1000;
+  let loginTimer;
+  client.on("error", () => console.warn("Discord bridge connection error"));
+  client.on("clientReady", () => updatePresence(true));
+  client.on("shardResume", () => updatePresence(true));
+  client.on("messageCreate", (message) => {
+    try {
+      acceptDiscordMessage(chat, message, guild, channelId, app);
+    } catch {
+      console.warn("Discord bridge could not store message");
+    }
+  });
+  async function connect() {
+    if (stopped)
+      return;
+    try {
+      await client.login(token);
+      retry = 1000;
+    } catch {
+      console.warn("Discord bridge login failed; retrying");
+      loginTimer = setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 60000);
+    }
+  }
+  async function dispatch() {
+    if (stopped || busy || !client.isReady())
+      return;
+    busy = true;
+    let row;
+    try {
+      row = db.query("SELECT * FROM discord_chat_outbox WHERE next_attempt <= ? ORDER BY message_id LIMIT 1").get(Date.now());
+      if (!row)
+        return;
+      const channel = await client.channels.fetch(channelId);
+      if (!channel || !("send" in channel) || !("guildId" in channel) || channel.guildId !== guild)
+        throw new Error("channel unavailable");
+      await channel.send(outgoingDiscordMessage(row));
+      db.query("DELETE FROM discord_chat_outbox WHERE message_id = ?").run(row.message_id);
+    } catch {
+      try {
+        if (row)
+          db.query("UPDATE discord_chat_outbox SET attempts = attempts + 1, next_attempt = ? WHERE message_id = ?").run(Date.now() + Math.min(300000, 2000 * 2 ** Math.min(row.attempts, 7)), row.message_id);
+      } catch {}
+      console.warn("Discord bridge dispatch failed; retrying");
+    } finally {
+      busy = false;
+    }
+  }
+  connect();
+  const timer = setInterval(() => void dispatch(), 2000);
+  const presenceTimer = setInterval(updatePresence, 30000);
+  return { enabled: true, close() {
+    stopped = true;
+    clearInterval(timer);
+    clearInterval(presenceTimer);
+    if (loginTimer)
+      clearTimeout(loginTimer);
+    client.destroy();
+  } };
+}
+
+// src/pvp/availability.ts
+function rankedAvailability(env) {
+  if (env.PVP_ENABLED !== "1")
+    return { status: 503, data: { error: "PVP_DISABLED" } };
+  return { status: 503, data: { error: "PVP_SECRET_REQUIRED" } };
+}
+function isRankedRoute(method, path) {
+  return method === "GET" && ["/pvp/queue/state", "/pvp/match/state", "/pvp/leaderboard"].includes(path) || method === "POST" && ["/pvp/queue/join", "/pvp/queue/cancel", "/pvp/match/decision", "/pvp/match/playback_ack", "/pvp/match/forfeit", "/pvp/match/chat"].includes(path);
+}
+
 // src/pvp/service.ts
+import { createHmac as createHmac7, randomInt, randomUUID as randomUUID3 } from "crypto";
 var PVP_TURN_TIMEOUT_MS = 90000;
 function pvpRandom(secret, matchId, battle, turn, draw) {
   if (!(secret instanceof Uint8Array) || secret.length < 32 || typeof matchId !== "string" || !matchId || ![battle, turn, draw].every((n) => Number.isSafeInteger(n) && n >= 0))
     throw new Error("INVALID_PVP_RNG_INPUT");
-  return createHmac3("sha256", secret).update(JSON.stringify(["ranked-pvp-v1", matchId, battle, turn, draw])).digest().readUInt32BE(0) / 4294967296;
+  return createHmac7("sha256", secret).update(JSON.stringify(["ranked-pvp-v1", matchId, battle, turn, draw])).digest().readUInt32BE(0) / 4294967296;
 }
 function trustedPvpSnapshot(playerId, selection, state, catalogs) {
   if (!selection || typeof selection !== "object" || Array.isArray(selection) || Object.keys(selection).some((k) => !["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"].includes(k)) || !state || state.player_id !== playerId || !["attack", "defense"].includes(selection.mode))
@@ -15039,18 +17860,20 @@ function trustedPvpSnapshot(playerId, selection, state, catalogs) {
     return null;
   return { player_id: playerId, entity_id: entity.id, weapon_ids: [...weapons], homunculus_id: selection.homunculus_id, spell_ids: [...ids], item_progress: structuredClone(state.item_progress ?? {}), homunculus_progress: structuredClone(state.homunculus_progress ?? {}), spell_progress: structuredClone(state.spell_progress ?? {}) };
 }
-function createSharedPvpMatch(db, catalogs, a, b, now, kind, inviteId = null) {
+function createSharedPvpMatch(db, catalogs, a, b, now, kind, inviteId = null, playbackProtocol = 0) {
   if (a.player_id === b.player_id || "error" in createPvpFighter(a, catalogs) || "error" in createPvpFighter(b, catalogs))
     throw new Error("UNTRUSTED_SETUP");
   const [left, right] = randomInt(2) === 0 ? [a, b] : [b, a];
   const combat = createPvpCombatState(left, right, catalogs);
   if ("error" in combat)
     throw new Error(combat.error);
-  const id = randomUUID(), season = pvpSeason(now);
+  const id = randomUUID3(), season = pvpSeason(now);
   const rankings = createPvpRanking(db, () => now);
   const leftRating = kind === "ranked" ? rankings.ensure(season, left.player_id, now).rating : null;
   const rightRating = kind === "ranked" ? rankings.ensure(season, right.player_id, now).rating : null;
   db.query("INSERT INTO pvp_matches (match_id,status,created_at,updated_at,revision,combat_state_json,season,decision_deadline,kind,invite_id) VALUES (?,'ACTIVE',?,?,1,?,?,?,?,?)").run(id, now, now, JSON.stringify(combat), kind === "ranked" ? season : null, now + PVP_TURN_TIMEOUT_MS, kind, inviteId);
+  if (playbackProtocol === 1)
+    db.query("UPDATE pvp_matches SET playback_protocol=1, decision_deadline=? WHERE match_id=?").run(now + 60000, id);
   const member = db.query("INSERT INTO pvp_match_players (match_id,player_id,side,snapshot_json,active,last_seen_at,start_rating) VALUES (?,?,?,?,1,?,?)");
   member.run(id, left.player_id, "LEFT", JSON.stringify(left), now, leftRating);
   member.run(id, right.player_id, "RIGHT", JSON.stringify(right), now, rightRating);
@@ -15086,9 +17909,11 @@ function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
         return current ? current.kind === "friendly" ? { state: "FRIENDLY_ACTIVE" } : { state: "MATCHED", match_id: current.match_id } : { state: "IDLE" };
       }).immediate();
     },
-    join(playerId, selection) {
+    join(playerId, selection, playbackProtocol) {
       if (!validId3(playerId))
         throw new Error("INVALID_PLAYER");
+      if (playbackProtocol !== undefined && playbackProtocol !== 1)
+        throw new Error("INVALID_REQUEST");
       return db.transaction(() => {
         const now = clock();
         expire.run(now);
@@ -15101,10 +17926,14 @@ function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
           throw new Error("PLAYER_BUSY");
         const previous = queued.get(playerId);
         if (previous) {
-          if (JSON.stringify(JSON.parse(previous.snapshot_json).selection) !== JSON.stringify(selection))
+          const stored = JSON.parse(previous.snapshot_json);
+          if (JSON.stringify(stored.selection) !== JSON.stringify(selection) || (stored.playback_protocol ?? 0) !== (playbackProtocol ?? 0))
             throw new Error("QUEUE_CONFLICT");
           return { state: "QUEUED", joined_at: previous.queued_at, expires_at: previous.expires_at };
         }
+        endSpectatingForStart(playerId);
+        if (activePractice(db, playerId, now))
+          throw new Error("PLAYER_BUSY");
         const snapshot2 = trustedSnapshot(playerId, selection);
         if (!snapshot2 || snapshot2.player_id !== playerId || "error" in createPvpFighter(snapshot2, catalogs))
           throw new Error("UNTRUSTED_SETUP");
@@ -15118,10 +17947,10 @@ function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
           opponent = first.get(playerId, now);
         }
         if (!opponent || !other) {
-          insert.run(playerId, now, now + 3600000, JSON.stringify({ selection, snapshot: snapshot2 }));
+          insert.run(playerId, now, now + 3600000, JSON.stringify({ selection, snapshot: snapshot2, ...playbackProtocol === 1 ? { playback_protocol: 1 } : {} }));
           return { state: "QUEUED", joined_at: now, expires_at: now + 3600000 };
         }
-        const id = createSharedPvpMatch(db, catalogs, snapshot2, other, now, "ranked");
+        const id = createSharedPvpMatch(db, catalogs, snapshot2, other, now, "ranked", null, playbackProtocol === 1 && JSON.parse(opponent.snapshot_json).playback_protocol === 1 ? 1 : 0);
         remove.run(other.player_id);
         return { state: "MATCHED", match_id: id };
       }).immediate();
@@ -15144,7 +17973,7 @@ function queueAction(db, player, clientId, request, perform, clock = Date.now) {
     return response;
   }).immediate();
 }
-function settlePvpMatch(db, matchId, winner, now) {
+function settlePvpMatch(db, matchId, winner, now, reward) {
   if (typeof matchId !== "string" || !matchId || !["left", "right", "draw"].includes(winner))
     throw new Error("INVALID_RESULT");
   const currentSeason = pvpSeason(now);
@@ -15158,8 +17987,22 @@ function settlePvpMatch(db, matchId, winner, now) {
         throw new Error("RESULT_CONFLICT");
       return prior;
     }
+    let xp = null;
+    if (reward && winner !== "draw") {
+      const participants = db.query("SELECT player_id,side,snapshot_json FROM pvp_match_players WHERE match_id=?").all(matchId);
+      const victor = participants.find((p) => p.side.toLowerCase() === winner), opponent = participants.find((p) => p.side.toLowerCase() !== winner);
+      if (!victor || !opponent)
+        throw new Error("INVALID_MATCH_STATE");
+      const day = Math.floor(now / 86400000) * 86400000;
+      const count = match.kind === "friendly" ? db.query("SELECT count(*) n FROM pvp_xp_rewards r JOIN pvp_matches m ON m.match_id=r.match_id WHERE r.winner_id=? AND r.opponent_id=? AND r.rewarded_at>=? AND r.rewarded_at<? AND m.kind='friendly'").get(victor.player_id, opponent.player_id, day, day + 86400000).n : 0;
+      if (match.kind !== "friendly" || count < 3) {
+        xp = reward(victor.player_id, victor.snapshot_json, now);
+        if (xp && xp.xp_granted > 0)
+          db.query("INSERT INTO pvp_xp_rewards VALUES (?,?,?,?)").run(matchId, victor.player_id, opponent.player_id, now);
+      }
+    }
     if (match.kind === "friendly") {
-      const result2 = { result: winner };
+      const result2 = { result: winner, ...xp ? { xp } : {} };
       db.query("UPDATE pvp_matches SET status='FINISHED', result_json=?, settled_at=?, updated_at=?, revision=revision+1 WHERE match_id=? AND status='ACTIVE'").run(JSON.stringify(result2), now, now, matchId);
       db.query("UPDATE pvp_match_players SET active=0 WHERE match_id=?").run(matchId);
       return result2;
@@ -15179,7 +18022,7 @@ function settlePvpMatch(db, matchId, winner, now) {
       }
     const currentRating = db.query("SELECT rating FROM pvp_season_ratings WHERE season = ? AND player_id = ?");
     const totals = { left: currentRating.get(currentSeason, left.player_id)?.rating ?? 1000, right: currentRating.get(currentSeason, right.player_id)?.rating ?? 1000 };
-    const result = { result: winner, season: match.season, deltas: { left: ld, right: rd }, totals };
+    const result = { result: winner, season: match.season, deltas: { left: ld, right: rd }, totals, ...xp ? { xp } : {} };
     db.query("UPDATE pvp_matches SET status = 'FINISHED', result_json = ?, settled_at = ?, updated_at = ?, revision = revision + 1 WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(result), now, now, matchId);
     db.query("UPDATE pvp_match_players SET active = 0 WHERE match_id = ?").run(matchId);
     return result;
@@ -15223,7 +18066,7 @@ function createPvpChat(db, clock = Date.now) {
     }
   };
 }
-function createPvpMatches(db, secret, clock = Date.now) {
+function createPvpMatches(db, secret, clock = Date.now, reward) {
   if (!(secret instanceof Uint8Array) || secret.length < 32)
     throw new Error("PVP_SECRET_REQUIRED");
   const get = db.prepare("SELECT m.*, p.side FROM pvp_matches m JOIN pvp_match_players p ON p.match_id = m.match_id WHERE m.match_id = ? AND p.player_id = ?");
@@ -15239,53 +18082,17 @@ function createPvpMatches(db, secret, clock = Date.now) {
     const n = db.query("SELECT COALESCE(MAX(seq),0)+1 n FROM pvp_events WHERE match_id = ?").get(id).n;
     db.query("INSERT INTO pvp_events (match_id, seq, kind, visibility, payload_json, created_at) VALUES (?, ?, ?, 'public', ?, ?)").run(id, n, String(entry.kind ?? "event"), JSON.stringify(entry), now);
   };
-  const sanitizeEvent = (entry, viewer, seq) => {
-    const rel = (v) => v === viewer ? "player" : v === "left" || v === "right" ? "enemy" : undefined;
-    const out = { id: seq, kind: entry.kind, turn: entry.turn };
-    for (const key of ["category", "verb", "suffix", "spell_id", "spell_name", "show_spell_link", "effectiveness", "actor_kind", "damage", "actual_damage", "amount", "hp", "status", "value", "previous", "remaining", "boosted", "result"])
-      if (["string", "number", "boolean"].includes(typeof entry[key]) || entry[key] === null)
-        out[key] = entry[key];
-    if (entry.side)
-      out.actor = rel(entry.side);
-    if (entry.target_side)
-      out.target = rel(entry.target_side);
-    if (entry.kind === "poison") {
-      out.source = rel(entry.source) ?? null;
-      out.victim = rel(entry.victim);
-    }
-    if (entry.kind === "hom_passive") {
-      out.actor = rel(entry.actor);
-      out.target = rel(entry.target);
-      for (const key of ["hom_id", "passive_id", "trigger"])
-        if (typeof entry[key] === "string")
-          out[key] = entry[key];
-      if (Array.isArray(entry.effects))
-        out.effects = entry.effects.filter((effect) => effect && ["left", "right"].includes(effect.target) && typeof effect.kind === "string" && typeof effect.amount === "number" && Number.isFinite(effect.amount)).map((effect) => ({ kind: effect.kind, target: rel(effect.target), amount: effect.amount, unit: effect.unit, duration: effect.duration, remaining: effect.remaining }));
-    }
-    if (["left", "right"].includes(entry.result))
-      out.result = rel(entry.result);
-    return out;
-  };
   const dto = (row, viewerId, after) => {
     const state = parse(row), viewer = row.side.toLowerCase(), rival = viewer === "left" ? "right" : "left", entries = members(row.match_id), decisions = pending.all(row.match_id, row.revision);
-    const present = (side) => {
-      const f = state.fighters[side], identity = entries.find((e) => e.side.toLowerCase() === side);
-      const status = {}, statusView = publicCombatStatus(f, state.turn);
-      for (const k of ["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect"])
-        if (typeof statusView.status[k] === "number")
-          status[k] = statusView.status[k];
-      if (f.status?.hybrid_mark)
-        status.hybrid_mark = { owner: f.status.hybrid_mark.owner === viewer ? "player" : "enemy", remaining: f.status.hybrid_mark.remaining };
-      const delayed_damage = (state.strategic_delayed ?? []).filter((entry) => entry.target === side).map((entry) => ({ amount: entry.amount, due_turn: entry.due_turn }));
-      return { player_id: identity.player_id, display_name: identity.display_name, entity_id: f.id, name: f.name, type: f.type, hp: f.hp, max_hp: f.max_hp, atk: f.atk, def: f.def, status, defense_presentation: statusView.defense_presentation, persistent_statuses: statusView.persistent_statuses, passive_modifiers: statusView.passive_modifiers, pending_drain: publicIncomingDrains(state, side), spell_neutralize_active: f.spell_neutralize_active, spell_neutralize_pending: f.spell_neutralize_pending, delayed_damage, active_weapon_slot: f.active_weapon_slot, weapon_ids: f.weapons.map((weapon) => weapon?.id ?? null), hom_id: f.hom_id, hom_name: f.hom_name, hom_energy: f.hom_energy, hom_max_energy: f.hom_max_energy, hom_ready_at: f.hom_ready_at, hom_spent: f.hom_spent, ultra_used: f.ultra_used, inspiration: f.inspiration, inspiration_pending: !!f.inspiration_pending, inspiration_used_this_battle: !!f.inspiration_used_this_battle, ...f.strategic_trap ? { trap: { value: f.strategic_trap.value, expires_turn: f.strategic_trap.expires_turn } } : {}, ...f.strategic_heal_suppression ? { heal_suppression: { expires_turn: f.strategic_heal_suppression.expires_turn } } : {}, ...side === viewer ? { spell_ids: [...f.spell_ids], spell_cooldowns: { ...f.spell_cooldowns }, inspiration_offers: f.inspiration_pending ? [...f.inspiration_offers] : [] } : {} };
-    };
+    const present = (side) => projectPvpFighter(state, side, viewer, entries.find((e) => e.side.toLowerCase() === side));
     const finished = row.result_json ? JSON.parse(row.result_json) : null;
     const total = finished?.totals?.[viewer];
-    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {} } : {} } : null;
-    const anomaly = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
-    return { match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some((d) => d.player_id === viewerId), enemy: decisions.some((d) => d.player_id !== viewerId) }, result, events: eventRows.all(row.match_id, after).map((e) => sanitizeEvent(JSON.parse(e.payload_json), viewer, e.seq)) };
+    const result = finished ? { result: finished.result === "draw" ? "draw" : finished.result === viewer ? "win" : "loss", ...finished.result === viewer && finished.xp ? { homunculus_xp: finished.xp } : {}, ...row.kind === "ranked" ? { mp_delta: finished.deltas?.[viewer] ?? 0, season: finished.season, ...Number.isSafeInteger(total) && total >= 0 ? { mp_total_after: total, ...pvpRank(total) } : {} } : {} } : null;
+    const anomaly2 = state.physical_anomaly ? { id: state.physical_anomaly.id, favored_type: state.physical_anomaly.favored_type, weakened_type: state.physical_anomaly.weakened_type, remaining_exchanges: state.physical_anomaly.remaining_exchanges } : null;
+    return { ...spectatorNames(viewerId), match_id: row.match_id, kind: row.kind, status: row.status, combat_revision: row.revision, deadline: row.status === "ACTIVE" ? row.decision_deadline : null, ...row.playback_protocol === 1 ? { phase: row.phase, server_time: clock(), playback_revision: row.phase === "PLAYBACK" ? row.revision : null, playback_until: row.phase === "PLAYBACK" ? row.decision_deadline : null, playback_event_end: row.playback_event_end } : {}, turn: state.turn, round: state.round, battle_index: state.battle_index, sudden_death: state.sudden_death, physical_anomaly: anomaly2, score: { player: state.wins[viewer], enemy: state.wins[rival] }, player: present(viewer), enemy: present(rival), ready: { player: decisions.some((d) => d.player_id === viewerId), enemy: decisions.some((d) => d.player_id !== viewerId) }, result, events: eventRows.all(row.match_id, after).map((e) => sanitizePvpEvent(JSON.parse(e.payload_json), viewer, e.seq)) };
   };
   const advance = (row, now, timeout) => {
+    const eventStart = db.query("SELECT COALESCE(MAX(seq),0) n FROM pvp_events WHERE match_id=?").get(row.match_id).n;
     let state = parse(row);
     const entries = members(row.match_id), choices = pending.all(row.match_id, row.revision);
     const bySide = {};
@@ -15324,13 +18131,20 @@ function createPvpMatches(db, secret, clock = Date.now) {
       for (const e of out.events)
         event(row.match_id, e, now);
     }
-    db.query("UPDATE pvp_matches SET combat_state_json = ?, revision = revision + 1, updated_at = ?, decision_deadline = ? WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(state), now, now + PVP_TURN_TIMEOUT_MS, row.match_id);
+    const end = db.query("SELECT COALESCE(MAX(seq),0) n FROM pvp_events WHERE match_id=?").get(row.match_id).n;
+    const playback = row.playback_protocol === 1 && !state.match_result;
+    const deadline = playback ? now + Math.min(45000, (end - eventStart) * 1350 + 6000) : now + (row.playback_protocol === 1 ? 60000 : PVP_TURN_TIMEOUT_MS);
+    db.query("UPDATE pvp_matches SET combat_state_json = ?, revision = revision + 1, updated_at = ?, decision_deadline = ?, phase=?, playback_event_end=? WHERE match_id = ? AND status = 'ACTIVE'").run(JSON.stringify(state), now, deadline, playback ? "PLAYBACK" : "DECISION", end, row.match_id);
     if (state.match_result)
-      settlePvpMatch(db, row.match_id, state.match_result, now);
+      settlePvpMatch(db, row.match_id, state.match_result, now, timeout ? undefined : reward);
   };
   const checkTimeout = (row, now) => {
-    if (row.status === "ACTIVE" && row.decision_deadline <= now)
-      advance(row, now, true);
+    if (row.status === "ACTIVE" && row.decision_deadline <= now) {
+      if (row.phase === "PLAYBACK")
+        db.query("UPDATE pvp_matches SET phase='DECISION', decision_deadline=?, updated_at=? WHERE match_id=?").run(now + 60000, now, row.match_id);
+      else
+        advance(row, now, true);
+    }
   };
   const lookup = (id, player) => {
     const row = get.get(id, player);
@@ -15349,7 +18163,7 @@ function createPvpMatches(db, secret, clock = Date.now) {
           throw new Error("ACTION_CONFLICT");
         return JSON.parse(old.response_json);
       }
-      const now = clock(), timedOut = row.status === "ACTIVE" && row.decision_deadline <= now;
+      const now = clock(), timedOut = row.status === "ACTIVE" && row.phase !== "PLAYBACK" && row.decision_deadline <= now;
       checkTimeout(row, now);
       row = lookup(id, player);
       if (!timedOut) {
@@ -15389,6 +18203,8 @@ function createPvpMatches(db, secret, clock = Date.now) {
     },
     decide(id, player, clientId, revision, decision) {
       return transactAction(id, player, clientId, { kind: "decision", revision, decision }, (row, now) => {
+        if (row.phase === "PLAYBACK")
+          throw new Error("PLAYBACK_PENDING");
         if (!Number.isSafeInteger(revision) || revision !== row.revision)
           throw new Error("STALE_REVISION");
         const state = parse(row), side = row.side.toLowerCase();
@@ -15404,6 +18220,25 @@ function createPvpMatches(db, secret, clock = Date.now) {
         db.query("INSERT INTO pvp_decisions (match_id, player_id, revision, client_action_id, decision_json, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, player, row.revision, clientId, JSON.stringify(decision), now);
         advance(row, now, false);
       });
+    },
+    ack(id, player, revision) {
+      if (!Number.isSafeInteger(revision) || revision < 1)
+        throw new Error("INVALID_REQUEST");
+      return db.transaction(() => {
+        const now = clock();
+        let row = lookup(id, player);
+        checkTimeout(row, now);
+        row = lookup(id, player);
+        if (row.playback_protocol !== 1 || row.revision !== revision)
+          throw new Error("STALE_REVISION");
+        if (row.status === "ACTIVE" && row.phase === "PLAYBACK") {
+          db.query("UPDATE pvp_match_players SET playback_ack_revision=? WHERE match_id=? AND player_id=?").run(revision, id, player);
+          const count = db.query("SELECT count(*) n FROM pvp_match_players WHERE match_id=? AND playback_ack_revision=?").get(id, revision).n;
+          if (count === 2)
+            db.query("UPDATE pvp_matches SET phase='DECISION', decision_deadline=?, updated_at=? WHERE match_id=?").run(now + 60000, now, id);
+        }
+        return dto(lookup(id, player), player, 0);
+      }).immediate();
     },
     forfeit(id, player, clientId) {
       return transactAction(id, player, clientId, { kind: "forfeit" }, (row, now) => {
@@ -15450,9 +18285,9 @@ function dispatchPvpRequest(services, player, method, path, body, query, kind = 
     return { ...matches.state(id, player, cursor()), chat: chat.list(id, player, chatAfter) };
   }
   if (method === "POST" && path === "/pvp/queue/join") {
-    if (!fields(body, ["client_action_id", "selection"]))
+    if (!fields(body, ["client_action_id", "selection", "playback_protocol"]))
       throw new Error("INVALID_REQUEST");
-    return queueAction(db, player, body.client_action_id, { kind: "queue_join", selection: body.selection }, () => queue.join(player, body.selection));
+    return queueAction(db, player, body.client_action_id, { kind: "queue_join", selection: body.selection, ...body.playback_protocol === undefined ? {} : { playback_protocol: body.playback_protocol } }, () => queue.join(player, body.selection, body.playback_protocol));
   }
   if (method === "POST" && path === "/pvp/queue/cancel") {
     if (!fields(body, ["client_action_id"]))
@@ -15464,6 +18299,12 @@ function dispatchPvpRequest(services, player, method, path, body, query, kind = 
       throw new Error("INVALID_REQUEST");
     authorize(body.match_id);
     return matches.decide(body.match_id, player, body.client_action_id, body.combat_revision, body.decision);
+  }
+  if (method === "POST" && path === "/pvp/match/playback_ack") {
+    if (!fields(body, ["match_id", "playback_revision"]) || typeof body.match_id !== "string")
+      throw new Error("INVALID_REQUEST");
+    authorize(body.match_id);
+    return matches.ack(body.match_id, player, body.playback_revision);
   }
   if (method === "POST" && path === "/pvp/match/forfeit") {
     if (!fields(body, ["match_id", "client_action_id"]) || typeof body.match_id !== "string")
@@ -15482,7 +18323,7 @@ function dispatchPvpRequest(services, player, method, path, body, query, kind = 
 }
 
 // src/index.ts
-import { createHash as createHash3, createHmac as createHmac7 } from "crypto";
+import { createHash as createHash3, createHmac as createHmac9 } from "crypto";
 import { lookup } from "dns/promises";
 import { isIP } from "net";
 import { existsSync, mkdirSync, readFileSync as readFileSync3 } from "fs";
@@ -18195,40 +21036,6 @@ async function getJobQueueSize() {
   }
 }
 
-// src/solo_hunt_retention.ts
-import { gzipSync, gunzipSync } from "zlib";
-var prefix = "gz1:";
-function readHuntCombat(value) {
-  return JSON.parse(value.startsWith(prefix) ? gunzipSync(Buffer.from(value.slice(prefix.length), "base64")).toString("utf8") : value);
-}
-function maintainSoloHunts(db, now) {
-  const candidates = db.query(`SELECT session_id, combat_state_json FROM solo_hunt_sessions
-		WHERE global_event_id IS NULL AND status IN ('VERIFIED_LOSS', 'FORFEIT', 'EXPIRED') AND compacted_at IS NULL
-		AND (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) <= ?
-		ORDER BY (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) LIMIT 50`).all(now - 7200000);
-  const prepared = candidates.map((row) => {
-    const value = row.combat_state_json;
-    const compressed = value ? prefix + gzipSync(Buffer.from(value)).toString("base64") : value;
-    return { ...row, compressed: compressed && value && compressed.length >= value.length ? value : compressed };
-  });
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const expired = db.query(`UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE session_id IN (
-			SELECT session_id FROM solo_hunt_sessions WHERE status = 'ACTIVE' AND global_event_id IS NULL AND expires_at <= ? ORDER BY expires_at LIMIT 50
-		) AND status = 'ACTIVE' AND global_event_id IS NULL`).run(now, now).changes;
-    const update = db.query("UPDATE solo_hunt_sessions SET player_snapshot_json = '{}', combat_state_json = ?, compacted_at = ? WHERE session_id = ? AND combat_state_json IS ? AND compacted_at IS NULL AND global_event_id IS NULL AND status IN ('VERIFIED_LOSS', 'FORFEIT', 'EXPIRED') AND (CASE WHEN status = 'EXPIRED' THEN expires_at ELSE finished_at END) <= ?");
-    let compacted = 0;
-    for (const row of prepared) {
-      compacted += update.run(row.compressed, now, row.session_id, row.combat_state_json, now - 7200000).changes;
-    }
-    db.exec("COMMIT");
-    return { expired, compacted };
-  } catch (error2) {
-    db.exec("ROLLBACK");
-    throw error2;
-  }
-}
-
 // src/boss_ip_limit.ts
 function createBossIpLimit() {
   const windows = new ExpiringMap;
@@ -18460,1884 +21267,6 @@ function claimVerifiedCombatReward(db, matchId, playerId, apply) {
   }).immediate();
 }
 
-// src/dungeon_combat.ts
-import { createHmac as createHmac4 } from "crypto";
-function dungeonSeason(timeMs) {
-  if (!Number.isSafeInteger(timeMs) || timeMs < 0)
-    throw new Error("INVALID_DUNGEON_TIME");
-  const date = new Date(timeMs);
-  if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999)
-    throw new Error("INVALID_DUNGEON_TIME");
-  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-function dungeonLeaderboard(db, season, playerId) {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(season) || typeof playerId !== "string" || !playerId || playerId.length > 256)
-    throw new Error("INVALID_DUNGEON_LEADERBOARD");
-  const ranking = `WITH ranked AS (
-    SELECT b.player_id, p.display_name, b.cleared_floor, b.total_turns, b.achieved_at,
-      ROW_NUMBER() OVER (ORDER BY b.cleared_floor DESC, b.total_turns ASC, b.achieved_at ASC, b.player_id ASC) AS rank
-    FROM dungeon_monthly_best b JOIN players p ON p.player_id = b.player_id WHERE b.season = ?
-  )`;
-  const leaders = db.query(`${ranking} SELECT * FROM ranked ORDER BY rank LIMIT 50`).all(season);
-  const player = db.query(`${ranking} SELECT * FROM ranked WHERE player_id = ?`).get(season, playerId) ?? null;
-  return { season, leaders, player };
-}
-function generateDungeonEncounter(seed, runId, floor, enabled) {
-  if (!enabled || floor < 5 || floor % 10 === 0)
-    return null;
-  const draw = (domain) => createHmac4("sha256", seed).update(JSON.stringify(["dungeon-encounter-v1", runId, floor, domain])).digest().readUInt32BE(0);
-  if (draw("chance") >= Math.floor(4294967296 * 0.1))
-    return null;
-  return [
-    { kind: "corrupted_fog", label: "CORRUPTED FOG", hint: "Player starts vulnerable by 10%." },
-    { kind: "crystal_bastion", label: "CRYSTAL BASTION", hint: "Enemy starts with a 15% shield." },
-    { kind: "arcane_instability", label: "ARCANE INSTABILITY", hint: "Both fighters start with 10% attack boost." }
-  ][draw("variant") % 3];
-}
-function generateDungeonEnemy(seed, runId, floor, catalogs, growth = { hp: 0.04, attack: 0.025, defense: 0.015 }, previous, elitesEnabled = false, tacticsEnabled = false, trackBase = elitesEnabled) {
-  if (!(seed instanceof Uint8Array) || seed.length < 32 || typeof runId !== "string" || !runId || !Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !catalogs || !Array.isArray(catalogs.entities) || !Array.isArray(catalogs.homunculi) || !Array.isArray(catalogs.spells) || !growth || [growth.hp, growth.attack, growth.defense].some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 0.1))
-    throw new Error("INVALID_DUNGEON_SETUP");
-  const draw = (domain) => createHmac4("sha256", seed).update(JSON.stringify(["dungeon-enemy-v1", runId, floor, domain])).digest().readUInt32BE(0);
-  const entities2 = [...catalogs.entities].filter((e) => e && typeof e.id === "string" && typeof e.type === "string" && e.base_stats && [e.base_stats.hp, e.base_stats.power, e.base_stats.guard].every((v) => Number.isSafeInteger(v) && v > 0)).sort((a, b2) => a.id.localeCompare(b2.id));
-  const homunculi = [...catalogs.homunculi].filter((h) => h && typeof h.id === "string").sort((a, b2) => a.id.localeCompare(b2.id));
-  if (!entities2.length || !homunculi.length)
-    throw new Error("INVALID_DUNGEON_CATALOG");
-  const otherEntities = entities2.filter((e) => e.id !== previous?.entity_id);
-  const otherHomunculi = homunculi.filter((h) => h.id !== previous?.homunculus_id);
-  const entityChoices = otherEntities.length ? otherEntities : entities2;
-  const homChoices = otherHomunculi.length ? otherHomunculi : homunculi;
-  const entity = entityChoices[draw("entity") % entityChoices.length];
-  const homunculus = homChoices[draw("homunculus") % homChoices.length];
-  const candidates = catalogs.spells.filter((s) => s && typeof s.id === "string" && (s.type === entity.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type) && Number.isInteger(s.tower_level_required) && s.research_cost && Number.isInteger(s.research_time_sec) && s.research_time_sec > 0) && Array.isArray(s.effects) && s.effects.every((e) => (DUNGEON_GENERATED_EFFECTS.has(e.kind) || e.kind === "life_leech" && e.health_drain === true) && validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && Number.isFinite(s.accuracy) && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0).sort((a, b2) => a.id.localeCompare(b2.id));
-  const unique = [...new Map(candidates.map((s) => [s.id, s])).values()];
-  const advanced = unique.filter((s) => s.type === "universal" || s.type === "hybrid");
-  if (unique.length < 4 || !advanced.length)
-    throw new Error("INVALID_DUNGEON_CATALOG");
-  const attack = unique.filter((s) => s.category === "attack" && s.cooldown_turns === 0 && s.power_mult > 0);
-  if (!attack.length)
-    throw new Error("INVALID_DUNGEON_CATALOG");
-  const chosen = [attack[draw("basic") % attack.length]];
-  if (floor >= 8) {
-    const pairs = [];
-    for (const setup of unique)
-      for (const follow of unique) {
-        if (setup.id === follow.id || setup.id === chosen[0].id || follow.id === chosen[0].id)
-          continue;
-        const has = (s, k, target) => s.effects.some((e) => e.kind === k && (!target || e.target === target));
-        if (has(setup, "poison", "enemy") && has(follow, "bonus_if_poisoned") || has(setup, "shield", "self") && has(follow, "ward_convert") || has(setup, "vuln", "enemy") && follow.category === "attack" && follow.power_mult >= 0.9)
-          pairs.push([setup, follow]);
-      }
-    const usable = pairs.filter((pair) => pair.some((s) => ["universal", "hybrid"].includes(s.type)));
-    if (usable.length)
-      chosen.push(...usable[draw("combo") % usable.length]);
-  }
-  const advancedChoices = advanced.filter((s) => s.id !== chosen[0].id);
-  if (!advancedChoices.length)
-    throw new Error("INVALID_DUNGEON_CATALOG");
-  if (chosen.length === 1)
-    chosen.push(advancedChoices[draw("advanced") % advancedChoices.length]);
-  const remaining = unique.filter((s) => !chosen.some((c) => c.id === s.id));
-  while (chosen.length < 4)
-    chosen.push(remaining.splice(draw(`spell-${chosen.length}`) % remaining.length, 1)[0]);
-  if (previous?.spell_ids && chosen.every((s) => previous.spell_ids.includes(s.id))) {
-    const alternatives = remaining.filter((s) => !previous.spell_ids.includes(s.id));
-    if (alternatives.length)
-      chosen[3] = alternatives[draw("variety") % alternatives.length];
-  }
-  const scale = (base2, rate) => Math.min(90000, Math.round(base2 * Math.pow(1 + rate, floor - 1)));
-  if (previous && [previous.hp, previous.attack, previous.defense].some((v) => !Number.isSafeInteger(v) || v < 0 || v >= 1e5))
-    throw new Error("DUNGEON_DIFFICULTY_LIMIT");
-  const hp = Math.max(scale(entity.base_stats.hp, growth.hp), (previous?.hp ?? -1) + 1);
-  const npcAttack = Math.max(scale(entity.base_stats.power, growth.attack), (previous?.attack ?? -1) + 1);
-  const defense = Math.max(scale(entity.base_stats.guard, growth.defense), (previous?.defense ?? -1) + 1);
-  const base = { hp, attack: npcAttack, defense };
-  const variants = [
-    { kind: "bulwark", label: "BULWARK", modifiers: { hp: 1.2, attack: 1, defense: 1.12 } },
-    { kind: "reaver", label: "REAVER", modifiers: { hp: 1.12, attack: 1.1, defense: 1 } },
-    { kind: "alchemist", label: "ALCHEMIST", modifiers: { hp: 1.15, attack: 1.05, defense: 1.05 } }
-  ];
-  const elite = elitesEnabled && floor % 10 === 0 ? variants[draw("elite") % variants.length] : null;
-  const effective = elite ? Object.fromEntries(Object.entries(base).map(([key2, value]) => [key2, Math.min(99999, Math.round(value * elite.modifiers[key2]))])) : base;
-  const personalities = ["AGGRESSIVE", "DEFENSIVE", "OPPORTUNIST", "ALCHEMIST"];
-  const npc_personality = elite ? { bulwark: "DEFENSIVE", reaver: "AGGRESSIVE", alchemist: "ALCHEMIST" }[elite.kind] : personalities[draw("personality") % personalities.length];
-  return { entity_id: entity.id, type: entity.type, homunculus_id: homunculus.id, homunculus_level: Math.min(10, Math.floor((floor - 1) / 3)), spell_ids: chosen.map((s) => s.id), ...effective, ...trackBase ? { base_stats: base, elite } : {}, ...tacticsEnabled ? { npc_personality } : {} };
-}
-function dungeonPreviousBase(combat, homunculi) {
-  const base = combat.npc_base_stats;
-  if (!base)
-    return null;
-  if (![base.hp, base.attack, base.defense].every((n) => Number.isSafeInteger(n) && n >= 0))
-    throw new Error("INVALID_DUNGEON_BASE");
-  if (combat.npc_base_stats_version === 2)
-    return { hp: base.hp, attack: base.attack, defense: base.defense };
-  if (combat.npc_base_stats_version !== undefined || !Number.isSafeInteger(combat.floor) || combat.floor < 1 || combat.floor > 1000)
-    throw new Error("INVALID_DUNGEON_BASE");
-  const hom = homunculi.find((h) => h.id === combat.npc?.hom_id);
-  if (!hom)
-    throw new Error("INVALID_DUNGEON_BASE");
-  const level = Math.min(10, Math.floor((combat.floor - 1) / 3));
-  const result = { hp: base.hp - (hom.buff_hp ?? 0) - level, attack: base.attack - (hom.buff_atk ?? 0) - Math.floor(level / 5), defense: base.defense - (hom.buff_def ?? 0) - Math.floor(level / 3) };
-  if (Object.values(result).some((n) => !Number.isSafeInteger(n) || n < 1))
-    throw new Error("INVALID_DUNGEON_BASE");
-  return result;
-}
-function chooseDungeonNpcSpell(floor, equippedIds, spells2, cooldowns, npc, target, roll, context = {}) {
-  if (!Number.isSafeInteger(floor) || floor < 1 || floor > 1000 || !Array.isArray(equippedIds) || equippedIds.length !== 4 || new Set(equippedIds).size !== 4 || !Array.isArray(spells2) || !cooldowns || typeof cooldowns !== "object" || !npc || !target || typeof roll !== "number" || !Number.isFinite(roll) || roll < 0 || roll >= 1)
-    throw new Error("INVALID_DUNGEON_DECISION");
-  const legal = equippedIds.map((id) => spells2.find((s) => s?.id === id)).filter((s) => s && (npc.expedition_types ? expeditionSpellLegal(s, npc.expedition_types) : s.type === npc.type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(npc.type)) && Array.isArray(s.effects) && s.effects.every((e) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && Number.isFinite(s.power_mult) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Number.isInteger(cooldowns[s.id] ?? 0) && (cooldowns[s.id] ?? 0) === 0);
-  if (legal.length === 0)
-    throw new Error("NO_AVAILABLE_DUNGEON_SPELL");
-  if (floor <= 3 && !npc.expedition_types)
-    return legal[Math.floor(roll * legal.length)].id;
-  if (npc.expedition_types && context.tactical_tier === "normal") {
-    const attacks = legal.filter((s) => s.category === "attack");
-    const pool = attacks.length ? attacks : legal;
-    return pool[Math.floor(roll * pool.length)].id;
-  }
-  const enemyStatus = target.status ?? {}, ownStatus = npc.status ?? {};
-  const enemyShield = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "shield") : enemyStatus.shield ?? 0;
-  const enemyReflect = npc.combat_rules_version === 2 ? effectiveTimedDefense(target, "reflect") : enemyStatus.reflect ?? 0;
-  const allMoves = equippedIds.map((id) => spells2.find((s) => s?.id === id)).filter(Boolean);
-  const has = (s, kind) => s.effects.some((e) => e.kind === kind);
-  const poisonFollow = allMoves.some((s) => has(s, "bonus_if_poisoned") && (cooldowns[s.id] ?? 0) <= 1);
-  const wardFollow = allMoves.some((s) => has(s, "ward_convert") && (cooldowns[s.id] ?? 0) <= 1);
-  const estimate = (s) => {
-    const relation = context.types?.effectiveness?.[s.type]?.[target.type] ?? 1;
-    let typeMultiplier = relation > 1 ? 1.25 : relation < 1 ? 0.8 : 1;
-    if (s.type === "hybrid") {
-      const factor = (type) => {
-        const value = context.types?.effectiveness?.[type]?.[target.type] ?? 1;
-        return value > 1 ? 1.25 : value < 1 ? 0.8 : 1;
-      };
-      typeMultiplier = Math.max(0.8, Math.min(1.25, Math.pow(factor(s.primary_type), 0.65) * Math.pow(factor(s.secondary_type), 0.35)));
-    } else if (context.personality && s.type === "universal")
-      typeMultiplier = 1;
-    const poison = s.effects.find((e) => e.kind === "bonus_if_poisoned");
-    const power = s.power_mult * (poison && enemyStatus.poison > 0 ? 1 + poison.value : 1);
-    const base = Math.max(1, Math.round(((npc.atk ?? 0) * (1 + (ownStatus.atk_boost ?? 0) - (ownStatus.atk_down ?? 0)) - Math.trunc((target.def ?? 0) * 0.5)) * typeMultiplier * physicalAnomalyMultiplier(context.anomaly, npc.type) * power * (1 + (enemyStatus.vuln ?? 0))));
-    return enemyShield > 0 ? Math.max(0, Math.round(base * (1 - enemyShield))) : base;
-  };
-  const lethalAvailable = legal.some((s) => s.category === "attack" && estimate(s) >= target.hp && s.accuracy > 0);
-  const scored = legal.map((spell) => {
-    let score = spell.category === "attack" ? spell.power_mult * spell.accuracy * 100 : 20;
-    if (npc.expedition_types && spell.category === "attack")
-      score += estimate(spell) * spell.accuracy * 2;
-    if (lethalAvailable && spell.category === "attack" && estimate(spell) >= target.hp)
-      score += 1000;
-    for (const effect of spell.effects) {
-      if (effect.kind === "heal")
-        score += npc.hp < npc.max_hp * 0.6 ? Math.min(effect.value ?? 0, npc.max_hp - npc.hp) * 3 : -70;
-      if (effect.kind === "shield" && !(ownStatus.shield > 0))
-        score += 35 + (floor >= 8 && wardFollow ? 75 : 0);
-      if (effect.kind === "poison" && effect.target === "enemy" && !(enemyStatus.poison > 0))
-        score += npc.combat_rules_version === 2 ? (effect.chance ?? 1) * (35 + Math.min(40, Math.round((target.max_hp ?? 0) * 0.135)) + (floor >= 8 && poisonFollow ? 80 : 0)) : 35 + (floor >= 8 && poisonFollow ? 80 : 0);
-      if (effect.kind === "burn" && !target.burn_effect)
-        score += (effect.chance ?? 1) * (30 + 100 * Math.max(effectiveTimedDefense(target, "shield"), effectiveTimedDefense(target, "reflect")));
-      if (effect.kind === "lethargy" && !target.lethargy_effect)
-        score += (effect.chance ?? 1) * 45;
-      if (effect.kind === "vuln" && effect.target === "enemy" && !(enemyStatus.vuln > 0))
-        score += 25;
-      if (floor >= 8 && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(effect.kind) && enemyStatus.poison > 0)
-        score += 65;
-      if (floor >= 8 && ["bonus_if_shielded", "ward_convert"].includes(effect.kind) && ownStatus.shield > 0)
-        score += 90;
-      if (npc.expedition_types && effect.kind === "hybrid_mark" && !enemyStatus.hybrid_mark && allMoves.some((s) => s.id !== spell.id && has(s, "bonus_if_marked") && (cooldowns[s.id] ?? 0) <= 1))
-        score += 75;
-      if (npc.expedition_types && effect.kind === "bonus_if_marked" && enemyStatus.hybrid_mark?.owner === "npc")
-        score += 90;
-      if (effect.kind === "counter_trap")
-        score += npc.strategic_trap ? -100 : 20;
-      if (effect.kind === "hom_energy_siphon")
-        score += npc.hom_id && target.hom_id && target.hom_energy > 0 && npc.hom_energy < 6 ? 25 : -60;
-      if (effect.kind === "physical_anomaly") {
-        const anomaly = context.anomaly;
-        const proposed = effect.favored_type === undefined ? spell : effect;
-        score += proposed.favored_type === npc.type ? 30 : 0;
-        score += proposed.weakened_type === target.type ? 30 : 0;
-        score -= proposed.favored_type === target.type ? 60 : 0;
-        score -= proposed.weakened_type === npc.type ? 60 : 0;
-        if (anomaly?.favored_type === proposed.favored_type && anomaly?.weakened_type === proposed.weakened_type)
-          score -= 120;
-        else if (anomaly?.favored_type === npc.type || anomaly?.weakened_type === target.type)
-          score -= 80;
-      }
-      if (effect.kind === "cooldown_jam" && floor >= 15)
-        score += (!npc.expedition_types || !context.tactical_tier) && (target.spell_ids ?? []).some((id) => (target.cooldowns?.[id] ?? 0) === 0 && spells2.some((s) => s.id === id && s.cooldown_turns > 0 && s.power_mult >= 1)) ? 35 : 0;
-      if (floor >= 15 && effect.kind === "atk_down" && !(enemyStatus.atk_down > 0))
-        score += 25;
-    }
-    if (floor >= 15 && enemyStatus.vuln > 0 && spell.category === "attack")
-      score += spell.power_mult * 20;
-    if (floor >= 8 && spell.category === "support" && npc.hp < npc.max_hp * 0.3 && !has(spell, "heal"))
-      score -= 35;
-    if (npc.expedition_types && context.tactical_tier && floor >= 5) {
-      for (const effect of spell.effects) {
-        if (["shield", "reflect", "atk_boost"].includes(effect.kind) && effect.target === "self" && (ownStatus[effect.kind] ?? 0) > 0)
-          score -= 100;
-        if (["poison", "vuln", "atk_down"].includes(effect.kind) && effect.target === "enemy" && (enemyStatus[effect.kind] ?? 0) > 0)
-          score -= 75;
-      }
-      if (floor >= 8) {
-        const debuffed = ["poison", "stun", "vuln", "atk_down", "misalign_next"].some((k) => (ownStatus[k] ?? 0) > 0) || !!npc.burn_effect || !!npc.lethargy_effect;
-        if (has(spell, "cleanse_one") || has(spell, "debuff_transfer"))
-          score += debuffed ? 175 : -60;
-        if (spell.category === "attack" && enemyReflect > 0)
-          score -= Math.min(150, estimate(spell) * enemyReflect * (npc.hp < npc.max_hp * 0.4 ? 5 : 2));
-        if ((has(spell, "pierce_ward") || has(spell, "ward_dispel")) && enemyShield > 0)
-          score += 65;
-      }
-      if (floor >= 15 && spell.category === "attack")
-        score += estimate(spell) * spell.accuracy;
-    }
-    const personality = context.personality;
-    if (personality) {
-      const attack = spell.category === "attack", injured = npc.hp < npc.max_hp, shielded = ownStatus.shield > 0;
-      const usefulHeal = spell.effects.some((e) => e.kind === "heal" && e.target === "self" && injured);
-      const usefulShield = spell.effects.some((e) => e.kind === "shield" && e.target === "self" && !shielded);
-      if (spell.category === "support" && has(spell, "heal") && !injured)
-        score -= 1000;
-      if (personality === "AGGRESSIVE" && attack)
-        score += 35 + Math.round(25 * spell.accuracy);
-      if (personality === "DEFENSIVE") {
-        if (usefulHeal && npc.hp < npc.max_hp * 0.8)
-          score += 60;
-        else if (usefulShield && npc.hp < npc.max_hp * 0.8)
-          score += 45;
-        else if (attack && (!injured || shielded))
-          score += 35;
-      }
-      if (personality === "OPPORTUNIST") {
-        if (attack && (enemyStatus.poison > 0 && spell.effects.some((e) => ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].includes(e.kind)) || enemyStatus.hybrid_mark?.owner === "npc" || enemyStatus.vuln > 0 || target.hp < target.max_hp * 0.35))
-          score += 60;
-        if (spell.category === "support" && spell.effects.some((e) => ["poison", "vuln"].includes(e.kind) && e.target === "enemy") && !allMoves.some((s) => s.id !== spell.id && s.category === "attack" && (cooldowns[s.id] ?? 0) <= 1))
-          score -= 120;
-      }
-      if (personality === "ALCHEMIST") {
-        const availableFollow = (kind) => allMoves.some((s) => s.id !== spell.id && (cooldowns[s.id] ?? 0) <= 1 && has(s, kind));
-        const combo = spell.effects.some((e) => e.kind === "poison" && e.target === "enemy" && !(enemyStatus.poison > 0) && availableFollow("bonus_if_poisoned") || e.kind === "shield" && e.target === "self" && !shielded && availableFollow("ward_convert"));
-        if (spell.category === "support" && spell.effects.some((e) => e.kind === "poison" && e.target === "enemy") && !combo)
-          score -= 120;
-        const strategic = spell.effects.some((e) => ["vuln", "atk_down", "cooldown_jam"].includes(e.kind) && e.target === "enemy" && !(enemyStatus[e.kind] > 0));
-        const anomaly = spell.effects.some((e) => e.kind === "physical_anomaly") && spell.favored_type === npc.type && !(context.anomaly?.favored_type === spell.favored_type && context.anomaly?.weakened_type === spell.weakened_type);
-        if (combo || anomaly)
-          score += 60;
-        else if (strategic)
-          score += 30;
-      }
-    }
-    return { id: spell.id, score };
-  });
-  const best = Math.max(...scored.map((s) => s.score));
-  const tied = scored.filter((s) => s.score === best);
-  return tied[Math.floor(roll * tied.length)].id;
-}
-var DUNGEON_GENERATED_EFFECTS = new Set(["burn", "lethargy", "atk_boost", "atk_down", "vuln", "shield", "reflect", "heal", "poison", "bonus_if_poisoned", "physical_anomaly", ...STRATEGIC_EFFECTS]);
-var DUNGEON_EFFECTS = new Set([...DUNGEON_GENERATED_EFFECTS, "hom_stun", "type_neutralize", "bonus_if_hit_last_exchange", "cleanse_one", "pierce_ward", "focus_next", "life_leech", "misalign_next", "tempo_shift", "bonus_if_low_hp", "recoil", "hybrid_mark", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "consume_poison", "bonus_power_if_hit_last_exchange", "ward_dispel", "shield_by_order", "poison_on_reflect"]);
-var validEffect = (e) => e && DUNGEON_EFFECTS.has(e.kind) && validChance(e) && ["self", "enemy"].includes(e.target) && typeof e.value === "number" && Number.isFinite(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["threshold", "max_heal", "second_value"].every((k) => e[k] === undefined || typeof e[k] === "number" && Number.isFinite(e[k]) && e[k] >= 0) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e));
-var DUNGEON_ITEMS = new Set(["power_flat", "guard_flat", "true_on_hit", "dot_true", "vuln_on_hit", "tempo_flat", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
-function expeditionSpellLegal(s, types2) {
-  if (!s || !Array.isArray(types2) || types2.length !== 2)
-    return false;
-  if (s.type === "hybrid")
-    return types2.includes(s.primary_type) && types2.includes(s.secondary_type) && s.primary_type !== s.secondary_type && types2.every((t) => s.eligible_types?.includes(t));
-  if (s.type === "universal")
-    return types2.every((t) => s.eligible_types?.includes(t));
-  return types2.includes(s.type);
-}
-function expeditionSpellSupported(s, types2) {
-  return expeditionSpellLegal(s, types2) && dungeonInspirationCandidatesForTypes(types2, [], [s]).length === 1;
-}
-function dungeonInspirationCandidatesForTypes(types2, equipped, spells2) {
-  return spells2.filter((s) => expeditionSpellLegal(s, types2) && types2.some((t) => dungeonInspirationCandidates(t, equipped, [s]).length === 1));
-}
-function dungeonEliteTrait(state) {
-  if (state.elite_traits_enabled !== true || state.elites_enabled !== true || !Number.isInteger(state.floor) || state.floor % 10 !== 0)
-    return null;
-  const traits = { bulwark: { trait: "aegis_protocol", label: "AEGIS PROTOCOL", status: "shield", value: 0.15, target: "npc", hint: "At 70% HP or below, gains 15% shield." }, reaver: { trait: "bloodrush", label: "BLOODRUSH", status: "atk_boost", value: 0.15, target: "npc", hint: "At 50% HP or below, gains 15% attack for the next spell hit." }, alchemist: { trait: "catalytic_exposure", label: "CATALYTIC EXPOSURE", status: "vuln", value: 0.12, target: "player", hint: "A damaging spell hit can apply 12% vulnerability." } };
-  const kind = state.elite?.kind, trait = traits[kind];
-  const expected2 = { bulwark: [1.2, 1, 1.12], reaver: [1.12, 1.1, 1], alchemist: [1.15, 1.05, 1.05] };
-  const modifiers = state.elite?.modifiers;
-  return trait && state.elite?.label === kind.toUpperCase() && modifiers && [modifiers.hp, modifiers.attack, modifiers.defense].every((value, i) => value === expected2[kind][i]) ? trait : null;
-}
-function dungeonInspirationCandidates(type, equipped, spells2) {
-  const seen = new Set;
-  return spells2.filter((s) => s && typeof s.id === "string" && !seen.has(s.id) && !equipped.includes(s.id) && (s.type === type || ["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(type)) && ["attack", "support"].includes(s.category) && Number.isFinite(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && Number.isFinite(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e) => validEffect(e) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s))) && !!seen.add(s.id));
-}
-function hydrateDungeonInspiration(state, spells2) {
-  if (!state?.player || !state?.npc || !Array.isArray(spells2))
-    return false;
-  for (const who of ["player", "npc"]) {
-    const fighter2 = state[who];
-    if (!Array.isArray(fighter2.spell_ids) || fighter2.spell_ids.length !== 4 || typeof fighter2.type !== "string")
-      return false;
-    const candidates = dungeonInspirationCandidates(fighter2.type, fighter2.original_spell_ids ?? fighter2.spell_ids, spells2);
-    if (candidates.length < 3)
-      return false;
-    state.inspiration_catalog ??= {};
-    state.inspiration_catalog[who] = candidates;
-    fighter2.inspiration ??= 0;
-    fighter2.inspiration_pending ??= false;
-    fighter2.inspiration_used ??= false;
-    fighter2.inspiration_offers ??= [];
-    fighter2.original_spell_ids ??= [...fighter2.spell_ids];
-    fighter2.temporary_spell_id ??= null;
-    fighter2.temporary_replaced_slot ??= null;
-  }
-  state.inspiration_catalog_version = 2;
-  return true;
-}
-function restoreDungeonInspiration(state, fighter2) {
-  if (fighter2.temporary_spell_id) {
-    delete fighter2.cooldowns[fighter2.temporary_spell_id];
-    fighter2.spell_ids = [...fighter2.original_spell_ids];
-    const id = fighter2.temporary_spell_id;
-    if (!state.player.spell_ids.includes(id) && !state.npc.spell_ids.includes(id))
-      state.spells = state.spells.filter((s) => s.id !== id);
-  }
-  fighter2.inspiration_pending = false;
-  fighter2.inspiration_offers = [];
-  fighter2.temporary_spell_id = null;
-  fighter2.temporary_replaced_slot = null;
-}
-function createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot = 0) {
-  if (!setup?.entity?.base_stats || !Array.isArray(setup.spell_ids) || setup.spell_ids.length !== 4 || new Set(setup.spell_ids).size !== 4 || !enemy || !catalogs || !Array.isArray(enemy.spell_ids) || enemy.spell_ids.length !== 4 || !Array.isArray(catalogs.spells) || !Array.isArray(catalogs.homunculi) || !catalogs.types?.effectiveness)
-    return { error: "UNTRUSTED_SETUP" };
-  const equipment = setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects ?? {} }, { id: null, effects: {} }];
-  if (!Array.isArray(equipment) || equipment.length !== 2 || equipment.some((w) => !w || !w.effects || Object.entries(w.effects).some(([key2, value]) => !DUNGEON_ITEMS.has(key2) && value !== 0)))
-    return { error: "UNSUPPORTED_MECHANIC" };
-  const factor = Math.max(0, Math.min(2, setup.hom_id ? setup.hom_synergy?.item_effect_mult ?? 1 : 1));
-  const weapons = equipment.map((w) => ({ id: w.id ?? null, effects: Object.fromEntries(Object.entries(w.effects).map(([key2, value]) => [key2, value * factor])) }));
-  const activeSlot = [1, 2].includes(previousActiveSlot) && weapons[previousActiveSlot - 1]?.id ? previousActiveSlot : weapons[0].id ? 1 : weapons[1].id ? 2 : 0;
-  const effects = activeSlot ? weapons[activeSlot - 1].effects : {};
-  const spells2 = [...setup.spell_ids, ...enemy.spell_ids].map((id) => catalogs.spells.find((s) => s.id === id));
-  if (spells2.some((s) => !s || !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
-    return { error: "UNSUPPORTED_MECHANIC" };
-  const expedition2 = enemy.combat_mode === "expedition";
-  if (expedition2 && (!Array.isArray(enemy.types) || enemy.types.length !== 2 || enemy.type !== enemy.types[0] || enemy.types[0] === enemy.types[1] || enemy.types.some((t) => !catalogs.types.effectiveness[t]) || !expeditionCaptures.some((h) => h.id === enemy.homunculus_id) || !Number.isInteger(enemy.homunculus_level) || enemy.homunculus_level < 0 || enemy.homunculus_level > 10 || new Set(enemy.spell_ids).size !== 4))
-    return { error: "UNTRUSTED_SETUP" };
-  if (spells2.some((s, i) => i >= 4 && expedition2 ? !expeditionSpellSupported(s, enemy.types) : !(s.type === (i < 4 ? setup.entity.type : enemy.type) || ["universal", "hybrid"].includes(s.type) && s.eligible_types?.includes(i < 4 ? setup.entity.type : enemy.type))))
-    return { error: "UNTRUSTED_SETUP" };
-  const hom = expedition2 ? expeditionCaptures.find((h) => h.id === enemy.homunculus_id) : catalogs.homunculi.find((h) => h.id === enemy.homunculus_id);
-  if (!expedition2 && (!hom || !Number.isInteger(enemy.homunculus_level) || enemy.homunculus_level < 0 || enemy.homunculus_level > 10) || [enemy.hp, enemy.attack, enemy.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
-    return { error: "UNTRUSTED_SETUP" };
-  if (enemy.base_stats && [enemy.base_stats.hp, enemy.base_stats.attack, enemy.base_stats.defense].some((v) => !Number.isSafeInteger(v) || v < 1 || v > 1e5))
-    return { error: "UNTRUSTED_SETUP" };
-  const stats = setup.entity.base_stats, bonus = setup.bonuses ?? {};
-  const npcTempo = catalogs.entities?.find((entity) => entity.id === enemy.entity_id)?.base_stats?.tempo ?? 10;
-  const npcHp = enemy.hp + (hom?.buff_hp ?? 0) + enemy.homunculus_level;
-  const player = { id: setup.entity.id, type: setup.entity.type, tempo: stats.tempo ?? 10, hp: stats.hp + (bonus.hp ?? 0), max_hp: stats.hp + (bonus.hp ?? 0), atk: stats.power + (bonus.atk ?? 0) + Math.trunc(effects.power_flat ?? 0), def: stats.guard + (bonus.def ?? 0) + Math.trunc(effects.guard_flat ?? 0), hom_id: setup.hom_id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...setup.spell_ids] };
-  if (setup.hom_passive_level !== undefined)
-    player.expedition_passive = newExpeditionPassiveState(setup.hom_id, setup.hom_passive_level);
-  const npcBaseAttack = enemy.attack - (expedition2 ? enemy.item_power_allocated : 0);
-  const npcBaseGuard = enemy.defense - (expedition2 ? enemy.item_guard_allocated : 0);
-  const npc = { id: enemy.entity_id, type: enemy.type, ...expedition2 ? { expedition_types: [...enemy.types] } : {}, tempo: npcTempo, hp: npcHp, max_hp: npcHp, atk: npcBaseAttack + (expedition2 ? enemy.item_power_allocated : 0) + (hom?.buff_atk ?? 0) + Math.floor(enemy.homunculus_level / 5), def: npcBaseGuard + (expedition2 ? enemy.item_guard_allocated : 0) + (hom?.buff_def ?? 0) + Math.floor(enemy.homunculus_level / 3), hom_id: hom?.id ?? null, hom_energy: 0, status: {}, cooldowns: {}, spell_ids: [...enemy.spell_ids] };
-  if (expedition2)
-    npc.expedition_passive = newExpeditionPassiveState(enemy.homunculus_id, enemy.homunculus_level);
-  if (!enemy.elite && enemy.special_encounter?.kind === "corrupted_fog")
-    Object.assign(player.status, { vuln: 0.1 });
-  if (!enemy.elite && enemy.special_encounter?.kind === "crystal_bastion")
-    Object.assign(npc.status, { shield: 0.15 });
-  if (!enemy.elite && enemy.special_encounter?.kind === "arcane_instability") {
-    Object.assign(player.status, { atk_boost: 0.1 });
-    Object.assign(npc.status, { atk_boost: 0.1 });
-  }
-  if (enemy.elite) {
-    npc.hp = npc.max_hp = Math.min(99999, npc.max_hp);
-    npc.atk = Math.min(99999, npc.atk);
-    npc.def = Math.min(99999, npc.def);
-  }
-  const inspirationCatalog = { player: dungeonInspirationCandidates(player.type, player.spell_ids, catalogs.spells), npc: expedition2 ? dungeonInspirationCandidatesForTypes(enemy.types, npc.spell_ids, catalogs.spells) : dungeonInspirationCandidates(npc.type, npc.spell_ids, catalogs.spells) };
-  if (inspirationCatalog.player.length < 3 || inspirationCatalog.npc.length < 3)
-    return { error: "UNSUPPORTED_MECHANIC" };
-  for (const fighter2 of [player, npc])
-    Object.assign(fighter2, { inspiration: 0, inspiration_pending: false, inspiration_used: false, inspiration_offers: [], original_spell_ids: [...fighter2.spell_ids], temporary_spell_id: null, temporary_replaced_slot: null });
-  return { combat_rules_version: 2, player, npc, ...!enemy.elite && enemy.special_encounter ? { special_encounter: structuredClone(enemy.special_encounter) } : {}, ...enemy.base_stats ? { npc_base_stats: structuredClone(enemy.base_stats), npc_base_stats_version: 2, elite: enemy.elite ?? null } : {}, ...enemy.npc_personality ? { npc_personality: enemy.npc_personality } : {}, inspiration_catalog: structuredClone(inspirationCatalog), inspiration_catalog_version: 2, weapons, active_weapon_slot: activeSlot, item_id: activeSlot ? weapons[activeSlot - 1].id : null, item_effects: effects, hom_tempo: setup.hom_tempo ?? 0, hom_synergy: structuredClone(setup.hom_id ? setup.hom_synergy ?? {} : {}), hom_advantage: setup.hom_id ? setup.hom_advantage ?? 0 : 0, weapon_defenses: {}, other_defenses: {}, spells: structuredClone(spells2), types: structuredClone(catalogs.types), floor: enemy.floor ?? 1, turn: 0, rng_counter: 0, terminal_result: null, physical_anomaly: null };
-}
-function createDungeonBlessing(seed, runId, floor, hasHom) {
-  if (floor < 3 || floor % 3 !== 0)
-    return null;
-  const tier = Math.min(7, Math.floor(floor / 3));
-  const offers = ["elemental_surge", hasHom ? "homunculus_resonance" : "player_shield", "toxin_ward"];
-  for (let i = offers.length - 1;i > 0; i--) {
-    const draw = createHmac4("sha256", seed).update(JSON.stringify(["dungeon-blessing-v1", runId, floor, i])).digest().readUInt32BE(0);
-    const j = draw % (i + 1);
-    [offers[i], offers[j]] = [offers[j], offers[i]];
-  }
-  return { tier, offers, pending: true, selected: null, spell_count: 0, procs: 0, poison_remainder: 0, shield_used: false };
-}
-function publicDungeonBlessing(blessing) {
-  if (!blessing)
-    return null;
-  const tier = blessing.tier, pct = Math.min(10, 4 + tier), ward = Math.min(50, 20 + 5 * (tier - 1));
-  const metadata = {
-    elemental_surge: { id: "elemental_surge", name: "Elemental Surge", description: `Direct elemental spell damage +${pct}%.` },
-    homunculus_resonance: { id: "homunculus_resonance", name: "Homunculus Resonance", description: `+1 hom energy after ${tier < 3 ? 3 : 2} successful spells, up to ${tier < 5 ? 1 : 2} times this floor.` },
-    player_shield: { id: "player_shield", name: "Protective Ward", description: `Reduce one incoming direct hit by ${pct}%.` },
-    toxin_ward: { id: "toxin_ward", name: "Toxin Ward", description: `Poison tick damage reduced by ${ward}%, minimum 1 damage.` }
-  };
-  return { tier, pending: blessing.pending, offers: blessing.pending ? blessing.offers.map((id) => metadata[id]) : [], selected: blessing.selected ? metadata[blessing.selected] : null };
-}
-function resolveDungeonBlessing(state, decision) {
-  const b2 = state?.blessing;
-  if (!state || state.terminal_result || !b2?.pending || !decision || typeof decision !== "object" || Array.isArray(decision) || Object.keys(decision).sort().join(",") !== "blessing_id" || typeof decision.blessing_id !== "string" || !b2.offers.includes(decision.blessing_id))
-    return { error: "INVALID_DECISION" };
-  const next = structuredClone(state);
-  next.blessing.pending = false;
-  next.blessing.selected = decision.blessing_id;
-  return { next_state: next, events: [{ kind: "blessing_selected", actor: "player", blessing_id: decision.blessing_id }] };
-}
-function resolveDungeonTurn(state, decision, rng) {
-  if (!state || state.terminal_result || state.blessing?.pending || state.player?.inspiration_pending || !decision || typeof decision !== "object" || Object.keys(decision).some((k) => !["turn", "spell_id", "hom_action", "switch_slot"].includes(k)) || decision.turn !== state.turn + 1 || ![undefined, "hold", "attack"].includes(decision.hom_action) || typeof rng !== "function")
-    return { error: "INVALID_DECISION" };
-  if ([state.player, state.npc].some((fighter2) => !validPersistentFighter(fighter2, state.combat_rules_version, state.turn)))
-    return { error: "UNSUPPORTED_MECHANIC" };
-  if (!validPendingDrains(state, ["player", "npc"], ["player", "npc"]))
-    return { error: "UNSUPPORTED_MECHANIC" };
-  const switching = decision.switch_slot !== undefined;
-  if (switching && (decision.spell_id !== undefined || decision.hom_action !== undefined || ![1, 2].includes(decision.switch_slot) || decision.switch_slot === state.active_weapon_slot || !state.weapons?.[decision.switch_slot - 1]?.id))
-    return { error: "INVALID_DECISION" };
-  const spell = switching ? null : state.spells.find((s) => s.id === decision.spell_id && state.player.spell_ids.includes(s.id));
-  if (!switching && (!spell || (state.player.cooldowns[spell.id] ?? 0) > 0 || decision.hom_action === "attack" && (!state.player.hom_id || state.player.hom_energy < 3)))
-    return { error: "INVALID_DECISION" };
-  if (state.spells.some((s) => !Array.isArray(s.effects) || s.effects.some((e) => !validEffect(e) || e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(s))))
-    return { error: "UNSUPPORTED_MECHANIC" };
-  const next = structuredClone(state), events2 = [];
-  if (next.combat_rules_version === 2)
-    for (const fighter2 of [next.player, next.npc]) {
-      fighter2.combat_rules_version = 2;
-      fighter2.combat_exchange = decision.turn;
-    }
-  const firePassive = (event, poisonDamage = 0, attack = null) => applyTimedAwarePassive(next.player, next.npc, event, next.types, "player", "npc", events2, poisonDamage, attack);
-  const fireNpcPassive = (event, poisonDamage = 0, attack = null) => applyTimedAwarePassive(next.npc, next.player, event, next.types, "npc", "player", events2, poisonDamage, attack);
-  const modifiers = (fighter2 = next.player) => fighter2.expedition_passive ? passiveModifiers(fighter2.expedition_passive) : {};
-  if (next.player.expedition_passive) {
-    next.player.expedition_passive = beginPassiveExchange(next.player.expedition_passive, decision.turn);
-    firePassive("before_exchange");
-  }
-  if (next.npc.expedition_passive) {
-    next.npc.expedition_passive = beginPassiveExchange(next.npc.expedition_passive, decision.turn);
-    fireNpcPassive("before_exchange");
-  }
-  let vitriolCorrosionUsed = 0, npcVitriolCorrosionUsed = 0;
-  for (const fighter2 of [next.player, next.npc]) {
-    fighter2.spell_hit_last_exchange = fighter2.spell_hit_this_exchange ?? false;
-    fighter2.spell_hit_this_exchange = false;
-    fighter2.spell_neutralize_active = fighter2.spell_neutralize_pending ?? 0;
-    fighter2.spell_neutralize_pending = 0;
-  }
-  next.weapon_defenses ??= {};
-  next.other_defenses ??= {};
-  if (next.combat_mode === "expedition") {
-    next.npc_weapon_defenses ??= {};
-    next.npc_other_defenses ??= {};
-  }
-  const npcEffects = next.combat_mode === "expedition" ? next.npc.item_effects ?? {} : {};
-  const pendingJams = [];
-  let counter = next.rng_counter;
-  const draw = () => {
-    const value = rng(decision.turn, counter++);
-    if (!Number.isFinite(value) || value < 0 || value >= 1)
-      throw new Error("INVALID_RNG");
-    return value;
-  };
-  let npcSpell;
-  try {
-    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? { normal: 1, difficult: 5, very_difficult: 8, exceptional: 15 }[next.tactical_tier] ?? Math.max(8, Math.min(1000, next.floor)) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined });
-    npcSpell = next.spells.find((s) => s.id === npcId);
-  } catch (err) {
-    if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL")
-      throw err;
-    npcSpell = { id: "basic_attack", type: next.npc.type, category: "attack", accuracy: 0.9, power_mult: 1, cooldown_turns: 0, effects: [] };
-  }
-  const clearDefense = (fighter2, field) => {
-    delete fighter2.status[field];
-    if (fighter2 === next.player) {
-      delete next.weapon_defenses[field];
-      delete next.other_defenses[field];
-    } else if (fighter2 === next.npc && next.combat_mode === "expedition") {
-      delete next.npc_weapon_defenses[field];
-      delete next.npc_other_defenses[field];
-    }
-  };
-  const applyDefense = (fighter2, field, value) => {
-    if (fighter2 === next.player && next.weapon_defenses[field] !== undefined)
-      next.other_defenses[field] = Math.max(next.other_defenses[field] ?? 0, value);
-    else if (fighter2 === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses[field] !== undefined)
-      next.npc_other_defenses[field] = Math.max(next.npc_other_defenses[field] ?? 0, value);
-    fighter2.status[field] = Math.max(fighter2.status[field] ?? 0, value);
-  };
-  const awardInspiration = (actor, who, source) => {
-    if (actor.inspiration_used || actor.inspiration_pending || actor.inspiration >= 3)
-      return;
-    actor.inspiration = Math.min(3, (actor.inspiration ?? 0) + 1);
-    events2.push({ kind: "inspiration", actor: who, value: actor.inspiration, source });
-  };
-  const triggerEliteTrait = (timing, directDamage = 0) => {
-    const trait = dungeonEliteTrait(next);
-    if (!trait || next.elite_trait_used || next.player.hp <= 0 || next.npc.hp <= 0)
-      return;
-    if (timing === "hit" ? trait.trait !== "catalytic_exposure" || directDamage <= 0 : trait.trait === "catalytic_exposure" || next.npc.hp > next.npc.max_hp * (trait.trait === "aegis_protocol" ? 0.7 : 0.5))
-      return;
-    const recipient = next[trait.target], previous = recipient.status[trait.status] ?? 0;
-    if (previous >= trait.value)
-      return;
-    recipient.status[trait.status] = trait.value;
-    next.elite_trait_used = true;
-    events2.push({ kind: "elite_trait_triggered", actor: "npc", target: trait.target, trait: trait.trait, label: trait.label });
-    events2.push({ kind: "status_applied", actor: "npc", target: trait.target, status: trait.status, previous, value: trait.value, source: "elite" });
-  };
-  const act = (actor, target, chosen, who) => {
-    if (actor.hp <= 0 || target.hp <= 0)
-      return;
-    actor.cooldowns[chosen.id] = chosen.cooldown_turns + 1;
-    if (chosen.category === "attack" && who === "player" && (modifiers(target).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(target).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) {
-      events2.push({ kind: "evade", actor: "npc", target: "player" });
-      fireNpcPassive("dodge");
-      return;
-    }
-    if (chosen.category === "attack" && who === "npc" && (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) > 0 && draw() < Math.min(1, (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0))) {
-      if (actor.expedition_types && actor.hom_id)
-        actor.hom_energy = Math.min(6, actor.hom_energy + 1);
-      events2.push({ kind: "evade", actor: "player", target: "npc" });
-      firePassive("dodge");
-      return;
-    }
-    const poisonedBefore = (target.status.poison ?? 0) > 0;
-    const mark = target.status.hybrid_mark;
-    const marked = mark?.owner === who && mark.remaining > 0;
-    if (marked && --mark.remaining <= 0)
-      delete target.status.hybrid_mark;
-    if (chosen.category === "attack") {
-      if (who === "player")
-        firePassive("before_attack", 0, chosen);
-      else
-        fireNpcPassive("before_attack", 0, chosen);
-    }
-    let accuracy = chosen.accuracy;
-    if (chosen.category === "attack") {
-      accuracy = Math.max(0, Math.min(1, accuracy + (actor.status.focus_next ?? 0) - (actor.status.misalign_next ?? 0) + (modifiers(actor).accuracy_pct ?? 0)));
-      delete actor.status.focus_next;
-      delete actor.status.misalign_next;
-    } else
-      accuracy = Math.max(0, Math.min(1, accuracy + (modifiers(actor).accuracy_pct ?? 0)));
-    if (statusActive(actor, "lethargy", decision.turn))
-      accuracy = Math.max(0, accuracy - 0.15);
-    const hit = draw() < accuracy;
-    events2.push({ kind: "spell", actor: who, spell_id: chosen.id, hit });
-    if (who === "npc" && actor.expedition_types && actor.hom_id)
-      actor.hom_energy = Math.min(6, actor.hom_energy + 1);
-    if (chosen.category === "attack" && actor.expedition_passive) {
-      actor.expedition_passive = recordPassiveSpellHit(actor.expedition_passive, hit);
-      if (!hit) {
-        actor.expedition_passive = finishPassiveAttack(actor.expedition_passive);
-        (who === "player" ? firePassive : fireNpcPassive)("spell_miss");
-      }
-    }
-    if (!hit) {
-      if (chosen.category !== "attack")
-        (who === "player" ? firePassive : fireNpcPassive)("spell_miss");
-      return;
-    }
-    let directDamage = 0, unblessedDirectDamage = 0;
-    const previousWard = actor === next.player && next.weapon_defenses.shield !== undefined ? next.other_defenses.shield ?? 0 : actor === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses.shield !== undefined ? next.npc_other_defenses.shield ?? 0 : actor.status.shield ?? 0;
-    if (chosen.category === "attack") {
-      const relation = next.types.effectiveness[chosen.type]?.[target.type] ?? 1;
-      let mult = relation > 1 ? 1.18 : relation < 1 ? 0.84 : 1;
-      if (chosen.type === "hybrid") {
-        const factor = (type) => {
-          const value = next.types.effectiveness[type]?.[target.type] ?? 1;
-          return value > 1 ? 1.25 : value < 1 ? 0.8 : 1;
-        };
-        mult = Math.max(0.8, Math.min(1.25, Math.pow(factor(chosen.primary_type), 0.65) * Math.pow(factor(chosen.secondary_type), 0.35)));
-      } else if (chosen.type === "universal")
-        mult = 1;
-      if (target.expedition_types && chosen.type !== "universal") {
-        if (chosen.type === "hybrid")
-          mult = Math.pow(expeditionDualTypeMultiplier(chosen.primary_type, target.expedition_types), 0.65) * Math.pow(expeditionDualTypeMultiplier(chosen.secondary_type, target.expedition_types), 0.35);
-        else
-          mult = expeditionDualTypeMultiplier(chosen.type, target.expedition_types);
-      }
-      if ((who === "player" && chosen.type === actor.type || who === "npc" && actor.expedition_types?.includes(chosen.type)) && (target.expedition_types ? mult < 1 : relation < 1))
-        mult = Math.min(1, mult + (who === "player" ? next.item_effects?.disadvantage_reduction ?? 0 : npcEffects.disadvantage_reduction ?? 0));
-      if (who === "player" && chosen.type !== "universal" && mult > 1)
-        mult += next.hom_advantage ?? 0;
-      if (chosen.type !== "universal")
-        mult = 1 + (mult - 1) * (1 - Math.max(actor.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0));
-      const poisonBonus = chosen.effects.find((e) => e.kind === "bonus_if_poisoned");
-      let power = chosen.power_mult * (poisonBonus && poisonedBefore ? 1 + poisonBonus.value : 1);
-      for (const effect of chosen.effects) {
-        if (effect.kind === "bonus_if_hit_last_exchange" && actor.spell_hit_last_exchange)
-          power *= 1 + effect.value;
-        if (effect.kind === "bonus_power_if_poisoned" && poisonedBefore || effect.kind === "bonus_if_shielded" && effectiveTimedDefense(actor, "shield") > 0 || effect.kind === "bonus_if_low_hp" && actor.hp < actor.max_hp * (effect.threshold ?? 0.4) || effect.kind === "bonus_power_if_hit_last_exchange" && actor.spell_hit_last_exchange || effect.kind === "bonus_if_marked" && marked)
-          power += effect.value;
-      }
-      const anomalyFactor = actor.expedition_types && chosen.type === "hybrid" ? Math.pow(physicalAnomalyMultiplier(next.physical_anomaly, chosen.primary_type), 0.65) * Math.pow(physicalAnomalyMultiplier(next.physical_anomaly, chosen.secondary_type), 0.35) : physicalAnomalyMultiplier(next.physical_anomaly, actor.expedition_types && actor.expedition_types.includes(chosen.type) ? chosen.type : actor.type);
-      const base = ((actor.atk + (modifiers(actor).power_flat ?? 0)) * (1 + (actor.status.atk_boost ?? 0) - (actor.status.atk_down ?? 0)) - Math.trunc((target.def + (modifiers(target).guard_flat ?? 0)) * 0.5)) * mult * anomalyFactor * (1 + (target.status.vuln ?? 0));
-      for (const [fighter2, id, fields] of [[actor, who, ["atk_boost", "atk_down"]], [target, who === "player" ? "npc" : "player", ["vuln"]]]) {
-        for (const status of fields) {
-          const previous = fighter2.status[status] ?? 0;
-          if (previous > 0) {
-            delete fighter2.status[status];
-            events2.push({ kind: "status_consumed", target: id, status, previous, remaining: 0 });
-          }
-        }
-      }
-      const shield = effectiveTimedDefense(target, "shield");
-      const baseline = Math.min(target.hp, shield > 0 ? Math.max(0, Math.round(Math.max(1, Math.round(base * chosen.power_mult)) * (1 - shield))) : Math.max(1, Math.round(base * chosen.power_mult)));
-      let unblessedDamage = Math.max(1, Math.round(base * power));
-      let damage = Math.max(1, Math.round(base * power * (who === "player" && next.blessing?.selected === "elemental_surge" && ["sulfur", "mercury", "sodium", "aether", "vitriol", "gold", "hybrid"].includes(chosen.type) ? 1 + Math.min(10, 4 + next.blessing.tier) / 100 : 1)));
-      if (who === "npc") {
-        const incoming = Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1));
-        damage = Math.max(1, Math.round(damage * incoming));
-        unblessedDamage = Math.max(1, Math.round(unblessedDamage * incoming));
-      }
-      if (who === "npc" && next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
-        damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
-        next.blessing.shield_used = true;
-      }
-      if (shield > 0) {
-        const dispel = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "ward_dispel")?.value ?? 0));
-        const pierce = Math.max(0, Math.min(1, chosen.effects.find((e) => e.kind === "pierce_ward")?.value ?? 0));
-        unblessedDamage = Math.max(0, Math.round(unblessedDamage * (1 - shield * (1 - dispel) * (1 - pierce))));
-        damage = Math.max(0, Math.round(damage * (1 - shield * (1 - dispel) * (1 - pierce))));
-        if ((target.status.shield ?? 0) > 0)
-          clearDefense(target, "shield");
-      }
-      directDamage = Math.min(target.hp, damage);
-      unblessedDirectDamage = who === "player" && next.blessing?.selected === "elemental_surge" ? Math.min(target.hp, unblessedDamage) : directDamage;
-      target.hp = Math.max(0, target.hp - damage);
-      if (directDamage > 0)
-        (who === "npc" ? firePassive : fireNpcPassive)("damage_received");
-      if (directDamage > 0)
-        target.spell_hit_this_exchange = true;
-      events2.push({ kind: "damage", actor: who, amount: damage, hp: target.hp, target_status: structuredClone(target.status) });
-      if (effectiveTimedDefense(target, "reflect") > 0) {
-        const ignoreChance = who === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
-        const ignored = ignoreChance > 0 && draw() < Math.min(1, ignoreChance);
-        const amount = ignored ? 0 : Math.min(actor.hp, Math.round((who === "player" && next.blessing?.selected === "elemental_surge" ? unblessedDamage : damage) * effectiveTimedDefense(target, "reflect")));
-        actor.hp -= amount;
-        if (amount > 0)
-          (who === "player" ? firePassive : fireNpcPassive)("damage_received");
-        if ((target.status.reflect ?? 0) > 0)
-          clearDefense(target, "reflect");
-        if (amount > 0)
-          actor.spell_hit_this_exchange = true;
-        const poison = target.status.poison_on_reflect ?? 0;
-        if (!ignored && poison > 0) {
-          const previous = actor.status.poison ?? 0;
-          actor.status.poison = Math.max(previous, poison);
-          recordPoisonChange(actor, previous, typeof target.poison_reflect_source === "string" ? target.poison_reflect_source : null);
-          if (actor.status.poison > previous)
-            events2.push({ kind: "status_applied", actor: who === "player" ? "npc" : "player", target: who, status: "poison", previous, value: actor.status.poison, source: "poison_on_reflect" });
-        }
-        delete target.status.poison_on_reflect;
-        delete target.poison_reflect_source;
-        events2.push({ kind: "reflect", actor: who === "player" ? "npc" : "player", target: who, amount, hp: actor.hp, ignored });
-      }
-      if (who === "player") {
-        for (const key2 of ["true_on_hit", "dot_true"]) {
-          let amount = Math.min(target.hp, Math.max(0, Math.trunc(next.item_effects?.[key2] ?? 0)));
-          if (key2 === "dot_true" && next.item_id === "vitriol_vial") {
-            amount = Math.min(amount, 4 - vitriolCorrosionUsed);
-            vitriolCorrosionUsed += amount;
-          }
-          if (amount > 0) {
-            target.hp -= amount;
-            events2.push({ kind: key2, actor: who, target: "npc", amount, hp: target.hp });
-          }
-        }
-        if ((next.item_effects?.dot_true ?? 0) > 0 && (next.item_effects?.vuln_on_hit ?? 0) > 0)
-          target.status.vuln = Math.max(target.status.vuln ?? 0, Math.min(1, next.item_effects.vuln_on_hit));
-        const homDot = Math.min(target.hp, Math.max(0, Math.trunc(next.hom_synergy?.dot_true ?? 0)));
-        if (homDot > 0) {
-          target.hp -= homDot;
-          if (next.combat_rules_version === 2)
-            events2.push({ kind: "hom_passive", turn: decision.turn, actor: who, target: "npc", hom_id: next.player.hom_id, passive_id: next.player.hom_id, trigger: "spell_hit", effects: [{ kind: "dot_true", target: "npc", amount: homDot, unit: "hp", duration: "instant", remaining: 0 }] });
-          events2.push({ kind: "hom_dot", actor: who, target: "npc", amount: homDot, hp: target.hp });
-        }
-      }
-      if (who === "npc" && next.combat_mode === "expedition") {
-        for (const key2 of ["true_on_hit", "dot_true"]) {
-          let amount = Math.min(target.hp, Math.max(0, Math.trunc(npcEffects[key2] ?? 0)));
-          if (key2 === "dot_true" && next.npc.item_id === "vitriol_vial") {
-            amount = Math.min(amount, 4 - npcVitriolCorrosionUsed);
-            npcVitriolCorrosionUsed += amount;
-          }
-          if (amount > 0) {
-            target.hp -= amount;
-            events2.push({ kind: key2, actor: who, target: "player", amount, hp: target.hp, item_id: next.npc.item_id });
-            firePassive("damage_received");
-          }
-        }
-        if ((npcEffects.dot_true ?? 0) > 0 && (npcEffects.vuln_on_hit ?? 0) > 0) {
-          const previous = target.status.vuln ?? 0;
-          target.status.vuln = Math.max(previous, Math.min(1, npcEffects.vuln_on_hit));
-          if (target.status.vuln > previous)
-            events2.push({ kind: "status_applied", actor: "npc", target: "player", status: "vuln", previous, value: target.status.vuln, source: "weapon", item_id: next.npc.item_id });
-        }
-      }
-      if (poisonBonus && target.status.poison > 0 && directDamage > baseline)
-        events2.push({ kind: "combo_trigger", actor: who, target: who === "player" ? "npc" : "player", source_spell_id: chosen.id, prerequisite: "poison", actual_bonus_damage: directDamage - baseline, resulting_status: { poison: target.status.poison } });
-    }
-    if (chosen.type === "hybrid" && marked)
-      delete target.status.hybrid_mark;
-    const conversion = chosen.effects.find((e) => e.kind === "ward_convert");
-    if (chosen.category === "attack" && conversion && previousWard > 0) {
-      if (actor === next.player && next.weapon_defenses.shield !== undefined) {
-        delete next.other_defenses.shield;
-        actor.status.shield = next.weapon_defenses.shield;
-      } else if (actor === next.npc && next.combat_mode === "expedition" && next.npc_weapon_defenses.shield !== undefined) {
-        delete next.npc_other_defenses.shield;
-        actor.status.shield = next.npc_weapon_defenses.shield;
-      } else
-        delete actor.status.shield;
-      const amount = Math.min(target.hp, Math.floor(target.max_hp * 0.2), Math.floor(actor.max_hp * previousWard * conversion.value));
-      target.hp -= amount;
-      events2.push({ kind: "ward_convert", actor: who, target: who === "player" ? "npc" : "player", shield: previousWard, amount, hp: target.hp });
-    }
-    for (const e of chosen.effects) {
-      if (e.chance !== undefined && draw() >= e.chance)
-        continue;
-      if (e.kind === "burn" || e.kind === "lethargy") {
-        if (applyPersistentStatus(target, e.kind, who, decision.turn)) {
-          events2.push({ kind: "status_applied", actor: who, target: who === "player" ? "npc" : "player", status: e.kind, expires_exchange: decision.turn + 2, spell_id: chosen.id });
-          awardInspiration(actor, who, e.kind);
-        }
-        continue;
-      }
-      if (["bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "bonus_if_marked", "pierce_ward", "ward_dispel"].includes(e.kind))
-        continue;
-      if (e.kind === "physical_anomaly") {
-        next.physical_anomaly = castPhysicalAnomaly(chosen, decision.turn);
-        events2.push({ kind: "physical_anomaly_cast", actor: who, anomaly: structuredClone(next.physical_anomaly) });
-        continue;
-      }
-      if (e.kind === "debuff_transfer" || e.kind === "buff_steal") {
-        const previousEvents = events2.length;
-        const previousPoison = target.status.poison ?? 0;
-        transferStrategicStatus(e.kind, actor, target, who, who === "player" ? "npc" : "player", { vuln: "vuln", shield: "shield", reflect: "reflect" }, events2, clearDefense, applyDefense);
-        recordPoisonChange(target, previousPoison, who);
-        recordPoisonChange(actor, actor.status.poison ?? 0, null);
-        const changed = events2[previousEvents];
-        if (e.kind === "debuff_transfer" && changed && ["poison", "vuln", "atk_down"].includes(changed.status) && changed.value > changed.previous)
-          awardInspiration(actor, who, e.kind);
-        continue;
-      }
-      if (e.kind === "cooldown_jam") {
-        pendingJams.push({ target, actor: who, targetId: who === "player" ? "npc" : "player" });
-        continue;
-      }
-      if (e.kind === "hom_energy_siphon") {
-        const amount = actor.hom_id && target.hom_id ? Math.min(2, target.hom_energy, 6 - actor.hom_energy) : 0;
-        if (amount > 0) {
-          target.hom_energy -= amount;
-          actor.hom_energy += amount;
-          events2.push({ kind: "hom_energy_siphon", actor: who, target: who === "player" ? "npc" : "player", amount, actor_energy: actor.hom_energy, target_energy: target.hom_energy });
-        }
-        continue;
-      }
-      if (e.kind === "delayed_damage") {
-        if (chosen.category === "attack")
-          queueDelayedDamage(next, who, who === "player" ? "npc" : "player", e.value, unblessedDirectDamage, decision.turn, events2);
-        continue;
-      }
-      if (e.kind === "ward_convert")
-        continue;
-      if (e.kind === "counter_trap") {
-        actor.strategic_trap = { value: e.value, activated_turn: decision.turn, expires_turn: decision.turn + 2 };
-        events2.push({ kind: "counter_trap_armed", actor: who, target: who, value: e.value, expires_turn: decision.turn + 2 });
-        continue;
-      }
-      if (e.kind === "heal_suppression") {
-        target.strategic_heal_suppression = { expires_turn: decision.turn + 2 };
-        events2.push({ kind: "heal_suppression_applied", actor: who, target: who === "player" ? "npc" : "player", value: e.value, expires_turn: decision.turn + 2 });
-        continue;
-      }
-      const recipient = e.target === "self" ? actor : target;
-      const recipientId = recipient === next.player ? "player" : "npc";
-      if (e.kind === "type_neutralize") {
-        recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending ?? 0, e.value);
-        continue;
-      }
-      if (e.kind === "cleanse_one") {
-        const field = ["poison", "stun", "vuln", "atk_down", "misalign_next"].find((key2) => (recipient.status[key2] ?? 0) > 0);
-        if (field) {
-          events2.push({ kind: "status_cleansed", actor: who, target: recipientId, status: field, previous: recipient.status[field] });
-          delete recipient.status[field];
-          if (field === "poison")
-            recordPoisonChange(recipient, 0, null);
-        } else {
-          const status = cleansePersistentStatus(recipient);
-          if (status)
-            events2.push({ kind: "status_cleansed", actor: who, target: recipientId, status });
-        }
-        continue;
-      }
-      if (e.kind === "recoil") {
-        const amount = Math.min(recipient.hp, Math.trunc(e.value));
-        recipient.hp -= amount;
-        if (amount > 0)
-          recipient.spell_hit_this_exchange = true;
-        events2.push({ kind: "recoil", actor: who, target: recipientId, amount, hp: recipient.hp });
-        continue;
-      }
-      if (e.kind === "consume_poison") {
-        if (poisonedBefore) {
-          recipient.status.poison = Math.max(0, (recipient.status.poison ?? 0) - Math.trunc(e.value));
-          recordPoisonChange(recipient, recipient.status.poison, null);
-        }
-        continue;
-      }
-      if (e.kind === "life_leech" && !e.health_drain) {
-        const before = recipient.hp;
-        if (before > 0)
-          recipient.hp = Math.min(recipient.max_hp, before + strategicHeal(recipient, Math.min(e.max_heal ?? 0, Math.floor(directDamage * e.value))));
-        if (recipient.hp > before)
-          events2.push({ kind: "heal", actor: who, target: recipientId, amount: recipient.hp - before, hp: recipient.hp });
-        continue;
-      }
-      if (e.kind === "life_leech" && e.health_drain === true) {
-        const drainAmount = next.combat_rules_version === 2 && chosen.id === "brine_mend" ? Math.round(target.hp * 0.06) : e.max_heal ?? 0;
-        if (next.combat_rules_version === 2 && chosen.id === "brine_mend") {
-          next.pending_drains ??= [];
-          next.pending_drains.push({ source: who, target: who === "player" ? "npc" : "player", due_exchange: decision.turn + 1 });
-        }
-        const { damage, healed } = drainHealth(actor, target, drainAmount, effectiveTimedDefense(target, "shield"), who === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
-        if (effectiveTimedDefense(target, "shield") > 0 && (target.status.shield ?? 0) > 0)
-          clearDefense(target, "shield");
-        if (damage > 0)
-          target.spell_hit_this_exchange = true;
-        events2.push({ kind: "damage", actor: who, target: who === "player" ? "npc" : "player", amount: damage, hp: target.hp, spell_id: chosen.id });
-        if (damage > 0)
-          (who === "player" ? fireNpcPassive : firePassive)("damage_received");
-        events2.push({ kind: "heal", actor: who, target: who, amount: healed, hp: actor.hp, spell_id: chosen.id });
-        const reflect = effectiveTimedDefense(target, "reflect");
-        if (damage > 0 && reflect > 0) {
-          const chance = who === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
-          const ignored = chance > 0 && draw() < Math.min(1, chance);
-          const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(damage * reflect));
-          actor.hp -= reflected;
-          if (reflected > 0)
-            (who === "player" ? firePassive : fireNpcPassive)("damage_received");
-          if ((target.status.reflect ?? 0) > 0)
-            clearDefense(target, "reflect");
-          const poison = target.status.poison_on_reflect ?? 0;
-          if (!ignored && poison > 0) {
-            const previous = actor.status.poison ?? 0;
-            actor.status.poison = Math.max(previous, poison);
-            recordPoisonChange(actor, previous, typeof target.poison_reflect_source === "string" ? target.poison_reflect_source : null);
-          }
-          delete target.status.poison_on_reflect;
-          delete target.poison_reflect_source;
-          events2.push({ kind: "reflect", actor: who === "player" ? "npc" : "player", target: who, amount: reflected, hp: actor.hp, ignored });
-        }
-        continue;
-      }
-      if (["shield", "reflect"].includes(e.kind) && e.duration_exchanges) {
-        applyTimedDefense(recipient, e.kind, e.value, decision.turn, e.duration_exchanges);
-        events2.push({ kind: "status_applied", actor: who, target: recipientId, status: e.kind, value: e.value, spell_id: chosen.id });
-        continue;
-      }
-      if (e.kind === "hybrid_mark") {
-        const before = JSON.stringify(recipient.status.hybrid_mark ?? {});
-        recipient.status.hybrid_mark = { owner: who, remaining: Math.trunc(e.value) };
-        if (before !== JSON.stringify(recipient.status.hybrid_mark) && recipient === target)
-          awardInspiration(actor, who, e.kind);
-        events2.push({ kind: "status_applied", actor: who, target: recipientId, status: "hybrid_mark", value: structuredClone(recipient.status.hybrid_mark) });
-        continue;
-      }
-      if (e.kind === "tempo_shift") {
-        const previous = recipient.status.tempo_bonus ?? 0;
-        recipient.status.tempo_bonus = e.value;
-        if (recipient === target && e.value < 0 && e.value < previous)
-          awardInspiration(actor, who, e.kind);
-        events2.push({ kind: "status_applied", actor: who, target: recipientId, status: "tempo_bonus", previous, value: e.value });
-        continue;
-      }
-      if (e.kind === "shield_by_order") {
-        applyDefense(recipient, "shield", who === "player" === playerFirst ? e.value : e.second_value ?? e.value);
-        continue;
-      }
-      if (e.kind === "heal") {
-        const before = recipient.hp;
-        if (before > 0)
-          recipient.hp = Math.min(recipient.max_hp, before + strategicHeal(recipient, e.value));
-        if (recipient.hp > before)
-          events2.push({ kind: "heal", actor: who, target: recipientId, amount: recipient.hp - before, hp: recipient.hp, spell_id: chosen.id });
-      } else {
-        const previous = recipient.status[e.kind] ?? 0;
-        if (["shield", "reflect"].includes(e.kind))
-          applyDefense(recipient, e.kind, e.value);
-        else
-          recipient.status[e.kind] = Math.max(previous, e.value);
-        if (e.kind === "poison")
-          recordPoisonChange(recipient, previous, who);
-        if (e.kind === "poison_on_reflect" && recipient.status[e.kind] > previous)
-          recipient.poison_reflect_source = who;
-        if (recipient.status[e.kind] !== previous)
-          events2.push({ kind: "status_applied", actor: who, target: recipientId, status: e.kind, previous, value: recipient.status[e.kind], spell_id: chosen.id });
-        if (recipient === target && ["poison", "vuln", "atk_down", "hom_stun", "misalign_next"].includes(e.kind) && recipient.status[e.kind] > previous)
-          awardInspiration(actor, who, e.kind);
-      }
-    }
-    if (chosen.category === "attack" && actor.expedition_passive)
-      actor.expedition_passive = finishPassiveAttack(actor.expedition_passive);
-    if (chosen.category === "attack")
-      strategicCounter(target, actor, who === "player" ? "npc" : "player", who, unblessedDirectDamage, decision.turn, events2);
-    if (who === "npc" && chosen.category === "attack")
-      triggerEliteTrait("hit", directDamage);
-    if (actor.hom_id && !(who === "npc" && actor.expedition_types))
-      actor.hom_energy = Math.min(6, actor.hom_energy + 1);
-    if (who === "player" && actor.hom_id && next.blessing?.selected === "homunculus_resonance") {
-      const b2 = next.blessing, threshold = b2.tier < 3 ? 3 : 2, limit = b2.tier < 5 ? 1 : 2;
-      if (b2.procs < limit && ++b2.spell_count >= threshold) {
-        b2.spell_count = 0;
-        b2.procs++;
-        const before = actor.hom_energy;
-        actor.hom_energy = Math.min(6, actor.hom_energy + 1);
-        events2.push({ kind: "blessing_energy", actor: who, amount: actor.hom_energy - before, energy: actor.hom_energy });
-      }
-    }
-  };
-  const playerAction = () => {
-    if (switching) {
-      const old = next.item_effects ?? {}, weapon = next.weapons[decision.switch_slot - 1];
-      for (const field of ["shield", "reflect"])
-        if (next.weapon_defenses[field] !== undefined) {
-          if ((next.other_defenses[field] ?? 0) > 0)
-            next.player.status[field] = next.other_defenses[field];
-          else
-            delete next.player.status[field];
-          delete next.weapon_defenses[field];
-          delete next.other_defenses[field];
-        }
-      next.player.atk += Math.trunc(weapon.effects.power_flat ?? 0) - Math.trunc(old.power_flat ?? 0);
-      next.player.def += Math.trunc(weapon.effects.guard_flat ?? 0) - Math.trunc(old.guard_flat ?? 0);
-      next.active_weapon_slot = decision.switch_slot;
-      next.item_id = weapon.id;
-      next.item_effects = weapon.effects;
-      events2.push({ kind: "switch", actor: "player", slot: decision.switch_slot, item_id: weapon.id });
-      firePassive("weapon_switched");
-    } else
-      act(next.player, next.npc, spell, "player");
-    if (decision.hom_action === "attack" && next.player.hp > 0 && next.npc.hp > 0) {
-      if (next.player.status.hom_stun > 0) {
-        next.player.status.hom_stun--;
-        events2.push({ kind: "status_consumed", target: "player", status: "hom_stun", remaining: next.player.status.hom_stun });
-      } else if ((modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0) > 0 && draw() < Math.min(1, (modifiers(next.npc).evasion_pct ?? 0) + (npcEffects.evasion_pct ?? 0))) {
-        events2.push({ kind: "evade", actor: "npc", target: "player" });
-        fireNpcPassive("dodge");
-      } else if (draw() < 0.95) {
-        const neutralizations = [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0];
-        const homFactor = (type) => homunculusAttackMultiplierById(next.player.hom_id, type, next.types, neutralizations);
-        const factor = next.npc.expedition_types ? Math.sqrt(homFactor(next.npc.expedition_types[0]) * homFactor(next.npc.expedition_types[1])) : homFactor(next.npc.type);
-        let damage = Math.max(1, Math.round((next.player.atk + (modifiers().power_flat ?? 0)) * (next.player.hom_energy >= 6 ? 0.6 : 0.4) * factor));
-        if (effectiveTimedDefense(next.npc, "shield") > 0) {
-          damage = Math.max(0, Math.round(damage * (1 - effectiveTimedDefense(next.npc, "shield"))));
-          if ((next.npc.status.shield ?? 0) > 0)
-            clearDefense(next.npc, "shield");
-        }
-        next.npc.hp = Math.max(0, next.npc.hp - damage);
-        if (damage > 0)
-          fireNpcPassive("damage_received");
-        events2.push({ kind: "hom_attack", actor: "player", amount: damage, hp: next.npc.hp });
-        const reflect = statusActive(next.npc, "burn", decision.turn) ? 0 : next.npc.timed_defenses?.reflect?.value ?? 0;
-        if (reflect > 0) {
-          const ignored = (next.item_effects?.ignore_reflect_chance ?? 0) > 0 && draw() < next.item_effects.ignore_reflect_chance;
-          const amount = ignored ? 0 : Math.min(next.player.hp, Math.round(damage * reflect));
-          next.player.hp -= amount;
-          if (amount > 0)
-            firePassive("damage_received");
-          events2.push({ kind: "reflect", actor: "npc", target: "player", amount, hp: next.player.hp, ignored });
-        }
-      } else
-        events2.push({ kind: "hom_miss", actor: "player" });
-      next.player.hom_energy = 0;
-    }
-  };
-  const npcAction = () => {
-    act(next.npc, next.player, npcSpell, "npc");
-    const homFactor = next.npc.expedition_types ? homunculusAttackMultiplierById(next.npc.hom_id, next.player.type, next.types, [next.player.spell_neutralize_active ?? 0, next.npc.spell_neutralize_active ?? 0, next.hom_synergy?.type_neutralize ?? 0]) : 1;
-    const earlyHomDamage = Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * 0.4 * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) * (1 - (next.player.status.shield ?? 0))));
-    const spendHom = !next.npc.expedition_types || next.npc.hom_energy >= 6 || next.player.hp <= earlyHomDamage || next.npc.hp <= next.npc.max_hp * 0.3 || (next.player.status.shield ?? 0) > 0 && next.npc.hom_energy >= 5;
-    if (next.npc.hom_id && next.npc.hom_energy >= 3 && spendHom && next.npc.hp > 0 && next.player.hp > 0) {
-      if (next.npc.status.hom_stun > 0) {
-        next.npc.status.hom_stun--;
-        events2.push({ kind: "status_consumed", target: "npc", status: "hom_stun", remaining: next.npc.status.hom_stun });
-      } else if ((next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) > 0 && draw() < Math.min(1, (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0))) {
-        events2.push({ kind: "evade", actor: "player", target: "npc" });
-        firePassive("dodge");
-      } else if (draw() < 0.95) {
-        let damage = Math.max(1, Math.round((next.npc.atk + (modifiers(next.npc).power_flat ?? 0)) * (next.npc.hom_energy >= 6 ? 0.6 : 0.4) * homFactor * Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1))));
-        if (next.blessing?.selected === "player_shield" && !next.blessing.shield_used) {
-          damage = Math.max(1, Math.round(damage * (1 - Math.min(10, 4 + next.blessing.tier) / 100)));
-          next.blessing.shield_used = true;
-        }
-        if (effectiveTimedDefense(next.player, "shield") > 0) {
-          damage = Math.max(0, Math.round(damage * (1 - effectiveTimedDefense(next.player, "shield"))));
-          if ((next.player.status.shield ?? 0) > 0)
-            clearDefense(next.player, "shield");
-        }
-        next.player.hp = Math.max(0, next.player.hp - damage);
-        if (damage > 0)
-          firePassive("damage_received");
-        events2.push({ kind: "hom_attack", actor: "npc", amount: damage, hp: next.player.hp });
-        const reflect = statusActive(next.player, "burn", decision.turn) ? 0 : next.player.timed_defenses?.reflect?.value ?? 0;
-        if (reflect > 0) {
-          const ignored = (npcEffects.ignore_reflect_chance ?? 0) > 0 && draw() < npcEffects.ignore_reflect_chance;
-          const amount = ignored ? 0 : Math.min(next.npc.hp, Math.round(damage * reflect));
-          next.npc.hp -= amount;
-          if (amount > 0)
-            fireNpcPassive("damage_received");
-          events2.push({ kind: "reflect", actor: "player", target: "npc", amount, hp: next.npc.hp, ignored });
-        }
-      } else
-        events2.push({ kind: "hom_miss", actor: "npc" });
-      next.npc.hom_energy = 0;
-    }
-  };
-  if (!switching && next.player.expedition_passive?.id === "luny" && (next.player.status.stun ?? 0) <= 0 && spell.category === "attack" && spell.power_mult > 0)
-    firePassive("before_attack", 0, spell);
-  if (next.npc.expedition_passive?.id === "luny" && (next.npc.status.stun ?? 0) <= 0 && npcSpell.category === "attack" && npcSpell.power_mult > 0)
-    fireNpcPassive("before_attack", 0, npcSpell);
-  const playerFirst = (next.player.tempo ?? 10) + (next.item_effects?.tempo_flat ?? 0) + (next.hom_tempo ?? 0) + (modifiers().tempo_flat ?? 0) + (next.player.status.tempo_bonus ?? 0) >= (next.npc.tempo ?? 10) + (npcEffects.tempo_flat ?? 0) + (modifiers(next.npc).tempo_flat ?? 0) + (next.npc.status.tempo_bonus ?? 0);
-  delete next.player.status.tempo_bonus;
-  delete next.npc.status.tempo_bonus;
-  if (playerFirst) {
-    playerAction();
-    npcAction();
-  } else {
-    npcAction();
-    if (next.player.hp > 0 && next.npc.hp > 0)
-      playerAction();
-  }
-  if (next.pending_drains?.length) {
-    const future = [];
-    for (const pending of next.pending_drains) {
-      if (pending.due_exchange > decision.turn) {
-        future.push(pending);
-        continue;
-      }
-      const actor = next[pending.source], target = next[pending.target];
-      if (!actor || !target || actor.hp <= 0 || target.hp <= 0)
-        continue;
-      const shield = effectiveTimedDefense(target, "shield");
-      const { damage, healed } = drainHealth(actor, target, Math.round(target.hp * 0.06), shield, pending.source === "npc" ? Math.max(0.1, Math.min(1, next.hom_synergy?.incoming_mult ?? 1)) : 1);
-      if (shield > 0 && (target.status.shield ?? 0) > 0)
-        clearDefense(target, "shield");
-      if (damage > 0) {
-        target.spell_hit_this_exchange = true;
-        (pending.source === "player" ? fireNpcPassive : firePassive)("damage_received");
-      }
-      events2.push({ kind: "damage", actor: pending.source, target: pending.target, amount: damage, actual_damage: damage, hp: target.hp, spell_id: "brine_mend", source: "pending_drain" });
-      events2.push({ kind: "heal", actor: pending.source, target: pending.source, amount: healed, hp: actor.hp, spell_id: "brine_mend", source: "pending_drain" });
-      const reflect = effectiveTimedDefense(target, "reflect");
-      if (damage > 0 && reflect > 0) {
-        const chance = pending.source === "player" ? next.item_effects?.ignore_reflect_chance ?? 0 : npcEffects.ignore_reflect_chance ?? 0;
-        const ignored = chance > 0 && draw() < Math.min(1, chance);
-        const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(damage * reflect));
-        actor.hp -= reflected;
-        if (reflected > 0)
-          (pending.source === "player" ? firePassive : fireNpcPassive)("damage_received");
-        if ((target.status.reflect ?? 0) > 0)
-          clearDefense(target, "reflect");
-        const poison = target.status.poison_on_reflect ?? 0;
-        if (!ignored && poison > 0) {
-          const previous = actor.status.poison ?? 0;
-          actor.status.poison = Math.max(previous, poison);
-          recordPoisonChange(actor, previous, target.poison_reflect_source ?? null);
-        }
-        delete target.status.poison_on_reflect;
-        delete target.poison_reflect_source;
-        events2.push({ kind: "reflect", actor: pending.target, target: pending.source, amount: reflected, hp: actor.hp, ignored });
-      }
-    }
-    next.pending_drains = future;
-  }
-  const poisonFighters = [next.player, next.npc], ticked = new Set;
-  do {
-    for (const fighter2 of poisonFighters)
-      if (!ticked.has(fighter2) && fighter2.hp > 0 && fighter2.status.poison > 0) {
-        ticked.add(fighter2);
-        let tick = poisonTickDamage(fighter2);
-        if (fighter2 === next.player && next.blessing?.selected === "toxin_ward") {
-          const b2 = next.blessing, mitigation = tick * Math.min(50, 20 + 5 * (b2.tier - 1)) + b2.poison_remainder;
-          const prevented = Math.min(Math.max(0, tick - 1), Math.floor(mitigation / 100));
-          b2.poison_remainder = mitigation % 100;
-          tick -= prevented;
-        }
-        const amount = Math.min(tick, fighter2.hp);
-        const victim = fighter2 === next.player ? "player" : "npc";
-        const provenance = poisonTickMetadata(fighter2, victim, ["player", "npc"], amount, decision.turn);
-        fighter2.hp -= amount;
-        fighter2.spell_hit_this_exchange = true;
-        fighter2.status.poison--;
-        events2.push({ kind: "poison", target: fighter2.id, side: victim, amount, hp: fighter2.hp, remaining: fighter2.status.poison, ...provenance });
-        if (provenance.source === "player" && victim === "npc" && amount > 0)
-          firePassive("opponent_poison_damage", amount);
-        if (provenance.source === "npc" && victim === "player" && amount > 0) {
-          firePassive("damage_received");
-          fireNpcPassive("opponent_poison_damage", amount);
-        }
-        if (provenance.source === "player" && victim === "npc" && amount > 0)
-          fireNpcPassive("damage_received");
-        recordPoisonChange(fighter2, fighter2.status.poison, null);
-      }
-  } while (next.combat_rules_version === 2 && poisonFighters.some((fighter2) => !ticked.has(fighter2) && fighter2.hp > 0 && fighter2.status.poison > 0));
-  for (const fighter2 of poisonFighters)
-    for (const id of Object.keys(fighter2.cooldowns))
-      fighter2.cooldowns[id] = Math.max(0, fighter2.cooldowns[id] - 1);
-  finishStrategicExchange(next, { player: next.player, npc: next.npc }, decision.turn, events2);
-  triggerEliteTrait("end");
-  for (const jam of pendingJams)
-    jamStrategicCooldown(jam.target.spell_ids.map((id) => next.spells.find((s) => s.id === id)), jam.target.cooldowns, jam.actor, jam.targetId, events2);
-  next.turn++;
-  next.rng_counter = counter;
-  for (const fighter2 of [next.player, next.npc]) {
-    expireTimedDefenses(fighter2, next.turn);
-    for (const status of expirePersistentStatuses(fighter2, next.turn))
-      events2.push({ kind: "status_expired", target: fighter2 === next.player ? "player" : "npc", status });
-  }
-  if (next.player.hp > 0 && next.npc.hp > 0 && next.turn % 2 === 1) {
-    const homReflect = Math.max(0, Math.min(1, next.hom_synergy?.reflect_pct ?? 0));
-    if (homReflect > 0) {
-      const previous = next.player.status.reflect ?? 0;
-      applyDefense(next.player, "reflect", homReflect);
-      if (next.combat_rules_version === 2 && next.player.status.reflect > previous)
-        events2.push({ kind: "hom_passive", turn: next.turn, actor: "player", target: "player", hom_id: next.player.hom_id, passive_id: next.player.hom_id, trigger: "round_start", effects: [{ kind: "reflect_pct", target: "player", amount: homReflect, unit: "fraction", duration: "until_consumed", remaining: 0 }] });
-      events2.push({ kind: "status_applied", actor: "player", target: "player", status: "reflect", value: next.player.status.reflect, source: "homunculus" });
-    }
-    for (const [effect, field] of [["ward_pct", "shield"], ["reflect_pct", "reflect"]]) {
-      const value = Math.max(0, Math.min(1, next.item_effects?.[effect] ?? 0));
-      if (value > 0) {
-        if (next.weapon_defenses[field] === undefined)
-          next.other_defenses[field] = next.player.status[field] ?? 0;
-        next.weapon_defenses[field] = Math.max(next.weapon_defenses[field] ?? 0, value);
-        next.player.status[field] = Math.max(next.other_defenses[field] ?? 0, next.weapon_defenses[field]);
-        events2.push({ kind: "status_applied", actor: "player", target: "player", status: field, value: next.player.status[field], source: "weapon" });
-      }
-    }
-    if (next.turn === 1 && next.player.hp > next.npc.hp && (next.item_effects?.tempo_on_win ?? 0) > 0)
-      next.player.status.tempo_bonus = next.item_effects.tempo_on_win;
-    if (next.combat_mode === "expedition") {
-      for (const [effect, field] of [["ward_pct", "shield"], ["reflect_pct", "reflect"]]) {
-        const value = Math.max(0, Math.min(1, npcEffects[effect] ?? 0));
-        if (value > 0) {
-          if (next.npc_weapon_defenses[field] === undefined)
-            next.npc_other_defenses[field] = next.npc.status[field] ?? 0;
-          next.npc_weapon_defenses[field] = Math.max(next.npc_weapon_defenses[field] ?? 0, value);
-          next.npc.status[field] = Math.max(next.npc_other_defenses[field] ?? 0, next.npc_weapon_defenses[field]);
-          events2.push({ kind: "status_applied", actor: "npc", target: "npc", status: field, value: next.npc.status[field], source: "weapon", item_id: next.npc.item_id });
-        }
-      }
-      if (next.turn === 1 && next.npc.hp > next.player.hp && (npcEffects.tempo_on_win ?? 0) > 0)
-        next.npc.status.tempo_bonus = npcEffects.tempo_on_win;
-    }
-  }
-  next.terminal_result = next.player.hp <= 0 ? "LOSS" : next.npc.hp <= 0 ? "WIN" : null;
-  if (next.terminal_result) {
-    delete next.player.expedition_passive;
-    delete next.npc.expedition_passive;
-    next.strategic_delayed = [];
-    for (const fighter2 of [next.player, next.npc]) {
-      delete fighter2.strategic_trap;
-      delete fighter2.strategic_heal_suppression;
-      restoreDungeonInspiration(next, fighter2);
-    }
-  } else {
-    for (const who of ["npc", "player"]) {
-      const fighter2 = next[who];
-      if (fighter2.hp <= 0 || fighter2.inspiration_used || fighter2.inspiration_pending || fighter2.inspiration < 3)
-        continue;
-      const choices = (next.inspiration_catalog?.[who] ?? []).filter((s) => !fighter2.spell_ids.includes(s.id));
-      if (choices.length < 3)
-        return { error: "UNSUPPORTED_MECHANIC" };
-      fighter2.inspiration_offers = [];
-      for (let i = 0;i < 3; i++)
-        fighter2.inspiration_offers.push(choices.splice(Math.floor(draw() * choices.length), 1)[0].id);
-      fighter2.inspiration_pending = true;
-      events2.push({ kind: "inspiration_offered", actor: who, ...who === "player" ? { offers: [...fighter2.inspiration_offers] } : {} });
-      if (who === "npc") {
-        const selected = fighter2.inspiration_offers[Math.floor(draw() * 3)];
-        const chosen = next.inspiration_catalog.npc.find((s) => s.id === selected);
-        const availableSlots = fighter2.expedition_types && !(chosen.category === "attack" && chosen.cooldown_turns === 0) ? fighter2.spell_ids.map((id, index) => ({ index, spell: next.spells.find((s) => s.id === id) })).filter((entry, _i, all) => !(entry.spell?.category === "attack" && entry.spell.cooldown_turns === 0 && all.filter((other) => other.spell?.category === "attack" && other.spell.cooldown_turns === 0).length === 1)).map((entry) => entry.index) : [0, 1, 2, 3];
-        const slot = availableSlots[Math.floor(draw() * availableSlots.length)];
-        fighter2.spell_ids[slot] = selected;
-        fighter2.temporary_spell_id = selected;
-        fighter2.temporary_replaced_slot = slot;
-        if (!next.spells.some((s) => s.id === selected))
-          next.spells.push(structuredClone(chosen));
-        fighter2.inspiration_used = true;
-        fighter2.inspiration_pending = false;
-        fighter2.inspiration_offers = [];
-        events2.push({ kind: "inspiration_chosen", actor: who, spell_id: selected, slot, activation: recordInspirationActivation(fighter2, who, next.turn) });
-        fireNpcPassive("inspiration_activated");
-      }
-    }
-  }
-  if (next.player.expedition_passive)
-    next.player.expedition_passive = finishPassiveExchange(next.player.expedition_passive);
-  if (next.npc.expedition_passive)
-    next.npc.expedition_passive = finishPassiveExchange(next.npc.expedition_passive);
-  next.rng_counter = counter;
-  next.physical_anomaly = next.terminal_result ? null : tickPhysicalAnomaly(next.physical_anomaly, next.turn);
-  return { next_state: next, events: events2, terminal_result: next.terminal_result };
-}
-function resolveDungeonInspiration(state, decision, rng) {
-  const fighter2 = state?.player;
-  if (!state || state.terminal_result || state.blessing?.pending || !fighter2?.inspiration_pending || fighter2.inspiration_used || !Array.isArray(fighter2.inspiration_offers) || fighter2.inspiration_offers.length !== 3 || !decision || typeof decision !== "object" || Array.isArray(decision) || typeof rng !== "function")
-    return { error: "INVALID_DECISION" };
-  const keys = Object.keys(decision).sort().join(",");
-  if (!(decision.kind === "decline" && keys === "kind") && !(decision.kind === "choose" && keys === "kind,spell_id" && typeof decision.spell_id === "string" && fighter2.inspiration_offers.includes(decision.spell_id)))
-    return { error: "INVALID_DECISION" };
-  const next = structuredClone(state), p = next.player, events2 = [];
-  if (decision.kind === "choose") {
-    const spell = next.inspiration_catalog?.player?.find((s) => s.id === decision.spell_id);
-    if (!spell || !dungeonInspirationCandidates(p.type, p.spell_ids, [spell]).length)
-      return { error: "INVALID_DECISION" };
-    const roll = rng(next.turn, next.rng_counter);
-    if (!Number.isFinite(roll) || roll < 0 || roll >= 1)
-      throw new Error("INVALID_RNG");
-    const slot = Math.floor(roll * 4);
-    next.rng_counter++;
-    p.spell_ids[slot] = spell.id;
-    p.temporary_spell_id = spell.id;
-    p.temporary_replaced_slot = slot;
-    if (!next.spells.some((s) => s.id === spell.id))
-      next.spells.push(structuredClone(spell));
-    events2.push({ kind: "inspiration_chosen", actor: "player", spell_id: spell.id, slot, activation: recordInspirationActivation(p, "player", next.turn) });
-    applyTimedAwarePassive(p, next.npc, "inspiration_activated", next.types, "player", "npc", events2);
-  } else
-    events2.push({ kind: "inspiration_declined", actor: "player" });
-  p.inspiration_used = true;
-  p.inspiration_pending = false;
-  p.inspiration_offers = [];
-  return { next_state: next, events: events2 };
-}
-
-// src/expeditions_service.ts
-import { createHmac as createHmac5, randomBytes } from "crypto";
-import { gzipSync as gzipSync2, gunzipSync as gunzipSync2 } from "zlib";
-
-// src/expeditions_combat.ts
-var ITEM_EFFECTS = new Set(["power_flat", "guard_flat", "tempo_flat", "true_on_hit", "dot_true", "vuln_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
-function expeditionItemEffects(item, level) {
-  if (!item || typeof item.id !== "string" || !item.id || item.slot !== "build" || !Number.isInteger(level) || level < 0 || level > 10 || !item.effects || typeof item.effects !== "object" || Array.isArray(item.effects))
-    throw new Error("INVALID_EXPEDITION_ITEM");
-  const result = {};
-  for (const [key2, values2] of Object.entries(item.effects)) {
-    if (!ITEM_EFFECTS.has(key2) || !Array.isArray(values2) || !values2.length || values2.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0))
-      throw new Error("INVALID_EXPEDITION_ITEM");
-    const value = level === 0 && values2.length === 10 && key2 in (item.base_effects ?? {}) ? item.base_effects[key2] : values2[Math.min(Math.max(0, level - 1), values2.length - 1)];
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
-      throw new Error("INVALID_EXPEDITION_ITEM");
-    result[key2] = value;
-  }
-  if (!Object.keys(result).length || Object.entries(item.base_effects ?? {}).some(([key2, value]) => !ITEM_EFFECTS.has(key2) || !Object.hasOwn(item.effects, key2) || typeof value !== "number" || !Number.isFinite(value) || value < 0))
-    throw new Error("INVALID_EXPEDITION_ITEM");
-  return result;
-}
-function chooseNpcItem(seed, key2, setup, npcSpells, npcTypes, hom, personality, catalogs, level) {
-  const items = catalogs.items?.filter((item) => item.slot === "build") ?? [];
-  if (items.length !== 8 || new Set(items.map((item) => item.id)).size !== 8)
-    throw new Error("INVALID_EXPEDITION_ITEM_CATALOG");
-  const spells2 = setup.spells ?? [];
-  const attacks = spells2.filter((s) => s.category === "attack");
-  const offense = attacks.reduce((sum, s) => sum + Math.max(0, s.power_mult ?? 0) * (s.accuracy ?? 0), 0) / Math.max(1, spells2.length);
-  const has = (list, effect) => list.some((s) => s.effects?.some((e) => e.kind === effect));
-  const playerItems = (setup.weapons ?? [{ id: setup.item_id, effects: setup.itemEffects ?? {} }]).filter((w) => w?.id);
-  const effectMax = (name) => Math.max(0, ...playerItems.map((w) => w.effects?.[name] ?? 0));
-  const playerReflect = has(spells2, "reflect") || effectMax("reflect_pct") > 0 || (setup.hom_synergy?.reflect_pct ?? 0) > 0;
-  const defensive = has(spells2, "shield") || has(spells2, "heal") || effectMax("guard_flat") > 1 || effectMax("ward_pct") > 0;
-  const tempoPressure = Math.max(0, Math.min(1, ((setup.entity.base_stats.tempo ?? 10) + effectMax("tempo_flat") + (setup.hom_tempo ?? 0) - 10) / 20));
-  const hasDisadvantage = npcTypes.some((t) => (catalogs.types.effectiveness[t]?.[setup.entity.type] ?? 1) < 1);
-  const passive = catalogs.homunculi?.find((entry) => entry.id === hom.id)?.passive;
-  const synergy = has(npcSpells, "poison") || has(npcSpells, "vuln") || passive?.event === "before_attack" || passive?.effects?.some((effect) => ["poison", "vuln", "power_flat"].includes(effect.kind));
-  const ranked = items.map((item) => {
-    const fx = expeditionItemEffects(item, level);
-    const score = 1 + (fx.evasion_pct ?? 0) * (4 + offense * 5) + (fx.ward_pct ?? 0) * (3 + offense * 5) + (fx.reflect_pct ?? 0) * (2 + offense * 6) + (fx.ignore_reflect_chance ?? 0) * (playerReflect ? 7 : 0.4) + (fx.guard_flat ?? 0) * (0.08 + offense * 0.08) + (fx.true_on_hit ?? 0) * (defensive ? 0.65 : 0.22) + (fx.dot_true ?? 0) * (defensive || synergy ? 0.5 : 0.2) + (fx.vuln_on_hit ?? 0) * (synergy ? 4 : 1) + (fx.tempo_flat ?? 0) * (0.08 + tempoPressure * 0.42) + (fx.tempo_on_win ?? 0) * (0.06 + tempoPressure * 0.35) + (fx.disadvantage_reduction ?? 0) * (hasDisadvantage ? 4 : 0.3) + (fx.power_flat ?? 0) * (personality === "OPPORTUNIST" ? 0.12 : 0.07);
-    return { item, effects: fx, score };
-  }).sort((a, b2) => b2.score - a.score || a.item.id.localeCompare(b2.item.id));
-  const pool = ranked.filter((v, i) => i < 4 && v.score >= ranked[0].score * 0.7);
-  const choice = pool[Math.floor(expeditionDraw(seed, JSON.stringify(["npc-item", key2]), 0) * pool.length)];
-  return { item_id: choice.item.id, item_level: level, item_effects: choice.effects };
-}
-function buildExpeditionEnemy(seed, encounterKey, depth, capturable, setup, catalogs, enemyId, homId, npcItemLevel = 0, difficultyDepth = depth) {
-  if (!encounterKey || !Number.isSafeInteger(depth) || depth < 1 || !Number.isSafeInteger(difficultyDepth) || difficultyDepth < 1 || typeof capturable !== "boolean" || !setup?.entity?.base_stats || !Array.isArray(setup.spells) || !Array.isArray(setup.spell_ids) || !Array.isArray(catalogs?.spells))
-    throw new Error("INVALID_EXPEDITION_SETUP");
-  const draw = (label) => expeditionDraw(seed, JSON.stringify([encounterKey, depth, label]), 0);
-  const enemy = enemyId === undefined ? expeditionEnemies[Math.floor(draw("enemy") * expeditionEnemies.length)] : expeditionEnemies.find((e) => e.id === enemyId);
-  if (!enemy)
-    throw new Error("INVALID_EXPEDITION_ENEMY");
-  const hom = homId === undefined ? expeditionCaptures[Math.floor(draw("homunculus") * expeditionCaptures.length)] : expeditionCaptures.find((h) => h.id === homId);
-  if (!hom)
-    throw new Error("INVALID_EXPEDITION_HOMUNCULUS");
-  const candidates = catalogs.spells.filter((s) => expeditionSpellSupported(s, enemy.types)).sort((a, b2) => a.id.localeCompare(b2.id));
-  const basic = candidates.filter((s) => s.category === "attack" && s.cooldown_turns === 0 && s.power_mult > 0);
-  if (!basic.length)
-    throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
-  const relation = (type) => catalogs.types?.effectiveness?.[type]?.[setup.entity.type] ?? 1;
-  const pick = (list, label) => list[Math.floor(draw(label) * list.length)];
-  const preferredBasic = [...basic].sort((a, b2) => relation(b2.type) - relation(a.type));
-  const bestRelation = relation(preferredBasic[0].type);
-  const selected = [pick(preferredBasic.filter((s) => relation(s.type) === bestRelation), "basic")];
-  const has = (spell, kind, target) => spell.effects.some((effect) => effect.kind === kind && (!target || effect.target === target));
-  const pairs = [];
-  for (const a of candidates)
-    for (const b2 of candidates) {
-      if (a.id === b2.id || selected.some((s) => s.id === a.id || s.id === b2.id))
-        continue;
-      if (has(a, "poison", "enemy") && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].some((k) => has(b2, k)) || has(a, "shield", "self") && ["ward_convert", "bonus_if_shielded"].some((k) => has(b2, k)) || has(a, "hybrid_mark", "enemy") && has(b2, "bonus_if_marked") || has(a, "vuln", "enemy") && b2.category === "attack" && b2.power_mult >= 0.9)
-        pairs.push([a, b2]);
-    }
-  const advancedPairs = pairs.filter((pair) => pair.some((s) => s.type === "hybrid"));
-  const markPairs = advancedPairs.filter((pair) => has(pair[0], "hybrid_mark") && has(pair[1], "bonus_if_marked"));
-  if (pairs.length)
-    selected.push(...pick(markPairs.length ? markPairs : advancedPairs.length ? advancedPairs : pairs, "combo"));
-  const remaining = () => candidates.filter((s) => !selected.some((x) => x.id === s.id));
-  if (selected.length < 4) {
-    const advanced = remaining().filter((s) => ["hybrid", "universal"].includes(s.type));
-    if (advanced.length)
-      selected.push(pick(advanced, "advanced"));
-  }
-  while (selected.length < 4) {
-    const available = remaining();
-    if (!available.length)
-      throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
-    selected.push(pick(available, `spell-${selected.length}`));
-  }
-  const base = setup.entity.base_stats, bonus = setup.bonuses ?? {};
-  const weapons = Array.isArray(setup.weapons) ? setup.weapons.filter((w) => w.id).map((w) => w.effects) : [setup.itemEffects ?? {}];
-  const factor = Math.max(0, Math.min(2, setup.hom_id ? setup.hom_synergy?.item_effect_mult ?? 1 : 1));
-  const weaponPower = Math.max(0, ...weapons.map((w) => w?.power_flat ?? 0));
-  const weaponGuard = Math.max(0, ...weapons.map((w) => w?.guard_flat ?? 0));
-  const hp = base.hp + (bonus.hp ?? 0), attack = base.power + (bonus.atk ?? 0) + Math.trunc(weaponPower * factor), defense = base.guard + (bonus.def ?? 0) + Math.trunc(weaponGuard * factor);
-  if (![hp, attack, defense].every((v) => Number.isFinite(v) && v > 0))
-    throw new Error("INVALID_EXPEDITION_SETUP");
-  const spellQuality = setup.spells.reduce((sum, s) => sum + (s.category === "attack" ? Math.min(1.5, s.power_mult * s.accuracy) : 0.65), 0) / 4;
-  const growth = 1 + Math.min(0.55, Math.log2(difficultyDepth) * 0.035);
-  const threat = (capturable ? 1.12 : 1) * growth;
-  const personality = capturable ? "ALCHEMIST" : "OPPORTUNIST";
-  const equipment = chooseNpcItem(seed, encounterKey, setup, selected, enemy.types, hom, personality, catalogs, npcItemLevel);
-  const attackBudget = Math.max(1, Math.round(attack * (0.6 + Math.min(0.15, spellQuality * 0.1)) * threat));
-  const defenseBudget = Math.min(1e5, Math.max(1, Math.round(defense * 0.82 * threat)) + Math.min(26, 2 * (difficultyDepth - 1)));
-  const item_power_allocated = Math.trunc(equipment.item_effects.power_flat ?? 0);
-  const item_guard_allocated = Math.trunc(equipment.item_effects.guard_flat ?? 0);
-  return { ...equipment, item_power_allocated, item_guard_allocated, combat_mode: "expedition", entity_id: enemy.id, name: enemy.name, type: enemy.types[0], types: [...enemy.types], texture: enemy.texture, preview_texture: enemy.preview_texture, capturable, floor: depth, homunculus_id: hom.id, homunculus_level: Math.min(10, Math.floor((difficultyDepth - 1) / 3)), hp: Math.max(1, Math.round(hp * (capturable ? 0.85 : 0.75) * growth) + Math.min(40, (difficultyDepth - 1) * 5)), attack: attackBudget, defense: defenseBudget, spell_ids: selected.map((s) => s.id), npc_personality: personality };
-}
-function createExpeditionCombatState(setup, enemy, catalogs, previousActiveSlot = 0) {
-  if (enemy?.combat_mode !== "expedition")
-    return { error: "UNTRUSTED_SETUP" };
-  const manifest = expeditionEnemies.find((e) => e.id === enemy.entity_id);
-  if (!manifest || JSON.stringify(manifest.types) !== JSON.stringify(enemy.types) || enemy.texture !== manifest.texture || enemy.preview_texture !== manifest.preview_texture)
-    return { error: "UNTRUSTED_SETUP" };
-  const item = catalogs.items?.find((entry) => entry.id === enemy.item_id && entry.slot === "build");
-  let effects;
-  try {
-    effects = expeditionItemEffects(item, enemy.item_level);
-  } catch {
-    return { error: "UNTRUSTED_SETUP" };
-  }
-  if (JSON.stringify(Object.entries(effects).sort()) !== JSON.stringify(Object.entries(enemy.item_effects ?? {}).sort()))
-    return { error: "UNTRUSTED_SETUP" };
-  if (![enemy.item_power_allocated, enemy.item_guard_allocated].every(Number.isSafeInteger) || enemy.item_power_allocated !== Math.trunc(effects.power_flat ?? 0) || enemy.item_guard_allocated !== Math.trunc(effects.guard_flat ?? 0))
-    return { error: "UNTRUSTED_SETUP" };
-  const state = createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot);
-  if (!state.error) {
-    const hom = expeditionCaptures.find((h) => h.id === enemy.homunculus_id);
-    state.npc.item_id = item.id;
-    state.npc.item_level = enemy.item_level;
-    state.npc.item_effects = effects;
-    state.npc.weapons = [{ id: item.id, level: enemy.item_level }];
-    state.tactics_enabled = true;
-    state.tactical_tier = enemy.tactical_tier ?? "normal";
-    state.combat_mode = "expedition";
-    state.npc.texture = manifest.texture;
-    state.npc.preview_texture = manifest.preview_texture;
-    state.npc.capturable = enemy.capturable;
-    state.npc.hom_type = hom.type;
-    state.npc.hom_texture = hom.combat_texture;
-  }
-  return state;
-}
-function resolveExpeditionTurn(state, decision, rng) {
-  return state?.combat_mode === "expedition" ? resolveDungeonTurn(state, decision, rng) : { error: "UNTRUSTED_SETUP" };
-}
-function resolveExpeditionInspiration(state, decision, rng) {
-  return state?.combat_mode === "expedition" ? resolveDungeonInspiration(state, decision, rng) : { error: "UNTRUSTED_SETUP" };
-}
-
-// src/expeditions_backgrounds.ts
-var EXPEDITION_BACKGROUNDS = Object.freeze([
-  "Ashen_Monastery_12s_1080p_Godot.ogv",
-  "Astral_Throne_15s_1080p_Godot.ogv",
-  "Eclipsed_Ziggurat_15s_1080p_Godot.ogv",
-  "Hollow_Carnival_12s_1080p_Godot.ogv",
-  "Hollow_Necropolis_12s_1080p_Godot.ogv",
-  "Ironroot_Forest_12s_1080p.ogv",
-  "Leviathan_Ossuary_12s_1080p_Godot.ogv",
-  "Mirror_Tribunal_12s_1080p_Godot.ogv",
-  "Quicksilver_Docks_12s_1080p.ogv",
-  "Salt_Cathedral_12s_1080p_Godot.ogv",
-  "Sunken_Archive_15s_1080p_Godot.ogv",
-  "The_Bismuth_Badlands_12s_Godot.ogv",
-  "The_Blackwater_Baths_12s_Godot.ogv",
-  "The_Celestial_Loom_12s_Godot.ogv",
-  "The_Crimson_Pagoda_12s.ogv",
-  "The_Forgotten_Menagerie_12s_Godot.ogv",
-  "The_Frozen_Clocktower_12s_Godot.ogv",
-  "The_Gilded_Apiary_12s_Godot.ogv",
-  "The_Golden_Basilica_12s.ogv",
-  "The_Lunar_Salt_Flats_12s_Godot.ogv",
-  "The_Mycelial_Underworks_15s_Godot.ogv",
-  "The_Neon_Reliquary_12s_Godot.ogv",
-  "The_Obsidian_Rail_Terminus_12s_Godot.ogv",
-  "The_Skyborne_Aether_Gardens_15s_Godot.ogv",
-  "The_Transmutation_Foundry_12s_Godot.ogv",
-  "Vitriol_Marshes_12s_1080p_Godot.ogv"
-]);
-if (EXPEDITION_BACKGROUNDS.length !== 26 || new Set(EXPEDITION_BACKGROUNDS).size !== 26 || EXPEDITION_BACKGROUNDS.some((key2) => !/^[A-Za-z0-9_]+\.ogv$/.test(key2)))
-  throw new Error("INVALID_EXPEDITION_BACKGROUNDS");
-function expeditionBackgroundAt(seed, runId, index) {
-  if (!runId || !Number.isSafeInteger(index) || index < 0)
-    throw new Error("INVALID_EXPEDITION_BACKGROUND_INDEX");
-  const cycle = Math.floor(index / EXPEDITION_BACKGROUNDS.length);
-  const shuffle = (n) => {
-    const permutation2 = [...EXPEDITION_BACKGROUNDS];
-    for (let i = permutation2.length - 1;i > 0; i--) {
-      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["background", runId, n]), i) * (i + 1));
-      [permutation2[i], permutation2[j]] = [permutation2[j], permutation2[i]];
-    }
-    return permutation2;
-  };
-  const permutation = shuffle(cycle);
-  if (cycle > 0 && permutation[0] === shuffle(cycle - 1).at(-1))
-    [permutation[0], permutation[1]] = [permutation[1], permutation[0]];
-  return permutation[index % permutation.length];
-}
-
-// src/expeditions_service.ts
-class ExpeditionError extends Error {
-  status;
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
-var fail2 = (status, message) => {
-  throw new ExpeditionError(status, message);
-};
-var canonical = (v) => Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}` : JSON.stringify(v) ?? "null";
-var replayPrefix = "gz1:";
-var readReplay = (value) => JSON.parse(value.startsWith(replayPrefix) ? gunzipSync2(Buffer.from(value.slice(replayPrefix.length), "base64")).toString("utf8") : value);
-var EXPEDITION_REPLAY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-var EXPEDITION_LEASE_EXPIRY_MS = 240000;
-var EXPEDITION_MAX_REVISION = 1e4;
-function maintainExpeditionReplays(db, now) {
-  return db.transaction(() => {
-    let changed = 0;
-    const legacy = db.query(`SELECT player_id,client_action_id,payload_json,result_state_json FROM action_log
-      WHERE action_type GLOB 'EXPEDITION_*' AND expedition_run_id IS NULL LIMIT 50`).all();
-    const attach = db.prepare("UPDATE action_log SET expedition_run_id=?,expedition_replay_compacted=? WHERE player_id=? AND client_action_id=? AND expedition_run_id IS NULL");
-    for (const row of legacy) {
-      let runId = "";
-      try {
-        runId = JSON.parse(row.payload_json)?.run_id ?? (row.result_state_json ? readReplay(row.result_state_json)?.session?.run_id : "") ?? "";
-      } catch {}
-      if (typeof runId !== "string")
-        runId = "";
-      changed += attach.run(runId, !row.result_state_json || row.result_state_json.startsWith(replayPrefix) ? 1 : 0, row.player_id, row.client_action_id).changes;
-    }
-    if (!db.query("SELECT 1 FROM action_log WHERE action_type GLOB 'EXPEDITION_*' AND expedition_run_id IS NULL LIMIT 1").get()) {
-      const finished = db.query("SELECT run_id FROM expedition_runs WHERE status <> 'ACTIVE' AND replay_compacted_at IS NULL AND finished_at <= ? ORDER BY finished_at LIMIT 1").get(now - 2 * 60 * 60 * 1000);
-      if (finished) {
-        const rows = db.query("SELECT player_id,client_action_id,result_state_json FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' AND expedition_replay_compacted=0 LIMIT 50").all(finished.run_id);
-        const update = db.prepare("UPDATE action_log SET result_state_json=?,expedition_replay_compacted=1 WHERE player_id=? AND client_action_id=? AND expedition_replay_compacted=0");
-        for (const row of rows) {
-          const result = row.result_state_json && !row.result_state_json.startsWith(replayPrefix) ? replayPrefix + gzipSync2(Buffer.from(row.result_state_json)).toString("base64") : row.result_state_json;
-          changed += update.run(result, row.player_id, row.client_action_id).changes;
-        }
-        if (!db.query("SELECT 1 FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' AND expedition_replay_compacted=0 LIMIT 1").get(finished.run_id))
-          changed += db.query("UPDATE expedition_runs SET replay_compacted_at=? WHERE run_id=? AND replay_compacted_at IS NULL").run(now, finished.run_id).changes;
-      }
-      const expired = db.query("SELECT run_id FROM expedition_runs WHERE status <> 'ACTIVE' AND finished_at <= ? ORDER BY finished_at LIMIT 1").get(now - EXPEDITION_REPLAY_RETENTION_MS);
-      if (expired) {
-        changed += db.query("DELETE FROM action_log WHERE rowid IN (SELECT rowid FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' LIMIT 50)").run(expired.run_id).changes;
-        if (!db.query("SELECT 1 FROM action_log WHERE expedition_run_id=? AND action_type GLOB 'EXPEDITION_*' LIMIT 1").get(expired.run_id))
-          changed += db.query("DELETE FROM expedition_runs WHERE run_id=? AND status <> 'ACTIVE' AND finished_at <= ?").run(expired.run_id, now - EXPEDITION_REPLAY_RETENTION_MS).changes;
-      }
-      changed += db.query("DELETE FROM action_log WHERE rowid IN (SELECT rowid FROM action_log WHERE expedition_run_id='' AND action_type GLOB 'EXPEDITION_*' AND created_at <= ? LIMIT 50)").run(now - EXPEDITION_REPLAY_RETENTION_MS).changes;
-    }
-    return changed;
-  }).immediate();
-}
-function expeditionEnemyAt(seed, runId, index) {
-  if (!runId || !Number.isSafeInteger(index) || index < 0)
-    throw new Error("INVALID_EXPEDITION_ENEMY_INDEX");
-  const cycle = Math.floor(index / expeditionEnemies.length);
-  const shuffle = (n) => {
-    const bag2 = expeditionEnemies.map((e) => e.id);
-    for (let i = bag2.length - 1;i > 0; i--) {
-      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["enemy-bag", runId, n]), i) * (i + 1));
-      [bag2[i], bag2[j]] = [bag2[j], bag2[i]];
-    }
-    return bag2;
-  };
-  const bag = shuffle(cycle);
-  if (cycle && bag[0] === shuffle(cycle - 1).at(-1))
-    [bag[0], bag[1]] = [bag[1], bag[0]];
-  return bag[index % bag.length];
-}
-function expeditionHomunculusAt(seed, runId, index) {
-  if (!runId || !Number.isSafeInteger(index) || index < 0)
-    throw new Error("INVALID_EXPEDITION_HOMUNCULUS_INDEX");
-  const cycle = Math.floor(index / expeditionCaptures.length);
-  const shuffle = (n) => {
-    const bag2 = expeditionCaptures.map((h) => h.id);
-    for (let i = bag2.length - 1;i > 0; i--) {
-      const j = Math.floor(expeditionDraw(seed, JSON.stringify(["homunculus-bag", runId, n]), i) * (i + 1));
-      [bag2[i], bag2[j]] = [bag2[j], bag2[i]];
-    }
-    return bag2;
-  };
-  const bag = shuffle(cycle);
-  if (cycle && bag[0] === shuffle(cycle - 1).at(-1))
-    [bag[0], bag[1]] = [bag[1], bag[0]];
-  return bag[index % bag.length];
-}
-function expeditionVictoryTier(depth, enemy, _setup) {
-  const capturable = enemy.capturable === true;
-  if (depth >= (capturable ? 30 : 35))
-    return "exceptional";
-  if (depth >= (capturable ? 12 : 15))
-    return "very_difficult";
-  if (depth >= (capturable ? 4 : 5))
-    return "difficult";
-  return "normal";
-}
-function expeditionVictoryGrants(tier, roll) {
-  const amounts = { normal: [30, 0], difficult: [45, 1], very_difficult: [60, 1], exceptional: [90, 2] };
-  if (!amounts[tier] || !(roll >= 0 && roll < 1))
-    throw new Error("INVALID_EXPEDITION_REWARD");
-  const [essence, core] = amounts[tier];
-  return { essence, ...core ? { core } : {}, ...roll < 0.08 ? { arcane_shard: 1 } : roll < 0.1 ? { time_crystal: 1 } : {} };
-}
-var publicEvent = (event) => {
-  if (event?.kind === "inspiration_chosen" && event.actor === "npc") {
-    const { spell_id, slot, ...visible } = event;
-    return visible;
-  }
-  return event;
-};
-function publicCombat(combat) {
-  const { spell_ids, original_spell_ids, cooldowns, inspiration_offers, temporary_spell_id, temporary_replaced_slot, ...npc } = combat.npc;
-  return { player: { ...combat.player, ...publicCombatStatus(combat.player, combat.turn), pending_drain: publicIncomingDrains(combat, "player") }, npc: { ...npc, ...publicCombatStatus(npc, combat.turn), pending_drain: publicIncomingDrains(combat, "npc") }, floor: combat.floor, turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((w) => ({ id: w.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
-}
-function publicSession(row, state) {
-  return { run_id: row.run_id, status: row.status, revision: row.revision, phase: state.phase, depth: state.depth, loadout: JSON.parse(row.loadout_json), background_key: state.background, choices: state.phase === "EXPLORE" ? state.choices.map((e, choice) => ({ choice, id: e.entity_id, name: e.name, types: e.types, preview_texture: e.preview_texture, capturable: e.capturable })) : [], ...state.combat && state.phase !== "REWARD" ? { combat_state: publicCombat(state.combat), battle_log: state.log.map(publicEvent) } : {}, ...state.phase === "REWARD" ? { reward_homunculus: (() => {
-    const h = expeditionCaptures.find((h2) => h2.id === state.selected?.homunculus_id);
-    return h ? { id: h.id, name: h.name, type: h.type, preview_texture: h.preview_texture, combat_texture: h.combat_texture } : null;
-  })(), capture_candidate: state.candidate ? { id: state.candidate.id, name: state.candidate.name, type: state.candidate.type, rarity: state.candidate.rarity, preview_texture: state.candidate.preview_texture } : null, capture_attempts: state.capture_attempts ?? 0, capture_attempts_remaining: state.capture_closed === true ? 0 : Math.max(0, 3 - (state.capture_attempts ?? 0)), capture_closed: state.capture_closed === true, ...state.victory_reward ? { victory_reward: state.victory_reward } : {} } : {}, ...state.latest_reward ? { latest_reward: state.latest_reward } : {}, ...state.phase === "ROUTE" ? { directions: ["left", "forward", "right"], allowed_directions: (state.consecutive_right ?? 0) >= 3 ? ["left", "forward"] : ["left", "forward", "right"], consecutive_right: state.consecutive_right ?? 0, last_direction: state.last_direction ?? null } : {} };
-}
-function createExpeditionService(options) {
-  const { db, secret, catalogs } = options;
-  const seedFor = (runId) => createHmac5("sha256", secret).update("expedition:" + runId).digest();
-  const cooldown = (playerId, now) => Math.max(0, (db.query("SELECT cooldown_until FROM expedition_player_cooldowns WHERE player_id=?").get(playerId)?.cooldown_until ?? 0) - now);
-  const balance = (playerId, now) => {
-    db.query("INSERT OR IGNORE INTO expedition_balances(player_id) VALUES(?)").run(playerId);
-    const row = db.query("SELECT mana,crystals,regen_at FROM expedition_balances WHERE player_id=?").get(playerId);
-    if (!row || !Number.isInteger(row.crystals) || row.crystals < 0 || row.crystals > EXPEDITION_CRYSTAL_CAP)
-      throw new Error("INVALID_EXPEDITION_BALANCE");
-    const regenerated = regenerateExpeditionMana(row, now);
-    if (row.mana !== regenerated.mana || row.regen_at !== regenerated.regen_at)
-      db.query("UPDATE expedition_balances SET mana=?,regen_at=? WHERE player_id=?").run(regenerated.mana, regenerated.regen_at, playerId);
-    return { ...regenerated, crystals: row.crystals };
-  };
-  const saveBalance = (playerId, value) => {
-    if (!Number.isInteger(value.crystals) || value.crystals < 0 || value.crystals > EXPEDITION_CRYSTAL_CAP)
-      throw new Error("INVALID_EXPEDITION_BALANCE");
-    if (db.query("UPDATE expedition_balances SET mana=?,regen_at=?,crystals=? WHERE player_id=?").run(value.mana, value.regen_at, value.crystals, playerId).changes !== 1)
-      throw new Error("EXPEDITION_BALANCE_UNAVAILABLE");
-  };
-  const leaseHash = (lease) => createHmac5("sha256", secret).update("expedition-lease:" + lease).digest("hex");
-  const validLease = (row, lease, now) => typeof lease === "string" && /^[a-f0-9]{64}$/.test(lease) && row.lease_hash === leaseHash(lease) && Number.isSafeInteger(row.heartbeat_at) && now < row.heartbeat_at + EXPEDITION_LEASE_EXPIRY_MS;
-  const abandon = (row, now) => {
-    const deadline = Number.isSafeInteger(row.heartbeat_at) ? row.heartbeat_at + EXPEDITION_LEASE_EXPIRY_MS : now;
-    const closedAt = Math.min(now, deadline);
-    if (db.query("UPDATE expedition_runs SET status='ABANDONED',revision=revision+1,snapshot_json=NULL,loadout_json=NULL,setup_json=NULL,state_json=NULL,lease_hash=NULL,updated_at=?,finished_at=? WHERE run_id=? AND status='ACTIVE'").run(now, closedAt, row.run_id).changes !== 1)
-      return;
-    const pool = balance(row.player_id, closedAt);
-    if (pool.mana > 0)
-      saveBalance(row.player_id, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), closedAt), crystals: pool.crystals });
-    db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(row.player_id, closedAt + EXPEDITION_EXIT_COOLDOWN_MS);
-  };
-  const purchaseWindow = (playerId, now) => {
-    const row = db.query("SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM action_log WHERE player_id=? AND action_type='EXPEDITION_BUY_MANA' AND created_at>?").get(playerId, now - 86400000);
-    return { remaining: Math.max(0, 12 - row.count), next: row.count >= 12 ? row.oldest + 86400000 : null };
-  };
-  const response = (playerId, now, row, state2, events2) => {
-    const pool = balance(playerId, now), purchases = purchaseWindow(playerId, now);
-    return { session: row && state2 ? publicSession(row, state2) : null, mana: pool.mana, crystals: pool.crystals, mana_purchases_remaining: purchases.remaining, next_mana_purchase_at: purchases.next, next_regeneration_at: pool.regen_at || null, remaining_cooldown_ms: cooldown(playerId, now), server_time_unix_ms: now, ...events2 ? { events: events2.map(publicEvent) } : {} };
-  };
-  const makeNode = (state2, setup, runId, seed) => {
-    const background = expeditionBackgroundAt(seed, runId, state2.background_cursor++);
-    const choices = [0, 1].map(() => {
-      const cursor = state2.enemy_cursor++, id = expeditionEnemyAt(seed, runId, cursor);
-      const key2 = `${runId}:node:${state2.depth}:enemy:${cursor}`;
-      const capturable = expeditionDraw(seed, JSON.stringify(["capturable", key2]), 0) < 0.35;
-      return buildExpeditionEnemy(seed, key2, state2.depth, capturable, setup, catalogs, id, expeditionHomunculusAt(seed, runId, cursor), state2.npc_item_level ?? 0, state2.difficulty_depth ?? state2.depth);
-    });
-    if (choices[0].entity_id === choices[1].entity_id || state2.background && state2.background === background)
-      throw new Error("INVALID_EXPEDITION_ROTATION");
-    Object.assign(state2, { background, choices, phase: "EXPLORE", combat: null, log: [], candidate: null });
-  };
-  const validAction = (action2, body) => {
-    if (!body || typeof body !== "object" || Array.isArray(body))
-      fail2(400, "Invalid expedition action.");
-    const start = action2 === "start";
-    const fields = start ? ["entity_id", "weapon_ids", "homunculus_id", "spell_ids", "mode"] : ["run_id", "expected_revision", ...action2 === "select" ? ["choice"] : action2 === "advance" ? ["direction"] : ["turn", "inspiration"].includes(action2) ? ["decision"] : []];
-    if (Object.keys(body).some((k) => !["client_action_id", ...fields].includes(k)) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.trim().length > 64)
-      fail2(400, "Invalid expedition action.");
-    if (start) {
-      if (typeof body.entity_id !== "string" || !body.entity_id || !Array.isArray(body.weapon_ids) || body.weapon_ids.length !== 2 || body.weapon_ids.some((id) => id !== null && (typeof id !== "string" || !id)) || !(body.homunculus_id === null || typeof body.homunculus_id === "string" && !!body.homunculus_id) || !Array.isArray(body.spell_ids) || body.spell_ids.length !== 4 || body.spell_ids.some((id) => typeof id !== "string" || !id) || !["attack", "defense"].includes(body.mode))
-        fail2(400, "Invalid expedition loadout.");
-    } else if (typeof body.run_id !== "string" || !body.run_id || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1 || action2 === "select" && ![0, 1].includes(body.choice) || action2 === "advance" && !["left", "forward", "right"].includes(body.direction) || ["turn", "inspiration"].includes(action2) && (!body.decision || typeof body.decision !== "object" || Array.isArray(body.decision)))
-      fail2(400, "Invalid expedition action.");
-  };
-  function state(playerId, lease) {
-    return db.transaction(() => {
-      const now = Date.now(), row = db.query("SELECT * FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId);
-      if (row && !validLease(row, lease, now)) {
-        abandon(row, now);
-        return response(playerId, now);
-      }
-      return response(playerId, now, row, row ? JSON.parse(row.state_json) : null);
-    }).immediate();
-  }
-  function heartbeat(playerId, lease, body) {
-    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).join(",") !== "run_id" || typeof body.run_id !== "string" || !body.run_id)
-      fail2(400, "Invalid expedition heartbeat.");
-    const result = db.transaction(() => {
-      const now = Date.now(), row = db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
-      if (!row || row.status !== "ACTIVE")
-        return false;
-      if (!validLease(row, lease, now)) {
-        abandon(row, now);
-        return false;
-      }
-      db.query("UPDATE expedition_runs SET heartbeat_at=? WHERE run_id=? AND status='ACTIVE'").run(now, row.run_id);
-      return { server_time_unix_ms: now, expires_at: now + EXPEDITION_LEASE_EXPIRY_MS };
-    }).immediate();
-    if (!result)
-      fail2(409, "Expedition lease expired or unavailable.");
-    return result;
-  }
-  function expireLeases(now = Date.now()) {
-    return db.transaction(() => {
-      const rows = db.query("SELECT * FROM expedition_runs WHERE status='ACTIVE' AND (heartbeat_at IS NULL OR heartbeat_at<=?) ORDER BY heartbeat_at LIMIT 50").all(now - EXPEDITION_LEASE_EXPIRY_MS);
-      for (const row of rows)
-        abandon(row, now);
-      return rows.length;
-    }).immediate();
-  }
-  function action(playerId, action2, body, lease) {
-    if (!["start", "select", "turn", "inspiration", "capture", "skip", "advance", "exit", "buy_mana"].includes(action2))
-      fail2(404, "Unknown expedition action.");
-    validAction(action2, body);
-    const actionId = body.client_action_id.trim(), actionType = `EXPEDITION_${action2.toUpperCase()}`, payload = { ...body };
-    delete payload.client_action_id;
-    const outcome = db.transaction(() => {
-      const now = Date.now();
-      const live = action2 === "start" ? db.query("SELECT * FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId) : db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
-      if (live?.status === "ACTIVE" && !validLease(live, lease, now)) {
-        abandon(live, now);
-        return { leaseRejected: true };
-      }
-      const prior = db.query("SELECT action_type,payload_json,result_state_json FROM action_log WHERE player_id=? AND client_action_id=?").get(playerId, actionId);
-      if (prior) {
-        if (prior.action_type !== actionType || canonical(JSON.parse(prior.payload_json)) !== canonical(payload))
-          fail2(409, "Action ID already used with different content.");
-        if (!prior.result_state_json)
-          fail2(409, "Expedition action no longer available.");
-        const replay = readReplay(prior.result_state_json);
-        const replayRun = replay?.session?.run_id ?? body.run_id;
-        const replayRow = replayRun ? db.query("SELECT status,lease_hash FROM expedition_runs WHERE run_id=? AND player_id=?").get(replayRun, playerId) : null;
-        if (replayRow?.status !== "ACTIVE" && !(action2 === "exit" && replayRow?.status === "EXIT" && typeof lease === "string" && replayRow.lease_hash === leaseHash(lease)))
-          fail2(409, "Expedition action no longer available.");
-        return action2 === "start" ? { ...replay, lease } : replay;
-      }
-      if (live?.status === "ACTIVE" && live.revision >= EXPEDITION_MAX_REVISION && action2 !== "exit") {
-        abandon(live, now);
-        return { limitReached: true };
-      }
-      let row, state2, events2 = [];
-      if (action2 === "start") {
-        if (cooldown(playerId, now) > 0)
-          fail2(409, "Expedition exit cooldown active.");
-        if (db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE'").get(playerId))
-          fail2(409, "An active expedition already exists.");
-        if (balance(playerId, now).mana < 1)
-          fail2(409, "Not enough expedition mana.");
-        const player = options.getPlayer(playerId);
-        const snapshot2 = { state_revision: player.state_revision, item_progress: player.item_progress ?? {}, homunculus_progress: player.homunculus_progress ?? {}, spell_progress: player.spell_progress ?? {}, research_flags: player.research_flags ?? {} };
-        const selection = { entity_id: body.entity_id, weapon_ids: body.weapon_ids, homunculus_id: body.homunculus_id, spell_ids: body.spell_ids, mode: body.mode };
-        const setup = options.makeSetup(playerId, snapshot2, selection);
-        if (setup?.error)
-          fail2(400, "Invalid or unsupported expedition loadout.");
-        const runId = crypto.randomUUID(), newLease = randomBytes(32).toString("hex");
-        state2 = { phase: "EXPLORE", depth: 1, difficulty_depth: 1, enemy_cursor: 0, background_cursor: 0, npc_item_level: Math.max(0, ...selection.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, snapshot2.item_progress?.[id]?.level ?? 0)))) };
-        makeNode(state2, setup, runId, seedFor(runId));
-        row = { run_id: runId, player_id: playerId, status: "ACTIVE", revision: 1, loadout_json: JSON.stringify(selection), newLease };
-        db.query("INSERT INTO expedition_runs(run_id,player_id,status,revision,snapshot_json,loadout_json,setup_json,state_json,started_at,updated_at,lease_hash,heartbeat_at) VALUES(?,?,'ACTIVE',1,?,?,?,?,?,?,?,?)").run(runId, playerId, JSON.stringify(snapshot2), row.loadout_json, JSON.stringify(setup), JSON.stringify(state2), now, now, leaseHash(newLease), now);
-      } else {
-        row = db.query("SELECT * FROM expedition_runs WHERE run_id=? AND player_id=?").get(body.run_id, playerId);
-        if (!row)
-          fail2(404, "Expedition not found.");
-        if (row.status !== "ACTIVE" || row.revision !== body.expected_revision)
-          fail2(409, "Expedition unavailable or stale.");
-        state2 = JSON.parse(row.state_json);
-        const seed = seedFor(row.run_id);
-        if (action2 === "buy_mana") {
-          const pool = balance(playerId, now);
-          if (pool.mana > EXPEDITION_MANA_CAP - 1)
-            fail2(400, "Expedition mana is full.");
-          if (purchaseWindow(playerId, now).remaining < 1)
-            fail2(400, "Expedition mana purchase limit reached.");
-          options.spendManaEssence(playerId, actionId, now);
-          saveBalance(playerId, { ...changeExpeditionMana(pool, 1, now), crystals: pool.crystals });
-        } else if (action2 === "select") {
-          if (balance(playerId, now).mana < 0.1)
-            fail2(400, "Not enough expedition mana.");
-          if (state2.phase !== "EXPLORE")
-            fail2(409, "Enemy selection unavailable.");
-          let selected = state2.choices[body.choice];
-          const setup = JSON.parse(row.setup_json);
-          if (!selected.item_id) {
-            const frozen = JSON.parse(row.snapshot_json), loadout = JSON.parse(row.loadout_json);
-            state2.npc_item_level ??= Math.max(0, ...loadout.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0))));
-            const cursor = state2.enemy_cursor - 2 + body.choice;
-            const key2 = `${row.run_id}:node:${state2.depth}:enemy:${cursor}`;
-            selected = buildExpeditionEnemy(seed, key2, state2.depth, selected.capturable, setup, catalogs, selected.entity_id, selected.homunculus_id, state2.npc_item_level, state2.difficulty_depth ?? state2.depth);
-          }
-          const tacticalTier = expeditionVictoryTier(state2.difficulty_depth ?? state2.depth, selected, setup);
-          selected = { ...selected, tactical_tier: tacticalTier };
-          const combat = createExpeditionCombatState(setup, selected, catalogs);
-          if (combat.error)
-            fail2(409, "Expedition combat unavailable.");
-          state2.victory_tier = tacticalTier;
-          state2.victory_reward = null;
-          state2.phase = "COMBAT";
-          state2.combat = combat;
-          state2.selected = selected;
-          state2.choices = [];
-          state2.log = [];
-        } else if (action2 === "turn" || action2 === "inspiration") {
-          if (state2.phase !== "COMBAT")
-            fail2(409, "Expedition combat unavailable.");
-          const draw = (turn, count) => deterministicDraw(seed, `${row.run_id}:${state2.depth}`, turn, count);
-          const result2 = action2 === "turn" ? resolveExpeditionTurn(state2.combat, body.decision, draw) : resolveExpeditionInspiration(state2.combat, body.decision, draw);
-          if (result2.error)
-            fail2(400, result2.error);
-          state2.combat = result2.next_state;
-          events2 = result2.events;
-          state2.log.push(...events2);
-          if (state2.combat.terminal_result === "WIN") {
-            const pool = balance(playerId, now);
-            if (pool.mana < 0.1)
-              fail2(400, "Not enough expedition mana.");
-            saveBalance(playerId, { ...changeExpeditionMana(pool, -0.1, now), crystals: pool.crystals });
-            state2.phase = "REWARD";
-            state2.candidate = state2.selected.capturable ? expeditionCaptures.find((h) => h.id === state2.selected.homunculus_id) : null;
-            state2.capture_attempts = 0;
-            state2.capture_closed = false;
-            options.awardVictory(playerId, row.loadout_json, now);
-            const tier = state2.victory_tier ?? expeditionVictoryTier(state2.difficulty_depth ?? state2.depth, state2.selected, JSON.parse(row.setup_json));
-            const rewardId = `${row.run_id}:${state2.depth}:victory`;
-            const roll = expeditionDraw(seed, JSON.stringify(["victory-loot", row.run_id, state2.depth]), 0);
-            const grants = options.grantVictoryLoot(playerId, expeditionVictoryGrants(tier, roll), rewardId, now);
-            state2.victory_reward = { reward_id: rewardId, tier, grants };
-          } else if (state2.combat.terminal_result === "LOSS") {
-            const pool = balance(playerId, now);
-            if (pool.mana > 0)
-              saveBalance(playerId, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), now), crystals: pool.crystals });
-            state2.phase = "LOSS";
-            row.status = "LOSS";
-          }
-        } else if (action2 === "capture") {
-          const attempts = state2.capture_attempts ?? 0;
-          if (state2.phase !== "REWARD" || !state2.selected?.capturable || !state2.candidate || state2.capture_closed === true || !Number.isInteger(attempts) || attempts < 0 || attempts >= 3)
-            fail2(409, "Capture unavailable.");
-          const candidate = expeditionCaptures.find((h) => h.id === state2.candidate.id);
-          if (!candidate || candidate.id !== state2.selected.homunculus_id || candidate.rarity !== state2.candidate.rarity || candidate.preview_texture !== state2.candidate.preview_texture)
-            fail2(409, "Invalid capture candidate.");
-          const pool = balance(playerId, now);
-          if (pool.crystals < 1)
-            fail2(409, "Not enough capture crystals.");
-          const attempt = attempts + 1;
-          const success = expeditionDraw(seed, JSON.stringify(["capture", row.run_id, state2.depth, candidate.id]), attempt - 1) < expeditionCaptureChance(candidate.rarity);
-          saveBalance(playerId, { ...pool, crystals: pool.crystals - 1 });
-          state2.capture_attempts = attempt;
-          state2.capture_closed = success || attempt >= 3;
-          const capture = success ? options.captureHomunculus(playerId, candidate.id, now) : null;
-          const event = { reward_id: `${row.run_id}:${state2.depth}:capture:${attempt}`, kind: success ? "capture_success" : "capture_failure", candidate_id: candidate.id, attempt, remaining_attempts: success ? 0 : 3 - attempt, ...success ? { preview_texture: candidate.preview_texture, duplicate: capture.duplicate, duplicate_xp: capture.duplicate ? 20 : 0 } : {} };
-          state2.latest_reward = event;
-          events2 = [event];
-        } else if (action2 === "skip") {
-          if (state2.phase !== "REWARD")
-            fail2(409, "Reward decision unavailable.");
-          state2.phase = "ROUTE";
-          state2.combat = null;
-          state2.log = [];
-          state2.selected = null;
-          state2.candidate = null;
-        } else if (action2 === "advance") {
-          const difficultyDepth = (state2.difficulty_depth ?? state2.depth) + (body.direction === "left" ? 1 : body.direction === "forward" ? 2 : 0);
-          if (state2.phase !== "ROUTE" || !Number.isSafeInteger(state2.depth + 1) || !Number.isSafeInteger(difficultyDepth) || body.direction === "right" && (state2.consecutive_right ?? 0) >= 3)
-            fail2(409, "Route unavailable.");
-          const pool = balance(playerId, now);
-          const granted = pool.crystals < EXPEDITION_CRYSTAL_CAP && expeditionDraw(seed, JSON.stringify(["crystal-drop", row.run_id, state2.depth]), 0) < 0.5;
-          if (granted)
-            saveBalance(playerId, { ...pool, crystals: pool.crystals + 1 });
-          const reward = { reward_id: `${row.run_id}:${state2.depth}:crystal`, kind: "crystal_drop", granted, amount: granted ? 1 : 0, ...granted ? { asset_key: "res://assets/entities/expeditions/capture.png" } : {} };
-          state2.latest_reward = reward;
-          events2 = [reward];
-          state2.depth++;
-          state2.difficulty_depth = difficultyDepth;
-          state2.last_direction = body.direction;
-          state2.consecutive_right = body.direction === "right" ? (state2.consecutive_right ?? 0) + 1 : 0;
-          if (state2.npc_item_level === undefined) {
-            const frozen = JSON.parse(row.snapshot_json), loadout = JSON.parse(row.loadout_json);
-            state2.npc_item_level = Math.max(0, ...loadout.weapon_ids.filter((id) => !!id).map((id) => Math.min(10, Math.max(0, frozen.item_progress?.[id]?.level ?? 0))));
-          }
-          makeNode(state2, JSON.parse(row.setup_json), row.run_id, seed);
-        } else {
-          const pool = balance(playerId, now);
-          if (pool.mana > 0)
-            saveBalance(playerId, { ...changeExpeditionMana(pool, -Math.min(1, pool.mana), now), crystals: pool.crystals });
-          db.query("INSERT INTO expedition_player_cooldowns(player_id,cooldown_until) VALUES(?,?) ON CONFLICT(player_id) DO UPDATE SET cooldown_until=excluded.cooldown_until").run(playerId, now + EXPEDITION_EXIT_COOLDOWN_MS);
-          row.status = "EXIT";
-        }
-        const oldRevision = row.revision;
-        row.revision++;
-        const terminal = row.status !== "ACTIVE";
-        const updated = db.query("UPDATE expedition_runs SET status=?,revision=?,snapshot_json=CASE WHEN ? THEN NULL ELSE snapshot_json END,loadout_json=CASE WHEN ? THEN NULL ELSE loadout_json END,setup_json=CASE WHEN ? THEN NULL ELSE setup_json END,state_json=?,updated_at=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND revision=?").run(row.status, row.revision, terminal ? 1 : 0, terminal ? 1 : 0, terminal ? 1 : 0, terminal ? null : JSON.stringify(state2), now, terminal ? now : null, row.run_id, playerId, oldRevision);
-        if (updated.changes !== 1)
-          fail2(409, "Expedition changed.");
-      }
-      db.query("INSERT INTO action_log(player_id,client_action_id,action_type,payload_json,result_state_json,created_at,expedition_run_id) VALUES(?,?,?,?,NULL,?,?)").run(playerId, actionId, actionType, JSON.stringify(payload), now, row.run_id);
-      const result = response(playerId, now, row.status === "EXIT" ? null : row, row.status === "EXIT" ? null : state2, events2);
-      db.query("UPDATE action_log SET result_state_json=? WHERE player_id=? AND client_action_id=?").run(JSON.stringify(result), playerId, actionId);
-      return action2 === "start" ? { ...result, lease: row.newLease } : result;
-    }).immediate();
-    if (outcome.leaseRejected)
-      fail2(409, "Expedition lease expired or unavailable.");
-    if (outcome.limitReached)
-      fail2(409, "Expedition action limit reached.");
-    return outcome;
-  }
-  return { state, action, heartbeat, expireLeases };
-}
-
 // src/solo_guardians.ts
 import { createHash as createHash2 } from "crypto";
 var ZONE_ART = {
@@ -20388,9 +21317,9 @@ function guardiansFor(zoneId, parentId, bosses, _rotation = 0, seed) {
 }
 
 // src/global_boss_rotation.ts
-import { createHmac as createHmac6 } from "crypto";
+import { createHmac as createHmac8 } from "crypto";
 function globalBossRoll(secret, zone, rotationKey) {
-  return createHmac6("sha256", secret).update(`global-boss:${zone}:${rotationKey}`).digest();
+  return createHmac8("sha256", secret).update(`global-boss:${zone}:${rotationKey}`).digest();
 }
 function globalBossTier(roll, weights) {
   let cumulative = 0;
@@ -20435,7 +21364,7 @@ function normalizeHomunculusProgress2(value) {
   }
   return normalizeHomunculusProgress(progress, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
 }
-function awardHomunculusVictory(playerId, loadoutJson, now) {
+function awardHomunculusVictory(playerId, loadoutJson, now, pvp = false, maxXp = PVE_VICTORY_XP) {
   if (!loadoutJson)
     return;
   let selection;
@@ -20455,13 +21384,18 @@ function awardHomunculusVictory(playerId, loadoutJson, now) {
   const player = safeParseState(row.state_json, playerId, row.display_name);
   if (!player)
     throw new HttpError(409, "Invalid player state.");
-  if (!combatHomunculusAllowed(player.homunculus_progress, id))
+  if (!combatHomunculusAllowed(player.homunculus_progress, id)) {
+    if (pvp)
+      return;
     throw new HttpError(409, "Homunculus is not available for combat.");
+  }
   const current = player.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
-  player.homunculus_progress[id] = grantXp(current, PVE_VICTORY_XP);
+  const amount = pvp ? Math.min(maxXp, Math.max(0, xpThreshold(10) - current.xp)) : PVE_VICTORY_XP;
+  player.homunculus_progress[id] = grantXp(current, amount);
   player.updated_at = now;
   if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1)
     throw new HttpError(409, "Player unavailable.");
+  return { homunculus_id: id, xp_granted: amount, level_before: current.level, level_after: player.homunculus_progress[id].level };
 }
 function captureExpeditionHomunculus(playerId, id, now) {
   if (!expeditionHomunculusIds().has(id))
@@ -20540,14 +21474,22 @@ for (let attempt = 0;; attempt++) {
 }
 var socialEnabled = Bun.env.SOCIAL_ENABLED === "1";
 var friends = createFriends(db);
-var globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN, socialEnabled ? friends.friendIds : undefined);
+var spectatorEnabled = Bun.env.SPECTATOR_ENABLED === "1";
+var spectatorService = null;
+var globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN, socialEnabled ? friends.friendIds : undefined, spectatorEnabled ? (ids, now) => spectatableActivities(db, ids, now) : undefined, spectatorEnabled ? (id) => spectatorService?.namesForTarget(id) ?? [] : undefined);
+if (spectatorEnabled) {
+  const adapters = createSpectatorAdapters(db, { dungeon: publicDungeonCombat, hunt: publicHuntCombat, expedition: publicExpeditionCombat });
+  spectatorService = createSpectatorService({ db, online: (id) => globalChat.isOnline(id), enabledAccount: async (id) => !!getPlayerByIdStmt.get(id) && !await isUserDisabled(id), ...adapters });
+  installSpectatorStartGuard((id) => spectatorService?.endViewer(id), (id) => spectatorService?.namesForTarget(id) ?? []);
+}
 var expeditionService = null;
+var forestQuests = null;
 function getExpeditionService() {
   if (expeditionService)
     return expeditionService;
   const dataDir = resolve3(import.meta.dir, "..", "..", "data");
   const catalogs = { entities: readJsonFile(resolve3(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve3(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve3(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve3(dataDir, "types.json")), mutations: readJsonFile(resolve3(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve3(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
-  expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
+  expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, questProgress: Bun.env.FOREST_QUESTS_ENABLED === "1" ? (event) => forestQuests?.progress(event) : undefined, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
     const row = getPlayerByIdStmt.get(playerId);
     if (!row)
       throw new HttpError(404, "Player not found.");
@@ -20609,12 +21551,13 @@ function getRankedServices() {
   const catalogs = { entities: readJsonFile(resolve3(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve3(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve3(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve3(dataDir, "types.json")), mutations: readJsonFile(resolve3(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve3(dataDir, "static", "balance.json"))?.balance };
   if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance)
     throw new Error("PVP_CATALOG_UNAVAILABLE");
-  const matches = createPvpMatches(db, new TextEncoder().encode(secret));
+  const matches = createPvpMatches(db, new TextEncoder().encode(secret), Date.now, (id, snapshot3, now) => awardHomunculusVictory(id, snapshot3, now, true));
   const snapshot2 = (id, selection) => {
     const value = trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs);
     return value && !("error" in createPvpFighter(value, catalogs)) ? value : null;
   };
-  rankedServices = { db, matches, snapshot: snapshot2, startFriendly: (a, b2, now, invite) => createSharedPvpMatch(db, catalogs, a, b2, now, "friendly", invite), queue: createPvpQueue(db, catalogs, snapshot2), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+  const practice = createPracticeService(db, catalogs, new TextEncoder().encode(secret), snapshot2, (id, saved, now, amount) => awardHomunculusVictory(id, saved, now, true, amount));
+  rankedServices = { db, matches, snapshot: snapshot2, practice, startFriendly: (a, b2, now, invite, protocol) => createSharedPvpMatch(db, catalogs, a, b2, now, "friendly", invite, protocol), queue: createPvpQueue(db, catalogs, snapshot2), chat: createPvpChat(db), ranking: createPvpRanking(db) };
   const timer2 = setInterval(() => {
     try {
       matches.sweep();
@@ -20623,6 +21566,14 @@ function getRankedServices() {
     }
   }, 1000);
   timer2.unref();
+  const practiceTimer = setInterval(() => {
+    try {
+      practice.sweep();
+    } catch (error2) {
+      logError("practice cleanup failed", { error: String(error2) });
+    }
+  }, 60000);
+  practiceTimer.unref();
   return rankedServices;
 }
 var getPlayerByIdStmt = db.prepare("SELECT player_id, display_name, state_json, updated_at FROM players WHERE player_id = ?");
@@ -21305,7 +22256,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
     if (isChoose && (!pending || pending.slot !== slot || !Array.isArray(pending.options) || pending.options.length !== 3 || new Set(pending.options).size !== 3 || pending.options.some((option) => typeof option !== "string" || !ids.includes(option) || traits.some((t) => t.id === option)) || typeof payload?.trait_id !== "string" || !pending.options.includes(payload.trait_id)))
       return { state: next, error: "Invalid or stale reroll selection." };
     const chooseTrait = (candidates, slotIndex) => {
-      const digest = createHmac7("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
+      const digest = createHmac9("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_trait_v1", state.player_id, id, slotIndex, clientActionId])).digest();
       return candidates[digest.readUInt32BE(0) % candidates.length];
     };
     if (isReroll && ids.filter((candidate) => !traits.some((t) => t.id === candidate)).length < 3)
@@ -21331,7 +22282,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const options = [];
       for (let i = 0;i < 3; i++) {
         const candidates = ids.filter((candidate) => !traits.some((t) => t.id === candidate) && !options.includes(candidate));
-        const digest = createHmac7("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
+        const digest = createHmac9("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["forge_reroll_offer_v1", state.player_id, id, slot, clientActionId, i])).digest();
         options.push(candidates[digest.readUInt32BE(0) % candidates.length]);
       }
       next.item_progress[id] = { ...current, specialization: path, traits, pending_reroll: { slot, options } };
@@ -21418,7 +22369,7 @@ function applyAction(state, actionType, payload, clientActionId = "", debugBypas
       const outcomes = staticData.balance.anomaly_investigate_outcomes;
       if (!Array.isArray(outcomes) || !outcomes.length || outcomes.some((entry) => !entry || typeof entry.weight !== "number" || !Number.isFinite(entry.weight) || entry.weight < 0 || !validReward2(entry.reward)) || Math.abs(outcomes.reduce((sum, entry) => sum + entry.weight, 0) - 1) > 0.000001)
         return { state: next, error: "Invalid anomaly outcome configuration." };
-      const digest = createHmac7("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
+      const digest = createHmac9("sha256", EXPERIMENT_SECRET).update(JSON.stringify(["anomaly_resolve_v1", state.player_id, clientActionId])).digest();
       const roll = digest.readUInt32BE(0) / 4294967296;
       let cumulative = 0;
       reward = outcomes[outcomes.length - 1].reward;
@@ -21559,11 +22510,31 @@ async function startServer() {
     }
     return true;
   }
-  const duels = createForestDuels(db, (id) => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id, selection) => getRankedServices()?.snapshot(id, selection) ?? null, start: (a, b2, now, invite) => {
+  if (Bun.env.FOREST_QUESTS_ENABLED === "1" && forest) {
+    const catalog2 = readJsonFile(resolve3(import.meta.dir, "..", "..", "data", "static", "forest_quests.json"));
+    forestQuests = createForestQuests({ db, secret: WORLD_SECRET, npcs: catalog2.npcs, position: (id) => leaseValid() ? forest.positionOf(id) : null, grant: (id, reward, questId, now) => {
+      const row = getPlayerByIdStmt.get(id);
+      if (!row)
+        throw new HttpError(404, "Player not found.");
+      const player = JSON.parse(row.state_json);
+      assertWalletInvariant(player.wallet);
+      const before = { ...player.wallet }, caps2 = walletCapacities(player);
+      for (const [resource, amount] of Object.entries(reward))
+        if ((player.wallet[resource] ?? 0) + amount > (caps2[resource] ?? getWalletCap(resource)))
+          throw new ForestQuestError(409, "QUEST_STORAGE_FULL");
+      applyWalletGrant(player.wallet, reward);
+      assertWalletInvariant(player.wallet);
+      player.updated_at = now;
+      if (updatePlayerStmt.run(JSON.stringify(player), now, id).changes !== 1)
+        throw new HttpError(409, "Player unavailable.");
+      auditWalletMutation(id, computeWalletDelta(before, player.wallet), "FOREST_QUEST_REWARD", questId, now);
+    } });
+  }
+  const duels = createForestDuels(db, (id) => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id, selection) => getRankedServices()?.snapshot(id, selection) ?? null, start: (a, b2, now, invite, protocol) => {
     const service = getRankedServices();
     if (!service)
       throw new Error("PVP_SECRET_REQUIRED");
-    return service.startFriendly(a, b2, now, invite);
+    return service.startFriendly(a, b2, now, invite, protocol);
   } }, () => {
     try {
       return !!getRankedServices();
@@ -21884,7 +22855,7 @@ async function startServer() {
             const refreshToken = typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
             const accessToken = extractToken(req);
             let forestPlayerId = null;
-            if (forest) {
+            if (forest || spectatorService) {
               const access = accessToken ? await getAccessToken(accessToken) : null;
               const refresh = refreshToken ? await getRefreshToken(refreshToken) : null;
               if (!access || !refresh || access.userId === refresh.userId)
@@ -21896,6 +22867,8 @@ async function startServer() {
             if (accessToken) {
               await revokeAccessToken(accessToken);
             }
+            if (forestPlayerId)
+              spectatorService?.endForPlayer(forestPlayerId);
             if (forestPlayerId && leaseValid())
               forest?.evict(forestPlayerId);
             return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
@@ -21916,18 +22889,95 @@ async function startServer() {
             let forestPlayerId = null;
             if (idleEnabled())
               forestPlayerId = await requireAuth(req, ctx);
-            else if (forest) {
+            else if (forest || spectatorService) {
               try {
                 forestPlayerId = await requireAuth(req, ctx);
               } catch {}
             }
             await revokeSession(token);
             await revokeAccessToken(token);
+            if (forestPlayerId)
+              spectatorService?.endForPlayer(forestPlayerId);
             if (forestPlayerId && leaseValid())
               forest?.evict(forestPlayerId);
             return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
           }
-          if (isRankedRoute(req.method, url.pathname) || req.method === "GET" && url.pathname === "/forest/duels/match/state" || req.method === "POST" && ["/forest/duels/match/decision", "/forest/duels/match/forfeit", "/forest/duels/match/chat"].includes(url.pathname)) {
+          if (req.method === "POST" && ["/spectator/start", "/spectator/leave"].includes(url.pathname) || req.method === "GET" && url.pathname === "/spectator/state") {
+            const viewer = await requireAuth(req, ctx);
+            await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: viewer });
+            if (!spectatorService)
+              return jsonResponse({ error: "SPECTATOR_DISABLED" }, 503);
+            try {
+              if (req.method === "GET") {
+                const raw = url.searchParams.get("after") ?? "0";
+                if (!/^\d+$/.test(raw))
+                  throw new Error("INVALID_REQUEST");
+                return jsonResponse(await spectatorService.state(viewer, url.searchParams.get("observation_id") ?? "", Number(raw)));
+              }
+              const body = await readJson(req, config.maxBodyBytes);
+              if (!body || typeof body !== "object" || Array.isArray(body))
+                throw new Error("INVALID_REQUEST");
+              if (url.pathname === "/spectator/start") {
+                if (Object.keys(body).some((k) => k !== "target_player_id"))
+                  throw new Error("INVALID_REQUEST");
+                return jsonResponse(await spectatorService.start(viewer, body.target_player_id));
+              }
+              if (Object.keys(body).some((k) => k !== "observation_id"))
+                throw new Error("INVALID_REQUEST");
+              return jsonResponse(spectatorService.leave(viewer, body.observation_id));
+            } catch (error2) {
+              const code = error2 instanceof Error ? error2.message : "SPECTATOR_UNAVAILABLE";
+              if (["INVALID_REQUEST", "INVALID_TARGET"].includes(code))
+                return jsonResponse({ error: code }, 400);
+              if (code === "OBSERVATION_NOT_FOUND")
+                return jsonResponse({ error: code }, 404);
+              if (["SPECTATOR_UNAVAILABLE", "SPECTATOR_CAPACITY", "OBSERVATION_CLOSED"].includes(code))
+                return jsonResponse({ error: code }, 409);
+              logError("spectator request failed", { error: String(error2) });
+              return jsonResponse({ error: "SPECTATOR_UNAVAILABLE" }, 503);
+            }
+          }
+          if (req.method === "POST" && ["/practice/start", "/practice/match/decision", "/practice/match/forfeit"].includes(url.pathname) || req.method === "GET" && url.pathname === "/practice/match/state") {
+            const playerId = await requireAuth(req, ctx);
+            await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+            try {
+              const service = getRankedServices()?.practice;
+              if (!service)
+                return jsonResponse({ error: "PVP_SECRET_REQUIRED" }, 503);
+              if (req.method === "GET") {
+                const raw = url.searchParams.get("after") ?? "0";
+                if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)))
+                  throw new Error("INVALID_CURSOR");
+                return jsonResponse(service.state(playerId, url.searchParams.get("match_id"), Number(raw)));
+              }
+              const body = await readJson(req, config.maxBodyBytes);
+              const fields = (allowed) => body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).every((k) => allowed.includes(k));
+              if (url.pathname === "/practice/start") {
+                if (!fields(["client_action_id", "selection"]))
+                  throw new Error("INVALID_REQUEST");
+                return jsonResponse(service.start(playerId, body.client_action_id, body.selection));
+              }
+              if (url.pathname === "/practice/match/decision") {
+                if (!fields(["match_id", "client_action_id", "combat_revision", "decision"]) || typeof body.match_id !== "string")
+                  throw new Error("INVALID_REQUEST");
+                return jsonResponse(service.decide(playerId, body.match_id, body.client_action_id, body.combat_revision, body.decision));
+              }
+              if (!fields(["match_id", "client_action_id"]) || typeof body.match_id !== "string")
+                throw new Error("INVALID_REQUEST");
+              return jsonResponse(service.forfeit(playerId, body.match_id, body.client_action_id));
+            } catch (error2) {
+              const code = error2 instanceof Error ? error2.message : "PRACTICE_UNAVAILABLE";
+              if (code === "MATCH_NOT_FOUND")
+                return jsonResponse({ error: code }, 404);
+              if (["PLAYER_BUSY", "ACTION_CONFLICT", "STALE_REVISION", "MATCH_FINISHED", "ACTION_LIMIT"].includes(code))
+                return jsonResponse({ error: code }, 409);
+              if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_ACTION_ID", "INVALID_DECISION", "UNTRUSTED_SETUP"].includes(code))
+                return jsonResponse({ error: code }, 400);
+              logError("practice request failed", { error: String(error2) });
+              return jsonResponse({ error: "PRACTICE_UNAVAILABLE" }, 503);
+            }
+          }
+          if (isRankedRoute(req.method, url.pathname) || req.method === "GET" && url.pathname === "/forest/duels/match/state" || req.method === "POST" && ["/forest/duels/match/decision", "/forest/duels/match/playback_ack", "/forest/duels/match/forfeit", "/forest/duels/match/chat"].includes(url.pathname)) {
             const friendly = url.pathname.startsWith("/forest/duels/");
             const playerId = await requireAuth(req, ctx);
             await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
@@ -21949,7 +22999,7 @@ async function startServer() {
                 return jsonResponse({ error: code }, 404);
               if (code === "CHAT_RATE_LIMIT")
                 return jsonResponse({ error: code }, 429);
-              if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT", "PLAYER_BUSY"].includes(code))
+              if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "PLAYBACK_PENDING", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT", "PLAYER_BUSY"].includes(code))
                 return jsonResponse({ error: code }, 409);
               if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code))
                 return jsonResponse({ error: code }, 400);
@@ -21978,6 +23028,21 @@ async function startServer() {
               insertActionStmt.run(playerId, id, "CHAT_RECONNECT", "{}", "{}", now);
               return jsonResponse({ ok: true, duplicate: false });
             }).immediate();
+          }
+          if (["/forest/quests", "/forest/quests/accept", "/forest/quests/claim", "/forest/quests/cancel"].includes(url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            if (!forest || !leaseValid())
+              return jsonResponse({ error: "FOREST_QUESTS_UNAVAILABLE" }, 503);
+            if (!forestQuests && req.method === "GET" && url.pathname === "/forest/quests")
+              return jsonResponse({ quest: null, server_time_unix_ms: Date.now() });
+            if (!forestQuests)
+              return jsonResponse({ error: "FOREST_QUESTS_UNAVAILABLE" }, 503);
+            await applyRateLimit(ctx, { keyPrefix: "rl:forest-quests", windowSeconds: 60, max: 120, keyBy: "user", userId: playerId });
+            if (req.method === "GET" && url.pathname === "/forest/quests")
+              return jsonResponse(forestQuests.get(playerId));
+            if (req.method !== "POST" || url.pathname === "/forest/quests")
+              return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
+            return jsonResponse(forestQuests.action(playerId, url.pathname.endsWith("/accept") ? "accept" : url.pathname.endsWith("/cancel") ? "cancel" : "claim", await readSocialJson(req, Math.min(config.maxBodyBytes, 4096))));
           }
           if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel", "/forest/duels/ready"].includes(url.pathname)) {
             const playerId = await requireAuth(req, ctx);
@@ -22023,7 +23088,7 @@ async function startServer() {
             if (url.pathname === "/social/friends/request") {
               const target = body?.target_player_id;
               const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !await isUserDisabled(target);
-              result = friends.request(playerId, body, available);
+              result = friends.request(playerId, body, available, !!forest && leaseValid() && (forest.isBusy(playerId) || typeof target === "string" && forest.isBusy(target)));
             } else if (url.pathname === "/social/friends/respond")
               result = friends.respond(playerId, body);
             else
@@ -22031,7 +23096,10 @@ async function startServer() {
             return jsonResponse(result.data, result.status);
           }
           if (req.method == "GET" && url.pathname == "/chat/state") {
-            return jsonResponse(globalChat.state(await requireAuth(req, ctx)));
+            const playerId = await requireAuth(req, ctx);
+            if (forest && leaseValid())
+              forest.renewBusy(playerId, extractToken(req));
+            return jsonResponse(globalChat.state(playerId));
           }
           if (req.method == "POST" && url.pathname == "/chat/send") {
             const playerId = await requireAuth(req, ctx);
@@ -22853,7 +23921,7 @@ async function startServer() {
               const setup = buildTrustedCombatSetup(trusted, selection, catalogs, { independentLoadout: true });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported dungeon loadout.");
-              const seed = createHmac7("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
+              const seed = createHmac9("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
               const elitesEnabled = Bun.env.DUNGEON_ELITES_ENABLED === "1";
               const tacticsEnabled = Bun.env.DUNGEON_TACTICS_ENABLED === "1";
               const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, { ...catalogs, homunculi: homunculusCatalog().originals }, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
@@ -22868,7 +23936,7 @@ async function startServer() {
               combat.tactics_enabled = tacticsEnabled;
               if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1)
                 throw new HttpError(409, "Dungeon run changed.");
-              const response = { run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
+              const response = { ...spectatorNames(playerId), run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
               insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
               return jsonResponse(response);
             }).immediate();
@@ -22899,7 +23967,7 @@ async function startServer() {
                 throw new HttpError(404, "Dungeon run not found.");
               if (row.status !== "ACTIVE" || row.expires_at <= now || !row.combat_state_json || row.combat_revision !== body.expected_revision)
                 throw new HttpError(409, "Dungeon run unavailable or stale.");
-              const current = JSON.parse(row.combat_state_json), seed = createHmac7("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
+              const current = JSON.parse(row.combat_state_json), seed = createHmac9("sha256", WORLD_SECRET).update("dungeon:" + row.run_id).digest();
               if ((isTurn || isInspiration) && current.inspiration_catalog_version !== 2) {
                 const spells2 = readJsonFile(resolve3(import.meta.dir, "..", "..", "data", "spells.json"))?.spells;
                 if (!hydrateDungeonInspiration(current, spells2))
@@ -22968,7 +24036,13 @@ async function startServer() {
                 throw new HttpError(409, "Dungeon run changed.");
               if (isTurn && combat.terminal_result === "WIN" && cleared === combat.floor && row.cleared_floor < cleared)
                 awardHomunculusVictory(playerId, row.loadout_json, now);
-              const response = { run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events: events2 };
+              if (spectatorEnabled && (isTurn || isInspiration))
+                recordSpectatorEvents(db, "dungeon", row.run_id, String(current.floor), row.combat_revision + 1, events2, now);
+              if (spectatorEnabled && combat.terminal_result && (isTurn || isInspiration)) {
+                db.query("INSERT OR REPLACE INTO spectator_final_combats(mode,session_id,encounter,combat_json,created_at) VALUES ('dungeon',?,?,?,?)").run(row.run_id, String(current.floor), JSON.stringify(combat), now);
+                db.query("DELETE FROM spectator_final_combats WHERE rowid IN (SELECT rowid FROM spectator_final_combats WHERE created_at<? ORDER BY created_at LIMIT 50)").run(now - 86400000);
+              }
+              const response = { ...spectatorNames(playerId), run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events: events2 };
               insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
               return jsonResponse(response);
             }).immediate();
@@ -22981,7 +24055,7 @@ async function startServer() {
               const runId = url.searchParams.get("run_id");
               const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision";
               const session = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : null) ?? null;
-              return jsonResponse({ session, server_time_unix_ms: now });
+              return jsonResponse({ ...spectatorNames(playerId), session, server_time_unix_ms: now });
             }).immediate();
           }
           if (req.method == "POST" && url.pathname == "/dungeon/heartbeat") {
@@ -23023,6 +24097,9 @@ async function startServer() {
               let runId;
               let spellProgress;
               if (start) {
+                endSpectatingForStart(playerId);
+                if (activePractice(db, playerId, now))
+                  throw new HttpError(409, "Practice is active.");
                 const state = ensurePlayerState(playerId);
                 if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1)
                   throw new HttpError(409, "Sync Nexus unavailable.");
@@ -23205,7 +24282,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (state.player?.inspiration_pending)
                 throw new HttpError(409, "Inspiration decision pending.");
-              const seed = createHmac7("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac9("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveCombatTurn(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -23270,6 +24347,8 @@ async function startServer() {
                 db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
               }
               const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId);
+              if (spectatorEnabled)
+                recordSpectatorEvents(db, "hunt", row.session_id, "0", row.combat_revision + 1, [...typeof body.decision.spell_id === "string" ? [{ kind: "player_cast", actor: "player", spell_id: body.decision.spell_id, turn: result.next_state.turn }] : [], ...result.events], now);
               const response = { ...soloHuntResponse(current), events: result.events };
               insertActionStmt.run(playerId, actionId, "SOLO_HUNT_TURN", JSON.stringify(payload), JSON.stringify(response), now);
               return jsonResponse(response);
@@ -23308,7 +24387,7 @@ async function startServer() {
               const state = JSON.parse(row.combat_state_json);
               if (!state.player?.inspiration_pending)
                 throw new HttpError(409, "No inspiration decision pending.");
-              const seed = createHmac7("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac9("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const result = resolveInspirationDecision(state, body.decision, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (result.error)
                 throw new HttpError(result.error === "INVALID_DECISION" ? 400 : 409, result.error);
@@ -23318,6 +24397,8 @@ async function startServer() {
               const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId);
               if (!row.global_event_id && !row.guardian_id && body.decision.kind === "choose")
                 record(db, playerId, now, { guardian: false, choose: true, session: row.session_id });
+              if (spectatorEnabled && result.events.length)
+                recordSpectatorEvents(db, "hunt", row.session_id, "0", row.combat_revision + 1, result.events, now);
               const response = soloHuntResponse(current);
               insertActionStmt.run(playerId, actionId, "SOLO_HUNT_INSPIRATION", JSON.stringify(payload), JSON.stringify(response), now);
               return jsonResponse(response);
@@ -23361,7 +24442,7 @@ async function startServer() {
               const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true, ancientHunt: !row.global_event_id });
               if (setup.error)
                 throw new HttpError(400, "Invalid or unsupported hunt loadout.");
-              const seed = createHmac7("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
+              const seed = createHmac9("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
               const combat = createCombatState(setup, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
               if (combat.error)
                 throw new HttpError(400, "Unable to initialize combat.");
@@ -23416,6 +24497,9 @@ async function startServer() {
               let row;
               let replacedSessionId = null;
               if (start) {
+                endSpectatingForStart(playerId);
+                if (activePractice(db, playerId, now))
+                  throw new HttpError(409, "Practice is active.");
                 const schedule = soloBossSchedule(now);
                 const globalEvent = requestedGlobal ? db.query("SELECT * FROM global_boss_events WHERE event_id = ? AND status = 'ACTIVE'").get(requestedGlobal) : null;
                 if (requestedGlobal && (!globalEvent || payload.guardian_id !== undefined))
@@ -23589,8 +24673,8 @@ async function startServer() {
       } catch (err) {
         recordError();
         const sqliteBusy = typeof err === "object" && err !== null && typeof err.code === "string" && String(err.code).startsWith("SQLITE_BUSY");
-        const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
-        const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError ? err.status : 500;
+        const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof ForestQuestError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
+        const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof ForestQuestError || err instanceof CombatRewardError ? err.status : 500;
         const res = errorResponse(message, status);
         const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
         recordRequest(finalRes.status, Date.now() - ctx.startAt);
@@ -23768,7 +24852,7 @@ function publicHuntCombat(state) {
   };
 }
 function soloHuntResponse(row) {
-  return { ...row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}, session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}, ...row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}, ...row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(readHuntCombat(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
+  return { ...spectatorNames(row.player_id), ...row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}, session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}, ...row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}, ...row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}, boss_definition: JSON.parse(row.boss_snapshot_json), ...row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json), combat_state: publicHuntCombat(readHuntCombat(row.combat_state_json)), combat_revision: row.combat_revision } : {} };
 }
 function globalBossStatus(eventId, playerId) {
   const event = db.query("SELECT status, winner_count, zone_id FROM global_boss_events WHERE event_id = ?").get(eventId);
@@ -23801,7 +24885,7 @@ function bossBonusLoot(tier, sessionId, secret) {
     throw new HttpError(500, "Invalid boss bonus loot configuration.");
   const grants = {};
   for (const id of ["core", "arcane_shard"]) {
-    const roll = createHmac7("sha256", secret).update(`solo-hunt-bonus:${id}:${sessionId}`).digest().readUInt32BE(0) / 4294967296;
+    const roll = createHmac9("sha256", secret).update(`solo-hunt-bonus:${id}:${sessionId}`).digest().readUInt32BE(0) / 4294967296;
     if (roll < config2[id].chance)
       grants[id] = config2[id].quantity;
   }
@@ -23850,7 +24934,7 @@ function soloBossSchedule(now) {
   const { rotation, bosses } = staticData.soloBosses;
   const interval = rotation.interval_seconds * 1000, window2 = rotation.window_seconds * 1000;
   const key2 = Math.floor(now / interval), start = key2 * interval, end = start + window2;
-  const roll = createHmac7("sha256", WORLD_SECRET).update(String(key2)).digest().readUInt32BE(0) / 4294967296;
+  const roll = createHmac9("sha256", WORLD_SECRET).update(String(key2)).digest().readUInt32BE(0) / 4294967296;
   let cumulative = 0, chosen = "legendary";
   for (const tier of ["mythic", "rare", "epic", "legendary"]) {
     cumulative += rotation.weights[tier];
@@ -24412,15 +25496,15 @@ function normalizeLabRuntime(runtimeRaw) {
   }
   if (runtimeRaw?.reactor_overcharge && typeof runtimeRaw.reactor_overcharge === "object")
     result.reactor_overcharge = { progress: clampInt(runtimeRaw.reactor_overcharge.progress, 0, Math.max(1, getBalanceNumber("reactor_overcharge_threshold", 300))), last_used_at: clampInt(runtimeRaw.reactor_overcharge.last_used_at, 0, Number.MAX_SAFE_INTEGER) };
-  const anomaly = runtimeRaw?.anomaly;
-  if (anomaly && typeof anomaly === "object" && ["seal", "investigate"].includes(anomaly.last_choice)) {
+  const anomaly2 = runtimeRaw?.anomaly;
+  if (anomaly2 && typeof anomaly2 === "object" && ["seal", "investigate"].includes(anomaly2.last_choice)) {
     const reward = {};
-    if (anomaly.last_reward && typeof anomaly.last_reward === "object" && !Array.isArray(anomaly.last_reward)) {
-      for (const [id, amount] of Object.entries(anomaly.last_reward))
+    if (anomaly2.last_reward && typeof anomaly2.last_reward === "object" && !Array.isArray(anomaly2.last_reward)) {
+      for (const [id, amount] of Object.entries(anomaly2.last_reward))
         if (["essence", "core", "arcane_shard", "time_crystal"].includes(id) && Number.isSafeInteger(amount) && amount >= 0)
           reward[id] = amount;
     }
-    result.anomaly = { next_at: clampInt(anomaly.next_at, 0, Number.MAX_SAFE_INTEGER), last_at: clampInt(anomaly.last_at, 0, Number.MAX_SAFE_INTEGER), last_choice: anomaly.last_choice, last_reward: reward };
+    result.anomaly = { next_at: clampInt(anomaly2.next_at, 0, Number.MAX_SAFE_INTEGER), last_at: clampInt(anomaly2.last_at, 0, Number.MAX_SAFE_INTEGER), last_choice: anomaly2.last_choice, last_reward: reward };
   }
   const sync = runtimeRaw?.sync_project;
   if (sync && sync.project_id === "calibration" && sync.partner_kind === "npc" && sync.partner_id === "echo") {

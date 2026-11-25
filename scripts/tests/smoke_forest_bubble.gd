@@ -16,9 +16,11 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	assert(bubble.visible and bubble._label.text == "[b]plain[/b]" and bubble.mouse_filter == Control.MOUSE_FILTER_IGNORE)
-	assert(bubble.size.x == 300 and bubble.size.y >= 30 and bubble._label.size.y >= bubble._label.get_theme_font("font").get_height(22), "Bubble must give the text visible height")
+	assert(bubble._label.get_theme_font("font") == load("res://assets/fonts/old-newspaper-types-font/Oldnewspapertypes-449D.ttf"), "Bubble must use Old Newspaper")
+	assert(bubble.size.x < 300 and bubble.size.x >= bubble._label.get_theme_font("font").get_string_size(bubble._label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x + 16 and bubble.size.y >= 30 and bubble._label.size.y >= bubble._label.get_theme_font("font").get_height(22), "Bubble must fit the text with padding")
 	var original_y: float = bubble.position.y
 	var single_line_height: float = bubble.size.y
+	var original_width: float = bubble.size.x
 	var action := Button.new()
 	action.name = "DuelAction"
 	action.position.y = -240
@@ -32,16 +34,16 @@ func _run() -> void:
 	bubble.show_message(2, long_text, 2000, 12000, 4000)
 	await process_frame
 	await process_frame
-	assert(bubble._label.text == long_text and bubble.size.y > single_line_height and bubble._label.get_line_count() > 1, "Long messages must wrap and expand the bubble")
+	assert(bubble._label.text == long_text and bubble.size.x == 300 and bubble.size.y > single_line_height and bubble._label.get_line_count() > 1, "Long messages must wrap and expand the bubble")
 	assert(bubble.position.y + bubble.size.y < action.position.y, "Bubble must remain above player actions")
 	bubble.show_message(3, "W".repeat(120), 3000, 13000, 4000)
 	await process_frame
 	await process_frame
-	assert(bubble._label.get_line_count() > 1 and bubble._label.size.y >= mini(bubble._label.get_line_count(), 8) * bubble._label.get_theme_font("font").get_height(22), "Long words must also fit the wrapped lines")
+	assert(bubble._label.get_line_count() > 8 and bubble._label.size.y >= bubble._label.get_line_count() * bubble._label.get_theme_font("font").get_height(22), "All lines of long words must fit")
 	bubble.show_message(4, "new", 4000, 14000, 5000)
 	await process_frame
 	await process_frame
-	assert(bubble._label.text == "new" and bubble.size.y == single_line_height, "Bubble must shrink for a shorter message")
+	assert(bubble._label.text == "new" and bubble.size.x < original_width and bubble.size.y == single_line_height, "Bubble must shrink for a shorter message")
 	bubble.show_message(5, "expired", 5000, 15000, 15000)
 	assert(bubble._label.text == "new")
 	bubble._deadline_ticks = Time.get_ticks_msec()

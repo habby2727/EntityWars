@@ -682,10 +682,16 @@ func _unconfigured(title: String, tabs: Array) -> void:
 func _catalog(homunculi: bool) -> void:
 	var title := Label.new()
 	title.text = "VAT_CATALOG" if homunculi else "FORGE_CATALOG"
-	title.add_theme_font_size_override("font_size", 18 if homunculi else 14)
-	if not homunculi:
+	title.add_theme_font_size_override("font_size", 14)
+	var vat_header: HBoxContainer
+	if homunculi:
+		vat_header = HBoxContainer.new()
+		vat_header.add_theme_constant_override("separation", 20)
+		add_child(vat_header)
+		vat_header.add_child(title)
+	else:
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	add_child(title)
+		add_child(title)
 	var row := HBoxContainer.new()
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 14)
@@ -702,7 +708,7 @@ func _catalog(homunculi: bool) -> void:
 	list.name = "LocalizationCatalogItems"
 	list.set_meta("catalog_kind", "homunculus" if homunculi else "item")
 	list.custom_minimum_size = Vector2(220, 150)
-	list.add_theme_font_size_override("font_size", 19 if homunculi else 13)
+	list.add_theme_font_size_override("font_size", 12 if homunculi else 13)
 	var list_bg := StyleBoxFlat.new()
 	list_bg.bg_color = Color(0.02, 0.08, 0.08, 0.94)
 	list.add_theme_stylebox_override("panel", list_bg)
@@ -732,7 +738,7 @@ func _catalog(homunculi: bool) -> void:
 	var heading := Label.new()
 	heading.name = "LocalizationCatalogHeading"
 	heading.set_meta("localization_body_font", true)
-	heading.add_theme_font_size_override("font_size", 18 if homunculi else 14)
+	heading.add_theme_font_size_override("font_size", 12 if homunculi else 14)
 	if not homunculi:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.add_child(heading)
@@ -771,7 +777,7 @@ func _catalog(homunculi: bool) -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	stats_area.add_child(scroll)
 	var info := Label.new()
-	info.add_theme_font_size_override("font_size", 19 if homunculi else 12)
+	info.add_theme_font_size_override("font_size", 12)
 	if not homunculi:
 		_forge_info = info
 	else:
@@ -784,17 +790,18 @@ func _catalog(homunculi: bool) -> void:
 		scroll.add_child(text_column)
 		text_column.add_child(info)
 		_vat_synergies = Label.new()
-		_vat_synergies.add_theme_font_size_override("font_size", 15)
+		_vat_synergies.add_theme_font_size_override("font_size", 11)
 		_vat_synergies.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_vat_synergies.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		text_column.add_child(_vat_synergies)
 	else:
 		scroll.add_child(info)
-	var actions := HBoxContainer.new()
+	var actions: HBoxContainer
 	if not homunculi:
+		actions = HBoxContainer.new()
 		actions.alignment = BoxContainer.ALIGNMENT_CENTER
 		actions.add_theme_constant_override("separation", 10)
-	details.add_child(actions)
+		details.add_child(actions)
 	for label in ([] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
 		action.text = {"Upgrade Homunculus": "LAB_ACTION_UPGRADE_HOMUNCULUS", "Upgrade": "LAB_UPGRADE", "Reroll": "LAB_ACTION_REROLL"}[label]
@@ -813,31 +820,43 @@ func _catalog(homunculi: bool) -> void:
 	inventory.text = "LAB_OPEN_INVENTORY"
 	MenuArt.button(inventory)
 	inventory.pressed.connect(func(): SceneRouter.go_to_inventory("Homunculi" if homunculi else "Builds", true))
-	actions.add_child(inventory)
 	if homunculi:
+		inventory.add_theme_font_size_override("font_size", 12)
+		vat_header.add_child(inventory)
+		var status_row := HBoxContainer.new()
+		status_row.add_theme_constant_override("separation", 16)
+		details.add_child(status_row)
 		_vat_xp = Label.new()
-		_vat_xp.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		details.add_child(_vat_xp)
+		_vat_xp.add_theme_font_size_override("font_size", 11)
+		status_row.add_child(_vat_xp)
+		_vat_status = Label.new()
+		_vat_status.add_theme_font_size_override("font_size", 11)
+		_vat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_vat_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		status_row.add_child(_vat_status)
+		var mutation_row := HBoxContainer.new()
+		mutation_row.add_theme_constant_override("separation", 8)
+		details.add_child(mutation_row)
 		var mutation_heading := Label.new()
 		mutation_heading.text = "VAT_MUTATIONS"
-		details.add_child(mutation_heading)
-		var mutation_row := HBoxContainer.new()
-		details.add_child(mutation_row)
+		mutation_heading.add_theme_font_size_override("font_size", 11)
+		mutation_row.add_child(mutation_heading)
 		for mutation_id in ["catalyst", "vitality", "resonance"]:
 			var button := Button.new()
 			button.text = GameLocalization.catalog("mutation", mutation_id, "name", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("name", mutation_id)))
+			button.add_theme_font_size_override("font_size", 12)
 			button.tooltip_text = GameLocalization.catalog("mutation", mutation_id, "desc", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("description", "")))
 			MenuArt.button(button)
 			button.pressed.connect(_request_vat_mutation.bind(mutation_id))
 			mutation_row.add_child(button)
 			_vat_mutations.append(button)
-		_vat_status = Label.new()
-		_vat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		details.add_child(_vat_status)
+		details.move_child(status_row, details.get_child_count() - 1)
 		_vat_confirm = ConfirmationDialog.new()
 		_vat_confirm.title = "Confirm Homunculus Vat"
 		_vat_confirm.confirmed.connect(_send_vat_action)
 		add_child(_vat_confirm)
+	else:
+		actions.add_child(inventory)
 	if not homunculi:
 		var trait_actions := HBoxContainer.new()
 		trait_actions.alignment = BoxContainer.ALIGNMENT_CENTER

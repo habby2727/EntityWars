@@ -1,0 +1,124 @@
+{
+  "cards": [
+    {
+      "id": "neon",
+      "element": "mercury",
+      "cost": 2,
+      "hp": 150,
+      "damage": 20,
+      "defense": 4,
+      "speed": 110,
+      "range": 70,
+      "interval_ms": 600,
+      "role": "fast skirmisher"
+    },
+    {
+      "id": "luny",
+      "element": "aether",
+      "cost": 3,
+      "hp": 180,
+      "damage": 29,
+      "defense": 3,
+      "speed": 90,
+      "range": 150,
+      "interval_ms": 900,
+      "role": "ranged attacker"
+    },
+    {
+      "id": "mantillo",
+      "element": "mercury",
+      "cost": 3,
+      "hp": 240,
+      "damage": 27,
+      "defense": 9,
+      "speed": 75,
+      "range": 70,
+      "interval_ms": 1000,
+      "role": "durable fighter"
+    },
+    {
+      "id": "nebulynx",
+      "element": "aether",
+      "cost": 4,
+      "hp": 220,
+      "damage": 42,
+      "defense": 4,
+      "speed": 90,
+      "range": 175,
+      "interval_ms": 1000,
+      "role": "ranged striker"
+    },
+    {
+      "id": "venam",
+      "element": "vitriol",
+      "cost": 4,
+      "hp": 260,
+      "damage": 23,
+      "defense": 6,
+      "speed": 85,
+      "range": 95,
+      "interval_ms": 500,
+      "role": "rapid attacker"
+    },
+    {
+      "id": "cedix",
+      "element": "sulfur",
+      "cost": 4,
+      "hp": 160,
+      "damage": 64,
+      "defense": 2,
+      "speed": 100,
+      "range": 110,
+      "interval_ms": 1200,
+      "role": "fragile burst attacker"
+    },
+    {
+      "id": "flincho",
+      "element": "sodium",
+      "cost": 5,
+      "hp": 290,
+      "damage": 48,
+      "defense": 8,
+      "speed": 105,
+      "range": 95,
+      "interval_ms": 900,
+      "role": "mobile striker"
+    },
+    {
+      "id": "solcarp",
+      "element": "gold",
+      "cost": 5,
+      "hp": 270,
+      "damage": 65,
+      "defense": 5,
+      "speed": 75,
+      "range": 200,
+      "interval_ms": 1300,
+      "role": "long-range artillery"
+    },
+    {
+      "id": "hyrox",
+      "element": "gold",
+      "cost": 6,
+      "hp": 440,
+      "damage": 42,
+      "defense": 15,
+      "speed": 80,
+      "range": 75,
+      "interval_ms": 1100,
+      "role": "tank"
+    },
+    {
+      "id": "astralotl",
+      "element": "aether",
+      "cost": 6,
+      "hp": 340,
+      "damage": 70,
+      "defense": 8,
+      "speed": 85,
+      "range": 120,
+      "interval_ms": 1100,
+      "role": "heavy attacker"
+    }
+  ]
+}

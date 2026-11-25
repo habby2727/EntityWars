@@ -617,6 +617,7 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	var title := Label.new()
 	title.name = "EntryTitle"
 	title.set_meta("localization_body_font", true)
+	title.add_theme_font_size_override("font_size", 11)
 	title.text = _extract_name(entry)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -626,7 +627,7 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	if entry is Dictionary and entry.get("kind") == "build":
 		var item_level := Label.new()
 		item_level.name = "ItemLevel"
-		item_level.add_theme_font_size_override("font_size", 12)
+		item_level.add_theme_font_size_override("font_size", 9)
 		item_level.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		item_level.text = tr("INVENTORY_ROW_LEVEL") % int(_item_progress.get(str(entry.get("id", "")), {}).get("level", 0)) if _item_progress_known else tr("INVENTORY_ROW_UNAVAILABLE")
 		text_column.add_child(item_level)
@@ -634,14 +635,14 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 		var hom_status := _hom_status(entry)
 		var subtitle := Label.new()
 		subtitle.text = tr("HOM_STATUS_" + hom_status.to_upper())
-		subtitle.add_theme_font_size_override("font_size", 12)
+		subtitle.add_theme_font_size_override("font_size", 9)
 		text_column.add_child(subtitle)
 	if entry is Dictionary and entry.get("kind") == "spell":
 		var status := str(entry.get("spell_status", "Unknown"))
 		var subtitle := Label.new()
 		subtitle.name = "SpellStatus"
 		subtitle.text = "%s  |  %s" % [SpellView.affinity(entry), SpellView.state_label(status)]
-		subtitle.add_theme_font_size_override("font_size", 12)
+		subtitle.add_theme_font_size_override("font_size", 9)
 		subtitle.modulate = Color(0.73, 0.79, 0.76)
 		subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		text_column.add_child(subtitle)
