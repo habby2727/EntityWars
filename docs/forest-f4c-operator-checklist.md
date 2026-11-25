@@ -1,6 +1,6 @@
 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â»ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¿# Forest multiplayer: operator checklist
 
-Keep `FOREST_WS_ENABLED=0` until a separate activation decision. The default minimum build remains 5509; do not change it without a release plan.
+Keep `FOREST_WS_ENABLED=0` until a separate activation decision. The configured minimum client build is 5510; change it only as part of a release plan.
 
 1. Run the Forest and global-chat backend tests, backend build, Godot headless import and Forest smoke locally. Run `cd backend; bun run src/tests/forest_load.ts`, then run the pending authenticated load and fault tests below and resolve failures.
 2. Export the current release client and verify compatibility with the deployed server and protocol. Verify Android and network QA before recommending public activation.

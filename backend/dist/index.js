@@ -3358,8 +3358,8 @@ var require_lodash = __commonJS((exports, module) => {
     }
     return result;
   }
-  function eq(value, other) {
-    return value === other || value !== value && other !== other;
+  function eq(value, other2) {
+    return value === other2 || value !== value && other2 !== other2;
   }
   function isArguments(value) {
     return isArrayLikeObject(value) && hasOwnProperty.call(value, "callee") && (!propertyIsEnumerable.call(value, "callee") || objectToString.call(value) == argsTag);
@@ -4491,7 +4491,7 @@ var require_utils2 = __commonJS((exports) => {
     return array[from + Math.floor(Math.random() * (length - from))];
   }
   exports.sample = sample;
-  function shuffle(array) {
+  function shuffle2(array) {
     let counter = array.length;
     while (counter > 0) {
       const index = Math.floor(Math.random() * counter);
@@ -4500,7 +4500,7 @@ var require_utils2 = __commonJS((exports) => {
     }
     return array;
   }
-  exports.shuffle = shuffle;
+  exports.shuffle = shuffle2;
   exports.CONNECTION_CLOSED_ERROR_MSG = "Connection is closed.";
   function zipMap(keys, values) {
     const map = new Map;
@@ -6790,11 +6790,11 @@ var require_ClusterSubscriberGroup = __commonJS((exports) => {
         });
       }
     }
-    _slotsAreEqual(other) {
+    _slotsAreEqual(other2) {
       if (this.clusterSlots === undefined) {
         return false;
       } else {
-        return JSON.stringify(this.clusterSlots) === JSON.stringify(other);
+        return JSON.stringify(this.clusterSlots) === JSON.stringify(other2);
       }
     }
     hasUnhealthySubscribers() {
@@ -6928,9 +6928,9 @@ var require_cluster = __commonJS((exports) => {
             this.manuallyClosing = false;
             this.setStatus("connect");
             if (this.options.enableReadyCheck) {
-              this.readyCheck((err, fail4) => {
-                if (err || fail4) {
-                  debug("Ready check failed (%s). Reconnecting...", err || fail4);
+              this.readyCheck((err, fail9) => {
+                if (err || fail9) {
+                  debug("Ready check failed (%s). Reconnecting...", err || fail9);
                   if (this.status === "connect") {
                     this.disconnect(true);
                   }
@@ -9602,6 +9602,12 @@ var require_built3 = __commonJS((exports, module) => {
 
 // src/spectator_service.ts
 import { randomUUID as randomUUID2 } from "crypto";
+
+// src/woe/busy.ts
+var woeBusySql = (player, now) => `EXISTS (SELECT 1 FROM woe_members wm JOIN woe_rooms wr ON wr.room_id=wm.room_id WHERE wm.player_id=${player} AND (wr.status='STARTED' OR (wr.status='WAITING' AND wr.expires_at>${now})))`;
+function activeWoe(db, player, now) {
+  return !!db.query(`SELECT 1 WHERE ${woeBusySql("?", "?")}`).get(player, now);
+}
 
 // src/spectator_guard.ts
 var viewerNames;
@@ -15234,7 +15240,7 @@ function activePractice(db, player, now) {
   return !!db.query("SELECT 1 FROM practice_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now);
 }
 function otherCombat(db, player, now) {
-  return !!(db.query("SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1").get(player) || db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(player, now) || db.query("SELECT 1 FROM dungeon_runs WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE' AND heartbeat_at>?").get(player, now - 240000));
+  return !!(activeWoe(db, player, now) || db.query("SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1").get(player) || db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(player, now) || db.query("SELECT 1 FROM dungeon_runs WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id=? AND status='ACTIVE' AND expires_at>?").get(player, now) || db.query("SELECT 1 FROM expedition_runs WHERE player_id=? AND status='ACTIVE' AND heartbeat_at>?").get(player, now - 240000));
 }
 function createPracticeService(db, catalogs, secret, snapshot, reward, clock = Date.now) {
   if (secret.length < 32)
@@ -17390,6 +17396,7 @@ function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, comba
   };
   const row = (id) => db.query(`SELECT i.invite_id, i.challenger_id, a.display_name AS challenger_name, i.recipient_id, b.display_name AS recipient_name, i.originating_zone, i.status, i.created_at, i.updated_at, i.expires_at FROM forest_duel_invites i JOIN players a ON a.player_id=i.challenger_id JOIN players b ON b.player_id=i.recipient_id WHERE i.invite_id=?`).get(id);
   const busyPvp = (id, now) => !!db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>? UNION ALL SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1 LIMIT 1").get(id, now, id);
+  const busyWoe = (a, b, now) => activeWoe(db, a, now) || activeWoe(db, b, now);
   const reserved = (id) => !!db.query("SELECT 1 FROM forest_duel_reservations WHERE player_id=?").get(id);
   const mutate = (player, body, type, payload, run) => {
     if (!canServe())
@@ -17460,7 +17467,7 @@ function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, comba
         const zone = roomOf(player);
         if (!zone || roomOf(target) !== zone)
           return fail2(409, "FOREST_ROOM_MISMATCH");
-        if (reserved(player) || reserved(target) || busyPvp(player, now) || busyPvp(target, now))
+        if (busyWoe(player, target, now) || reserved(player) || reserved(target) || busyPvp(player, now) || busyPvp(target, now))
           return fail2(409, "PLAYER_BUSY");
         const id = crypto.randomUUID();
         db.query("INSERT INTO forest_duel_invites VALUES (?,?,?,?,'PENDING',?,?,?)").run(id, player, target, zone, now, now, now + PENDING_MS2);
@@ -17486,7 +17493,7 @@ function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, comba
             return fail2(404, "PLAYER_UNAVAILABLE");
           if (roomOf(player) !== invitation.originating_zone || roomOf(invitation.challenger_id) !== invitation.originating_zone)
             return fail2(409, "FOREST_ROOM_MISMATCH");
-          if (busyPvp(player, now) || busyPvp(invitation.challenger_id, now))
+          if (busyWoe(player, invitation.challenger_id, now) || busyPvp(player, now) || busyPvp(invitation.challenger_id, now))
             return fail2(409, "PLAYER_BUSY");
           db.query("UPDATE forest_duel_invites SET status='ACCEPTED', updated_at=?, expires_at=? WHERE invite_id=?").run(now, now + PREPARING_MS, body.invite_id);
         } else {
@@ -17512,6 +17519,8 @@ function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, comba
           const found = db.query("SELECT match_id FROM pvp_matches WHERE invite_id=?").get(body.invite_id);
           return { status: 200, data: { state: "STARTED", match_id: found.match_id } };
         }
+        if (busyWoe(invitation.challenger_id, invitation.recipient_id, now))
+          return fail2(409, "PLAYER_BUSY");
         if (activePractice(db, invitation.challenger_id, now) || activePractice(db, invitation.recipient_id, now))
           return fail2(409, "PLAYER_BUSY");
         if (invitation.status !== "ACCEPTED")
@@ -17561,6 +17570,1693 @@ function createForestDuels(db, roomOf, canServe, clock = Date.now, combat, comba
     }
   };
 }
+// ../data/static/woe_cards.json
+var woe_cards_default = {
+  cards: [
+    {
+      id: "neon",
+      element: "mercury",
+      cost: 2,
+      hp: 150,
+      damage: 33,
+      defense: 4,
+      speed: 110,
+      range: 70,
+      role: "fast skirmisher"
+    },
+    {
+      id: "luny",
+      element: "aether",
+      cost: 3,
+      hp: 180,
+      damage: 32,
+      defense: 3,
+      speed: 90,
+      range: 150,
+      role: "ranged attacker"
+    },
+    {
+      id: "mantillo",
+      element: "mercury",
+      cost: 3,
+      hp: 240,
+      damage: 27,
+      defense: 9,
+      speed: 75,
+      range: 70,
+      role: "durable fighter"
+    },
+    {
+      id: "nebulynx",
+      element: "aether",
+      cost: 4,
+      hp: 220,
+      damage: 42,
+      defense: 4,
+      speed: 90,
+      range: 175,
+      role: "ranged striker"
+    },
+    {
+      id: "venam",
+      element: "vitriol",
+      cost: 4,
+      hp: 260,
+      damage: 46,
+      defense: 6,
+      speed: 85,
+      range: 95,
+      role: "close-range fighter"
+    },
+    {
+      id: "cedix",
+      element: "sulfur",
+      cost: 4,
+      hp: 160,
+      damage: 53,
+      defense: 2,
+      speed: 100,
+      range: 110,
+      role: "fragile burst attacker"
+    },
+    {
+      id: "flincho",
+      element: "sodium",
+      cost: 5,
+      hp: 290,
+      damage: 53,
+      defense: 8,
+      speed: 105,
+      range: 95,
+      role: "mobile striker"
+    },
+    {
+      id: "solcarp",
+      element: "gold",
+      cost: 5,
+      hp: 270,
+      damage: 50,
+      defense: 5,
+      speed: 75,
+      range: 200,
+      role: "long-range artillery"
+    },
+    {
+      id: "hyrox",
+      element: "gold",
+      cost: 6,
+      hp: 440,
+      damage: 38,
+      defense: 15,
+      speed: 80,
+      range: 75,
+      role: "tank"
+    },
+    {
+      id: "astralotl",
+      element: "aether",
+      cost: 6,
+      hp: 340,
+      damage: 64,
+      defense: 8,
+      speed: 85,
+      range: 120,
+      role: "heavy attacker"
+    }
+  ]
+};
+// ../data/static/woe_arena.json
+var woe_arena_default = {
+  width: 1920,
+  height: 1080,
+  laboratory_hp: 1000,
+  tick_ms: 100,
+  duration_ticks: 1800,
+  unit_cap: 100,
+  spawns: {
+    blue: {
+      left: {
+        x: 410,
+        y: 800
+      },
+      right: {
+        x: 1510,
+        y: 800
+      }
+    },
+    red: {
+      left: {
+        x: 410,
+        y: 280
+      },
+      right: {
+        x: 1510,
+        y: 280
+      }
+    }
+  },
+  approaches: {
+    blue: {
+      left: [
+        {
+          x: 430,
+          y: 730
+        },
+        {
+          x: 530,
+          y: 670
+        },
+        {
+          x: 680,
+          y: 610
+        },
+        {
+          x: 800,
+          y: 550
+        }
+      ],
+      right: [
+        {
+          x: 1490,
+          y: 730
+        },
+        {
+          x: 1390,
+          y: 670
+        },
+        {
+          x: 1240,
+          y: 610
+        },
+        {
+          x: 1120,
+          y: 550
+        }
+      ]
+    },
+    red: {
+      left: [
+        {
+          x: 430,
+          y: 350
+        },
+        {
+          x: 530,
+          y: 410
+        },
+        {
+          x: 680,
+          y: 470
+        },
+        {
+          x: 800,
+          y: 530
+        }
+      ],
+      right: [
+        {
+          x: 1490,
+          y: 350
+        },
+        {
+          x: 1390,
+          y: 410
+        },
+        {
+          x: 1240,
+          y: 470
+        },
+        {
+          x: 1120,
+          y: 530
+        }
+      ]
+    }
+  },
+  plaza: {
+    x: 960,
+    y: 540
+  },
+  laboratories: {
+    blue: {
+      left: {
+        x: 410,
+        y: 860
+      },
+      right: {
+        x: 1510,
+        y: 860
+      }
+    },
+    red: {
+      left: {
+        x: 410,
+        y: 220
+      },
+      right: {
+        x: 1510,
+        y: 220
+      }
+    }
+  }
+};
+
+// src/woe/catalog.ts
+var ATTACK_INTERVAL_MS = 1000;
+var expected2 = { neon: 2, luny: 3, mantillo: 3, nebulynx: 4, venam: 4, cedix: 4, flincho: 5, solcarp: 5, hyrox: 6, astralotl: 6 };
+var cards = Object.freeze(woe_cards_default.cards.map((raw) => {
+  const original = expedition_homunculi_default.homunculi.find((h) => h.id === raw.id);
+  if (!original || original.type !== raw.element || expected2[raw.id] !== raw.cost || !raw.role || [raw.hp, raw.damage, raw.speed, raw.range].some((n) => !Number.isSafeInteger(n) || n <= 0) || !Number.isSafeInteger(raw.defense) || raw.defense < 0)
+    throw new Error("INVALID_WOE_CARD");
+  return Object.freeze(raw);
+}));
+if (cards.length !== 10 || new Set(cards.map((c) => c.id)).size !== 10)
+  throw new Error("INVALID_WOE_CATALOG");
+var cardById = Object.freeze(Object.fromEntries(cards.map((c) => [c.id, c])));
+var arena = woe_arena_default;
+function elementalMultiplier(attacker, defender) {
+  const relation = types_default.effectiveness[attacker]?.[defender];
+  if (![0.5, 1, 2].includes(relation))
+    throw new Error("INVALID_WOE_ELEMENT");
+  return relation === 2 ? 1.18 : relation === 0.5 ? 0.84 : 1;
+}
+function attackDamage(damage, defense, multiplier = 1) {
+  if (![damage, defense, multiplier].every(Number.isFinite) || damage < 0 || defense < 0 || ![0.84, 1, 1.18].includes(multiplier))
+    throw new Error("INVALID_WOE_DAMAGE");
+  return Math.max(0, Math.min(1e4, Math.round(Math.max(0, damage - defense) * multiplier)));
+}
+
+// src/woe/engine.ts
+var teams = ["blue", "red"];
+var lanes = ["left", "right"];
+var enemy = (team) => team === "blue" ? "red" : "blue";
+var labId = (team, lane) => `${team}:${lane}`;
+var copy = (value) => structuredClone(value);
+var dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+function nearestTarget(unit, units, range) {
+  return units.filter((other) => other.team !== unit.team && other.hp > 0 && dist2(unit.position, other.position) <= range ** 2).sort((a, b) => dist2(unit.position, a.position) - dist2(unit.position, b.position) || a.id - b.id)[0];
+}
+function shuffle(seed) {
+  let n = 2166136261;
+  for (let i = 0;i < seed.length; i++)
+    n = Math.imul(n ^ seed.charCodeAt(i), 16777619) >>> 0;
+  if (!n)
+    n = 2654435769;
+  const deck = cards.map((c) => c.id);
+  for (let i = deck.length - 1;i > 0; i--) {
+    n ^= n << 13;
+    n ^= n >>> 17;
+    n ^= n << 5;
+    n >>>= 0;
+    const j = n % (i + 1);
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  if (!deck.slice(0, 3).some((id) => cardById[id].cost <= 3)) {
+    const j = deck.findIndex((id) => cardById[id].cost <= 3);
+    [deck[0], deck[j]] = [deck[j], deck[0]];
+  }
+  return deck;
+}
+function initializeMatch(mode, seed, controllerIds) {
+  if (mode !== "1v1" && mode !== "2v2" || typeof seed !== "string" || !Array.isArray(controllerIds) || controllerIds.length !== (mode === "1v1" ? 2 : 4) || controllerIds.some((id) => typeof id !== "string" || !id || id.length > 128) || new Set(controllerIds).size !== controllerIds.length)
+    throw new Error("INVALID_WOE_MATCH");
+  const perTeam = controllerIds.length / 2;
+  return { kind: "woe", mode, tick: 0, controllers: controllerIds.map((id, i) => {
+    const deck = shuffle(`${seed.length}:${seed}:${id.length}:${id}`);
+    return { id, team: i < perTeam ? "blue" : "red", zealTenths: 50, slots: deck.slice(0, 3), queue: deck.slice(3), actionIds: [] };
+  }), laboratories: teams.flatMap((team) => lanes.map((lane) => ({ id: labId(team, lane), team, lane, hp: arena.laboratory_hp, maxHp: arena.laboratory_hp, position: copy(arena.laboratories[team][lane]) }))), units: [], nextUnitId: 1, events: [], result: null };
+}
+function formationPoint(point, id, endpoint = false) {
+  const order = [0, -1, 1, -2, 2], n = (id - 1) % 100, group = Math.floor(n / 25), slot = n % 25;
+  return { x: point.x + order[slot % 5] * (endpoint ? 10 : 12) + (endpoint ? [0, 1, -1, 2][group] : [0, 3, -3, 6][group]), y: point.y + (endpoint ? 0 : order[Math.floor(slot / 5)] * 8 + [0, 2, -2, 4][group]) };
+}
+function route(team, from, target, formationId) {
+  const points = [...copy(arena.approaches[team][from]), copy(arena.plaza), ...copy(arena.approaches[enemy(team)][target]).reverse(), copy(arena.spawns[enemy(team)][target])];
+  return formationId === undefined ? points : points.map((p, i) => formationPoint(p, formationId, i === points.length - 1));
+}
+function redirectRoute(unit, target) {
+  let approach = [copy(arena.plaza), ...copy(arena.approaches[enemy(unit.team)][target]).reverse(), copy(arena.spawns[enemy(unit.team)][target])];
+  if (unit.formation)
+    approach = approach.map((p, i) => formationPoint(p, unit.id, i === approach.length - 1));
+  const plazaIndex = arena.approaches[unit.team][unit.lane].length;
+  if (unit.waypoint <= plazaIndex)
+    return [...copy(unit.route.slice(unit.waypoint, plazaIndex + 1)), ...approach.slice(1)];
+  const y = unit.position.y;
+  const direction = enemy(unit.team) === "red" ? -1 : 1;
+  for (let i = 1;i < approach.length; i++) {
+    const a = approach[i - 1], b = approach[i];
+    if ((y - a.y) * direction >= 0 && (b.y - y) * direction >= 0) {
+      const t = (y - a.y) / (b.y - a.y);
+      const crossing = { x: a.x + (b.x - a.x) * t, y };
+      return [crossing, ...approach.slice(i)];
+    }
+  }
+  return [copy(approach[approach.length - 1])];
+}
+function allowedDeploymentLanes(state, controllerId) {
+  const player = state.controllers.find((p) => p.id === controllerId);
+  if (!player)
+    return [];
+  const teamControllers = state.controllers.filter((p) => p.team === player.team);
+  const permitted = state.kind === "woe" && state.mode === "2v2" ? [lanes[teamControllers.findIndex((p) => p.id === controllerId)]].filter((lane) => !!lane) : lanes;
+  return permitted.filter((lane) => state.laboratories.some((l) => l.team === player.team && l.lane === lane && l.hp > 0));
+}
+function validateDeployment(state, command) {
+  if (state.result)
+    return "MATCH_FINISHED";
+  if (!command || typeof command.actionId !== "string" || !command.actionId.trim() || command.actionId.length > 128)
+    return "INVALID_ACTION_ID";
+  const player = state.controllers.find((p) => p.id === command.controllerId);
+  if (!player)
+    return "INVALID_CONTROLLER";
+  if (player.actionIds.includes(command.actionId))
+    return "DUPLICATE_ACTION_ID";
+  if (!lanes.includes(command.lane))
+    return "INVALID_LANE";
+  if (state.kind === "woe" && state.mode === "2v2" && ![lanes[state.controllers.filter((p) => p.team === player.team).findIndex((p) => p.id === player.id)]].includes(command.lane))
+    return "LANE_NOT_OWNED";
+  if (!Number.isInteger(command.slot) || command.slot < 0 || command.slot >= 3 || player.slots[command.slot] !== command.cardId || !cardById[command.cardId])
+    return "INVALID_CARD";
+  if (!state.laboratories.find((l) => l.team === player.team && l.lane === command.lane && l.hp > 0))
+    return "LANE_DESTROYED";
+  if (player.zealTenths < cardById[command.cardId].cost * 10)
+    return "INSUFFICIENT_ZEAL";
+  if (state.units.length >= arena.unit_cap)
+    return "UNIT_CAP";
+  return null;
+}
+function applyDeployment(state, command) {
+  const reason = validateDeployment(state, command);
+  if (reason)
+    return { accepted: false, state, reason };
+  const next = copy(state);
+  const player = next.controllers.find((p) => p.id === command.controllerId);
+  player.zealTenths -= cardById[command.cardId].cost * 10;
+  player.actionIds.push(command.actionId);
+  player.slots[command.slot] = player.queue.shift();
+  player.queue.push(command.cardId);
+  let targetLane = command.lane;
+  if (!next.laboratories.find((l) => l.team === enemy(player.team) && l.lane === targetLane && l.hp > 0))
+    targetLane = targetLane === "left" ? "right" : "left";
+  const id = next.nextUnitId++;
+  next.units.push({ id, controllerId: player.id, team: player.team, lane: command.lane, cardId: command.cardId, hp: cardById[command.cardId].hp, position: formationPoint(arena.spawns[player.team][command.lane], id), route: route(player.team, command.lane, targetLane, id), waypoint: 0, targetLane, cooldown: 0, formation: true });
+  return { accepted: true, state: next };
+}
+function move(unit, amount) {
+  while (amount > 0 && unit.waypoint < unit.route.length) {
+    const point = unit.route[unit.waypoint];
+    const dx = point.x - unit.position.x, dy = point.y - unit.position.y;
+    const d = Math.hypot(dx, dy);
+    if (d <= amount) {
+      unit.position = { ...point };
+      unit.waypoint++;
+      amount -= d;
+    } else {
+      unit.position.x += dx / d * amount;
+      unit.position.y += dy / d * amount;
+      break;
+    }
+  }
+}
+function finish(state, team) {
+  state.result = { winner: team, reason: "laboratories" };
+}
+function advanceTick(state) {
+  if (state.result)
+    return state;
+  const next = copy(state);
+  next.events = [];
+  next.tick++;
+  for (const player of next.controllers)
+    player.zealTenths = Math.min(100, player.zealTenths + 1);
+  for (const unit of next.units) {
+    if (unit.hp <= 0 || next.result)
+      continue;
+    if (unit.cooldown > 0)
+      unit.cooldown--;
+    const card = cardById[unit.cardId];
+    let lab = next.laboratories.find((l) => l.team === enemy(unit.team) && l.lane === unit.targetLane);
+    if (lab.hp <= 0) {
+      unit.targetLane = unit.targetLane === "left" ? "right" : "left";
+      lab = next.laboratories.find((l) => l.team === enemy(unit.team) && l.lane === unit.targetLane);
+      unit.route = redirectRoute(unit, unit.targetLane);
+      unit.waypoint = 0;
+    }
+    const target = nearestTarget(unit, next.units, card.range);
+    if (target || lab.hp > 0 && dist2(unit.position, lab.position) <= card.range ** 2) {
+      if (unit.cooldown === 0) {
+        const damage = target ? attackDamage(card.damage, cardById[target.cardId].defense, elementalMultiplier(card.element, cardById[target.cardId].element)) : attackDamage(card.damage, 0);
+        const victim = target ?? lab;
+        const dealt = Math.min(victim.hp, damage);
+        victim.hp -= dealt;
+        next.events.push({ type: "attack", attacker: unit.id, target: victim.id, damage: dealt, tick: next.tick, team: unit.team, cardId: unit.cardId, position: copy(unit.position), targetPosition: copy(victim.position) });
+        unit.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
+        if (victim.hp === 0) {
+          next.events.push({ type: "death", attacker: unit.id, target: victim.id, tick: next.tick, team: unit.team, cardId: unit.cardId, position: copy(unit.position), targetPosition: copy(victim.position), victimCardId: target?.cardId ?? null, victimTeam: victim.team, victimPosition: copy(victim.position), targetKind: target ? "unit" : "laboratory" });
+          if (!target && next.laboratories.every((l) => l.team !== lab.team || l.hp === 0))
+            finish(next, unit.team);
+        }
+      }
+    } else
+      move(unit, card.speed * arena.tick_ms / 1000);
+  }
+  next.units = next.units.filter((u) => u.hp > 0);
+  if (!next.result && next.tick >= arena.duration_ticks) {
+    const score = (team) => {
+      const labs = next.laboratories.filter((l) => l.team === team);
+      return [labs.filter((l) => l.hp > 0).length, labs.reduce((sum, l) => sum + l.hp / l.maxHp, 0)];
+    };
+    const a = score("blue"), b = score("red");
+    const cmp = a[0] - b[0] || a[1] - b[1];
+    next.result = { winner: cmp > 0 ? "blue" : cmp < 0 ? "red" : null, reason: "timeout" };
+  }
+  return next;
+}
+function getPublicSnapshot(state, viewerId) {
+  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map((u) => ({ id: u.id, controllerId: u.controllerId, team: u.team, lane: u.lane, cardId: u.cardId, hp: u.hp, maxHp: cardById[u.cardId].hp, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), laboratories: state.laboratories, players: state.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: p.zealTenths / 10, slots: p.slots, allowedDeploymentLanes: allowedDeploymentLanes(state, p.id) } : {} })), events: state.events, result: state.result });
+}
+
+// src/woe/lobby.ts
+var WAIT_MS = 30 * 60000;
+var START_MS = 15 * 60000;
+var RETENTION2 = 7 * 86400000;
+var MAX_ROOMS = 1000;
+var seats = ["blue:left", "blue:right", "red:left", "red:right"];
+var valid = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
+var fail3 = (status, error2) => ({ status, data: { error: error2 } });
+function createWoeLobby(db, roomOf, canServe, clock = Date.now) {
+  const clean = (now) => {
+    db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE status='WAITING' AND expires_at<=?").run(now, now);
+    db.query("DELETE FROM woe_members WHERE room_id IN (SELECT room_id FROM woe_rooms WHERE status='EXPIRED')").run();
+    db.query("DELETE FROM woe_actions WHERE created_at<=?").run(now - RETENTION2);
+    db.query("DELETE FROM woe_rooms WHERE status='EXPIRED' AND updated_at<=?").run(now - RETENTION2);
+  };
+  const room = (id) => db.query("SELECT * FROM woe_rooms WHERE room_id=? AND room_id NOT IN (SELECT room_id FROM core_defense_rooms)").get(id);
+  const members = (id) => db.query("SELECT m.player_id,m.seat,m.joined_at,p.display_name FROM woe_members m LEFT JOIN players p ON p.player_id=m.player_id WHERE m.room_id=? ORDER BY m.joined_at,m.player_id").all(id);
+  const busy = (id, now) => !!(db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>? UNION ALL SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1 LIMIT 1").get(id, now, id) || db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(id, now) || activePractice(db, id, now));
+  const view = (r, player) => ({ room_id: r.room_id, join_code: r.join_code, mode: r.mode, host_id: r.host_id, host_name: members(r.room_id).find((m) => m.player_id === r.host_id)?.display_name ?? "", status: r.status, revision: r.revision, expires_at: r.expires_at, members: members(r.room_id).map(({ player_id, seat, display_name }) => ({ player_id, seat, display_name })), ...r.status === "STARTED" ? { match_id: r.match_id, controllers: JSON.parse(r.mapping_json), snapshot: getPublicSnapshot(JSON.parse(db.query("SELECT state_json FROM woe_matches WHERE match_id=? AND room_id=?").get(r.match_id, r.room_id).state_json), player) } : {} });
+  const read = (fn) => {
+    if (!canServe())
+      return fail3(503, "FOREST_WOE_UNAVAILABLE");
+    return db.transaction(() => {
+      if (!canServe())
+        return fail3(503, "FOREST_WOE_UNAVAILABLE");
+      const now = clock();
+      clean(now);
+      return fn(now);
+    }).immediate();
+  };
+  const mutate = (player, body, type, keys, fn) => {
+    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !["client_action_id", ...keys].includes(k)))
+      return fail3(400, "INVALID_REQUEST");
+    if (!valid(body.client_action_id))
+      return fail3(400, "INVALID_ACTION_ID");
+    const payload = JSON.stringify(keys.map((k) => [k, Object.hasOwn(body, k), body[k]]));
+    return read((now) => {
+      const old = db.query("SELECT * FROM woe_actions WHERE player_id=? AND client_action_id=?").get(player, body.client_action_id);
+      if (old)
+        return old.action_type === type && old.payload_json === payload ? { status: old.status_code, data: JSON.parse(old.result_json) } : fail3(409, "ACTION_CONFLICT");
+      if (db.query("SELECT count(*) n FROM woe_actions WHERE player_id=?").get(player).n >= 500)
+        return fail3(429, "ACTION_LIMIT");
+      const result = fn(now);
+      db.query("INSERT INTO woe_actions VALUES (?,?,?,?,?,?,?)").run(player, body.client_action_id, type, payload, result.status, JSON.stringify(result.data), now);
+      return result;
+    });
+  };
+  const memberRoom = (player, id) => db.query("SELECT r.* FROM woe_rooms r JOIN woe_members m ON m.room_id=r.room_id WHERE r.room_id=? AND m.player_id=? AND r.room_id NOT IN (SELECT room_id FROM core_defense_rooms)").get(id, player);
+  const touch = (id, now) => db.query("UPDATE woe_rooms SET revision=revision+1,updated_at=?,expires_at=? WHERE room_id=?").run(now, now + WAIT_MS, id);
+  const joinRoom = (player, roomId, now) => {
+    if (!valid(roomId))
+      return fail3(400, "INVALID_REQUEST");
+    const r = db.query("SELECT * FROM woe_rooms WHERE (room_id=? OR join_code=?) AND room_id NOT IN (SELECT room_id FROM core_defense_rooms)").get(roomId, roomId.toUpperCase());
+    if (!r || r.status !== "WAITING" || r.expires_at <= now)
+      return fail3(404, "ROOM_UNAVAILABLE");
+    const existing = db.query("SELECT room_id FROM woe_members WHERE player_id=?").get(player);
+    if (existing?.room_id === r.room_id)
+      return { status: 200, data: view(r, player) };
+    if (roomOf(player) !== "duel_clearing")
+      return fail3(409, "FOREST_PRESENCE_REQUIRED");
+    if (existing || busy(player, now))
+      return fail3(409, "PLAYER_BUSY");
+    if (members(r.room_id).length >= (r.mode === "1v1" ? 2 : 4))
+      return fail3(409, "ROOM_FULL");
+    db.query("INSERT INTO woe_members VALUES (?,?,NULL,?)").run(player, r.room_id, now);
+    touch(r.room_id, now);
+    return { status: 200, data: view(room(r.room_id), player) };
+  };
+  return {
+    list: () => read(() => ({ status: 200, data: { rooms: db.query("SELECT r.room_id,r.join_code,r.mode,r.host_id,(SELECT display_name FROM players WHERE player_id=r.host_id) AS host_name,r.revision,r.expires_at,count(m.player_id) AS member_count FROM woe_rooms r JOIN woe_members m ON m.room_id=r.room_id WHERE r.status='WAITING' AND r.room_id NOT IN (SELECT room_id FROM core_defense_rooms) GROUP BY r.room_id HAVING count(m.player_id)<CASE r.mode WHEN '1v1' THEN 2 ELSE 4 END ORDER BY r.created_at,r.room_id LIMIT 100").all() } })),
+    state: (player, id) => !valid(id) ? fail3(400, "INVALID_REQUEST") : read(() => {
+      const r = memberRoom(player, id);
+      return r ? { status: 200, data: view(r, player) } : fail3(404, "ROOM_UNAVAILABLE");
+    }),
+    create: (player, b) => mutate(player, b, "create", ["mode"], (now) => {
+      if (b.mode !== "1v1" && b.mode !== "2v2")
+        return fail3(400, "INVALID_REQUEST");
+      if (roomOf(player) !== "duel_clearing")
+        return fail3(409, "FOREST_PRESENCE_REQUIRED");
+      if (busy(player, now) || db.query("SELECT 1 FROM woe_members WHERE player_id=?").get(player))
+        return fail3(409, "PLAYER_BUSY");
+      if (db.query("SELECT count(*) n FROM woe_rooms WHERE status IN ('WAITING','STARTED')").get().n >= MAX_ROOMS)
+        return fail3(429, "ROOM_LIMIT");
+      const id = crypto.randomUUID(), code = crypto.randomUUID().replaceAll("-", "").toUpperCase();
+      db.query("INSERT INTO woe_rooms (room_id,join_code,mode,host_id,status,revision,created_at,updated_at,expires_at) VALUES (?,?,?,?,'WAITING',1,?,?,?)").run(id, code, b.mode, player, now, now, now + WAIT_MS);
+      db.query("INSERT INTO woe_members VALUES (?,?,NULL,?)").run(player, id, now);
+      return { status: 200, data: view(room(id), player) };
+    }),
+    join: (player, b) => mutate(player, b, "join", ["room_id_or_code"], (now) => joinRoom(player, b.room_id_or_code, now)),
+    joinFromInvitation: joinRoom,
+    seat: (player, b) => mutate(player, b, "seat", ["room_id", "seat", "expected_revision"], (now) => {
+      if (!valid(b.room_id) || !seats.includes(b.seat) || !Number.isSafeInteger(b.expected_revision))
+        return fail3(400, "INVALID_REQUEST");
+      const r = memberRoom(player, b.room_id);
+      if (!r)
+        return fail3(404, "ROOM_UNAVAILABLE");
+      if (r.status !== "WAITING")
+        return fail3(409, "ROOM_NOT_WAITING");
+      if (r.revision !== b.expected_revision)
+        return fail3(409, "REVISION_CONFLICT");
+      const occupied = members(r.room_id).some((m) => m.player_id !== player && m.seat && (r.mode === "1v1" ? m.seat.split(":")[0] === b.seat.split(":")[0] : m.seat === b.seat));
+      if (occupied)
+        return fail3(409, "SEAT_TAKEN");
+      db.query("UPDATE woe_members SET seat=? WHERE player_id=?").run(b.seat, player);
+      touch(r.room_id, now);
+      return { status: 200, data: view(room(r.room_id), player) };
+    }),
+    leave: (player, b) => mutate(player, b, "leave", ["room_id"], (now) => {
+      if (!valid(b.room_id))
+        return fail3(400, "INVALID_REQUEST");
+      const r = memberRoom(player, b.room_id);
+      if (!r)
+        return fail3(404, "ROOM_UNAVAILABLE");
+      if (r.status === "STARTED")
+        return { status: 200, data: { left: true, match_id: r.match_id } };
+      db.query("DELETE FROM woe_members WHERE player_id=?").run(player);
+      const remaining = members(r.room_id);
+      if (!remaining.length || r.status === "STARTED") {
+        db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=?").run(now, r.room_id);
+        db.query("DELETE FROM woe_members WHERE room_id=?").run(r.room_id);
+      } else {
+        db.query("UPDATE woe_rooms SET host_id=? WHERE room_id=?").run(r.host_id === player ? remaining[0].player_id : r.host_id, r.room_id);
+        touch(r.room_id, now);
+      }
+      return { status: 200, data: { left: true } };
+    }),
+    start: (player, b) => mutate(player, b, "start", ["room_id", "fill_bots", "expected_revision"], (now) => {
+      if (!valid(b.room_id) || typeof b.fill_bots !== "boolean" || !Number.isSafeInteger(b.expected_revision))
+        return fail3(400, "INVALID_REQUEST");
+      const r = memberRoom(player, b.room_id);
+      if (!r)
+        return fail3(404, "ROOM_UNAVAILABLE");
+      if (r.host_id !== player)
+        return fail3(403, "HOST_REQUIRED");
+      if (r.status !== "WAITING")
+        return fail3(409, "ROOM_NOT_WAITING");
+      if (r.revision !== b.expected_revision)
+        return fail3(409, "REVISION_CONFLICT");
+      const ms = members(r.room_id);
+      if (ms.some((m) => !m.seat))
+        return fail3(409, "SEAT_REQUIRED");
+      if (ms.some((m) => busy(m.player_id, now)))
+        return fail3(409, "PLAYER_BUSY");
+      const positions = r.mode === "1v1" ? ["blue", "red"] : seats;
+      const mapping = positions.map((pos) => {
+        const m = ms.find((x) => r.mode === "1v1" ? x.seat.split(":")[0] === pos : x.seat === pos);
+        return { seat: pos, controller_id: m?.player_id ?? `woe-bot:${r.room_id}:${pos}`, bot: !m };
+      });
+      if (!b.fill_bots && mapping.some((x) => x.bot))
+        return fail3(409, "ROOM_NOT_FULL");
+      const ids = mapping.map((x) => x.controller_id);
+      if (ids.some((id, i) => mapping[i].bot && !!db.query("SELECT 1 FROM players WHERE player_id=?").get(id)))
+        return fail3(409, "BOT_ID_CONFLICT");
+      const limit = Math.max(1, Math.min(256, Number(Bun.env.FOREST_WOE_MAX_MATCHES) || 32));
+      if (db.query("SELECT count(*) n FROM woe_matches WHERE status='RUNNING'").get().n >= limit)
+        return fail3(429, "MATCH_LIMIT");
+      const match = initializeMatch(r.mode, crypto.randomUUID() + crypto.randomUUID(), ids), matchId = crypto.randomUUID();
+      db.query("INSERT INTO woe_matches(match_id,room_id,status,state_json,created_at,updated_at) VALUES (?,?,'RUNNING',?,?,?)").run(matchId, r.room_id, JSON.stringify(match), now, now);
+      for (const m of mapping)
+        db.query("INSERT INTO woe_match_participants(match_id,controller_id,team,human) VALUES (?,?,?,?)").run(matchId, m.controller_id, m.seat.startsWith("blue") ? "blue" : "red", m.bot ? 0 : 1);
+      db.query("UPDATE woe_rooms SET status='STARTED',revision=revision+1,updated_at=?,expires_at=?,match_id=?,match_json=NULL,mapping_json=? WHERE room_id=?").run(now, now + START_MS, matchId, JSON.stringify(mapping), r.room_id);
+      return { status: 200, data: view(room(r.room_id), player) };
+    })
+  };
+}
+
+// src/social/minigame_invitations.ts
+var fail4 = (status, error2) => ({ status, data: { error: error2 } });
+var valid2 = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
+var WINDOW = 600000;
+var FUTURE = 60000;
+var RETENTION3 = 7 * 86400000;
+var LIMIT = 2048;
+function createMinigameInvitations(db, options) {
+  const clock = options.clock ?? Date.now;
+  const friends = (a, b) => {
+    const [low, high] = [a, b].sort();
+    return !!db.query("SELECT 1 FROM friendships WHERE player_low=? AND player_high=?").get(low, high);
+  };
+  const busy = (p, now) => activePractice(db, p, now) || otherCombat(db, p, now);
+  const clearStaleMembership = (p, now) => {
+    const stale = db.query("SELECT r.room_id,r.status FROM woe_rooms r JOIN woe_members m ON m.room_id=r.room_id WHERE m.player_id=? AND (r.status='EXPIRED' OR (r.status='WAITING' AND r.expires_at<=?))").get(p, now);
+    if (stale) {
+      if (stale.status === "WAITING")
+        db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=? AND status='WAITING'").run(now, stale.room_id);
+      db.query("DELETE FROM woe_members WHERE room_id=?").run(stale.room_id);
+    }
+  };
+  const clean = (now) => {
+    db.query("UPDATE minigame_invitations SET status='EXPIRED',updated_at=? WHERE invite_id IN (SELECT invite_id FROM minigame_invitations WHERE status='PENDING' AND expires_at<=? LIMIT 128)").run(now, now);
+    db.query("DELETE FROM minigame_invitations WHERE invite_id IN (SELECT invite_id FROM minigame_invitations WHERE status<>'PENDING' AND updated_at<=? LIMIT 128)").run(now - RETENTION3);
+    const orphans = db.query("SELECT player_id FROM minigame_invite_clock c WHERE NOT EXISTS (SELECT 1 FROM players p WHERE p.player_id=c.player_id) LIMIT 128").all();
+    for (const p of orphans)
+      db.query("DELETE FROM minigame_invite_clock WHERE player_id=?").run(p.player_id);
+    const expired = db.query("SELECT player_id,action_id FROM minigame_invite_actions WHERE expires_at<? LIMIT 128").all(now);
+    for (const a of expired) {
+      db.query("INSERT INTO minigame_invite_clock VALUES (?,?) ON CONFLICT(player_id) DO UPDATE SET watermark=max(watermark,excluded.watermark)").run(a.player_id, now);
+      db.query("DELETE FROM minigame_invite_actions WHERE player_id=? AND action_id=?").run(a.player_id, a.action_id);
+    }
+  };
+  const transact = (fn) => {
+    if (!options.canServe())
+      return fail4(503, "MINIGAMES_UNAVAILABLE");
+    return db.transaction(() => {
+      if (!options.canServe())
+        return fail4(503, "MINIGAMES_UNAVAILABLE");
+      const now = clock();
+      clean(now);
+      const result = fn(now);
+      if (!options.canServe())
+        throw Error("MINIGAMES_FENCED");
+      return result;
+    }).immediate();
+  };
+  const room = (id, kind, now) => db.query("SELECT r.*,c.mode AS cd_mode,(SELECT count(*) FROM woe_members m WHERE m.room_id=r.room_id) AS member_count FROM woe_rooms r LEFT JOIN core_defense_rooms c ON c.room_id=r.room_id WHERE r.room_id=? AND r.status='WAITING' AND r.expires_at>? AND ((?='woe' AND c.room_id IS NULL) OR (?='core_defense' AND c.mode='coop'))").get(id, now, kind, kind);
+  const roomCheck = (id, kind, host, now) => {
+    if (!options.enabled(kind))
+      return fail4(503, "GAME_UNAVAILABLE");
+    const r = room(id, kind, now);
+    if (!r)
+      return fail4(404, "ROOM_UNAVAILABLE");
+    if (!db.query("SELECT 1 FROM woe_members WHERE room_id=? AND player_id=?").get(id, host))
+      return fail4(404, "ROOM_UNAVAILABLE");
+    if (r.host_id !== host)
+      return fail4(403, "HOST_REQUIRED");
+    if (r.member_count >= (kind === "core_defense" ? 2 : r.mode === "1v1" ? 2 : 4))
+      return fail4(409, "ROOM_FULL");
+    return null;
+  };
+  const mutate = (p, b, type, keys, fn) => {
+    if (!b || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !["client_action_id", ...keys].includes(k)) || !valid2(b.client_action_id))
+      return fail4(400, "INVALID_REQUEST");
+    const match = /^(\d{13}):([^\s:]{1,110})$/.exec(b.client_action_id);
+    if (!match)
+      return fail4(400, "INVALID_ACTION_ID");
+    const payload = JSON.stringify(keys.map((k) => [k, Object.hasOwn(b, k), b[k]]));
+    return transact((wall) => {
+      const oldClock = db.query("SELECT watermark FROM minigame_invite_clock WHERE player_id=?").get(p)?.watermark ?? 0, now = Math.max(wall, oldClock), stamp = Number(match[1]);
+      if (stamp < now - WINDOW || stamp > now + FUTURE)
+        return fail4(409, "ACTION_EXPIRED");
+      const old = db.query("SELECT * FROM minigame_invite_actions WHERE player_id=? AND action_id=?").get(p, b.client_action_id);
+      if (old)
+        return old.action_type === type && old.payload === payload ? { status: old.status_code, data: JSON.parse(old.response) } : fail4(409, "ACTION_CONFLICT");
+      if (db.query("SELECT count(*) n FROM minigame_invite_actions WHERE player_id=?").get(p).n >= LIMIT)
+        return fail4(429, "ACTION_LIMIT");
+      const result = fn(wall);
+      if (result.status === 503 || result.data.error === "FOREST_PRESENCE_REQUIRED")
+        return result;
+      db.query("INSERT INTO minigame_invite_clock VALUES (?,?) ON CONFLICT(player_id) DO UPDATE SET watermark=max(watermark,excluded.watermark)").run(p, now);
+      db.query("INSERT INTO minigame_invite_actions VALUES (?,?,?,?,?,?,?)").run(p, b.client_action_id, type, payload, result.status, JSON.stringify(result.data), stamp + WINDOW);
+      return result;
+    });
+  };
+  return {
+    state: (p) => transact((now) => {
+      const rows = db.query("SELECT invite_id,room_id,game_kind,inviter_id,recipient_id,status,created_at,expires_at FROM minigame_invitations WHERE (inviter_id=? OR recipient_id=?) AND status='PENDING' AND expires_at>? ORDER BY created_at,invite_id LIMIT 100").all(p, p, now);
+      const visible = rows.filter((r) => options.enabled(r.game_kind) && friends(r.inviter_id, r.recipient_id));
+      const recent = db.query("SELECT invite_id,room_id,game_kind,inviter_id,recipient_id,status,updated_at FROM minigame_invitations WHERE (inviter_id=? OR recipient_id=?) AND status<>'PENDING' AND updated_at>? ORDER BY updated_at DESC,invite_id LIMIT 100").all(p, p, now - 300000).filter((r) => options.enabled(r.game_kind) && friends(r.inviter_id, r.recipient_id));
+      return { status: 200, data: { incoming: visible.filter((r) => r.recipient_id === p), outgoing: visible.filter((r) => r.inviter_id === p), recent, server_time_unix_ms: now } };
+    }),
+    friends: (p, id) => {
+      if (!valid2(id))
+        return fail4(400, "INVALID_REQUEST");
+      return transact((now) => {
+        const kind = db.query("SELECT 1 FROM core_defense_rooms WHERE room_id=?").get(id) ? "core_defense" : "woe";
+        const err = roomCheck(id, kind, p, now);
+        if (err)
+          return err;
+        const all = db.query("SELECT p.player_id,p.display_name FROM friendships f JOIN players p ON p.player_id=CASE WHEN f.player_low=? THEN f.player_high ELSE f.player_low END WHERE f.player_low=? OR f.player_high=? ORDER BY p.display_name,p.player_id LIMIT 200").all(p, p, p);
+        return { status: 200, data: { friends: all.filter((f) => options.online(f.player_id) && !busy(f.player_id, now)), server_time_unix_ms: now } };
+      });
+    },
+    invite: (p, b) => mutate(p, b, "invite", ["room_id", "game_kind", "target_player_id"], (now) => {
+      if (!valid2(b.room_id) || !valid2(b.target_player_id) || !["woe", "core_defense"].includes(b.game_kind) || b.target_player_id === p)
+        return fail4(400, "INVALID_REQUEST");
+      const kind = b.game_kind, err = roomCheck(b.room_id, kind, p, now);
+      if (err)
+        return err;
+      const target = b.target_player_id;
+      if (!friends(p, target) || !options.online(target) || busy(target, now))
+        return fail4(409, "TARGET_UNAVAILABLE");
+      if (db.query("SELECT 1 FROM minigame_invitations WHERE inviter_id=? AND recipient_id=? AND created_at>? LIMIT 1").get(p, target, now - 30000))
+        return fail4(429, "INVITE_COOLDOWN");
+      if (db.query("SELECT count(*) n FROM minigame_invitations WHERE inviter_id=? AND status='PENDING' AND expires_at>?").get(p, now).n >= 20 || db.query("SELECT count(*) n FROM minigame_invitations WHERE recipient_id=? AND status='PENDING' AND expires_at>?").get(target, now).n >= 50 || db.query("SELECT count(*) n FROM minigame_invitations").get().n >= 1e4)
+        return fail4(429, "INVITE_LIMIT");
+      const duration = Math.max(1e4, Math.min(600000, Number(Bun.env.FOREST_MINIGAME_INVITE_MS) || 180000)), id = crypto.randomUUID();
+      db.query("INSERT INTO minigame_invitations VALUES (?,?,?,?,?,'PENDING',?,?,?)").run(id, b.room_id, kind, p, target, now, now, now + duration);
+      return { status: 200, data: { invite_id: id, room_id: b.room_id, game_kind: kind, inviter_id: p, recipient_id: target, status: "PENDING", expires_at: now + duration, server_time_unix_ms: now } };
+    }),
+    respond: (p, b) => mutate(p, b, "respond", ["invite_id", "accept"], (now) => {
+      if (!valid2(b.invite_id) || typeof b.accept !== "boolean")
+        return fail4(400, "INVALID_REQUEST");
+      const inv = db.query("SELECT * FROM minigame_invitations WHERE invite_id=? AND recipient_id=?").get(b.invite_id, p);
+      if (!inv)
+        return fail4(404, "INVITE_UNAVAILABLE");
+      if (!options.enabled(inv.game_kind))
+        return fail4(503, "GAME_UNAVAILABLE");
+      if (inv.status !== "PENDING" || inv.expires_at <= now)
+        return fail4(409, "INVITE_NOT_PENDING");
+      if (!b.accept) {
+        db.query("UPDATE minigame_invitations SET status='DECLINED',updated_at=? WHERE invite_id=?").run(now, inv.invite_id);
+        return { status: 200, data: { invite_id: inv.invite_id, status: "DECLINED", server_time_unix_ms: now } };
+      }
+      const err = roomCheck(inv.room_id, inv.game_kind, inv.inviter_id, now);
+      if (err)
+        return err;
+      clearStaleMembership(p, now);
+      if (!friends(inv.inviter_id, p) || !options.online(p) || busy(p, now))
+        return fail4(409, "TARGET_UNAVAILABLE");
+      const joined = options.join[inv.game_kind](p, inv.room_id, now, inv.invite_id);
+      if (joined.status !== 200)
+        return joined;
+      db.query("UPDATE minigame_invitations SET status='ACCEPTED',updated_at=? WHERE invite_id=?").run(now, inv.invite_id);
+      return { status: 200, data: { invite_id: inv.invite_id, status: "ACCEPTED", room: joined.data, server_time_unix_ms: now } };
+    }),
+    cancel: (p, b) => mutate(p, b, "cancel", ["invite_id"], (now) => {
+      if (!valid2(b.invite_id))
+        return fail4(400, "INVALID_REQUEST");
+      const inv = db.query("SELECT * FROM minigame_invitations WHERE invite_id=? AND inviter_id=?").get(b.invite_id, p);
+      if (!inv)
+        return fail4(404, "INVITE_UNAVAILABLE");
+      if (!options.enabled(inv.game_kind))
+        return fail4(503, "GAME_UNAVAILABLE");
+      if (inv.status !== "PENDING" || inv.expires_at <= now)
+        return fail4(409, "INVITE_NOT_PENDING");
+      db.query("UPDATE minigame_invitations SET status='CANCELLED',updated_at=? WHERE invite_id=?").run(now, inv.invite_id);
+      return { status: 200, data: { invite_id: inv.invite_id, status: "CANCELLED", server_time_unix_ms: now } };
+    })
+  };
+}
+
+// src/woe/bot_ai.ts
+function chooseBotDeployment(state, id, options) {
+  const p = state.controllers.find((c) => c.id === id);
+  if (!p || state.result)
+    return null;
+  const choices = [];
+  const bias = [...id].reduce((n, c) => n * 33 + c.charCodeAt(0) >>> 0, 0);
+  for (const lane of ["left", "right"])
+    for (let slot = 0;slot < 3; slot++) {
+      const card = cardById[p.slots[slot]], cmd = { actionId: `bot:${state.tick}:${id}`, controllerId: id, slot, cardId: card.id, lane };
+      if ((options?.validate ?? validateDeployment)(state, cmd))
+        continue;
+      const enemies = state.units.filter((u) => u.team !== p.team && u.lane === lane), allies = state.units.filter((u) => u.team === p.team && u.lane === lane);
+      const lab = state.laboratories.find((l) => l.team === p.team && l.lane === lane);
+      const counters = enemies.reduce((n, u) => n + elementalMultiplier(card.element, options?.element ? options.element(u.cardId) : cardById[u.cardId].element) - 1, 0);
+      const threat = enemies.reduce((n, u) => n + Math.max(0, 1 - Math.abs(u.position.y - lab.position.y) / 700), 0);
+      const score = threat * 5 + enemies.length * 1.5 - allies.length * 1.2 + (1 - lab.hp / lab.maxHp) * 3 + counters * 4 + card.cost * 0.12 + ((bias + state.tick / 10) % 2 === (lane === "left" ? 0 : 1) ? 0.3 : 0) - slot * 0.001;
+      choices.push({ cmd, score });
+    }
+  choices.sort((a, b) => b.score - a.score);
+  return choices[0]?.cmd ?? null;
+}
+
+// src/woe/core_defense_leaderboard.ts
+var monthAt = (now) => new Date(now).toISOString().slice(0, 7);
+function previous(month) {
+  const [y, m] = month.split("-").map(Number);
+  return `${String(m === 1 ? y - 1 : y).padStart(4, "0")}-${String(m === 1 ? 12 : m - 1).padStart(2, "0")}`;
+}
+function maintainMonthlyScores(db, now) {
+  const current = monthAt(now);
+  db.query("INSERT INTO core_defense_monthly_clock VALUES (1,?) ON CONFLICT(id) DO UPDATE SET month=max(month,excluded.month)").run(current);
+  const high = db.query("SELECT month FROM core_defense_monthly_clock WHERE id=1").get().month;
+  const prior = previous(high);
+  db.query("DELETE FROM core_defense_monthly_scores WHERE rowid IN (SELECT rowid FROM core_defense_monthly_scores WHERE month<? LIMIT 32)").run(prior);
+  return { current: high, previous: prior };
+}
+function recordMonthlyScore(db, matchId, state, now) {
+  if (state.result?.reason !== "laboratories" || !Number.isSafeInteger(state.completedWaves) || state.completedWaves <= 0 || !["solo", "coop"].includes(state.mode))
+    return;
+  const participants = db.query("SELECT controller_id,human,forfeited,team FROM woe_match_participants WHERE match_id=?").all(matchId);
+  const count = state.mode === "solo" ? 1 : 2;
+  if (!db.query("SELECT 1 FROM woe_matches m JOIN core_defense_rooms r ON r.room_id=m.room_id WHERE m.match_id=? AND r.mode=?").get(matchId, state.mode) || participants.length !== count || participants.some((p) => p.human !== 1 || p.forfeited !== 0 || p.team !== "blue") || state.controllers.length !== count || new Set(state.controllers.map((c) => c.id)).size !== count || state.controllers.some((c) => c.team !== "blue" || !participants.some((p) => p.controller_id === c.id)) || state.units.some((u) => u.team === "blue" && !participants.some((p) => p.controller_id === u.controllerId)))
+    return;
+  const months = maintainMonthlyScores(db, now), month = monthAt(now);
+  if (month < months.previous || month > months.current)
+    return;
+  const insert = db.query("INSERT INTO core_defense_monthly_scores VALUES (?,?,?,?,?) ON CONFLICT(month,mode,player_id) DO UPDATE SET completed_waves=excluded.completed_waves,achieved_at=excluded.achieved_at WHERE excluded.completed_waves>core_defense_monthly_scores.completed_waves");
+  for (const p of participants)
+    insert.run(month, state.mode, p.controller_id, state.completedWaves, now);
+}
+function readMonthlyScores(db, mode, month, now) {
+  if (mode !== "solo" && mode !== "coop" || month !== "current" && month !== "previous")
+    return { status: 400, data: { error: "INVALID_REQUEST" } };
+  const months = maintainMonthlyScores(db, now), viewed = month === "current" ? months.current : months.previous;
+  const entries = db.query("SELECT p.display_name,s.completed_waves FROM core_defense_monthly_scores s JOIN players p ON p.player_id=s.player_id WHERE s.month=? AND s.mode=? ORDER BY s.completed_waves DESC,s.achieved_at ASC,s.player_id ASC LIMIT 100").all(viewed, mode);
+  return { status: 200, data: { current_month: months.current, previous_month: months.previous, viewed_month: viewed, mode, entries } };
+}
+
+// src/woe/core_defense_retention.ts
+function cleanupCoreDefense(db, now) {
+  maintainMonthlyScores(db, now);
+  const limit = 32, rows = (sql, ...args) => db.query(sql).all(...args);
+  for (const r of rows("SELECT r.room_id FROM woe_rooms r JOIN core_defense_rooms c ON c.room_id=r.room_id WHERE r.status='WAITING' AND r.expires_at<=? ORDER BY r.expires_at LIMIT ?", now, limit)) {
+    db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=? AND status='WAITING'").run(now, r.room_id);
+    db.query("DELETE FROM woe_members WHERE room_id=?").run(r.room_id);
+  }
+  for (const a of rows("SELECT a.match_id,a.player_id,a.action_id FROM core_defense_actions a JOIN core_defense_participants p ON p.match_id=a.match_id AND p.controller_id=a.player_id WHERE a.kind='deploy' AND a.expires_at<? ORDER BY a.expires_at LIMIT ?", now, limit)) {
+    db.query("UPDATE core_defense_participants SET replay_watermark=max(replay_watermark,?) WHERE match_id=? AND controller_id=?").run(now, a.match_id, a.player_id);
+    db.query("DELETE FROM core_defense_actions WHERE match_id=? AND player_id=? AND action_id=?").run(a.match_id, a.player_id, a.action_id);
+  }
+  for (const r of rows("SELECT r.room_id FROM woe_rooms r JOIN core_defense_rooms c ON c.room_id=r.room_id WHERE r.status='EXPIRED' AND r.updated_at<=? AND NOT EXISTS (SELECT 1 FROM woe_matches m WHERE m.room_id=r.room_id) ORDER BY r.updated_at LIMIT ?", now - 7 * 86400000, limit)) {
+    db.query("DELETE FROM woe_members WHERE room_id=?").run(r.room_id);
+    db.query("DELETE FROM core_defense_rooms WHERE room_id=?").run(r.room_id);
+    db.query("DELETE FROM woe_rooms WHERE room_id=?").run(r.room_id);
+  }
+  for (const r of rows("SELECT c.room_id FROM core_defense_rooms c WHERE NOT EXISTS (SELECT 1 FROM woe_rooms r WHERE r.room_id=c.room_id) AND NOT EXISTS (SELECT 1 FROM woe_matches m WHERE m.room_id=c.room_id) LIMIT ?", limit))
+    db.query("DELETE FROM core_defense_rooms WHERE room_id=?").run(r.room_id);
+  for (const table of ["core_defense_actions", "core_defense_participants", "core_defense_results"]) {
+    const ids = rows(`SELECT rowid AS id FROM ${table} t WHERE NOT EXISTS (SELECT 1 FROM woe_matches m WHERE m.match_id=t.match_id) LIMIT ?`, limit);
+    for (const r of ids)
+      db.query(`DELETE FROM ${table} WHERE rowid=?`).run(r.id);
+  }
+  for (const table of ["core_defense_actions", "core_defense_participants"]) {
+    const playerColumn = table === "core_defense_actions" ? "player_id" : "controller_id";
+    const ids = rows(`SELECT rowid AS id FROM ${table} t WHERE NOT EXISTS (SELECT 1 FROM woe_match_participants p WHERE p.match_id=t.match_id AND p.controller_id=t.${playerColumn}) LIMIT ?`, limit);
+    for (const r of ids)
+      db.query(`DELETE FROM ${table} WHERE rowid=?`).run(r.id);
+  }
+  for (const a of rows("SELECT rowid AS id FROM woe_actions WHERE action_type LIKE 'cd:%' AND created_at<=? LIMIT ?", now - 7 * 86400000, limit))
+    db.query("DELETE FROM woe_actions WHERE rowid=?").run(a.id);
+}
+
+// src/woe/match_service.ts
+var PAGE = 100;
+var EVENT_LIMIT = 2000;
+var ACTION_LIMIT = 2048;
+var RETENTION4 = 24 * 60 * 60000;
+var fail5 = (status, error2) => ({ status, data: { error: error2 } });
+var valid3 = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
+function createWoeMatchService(db, canServe, clock = Date.now, shared) {
+  const row = (id) => db.query("SELECT * FROM woe_matches WHERE match_id=? AND room_id NOT IN (SELECT room_id FROM core_defense_rooms)").get(id);
+  const member = (id, player) => db.query("SELECT * FROM woe_match_participants WHERE match_id=? AND controller_id=? AND human=1").get(id, player);
+  const inTransaction = (f) => {
+    if (!canServe())
+      return fail5(503, "FOREST_WOE_UNAVAILABLE");
+    return db.transaction(() => canServe() ? f() : fail5(503, "FOREST_WOE_UNAVAILABLE")).immediate();
+  };
+  function append(id, seq, events2) {
+    for (const e of events2)
+      db.query("INSERT INTO woe_match_events VALUES (?,?,?)").run(id, ++seq, JSON.stringify(e));
+    if (seq > EVENT_LIMIT)
+      db.query("DELETE FROM woe_match_events WHERE match_id=? AND seq<=?").run(id, seq - EVENT_LIMIT);
+    return seq;
+  }
+  function spawnEvent(state) {
+    const u = state.units[state.units.length - 1];
+    return { type: "spawn", tick: state.tick, unit_id: u.id, card_id: u.cardId, team: u.team, lane: u.lane, position: u.position, controller_id: u.controllerId };
+  }
+  function save2(r, state, events2, now) {
+    if (!canServe())
+      throw new Error("FOREST_WOE_FENCED");
+    if (state.result)
+      events2.push({ type: "result", tick: state.tick, result: state.result });
+    const seq = append(r.match_id, r.event_seq, events2);
+    const done = !!state.result;
+    for (const c of state.controllers)
+      c.actionIds = [];
+    const json = JSON.stringify(state);
+    db.query("UPDATE woe_matches SET state_json=?,event_seq=?,revision=revision+1,updated_at=?,status=?,finished_at=? WHERE match_id=?").run(json, seq, now, done ? "FINISHED" : "RUNNING", done ? now : null, r.match_id);
+    if (done) {
+      db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=?").run(now, r.room_id);
+      db.query("DELETE FROM woe_members WHERE room_id=?").run(r.room_id);
+    }
+  }
+  function snapshot2(r, player, after) {
+    const first = db.query("SELECT min(seq) AS n FROM woe_match_events WHERE match_id=?").get(r.match_id);
+    const gap = after > r.event_seq || (first.n === null ? after < r.event_seq : after < first.n - 1);
+    const events2 = gap ? [] : db.query("SELECT seq,event_json FROM woe_match_events WHERE match_id=? AND seq>? ORDER BY seq LIMIT ?").all(r.match_id, after, PAGE).map((x) => ({ seq: x.seq, ...JSON.parse(x.event_json) }));
+    const state = JSON.parse(r.state_json);
+    const snap = getPublicSnapshot(state, player);
+    snap.events = [];
+    return { match_id: r.match_id, status: r.status, revision: r.revision, tick: state.tick, server_time_unix_ms: clock(), snapshot: snap, events: events2, cursor: gap ? r.event_seq : events2.at(-1)?.seq ?? after, latest_event_seq: r.event_seq, resync_required: gap };
+  }
+  function action(player, b, kind) {
+    const keys = kind === "deploy" ? ["match_id", "client_action_id", "slot", "card_id", "lane"] : ["match_id", "client_action_id"];
+    if (!b || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !keys.includes(k)) || !valid3(b.match_id) || !valid3(b.client_action_id))
+      return fail5(400, "INVALID_REQUEST");
+    const payload = JSON.stringify(keys.map((k) => [k, b[k]]));
+    return inTransaction(() => {
+      const r = row(b.match_id);
+      if (!r)
+        return fail5(404, "MATCH_UNAVAILABLE");
+      const p = member(b.match_id, player);
+      if (!p)
+        return fail5(403, "NOT_PARTICIPANT");
+      const old = db.query("SELECT * FROM woe_match_actions WHERE match_id=? AND player_id=? AND action_id=?").get(b.match_id, player, b.client_action_id);
+      if (old)
+        return old.kind === kind && old.payload === payload ? { status: old.status, data: JSON.parse(old.response) } : fail5(409, "ACTION_CONFLICT");
+      if (db.query("SELECT count(*) n FROM woe_match_actions WHERE match_id=? AND player_id=?").get(b.match_id, player).n >= ACTION_LIMIT)
+        return fail5(429, "ACTION_LIMIT");
+      let result;
+      const state = JSON.parse(r.state_json);
+      if (r.status !== "RUNNING" || p.forfeited)
+        result = fail5(409, r.status !== "RUNNING" ? "MATCH_FINISHED" : "FORFEITED");
+      else if (kind === "deploy") {
+        const applied = applyDeployment(state, { actionId: b.client_action_id, controllerId: player, slot: b.slot, cardId: b.card_id, lane: b.lane });
+        if (!applied.accepted)
+          result = fail5(409, applied.reason);
+        else {
+          save2(r, applied.state, [spawnEvent(applied.state)], clock());
+          result = { status: 200, data: snapshot2(row(b.match_id), player, r.event_seq) };
+        }
+      } else {
+        db.query("UPDATE woe_match_participants SET forfeited=1 WHERE match_id=? AND controller_id=?").run(b.match_id, player);
+        const remaining = db.query("SELECT team,count(*) n FROM woe_match_participants WHERE match_id=? AND human=1 AND forfeited=0 GROUP BY team").all(b.match_id);
+        const allies = remaining.find((x) => x.team === p.team)?.n ?? 0, total = remaining.reduce((n, x) => n + x.n, 0);
+        if (state.mode === "1v1")
+          state.result = { winner: p.team === "blue" ? "red" : "blue", reason: "forfeit" };
+        else if (!total)
+          state.result = { winner: null, reason: "abandoned" };
+        else if (!allies)
+          state.result = { winner: p.team === "blue" ? "red" : "blue", reason: "forfeit" };
+        save2(r, state, [], clock());
+        result = { status: 200, data: snapshot2(row(b.match_id), player, r.event_seq) };
+      }
+      db.query("INSERT INTO woe_match_actions VALUES (?,?,?,?,?,?,?)").run(b.match_id, player, b.client_action_id, kind, payload, result.status, JSON.stringify(result.data));
+      if (!canServe())
+        throw new Error("FOREST_WOE_FENCED");
+      return result;
+    });
+  }
+  function tickOne(id) {
+    if (!canServe())
+      return;
+    db.transaction(() => {
+      if (!canServe())
+        return;
+      const r = row(id);
+      if (!r || r.status !== "RUNNING")
+        return;
+      let state = JSON.parse(r.state_json);
+      const events2 = [];
+      if (state.tick % 10 === 0) {
+        const bots = db.query("SELECT controller_id FROM woe_match_participants WHERE match_id=? AND (human=0 OR forfeited=1) ORDER BY controller_id").all(id);
+        for (const bot of bots) {
+          const cmd = chooseBotDeployment(state, bot.controller_id);
+          if (cmd) {
+            const applied = applyDeployment(state, cmd);
+            if (applied.accepted) {
+              state = applied.state;
+              events2.push(spawnEvent(state));
+            }
+          }
+        }
+      }
+      state = advanceTick(state);
+      events2.push(...state.events);
+      if (!canServe())
+        throw new Error("FOREST_WOE_FENCED");
+      save2(r, state, events2, clock());
+      if (!canServe())
+        throw new Error("FOREST_WOE_FENCED");
+    }).immediate();
+  }
+  let timer;
+  let lastCleanup = 0, nextDue = 0;
+  const failures = new Map;
+  function runPulse(isolateFailures = false) {
+    if (!(shared?.canSchedule() ?? canServe()))
+      return;
+    const now = clock();
+    if (now - lastCleanup > 60000) {
+      db.transaction(() => {
+        if (!(shared?.canSchedule() ?? canServe()))
+          throw new Error("FOREST_WOE_FENCED");
+        const expired = db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='FINISHED' AND m.finished_at<=? LIMIT 32").all(now - RETENTION4);
+        for (const r of expired) {
+          if (r.cd) {
+            const actions = db.query("SELECT rowid AS id FROM core_defense_actions WHERE match_id=? LIMIT 32").all(r.match_id);
+            for (const a of actions)
+              db.query("DELETE FROM core_defense_actions WHERE rowid=?").run(a.id);
+            if (db.query("SELECT 1 FROM core_defense_actions WHERE match_id=? LIMIT 1").get(r.match_id))
+              continue;
+          }
+          for (const table of ["core_defense_actions", "core_defense_results", "core_defense_participants", "woe_match_events", "woe_match_actions", "woe_match_participants"])
+            db.query(`DELETE FROM ${table} WHERE match_id=?`).run(r.match_id);
+          db.query("DELETE FROM woe_matches WHERE match_id=?").run(r.match_id);
+        }
+        cleanupCoreDefense(db, now);
+        if (!(shared?.canSchedule() ?? canServe()))
+          throw new Error("FOREST_WOE_FENCED");
+      }).immediate();
+      lastCleanup = now;
+    }
+    const running = db.query("SELECT m.match_id, c.room_id IS NOT NULL AS cd FROM woe_matches m LEFT JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.status='RUNNING' ORDER BY m.match_id LIMIT 256").all();
+    if (isolateFailures) {
+      const live = new Set(running.map((r) => r.match_id));
+      for (const id of failures.keys())
+        if (!live.has(id))
+          failures.delete(id);
+    }
+    for (const r of running) {
+      if (!(shared?.canSchedule() ?? canServe()))
+        break;
+      if (isolateFailures && performance.now() < (failures.get(r.match_id)?.until ?? 0))
+        continue;
+      try {
+        if (r.cd)
+          shared?.coreDefense.tickOne(r.match_id);
+        else
+          tickOne(r.match_id);
+        failures.delete(r.match_id);
+      } catch (error2) {
+        if (!isolateFailures)
+          throw error2;
+        if (!(shared?.canSchedule() ?? canServe()))
+          break;
+        const delay = Math.min(30000, (failures.get(r.match_id)?.delay ?? 500) * 2);
+        failures.set(r.match_id, { until: performance.now() + delay, delay });
+        console.error("FOREST_MINIGAME_TICK_FAILED", r.match_id, error2);
+      }
+    }
+  }
+  function pulse(isolateFailures = false) {
+    if (Bun.env.FOREST_WOE_PULSE_PROFILE !== "1")
+      return runPulse(isolateFailures);
+    const start = performance.now();
+    try {
+      return runPulse(isolateFailures);
+    } finally {
+      console.log(`R2_PULSE ${performance.now() - start}`);
+    }
+  }
+  function arm(delay) {
+    timer = setTimeout(scheduled, Math.max(1, delay));
+    timer.unref();
+  }
+  function scheduled() {
+    if (!timer)
+      return;
+    try {
+      if (!(shared?.canSchedule() ?? canServe())) {
+        nextDue = performance.now() + 100;
+        arm(100);
+        return;
+      }
+      const now = performance.now();
+      nextDue = Math.max(nextDue, now - 300);
+      let steps = 0;
+      while (steps < 3 && performance.now() >= nextDue && (shared?.canSchedule() ?? canServe())) {
+        pulse(true);
+        nextDue += 100;
+        steps++;
+      }
+      arm(nextDue - performance.now());
+    } catch (error2) {
+      console.error("FOREST_MINIGAME_SCHEDULER_FAILED", error2);
+      nextDue = performance.now() + 1000;
+      arm(1000);
+    }
+  }
+  return {
+    start() {
+      if (!timer) {
+        nextDue = performance.now() + 100;
+        arm(100);
+      }
+    },
+    stop() {
+      if (timer)
+        clearTimeout(timer);
+      timer = undefined;
+      failures.clear();
+    },
+    pulse: () => pulse(),
+    state(player, id, after) {
+      if (!valid3(id) || typeof after !== "string" || !/^\d{1,15}$/.test(after) || !Number.isSafeInteger(Number(after)))
+        return fail5(400, "INVALID_REQUEST");
+      return inTransaction(() => {
+        const r = row(id);
+        if (!r)
+          return fail5(404, "MATCH_UNAVAILABLE");
+        if (!member(id, player))
+          return fail5(403, "NOT_PARTICIPANT");
+        return { status: 200, data: snapshot2(r, player, Number(after)) };
+      });
+    },
+    current(player) {
+      return inTransaction(() => {
+        const r = db.query("SELECT m.* FROM woe_matches m JOIN woe_match_participants p ON p.match_id=m.match_id WHERE p.controller_id=? AND p.human=1 AND m.room_id NOT IN (SELECT room_id FROM core_defense_rooms) ORDER BY (m.status='RUNNING') DESC,m.created_at DESC LIMIT 1").get(player);
+        return { status: 200, data: r ? snapshot2(r, player, 0) : { match: null, server_time_unix_ms: clock() } };
+      });
+    },
+    deploy: (player, b) => action(player, b, "deploy"),
+    forfeit: (player, b) => action(player, b, "forfeit")
+  };
+}
+// ../data/static/core_defense_enemies.json
+var core_defense_enemies_default = {
+  enemies: [
+    { id: "noxiris", role: "balanced", element: "mercury", hp: 150, damage: 25, defense: 4, speed: 85, range: 70, unlock_wave: 1 },
+    { id: "mycelion", role: "swarm", element: "vitriol", hp: 100, damage: 20, defense: 2, speed: 100, range: 65, unlock_wave: 2 },
+    { id: "vitreous", role: "fast", element: "sodium", hp: 125, damage: 25, defense: 3, speed: 115, range: 70, unlock_wave: 3 },
+    { id: "hexalith", role: "ranged", element: "aether", hp: 135, damage: 28, defense: 2, speed: 75, range: 160, unlock_wave: 4 },
+    { id: "mortivane", role: "tank", element: "gold", hp: 260, damage: 24, defense: 10, speed: 65, range: 70, unlock_wave: 5 }
+  ]
+};
+// ../data/static/core_defense_waves.json
+var core_defense_waves_default = {
+  initial_count: 4,
+  count_per_wave: 1,
+  max_count: 200,
+  spawn_interval_ticks: 15,
+  intermission_ticks: 50,
+  hp_growth_per_wave: 0.06,
+  damage_growth_per_wave: 0.035,
+  max_hp: 1e4,
+  max_damage: 1e4,
+  allied_unit_cap: 75,
+  action_id_limit: 2048
+};
+
+// src/woe/core_defense.ts
+var coreDefenseEnemies = Object.freeze(core_defense_enemies_default.enemies.map((e) => Object.freeze(e)));
+var coreDefenseRules = Object.freeze(core_defense_waves_default);
+var enemyById = Object.freeze(Object.fromEntries(coreDefenseEnemies.map((e) => [e.id, e])));
+if (coreDefenseEnemies.length !== 5 || new Set(coreDefenseEnemies.map((e) => e.id)).size !== 5 || coreDefenseEnemies.some((e) => !e.role || !Number.isSafeInteger(e.unlock_wave) || e.unlock_wave < 1 || [e.hp, e.damage, e.speed, e.range].some((n) => !Number.isSafeInteger(n) || n <= 0) || !Number.isSafeInteger(e.defense) || e.defense < 0 || (() => {
+  try {
+    elementalMultiplier(e.element, e.element);
+    return false;
+  } catch {
+    return true;
+  }
+})()))
+  throw new Error("INVALID_CORE_DEFENSE_CATALOG");
+var clone = (x) => structuredClone(x);
+var other = (lane) => lane === "left" ? "right" : "left";
+var dist22 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+var plus = (n) => Math.min(Number.MAX_SAFE_INTEGER, n + 1);
+function nextAvailableId(s) {
+  let id = s.nextUnitId > Number.MAX_SAFE_INTEGER ? 1 : s.nextUnitId;
+  const used = new Set(s.units.map((u) => u.id));
+  while (used.has(id))
+    id = id === Number.MAX_SAFE_INTEGER ? 1 : id + 1;
+  s.nextUnitId = id;
+}
+function waveCount(wave) {
+  return Math.min(core_defense_waves_default.max_count, core_defense_waves_default.initial_count + Math.max(0, wave - 1) * core_defense_waves_default.count_per_wave);
+}
+function enemyStats(id, wave) {
+  const e = enemyById[id];
+  if (!e || !Number.isSafeInteger(wave) || wave < 1)
+    throw new Error("INVALID_CORE_DEFENSE_ENEMY");
+  return { ...e, hp: Math.min(core_defense_waves_default.max_hp, Math.round(e.hp * (1 + (wave - 1) * core_defense_waves_default.hp_growth_per_wave))), damage: Math.min(core_defense_waves_default.max_damage, Math.round(e.damage * (1 + (wave - 1) * core_defense_waves_default.damage_growth_per_wave))) };
+}
+function initializeCoreDefense(mode, seed, controllerIds) {
+  if (!["solo", "coop"].includes(mode) || !Array.isArray(controllerIds) || controllerIds.length !== (mode === "solo" ? 1 : 2) || controllerIds.some((id) => typeof id !== "string" || !id || id.length > 128) || new Set(controllerIds).size !== controllerIds.length || typeof seed !== "string")
+    throw new Error("INVALID_CORE_DEFENSE_MATCH");
+  let dummy = "__core_defense_red__";
+  while (controllerIds.includes(dummy))
+    dummy += "_";
+  const base = initializeMatch("1v1", seed, [controllerIds[0], dummy]);
+  if (controllerIds.length === 2) {
+    let dummy2 = dummy + "_2";
+    while (controllerIds.includes(dummy2))
+      dummy2 += "_";
+    base.controllers = initializeMatch("2v2", seed, [...controllerIds, dummy, dummy2]).controllers.slice(0, 2);
+  } else
+    base.controllers = base.controllers.slice(0, 1);
+  return { kind: "core_defense", mode, tick: 0, controllers: base.controllers, laboratories: base.laboratories, units: [], nextUnitId: 1, events: [], wave: 1, completedWaves: 0, enemiesSpawned: 0, enemiesKilled: 0, waveSpawned: 0, pendingSpawns: waveCount(1), phase: "wave", intermissionTicks: 0, spawnCooldown: 0, result: null };
+}
+var asWoe = (s) => s;
+function validateCoreDefenseDeployment(s, c) {
+  const reason = validateDeployment(asWoe(s), c);
+  if (reason)
+    return reason;
+  if (s.units.filter((u) => u.team === "blue").length >= core_defense_waves_default.allied_unit_cap)
+    return "UNIT_CAP";
+  return null;
+}
+function applyCoreDefenseDeployment(s, c) {
+  const reason = validateCoreDefenseDeployment(s, c);
+  if (reason)
+    return { accepted: false, state: s, reason };
+  const prepared = clone(s);
+  nextAvailableId(prepared);
+  const applied = applyDeployment(asWoe(prepared), c);
+  if (!applied.accepted)
+    return { accepted: false, state: s, reason: applied.reason };
+  const next = applied.state, u = next.units[next.units.length - 1], card = cardById[u.cardId];
+  const actions = next.controllers.find((p) => p.id === c.controllerId).actionIds;
+  if (actions.length > core_defense_waves_default.action_id_limit)
+    actions.shift();
+  Object.assign(u, { kind: "homunculus", maxHp: card.hp, damage: card.damage, defense: card.defense, speed: card.speed, range: card.range, element: card.element });
+  next.events.push({ type: "spawn", tick: next.tick, team: u.team, cardId: u.cardId, position: clone(u.position), unit_id: u.id, card_id: u.cardId, lane: u.lane, controller_id: u.controllerId, kind: u.kind, assetId: u.cardId, element: u.element, hp: u.hp, maxHp: u.maxHp });
+  return { accepted: true, state: next };
+}
+function spawn(s) {
+  const eligible = coreDefenseEnemies.filter((e) => e.unlock_wave <= s.wave);
+  const def = eligible[(s.waveSpawned + Math.floor((s.wave - 1) / 2)) % eligible.length];
+  const stats = enemyStats(def.id, s.wave), lane = (s.waveSpawned + (s.wave - 1)) % 2 === 0 ? "left" : "right";
+  const target = s.laboratories.find((l) => l.team === "blue" && l.lane === lane && l.hp > 0) ? lane : other(lane);
+  nextAvailableId(s);
+  const id = s.nextUnitId++;
+  const u = { id, controllerId: "", team: "red", lane, cardId: def.id, hp: stats.hp, maxHp: stats.hp, damage: stats.damage, defense: stats.defense, speed: stats.speed, range: stats.range, element: stats.element, kind: "enemy", position: formationPoint(arena.spawns.red[lane], id), route: route("red", lane, target, id), waypoint: 0, targetLane: target, cooldown: 0, formation: true };
+  s.units.push(u);
+  s.waveSpawned++;
+  s.enemiesSpawned = plus(s.enemiesSpawned);
+  s.pendingSpawns--;
+  s.spawnCooldown = core_defense_waves_default.spawn_interval_ticks;
+  s.events.push({ type: "spawn", tick: s.tick, team: u.team, cardId: u.cardId, position: clone(u.position), unit_id: u.id, card_id: u.cardId, lane, kind: u.kind, assetId: u.cardId, element: u.element, hp: u.hp, maxHp: u.maxHp });
+}
+function advanceCoreDefenseTick(state) {
+  if (state.result)
+    return state;
+  let s = clone(state);
+  s.events = [];
+  s.tick = plus(s.tick);
+  for (const p of s.controllers)
+    p.zealTenths = Math.min(100, p.zealTenths + 1);
+  if (s.phase === "intermission") {
+    s.intermissionTicks--;
+    if (s.intermissionTicks === 0) {
+      s.wave = plus(s.wave);
+      s.waveSpawned = 0;
+      s.pendingSpawns = waveCount(s.wave);
+      s.spawnCooldown = 0;
+      s.phase = "wave";
+    }
+  } else if (s.pendingSpawns > 0) {
+    if (s.spawnCooldown > 0)
+      s.spawnCooldown--;
+    if (s.spawnCooldown === 0 && s.units.length < arena.unit_cap)
+      spawn(s);
+  }
+  s.units.sort((a, b) => a.id - b.id);
+  for (const u of s.units) {
+    if (u.hp <= 0 || s.result)
+      continue;
+    if (u.cooldown > 0)
+      u.cooldown--;
+    let lab;
+    if (u.team === "red") {
+      lab = s.laboratories.find((l) => l.team === "blue" && l.lane === u.targetLane);
+      if (lab.hp <= 0) {
+        u.targetLane = other(u.targetLane);
+        lab = s.laboratories.find((l) => l.team === "blue" && l.lane === u.targetLane);
+        u.route = redirectRoute(u, u.targetLane);
+        u.waypoint = 0;
+      }
+    }
+    const target = nearestTarget(u, s.units, u.range);
+    const victim = target ?? (lab && lab.hp > 0 && dist22(u.position, lab.position) <= u.range ** 2 ? lab : undefined);
+    if (victim) {
+      if (u.cooldown === 0) {
+        const damage = target ? attackDamage(u.damage, target.defense, elementalMultiplier(u.element, target.element)) : attackDamage(u.damage, 0);
+        const dealt = Math.min(victim.hp, damage);
+        victim.hp -= dealt;
+        u.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
+        s.events.push({ type: "attack", attacker: u.id, target: victim.id, damage: dealt, tick: s.tick, team: u.team, cardId: u.cardId, kind: u.kind, assetId: u.cardId, element: u.element, position: clone(u.position), targetPosition: clone(victim.position), targetKind: target ? "unit" : "laboratory", victimKind: target?.kind ?? "laboratory", victimAssetId: target?.cardId ?? null, victimElement: target?.element ?? null, targetHp: victim.hp, targetMaxHp: target?.maxHp ?? lab?.maxHp });
+        if (victim.hp === 0) {
+          s.events.push({ type: "death", attacker: u.id, target: victim.id, tick: s.tick, team: u.team, cardId: u.cardId, kind: u.kind, assetId: u.cardId, element: u.element, position: clone(u.position), targetPosition: clone(victim.position), victimKind: target?.kind ?? "laboratory", victimAssetId: target?.cardId ?? null, victimElement: target?.element ?? null, victimCardId: target?.cardId ?? null, victimTeam: victim.team, victimPosition: clone(victim.position), targetKind: target ? "unit" : "laboratory" });
+          if (target?.kind === "enemy")
+            s.enemiesKilled = plus(s.enemiesKilled);
+          if (!target && s.laboratories.filter((l) => l.team === "blue").every((l) => l.hp === 0)) {
+            s.result = { winner: "red", reason: "laboratories" };
+            s.phase = "defeat";
+          }
+        }
+      }
+    } else
+      move(u, u.speed * arena.tick_ms / 1000);
+  }
+  s.units = s.units.filter((u) => u.hp > 0);
+  if (!s.result && s.phase === "wave" && s.pendingSpawns === 0 && !s.units.some((u) => u.kind === "enemy")) {
+    s.completedWaves = s.wave;
+    s.phase = "intermission";
+    s.intermissionTicks = core_defense_waves_default.intermission_ticks;
+  }
+  return s;
+}
+function getCoreDefenseSnapshot(s, viewerId) {
+  return clone({ kind: s.kind, mode: s.mode, tick: s.tick, wave: s.wave, completedWaves: s.completedWaves, enemiesSpawned: s.enemiesSpawned, enemiesKilled: s.enemiesKilled, pendingSpawns: s.pendingSpawns, phase: s.phase, intermissionTicks: s.intermissionTicks, remainingBlueLabHp: s.laboratories.filter((l) => l.team === "blue").reduce((n, l) => n + l.hp, 0), laboratories: s.laboratories, units: s.units.map((u) => ({ id: u.id, kind: u.kind, assetId: u.cardId, cardId: u.cardId, ...u.kind === "homunculus" ? { controllerId: u.controllerId } : {}, team: u.team, lane: u.lane, hp: u.hp, maxHp: u.maxHp, element: u.element, x: Math.round(u.position.x * 100) / 100, y: Math.round(u.position.y * 100) / 100 })), players: s.controllers.map((p) => ({ id: p.id, team: p.team, ...viewerId === p.id ? { zeal: p.zealTenths / 10, slots: p.slots } : {} })), events: s.events, result: s.result });
+}
+
+// src/woe/core_defense_lobby.ts
+var WAIT = 30 * 60000;
+var valid4 = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
+var fail6 = (status, error2) => ({ status, data: { error: error2 } });
+function createCoreDefenseLobby(db, roomOf, canServe, clock = Date.now) {
+  const room = (id) => db.query("SELECT r.*,c.mode AS cd_mode FROM woe_rooms r JOIN core_defense_rooms c ON c.room_id=r.room_id WHERE r.room_id=?").get(id);
+  const members = (id) => db.query("SELECT m.player_id,m.joined_at,p.display_name FROM woe_members m LEFT JOIN players p ON p.player_id=m.player_id WHERE m.room_id=? ORDER BY m.joined_at,m.player_id").all(id);
+  const memberRoom = (id, p) => db.query("SELECT r.*,c.mode AS cd_mode FROM woe_rooms r JOIN core_defense_rooms c ON c.room_id=r.room_id JOIN woe_members m ON m.room_id=r.room_id WHERE r.room_id=? AND m.player_id=?").get(id, p);
+  const view = (r, p) => {
+    if (r.status === "STARTED")
+      db.query("UPDATE core_defense_participants SET last_active_at=max(last_active_at,?) WHERE match_id=? AND controller_id=?").run(clock(), r.match_id, p);
+    return { room_id: r.room_id, join_code: r.join_code, mode: r.cd_mode, host_id: r.host_id, host_name: members(r.room_id).find((m) => m.player_id === r.host_id)?.display_name ?? "", status: r.status, revision: r.revision, expires_at: r.expires_at, members: members(r.room_id).map((m) => ({ player_id: m.player_id, display_name: m.display_name })), ...r.status === "STARTED" ? { match_id: r.match_id, controllers: JSON.parse(r.mapping_json), snapshot: getCoreDefenseSnapshot(JSON.parse(db.query("SELECT state_json FROM woe_matches WHERE match_id=? AND room_id=?").get(r.match_id, r.room_id).state_json), p) } : {} };
+  };
+  const busy = (p, now) => !!(db.query("SELECT 1 FROM pvp_queue WHERE player_id=? AND expires_at>? UNION ALL SELECT 1 FROM pvp_match_players WHERE player_id=? AND active=1 LIMIT 1").get(p, now, p) || db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(p, now) || activePractice(db, p, now));
+  const read = (fn) => {
+    if (!canServe())
+      return fail6(503, "FOREST_CORE_DEFENSE_UNAVAILABLE");
+    return db.transaction(() => {
+      if (!canServe())
+        return fail6(503, "FOREST_CORE_DEFENSE_UNAVAILABLE");
+      const now = clock();
+      cleanupCoreDefense(db, now);
+      const result = fn(now);
+      if (!canServe())
+        throw Error("FOREST_CORE_DEFENSE_FENCED");
+      return result;
+    }).immediate();
+  };
+  const mutate = (p, b, type, keys, fn) => {
+    if (!b || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !["client_action_id", ...keys].includes(k)) || !valid4(b.client_action_id))
+      return fail6(400, "INVALID_REQUEST");
+    const payload = JSON.stringify(keys.map((k) => [k, Object.hasOwn(b, k), b[k]]));
+    return read((now) => {
+      const stale = db.query("SELECT r.room_id FROM woe_rooms r JOIN woe_members m ON m.room_id=r.room_id WHERE m.player_id=? AND r.status='WAITING' AND r.expires_at<=?").get(p, now);
+      if (stale) {
+        db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=?").run(now, stale.room_id);
+        db.query("DELETE FROM woe_members WHERE room_id=?").run(stale.room_id);
+      }
+      const old = db.query("SELECT * FROM woe_actions WHERE player_id=? AND client_action_id=?").get(p, b.client_action_id);
+      if (old)
+        return old.action_type === "cd:" + type && old.payload_json === payload ? { status: old.status_code, data: JSON.parse(old.result_json) } : fail6(409, "ACTION_CONFLICT");
+      if (db.query("SELECT count(*) n FROM woe_actions WHERE player_id=?").get(p).n >= 500)
+        return fail6(429, "ACTION_LIMIT");
+      const result = fn(now);
+      db.query("INSERT INTO woe_actions VALUES (?,?,?,?,?,?,?)").run(p, b.client_action_id, "cd:" + type, payload, result.status, JSON.stringify(result.data), now);
+      return result;
+    });
+  };
+  const start = (r, now) => {
+    if (r.cd_mode !== "solo" && r.cd_mode !== "coop")
+      return fail6(409, "LEGACY_MODE_UNAVAILABLE");
+    const ms = members(r.room_id);
+    if (ms.length !== (r.cd_mode === "coop" ? 2 : 1))
+      return fail6(409, "ROOM_NOT_FULL");
+    if (r.cd_mode === "coop") {
+      const [low, high] = ms.map((m) => m.player_id).sort();
+      if (!db.query("SELECT 1 FROM friendships WHERE player_low=? AND player_high=?").get(low, high))
+        return fail6(409, "FRIENDSHIP_REQUIRED");
+    }
+    if (ms.some((m) => busy(m.player_id, now)))
+      return fail6(409, "PLAYER_BUSY");
+    const limit = Math.max(1, Math.min(256, Number(Bun.env.FOREST_WOE_MAX_MATCHES) || 32));
+    if (db.query("SELECT count(*) n FROM woe_matches WHERE status='RUNNING'").get().n >= limit)
+      return fail6(429, "MATCH_LIMIT");
+    const ids = ms.map((m) => m.player_id);
+    const mapping = ids.map((id2, i) => ({ seat: i === 0 ? "blue:left" : "blue:right", controller_id: id2, bot: i >= ms.length }));
+    const state = initializeCoreDefense(r.cd_mode, crypto.randomUUID() + crypto.randomUUID(), ids), id = crypto.randomUUID();
+    db.query("INSERT INTO woe_matches(match_id,room_id,status,state_json,created_at,updated_at) VALUES (?,?,'RUNNING',?,?,?)").run(id, r.room_id, JSON.stringify(state), now, now);
+    for (const m of mapping) {
+      db.query("INSERT INTO woe_match_participants(match_id,controller_id,team,human) VALUES (?,?,'blue',?)").run(id, m.controller_id, m.bot ? 0 : 1);
+      if (!m.bot)
+        db.query("INSERT INTO core_defense_participants(match_id,controller_id,last_active_at) VALUES (?,?,?)").run(id, m.controller_id, now);
+    }
+    db.query("UPDATE woe_rooms SET status='STARTED',revision=revision+1,updated_at=?,match_id=?,match_json=NULL,mapping_json=? WHERE room_id=?").run(now, id, JSON.stringify(mapping), r.room_id);
+    return { status: 200, data: view(room(r.room_id), r.host_id) };
+  };
+  const joinRoom = (p, roomId, now, inviteId) => {
+    if (!valid4(roomId))
+      return fail6(400, "INVALID_REQUEST");
+    const r = db.query("SELECT r.*,c.mode cd_mode FROM woe_rooms r JOIN core_defense_rooms c ON c.room_id=r.room_id WHERE r.room_id=? OR r.join_code=?").get(roomId, roomId.toUpperCase());
+    if (!r || r.status !== "WAITING" || r.expires_at <= now || r.cd_mode !== "coop")
+      return fail6(404, "ROOM_UNAVAILABLE");
+    const [low, high] = [r.host_id, p].sort();
+    if (!valid4(inviteId) || !db.query("SELECT 1 FROM minigame_invitations WHERE invite_id=? AND room_id=? AND game_kind='core_defense' AND inviter_id=? AND recipient_id=? AND status='PENDING' AND expires_at>?").get(inviteId, r.room_id, r.host_id, p, now) || !db.query("SELECT 1 FROM friendships WHERE player_low=? AND player_high=?").get(low, high))
+      return fail6(403, "INVITE_REQUIRED");
+    const existing = db.query("SELECT room_id FROM woe_members WHERE player_id=?").get(p);
+    if (existing?.room_id === r.room_id)
+      return { status: 200, data: view(r, p) };
+    if (roomOf(p) !== "duel_clearing")
+      return fail6(409, "FOREST_PRESENCE_REQUIRED");
+    if (existing || busy(p, now))
+      return fail6(409, "PLAYER_BUSY");
+    if (members(r.room_id).length >= 2)
+      return fail6(409, "ROOM_FULL");
+    db.query("INSERT INTO woe_members VALUES (?,?,NULL,?)").run(p, r.room_id, now);
+    db.query("UPDATE woe_rooms SET revision=revision+1,updated_at=?,expires_at=? WHERE room_id=?").run(now, now + WAIT, r.room_id);
+    return { status: 200, data: view(room(r.room_id), p) };
+  };
+  return {
+    list: () => read(() => ({ status: 200, data: { rooms: [] } })),
+    state: (p, id) => !valid4(id) ? fail6(400, "INVALID_REQUEST") : read(() => {
+      const r = memberRoom(id, p);
+      return r ? { status: 200, data: view(r, p) } : fail6(404, "ROOM_UNAVAILABLE");
+    }),
+    create: (p, b) => mutate(p, b, "create", ["mode"], (now) => {
+      if (!["solo", "coop"].includes(b.mode))
+        return fail6(400, "INVALID_REQUEST");
+      if (roomOf(p) !== "duel_clearing")
+        return fail6(409, "FOREST_PRESENCE_REQUIRED");
+      if (busy(p, now) || db.query("SELECT 1 FROM woe_members WHERE player_id=?").get(p))
+        return fail6(409, "PLAYER_BUSY");
+      if (db.query("SELECT count(*) n FROM woe_rooms WHERE status IN ('WAITING','STARTED')").get().n >= 1000)
+        return fail6(429, "ROOM_LIMIT");
+      const id = crypto.randomUUID(), code = crypto.randomUUID().replaceAll("-", "").toUpperCase();
+      db.query("INSERT INTO woe_rooms(room_id,join_code,mode,host_id,status,revision,created_at,updated_at,expires_at) VALUES (?,?,'1v1',?,'WAITING',1,?,?,?)").run(id, code, p, now, now, now + WAIT);
+      db.query("INSERT INTO core_defense_rooms VALUES (?,?)").run(id, b.mode);
+      db.query("INSERT INTO woe_members VALUES (?,?,NULL,?)").run(p, id, now);
+      if (b.mode !== "coop") {
+        const result = start(room(id), now);
+        if (result.status !== 200) {
+          db.query("DELETE FROM woe_members WHERE room_id=?").run(id);
+          db.query("DELETE FROM core_defense_rooms WHERE room_id=?").run(id);
+          db.query("DELETE FROM woe_rooms WHERE room_id=?").run(id);
+        }
+        return result;
+      }
+      return { status: 200, data: view(room(id), p) };
+    }),
+    join: (p, b) => mutate(p, b, "join", ["room_id_or_code"], () => valid4(b.room_id_or_code) ? fail6(403, "INVITE_REQUIRED") : fail6(400, "INVALID_REQUEST")),
+    joinFromInvitation: joinRoom,
+    start: (p, b) => mutate(p, b, "start", ["room_id", "expected_revision"], (now) => {
+      if (!valid4(b.room_id) || !Number.isSafeInteger(b.expected_revision))
+        return fail6(400, "INVALID_REQUEST");
+      const r = memberRoom(b.room_id, p);
+      if (!r)
+        return fail6(404, "ROOM_UNAVAILABLE");
+      if (r.host_id !== p)
+        return fail6(403, "HOST_REQUIRED");
+      if (r.status !== "WAITING")
+        return fail6(409, "ROOM_NOT_WAITING");
+      if (r.revision !== b.expected_revision)
+        return fail6(409, "REVISION_CONFLICT");
+      return start(r, now);
+    }),
+    leave: (p, b) => mutate(p, b, "leave", ["room_id"], (now) => {
+      if (!valid4(b.room_id))
+        return fail6(400, "INVALID_REQUEST");
+      const r = memberRoom(b.room_id, p);
+      if (!r)
+        return fail6(404, "ROOM_UNAVAILABLE");
+      if (r.status === "STARTED") {
+        db.query("UPDATE core_defense_participants SET last_active_at=max(last_active_at,?) WHERE match_id=? AND controller_id=?").run(now, r.match_id, p);
+        return { status: 200, data: { left: true, match_id: r.match_id } };
+      }
+      db.query("DELETE FROM woe_members WHERE player_id=?").run(p);
+      const ms = members(r.room_id);
+      if (!ms.length)
+        db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=?").run(now, r.room_id);
+      else
+        db.query("UPDATE woe_rooms SET host_id=?,revision=revision+1,updated_at=?,expires_at=? WHERE room_id=?").run(r.host_id === p ? ms[0].player_id : r.host_id, now, now + WAIT, r.room_id);
+      return { status: 200, data: { left: true } };
+    })
+  };
+}
+
+// src/woe/core_defense_match_service.ts
+var PAGE2 = 100;
+var EVENT_LIMIT2 = 2000;
+var REPLAY_WINDOW = 600000;
+var FUTURE2 = 60000;
+var ACTION_LIMIT2 = 2048;
+var RETENTION5 = 86400000;
+var fail7 = (status, error2) => ({ status, data: { error: error2 } });
+var valid5 = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && v.trim() === v && !/[\u0000-\u001f\u007f-\u009f]/u.test(v);
+function createCoreDefenseMatchService(db, canServe, clock = Date.now) {
+  const row = (id) => db.query("SELECT m.* FROM woe_matches m JOIN core_defense_rooms c ON c.room_id=m.room_id WHERE m.match_id=?").get(id);
+  const member = (id, p) => db.query("SELECT * FROM woe_match_participants WHERE match_id=? AND controller_id=? AND human=1").get(id, p);
+  const transaction = (fn) => {
+    if (!canServe())
+      return fail7(503, "FOREST_CORE_DEFENSE_UNAVAILABLE");
+    return db.transaction(() => {
+      if (!canServe())
+        return fail7(503, "FOREST_CORE_DEFENSE_UNAVAILABLE");
+      const result = fn();
+      if (!canServe())
+        throw Error("FOREST_CORE_DEFENSE_FENCED");
+      return result;
+    }).immediate();
+  };
+  const touch = (id, p, now) => db.query("UPDATE core_defense_participants SET last_active_at=max(last_active_at,?) WHERE match_id=? AND controller_id=?").run(now, id, p);
+  function snapshot2(r, p, after) {
+    const first = db.query("SELECT min(seq) n FROM woe_match_events WHERE match_id=?").get(r.match_id);
+    const gap = after > r.event_seq || (first.n === null ? after < r.event_seq : after < first.n - 1);
+    const events2 = gap ? [] : db.query("SELECT seq,event_json FROM woe_match_events WHERE match_id=? AND seq>? ORDER BY seq LIMIT ?").all(r.match_id, after, PAGE2).map((x) => ({ seq: x.seq, ...JSON.parse(x.event_json) }));
+    const state = JSON.parse(r.state_json);
+    const snap = getCoreDefenseSnapshot(state, p);
+    snap.events = [];
+    const participants = db.query("SELECT controller_id,human,forfeited FROM woe_match_participants WHERE match_id=? ORDER BY controller_id").all(r.match_id);
+    const score = db.query("SELECT mode,completed_waves,enemies_killed,remaining_lab_hp,elapsed_ticks,reason,assisted,finished_at FROM core_defense_results WHERE match_id=?").get(r.match_id) ?? null;
+    return { match_id: r.match_id, status: r.status, revision: r.revision, tick: state.tick, server_time_unix_ms: clock(), snapshot: snap, participants, score, events: events2, cursor: gap ? r.event_seq : events2.at(-1)?.seq ?? after, latest_event_seq: r.event_seq, resync_required: gap };
+  }
+  function save2(r, s, events2, now) {
+    if (!canServe())
+      throw Error("FOREST_CORE_DEFENSE_FENCED");
+    if (s.result)
+      events2.push({ type: "result", tick: s.tick, result: s.result });
+    let seq = r.event_seq;
+    for (const e of events2)
+      db.query("INSERT INTO woe_match_events VALUES (?,?,?)").run(r.match_id, ++seq, JSON.stringify(e));
+    if (seq > EVENT_LIMIT2)
+      db.query("DELETE FROM woe_match_events WHERE match_id=? AND seq<=?").run(r.match_id, seq - EVENT_LIMIT2);
+    s.events = [];
+    for (const c of s.controllers)
+      c.actionIds = [];
+    const json = JSON.stringify(s), done = !!s.result;
+    db.query("UPDATE woe_matches SET state_json=?,event_seq=?,revision=revision+1,updated_at=?,status=?,finished_at=? WHERE match_id=?").run(json, seq, now, done ? "FINISHED" : "RUNNING", done ? now : null, r.match_id);
+    if (done) {
+      const hp = s.laboratories.filter((l) => l.team === "blue").reduce((n, l) => n + l.hp, 0);
+      const assisted = !!db.query("SELECT 1 FROM woe_match_participants WHERE match_id=? AND human=1 AND forfeited=1").get(r.match_id);
+      db.query("INSERT INTO core_defense_results VALUES (?,?,?,?,?,?,?,?,?)").run(r.match_id, s.mode, s.completedWaves, s.enemiesKilled, hp, s.tick, s.result.reason, assisted ? 1 : 0, now);
+      recordMonthlyScore(db, r.match_id, s, now);
+      db.query("UPDATE woe_rooms SET status='EXPIRED',updated_at=? WHERE room_id=?").run(now, r.room_id);
+      db.query("DELETE FROM woe_members WHERE room_id=?").run(r.room_id);
+    }
+  }
+  function action(p, b, kind) {
+    const keys = kind === "deploy" ? ["match_id", "client_action_id", "slot", "card_id", "lane"] : ["match_id", "client_action_id"];
+    if (!b || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !keys.includes(k)) || !valid5(b.match_id) || !valid5(b.client_action_id))
+      return fail7(400, "INVALID_REQUEST");
+    const payload = JSON.stringify(keys.map((k) => [k, b[k]]));
+    return transaction(() => {
+      const r = row(b.match_id);
+      if (!r)
+        return fail7(404, "MATCH_UNAVAILABLE");
+      const participant = member(b.match_id, p);
+      if (!participant)
+        return fail7(403, "NOT_PARTICIPANT");
+      const activity = db.query("SELECT last_active_at,replay_watermark FROM core_defense_participants WHERE match_id=? AND controller_id=?").get(b.match_id, p);
+      const wallNow = clock(), now = Math.max(wallNow, activity.last_active_at, activity.replay_watermark);
+      touch(b.match_id, p, wallNow);
+      let expires = wallNow + RETENTION5;
+      if (kind === "deploy") {
+        const m = /^(\d{13}):([^\s:]{1,110})$/.exec(b.client_action_id);
+        if (!m)
+          return fail7(400, "INVALID_ACTION_ID");
+        const timestamp = Number(m[1]);
+        if (timestamp < now - REPLAY_WINDOW || timestamp > now + FUTURE2)
+          return fail7(409, "ACTION_EXPIRED");
+        expires = timestamp + REPLAY_WINDOW;
+      }
+      const old = db.query("SELECT * FROM core_defense_actions WHERE match_id=? AND player_id=? AND action_id=?").get(b.match_id, p, b.client_action_id);
+      if (old)
+        return old.kind === kind && old.payload === payload ? { status: old.status, data: JSON.parse(old.response) } : fail7(409, "ACTION_CONFLICT");
+      if (kind === "forfeit" && (r.status !== "RUNNING" || participant.forfeited))
+        return fail7(409, r.status !== "RUNNING" ? "MATCH_FINISHED" : "FORFEITED");
+      if (kind === "deploy") {
+        db.query("DELETE FROM core_defense_actions WHERE match_id=? AND player_id=? AND kind='deploy' AND expires_at<?").run(b.match_id, p, now);
+        if (db.query("SELECT count(*) n FROM core_defense_actions WHERE match_id=? AND player_id=? AND kind='deploy'").get(b.match_id, p).n >= ACTION_LIMIT2)
+          return fail7(429, "ACTION_LIMIT");
+      }
+      let result;
+      const s = JSON.parse(r.state_json);
+      if (r.status !== "RUNNING" || participant.forfeited)
+        result = fail7(409, r.status !== "RUNNING" ? "MATCH_FINISHED" : "FORFEITED");
+      else if (kind === "deploy") {
+        const applied = applyCoreDefenseDeployment(s, { actionId: b.client_action_id, controllerId: p, slot: b.slot, cardId: b.card_id, lane: b.lane });
+        if (!applied.accepted)
+          result = fail7(409, applied.reason);
+        else {
+          save2(r, applied.state, applied.state.events, wallNow);
+          result = { status: 200, data: { accepted: true, match_id: r.match_id, revision: r.revision + 1, server_time_unix_ms: wallNow } };
+        }
+      } else {
+        db.query("UPDATE woe_match_participants SET forfeited=1 WHERE match_id=? AND controller_id=?").run(r.match_id, p);
+        db.query("DELETE FROM woe_members WHERE player_id=? AND room_id=?").run(p, r.room_id);
+        s.result = { winner: null, reason: "forfeit" };
+        save2(r, s, [], wallNow);
+        result = { status: 200, data: snapshot2(row(r.match_id), p, r.event_seq) };
+      }
+      db.query("INSERT INTO core_defense_actions VALUES (?,?,?,?,?,?,?,?)").run(r.match_id, p, b.client_action_id, kind, payload, result.status, JSON.stringify(result.data), expires);
+      return result;
+    });
+  }
+  function tickOne(id) {
+    if (!canServe())
+      return;
+    db.transaction(() => {
+      if (!canServe())
+        return;
+      const r = row(id);
+      if (!r || r.status !== "RUNNING")
+        return;
+      const now = clock();
+      let s = JSON.parse(r.state_json);
+      const timeout = Math.max(1000, Math.min(86400000, Number(Bun.env.FOREST_CORE_DEFENSE_INACTIVITY_MS) || 300000));
+      const live = db.query("SELECT p.controller_id,a.last_active_at FROM woe_match_participants p JOIN core_defense_participants a ON a.match_id=p.match_id AND a.controller_id=p.controller_id WHERE p.match_id=? AND p.human=1 AND p.forfeited=0").all(id);
+      if (s.mode === "coop" && db.query("SELECT 1 FROM woe_match_participants WHERE match_id=? AND human=1 AND forfeited=1").get(id)) {
+        s.result = { winner: null, reason: "forfeit" };
+        save2(r, s, [], now);
+        if (!canServe())
+          throw Error("FOREST_CORE_DEFENSE_FENCED");
+        return;
+      }
+      if (!live.length || live.every((p) => now - p.last_active_at >= timeout)) {
+        s.result = { winner: null, reason: "abandoned" };
+        save2(r, s, [], now);
+        if (!canServe())
+          throw Error("FOREST_CORE_DEFENSE_FENCED");
+        return;
+      }
+      const { phase: oldPhase, wave: oldWave } = s;
+      s = advanceCoreDefenseTick(s);
+      const events2 = [];
+      if (s.tick === 1)
+        events2.push({ type: "wave_start", tick: s.tick, wave: 1, pendingSpawns: 4 });
+      events2.push(...s.events);
+      if (oldPhase === "wave" && s.phase === "intermission")
+        events2.push({ type: "wave_complete", tick: s.tick, wave: s.completedWaves, enemiesKilled: s.enemiesKilled }, { type: "intermission", tick: s.tick, intermissionTicks: s.intermissionTicks });
+      if (s.wave !== oldWave)
+        events2.push({ type: "wave_start", tick: s.tick, wave: s.wave, pendingSpawns: s.pendingSpawns });
+      save2(r, s, events2, now);
+      if (!canServe())
+        throw Error("FOREST_CORE_DEFENSE_FENCED");
+    }).immediate();
+  }
+  return { tickOne, leaderboard: (mode, month) => transaction(() => readMonthlyScores(db, mode, month, clock())), state: (p, id, after) => {
+    if (!valid5(id) || typeof after !== "string" || !/^\d{1,15}$/.test(after) || !Number.isSafeInteger(Number(after)))
+      return fail7(400, "INVALID_REQUEST");
+    return transaction(() => {
+      const r = row(id);
+      if (!r)
+        return fail7(404, "MATCH_UNAVAILABLE");
+      if (!member(id, p))
+        return fail7(403, "NOT_PARTICIPANT");
+      touch(id, p, clock());
+      return { status: 200, data: snapshot2(r, p, Number(after)) };
+    });
+  }, current: (p) => transaction(() => {
+    const r = db.query("SELECT m.* FROM woe_matches m JOIN core_defense_rooms c ON c.room_id=m.room_id JOIN woe_match_participants p ON p.match_id=m.match_id WHERE p.controller_id=? AND p.human=1 ORDER BY (m.status='RUNNING' AND p.forfeited=0) DESC,m.created_at DESC LIMIT 1").get(p);
+    if (r)
+      touch(r.match_id, p, clock());
+    return { status: 200, data: r ? snapshot2(r, p, 0) : { match: null, server_time_unix_ms: clock() } };
+  }), deploy: (p, b) => action(p, b, "deploy"), forfeit: (p, b) => action(p, b, "forfeit") };
+}
 
 // src/forest_quests.ts
 import { createHmac as createHmac6 } from "crypto";
@@ -17581,7 +19277,7 @@ class ForestQuestError extends Error {
     this.status = status;
   }
 }
-var fail3 = (status, message) => {
+var fail8 = (status, message) => {
   throw new ForestQuestError(status, message);
 };
 function createForestQuests(o) {
@@ -17620,10 +19316,10 @@ function createForestQuests(o) {
   const current = (player, now) => {
     const p = o.position(player);
     if (!p)
-      fail3(409, "FOREST_POSITION_REQUIRED");
+      fail8(409, "FOREST_POSITION_REQUIRED");
     const npc = npcByZone.get(p.zone_id);
     if (!npc)
-      fail3(409, "FOREST_POSITION_REQUIRED");
+      fail8(409, "FOREST_POSITION_REQUIRED");
     expire(player, now);
     const old = db.query("SELECT * FROM forest_quests WHERE player_id=? AND npc_id=? AND state='COMPLETED' AND completed_at+?>? ORDER BY completed_at LIMIT 1").get(player, npc.id, DAY2, now);
     const q = old ?? offer(player, npc, now);
@@ -17636,37 +19332,37 @@ function createForestQuests(o) {
   }).immediate();
   const action = (player, kind, body) => {
     if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).sort().join(",") !== "client_action_id,quest_id" || typeof body.quest_id !== "string" || !/^[a-f0-9]{64}$/.test(body.quest_id) || typeof body.client_action_id !== "string" || !body.client_action_id.trim() || body.client_action_id.length > 64)
-      fail3(400, "INVALID_QUEST_ACTION");
+      fail8(400, "INVALID_QUEST_ACTION");
     return db.transaction(() => {
       const now = clock(), id = body.client_action_id;
       const prior = db.query("SELECT * FROM forest_quest_actions WHERE player_id=? AND action_id=?").get(player, id);
       if (prior) {
         if (prior.action !== kind || prior.quest_id !== body.quest_id)
-          fail3(409, "ACTION_ID_REUSED");
+          fail8(409, "ACTION_ID_REUSED");
         return JSON.parse(prior.result);
       }
       expire(player, now);
       const q = row(body.quest_id, player);
       if (!q)
-        fail3(404, "QUEST_NOT_FOUND");
+        fail8(404, "QUEST_NOT_FOUND");
       const p = o.position(player), npc = npcById.get(q.npc_id);
       if (!p || !npc || p.zone_id !== npc.zone || Math.hypot(p.x - npc.position[0], p.y - npc.position[1]) > 175)
-        fail3(409, "QUEST_OUT_OF_RANGE");
+        fail8(409, "QUEST_OUT_OF_RANGE");
       if (kind === "accept") {
         if (q.state !== "OFFERED" || availableDuration(q, now) <= 0)
-          fail3(409, "QUEST_UNAVAILABLE");
+          fail8(409, "QUEST_UNAVAILABLE");
         const a = availability(player, q, now);
         if (a.cooldown_until > now)
-          fail3(409, "QUEST_CANCEL_COOLDOWN");
+          fail8(409, "QUEST_CANCEL_COOLDOWN");
         if (a.active_quest)
-          fail3(409, "QUEST_ACTIVE_EXISTS");
+          fail8(409, "QUEST_ACTIVE_EXISTS");
         q.state = "ACTIVE";
         q.accepted_at = now;
         q.expires_at = now + availableDuration(q, now);
         db.query("UPDATE forest_quests SET state='ACTIVE',accepted_at=?,expires_at=? WHERE id=?").run(now, q.expires_at, q.id);
       } else if (kind === "cancel") {
         if (q.state !== "ACTIVE" || now >= q.expires_at)
-          fail3(409, "QUEST_UNAVAILABLE");
+          fail8(409, "QUEST_UNAVAILABLE");
         q.state = "OFFERED";
         q.progress = 0;
         q.progress_data = "{}";
@@ -17676,7 +19372,7 @@ function createForestQuests(o) {
         db.query("UPDATE forest_quests SET state='OFFERED',progress=0,progress_data='{}',accepted_at=NULL,expires_at=?,cancelled_until=? WHERE id=?").run(q.expires_at, q.cancelled_until, q.id);
       } else {
         if (q.state !== "COMPLETED" || now >= q.completed_at + DAY2)
-          fail3(409, "QUEST_UNAVAILABLE");
+          fail8(409, "QUEST_UNAVAILABLE");
         o.grant(player, JSON.parse(q.reward), q.id, now);
         q.state = "CLAIMED";
         q.claimed_at = now;
@@ -17885,7 +19581,7 @@ function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
   const expire = db.prepare("DELETE FROM pvp_queue WHERE expires_at <= ?");
   const queued = db.prepare("SELECT player_id, queued_at, expires_at, snapshot_json FROM pvp_queue WHERE player_id = ?");
   const active2 = db.prepare("SELECT p.match_id, m.kind FROM pvp_match_players p JOIN pvp_matches m ON m.match_id=p.match_id WHERE p.player_id = ? AND p.active = 1");
-  const first = db.prepare("SELECT q.player_id, q.queued_at, q.expires_at, q.snapshot_json FROM pvp_queue q WHERE q.player_id <> ? AND NOT EXISTS (SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=q.player_id AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?) ORDER BY q.queued_at, q.rowid LIMIT 1");
+  const first = db.prepare(`SELECT q.player_id, q.queued_at, q.expires_at, q.snapshot_json FROM pvp_queue q WHERE q.player_id <> ? AND NOT EXISTS (SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=q.player_id AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?) AND NOT ${woeBusySql("q.player_id", "?")} ORDER BY q.queued_at, q.rowid LIMIT 1`);
   const insert = db.prepare("INSERT INTO pvp_queue (player_id, queued_at, expires_at, snapshot_json) VALUES (?, ?, ?, ?)");
   const remove = db.prepare("DELETE FROM pvp_queue WHERE player_id = ?");
   const validId3 = (id) => typeof id === "string" && id.length > 0 && id.length <= 256;
@@ -17924,34 +19620,36 @@ function createPvpQueue(db, catalogs, trustedSnapshot, clock = Date.now) {
         db.query("DELETE FROM forest_duel_reservations WHERE invite_id IN (SELECT invite_id FROM forest_duel_invites WHERE status='EXPIRED')").run();
         if (db.query("SELECT 1 FROM forest_duel_reservations r JOIN forest_duel_invites i ON i.invite_id=r.invite_id WHERE r.player_id=? AND i.status IN ('PENDING','ACCEPTED') AND i.expires_at>?").get(playerId, now))
           throw new Error("PLAYER_BUSY");
-        const previous = queued.get(playerId);
-        if (previous) {
-          const stored = JSON.parse(previous.snapshot_json);
+        const previous2 = queued.get(playerId);
+        if (previous2) {
+          const stored = JSON.parse(previous2.snapshot_json);
           if (JSON.stringify(stored.selection) !== JSON.stringify(selection) || (stored.playback_protocol ?? 0) !== (playbackProtocol ?? 0))
             throw new Error("QUEUE_CONFLICT");
-          return { state: "QUEUED", joined_at: previous.queued_at, expires_at: previous.expires_at };
+          return { state: "QUEUED", joined_at: previous2.queued_at, expires_at: previous2.expires_at };
         }
+        if (activeWoe(db, playerId, now))
+          throw new Error("PLAYER_BUSY");
         endSpectatingForStart(playerId);
         if (activePractice(db, playerId, now))
           throw new Error("PLAYER_BUSY");
         const snapshot2 = trustedSnapshot(playerId, selection);
         if (!snapshot2 || snapshot2.player_id !== playerId || "error" in createPvpFighter(snapshot2, catalogs))
           throw new Error("UNTRUSTED_SETUP");
-        let opponent = first.get(playerId, now), other = null;
+        let opponent = first.get(playerId, now, now), other2 = null;
         while (opponent) {
           const stored = JSON.parse(opponent.snapshot_json);
-          other = stored.snapshot ?? null;
-          if (other && other.player_id === opponent.player_id && other.player_id !== playerId && !("error" in createPvpFighter(other, catalogs)))
+          other2 = stored.snapshot ?? null;
+          if (other2 && other2.player_id === opponent.player_id && other2.player_id !== playerId && !("error" in createPvpFighter(other2, catalogs)))
             break;
           remove.run(opponent.player_id);
-          opponent = first.get(playerId, now);
+          opponent = first.get(playerId, now, now);
         }
-        if (!opponent || !other) {
+        if (!opponent || !other2) {
           insert.run(playerId, now, now + 3600000, JSON.stringify({ selection, snapshot: snapshot2, ...playbackProtocol === 1 ? { playback_protocol: 1 } : {} }));
           return { state: "QUEUED", joined_at: now, expires_at: now + 3600000 };
         }
-        const id = createSharedPvpMatch(db, catalogs, snapshot2, other, now, "ranked", null, playbackProtocol === 1 && JSON.parse(opponent.snapshot_json).playback_protocol === 1 ? 1 : 0);
-        remove.run(other.player_id);
+        const id = createSharedPvpMatch(db, catalogs, snapshot2, other2, now, "ranked", null, playbackProtocol === 1 && JSON.parse(opponent.snapshot_json).playback_protocol === 1 ? 1 : 0);
+        remove.run(other2.player_id);
         return { state: "MATCHED", match_id: id };
       }).immediate();
     }
@@ -18030,7 +19728,7 @@ function settlePvpMatch(db, matchId, winner, now, reward) {
 }
 function createPvpChat(db, clock = Date.now) {
   const participant = db.prepare("SELECT 1 FROM pvp_match_players WHERE match_id = ? AND player_id = ?");
-  const previous = db.prepare("SELECT id, match_id, player_id, client_message_id, text, created_at FROM pvp_chat WHERE match_id = ? AND player_id = ? AND client_message_id = ?");
+  const previous2 = db.prepare("SELECT id, match_id, player_id, client_message_id, text, created_at FROM pvp_chat WHERE match_id = ? AND player_id = ? AND client_message_id = ?");
   const recent = db.prepare("SELECT created_at FROM pvp_chat WHERE player_id = ? ORDER BY id DESC LIMIT 1");
   const messages = db.prepare("SELECT id, player_id, text, created_at FROM pvp_chat WHERE match_id = ? AND id > ? ORDER BY id ASC LIMIT 100");
   const insert = db.prepare("INSERT INTO pvp_chat (match_id, player_id, client_message_id, text, created_at) VALUES (?, ?, ?, ?, ?)");
@@ -18051,7 +19749,7 @@ function createPvpChat(db, clock = Date.now) {
         throw new Error("INVALID_CHAT");
       return db.transaction(() => {
         authorize(match, player);
-        const existing = previous.get(match, player, clientId);
+        const existing = previous2.get(match, player, clientId);
         if (existing) {
           if (existing.text !== text)
             throw new Error("ACTION_CONFLICT");
@@ -18061,7 +19759,7 @@ function createPvpChat(db, clock = Date.now) {
         if (last && now - last.created_at < 1e4)
           throw new Error("CHAT_RATE_LIMIT");
         insert.run(match, player, clientId, text, now);
-        return { message: previous.get(match, player, clientId), duplicate: false };
+        return { message: previous2.get(match, player, clientId), duplicate: false };
       }).immediate();
     }
   };
@@ -20281,13 +21979,13 @@ import Stream2 from "stream";
 function largeObject(sql, oid, mode = 131072 | 262144) {
   return new Promise(async (resolve2, reject) => {
     await sql.begin(async (sql2) => {
-      let finish;
+      let finish2;
       !oid && ([{ oid }] = await sql2`select lo_creat(-1) as oid`);
       const [{ fd }] = await sql2`select lo_open(${oid}, ${mode}) as fd`;
       const lo = {
         writable,
         readable,
-        close: () => sql2`select lo_close(${fd})`.then(finish),
+        close: () => sql2`select lo_close(${fd})`.then(finish2),
         tell: () => sql2`select lo_tell64(${fd})`,
         read: (x) => sql2`select loread(${fd}, ${x}) as data`,
         write: (x) => sql2`select lowrite(${fd}, ${x})`,
@@ -20306,7 +22004,7 @@ function largeObject(sql, oid, mode = 131072 | 262144) {
         `
       };
       resolve2(lo);
-      return new Promise(async (r) => finish = r);
+      return new Promise(async (r) => finish2 = r);
       async function readable({
         highWaterMark = 2048 * 8,
         start = 0,
@@ -20482,8 +22180,8 @@ function Postgres(a, b2) {
       queries.push(query);
       closed.length && connect(closed.shift(), query);
     });
-    move(c, reserved);
-    c.reserved = () => queue.length ? c.execute(queue.shift()) : move(c, reserved);
+    move2(c, reserved);
+    c.reserved = () => queue.length ? c.execute(queue.shift()) : move2(c, reserved);
     c.reserved.release = true;
     const sql2 = Sql(handler2);
     sql2.release = () => {
@@ -20492,7 +22190,7 @@ function Postgres(a, b2) {
     };
     return sql2;
     function handler2(q) {
-      c.queue === full ? queue.push(q) : c.execute(q) || move(c, full);
+      c.queue === full ? queue.push(q) : c.execute(q) || move2(c, full);
     }
   }
   async function begin(options2, fn) {
@@ -20537,16 +22235,16 @@ function Postgres(a, b2) {
       }
       function handler2(q) {
         q.catch((e) => uncaughtError || (uncaughtError = e));
-        c.queue === full ? queries2.push(q) : c.execute(q) || move(c, full);
+        c.queue === full ? queries2.push(q) : c.execute(q) || move2(c, full);
       }
     }
     function onexecute(c) {
       connection2 = c;
-      move(c, reserved);
-      c.reserved = () => queries2.length ? c.execute(queries2.shift()) : move(c, reserved);
+      move2(c, reserved);
+      c.reserved = () => queries2.length ? c.execute(queries2.shift()) : move2(c, reserved);
     }
   }
-  function move(c, queue) {
+  function move2(c, queue) {
     c.queue.remove(c);
     queue.push(c);
     c.queue = queue;
@@ -20571,7 +22269,7 @@ function Postgres(a, b2) {
     busy.length ? go(busy.shift(), query) : queries.push(query);
   }
   function go(c, query) {
-    return c.execute(query) ? move(c, busy) : move(c, full);
+    return c.execute(query) ? move2(c, busy) : move2(c, full);
   }
   function cancel(query) {
     return new Promise((resolve2, reject) => {
@@ -20598,16 +22296,16 @@ function Postgres(a, b2) {
     resolve2();
   }
   function connect(c, query) {
-    move(c, connecting);
+    move2(c, connecting);
     c.connect(query);
     return c;
   }
   function onend(c) {
-    move(c, ended);
+    move2(c, ended);
   }
   function onopen(c) {
     if (queries.length === 0)
-      return move(c, open);
+      return move2(c, open);
     let max = Math.ceil(queries.length / (connecting.length + 1)), ready = true;
     while (ready && queries.length && max-- > 0) {
       const query = queries.shift();
@@ -20615,10 +22313,10 @@ function Postgres(a, b2) {
         return query.reserve(c);
       ready = c.execute(query);
     }
-    ready ? move(c, busy) : move(c, full);
+    ready ? move2(c, busy) : move2(c, full);
   }
   function onclose(c, e) {
-    move(c, closed);
+    move2(c, closed);
     c.reserved = null;
     c.onclose && (c.onclose(e), c.onclose = null);
     options.onclose && options.onclose(c.id);
@@ -20957,12 +22655,12 @@ function buildKey(options) {
   const keyBy = options.keyBy ?? "ip";
   const ip = options.ip ?? "unknown";
   const userId = options.userId ?? "anon";
-  const route = options.route ?? "global";
+  const route2 = options.route ?? "global";
   switch (keyBy) {
     case "user":
       return `${options.keyPrefix}:${userId}`;
     case "ip+route":
-      return `${options.keyPrefix}:${ip}:${route}`;
+      return `${options.keyPrefix}:${ip}:${route2}`;
     default:
       return `${options.keyPrefix}:${ip}`;
   }
@@ -21335,8 +23033,8 @@ function globalBossTier(roll, weights) {
 function worldDropAmount(min, max, roll) {
   return Math.min(max, min + Math.floor((max - min + 1) * roll));
 }
-function incrementalBossTokens(previous, current, divisor) {
-  return Math.floor(current / divisor) - Math.floor(previous / divisor);
+function incrementalBossTokens(previous2, current, divisor) {
+  return Math.floor(current / divisor) - Math.floor(previous2 / divisor);
 }
 
 // src/index.ts
@@ -21591,9 +23289,9 @@ var insertCredentialStmt = db.prepare("INSERT INTO credentials (username, player
 var updatePlayerSql = db.prepare("UPDATE players SET state_json = json_set(?, '$.state_revision', CASE WHEN json_valid(state_json) THEN MAX(0, CAST(COALESCE(json_extract(state_json, '$.state_revision'), 0) AS INTEGER)) + 1 ELSE 1 END), updated_at = ? WHERE player_id = ?");
 var updatePlayerStmt = {
   run(serialized, updatedAt, playerId) {
-    const previous = getPlayerByIdStmt.get(playerId);
-    if (previous) {
-      const before = JSON.parse(previous.state_json);
+    const previous2 = getPlayerByIdStmt.get(playerId);
+    if (previous2) {
+      const before = JSON.parse(previous2.state_json);
       const after = JSON.parse(serialized);
       const caps2 = walletCapacities(after);
       for (const [id, cap] of Object.entries(caps2)) {
@@ -22063,13 +23761,13 @@ function getIdempotentState(playerId, clientActionId, actionType, payload) {
     return null;
   }
   if (actionType) {
-    let previous;
+    let previous2;
     try {
-      previous = JSON.parse(already.payload_json);
+      previous2 = JSON.parse(already.payload_json);
     } catch {
       throw new HttpError(409, "Stored action payload is invalid.");
     }
-    if (already.action_type !== actionType || canonicalActionPayload(previous) !== canonicalActionPayload(payload))
+    if (already.action_type !== actionType || canonicalActionPayload(previous2) !== canonicalActionPayload(payload))
       throw new HttpError(409, "Action ID already used with different content.");
     return ensurePlayerState(playerId);
   }
@@ -22542,6 +24240,14 @@ async function startServer() {
       return false;
     }
   });
+  const woe = createWoeLobby(db, (id) => forest?.roomOf(id) ?? null, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid());
+  const coreEnabled = () => Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1" && !!forest && leaseValid();
+  const coreDefense = createCoreDefenseLobby(db, (id) => forest?.roomOf(id) ?? null, coreEnabled);
+  const coreMatches = createCoreDefenseMatchService(db, coreEnabled);
+  const minigameInvites = createMinigameInvitations(db, { canServe: () => socialEnabled && !!forest && leaseValid(), enabled: (kind) => kind === "woe" ? Bun.env.FOREST_WOE_ENABLED === "1" : Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1", online: (id) => globalChat.isOnline(id), join: { woe: woe.joinFromInvitation, core_defense: coreDefense.joinFromInvitation } });
+  const woeMatches = createWoeMatchService(db, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid(), Date.now, { canSchedule: () => !!forest && leaseValid(), coreDefense: coreMatches });
+  if ((Bun.env.FOREST_WOE_ENABLED === "1" || Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1") && forest)
+    woeMatches.start();
   if (forest && leaseToken) {
     getRedis().on("error", fenceLease);
     getRedis().on("close", fenceLease);
@@ -23043,6 +24749,91 @@ async function startServer() {
             if (req.method !== "POST" || url.pathname === "/forest/quests")
               return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
             return jsonResponse(forestQuests.action(playerId, url.pathname.endsWith("/accept") ? "accept" : url.pathname.endsWith("/cancel") ? "cancel" : "claim", await readSocialJson(req, Math.min(config.maxBodyBytes, 4096))));
+          }
+          if (["/forest/minigames/invitations", "/forest/minigames/invite-friends", "/forest/minigames/invite", "/forest/minigames/invite/respond", "/forest/minigames/invite/cancel"].includes(url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            if (!socialEnabled)
+              return jsonResponse({ error: "SOCIAL_DISABLED" }, 503);
+            if (!forest || !leaseValid() || Bun.env.FOREST_WOE_ENABLED !== "1" && Bun.env.FOREST_CORE_DEFENSE_ENABLED !== "1")
+              return jsonResponse({ error: "MINIGAMES_UNAVAILABLE" }, 503);
+            await applyRateLimit(ctx, { keyPrefix: "rl:forest-minigames", windowSeconds: 60, max: 120, keyBy: "user", userId: playerId });
+            let result;
+            if (req.method === "GET" && url.pathname.endsWith("/invitations"))
+              result = minigameInvites.state(playerId);
+            else if (req.method === "GET" && url.pathname.endsWith("/invite-friends"))
+              result = minigameInvites.friends(playerId, url.searchParams.get("room_id"));
+            else if (req.method === "POST" && ["/forest/minigames/invite", "/forest/minigames/invite/respond", "/forest/minigames/invite/cancel"].includes(url.pathname)) {
+              const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+              result = url.pathname.endsWith("/respond") ? minigameInvites.respond(playerId, body) : url.pathname.endsWith("/cancel") ? minigameInvites.cancel(playerId, body) : minigameInvites.invite(playerId, body);
+            } else
+              return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
+            return jsonResponse(result.data, result.status);
+          }
+          if (["/forest/core-defense/leaderboard", "/forest/core-defense/match/state", "/forest/core-defense/match/current", "/forest/core-defense/match/deploy", "/forest/core-defense/match/forfeit", "/forest/core-defense/rooms", "/forest/core-defense/state", "/forest/core-defense/create", "/forest/core-defense/join", "/forest/core-defense/start", "/forest/core-defense/leave"].includes(url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            if (!coreEnabled())
+              return jsonResponse({ error: "FOREST_CORE_DEFENSE_UNAVAILABLE" }, 503);
+            await applyRateLimit(ctx, { keyPrefix: "rl:forest-core-defense", windowSeconds: 60, max: 120, keyBy: "user", userId: playerId });
+            let result;
+            if (req.method === "GET" && url.pathname === "/forest/core-defense/leaderboard") {
+              const keys = [...url.searchParams.keys()];
+              result = keys.length === 2 && keys.filter((k) => k === "mode").length === 1 && keys.filter((k) => k === "month").length === 1 ? coreMatches.leaderboard(url.searchParams.get("mode"), url.searchParams.get("month")) : { status: 400, data: { error: "INVALID_REQUEST" } };
+            } else if (req.method === "GET" && url.pathname === "/forest/core-defense/rooms")
+              result = coreDefense.list();
+            else if (req.method === "GET" && url.pathname === "/forest/core-defense/state")
+              result = coreDefense.state(playerId, url.searchParams.get("room_id"));
+            else if (req.method === "GET" && url.pathname === "/forest/core-defense/match/state")
+              result = coreMatches.state(playerId, url.searchParams.get("match_id"), url.searchParams.get("after") ?? "0");
+            else if (req.method === "GET" && url.pathname === "/forest/core-defense/match/current")
+              result = coreMatches.current(playerId);
+            else if (req.method === "POST" && ["/forest/core-defense/create", "/forest/core-defense/join", "/forest/core-defense/start", "/forest/core-defense/leave", "/forest/core-defense/match/deploy", "/forest/core-defense/match/forfeit"].includes(url.pathname)) {
+              const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+              if (url.pathname.endsWith("/match/deploy"))
+                result = coreMatches.deploy(playerId, body);
+              else if (url.pathname.endsWith("/match/forfeit"))
+                result = coreMatches.forfeit(playerId, body);
+              else {
+                const action = url.pathname.substring("/forest/core-defense/".length);
+                result = coreDefense[action](playerId, body);
+              }
+            } else
+              return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
+            return jsonResponse(result.data, result.status);
+          }
+          if (["/forest/woe/match/state", "/forest/woe/match/current", "/forest/woe/match/deploy", "/forest/woe/match/forfeit"].includes(url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            if (Bun.env.FOREST_WOE_ENABLED !== "1" || !forest || !leaseValid())
+              return jsonResponse({ error: "FOREST_WOE_UNAVAILABLE" }, 503);
+            await applyRateLimit(ctx, { keyPrefix: "rl:forest-woe", windowSeconds: 60, max: 120, keyBy: "user", userId: playerId });
+            let result;
+            if (req.method === "GET" && url.pathname.endsWith("/state"))
+              result = woeMatches.state(playerId, url.searchParams.get("match_id"), url.searchParams.get("after") ?? "0");
+            else if (req.method === "GET" && url.pathname.endsWith("/current"))
+              result = woeMatches.current(playerId);
+            else if (req.method === "POST" && (url.pathname.endsWith("/deploy") || url.pathname.endsWith("/forfeit"))) {
+              const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+              result = url.pathname.endsWith("/deploy") ? woeMatches.deploy(playerId, body) : woeMatches.forfeit(playerId, body);
+            } else
+              return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
+            return jsonResponse(result.data, result.status);
+          }
+          if (["/forest/woe/rooms", "/forest/woe/state", "/forest/woe/create", "/forest/woe/join", "/forest/woe/seat", "/forest/woe/leave", "/forest/woe/start"].includes(url.pathname)) {
+            const playerId = await requireAuth(req, ctx);
+            if (Bun.env.FOREST_WOE_ENABLED !== "1" || !forest || !leaseValid())
+              return jsonResponse({ error: "FOREST_WOE_UNAVAILABLE" }, 503);
+            await applyRateLimit(ctx, { keyPrefix: "rl:forest-woe", windowSeconds: 60, max: 120, keyBy: "user", userId: playerId });
+            let result;
+            if (req.method === "GET" && url.pathname === "/forest/woe/rooms")
+              result = woe.list();
+            else if (req.method === "GET" && url.pathname === "/forest/woe/state")
+              result = woe.state(playerId, url.searchParams.get("room_id"));
+            else if (req.method === "POST" && !["/forest/woe/rooms", "/forest/woe/state"].includes(url.pathname)) {
+              const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+              const action = url.pathname.substring("/forest/woe/".length);
+              result = woe[action](playerId, body);
+            } else
+              return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
+            return jsonResponse(result.data, result.status);
           }
           if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel", "/forest/duels/ready"].includes(url.pathname)) {
             const playerId = await requireAuth(req, ctx);
@@ -23924,8 +25715,8 @@ async function startServer() {
               const seed = createHmac9("sha256", WORLD_SECRET).update("dungeon:" + body.run_id).digest();
               const elitesEnabled = Bun.env.DUNGEON_ELITES_ENABLED === "1";
               const tacticsEnabled = Bun.env.DUNGEON_TACTICS_ENABLED === "1";
-              const enemy = { ...generateDungeonEnemy(seed, body.run_id, 1, { ...catalogs, homunculi: homunculusCatalog().originals }, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
-              const combat = createDungeonCombatState(setup, enemy, catalogs);
+              const enemy2 = { ...generateDungeonEnemy(seed, body.run_id, 1, { ...catalogs, homunculi: homunculusCatalog().originals }, undefined, undefined, elitesEnabled, tacticsEnabled, true), floor: 1 };
+              const combat = createDungeonCombatState(setup, enemy2, catalogs);
               if (combat.error)
                 throw new HttpError(400, combat.error);
               combat.blessings_enabled = Bun.env.DUNGEON_BLESSINGS_ENABLED === "1";
@@ -24019,8 +25810,8 @@ async function startServer() {
                 const setup = buildTrustedCombatSetup({ ...JSON.parse(row.player_snapshot_json), player_id: playerId, boss_id: "hunt_common", boss_entity_id: SOLO_HUNT_BOSS_ENTITIES.hunt_common }, JSON.parse(row.loadout_json), catalogs, { independentLoadout: true });
                 if (setup.error)
                   throw new HttpError(409, "Dungeon loadout unavailable.");
-                const enemy = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, { ...catalogs, homunculi: homunculusCatalog().originals }, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1, special_encounter: generateDungeonEncounter(seed, row.run_id, cleared + 1, current.special_encounters_enabled === true) };
-                combat = createDungeonCombatState(setup, enemy, catalogs, current.active_weapon_slot);
+                const enemy2 = { ...generateDungeonEnemy(seed, row.run_id, cleared + 1, { ...catalogs, homunculi: homunculusCatalog().originals }, undefined, { ...previousStats, entity_id: current.npc.id, homunculus_id: current.npc.hom_id, spell_ids: current.npc.spell_ids }, current.elites_enabled === true, current.tactics_enabled === true, base !== null || current.elites_enabled === true), floor: cleared + 1, special_encounter: generateDungeonEncounter(seed, row.run_id, cleared + 1, current.special_encounters_enabled === true) };
+                combat = createDungeonCombatState(setup, enemy2, catalogs, current.active_weapon_slot);
                 if (combat.error)
                   throw new HttpError(409, combat.error);
                 combat.blessings_enabled = current.blessings_enabled === true;
@@ -24088,8 +25879,8 @@ async function startServer() {
                 if (prior.action_type !== actionType || canonicalActionPayload(JSON.parse(prior.payload_json)) !== canonicalActionPayload(payload))
                   throw new HttpError(409, "Action ID already used with different content.");
                 if (start) {
-                  const previous = JSON.parse(prior.result_state_json ?? "null");
-                  if (!previous || !db.query("SELECT 1 FROM dungeon_runs WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ?").get(previous.run_id, playerId, now))
+                  const previous2 = JSON.parse(prior.result_state_json ?? "null");
+                  if (!previous2 || !db.query("SELECT 1 FROM dungeon_runs WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ?").get(previous2.run_id, playerId, now))
                     throw new HttpError(409, "Dungeon run is closed.");
                 }
                 return jsonResponse(JSON.parse(prior.result_state_json ?? "null"));
@@ -24261,14 +26052,14 @@ async function startServer() {
               const now = Date.now();
               const prior = getActionStmt.get(playerId, actionId);
               if (prior) {
-                let previous, response2;
+                let previous2, response2;
                 try {
-                  previous = JSON.parse(prior.payload_json);
+                  previous2 = JSON.parse(prior.payload_json);
                   response2 = JSON.parse(prior.result_state_json ?? "null");
                 } catch {
                   throw new HttpError(409, "Invalid stored action.");
                 }
-                if (prior.action_type !== "SOLO_HUNT_TURN" || canonicalActionPayload(previous) !== canonicalActionPayload(payload) || !response2)
+                if (prior.action_type !== "SOLO_HUNT_TURN" || canonicalActionPayload(previous2) !== canonicalActionPayload(payload) || !response2)
                   throw new HttpError(409, "Action ID already used with different content.");
                 return jsonResponse(response2);
               }
@@ -24366,14 +26157,14 @@ async function startServer() {
               const now = Date.now();
               const prior = getActionStmt.get(playerId, actionId);
               if (prior) {
-                let previous, response2;
+                let previous2, response2;
                 try {
-                  previous = JSON.parse(prior.payload_json);
+                  previous2 = JSON.parse(prior.payload_json);
                   response2 = JSON.parse(prior.result_state_json ?? "null");
                 } catch {
                   throw new HttpError(409, "Invalid stored action.");
                 }
-                if (prior.action_type !== "SOLO_HUNT_INSPIRATION" || canonicalActionPayload(previous) !== canonicalActionPayload(payload) || !response2)
+                if (prior.action_type !== "SOLO_HUNT_INSPIRATION" || canonicalActionPayload(previous2) !== canonicalActionPayload(payload) || !response2)
                   throw new HttpError(409, "Action ID already used with different content.");
                 return jsonResponse(response2);
               }
@@ -24480,14 +26271,14 @@ async function startServer() {
               expireSoloHunts(playerId, now);
               const prior = getActionStmt.get(playerId, actionId);
               if (prior) {
-                let previous, result;
+                let previous2, result;
                 try {
-                  previous = JSON.parse(prior.payload_json);
+                  previous2 = JSON.parse(prior.payload_json);
                   result = JSON.parse(prior.result_state_json ?? "{}");
                 } catch {
                   throw new HttpError(409, "Invalid stored action.");
                 }
-                if (prior.action_type !== actionType || canonicalActionPayload(previous) !== canonicalActionPayload(payload))
+                if (prior.action_type !== actionType || canonicalActionPayload(previous2) !== canonicalActionPayload(payload))
                   throw new HttpError(409, "Action ID already used with different content.");
                 const existing = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(result.session_id, playerId);
                 if (!existing)
@@ -24807,9 +26598,9 @@ function guardianRoster(playerId, zoneId, parentId, now) {
   if (!definitions)
     return null;
   for (const definition of definitions) {
-    const previous = db.query("SELECT boss_snapshot_json FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND guardian_parent_id = ? AND guardian_id = ? ORDER BY CASE WHEN status = 'VERIFIED_WIN' THEN 0 ELSE 1 END, started_at DESC LIMIT 1").get(playerId, zoneId, parentId, definition.guardian_id);
-    if (previous) {
-      const snapshot2 = JSON.parse(previous.boss_snapshot_json);
+    const previous2 = db.query("SELECT boss_snapshot_json FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND guardian_parent_id = ? AND guardian_id = ? ORDER BY CASE WHEN status = 'VERIFIED_WIN' THEN 0 ELSE 1 END, started_at DESC LIMIT 1").get(playerId, zoneId, parentId, definition.guardian_id);
+    if (previous2) {
+      const snapshot2 = JSON.parse(previous2.boss_snapshot_json);
       definition.name = snapshot2.name;
       definition.texture_id = snapshot2.texture_id;
     }
@@ -25412,11 +27203,11 @@ function normalizeLab(labRaw) {
       }
       const data = entry;
       const level = clampInt(data?.level ?? 0, 0, 999);
-      const route = typeof data?.route == "string" ? data.route : "";
+      const route2 = typeof data?.route == "string" ? data.route : "";
       const runtime2 = data?.runtime && typeof data.runtime == "object" ? data.runtime : {};
       buildings[id] = {
         level,
-        route,
+        route: route2,
         runtime: {
           stored_output: typeof runtime2.stored_output === "number" && Number.isFinite(runtime2.stored_output) ? Math.max(0, Math.min(runtime2.stored_output, 1e9)) : 0,
           last_tick: clampInt(runtime2.last_tick ?? Date.now(), 0, Number.MAX_SAFE_INTEGER)
@@ -26406,7 +28197,7 @@ function directiveActive(runtime, id, at) {
   const directive = runtime.directive;
   return !!directive && directive.id === id && directive.starts_at <= at && at < directive.ends_at;
 }
-function tickProduction(building, nowMs, level, route, storageRoute, hqPath, labRuntime) {
+function tickProduction(building, nowMs, level, route2, storageRoute, hqPath, labRuntime) {
   if (!building.runtime) {
     building.runtime = {};
   }
@@ -26443,12 +28234,12 @@ function tickProduction(building, nowMs, level, route, storageRoute, hqPath, lab
     const from = boundaries[i - 1], to = boundaries[i], sample = from + (to - from) / 2;
     const rawRate = getBalanceNumber("reactor_base_rate", 0) + getBalanceNumber("reactor_rate_per_level", 0.002777777777777778) * Math.max(0, level);
     const multiplier = directiveActive(labRuntime, "production", sample) ? getBalanceNumber("hq_directive_production_mult", 1.1) : 1;
-    produced += Math.max(0, Math.min(rawRate * 2, computeOutputRate(level, route, storageRoute, hqPath, labRuntime, sample) * multiplier)) * (to - from) / 1000;
+    produced += Math.max(0, Math.min(rawRate * 2, computeOutputRate(level, route2, storageRoute, hqPath, labRuntime, sample) * multiplier)) * (to - from) / 1000;
   }
   runtime.stored_output = Math.max(0, (runtime.stored_output ?? 0) + produced);
   runtime.last_tick = nowMs;
 }
-function computeOutputRate(level, route, storageRoute, hqPath, labRuntime, nowMs) {
+function computeOutputRate(level, route2, storageRoute, hqPath, labRuntime, nowMs) {
   const base = getBalanceNumber("reactor_base_rate", 0);
   const perLevel = getBalanceNumber("reactor_rate_per_level", 0.002777777777777778);
   const routeMults = staticData.balance.reactor_route_output_mult ?? {
@@ -26466,13 +28257,13 @@ function computeOutputRate(level, route, storageRoute, hqPath, labRuntime, nowMs
   };
   const lvl = Math.max(0, level);
   const baseRate = base + perLevel * lvl;
-  const routeMult = getMultiplier(routeMults, route.toLowerCase(), 1);
+  const routeMult = getMultiplier(routeMults, route2.toLowerCase(), 1);
   const storageMult = getMultiplier(storageMults, storageRoute.toLowerCase(), 1);
   const hqMult = getMultiplier(hqMults, hqPath.toLowerCase(), 1);
   const boosts = getBoostMultipliers(labRuntime, nowMs);
   return Math.max(0, baseRate * routeMult * storageMult * hqMult * boosts.outputMult);
 }
-function claimProduction(building, capacity, route, storageRoute, hqPath, labRuntime, nowMs) {
+function claimProduction(building, capacity, route2, storageRoute, hqPath, labRuntime, nowMs) {
   if (!building.runtime) {
     building.runtime = {};
   }
@@ -26482,7 +28273,7 @@ function claimProduction(building, capacity, route, storageRoute, hqPath, labRun
   const claimable = Math.floor(Math.min(available, cap));
   const boosts = getBoostMultipliers(labRuntime, nowMs);
   let loss = 0;
-  if (route.toLowerCase() == "volatile" && claimable > 0) {
+  if (route2.toLowerCase() == "volatile" && claimable > 0) {
     let lossChance = getBalanceNumber("volatile_loss_chance", 0.25);
     lossChance *= getMultiplier(staticData.balance.hq_risk_mult ?? { scientific: 0.9, chaotic: 1.1, industrial: 0.85 }, hqPath.toLowerCase(), 1);
     lossChance *= boosts.lossChanceMult;
@@ -26499,7 +28290,7 @@ function claimProduction(building, capacity, route, storageRoute, hqPath, labRun
   const claimed = Math.max(0, claimable - loss);
   runtime.stored_output = Math.max(0, available - claimable);
   const grants = { essence: Math.floor(claimed) };
-  if (route.toLowerCase() == "mutagenic" && claimed > 0) {
+  if (route2.toLowerCase() == "mutagenic" && claimed > 0) {
     const rareChance = getMutagenicRareChance(storageRoute, hqPath, boosts.rareChanceMult);
     if (Math.random() < rareChance) {
       grants.arcane_shard = 1;
@@ -26927,9 +28718,9 @@ function getPlayerPowerScore(state) {
   }
   return Math.floor(total);
 }
-function computeBossTokens(previous, current) {
+function computeBossTokens(previous2, current) {
   const divisor = Math.max(1, getBalanceNumber("boss_token_divisor", 1000));
-  const tokens = incrementalBossTokens(previous, current, divisor);
+  const tokens = incrementalBossTokens(previous2, current, divisor);
   return clampInt(tokens, 0, 1e6);
 }
 function computeBossRewards(boss, playerId) {

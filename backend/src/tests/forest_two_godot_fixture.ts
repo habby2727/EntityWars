@@ -25,7 +25,7 @@ try {
  const pipe=redis.pipeline();for(const r of records){const h=createHash('sha256').update(r.token).digest('hex');pipe.set(`access:${r.token}`,JSON.stringify({userId:r.id,createdAt:now,expiresAt:now+tokenLifetime}),'PX',tokenLifetime);pipe.set(`idle:${h}`,'1','EX',10800);pipe.set(`idle-initialized:${h}`,'1','PX',tokenLifetime);}await pipe.exec();
  server=Bun.spawn([process.execPath,'src/index.ts'],{cwd:backend,env:{...process.env,NODE_ENV:'test',BUN_ENV:'test',HOST:'127.0.0.1',PORT:String(ap),DB_PATH:dbPath,DATABASE_URL:'postgres://x:x@127.0.0.1:1/test',REDIS_URL:`redis://127.0.0.1:${rp}`,AUTH_ACCOUNT_TIMEOUT_MS:'100',FOREST_WS_ENABLED:'1',FOREST_WOE_ENABLED:process.env.FOREST_WOE_TEST==='1'?'1':'0',FOREST_CORE_DEFENSE_ENABLED:process.env.FOREST_CD_TEST==='1'?'1':'0',SOCIAL_ENABLED:process.env.FOREST_CD_TEST==='1'||process.env.FOREST_WOE_INVITE_TEST==='1'?'1':'0',FOREST_DUELS_ENABLED:process.env.FOREST_DUEL_TEST==='1'?'1':'0',PVP_ENABLED:'0',PVP_RNG_SECRET:'friendly-fixture-secret-at-least-32-bytes',SESSION_IDLE_ENABLED:'1'},stdout:Bun.file(serverLog),stderr:Bun.file(serverErr)});
  ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}assert(ready,'API startup failed');
- third=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${records[2].token}`,'X-EntityWars-Client-Build':'5509'}} as any);
+ third=new WebSocket(base.replace('http:','ws:')+'/forest/ws',{headers:{Authorization:`Bearer ${records[2].token}`,'X-EntityWars-Client-Build':'5510'}} as any);
  await new Promise<void>((ok,fail)=>{const t=setTimeout(()=>fail(Error('third peer welcome timeout')),5000);third!.onopen=()=>third!.send(JSON.stringify({v:1,type:'enter',summoner_id:'cyberghost'}));third!.onmessage=e=>{if(JSON.parse(String(e.data)).type==='welcome'){clearTimeout(t);ok();}};third!.onerror=()=>fail(Error('third peer socket error'));third!.onclose=e=>{if(e.code!==1000)fail(Error(`third peer closed: ${e.code} ${e.reason}`));};});
  const exe=Bun.env.GODOT_BIN||join(Bun.env.USERPROFILE||'','Desktop','Godot_v4.6.exe');
  for(let i=0;i<2;i++){
@@ -80,7 +80,7 @@ try {
  }
  if(process.env.FOREST_CD_TEST==='1'){assert(logs.every(log=>!log.includes('ERROR:')&&!log.includes('SCRIPT ERROR:')), 'Godot Core Defense client logged an error');const ids=logs.map(log=>/CORE_DEFENSE_FOREST_E2E_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Core Defense clients received different matches');}
  if(process.env.FOREST_CD_TEST==='1'){
-  const path='/forest/core-defense/leaderboard',headers={Authorization:`Bearer ${records[0].token}`,'X-EntityWars-Client-Build':'5509'};
+  const path='/forest/core-defense/leaderboard',headers={Authorization:`Bearer ${records[0].token}`,'X-EntityWars-Client-Build':'5510'};
   assert.equal((await fetch(base+path+'?mode=solo&month=current')).status,401);
   for(const q of ['mode=bad&month=current','mode=solo&mode=coop&month=current','mode=solo&month=current&extra=x']) assert.equal((await fetch(base+path+'?'+q,{headers})).status,400);
   for(const mode of ['solo','coop']){const res=await fetch(base+path+`?mode=${mode}&month=current`,{headers});assert.equal(res.status,200);const data=await res.json() as any;assert.equal(data.mode,mode);assert.equal(data.viewed_month,data.current_month);if(mode==='coop')assert(data.entries.some((e:any)=>e.display_name===records[0].name&&e.completed_waves>=1),'authoritative coop score');}
@@ -88,7 +88,7 @@ try {
   console.log('Authenticated leaderboard HTTP: unauthorized, invalid and duplicate filters, solo/coop and injected-fixture terminal score passed');
  }
  if(process.env.FOREST_WOE_TEST==='1'){
-  const response=await fetch(base+'/forest/core-defense/leaderboard?mode=solo&month=current',{headers:{Authorization:`Bearer ${records[0].token}`,'X-EntityWars-Client-Build':'5509'}});
+  const response=await fetch(base+'/forest/core-defense/leaderboard?mode=solo&month=current',{headers:{Authorization:`Bearer ${records[0].token}`,'X-EntityWars-Client-Build':'5510'}});
   assert.equal(response.status,503);console.log('Authenticated leaderboard HTTP: disabled flag passed');
  }
  if(process.env.FOREST_DUEL_TEST==='1'){const ids=logs.map(log=>/FRIENDLY_HTTP_PASS ([0-9a-f-]+)/.exec(log)?.[1]);assert(ids[0] && ids[0]===ids[1], 'Friendly participants received different matches');}

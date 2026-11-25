@@ -48,7 +48,7 @@ try {
  ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await Bun.sleep(100)}if(!ready)throw Error('API startup failed');
  const stats=()=>{if(process.platform!=='win32')return null;const cmd=`$p=Get-Process -Id ${server.pid}; [pscustomobject]@{cpu=$p.CPU;rss=$p.WorkingSet64} | ConvertTo-Json -Compress`;const x=Bun.spawnSync(['powershell','-NoProfile','-Command',cmd]);try{return JSON.parse(x.stdout.toString())}catch{return null}};
  const before=stats(),start=performance.now(),end=start+seconds*1000;
- await Promise.all(clients.map(async(c:any)=>{let next=0,actionAt=0;const prefix=c.cd?'core-defense':'woe',headers={Authorization:`Bearer ${c.token}`,'X-EntityWars-Client-Build':'5509','Content-Type':'application/json'};
+ await Promise.all(clients.map(async(c:any)=>{let next=0,actionAt=0;const prefix=c.cd?'core-defense':'woe',headers={Authorization:`Bearer ${c.token}`,'X-EntityWars-Client-Build':'5510','Content-Type':'application/json'};
   while(performance.now()<end){const t=performance.now();if(t<next){await Bun.sleep(next-t);continue}next=t+pollMs;
    const request=async(url:string,body?:any)=>{const at=performance.now();try{const res=await fetch(base+url,{headers,method:body?'POST':'GET',...(body?{body:JSON.stringify(body)}:{})});const data=await res.json() as any;c.latencies.push(performance.now()-at);c.statuses[res.status]=(c.statuses[res.status]||0)+1;return {status:res.status,data}}catch{c.statuses.network=(c.statuses.network||0)+1;return {status:0,data:{}}}};
    const res=await request(`/forest/${prefix}/match/state?match_id=${c.match}&after=${c.cursor}`);
