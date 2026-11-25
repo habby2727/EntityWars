@@ -48,10 +48,25 @@ test("snapshots expose only the viewer's hand and zeal",()=>{
    const snapshot=getPublicSnapshot(s,viewer);
    for(const p of snapshot.players) {
      const source=s.controllers.find(c=>c.id===p.id)!;
-     if(p.id===viewer) { expect(p).toEqual({id:p.id,team:p.team,zeal:source.zealTenths/10,slots:source.slots}); }
+     if(p.id===viewer) { expect(p).toEqual({id:p.id,team:p.team,zeal:source.zealTenths/10,slots:source.slots,allowedDeploymentLanes:[s.controllers.filter(c=>c.team===source.team).indexOf(source)===0?'left':'right']}); }
      else { expect(p).toEqual({id:p.id,team:p.team}); }
      expect(p).not.toHaveProperty("queue"); expect(p).not.toHaveProperty("actionIds");
    }
+ }
+});
+test("2v2 seat ownership survives serialization and applies to bots and destroyed labs",()=>{
+ let s=JSON.parse(JSON.stringify(initializeMatch('2v2','seats',['blue','bot-blue','red','bot-red'])));
+ for (const [i,lane] of ['left','right','left','right'].entries()) {
+  const p=s.controllers[i]; p.zealTenths=100;
+  const cmd={actionId:`seat-${i}`,controllerId:p.id,slot:0,cardId:p.slots[0],lane:lane as 'left'|'right'};
+  const before=structuredClone(s);
+  expect(applyDeployment(s,{...cmd,lane:lane==='left'?'right':'left'})).toMatchObject({accepted:false,reason:'LANE_NOT_OWNED'});
+  expect(s).toEqual(before);
+  expect(applyDeployment(s,{...cmd,lane:'invalid' as any})).toMatchObject({accepted:false,reason:'INVALID_LANE'});
+  expect(applyDeployment(s,cmd).accepted).toBe(true);
+  s.laboratories.find((l:any)=>l.team===p.team&&l.lane===lane).hp=0;
+  expect(applyDeployment(s,cmd)).toMatchObject({accepted:false,reason:'LANE_DESTROYED'});
+  expect(getPublicSnapshot(s,p.id).players.find((x:any)=>x.id===p.id)!.allowedDeploymentLanes).toEqual([]);
  }
 });
 test("rerouting beyond the plaza continues across at the same depth",()=>{

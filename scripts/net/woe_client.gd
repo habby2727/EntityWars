@@ -127,7 +127,7 @@ func mutate(action: String, values: Dictionary = {}) -> Dictionary:
 	var code := int(result.code)
 	if code == 200 and action in ["create", "join"] and not valid_room(result.get("data"), str(ConnectionGate.player_id)):
 		return {"code":0,"error":"WOE_NETWORK"}
-	if code > 0 and code < 500 and code != 408:
+	if code > 0 and code < 500 and code != 408 and code != 429:
 		_save_pending({})
 		pending = {}
 		if code == 200:

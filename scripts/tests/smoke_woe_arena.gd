@@ -64,11 +64,11 @@ func _run() -> void:
 		assert(arena._lab_bars["blue:left"].position.x + arena._lab_bars["blue:left"].size.x < 535.0)
 	arena._match_id = "m"
 	arena._cards = {"neon":{"cost":2,"element":"mercury"}}
-	arena._snapshot = {"tick":1,"units":[],"laboratories":[],"players":[{"id":str(root.get_node("ConnectionGate").player_id),"team":"blue","zeal":5,"slots":["neon","neon","neon"]}],"result":null}
+	arena._snapshot = {"tick":1,"units":[],"laboratories":[],"players":[{"id":str(root.get_node("ConnectionGate").player_id),"team":"blue","zeal":5,"slots":["neon","neon","neon"],"allowedDeploymentLanes":["left"]}],"result":null}
 	arena._render_snapshot()
 	assert(arena._zeal_meter.segments == 10 and arena._buttons[0].icon != null)
 	arena._select(0)
-	assert(arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["red:left"].visible)
+	assert(arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible and not arena._lane_buttons["red:left"].visible)
 	arena._accept_state({"match_id":"m","revision":2,"snapshot":arena._snapshot,"events":[{"seq":1,"type":"spawn","unit_id":4,"card_id":"neon","team":"red","position":{"x":100,"y":100}}]},true)
 	assert(arena._cursor == 1)
 	arena._accept_state({"match_id":"m","revision":1,"snapshot":arena._snapshot,"events":[{"seq":1,"type":"spawn","unit_id":4,"card_id":"neon","team":"red","position":{"x":100,"y":100}}]},true)
@@ -126,7 +126,10 @@ func _run() -> void:
 	assert(fx.effects.is_empty())
 	arena._lab_bars["blue:left"].value = 0
 	arena._update_hud()
-	assert(not arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible)
+	assert(not arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible)
+	arena._own.allowedDeploymentLanes = ["right"]
+	arena._update_hud()
+	assert(arena._lane_buttons["blue:right"].visible)
 	arena._accept_state({"match_id":"m","revision":4,"snapshot":arena._snapshot,"resync_required":true,"cursor":50},true)
 	assert(arena._cursor == 50 and arena._units.is_empty())
 	var finished: Dictionary = arena._snapshot.duplicate(true)

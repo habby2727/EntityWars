@@ -30,6 +30,20 @@ test('leave preserves match, forfeit releases reservation and retains result',()
 test('2v2 forfeit enables bot takeover',()=>{
  const h=setup('2v2',['a','b','c']);expect(h.service.forfeit('a',{match_id:h.id,client_action_id:'f'}).status).toBe(200);expect(h.service.state('b',h.id,'0').data.status).toBe('RUNNING');h.service.pulse();const s=h.service.state('b',h.id,'0').data;expect(s.snapshot.units.some((u:any)=>u.controllerId==='a')).toBe(true);expect(h.service.deploy('a',{match_id:h.id,client_action_id:'d',slot:0,card_id:'neon',lane:'left'}).data.error).toBe('FORFEITED');h.db.close();
 });
+test('2v2 bot takeover and reconnect retain seat lane ownership',()=>{
+ const h=setup('2v2',['a','b','c']);
+ const a=h.service.state('a',h.id,'0').data.snapshot.players.find((p:any)=>p.id==='a');
+ expect(a.allowedDeploymentLanes).toEqual(['left']);
+ const slot=a.slots.findIndex((id:string)=>cardById[id].cost<=5);
+ const denied=h.service.deploy('a',{match_id:h.id,client_action_id:'wrong-lane',slot,card_id:a.slots[slot],lane:'right'});
+ expect(denied.data.error).toBe('LANE_NOT_OWNED');
+ expect(h.service.state('a',h.id,'0').data.snapshot.players.find((p:any)=>p.id==='a')).toEqual(a);
+ h.service.forfeit('a',{match_id:h.id,client_action_id:'forfeit-seat'});h.service.pulse();
+ const units=h.service.state('b',h.id,'0').data.snapshot.units;
+ expect(units.some((u:any)=>u.controllerId==='a')).toBe(true);
+ expect(units.filter((u:any)=>u.controllerId==='a').every((u:any)=>u.lane==='left')).toBe(true);
+ h.db.close();
+});
 test('event cursor gaps request a resync',()=>{
  const h=setup();h.service.pulse();h.db.query('DELETE FROM woe_match_events WHERE match_id=?').run(h.id);h.db.query('UPDATE woe_matches SET event_seq=2002 WHERE match_id=?').run(h.id);h.db.query('INSERT INTO woe_match_events VALUES (?,?,?)').run(h.id,2002,JSON.stringify({type:'spawn'}));expect(h.service.state('a',h.id,'0').data.resync_required).toBe(true);expect(h.service.state('a',h.id,'9999').data.resync_required).toBe(true);h.db.close();
 });

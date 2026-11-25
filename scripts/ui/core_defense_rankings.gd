@@ -101,7 +101,7 @@ func _fetch() -> void:
 	var result: Dictionary = await CoreDefenseClient.request("/forest/core-defense/leaderboard?mode=" + requested_mode + "&month=" + requested_month, null, self)
 	if not is_inside_tree() or is_queued_for_deletion() or request_generation != _generation or _identity != CoreDefenseClient.identity(): return
 	_retry.disabled = false
-	if result.get("code") != 200 or not result.get("data") is Dictionary or not result.data.get("entries") is Array or result.data.get("mode") != requested_mode:
+	if result.get("code") != 200 or not result.get("data") is Dictionary or not result.data.get("entries") is Array or result.data.get("mode") != requested_mode or not result.data.get("current_month") is String or not result.data.get("previous_month") is String or result.data.get("viewed_month") != result.data.get("current_month" if requested_month == "current" else "previous_month"):
 		_status.text = tr("CD_UNAVAILABLE")
 		return
 	_current.text = str(result.data.get("current_month", ""))
@@ -111,7 +111,19 @@ func _fetch() -> void:
 	for entry in result.data.entries:
 		if not entry is Dictionary: continue
 		position += 1
-		var row := Label.new()
-		row.text = "%d.  %s  ?  %d" % [position, str(entry.get("display_name", "")), int(entry.get("completed_waves", 0))]
-		row.clip_text = true
+		var row := HBoxContainer.new()
+		var rank := Label.new()
+		rank.custom_minimum_size.x = 48
+		rank.text = "%d." % position
+		row.add_child(rank)
+		var player_name := Label.new()
+		player_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		player_name.clip_text = true
+		player_name.text = str(entry.get("display_name", ""))
+		row.add_child(player_name)
+		var wave := Label.new()
+		wave.custom_minimum_size.x = 48
+		wave.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		wave.text = str(int(entry.get("completed_waves", 0)))
+		row.add_child(wave)
 		_rows.add_child(row)

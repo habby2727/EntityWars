@@ -285,8 +285,9 @@ func _poll_state() -> void:
 	_server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 	_notice.text = tr("WOE_FORFEITED_NOTICE") if _forfeited else ""
 	_accept_state(result.data, true)
-	if _is_cd and str(_client.saved_pending().get("action", "")) == "start":
-		_reconcile_pending_start()
+	if str(_client.saved_pending().get("action", "")) == "start":
+		if _is_cd: _reconcile_pending_start()
+		elif not _acting: _retry_pending()
 	if _is_cd and not _other_recovery_busy and Time.get_ticks_msec() >= _other_recovery_next:
 		_reconcile_other_matches()
 	if _is_cd and int(result.data.get("revision", -1)) >= _deploy_receipt_revision:
@@ -505,7 +506,8 @@ func _update_hud() -> void:
 	for key in _lane_buttons:
 		var marker: Button = _lane_buttons[key]
 		var lab: Meter = _lab_bars[key]
-		marker.visible = not _finished and not _missing_match and not _forfeited and not (_is_cd and _awaiting_deploy_state) and _selected >= 0 and str(key).begins_with(_team + ":") and lab.value > 0
+		var lane := str(key).get_slice(":", 1)
+		marker.visible = not _finished and not _missing_match and not _forfeited and not (_is_cd and _awaiting_deploy_state) and _selected >= 0 and str(key).begins_with(_team + ":") and lab.value > 0 and (_is_cd or _debug_visual or lane in _own.get("allowedDeploymentLanes", []))
 		marker.disabled = _acting
 
 func _select(slot: int) -> void:

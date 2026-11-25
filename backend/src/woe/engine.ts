@@ -64,6 +64,16 @@ export function redirectRoute(unit: Unit, target: Lane): Point[] {
   }
   return [copy(approach[approach.length-1])];
 }
+/** The persisted controller order is the lobby's blue-left, blue-right, red-left, red-right seat order. */
+export function allowedDeploymentLanes(state: MatchState, controllerId: string): Lane[] {
+  const player = state.controllers.find(p => p.id === controllerId);
+  if (!player) return [];
+  const teamControllers = state.controllers.filter(p => p.team === player.team);
+  const permitted: Lane[] = state.kind === 'woe' && state.mode === '2v2'
+    ? [lanes[teamControllers.findIndex(p => p.id === controllerId)]].filter((lane): lane is Lane => !!lane)
+    : lanes;
+  return permitted.filter(lane => state.laboratories.some(l => l.team === player.team && l.lane === lane && l.hp > 0));
+}
 export function validateDeployment(state: MatchState, command: DeploymentCommand): string | null {
   if (state.result) return "MATCH_FINISHED";
   if (!command || typeof command.actionId !== "string" || !command.actionId.trim() || command.actionId.length > 128) return "INVALID_ACTION_ID";
@@ -71,6 +81,7 @@ export function validateDeployment(state: MatchState, command: DeploymentCommand
   if (!player) return "INVALID_CONTROLLER";
   if (player.actionIds.includes(command.actionId)) return "DUPLICATE_ACTION_ID";
   if (!lanes.includes(command.lane)) return "INVALID_LANE";
+  if (state.kind === 'woe' && state.mode === '2v2' && ![lanes[state.controllers.filter(p => p.team === player.team).findIndex(p => p.id === player.id)]].includes(command.lane)) return "LANE_NOT_OWNED";
   if (!Number.isInteger(command.slot) || command.slot < 0 || command.slot >= 3 || player.slots[command.slot] !== command.cardId || !cardById[command.cardId]) return "INVALID_CARD";
   if (!state.laboratories.find(l => l.team === player.team && l.lane === command.lane && l.hp > 0)) return "LANE_DESTROYED";
   if (player.zealTenths < cardById[command.cardId].cost * 10) return "INSUFFICIENT_ZEAL";
@@ -136,5 +147,5 @@ export function advanceTick(state: MatchState): MatchState {
 }
 /** Pass only an authenticated controller ID; omit it for a public/spectator view. */
 export function getPublicSnapshot(state: MatchState, viewerId?: string) {
-  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, maxHp:cardById[u.cardId].hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, ...(viewerId === p.id ? { zeal:p.zealTenths / 10, slots:p.slots } : {}) })), events:state.events, result:state.result });
+  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, maxHp:cardById[u.cardId].hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, ...(viewerId === p.id ? { zeal:p.zealTenths / 10, slots:p.slots, allowedDeploymentLanes:allowedDeploymentLanes(state,p.id) } : {}) })), events:state.events, result:state.result });
 }
