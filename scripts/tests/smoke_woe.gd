@@ -40,7 +40,7 @@ func _run() -> void:
 	assert(not SceneRouter.woe_context_valid())
 	var pregame = load("res://scripts/ui/woe_pregame.gd").new()
 	pregame._build()
-	pregame._room = {"room_id":"room", "mode":"1v1", "status":"WAITING", "host_id":"a", "revision":2, "join_code":"CODE", "members":[{"player_id":"tester-abc", "seat":"blue:left"}]}
+	pregame._room = {"room_id":"room", "mode":"1v1", "status":"WAITING", "host_id":"a", "revision":2, "join_code":"CODE", "members":[{"player_id":"tester-abc", "display_name":"Test Player", "seat":"blue:left"}]}
 	pregame._render()
 	assert(pregame._seat_buttons.size() == 4)
 	for viewport_size in [Vector2(1920,1080), Vector2(1280,720), Vector2(960,540)]:
@@ -49,11 +49,11 @@ func _run() -> void:
 		var factor: Vector2 = viewport_size / Vector2(1920,1080)
 		assert(pregame._seat_buttons["blue:left"].position.is_equal_approx(Vector2(295,795) * factor))
 		assert(pregame._seat_buttons["red:right"].position.is_equal_approx(Vector2(1395,155) * factor))
-	assert(pregame._seat_buttons["blue:right"].text.contains("tester-abc"))
+	assert(pregame._seat_buttons["blue:right"].text.contains("Test Player"))
 	pregame._room.mode = "2v2"
 	pregame._render()
-	assert(not pregame._seat_buttons["blue:right"].text.contains("tester-abc"))
-	assert(pregame._seat_buttons["blue:left"].text.contains("tester-abc"))
+	assert(not pregame._seat_buttons["blue:right"].text.contains("Test Player"))
+	assert(pregame._seat_buttons["blue:left"].text.contains("Test Player"))
 	pregame.free()
 	npc.queue_free()
 	print("WOE_SMOKE_PASS")

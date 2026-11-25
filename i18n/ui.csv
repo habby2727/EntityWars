@@ -526,6 +526,9 @@ FOREST_NPC_WAR_OF_ENTITIES_NAME,War of Entities,War of Entities
 FOREST_NPC_WAR_OF_ENTITIES_DIALOGUE,Enter the War of Elements and choose your laboratory.,Entra en la Guerra de los Elementos y elige tu laboratorio.
 FOREST_ACTION_WOE,Find a room,Buscar sala
 WOE_TITLE,War of Elements,Guerra de los Elementos
+INVITE_OPEN,Invite friend,Invitar amigo
+INVITE_UNKNOWN_PLAYER,Player,Jugador
+INVITE_CLEARING_GUIDANCE,Go to the matching game NPC in Duel Clearing and open its browser to accept.,Ve al NPC del juego en el Claro de Duelos y abre su menú para aceptar.
 WOE_CREATE_1V1,Create 1v1,Crear 1v1
 WOE_CREATE_2V2,Create 2v2,Crear 2v2
 WOE_REFRESH,Refresh,Actualizar
@@ -570,7 +573,7 @@ WOE_FORFEIT_CONFIRM,Forfeit this match?,¿Rendirse en esta partida?
 WOE_RETURN_CONFIRM,Return to the Forest? The battle will continue.,¿Volver al Bosque? La batalla continuará.
 WOE_ARENA_NETWORK,Reconnecting to the battle…,Reconectando a la batalla…
 WOE_ARENA_ACTION_FAILED,Action unavailable. State refreshed.,Acción no disponible. Estado actualizado.
-WOE_ZEAL,Zeal,Celo
+WOE_ZEAL,Zeal,Fervor
 WOE_DRAW,Draw,Empate
 WOE_VICTORY,Victory,Victoria
 WOE_DEFEAT,Defeat,Derrota

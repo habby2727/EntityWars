@@ -167,7 +167,8 @@ static func recover_woe_after_startup(match: Dictionary) -> bool:
 	var owner := _forest_verified_owner()
 	var client := tree.root.get_node("WoeClient")
 	if owner.is_empty() or not _woe_context.is_empty() or not client.valid_match(match, owner): return false
-	if str(match.match_id) != client.saved_match(): return false
+	if match.status != "RUNNING" and str(match.match_id) != client.saved_match(): return false
+	client.save_match(str(match.match_id))
 	_woe_context = {"room_id":"", "match_id":str(match.match_id), "player_id":owner, "generation":_connection_gate()._generation, "base_url":str(_connection_gate().base_url), "startup":true}
 	_go_to(SCENE_WOE_ARENA, "WOEArena")
 	return true
@@ -179,6 +180,7 @@ static func recover_core_defense_after_startup(match: Dictionary) -> bool:
 	var client := tree.root.get_node("CoreDefenseClient")
 	if owner.is_empty() or not _woe_context.is_empty() or not client.valid_match(match, owner): return false
 	if match.status != "RUNNING" and str(match.match_id) != client.saved_match(): return false
+	client.save_match(str(match.match_id))
 	_woe_context = {"kind":"core_defense","room_id":"","match_id":str(match.match_id),"player_id":owner,"generation":_connection_gate()._generation,"base_url":str(_connection_gate().base_url),"startup":true}
 	_go_to(SCENE_WOE_ARENA, "WOEArena")
 	return true

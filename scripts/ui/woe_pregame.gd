@@ -12,6 +12,9 @@ var _seat_buttons := {}
 var _info: Label
 var _message: Label
 var _start: Button
+var _invite_button: Button
+var _invite_popup: PopupPanel
+var _invites
 var _fill: CheckBox
 var _poll := 0.0
 var _requesting := false
@@ -81,6 +84,11 @@ func _build() -> void:
 	_start.text = tr("WOE_START")
 	_start.pressed.connect(_start_match)
 	box.add_child(_start)
+	_invite_button = Button.new()
+	MENU_ART.button(_invite_button)
+	_invite_button.text = tr("INVITE_OPEN")
+	_invite_button.pressed.connect(_open_invites)
+	box.add_child(_invite_button)
 	var copy := Button.new()
 	MENU_ART.button(copy)
 	copy.text = tr("WOE_COPY_CODE")
@@ -147,6 +155,7 @@ func _refresh() -> void:
 	else:
 		if int(result.get("code", 0)) == 404:
 			_expired = true
+			_invite_button.disabled = true
 			WoeClient.save_room("")
 		_error(result)
 
@@ -159,12 +168,12 @@ func _render() -> void:
 		_transitioning = true
 		SceneRouter.enter_woe_match(_room)
 		return
-	_info.text = "%s  %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s" % [tr("WOE_TITLE"),mode,tr("WOE_HOST"),host,tr("WOE_CODE"),_room.get("join_code", ""),tr("WOE_REVISION"),_room.get("revision", 0),tr("WOE_STATUS"),_room.get("status", "")]
+	_info.text = "%s  %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s" % [tr("WOE_TITLE"),mode,tr("WOE_HOST"),_display_name(host),tr("WOE_CODE"),_room.get("join_code", ""),tr("WOE_REVISION"),_room.get("revision", 0),tr("WOE_STATUS"),_room.get("status", "")]
 	var player_list: Array[String] = []
 	for member in _room.get("members", []):
 		if member is Dictionary:
 			var chosen := str(member.get("seat", ""))
-			player_list.append("%s (%s)" % [str(member.get("player_id", "")), chosen if not chosen.is_empty() else tr("WOE_EMPTY")])
+			player_list.append("%s (%s)" % [_display_name(str(member.get("player_id", ""))), chosen if not chosen.is_empty() else tr("WOE_EMPTY")])
 	_info.text += "\n" + tr("WOE_PLAYERS") + ": " + ", ".join(player_list)
 	var own_seat := ""
 	for member in _room.get("members", []):
@@ -181,12 +190,41 @@ func _render() -> void:
 			for controller in _room.get("controllers", []):
 				if controller is Dictionary and (controller.get("seat") == seat or (mode == "1v1" and controller.get("seat") == seat.get_slice(":",0))):
 					occupant = tr("WOE_NPC") if controller.get("bot", false) else str(controller.get("controller_id", ""))
-		button.text = tr("WOE_" + seat.get_slice(":",0).to_upper()) + " / " + tr("WOE_" + seat.get_slice(":",1).to_upper()) + "\n" + (occupant if not occupant.is_empty() else tr("WOE_EMPTY"))
+		button.text = tr("WOE_" + seat.get_slice(":",0).to_upper()) + " / " + tr("WOE_" + seat.get_slice(":",1).to_upper()) + "\n" + (tr("WOE_EMPTY") if occupant.is_empty() else (occupant if occupant == tr("WOE_NPC") else _display_name(occupant)))
 		button.modulate = Color("9ce3ff") if occupant == owner else (Color("ffb4a2") if not occupant.is_empty() else Color.WHITE)
 		button.disabled = started or _changing or (not occupant.is_empty() and occupant != owner)
 	_start.disabled = started or host != owner or own_seat.is_empty() or _changing
+	_invite_button.disabled = _expired or started or host != owner or _changing
+	if _invite_button.disabled and is_instance_valid(_invite_popup): _invite_popup.hide()
+	if is_instance_valid(_invites): _invites.set_inviting_enabled(not _invite_button.disabled and _room.get("members", []).size() < (2 if mode == "1v1" else 4))
 	_fill.disabled = host != owner or started or _changing
 	_message.text = tr("WOE_INITIALIZED") if started else tr("WOE_WAITING")
+
+func _display_name(id: String) -> String:
+	for member in _room.get("members", []):
+		if member is Dictionary and str(member.get("player_id", "")) == id:
+			var name := str(member.get("display_name", "")).strip_edges()
+			if not name.is_empty(): return name
+	var friend := str(SocialClient.friends.get(id, "")).strip_edges()
+	return friend if not friend.is_empty() else tr("INVITE_UNKNOWN_PLAYER")
+
+func _open_invites() -> void:
+	if _invite_button.disabled or not _valid(): return
+	if is_instance_valid(_invite_popup):
+		_invite_popup.popup_centered()
+		return
+	_invite_popup = PopupPanel.new()
+	add_child(_invite_popup)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(420, 340)
+	_invite_popup.add_child(scroll)
+	_invites = preload("res://scripts/ui/minigame_invitations.gd").new()
+	_invites.game_kind = "woe"
+	_invites.room_id = str(_room.get("room_id", ""))
+	_invites.can_invite = _room.get("members", []).size() < (2 if _room.get("mode") == "1v1" else 4)
+	_invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_invites)
+	_invite_popup.popup_centered()
 
 func _error(result: Dictionary) -> void:
 	var error := str(result.get("error", ""))

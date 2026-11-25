@@ -33,6 +33,7 @@ func _ready() -> void:
 	box.add_child(scroll)
 	var invites = preload("res://scripts/ui/minigame_invitations.gd").new()
 	invites.name = "Invitations"
+	invites.allow_accept = true
 	invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(invites)
 	invites.admitted.connect(_verified)
@@ -74,6 +75,11 @@ func _recover() -> void:
 		var state: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/state?match_id=" + id.uri_encode() + "&after=0", null, self)
 		if not _valid(): return
 		_busy = false
+		if (state.code == 404 and state.get("error") == "MATCH_UNAVAILABLE") or (state.code == 403 and state.get("error") == "NOT_PARTICIPANT"):
+			if CoreDefenseClient.reconcile_missing_match(id, str(state.error)):
+				continue
+			_status.text = tr("WOE_RETRY_PENDING")
+			return
 		if state.code != 200 or not CoreDefenseClient.valid_match(state.get("data"), str(ConnectionGate.player_id)) or str(state.data.match_id) != id:
 			_status.text = tr("WOE_RETRY_PENDING")
 			return

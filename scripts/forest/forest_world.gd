@@ -175,6 +175,15 @@ func _ready() -> void:
 	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_debug_label)
 	_build_dialogue()
+	if not ConnectionGate.debug_lab_navigation_allowed():
+		var notices = preload("res://scripts/ui/minigame_invitation_notices.gd").new()
+		notices.name = "MinigameInvitationNotices"
+		notices.anchor_left = 1.0
+		notices.anchor_right = 1.0
+		notices.offset_left = -400
+		notices.offset_right = -20
+		notices.offset_top = 100
+		_canvas.add_child(notices)
 	var quest_file := FileAccess.open("res://data/static/forest_quests.json", FileAccess.READ)
 	if quest_file:
 		var quest_data = JSON.parse_string(quest_file.get_as_text())

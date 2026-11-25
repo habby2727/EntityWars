@@ -12,7 +12,7 @@ var _room_missing := false
 var _message: Label
 var _info: Label
 var _start: Button
-var _invites: VBoxContainer
+var _invites
 
 func _ready() -> void:
 	_identity = CoreDefenseClient.identity()
@@ -107,12 +107,13 @@ func _render() -> void:
 	for member in _room.get("members", []):
 		var id := str(member.get("player_id", ""))
 		var display := str(member.get("display_name", SocialClient.friends.get(id, ""))).strip_edges()
-		names.append(display if not display.is_empty() else id)
+		names.append(display if not display.is_empty() else tr("INVITE_UNKNOWN_PLAYER"))
 	var host_id := str(_room.get("host_id", ""))
-	var host_name := str(SocialClient.friends.get(host_id, "")).strip_edges()
-	_info.text = "%s\n%s: %s\n%s: %s" % [tr("CD_COOP"), tr("WOE_HOST"), host_name if not host_name.is_empty() else host_id, tr("WOE_PLAYERS"), ", ".join(names)]
+	var host_name := str(_room.get("host_name", SocialClient.friends.get(host_id, ""))).strip_edges()
+	_info.text = "%s\n%s: %s\n%s: %s" % [tr("CD_COOP"), tr("WOE_HOST"), host_name if not host_name.is_empty() else tr("INVITE_UNKNOWN_PLAYER"), tr("WOE_PLAYERS"), ", ".join(names)]
 	_start.disabled = _changing or str(_room.get("host_id", "")) != str(ConnectionGate.player_id) or names.size() != 2
 	_invites.visible = str(_room.get("host_id", "")) == str(ConnectionGate.player_id)
+	_invites.set_inviting_enabled(_invites.visible and names.size() < 2 and not _changing and not _room_missing)
 
 func _start_match() -> void:
 	if _changing or _room.is_empty(): return

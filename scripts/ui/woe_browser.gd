@@ -40,6 +40,16 @@ func _ready() -> void:
 	_rows = VBoxContainer.new()
 	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_rows)
+	var invite_scroll := ScrollContainer.new()
+	invite_scroll.custom_minimum_size.y = 100
+	invite_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(invite_scroll)
+	var invites = preload("res://scripts/ui/minigame_invitations.gd").new()
+	invites.game_kind = "woe"
+	invites.allow_accept = true
+	invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	invite_scroll.add_child(invites)
+	invites.admitted.connect(_invite_admitted)
 	_button(box, "WOE_RETRY", _retry)
 	var close := Button.new()
 	MENU_ART.button(close)
@@ -72,6 +82,9 @@ func _set_busy(value: bool) -> void:
 
 func _valid() -> bool:
 	return is_inside_tree() and _epoch == WoeClient.identity()
+
+func _invite_admitted(room: Dictionary) -> void:
+	if _valid(): admitted.emit(room)
 
 func _show_error(result: Dictionary) -> void:
 	var code := int(result.get("code", 0))
@@ -106,7 +119,7 @@ func refresh() -> void:
 		var row := HBoxContainer.new()
 		_rows.add_child(row)
 		var label := Label.new()
-		label.text = "%s  %s/%s  %s: %s" % [room.get("mode", ""), count, capacity, tr("WOE_HOST"), room.get("host_id", "")]
+		label.text = "%s  %s/%s  %s: %s" % [room.get("mode", ""), count, capacity, tr("WOE_HOST"), str(room.get("host_name", "")) if not str(room.get("host_name", "")).is_empty() else tr("INVITE_UNKNOWN_PLAYER")]
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(label)
 		var join_button := _button(row, "WOE_JOIN", _mutate.bind("join", {"room_id_or_code":id}))

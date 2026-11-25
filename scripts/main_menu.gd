@@ -35,26 +35,32 @@ func _ready() -> void:
 	if settings_btn:
 		settings_btn.pressed.connect(SceneRouter.go_to_settings)
 	$ExitButton.pressed.connect(_show_exit_confirmation)
-	_recover_woe.call_deferred()
-	_recover_core_defense.call_deferred()
+	_recover_minigames.call_deferred()
 
-func _recover_core_defense() -> void:
-	if not CoreDefenseClient.available(): return
-	var identity: String = CoreDefenseClient.identity()
-	var match_id: String = CoreDefenseClient.saved_match()
-	var response: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/current", null, self)
-	if not is_inside_tree() or identity != CoreDefenseClient.identity(): return
-	if response.code == 200 and CoreDefenseClient.valid_match(response.data, str(ConnectionGate.player_id)) and (response.data.status == "RUNNING" or (not match_id.is_empty() and str(response.data.match_id) == match_id)):
-		SceneRouter.recover_core_defense_after_startup(response.data)
-
-func _recover_woe() -> void:
-	if not WoeClient.available() or WoeClient.saved_match().is_empty(): return
+func _recover_minigames() -> void:
+	if not WoeClient.available() or not CoreDefenseClient.available() or ConnectionGate.debug_offline_enabled: return
 	var identity: String = WoeClient.identity()
-	var match_id: String = WoeClient.saved_match()
-	var response: Dictionary = await WoeClient.request("/forest/woe/match/current", null, self)
-	if not is_inside_tree() or identity != WoeClient.identity(): return
-	if response.code == 200 and WoeClient.valid_match(response.data, str(ConnectionGate.player_id)) and str(response.data.match_id) == match_id:
-		SceneRouter.recover_woe_after_startup(response.data)
+	var cd_identity: String = CoreDefenseClient.identity()
+	var woe: Dictionary = await WoeClient.request("/forest/woe/match/current", null, self)
+	if not is_inside_tree() or identity != WoeClient.identity() or cd_identity != CoreDefenseClient.identity(): return
+	var cd: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/current", null, self)
+	if not is_inside_tree() or identity != WoeClient.identity() or cd_identity != CoreDefenseClient.identity(): return
+	var owner := str(ConnectionGate.player_id)
+	var woe_valid: bool = woe.code == 200 and WoeClient.valid_match(woe.get("data"), owner)
+	var cd_valid: bool = cd.code == 200 and CoreDefenseClient.valid_match(cd.get("data"), owner)
+	if woe_valid and woe.data.status == "RUNNING":
+		SceneRouter.recover_woe_after_startup(woe.data)
+	elif cd_valid and cd.data.status == "RUNNING":
+		SceneRouter.recover_core_defense_after_startup(cd.data)
+	# Do not open a retained result until both services have ruled out a live match.
+	elif woe.code != 200 or cd.code != 200:
+		return
+	elif not (woe_valid or (woe.get("data") is Dictionary and woe.data.has("match") and woe.data.match == null)) or not (cd_valid or (cd.get("data") is Dictionary and cd.data.has("match") and cd.data.match == null)):
+		return
+	elif woe_valid and str(woe.data.match_id) == WoeClient.saved_match():
+		SceneRouter.recover_woe_after_startup(woe.data)
+	elif cd_valid and str(cd.data.match_id) == CoreDefenseClient.saved_match():
+		SceneRouter.recover_core_defense_after_startup(cd.data)
 
 func _exit_tree() -> void:
 	background_video.stop()

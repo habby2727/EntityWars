@@ -27,6 +27,7 @@ SocialClient="*res://scripts/net/social_client.gd"
 DuelClient="*res://scripts/net/duel_client.gd"
 WoeClient="*res://scripts/net/woe_client.gd"
 CoreDefenseClient="*res://scripts/net/core_defense_client.gd"
+MinigameInvitationCache="*res://scripts/net/minigame_invitation_cache.gd"
 GlobalChatClient="*res://scripts/net/global_chat_client.gd"
 SpectatorClient="*res://scripts/net/spectator_client.gd"
 
