@@ -498,3 +498,81 @@ test("expedition NPC selection does not depend on the submitted player spell", (
   expect(a.events.find((e:any)=>e.kind==="spell" && e.actor==="npc")?.spell_id).toBe(b.events.find((e:any)=>e.kind==="spell" && e.actor==="npc")?.spell_id);
   expect(JSON.stringify(state)).toBe(before);
 });
+
+test("impossible lethal attacks and non-convertible equipment wards do not mislead expedition tactics", () => {
+  const moves:any[] = [
+    {id:"a_impossible",type:"sulfur",category:"attack",power_mult:3,accuracy:0,cooldown_turns:0,effects:[]},
+    {id:"b_safe",type:"sulfur",category:"attack",power_mult:0.5,accuracy:1,cooldown_turns:0,effects:[]},
+    {id:"c_convert",type:"sulfur",category:"attack",power_mult:0.4,accuracy:1,cooldown_turns:1,effects:[{kind:"ward_convert",target:"self",value:1}]},
+    {id:"d_heal",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"heal",target:"self",value:10}]},
+  ];
+  const npc:any={type:"sulfur",expedition_types:["sulfur","gold"],hp:100,max_hp:100,atk:20,status:{shield:0.5}};
+  const target:any={type:"gold",hp:15,max_hp:100,def:0,status:{}};
+  const choose=(context:any={})=>chooseDungeonNpcSpell(15,moves.map(s=>s.id),moves,{},npc,target,0,{tactical_tier:"exceptional",types,...context});
+  expect(choose({npcWeaponShield:0.5,npcOtherShield:0})).toBe("b_safe");
+  expect(choose({npcWeaponShield:0.5,npcOtherShield:0.5})).toBe("c_convert");
+});
+
+test("lethargy applies after the accuracy clamp in expedition lethal selection", () => {
+  const moves:any[]=[
+    {id:"a_focused",type:"sulfur",category:"attack",power_mult:1,accuracy:0.9,cooldown_turns:0,effects:[]},
+    {id:"b_certain",type:"sulfur",category:"attack",power_mult:1,accuracy:1,cooldown_turns:0,effects:[]},
+    {id:"c_heal",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"heal",target:"self",value:1}]},
+    {id:"d_shield",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"shield",target:"self",value:0.1}]},
+  ];
+  const npc:any={type:"sulfur",expedition_types:["sulfur","gold"],hp:100,max_hp:100,atk:30,status:{focus_next:0.3},combat_rules_version:2,combat_exchange:1,lethargy_effect:{applied_exchange:0,expires_exchange:2}};
+  const target:any={type:"gold",hp:10,max_hp:100,def:0,status:{}};
+  expect(chooseDungeonNpcSpell(15,moves.map(s=>s.id),moves,{},npc,target,0,{tactical_tier:"exceptional",types,turn:1})).toBe("a_focused");
+});
+
+test("expedition tactics execute real two-turn status payoffs and Mantillo activates", () => {
+  for (const kind of ["poison", "shield", "mark", "debuff"]) {
+    const enemy=buildExpeditionEnemy(seed,`combo-qa-${kind}`,15,false,setup,catalogs,undefined,"mantillo"); enemy.tactical_tier="exceptional";
+    let state:any=createExpeditionCombatState(setup,enemy,catalogs);
+    state.npc.expedition_types=["sulfur","gold"]; state.npc.type="sulfur"; state.npc.tempo=1000; state.player.tempo=0;
+    state.npc.hp=state.npc.max_hp=1000; state.player.hp=state.player.max_hp=1000; state.npc.atk=40; state.player.def=0; state.npc.item_effects={};
+    const setupEffect:any=kind==="poison"?{kind:"poison",target:"enemy",value:3}:kind==="shield"?{kind:"shield",target:"self",value:0.5}:kind==="mark"?{kind:"hybrid_mark",target:"enemy",value:2}:{kind:"vuln",target:"enemy",value:0.5};
+    const payoffEffect:any=kind==="poison"?{kind:"bonus_if_poisoned",target:"enemy",value:0.5}:kind==="shield"?{kind:"ward_convert",target:"self",value:0.5}:kind==="mark"?{kind:"bonus_if_marked",target:"enemy",value:0.5}:null;
+    const hybrid={type:"hybrid",primary_type:"sulfur",secondary_type:"gold",eligible_types:["sulfur","gold"]};
+    const moves:any[]=[{id:"qa_setup",...hybrid,category:"attack",power_mult:1,accuracy:1,cooldown_turns:3,effects:[setupEffect]}, {id:"qa_payoff",...hybrid,category:"attack",power_mult:0.8,accuracy:1,cooldown_turns:2,effects:payoffEffect?[payoffEffect]:[]}, {id:"qa_basic",type:"sulfur",category:"attack",power_mult:0.1,accuracy:1,cooldown_turns:0,effects:[]}, {id:"qa_heal",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"heal",target:"self",value:1}]}];
+    state.spells.push(...moves); state.npc.spell_ids=moves.map(s=>s.id);
+    const first=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},()=>0.01);
+    expect(first.error).toBeUndefined(); expect(first.events.find((e:any)=>e.kind==="spell"&&e.actor==="npc")?.spell_id).toBe("qa_setup");
+    state=first.next_state; state.player.inspiration_pending=false;
+    const second=resolveExpeditionTurn(state,{turn:2,spell_id:"cinder_fist"},()=>0.01);
+    expect(second.error).toBeUndefined(); expect(second.events.find((e:any)=>e.kind==="spell"&&e.actor==="npc")?.spell_id).toBe("qa_payoff");
+    if(kind==="poison") expect(second.events.some((e:any)=>e.kind==="combo_trigger"&&e.actor==="npc")).toBe(true);
+    if(kind==="shield") expect(second.events.some((e:any)=>e.kind==="ward_convert"&&e.actor==="npc"&&e.amount>0)).toBe(true);
+    if(kind==="mark") expect(second.next_state.player.status.hybrid_mark).toBeUndefined();
+    if(kind==="debuff") expect(second.events.some((e:any)=>e.kind==="status_consumed"&&e.target==="player"&&e.status==="vuln")).toBe(true);
+    if(kind==="poison" || kind==="debuff") expect(second.events.some((e:any)=>e.kind==="hom_passive"&&e.actor==="npc"&&e.passive_id==="mantillo")).toBe(true);
+  }
+});
+
+test("resolved expedition lethal selection rejects impossible hits and suicidal reflection", () => {
+  const enemy=buildExpeditionEnemy(seed,"qa-real-lethal",15,false,setup,catalogs); enemy.tactical_tier="exceptional";
+  const state:any=createExpeditionCombatState(setup,enemy,catalogs);
+  state.npc.expedition_types=["sulfur","gold"]; state.npc.type="sulfur"; state.npc.tempo=1000; state.player.tempo=0;
+  state.npc.hp=state.npc.max_hp=100; state.npc.atk=40; state.npc.item_effects={}; state.player.hp=10; state.player.max_hp=100; state.player.def=0;
+  const moves:any[]=[{id:"qa_zero",type:"sulfur",category:"attack",power_mult:3,accuracy:0,cooldown_turns:0,effects:[]},{id:"qa_hit",type:"sulfur",category:"attack",power_mult:1,accuracy:1,cooldown_turns:0,effects:[]},{id:"qa_guard",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"shield",target:"self",value:0.5}]},{id:"qa_heal",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"heal",target:"self",value:1}]}];
+  state.spells.push(...moves); state.npc.spell_ids=moves.map(s=>s.id);
+  const lethal=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},()=>0.1);
+  expect(lethal.error).toBeUndefined(); expect(lethal.events.find((e:any)=>e.kind==="spell"&&e.actor==="npc")?.spell_id).toBe("qa_hit"); expect(lethal.next_state.terminal_result).toBe("LOSS");
+  state.npc.hp=5; state.player.status.reflect=1;
+  const guarded=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},()=>0.1);
+  expect(guarded.error).toBeUndefined(); expect(guarded.events.find((e:any)=>e.kind==="spell"&&e.actor==="npc")?.spell_id).toBe("qa_guard");
+});
+
+test("resolved conversion ignores equipment ward but consumes a separate spell ward", () => {
+  const enemy=buildExpeditionEnemy(seed,"qa-real-conversion",15,false,setup,catalogs); enemy.tactical_tier="exceptional";
+  const state:any=createExpeditionCombatState(setup,enemy,catalogs);
+  state.npc.expedition_types=["sulfur","gold"]; state.npc.type="sulfur"; state.npc.tempo=1000; state.player.tempo=0;
+  state.npc.hp=state.npc.max_hp=100; state.npc.atk=20; state.npc.item_effects={}; state.player.hp=15; state.player.max_hp=100; state.player.def=0;
+  const moves:any[]=[{id:"qa_basic",type:"sulfur",category:"attack",power_mult:0.5,accuracy:1,cooldown_turns:0,effects:[]},{id:"qa_convert",type:"sulfur",category:"attack",power_mult:0.4,accuracy:1,cooldown_turns:1,effects:[{kind:"ward_convert",target:"self",value:1}]},{id:"qa_weak",type:"sulfur",category:"attack",power_mult:0.1,accuracy:1,cooldown_turns:0,effects:[]},{id:"qa_heal",type:"sulfur",category:"support",power_mult:0,accuracy:1,cooldown_turns:0,effects:[{kind:"heal",target:"self",value:1}]}];
+  state.spells.push(...moves); state.npc.spell_ids=moves.map(s=>s.id); state.npc.status.shield=0.5; state.npc_weapon_defenses={shield:0.5}; state.npc_other_defenses={shield:0};
+  const equipment=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},()=>0.01);
+  expect(equipment.error).toBeUndefined(); expect(equipment.events.find((e:any)=>e.kind==="spell"&&e.actor==="npc")?.spell_id).toBe("qa_basic"); expect(equipment.events.some((e:any)=>e.kind==="ward_convert"&&e.actor==="npc")).toBe(false);
+  state.npc_other_defenses.shield=0.5;
+  const spell=resolveExpeditionTurn(state,{turn:1,spell_id:"ash_temper"},()=>0.01);
+  expect(spell.error).toBeUndefined(); expect(spell.events.find((e:any)=>e.kind==="spell"&&e.actor==="npc")?.spell_id).toBe("qa_convert"); expect(spell.events.some((e:any)=>e.kind==="ward_convert"&&e.actor==="npc"&&e.amount>0)).toBe(true);
+});

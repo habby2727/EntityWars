@@ -224,9 +224,10 @@ function chooseExpeditionNpcSpell(legal: any[], equipped: any[], cooldowns: Reco
   const own = npc.status ?? {}, enemy = target.status ?? {};
   const shield = effectiveTimedDefense(target, "shield"), reflect = effectiveTimedDefense(target, "reflect");
   const ownShield = effectiveTimedDefense(npc, "shield");
+  const convertibleWard = context.npcWeaponShield !== undefined ? context.npcOtherShield ?? 0 : own.shield ?? 0;
   const evalAttack = (s: any) => {
     const actor = structuredClone(npc), victim = structuredClone(target);
-    if (actor.expedition_passive?.exchange > 0) applyCombatPassive(actor, victim, "before_attack", context.types, "npc", "player", [], 0, s);
+    if (actor.expedition_passive?.exchange > 0) applyTimedAwarePassive(actor, victim, "before_attack", context.types, "npc", "player", [], 0, s);
     const mods = actor.expedition_passive ? passiveModifiers(actor.expedition_passive) : {};
     const guard = target.expedition_passive ? passiveModifiers(target.expedition_passive).guard_flat ?? 0 : 0;
     const relation = (t: string) => context.types?.effectiveness?.[t]?.[target.type] ?? 1;
@@ -234,35 +235,40 @@ function chooseExpeditionNpcSpell(legal: any[], equipped: any[], cooldowns: Reco
     let mult = s.type === "hybrid" ? Math.pow(hybridFactor(s.primary_type), 0.65) * Math.pow(hybridFactor(s.secondary_type), 0.35) : s.type === "universal" ? 1 : relation(s.type) > 1 ? 1.18 : relation(s.type) < 1 ? 0.84 : 1;
     if (npc.expedition_types.includes(s.type) && relation(s.type) < 1) mult = Math.min(1, mult + (npc.item_effects?.disadvantage_reduction ?? 0));
     if (s.type !== "universal") mult = 1 + (mult - 1) * (1 - Math.max(npc.spell_neutralize_active ?? 0, target.spell_neutralize_active ?? 0, context.neutralize ?? 0));
-    let power = s.power_mult;
+    const poisonBonus = s.effects.find((e: any) => e.kind === "bonus_if_poisoned");
+    let power = s.power_mult * (poisonBonus && enemy.poison > 0 ? 1 + poisonBonus.value : 1);
     for (const e of s.effects) {
-      if (e.kind === "bonus_if_poisoned" && enemy.poison > 0 || e.kind === "bonus_if_hit_last_exchange" && npc.spell_hit_last_exchange) power *= 1 + e.value;
+      if (e.kind === "bonus_if_hit_last_exchange" && npc.spell_hit_last_exchange) power *= 1 + e.value;
       if (e.kind === "bonus_power_if_poisoned" && enemy.poison > 0 || e.kind === "bonus_if_shielded" && ownShield > 0 || e.kind === "bonus_if_low_hp" && npc.hp < npc.max_hp * (e.threshold ?? 0.4) || e.kind === "bonus_power_if_hit_last_exchange" && npc.spell_hit_last_exchange || e.kind === "bonus_if_marked" && enemy.hybrid_mark?.owner === "npc" && enemy.hybrid_mark.remaining > 0) power += e.value;
     }
     const anomaly = s.type === "hybrid" ? Math.pow(physicalAnomalyMultiplier(context.anomaly, s.primary_type), 0.65) * Math.pow(physicalAnomalyMultiplier(context.anomaly, s.secondary_type), 0.35) : physicalAnomalyMultiplier(context.anomaly, npc.expedition_types.includes(s.type) ? s.type : npc.type);
     let damage = Math.max(1, Math.round(((npc.atk + (mods.power_flat ?? 0)) * (1 + (own.atk_boost ?? 0) - (own.atk_down ?? 0)) - Math.trunc((target.def + guard) * 0.5)) * mult * anomaly * (1 + (enemy.vuln ?? 0)) * power));
     damage = Math.max(1, Math.round(damage * Math.max(0.1, Math.min(1, context.incomingMult ?? 1))));
-    const dispel = s.effects.find((e: any) => e.kind === "ward_dispel")?.value ?? 0, pierce = s.effects.find((e: any) => e.kind === "pierce_ward")?.value ?? 0;
+    if (context.playerShield) damage = Math.max(1, Math.round(damage * (1 - context.playerShield)));
+    const dispel = Math.max(0, Math.min(1, s.effects.find((e: any) => e.kind === "ward_dispel")?.value ?? 0)), pierce = Math.max(0, Math.min(1, s.effects.find((e: any) => e.kind === "pierce_ward")?.value ?? 0));
     if (shield > 0) damage = Math.max(0, Math.round(damage * (1 - shield * (1 - dispel) * (1 - pierce))));
-    const accuracy = Math.max(0, Math.min(1, s.accuracy + (own.focus_next ?? 0) - (own.misalign_next ?? 0) + (mods.accuracy_pct ?? 0) - (statusActive(npc, "lethargy", context.turn ?? 1) ? 0.15 : 0)));
+    const accuracy = Math.max(0, Math.min(1, s.accuracy + (own.focus_next ?? 0) - (own.misalign_next ?? 0) + (mods.accuracy_pct ?? 0)) - (statusActive(npc, "lethargy", context.turn ?? 1) ? 0.15 : 0));
     const conversion = s.effects.find((e: any) => e.kind === "ward_convert");
-    const extra = (conversion && ownShield > 0 ? Math.min(Math.floor(target.max_hp * 0.2), Math.floor(npc.max_hp * ownShield * conversion.value)) : 0) + Math.max(0, Math.trunc(npc.item_effects?.true_on_hit ?? 0)) + Math.max(0, Math.trunc(npc.item_effects?.dot_true ?? 0));
+    const dot = Math.max(0, Math.trunc(npc.item_effects?.dot_true ?? 0));
+    const extra = (conversion && convertibleWard > 0 ? Math.min(Math.floor(target.max_hp * 0.2), Math.floor(npc.max_hp * convertibleWard * conversion.value)) : 0) + Math.max(0, Math.trunc(npc.item_effects?.true_on_hit ?? 0)) + (npc.item_id === "vitriol_vial" ? Math.min(4, dot) : dot);
     return {damage, extra, chance: accuracy * (1 - Math.min(1, context.evasion ?? 0))};
   };
   const evaluated = legal.map(s => ({s, attack: s.category === "attack" ? evalAttack(s) : null}));
-  const safeLethals = evaluated.filter(x => x.attack && x.attack.damage + x.attack.extra >= target.hp && !(reflect > 0 && Math.round(x.attack.damage * reflect) >= npc.hp && (npc.item_effects?.ignore_reflect_chance ?? 0) < 1));
+  const safeLethals = evaluated.filter(x => x.attack && x.attack.chance > 0 && x.attack.damage + x.attack.extra >= target.hp && !(reflect > 0 && Math.round(x.attack.damage * reflect) >= npc.hp && (npc.item_effects?.ignore_reflect_chance ?? 0) < 1));
   if (safeLethals.length) return safeLethals.sort((a, b) => b.attack!.chance - a.attack!.chance || a.s.id.localeCompare(b.s.id))[0].s.id;
   const scored = evaluated.map(({s, attack}) => {
     let score = attack ? Math.min(target.hp, attack.damage + attack.extra) * attack.chance : 0;
-    if (tier > 0 && attack && (enemy.poison > 0 && has(s, "bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison") || ownShield > 0 && has(s, "ward_convert", "bonus_if_shielded") || enemy.hybrid_mark?.owner === "npc" && enemy.hybrid_mark.remaining > 0 && has(s, "bonus_if_marked"))) score += npc.atk * attack.chance * (tier === 2 ? 0.5 : 0.3);
+    if (tier > 0 && attack && (enemy.poison > 0 && has(s, "bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison") || convertibleWard > 0 && has(s, "ward_convert") || ownShield > 0 && has(s, "bonus_if_shielded") || enemy.hybrid_mark?.owner === "npc" && enemy.hybrid_mark.remaining > 0 && has(s, "bonus_if_marked"))) score += npc.atk * attack.chance * (tier === 2 ? 0.5 : 0.3);
     if (attack && reflect > 0) {
       const reflected = Math.round(attack.damage * reflect);
       score -= reflected * attack.chance * (1 - (npc.item_effects?.ignore_reflect_chance ?? 0)) * (tier === 2 ? 2 : 1);
       if (reflected >= npc.hp && (npc.item_effects?.ignore_reflect_chance ?? 0) < 1) score -= 10000;
     }
     for (const e of s.effects) {
-      const chance = (e.chance ?? 1) * s.accuracy;
-      if (e.kind === "heal" && e.target === "self") score += Math.min(e.value, npc.max_hp - npc.hp) * chance * (tier === 2 ? 1.5 : 1);
+      const supportAccuracy = Math.max(0, Math.min(1, s.accuracy + (npc.expedition_passive ? passiveModifiers(npc.expedition_passive).accuracy_pct ?? 0 : 0)) - (statusActive(npc, "lethargy", context.turn ?? 1) ? 0.15 : 0));
+      const chance = (e.chance ?? 1) * (attack ? attack.chance : supportAccuracy);
+      if (e.kind === "heal" && e.target === "self") { const healing = Math.min(strategicHeal(npc, e.value), npc.max_hp - npc.hp); score += healing > 0 ? healing * chance * (tier === 2 ? 1.5 : 1) : s.category === "support" ? -1 : 0; }
+      if (e.kind === "reflect" && e.target === "self" && effectiveTimedDefense(npc, "reflect") <= 0) score += chance * npc.max_hp * e.value * 0.5;
       if (["cleanse_one", "debuff_transfer"].includes(e.kind)) score += ["poison", "stun", "vuln", "atk_down", "misalign_next"].some(k => (own[k] ?? 0) > 0) || npc.burn_effect || npc.lethargy_effect ? npc.max_hp * 0.5 * chance : -10;
       if (e.kind === "shield" && e.target === "self" && ownShield <= 0) score += chance * npc.max_hp * e.value * (tier === 2 ? 0.8 : 0.5);
       if (e.kind === "poison" && e.target === "enemy" && !(enemy.poison > 0)) score += chance * target.max_hp * 0.06 * Math.min(2, e.value) * (npc.hom_id === "venam" ? 1.3 : 1);
@@ -442,7 +448,7 @@ export function resolveDungeonTurn(state: any, decision: any, rng: (turn: number
   const draw = () => { const value = rng(decision.turn, counter++); if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error("INVALID_RNG"); return value; };
   let npcSpell: any;
   try {
-    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? ({normal: 1, difficult: 5, very_difficult: 8, exceptional: 15}[next.tactical_tier as string] ?? Math.max(8, Math.min(1000, next.floor))) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined, turn: decision.turn, neutralize: next.hom_synergy?.type_neutralize, incomingMult: next.hom_synergy?.incoming_mult, evasion: (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0) });
+    const npcId = chooseDungeonNpcSpell(next.npc.expedition_types ? ({normal: 1, difficult: 5, very_difficult: 8, exceptional: 15}[next.tactical_tier as string] ?? Math.max(8, Math.min(1000, next.floor))) : next.floor, next.npc.spell_ids, next.spells, next.npc.cooldowns, next.npc, next.player, draw(), { tactical_tier: next.tactical_tier, anomaly: next.physical_anomaly, delayed: next.strategic_delayed, types: next.types, personality: next.tactics_enabled === true ? next.npc_personality : undefined, turn: decision.turn, neutralize: next.hom_synergy?.type_neutralize, incomingMult: next.hom_synergy?.incoming_mult, evasion: (next.item_effects?.evasion_pct ?? 0) + (modifiers().evasion_pct ?? 0), npcWeaponShield: next.npc_weapon_defenses?.shield, npcOtherShield: next.npc_other_defenses?.shield, playerShield: next.blessing?.selected === "player_shield" && !next.blessing.shield_used ? Math.min(10, 4 + next.blessing.tier) / 100 : 0 });
     npcSpell = next.spells.find((s: any) => s.id === npcId);
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "NO_AVAILABLE_DUNGEON_SPELL") throw err;
