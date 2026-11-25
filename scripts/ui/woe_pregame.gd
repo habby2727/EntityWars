@@ -194,7 +194,7 @@ func _render() -> void:
 		button.modulate = Color("9ce3ff") if occupant == owner else (Color("ffb4a2") if not occupant.is_empty() else Color.WHITE)
 		button.disabled = started or _changing or (not occupant.is_empty() and occupant != owner)
 	_start.disabled = started or host != owner or own_seat.is_empty() or _changing
-	_invite_button.disabled = _expired or started or host != owner or _changing
+	_invite_button.disabled = _expired or started or host != owner or _changing or _room.get("members", []).size() >= (2 if mode == "1v1" else 4)
 	if _invite_button.disabled and is_instance_valid(_invite_popup): _invite_popup.hide()
 	if is_instance_valid(_invites): _invites.set_inviting_enabled(not _invite_button.disabled and _room.get("members", []).size() < (2 if mode == "1v1" else 4))
 	_fill.disabled = host != owner or started or _changing
@@ -211,6 +211,7 @@ func _display_name(id: String) -> String:
 func _open_invites() -> void:
 	if _invite_button.disabled or not _valid(): return
 	if is_instance_valid(_invite_popup):
+		_invites.refresh_invitations()
 		_invite_popup.popup_centered()
 		return
 	_invite_popup = PopupPanel.new()

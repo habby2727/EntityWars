@@ -528,6 +528,8 @@ FOREST_ACTION_WOE,Find a room,Buscar sala
 WOE_TITLE,War of Elements,Guerra de los Elementos
 INVITE_OPEN,Invite friend,Invitar amigo
 INVITE_UNKNOWN_PLAYER,Player,Jugador
+INVITE_INBOX,More invitations,Más invitaciones
+INVITE_STALE,Updating…,Actualizando…
 INVITE_CLEARING_GUIDANCE,Go to the matching game NPC in Duel Clearing and open its browser to accept.,Ve al NPC del juego en el Claro de Duelos y abre su menú para aceptar.
 WOE_CREATE_1V1,Create 1v1,Crear 1v1
 WOE_CREATE_2V2,Create 2v2,Crear 2v2

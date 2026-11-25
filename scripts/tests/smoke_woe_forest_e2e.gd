@@ -109,20 +109,61 @@ func _run() -> void:
 	if not check(await walk(world,Vector2(960,540)) and await walk(world,Vector2(960,70)), "ruins walk"): quit(1); return
 	if not check(await portal(world,"north",Vector2(960,0),"duel_clearing"), "north portal"): quit(1); return
 	if not check(await walk(world,Vector2(1050,550)), "NPC walk"): quit(1); return
+	var invite_test := OS.get_environment("FOREST_WOE_INVITE_TEST") == "1"
+	if invite_test:
+		var online: Dictionary = await root.get_node("WoeClient").request("/chat/state")
+		if not check(online.code == 200, "online presence"): quit(1); return
+		signal_file("woe_online_%d" % role)
+		if not check(await wait_file("woe_online_%d" % (1-role)), "friend online"): quit(1); return
 	if not check(await open_woe(world), "browser opening"): quit(1); return
 	var browser = world._canvas.get_node("WOEBrowser")
 	if not check(await wait_for(func(): return not browser._busy), "browser ready"): quit(1); return
 	if role == 0:
-		browser._mutate("create", {"mode":"1v1"})
+		browser._mutate("create", {"mode":"2v2" if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2" else "1v1"})
 	else:
 		if not check(await wait_file("room"), "room sharing"): quit(1); return
 		var room_id := FileAccess.get_file_as_string(sync_dir.path_join("room"))
-		browser._mutate("join", {"room_id_or_code":room_id})
+		if invite_test:
+			if not check(await wait_file("woe_invited"), "invitation sent"): quit(1); return
+			var invites = browser.find_child("Invitations", true, false)
+			if invites == null:
+				for node in browser.find_children("*", "VBoxContainer", true, false):
+					if node.get_script() == load("res://scripts/ui/minigame_invitations.gd"): invites = node; break
+			var response: Dictionary = await root.get_node("WoeClient").request("/forest/minigames/invitations")
+			if not check(invites != null and response.code == 200 and response.data.get("incoming", []).size() == 1, "incoming WOE invitation"): quit(1); return
+			var invite: Dictionary = response.data.incoming[0]
+			var cache = root.get_node("MinigameInvitationCache")
+			if not check(await wait_for(func(): return not cache.stale and cache.data.get("incoming", []).any(func(item): return str(item.get("invite_id", "")) == str(invite.invite_id)), 15.0), "verified WOE invitation cache"): quit(1); return
+			var original_position: Vector2 = world._player.position
+			world._player.position = Vector2(600, 550)
+			var notice = cache._overlay.get_node("MinigameInvitationNotices")
+			var feedback := Label.new()
+			root.add_child(feedback)
+			await notice._respond("woe", str(invite.invite_id), true, room_id, feedback)
+			if not check(feedback.text == notice.tr("INVITE_CLEARING_GUIDANCE") and current_scene == world and invites._saved().is_empty(), "outside NPC guidance preserves invitation"): quit(1); return
+			feedback.queue_free()
+			world._player.position = original_position
+			var client = root.get_node("WoeClient")
+			if OS.get_environment("FOREST_WOE_LOST_ACCEPT") == "1": client.set_script(load("res://scripts/tests/woe_invitation_fault_client.gd"))
+			invites._respond(str(invite.invite_id), true, room_id)
+			if OS.get_environment("FOREST_WOE_LOST_ACCEPT") == "1":
+				if not check(await wait_for(func(): return not invites._busy and not invites._saved().is_empty()), "lost committed response journal"): quit(1); return
+				invites._retry()
+				if not check(await wait_for(func(): return client.accept_bodies.size() == 2), "accept retry"): quit(1); return
+				if not check(client.accept_bodies[0] == client.accept_bodies[1], "exact acceptance replay"): quit(1); return
+		else:
+			browser._mutate("join", {"room_id_or_code":room_id})
 	if not check(await wait_for(func(): return scene_is(PREGAME)), "browser admission and handoff"): quit(1); return
 	var pregame = current_scene
 	if not check(await wait_for(func(): return not pregame._room.is_empty() and not pregame._requesting), "pregame state"): quit(1); return
 	if role == 0:
 		signal_file("room", str(pregame._room.room_id))
+		if invite_test:
+			pregame._open_invites()
+			if not check(await wait_for(func(): return is_instance_valid(pregame._invites) and pregame._invites._server_time > 0 and not pregame._invites._busy), "invitation picker ready"): quit(1); return
+			pregame._invites._send(OS.get_environment("FOREST_TWO_OTHER"))
+			if not check(await wait_for(func(): return not pregame._invites._busy and pregame._invites._saved().is_empty()), "WOE invite submitted"): quit(1); return
+			signal_file("woe_invited")
 	else:
 		if not check(await wait_file("host_seated"), "host seat"): quit(1); return
 		pregame._refresh()
@@ -139,6 +180,13 @@ func _run() -> void:
 	var arena = current_scene
 	if not check(await wait_for(func(): return not arena._own.is_empty() and not arena._snapshot.is_empty()), "arena state"): quit(1); return
 	var match_id: String = arena._match_id
+	if invite_test:
+		var bots := 0
+		for player in arena._snapshot.players:
+			if str(player.id).begins_with("woe-bot:"): bots += 1
+		if not check(bots == (2 if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2" else 0), "invited match bot fill"): quit(1); return
+		if role == 1 and OS.get_environment("FOREST_WOE_LOST_ACCEPT") == "1": print("WOE_INVITATION_EXACT_REPLAY_PASS")
+		print("WOE_INVITATION_SCENE_PASS ", OS.get_environment("FOREST_WOE_INVITE_MODE") if OS.get_environment("FOREST_WOE_INVITE_MODE") == "2v2" else "1v1")
 	for p in arena._snapshot.players:
 		if not check(p.has("slots") == (str(p.id) == str(gate.player_id)) and p.has("zeal") == (str(p.id) == str(gate.player_id)), "hand privacy"): quit(1); return
 	signal_file("arena_%d" % role, match_id)

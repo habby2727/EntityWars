@@ -15,7 +15,7 @@ var _server_time := 0
 var _server_tick := 0
 var _reply_room := ""
 var _render_key := ""
-const FILE := "user://minigame_invite_recovery.cfg"
+var _countdown := 0.0
 
 func _ready() -> void:
 	_identity = _client().identity()
@@ -39,16 +39,10 @@ func _valid() -> bool:
 	return is_inside_tree() and _identity == _client().identity()
 
 func _saved() -> Dictionary:
-	var cfg := ConfigFile.new()
-	cfg.load(FILE)
-	var value: Variant = cfg.get_value("pending", _client().account_key() + "|" + game_kind, {})
-	return value if value is Dictionary else {}
+	return MinigameInvitationCache.saved(game_kind)
 
 func _save(value: Dictionary) -> bool:
-	var cfg := ConfigFile.new()
-	cfg.load(FILE)
-	cfg.set_value("pending", _client().account_key() + "|" + game_kind, value)
-	return cfg.save(FILE) == OK
+	return _valid() and MinigameInvitationCache.save(game_kind, value)
 
 func refresh_invitations() -> void:
 	if _busy or not _valid(): return
@@ -59,6 +53,18 @@ func refresh_invitations() -> void:
 func _cache_changed() -> void:
 	if _valid() and not _busy: _render_cache()
 
+func _process(delta: float) -> void:
+	_countdown -= delta
+	if _countdown > 0 or not is_instance_valid(_items): return
+	_countdown = 1.0
+	for row in _items.get_children():
+		if not row.has_meta("invitation"): continue
+		var invite: Dictionary = row.get_meta("invitation")
+		var remaining := maxi(0, int(ceil(float(int(invite.get("expires_at", 0)) - (_server_time + Time.get_ticks_msec() - _server_tick)) / 1000.0)))
+		if row.get_meta("incoming", false): row.get_meta("label").text = (tr("CD_INVITED_BY") % _friend_name(str(invite.get("inviter_id", "")))) + (" (%ds)" % remaining)
+		for button in row.get_children():
+			if button is Button: button.disabled = remaining <= 0 or MinigameInvitationCache.stale
+
 func _render_cache() -> void:
 	var data: Dictionary = MinigameInvitationCache.data
 	if data.is_empty():
@@ -66,24 +72,30 @@ func _render_cache() -> void:
 		return
 	_server_time = int(data.get("server_time_unix_ms", 0))
 	_server_tick = MinigameInvitationCache.received_tick
+	_status.text = tr("INVITE_STALE") if MinigameInvitationCache.stale else tr("CD_INVITE_HINT")
 	var key := JSON.stringify([data.get("incoming", []), data.get("outgoing", []), data.get("recent", []), room_id, game_kind, _saved()])
 	if key == _render_key: return
 	_render_key = key
 	for child in _items.get_children(): child.queue_free()
-	_status.text = tr("CD_INVITE_HINT")
 	for invite in data.get("incoming", []):
 		if not invite is Dictionary or str(invite.get("game_kind", "")) != game_kind: continue
 		var row := HBoxContainer.new()
+		row.set_meta("invitation", invite)
+		row.set_meta("incoming", true)
 		_items.add_child(row)
 		var label := Label.new()
+		row.set_meta("label", label)
 		var remaining := maxi(0, int(ceil(float(int(invite.get("expires_at", 0)) - (_server_time + Time.get_ticks_msec() - _server_tick)) / 1000.0)))
 		label.text = (tr("CD_INVITED_BY") % _friend_name(str(invite.get("inviter_id", "")))) + (" (%ds)" % remaining)
 		row.add_child(label)
 		_add_button(row, "CD_ACCEPT", _respond.bind(str(invite.invite_id), true, str(invite.get("room_id", ""))))
 		_add_button(row, "CD_DECLINE", _respond.bind(str(invite.invite_id), false, str(invite.get("room_id", ""))))
+		for button in row.get_children():
+			if button is Button: button.disabled = remaining <= 0 or MinigameInvitationCache.stale
 	for invite in data.get("outgoing", []):
 		if not invite is Dictionary or str(invite.get("room_id", "")) != room_id: continue
 		var row := HBoxContainer.new()
+		row.set_meta("invitation", invite)
 		_items.add_child(row)
 		var label := Label.new()
 		label.text = tr("CD_PENDING") % _friend_name(str(invite.get("recipient_id", "")))
@@ -147,6 +159,17 @@ func _send(id: String) -> void:
 	_submit("invite", {"room_id":room_id,"game_kind":game_kind,"target_player_id":id})
 
 func _respond(id: String, accept: bool, admitted_room: String) -> void:
+	if _saved().is_empty():
+		var verified := false
+		if not MinigameInvitationCache.stale:
+			for invite in MinigameInvitationCache.data.get("incoming", []):
+				if invite is Dictionary and str(invite.get("invite_id", "")) == id and str(invite.get("game_kind", "")) == game_kind and str(invite.get("room_id", "")) == admitted_room and int(invite.get("expires_at", 0)) > int(MinigameInvitationCache.data.get("server_time_unix_ms", 0)) + maxi(0, Time.get_ticks_msec() - MinigameInvitationCache.received_tick):
+					verified = true
+					break
+		if not verified:
+			_status.text = tr("CD_INVITE_UNAVAILABLE")
+			MinigameInvitationCache.refresh()
+			return
 	_reply_room = admitted_room if accept else ""
 	await _submit("invite/respond", {"invite_id":id,"accept":accept})
 
@@ -158,6 +181,15 @@ func _retry() -> void:
 	if not saved.is_empty(): _submit(str(saved.get("action", "")), saved.get("values", {}))
 
 func _submit(action: String, values: Dictionary) -> void:
+	if _busy or not _valid(): return
+	var account: String = _client().account_key()
+	if not MinigameInvitationCache.lock(game_kind, self):
+		_status.text = tr("WOE_RETRY_PENDING")
+		return
+	await _submit_locked(action, values)
+	MinigameInvitationCache.unlock(game_kind, self, account)
+
+func _submit_locked(action: String, values: Dictionary) -> void:
 	if _busy or not _valid(): return
 	if action == "invite/respond" and bool(values.get("accept", false)) and not _accept_context_valid():
 		_status.text = tr("INVITE_CLEARING_GUIDANCE")
@@ -186,7 +218,7 @@ func _submit(action: String, values: Dictionary) -> void:
 	if code == 200 and action == "invite/respond" and bool(values.get("accept", false)) and (not result.get("data") is Dictionary or result.data.get("status") != "ACCEPTED" or not _client().valid_room(result.data.get("room"), str(ConnectionGate.player_id))):
 		_status.text = tr("CD_INVITE_UNAVAILABLE")
 		return
-	if code > 0 and code < 500 and code != 408 and code != 429 and error != "FOREST_PRESENCE_REQUIRED" and not (action == "invite/respond" and bool(values.get("accept", false)) and (error == "ACTION_EXPIRED" or code == 200)): _save({})
+	if code > 0 and code < 500 and code != 408 and code != 429 and error != "FOREST_PRESENCE_REQUIRED" and not (action == "invite/respond" and bool(values.get("accept", false)) and (error == "ACTION_EXPIRED" or code == 200)): MinigameInvitationCache.clear_exact(game_kind, pending)
 	if code == 200 and action == "invite/respond" and bool(values.get("accept", false)) and str(pending.get("recover_room", "")) != str(result.data.get("room", {}).get("room_id", "")):
 		_status.text = tr("CD_INVITE_UNAVAILABLE")
 		return
@@ -207,11 +239,13 @@ func _submit(action: String, values: Dictionary) -> void:
 				if not _accept_context_valid():
 					_status.text = tr("INVITE_CLEARING_GUIDANCE")
 					return
-				if not _save({}):
+				if not MinigameInvitationCache.clear_exact(game_kind, pending):
 					_status.text = tr("CD_INVITE_UNAVAILABLE")
 					return
 				admitted.emit(verified.data)
 				return
+			if (verified.code == 404 and verified.get("error") == "ROOM_UNAVAILABLE") or (verified.code == 403 and verified.get("error") == "NOT_PARTICIPANT"):
+				if MinigameInvitationCache.clear_exact(game_kind, pending) and _client().saved_room() == str(room.room_id): _client().save_room("")
 			_status.text = tr("CD_INVITE_UNAVAILABLE")
 			return
 	if error == "ACTION_EXPIRED" and action == "invite/respond" and bool(values.get("accept", false)) and not str(pending.get("recover_room", "")).is_empty():
@@ -229,11 +263,12 @@ func _submit(action: String, values: Dictionary) -> void:
 					_status.text = tr("CD_INVITE_UNAVAILABLE")
 					return
 			else: _client().save_room(str(recovered.data.room_id))
-			_save({})
+			if not MinigameInvitationCache.clear_exact(game_kind, pending): return
 			admitted.emit(recovered.data)
 			return
-		if recovered.code == 404: _save({})
-	if error == "ACTION_EXPIRED" and action == "invite/respond" and str(pending.get("recover_room", "")).is_empty(): _save({})
+		if (recovered.code == 404 and recovered.get("error") == "ROOM_UNAVAILABLE") or (recovered.code == 403 and recovered.get("error") == "NOT_PARTICIPANT"):
+			if MinigameInvitationCache.clear_exact(game_kind, pending) and _client().saved_room() == str(pending.recover_room): _client().save_room("")
+	if error == "ACTION_EXPIRED" and action == "invite/respond" and str(pending.get("recover_room", "")).is_empty(): MinigameInvitationCache.clear_exact(game_kind, pending)
 	if error == "FOREST_PRESENCE_REQUIRED": _status.text = tr("WOE_ERROR_PRESENCE")
 	elif error == "ACTION_EXPIRED": _status.text = tr("CD_ACTION_EXPIRED")
 	elif code != 200: _status.text = tr("CD_INVITE_UNAVAILABLE")

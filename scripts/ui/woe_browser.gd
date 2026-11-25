@@ -45,6 +45,7 @@ func _ready() -> void:
 	invite_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(invite_scroll)
 	var invites = preload("res://scripts/ui/minigame_invitations.gd").new()
+	invites.name = "Invitations"
 	invites.game_kind = "woe"
 	invites.allow_accept = true
 	invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL

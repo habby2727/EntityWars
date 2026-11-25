@@ -83,10 +83,14 @@ func _run() -> void:
 	if not check(online.code == 200,"online presence"): quit(1); return
 	signal_file("cd_online_%d" % role)
 	if not check(await wait_file("cd_online_%d" % (1-role)),"friend online"): quit(1); return
+	if role == 0:
+		if not check(cd._persist_pending({"action":"match/deploy", "values":{"match_id":"expired-fixture-match"}, "body":{"match_id":"expired-fixture-match", "client_action_id":"1700000000000:fixture"}}), "stale match journal setup"): quit(1); return
+		cd.save_match("expired-fixture-match")
 	if not check(await open_browser(world),"browser"): quit(1); return
 	var browser = world._canvas.get_node("CoreDefenseBrowser")
 	if not check(await wait_for(func(): return not browser._busy),"browser ready"): quit(1); return
 	if role == 0:
+		if not check(cd.saved_pending().is_empty() and cd.saved_match().is_empty(), "expired match journal reconciled"): quit(1); return
 		browser._create("coop")
 		if not check(await wait_for(func(): return scene_is(PREGAME)),"host admission"): quit(1); return
 		var pregame = current_scene

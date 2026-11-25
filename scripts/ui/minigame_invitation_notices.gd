@@ -4,10 +4,27 @@ const MENU_ART := preload("res://scripts/ui/menu_art.gd")
 var _rows := {}
 var _actions := {}
 var _identity := ""
+var _inbox_button: Button
+var _inbox_scroll: ScrollContainer
+var _inbox_rows: VBoxContainer
+var _countdown := 0.0
 
 func _ready() -> void:
 	_identity = WoeClient.identity()
 	_create_actions()
+	_inbox_button = Button.new()
+	MENU_ART.button(_inbox_button)
+	_inbox_button.text = tr("INVITE_INBOX")
+	_inbox_button.custom_minimum_size.y = 44
+	_inbox_button.pressed.connect(func(): _inbox_scroll.visible = not _inbox_scroll.visible)
+	add_child(_inbox_button)
+	_inbox_scroll = ScrollContainer.new()
+	_inbox_scroll.custom_minimum_size = Vector2(360, 220)
+	_inbox_scroll.visible = false
+	add_child(_inbox_scroll)
+	_inbox_rows = VBoxContainer.new()
+	_inbox_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_inbox_scroll.add_child(_inbox_rows)
 	MinigameInvitationCache.changed.connect(_refresh)
 	_refresh()
 
@@ -23,7 +40,7 @@ func _create_actions() -> void:
 
 func _admitted(room: Dictionary, kind: String) -> void:
 	var forest := get_tree().current_scene
-	if not is_instance_valid(forest): return
+	if not is_instance_valid(forest) or forest.scene_file_path != SceneRouter.SCENE_FOREST_WORLD: return
 	if kind == "woe": forest._woe_admitted(room)
 	else: forest._core_defense_admitted(room)
 
@@ -37,19 +54,25 @@ func _refresh() -> void:
 		_create_actions()
 	var incoming: Array = MinigameInvitationCache.data.get("incoming", [])
 	var current := {}
+	var count := 0
 	for invite in incoming:
 		if not invite is Dictionary: continue
 		var id := str(invite.get("invite_id", ""))
 		var kind := str(invite.get("game_kind", ""))
 		if id.is_empty() or kind not in _actions: continue
 		current[id] = true
+		var parent: Node = self if count < 2 else _inbox_rows
+		count += 1
 		if _rows.has(id):
+			if _rows[id].get_parent() != parent: _rows[id].reparent(parent)
+			_rows[id].set_meta("invite", invite)
 			_set_label(_rows[id].get_meta("label"), invite)
 			continue
 		var panel := PanelContainer.new()
 		panel.add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup.png", Vector4(20, 20, 20, 20)))
-		add_child(panel)
+		parent.add_child(panel)
 		_rows[id] = panel
+		panel.set_meta("invite", invite)
 		var box := VBoxContainer.new()
 		panel.add_child(box)
 		var label := Label.new()
@@ -69,16 +92,34 @@ func _refresh() -> void:
 			button.custom_minimum_size.y = 44
 			button.pressed.connect(_respond.bind(kind, id, accept, str(invite.get("room_id", "")), feedback))
 			buttons.add_child(button)
+		panel.set_meta("buttons", buttons)
 	for id in _rows.keys():
 		if not current.has(id):
 			_rows[id].queue_free()
 			_rows.erase(id)
+	_inbox_button.visible = count > 2
+	if count <= 2: _inbox_scroll.hide()
+	_update_countdowns()
+
+func _process(delta: float) -> void:
+	_countdown -= delta
+	if _countdown <= 0:
+		_countdown = 1.0
+		_update_countdowns()
+
+func _update_countdowns() -> void:
+	for row in _rows.values():
+		if not is_instance_valid(row): continue
+		var invite: Dictionary = row.get_meta("invite")
+		_set_label(row.get_meta("label"), invite)
+		var remaining := int(invite.get("expires_at", 0)) - int(MinigameInvitationCache.data.get("server_time_unix_ms", 0)) - maxi(0, Time.get_ticks_msec() - MinigameInvitationCache.received_tick)
+		for button in row.get_meta("buttons").get_children(): button.disabled = remaining <= 0 or MinigameInvitationCache.stale
 
 func _set_label(label: Label, invite: Dictionary) -> void:
 	var friend := str(SocialClient.friends.get(str(invite.get("inviter_id", "")), "")).strip_edges()
 	if friend.is_empty(): friend = tr("INVITE_UNKNOWN_PLAYER")
-	var seconds := maxi(0, int(ceil(float(int(invite.get("expires_at", 0)) - int(MinigameInvitationCache.data.get("server_time_unix_ms", 0))) / 1000.0)))
-	label.text = "%s: %s (%ds)" % [tr("WOE_TITLE" if invite.get("game_kind") == "woe" else "CD_TITLE"), friend, seconds]
+	var seconds := maxi(0, int(ceil(float(int(invite.get("expires_at", 0)) - int(MinigameInvitationCache.data.get("server_time_unix_ms", 0)) - maxi(0, Time.get_ticks_msec() - MinigameInvitationCache.received_tick)) / 1000.0)))
+	label.text = "%s: %s (%ds)%s" % [tr("WOE_TITLE" if invite.get("game_kind") == "woe" else "CD_TITLE"), friend, seconds, " " + tr("INVITE_STALE") if MinigameInvitationCache.stale else ""]
 
 func _respond(kind: String, id: String, accept: bool, room: String, feedback: Label) -> void:
 	var actions: Node = _actions[kind]
@@ -86,4 +127,4 @@ func _respond(kind: String, id: String, accept: bool, room: String, feedback: La
 		feedback.text = tr("INVITE_CLEARING_GUIDANCE")
 		return
 	await actions._respond(id, accept, room)
-	if is_instance_valid(feedback): feedback.text = actions._status.text
+	if is_instance_valid(feedback) and is_instance_valid(actions): feedback.text = actions._status.text
