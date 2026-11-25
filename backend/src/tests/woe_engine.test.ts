@@ -1,5 +1,5 @@
 ﻿import { test, expect } from "bun:test";
-import { arena, cards, cardById, elementalMultiplier, attackDamage } from "../woe/catalog";
+import { arena, cards, cardById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "../woe/catalog";
 import { initializeMatch, applyDeployment, advanceTick, getPublicSnapshot, type MatchState } from "../woe/engine";
 const make = () => initializeMatch("1v1", "seed", ["b", "r"]);
 function deploy(s: MatchState, i: number, slot=0, lane: "left"|"right"="left") { const p=s.controllers[i]; const r=applyDeployment(s,{actionId:`${s.nextUnitId}`,controllerId:p.id,slot,cardId:p.slots[slot],lane}); expect(r.accepted).toBe(true); return r.state; }
@@ -29,6 +29,46 @@ test("Cedix attacks use sulfur effectiveness once",()=>{
    s.units[0].cardId="cedix"; s.units[1].cardId=defender; s.units.forEach(u=>u.position={x:960,y:540});
    s=advanceTick(s);
    expect(s.events[0]).toMatchObject({type:"attack",attacker:1,target:2,damage:attackDamage(cardById.cedix.damage,cardById[defender].defense,multiplier)});
+ }
+});
+test("all cards wait ten ticks between attacks even after their target dies",()=>{
+ expect(ATTACK_INTERVAL_MS).toBe(1000);
+ for(const card of cards) {
+   let s=make(); s.controllers.forEach(p=>p.zealTenths=100); s=deploy(s,0); s=deploy(s,1); s.controllers[1].zealTenths=100; s=deploy(s,1);
+   s.units[0].cardId=card.id; s.units[1].hp=1; s.units[2].hp=10000;
+   s.units.forEach(u=>u.position={x:960,y:540}); s.units[1].cooldown=100; s.units[2].cooldown=100;
+   s=advanceTick(s); expect(s.events).toContainEqual({type:"death",target:2});
+   for(let i=0;i<9;i++) { s=advanceTick(s); expect(s.events.some(e=>e.type==="attack" && e.attacker===1)).toBe(false); }
+   s=advanceTick(s); expect(s.events.some(e=>e.type==="attack" && e.attacker===1 && e.target===3)).toBe(true);
+ }
+});
+test("snapshots expose only the viewer's hand and zeal",()=>{
+ const s=initializeMatch("2v2","private",["b","b2","r","r2"]);
+ for(const viewer of [undefined,"unknown","b","b2","r","r2"]) {
+   const snapshot=getPublicSnapshot(s,viewer);
+   for(const p of snapshot.players) {
+     const source=s.controllers.find(c=>c.id===p.id)!;
+     if(p.id===viewer) { expect(p).toEqual({id:p.id,team:p.team,zeal:source.zealTenths/10,slots:source.slots}); }
+     else { expect(p).toEqual({id:p.id,team:p.team}); }
+     expect(p).not.toHaveProperty("queue"); expect(p).not.toHaveProperty("actionIds");
+   }
+ }
+});
+test("rerouting beyond the plaza continues across at the same depth",()=>{
+ for(const team of ["blue","red"] as const) for(const lane of ["left","right"] as const) {
+   let s=make(); const controller=team==="blue"?0:1; s.controllers[controller].zealTenths=100; s=deploy(s,controller,0,lane);
+   const u=s.units[0], enemyTeam=team==="blue"?"red":"blue";
+   u.position={x:lane==="left"?600:1320,y:team==="blue"?438:642}; u.waypoint=7;
+   s.laboratories.find(l=>l.team===enemyTeam && l.lane===lane)!.hp=0;
+   const startY=u.position.y; s=advanceTick(s);
+   expect(s.units[0].targetLane).toBe(lane==="left"?"right":"left");
+   expect(s.units[0].position.y).toBe(startY);
+   expect(s.units[0].route[0].y).toBe(startY);
+   for(let i=0;i<400 && !s.events.some(e=>e.type==="attack" && typeof e.target==="string");i++) {
+     const oldY=s.units[0].position.y; s=advanceTick(s);
+     expect(team==="blue" ? s.units[0].position.y<=oldY+1e-9 : s.units[0].position.y>=oldY-1e-9).toBe(true);
+   }
+   expect(s.events.some(e=>e.type==="attack" && typeof e.target==="string")).toBe(true);
  }
 });
 test("modes, seeded openings, rotation and independent zeal",()=>{

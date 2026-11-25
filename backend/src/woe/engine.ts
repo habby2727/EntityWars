@@ -1,4 +1,4 @@
-import { arena, cards, cardById, elementalMultiplier, attackDamage } from "./catalog";
+import { arena, cards, cardById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "./catalog";
 
 export type Team = "blue" | "red";
 export type Lane = "left" | "right";
@@ -41,6 +41,24 @@ export function initializeMatch(mode: Mode, seed: string, controllerIds: string[
 }
 function route(team: Team, from: Lane, target: Lane): Point[] {
   return [...copy(arena.approaches[team][from]), copy(arena.plaza), ...copy(arena.approaches[enemy(team)][target]).reverse(), copy(arena.spawns[enemy(team)][target])];
+}
+// Before the plaza, keep following the current approach. Beyond it, cross to the
+// other approach at the same depth, then continue toward the surviving lab.
+function redirectRoute(unit: Unit, target: Lane): Point[] {
+  const approach = [copy(arena.plaza), ...copy(arena.approaches[enemy(unit.team)][target]).reverse(), copy(arena.spawns[enemy(unit.team)][target])];
+  const plazaIndex = arena.approaches[unit.team][unit.lane].length;
+  if (unit.waypoint <= plazaIndex) return [...copy(unit.route.slice(unit.waypoint, plazaIndex + 1)), ...approach.slice(1)];
+  const y = unit.position.y;
+  const direction = enemy(unit.team) === "red" ? -1 : 1;
+  for (let i = 1; i < approach.length; i++) {
+    const a = approach[i-1], b = approach[i];
+    if ((y-a.y)*direction >= 0 && (b.y-y)*direction >= 0) {
+      const t = (y-a.y)/(b.y-a.y);
+      const crossing = { x: a.x+(b.x-a.x)*t, y };
+      return [crossing, ...approach.slice(i)];
+    }
+  }
+  return [copy(approach[approach.length-1])];
 }
 export function validateDeployment(state: MatchState, command: DeploymentCommand): string | null {
   if (state.result) return "MATCH_FINISHED";
@@ -88,7 +106,7 @@ export function advanceTick(state: MatchState): MatchState {
     if (lab.hp <= 0) {
       unit.targetLane = unit.targetLane === "left" ? "right" : "left";
       lab = next.laboratories.find(l => l.team === enemy(unit.team) && l.lane === unit.targetLane)!;
-      unit.route = [copy(arena.plaza), ...copy(arena.approaches[enemy(unit.team)][unit.targetLane]).reverse(), copy(lab.position)]; unit.waypoint = 0;
+      unit.route = redirectRoute(unit, unit.targetLane); unit.waypoint = 0;
     }
     const targets = next.units.filter(other => other.team !== unit.team && other.hp > 0 && dist2(unit.position,other.position) <= card.range ** 2).sort((a,b) => dist2(unit.position,a.position)-dist2(unit.position,b.position) || a.id-b.id);
     const target = targets[0];
@@ -97,7 +115,7 @@ export function advanceTick(state: MatchState): MatchState {
         const damage = target ? attackDamage(card.damage,cardById[target.cardId].defense,elementalMultiplier(card.element,cardById[target.cardId].element)) : attackDamage(card.damage,0);
         const victim = target ?? lab; const dealt = Math.min(victim.hp,damage); victim.hp -= dealt;
         next.events.push({ type: "attack", attacker: unit.id, target: victim.id, damage: dealt });
-        unit.cooldown = card.interval_ms / arena.tick_ms;
+        unit.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
         if (victim.hp === 0) {
           next.events.push({ type: "death", target: victim.id });
           if (!target && next.laboratories.every(l => l.team !== lab.team || l.hp === 0)) finish(next,unit.team);
@@ -113,7 +131,7 @@ export function advanceTick(state: MatchState): MatchState {
   }
   return next;
 }
-/** Snapshot omits hidden rotation order and accepted action IDs. Events cover the latest tick. */
-export function getPublicSnapshot(state: MatchState) {
-  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, zeal:p.zealTenths / 10, slots:p.slots })), events:state.events, result:state.result });
+/** Pass only an authenticated controller ID; omit it for a public/spectator view. */
+export function getPublicSnapshot(state: MatchState, viewerId?: string) {
+  return copy({ kind: state.kind, mode: state.mode, tick: state.tick, units: state.units.map(u => ({ id:u.id, controllerId:u.controllerId, team:u.team, lane:u.lane, cardId:u.cardId, hp:u.hp, x:Math.round(u.position.x * 100)/100, y:Math.round(u.position.y * 100)/100 })), laboratories: state.laboratories, players: state.controllers.map(p => ({ id:p.id, team:p.team, ...(viewerId === p.id ? { zeal:p.zealTenths / 10, slots:p.slots } : {}) })), events:state.events, result:state.result });
 }

@@ -5,11 +5,10 @@
       "element": "mercury",
       "cost": 2,
       "hp": 150,
-      "damage": 20,
+      "damage": 33,
       "defense": 4,
       "speed": 110,
       "range": 70,
-      "interval_ms": 600,
       "role": "fast skirmisher"
     },
     {
@@ -17,11 +16,10 @@
       "element": "aether",
       "cost": 3,
       "hp": 180,
-      "damage": 29,
+      "damage": 32,
       "defense": 3,
       "speed": 90,
       "range": 150,
-      "interval_ms": 900,
       "role": "ranged attacker"
     },
     {
@@ -33,7 +31,6 @@
       "defense": 9,
       "speed": 75,
       "range": 70,
-      "interval_ms": 1000,
       "role": "durable fighter"
     },
     {
@@ -45,7 +42,6 @@
       "defense": 4,
       "speed": 90,
       "range": 175,
-      "interval_ms": 1000,
       "role": "ranged striker"
     },
     {
@@ -53,23 +49,21 @@
       "element": "vitriol",
       "cost": 4,
       "hp": 260,
-      "damage": 23,
+      "damage": 46,
       "defense": 6,
       "speed": 85,
       "range": 95,
-      "interval_ms": 500,
-      "role": "rapid attacker"
+      "role": "close-range fighter"
     },
     {
       "id": "cedix",
       "element": "sulfur",
       "cost": 4,
       "hp": 160,
-      "damage": 64,
+      "damage": 53,
       "defense": 2,
       "speed": 100,
       "range": 110,
-      "interval_ms": 1200,
       "role": "fragile burst attacker"
     },
     {
@@ -77,11 +71,10 @@
       "element": "sodium",
       "cost": 5,
       "hp": 290,
-      "damage": 48,
+      "damage": 53,
       "defense": 8,
       "speed": 105,
       "range": 95,
-      "interval_ms": 900,
       "role": "mobile striker"
     },
     {
@@ -89,11 +82,10 @@
       "element": "gold",
       "cost": 5,
       "hp": 270,
-      "damage": 65,
+      "damage": 50,
       "defense": 5,
       "speed": 75,
       "range": 200,
-      "interval_ms": 1300,
       "role": "long-range artillery"
     },
     {
@@ -101,11 +93,10 @@
       "element": "gold",
       "cost": 6,
       "hp": 440,
-      "damage": 42,
+      "damage": 38,
       "defense": 15,
       "speed": 80,
       "range": 75,
-      "interval_ms": 1100,
       "role": "tank"
     },
     {
@@ -113,11 +104,10 @@
       "element": "aether",
       "cost": 6,
       "hp": 340,
-      "damage": 70,
+      "damage": 64,
       "defense": 8,
       "speed": 85,
       "range": 120,
-      "interval_ms": 1100,
       "role": "heavy attacker"
     }
   ]
