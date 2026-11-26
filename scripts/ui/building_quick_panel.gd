@@ -62,10 +62,14 @@ func _ready() -> void:
 	margin.add_child(layout)
 	content.reparent(layout)
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("separation", 8)
+	layout.add_child(actions)
 	for action in [_upgrade, _collect, _manage]:
-		action.reparent(layout)
-		action.custom_minimum_size.y = 50
-		action.add_theme_font_size_override("font_size", 20)
+		action.reparent(actions)
+		action.custom_minimum_size = Vector2(180, 56)
+		action.add_theme_font_size_override("font_size", 22)
 	_close.pressed.connect(_close_panel)
 	visibility_changed.connect(_sync_blocker)
 	_upgrade.pressed.connect(_on_upgrade)
@@ -154,8 +158,8 @@ func _layout_panel() -> void:
 	position = origin + Vector2(available.x - size.x * scale.x - 12.0, maxf(16.0, (available.y - size.y * scale.y) * 0.5))
 
 func _apply_art() -> void:
-	add_theme_stylebox_override("panel", _stretch_art(load("res://assets/ui/new-elements/marco-horizontal-popup-grande.png")))
-	_frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
+	add_theme_stylebox_override("panel", _stretch_art(load("res://assets/ui/new-elements/betterui/panel_vertical.png")))
+	_frame.texture = load("res://assets/ui/new-elements/betterui/panel_vertical.png")
 	for button in [_close, _upgrade, _collect, _manage]:
 		MenuArt.button(button)
 

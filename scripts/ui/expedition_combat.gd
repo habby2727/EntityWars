@@ -156,7 +156,7 @@ func _build() -> void:
 		button.pressed.connect(_switch.bind(i + 1))
 		_place(button, Vector2(400 + i * 112, 765), Vector2(104, 104))
 		var frame := TextureRect.new()
-		frame.texture = preload("res://assets/ui/new-elements/marco-slot-small.png")
+		frame.texture = preload("res://assets/ui/new-elements/betterui/panel_vertical.png")
 		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -187,7 +187,7 @@ func _build() -> void:
 			slot.tooltip_text = "%s  |  +%d" % [GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id))), int(entry.get("level", 0))]
 			_place(slot, Vector2(1296 + i * 112, 765), Vector2(104, 104))
 			var frame := TextureRect.new()
-			frame.texture = preload("res://assets/ui/new-elements/marco-slot-small.png")
+			frame.texture = preload("res://assets/ui/new-elements/betterui/panel_vertical.png")
 			frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

@@ -83,7 +83,7 @@ func _ready() -> void:
 	host.ultra_button.offset_top = 330
 	host.ultra_button.offset_bottom = 374
 	timer_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	timer_panel.add_theme_stylebox_override("panel", preload("res://scripts/ui/menu_art.gd")._button_frame("boton-loadout-opciones.png"))
+	timer_panel.add_theme_stylebox_override("panel", preload("res://scripts/ui/menu_art.gd")._button_frame("boton_largo.png"))
 	timer_panel.hide()
 	host.add_child(timer_panel)
 	timer_label = Label.new()

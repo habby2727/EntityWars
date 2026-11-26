@@ -278,7 +278,7 @@ func _setup_dungeon_ranking(parent: Control) -> void:
 	_dungeon_ranking_dialog.transparent_bg = true
 	_dungeon_ranking_dialog.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
 	_dungeon_ranking_dialog.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
-	_dungeon_ranking_dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
+	_dungeon_ranking_dialog.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(60, 65, 60, 48)))
 	MenuArt.button(_dungeon_ranking_dialog.get_ok_button())
 	add_child(_dungeon_ranking_dialog)
 	var ranking_content := VBoxContainer.new()
@@ -303,7 +303,7 @@ func _sync_card(parent: Control, title: String) -> VBoxContainer:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(275, 220)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(35, 35, 35, 30)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(35, 35, 35, 30)))
 	parent.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -395,7 +395,7 @@ func _style_dungeon_dialog(dialog: ConfirmationDialog, extra_buttons: Array = []
 	dialog.transparent_bg = true
 	dialog.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
 	dialog.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
-	dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(55, 50, 55, 40)))
+	dialog.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(55, 50, 55, 40)))
 	var message := dialog.get_label()
 	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -733,7 +733,7 @@ func _catalog(homunculi: bool) -> void:
 	var details := VBoxContainer.new()
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if not homunculi:
-		details.add_theme_constant_override("separation", 8)
+		details.add_theme_constant_override("separation", 4)
 	row.add_child(details)
 	var heading := Label.new()
 	heading.name = "LocalizationCatalogHeading"
@@ -750,7 +750,7 @@ func _catalog(homunculi: bool) -> void:
 	details.add_child(stats_area)
 	var preview_center := CenterContainer.new()
 	preview_center.name = "PreviewSlot"
-	preview_center.custom_minimum_size = Vector2(150, 150)
+	preview_center.custom_minimum_size = Vector2(150, 150 if homunculi else 135)
 	if homunculi:
 		catalog_column.add_child(preview_center)
 		catalog_column.move_child(preview_center, 0)
@@ -758,7 +758,7 @@ func _catalog(homunculi: bool) -> void:
 		stats_area.add_child(preview_center)
 	var frame := TextureRect.new()
 	frame.custom_minimum_size = preview_center.custom_minimum_size
-	frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
+	frame.texture = load("res://assets/ui/new-elements/betterui/panel_vertical.png")
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -796,11 +796,12 @@ func _catalog(homunculi: bool) -> void:
 		text_column.add_child(_vat_synergies)
 	else:
 		scroll.add_child(info)
-	var actions: HBoxContainer
+	var actions: HFlowContainer
 	if not homunculi:
-		actions = HBoxContainer.new()
-		actions.alignment = BoxContainer.ALIGNMENT_CENTER
-		actions.add_theme_constant_override("separation", 10)
+		actions = HFlowContainer.new()
+		actions.alignment = FlowContainer.ALIGNMENT_CENTER
+		actions.add_theme_constant_override("h_separation", 10)
+		actions.add_theme_constant_override("v_separation", 4)
 		details.add_child(actions)
 	for label in ([] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
@@ -858,12 +859,14 @@ func _catalog(homunculi: bool) -> void:
 	else:
 		actions.add_child(inventory)
 	if not homunculi:
-		var trait_actions := HBoxContainer.new()
-		trait_actions.alignment = BoxContainer.ALIGNMENT_CENTER
-		trait_actions.add_theme_constant_override("separation", 8)
+		var trait_actions := HFlowContainer.new()
+		trait_actions.alignment = FlowContainer.ALIGNMENT_CENTER
+		trait_actions.add_theme_constant_override("h_separation", 8)
+		trait_actions.add_theme_constant_override("v_separation", 4)
 		details.add_child(trait_actions)
 		_forge_reroll_slot = OptionButton.new()
 		_forge_reroll_slot.set_meta("localization_body_font", true)
+		_forge_reroll_slot.add_theme_font_size_override("font_size", 10)
 		_forge_reroll_slot.get_popup().set_meta("localization_body_font", true)
 		_forge_reroll_slot.tooltip_text = "FORGE_REROLL_TRAIT"
 		for i in range(3):
@@ -872,6 +875,7 @@ func _catalog(homunculi: bool) -> void:
 		for i in range(3):
 			var trait_button := Button.new()
 			trait_button.set_meta("localization_body_font", true)
+			trait_button.add_theme_font_size_override("font_size", 10)
 			trait_button.custom_minimum_size = Vector2(90, 38)
 			MenuArt.button(trait_button)
 			trait_actions.add_child(trait_button)
@@ -883,6 +887,7 @@ func _catalog(homunculi: bool) -> void:
 		details.add_child(fusion_row)
 		_fusion_donor = OptionButton.new()
 		_fusion_donor.set_meta("localization_body_font", true)
+		_fusion_donor.add_theme_font_size_override("font_size", 10)
 		_fusion_donor.get_popup().set_meta("localization_body_font", true)
 		_fusion_donor.custom_minimum_size.x = 165
 		for donor_id in entries:
@@ -896,12 +901,12 @@ func _catalog(homunculi: bool) -> void:
 		_fusion_button.pressed.connect(_request_fusion)
 		fusion_row.add_child(_fusion_button)
 		_fusion_info = Label.new()
-		_fusion_info.add_theme_font_size_override("font_size", 12)
+		_fusion_info.add_theme_font_size_override("font_size", 10)
 		_fusion_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_fusion_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		details.add_child(_fusion_info)
 		_forge_status = Label.new()
-		_forge_status.add_theme_font_size_override("font_size", 12)
+		_forge_status.add_theme_font_size_override("font_size", 10)
 		_forge_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_forge_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		details.add_child(_forge_status)

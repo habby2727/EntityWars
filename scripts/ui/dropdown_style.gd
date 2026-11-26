@@ -1,15 +1,18 @@
 extends Node
 
-const FRAME := preload("res://assets/ui/new-elements/marco-horizontal-popup.png")
-const BUTTON := preload("res://assets/ui/new-elements/boton-loadout-opciones.png")
-const DISABLED := preload("res://assets/ui/new-elements/boton-bloqueado-off.png")
+const FRAME := preload("res://assets/ui/new-elements/betterui/panel_horizontal.png")
+const POPUP_FRAME := preload("res://assets/ui/new-elements/betterui/panel_vertical.png")
+const BUTTON := preload("res://assets/ui/new-elements/betterui/boton_largo.png")
+const DISABLED := preload("res://assets/ui/new-elements/betterui/boton_largo.png")
 
 var _frame_texture: ImageTexture
+var _popup_frame_texture: ImageTexture
 var _button_texture: ImageTexture
 var _disabled_texture: ImageTexture
 
 func _ready() -> void:
 	_frame_texture = _resize_texture(FRAME, 360)
+	_popup_frame_texture = _resize_texture(POPUP_FRAME, 240)
 	_button_texture = _resize_texture(BUTTON, 400)
 	_disabled_texture = _resize_texture(DISABLED, 400)
 	get_tree().node_added.connect(_on_node_added)
@@ -69,7 +72,9 @@ func _configure_button(button: OptionButton) -> void:
 	button.add_theme_stylebox_override("normal", normal)
 	button.add_theme_stylebox_override("hover", hover)
 	button.add_theme_stylebox_override("pressed", pressed)
-	button.add_theme_stylebox_override("disabled", _style(_disabled_texture, Vector4(36, 16, 36, 16), Vector4(25, 8, 30, 8)))
+	var disabled := _style(_disabled_texture, Vector4(36, 16, 36, 16), Vector4(25, 8, 30, 8))
+	disabled.modulate_color = Color(0.5, 0.5, 0.5, 0.75)
+	button.add_theme_stylebox_override("disabled", disabled)
 	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	button.add_theme_color_override("font_color", Color(0.95, 0.95, 0.89))
 	button.add_theme_color_override("font_hover_color", Color.WHITE)
@@ -78,7 +83,7 @@ func _configure_button(button: OptionButton) -> void:
 func _configure_popup(popup: PopupMenu) -> void:
 	if not is_instance_valid(popup):
 		return
-	var frame := _style(_frame_texture, Vector4(32, 45, 32, 30), Vector4(34, 48, 34, 32))
+	var frame := _style(_popup_frame_texture, Vector4(24, 30, 24, 30), Vector4(25, 30, 25, 30))
 	popup.add_theme_stylebox_override("panel", frame)
 	var hover := StyleBoxFlat.new()
 	hover.bg_color = Color(0.08, 0.3, 0.27, 0.92)

@@ -183,10 +183,10 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 18
-theme_override_constants/margin_top = 18
-theme_override_constants/margin_right = 18
-theme_override_constants/margin_bottom = 18
+theme_override_constants/margin_left = 45
+theme_override_constants/margin_top = 35
+theme_override_constants/margin_right = 45
+theme_override_constants/margin_bottom = 48
 
 [node name="DetailVBox" type="VBoxContainer" parent="Background/ContentMargin/RootHBox/RightPanel/Margin"]
 layout_mode = 2

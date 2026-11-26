@@ -61,6 +61,13 @@ func _run() -> void:
 	pregame._render()
 	assert(not pregame._seat_buttons["blue:right"].text.contains("Test Player"))
 	assert(pregame._seat_buttons["blue:left"].text.contains("Test Player"))
+	pregame._room.members.append({"player_id":"other", "display_name":null, "seat":null})
+	pregame._room.join_code = null
+	pregame._render()
+	assert(not pregame._info.text.to_lower().contains("null") and not pregame._code_label.text.to_lower().contains("null"))
+	assert(pregame._copy_button.disabled)
+	pregame._room.members[0].display_name = "<null>"
+	assert(pregame._display_name("tester-abc") == pregame.tr("INVITE_UNKNOWN_PLAYER"))
 	pregame.free()
 	npc.queue_free()
 	print("WOE_SMOKE_PASS")

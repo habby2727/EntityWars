@@ -1,6 +1,7 @@
 extends VBoxContainer
 
 const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+const PLAYER_NAMES := preload("res://scripts/ui/minigame_names.gd")
 var _rows := {}
 var _actions := {}
 var _identity := ""
@@ -69,7 +70,7 @@ func _refresh() -> void:
 			_set_label(_rows[id].get_meta("label"), invite)
 			continue
 		var panel := PanelContainer.new()
-		panel.add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup.png", Vector4(20, 20, 20, 20)))
+		panel.add_theme_stylebox_override("panel", MENU_ART.frame("panel_horizontal.png", Vector4(20, 20, 20, 20)))
 		parent.add_child(panel)
 		_rows[id] = panel
 		panel.set_meta("invite", invite)
@@ -116,7 +117,7 @@ func _update_countdowns() -> void:
 		for button in row.get_meta("buttons").get_children(): button.disabled = remaining <= 0 or MinigameInvitationCache.stale
 
 func _set_label(label: Label, invite: Dictionary) -> void:
-	var friend := str(SocialClient.friends.get(str(invite.get("inviter_id", "")), "")).strip_edges()
+	var friend := PLAYER_NAMES.clean(SocialClient.friends.get(str(invite.get("inviter_id", ""))))
 	if friend.is_empty(): friend = tr("INVITE_UNKNOWN_PLAYER")
 	var seconds := maxi(0, int(ceil(float(int(invite.get("expires_at", 0)) - int(MinigameInvitationCache.data.get("server_time_unix_ms", 0)) - maxi(0, Time.get_ticks_msec() - MinigameInvitationCache.received_tick)) / 1000.0)))
 	label.text = "%s: %s (%ds)%s" % [tr("WOE_TITLE" if invite.get("game_kind") == "woe" else "CD_TITLE"), friend, seconds, " " + tr("INVITE_STALE") if MinigameInvitationCache.stale else ""]

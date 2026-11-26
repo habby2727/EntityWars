@@ -1,6 +1,7 @@
 extends PanelContainer
 
 const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
+const PLAYER_NAMES := preload("res://scripts/ui/minigame_names.gd")
 
 signal admitted(room: Dictionary)
 var _rows: VBoxContainer
@@ -124,7 +125,8 @@ func refresh() -> void:
 		var row := HBoxContainer.new()
 		_rows.add_child(row)
 		var label := Label.new()
-		label.text = "%s  %s/%s  %s: %s" % [room.get("mode", ""), count, capacity, tr("WOE_HOST"), str(room.get("host_name", "")) if not str(room.get("host_name", "")).is_empty() else tr("INVITE_UNKNOWN_PLAYER")]
+		var host := PLAYER_NAMES.clean(room.get("host_name"))
+		label.text = "%s  %s/%s  %s: %s" % [room.get("mode", ""), count, capacity, tr("WOE_HOST"), host if not host.is_empty() else tr("INVITE_UNKNOWN_PLAYER")]
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(label)
 		var join_button := _button(row, "WOE_JOIN", _mutate.bind("join", {"room_id_or_code":id}))

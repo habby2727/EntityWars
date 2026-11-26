@@ -10,6 +10,21 @@ func _run() -> void:
 		await process_frame
 	var lab = current_scene
 	assert(not lab._spell_registry.spells.is_empty())
+	lab._select_building("ultrahit_tower")
+	for i in 8:
+		await process_frame
+	assert(not lab._spell_rows.is_empty())
+	for row in lab._spell_rows.values():
+		for label in [row.name, row.status]:
+			assert(label.get_theme_font("font").resource_path.contains("MedievalSharp"))
+			assert(label.get_theme_font_size("font_size") <= 18)
+		var info: Button = row.status.get_parent().get_child(1)
+		assert(info.text == "i" and info.get_theme_stylebox("normal") is StyleBoxFlat)
+		assert(info.get_theme_stylebox("normal").corner_radius_top_left > 0)
+		info.pressed.emit()
+		assert(lab._spell_info.visible and lab._spell_info.get_meta("spell") == row.spell)
+		lab._spell_info.hide()
+		break
 	for locale in ["es", "en"]:
 		TranslationServer.set_locale(locale)
 		for spell in lab._spell_registry.spells.values():

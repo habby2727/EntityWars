@@ -604,6 +604,8 @@ CD_CANCEL_INVITE,Cancel invitation,Cancelar invitación
 CD_INVITE_FRIEND,Invite %s,Invitar a %s
 CD_ACTION_EXPIRED,Action expired. Refresh the authoritative state.,La acción caducó. Actualiza el estado del servidor.
 CD_WAVE_STATUS,Wave %d | Cleared %d | Kills %d | Pending %d | %02d:%02d,Ola %d | Superadas %d | Bajas %d | Pendientes %d | %02d:%02d
+CD_WAVE_BANNER,Wave %d | Cleared %d | Kills %d | Pending %d,Ola %d | Superadas %d | Bajas %d | Pendientes %d
+WOE_WINNING,Winning: %s,Ganando: %s
 CD_ALLIED_CAP,Units %d/%d,Unidades %d/%d
 WOE_POTION_THUNDERLOCK,Thunderlock,Poción de rayo
 WOE_POTION_VITRIOL,Vitriol Potion,Poción de vitriolo

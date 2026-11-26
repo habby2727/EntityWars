@@ -100,7 +100,7 @@ func _show_exit_confirmation() -> void:
 	_exit_overlay.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(520, 220)
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(45, 35, 45, 35)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(45, 35, 45, 35)))
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER

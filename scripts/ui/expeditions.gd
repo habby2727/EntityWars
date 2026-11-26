@@ -265,7 +265,7 @@ func _build_ui() -> void:
 	exit_confirmation.cancel_button_text = tr("COMBAT_STAY")
 	exit_confirmation.dialog_text = tr("EXPEDITION_RISK_WARNING")
 	exit_confirmation.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	exit_confirmation.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(64, 50, 64, 45)))
+	exit_confirmation.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(64, 50, 64, 45)))
 	exit_confirmation.get_label().horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	exit_confirmation.get_label().add_theme_font_size_override("font_size", 22)
 	MenuArt.button(exit_confirmation.get_ok_button())

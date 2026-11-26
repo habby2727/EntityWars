@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/ui/settings_screen.gd" id="1"]
 [ext_resource type="Texture2D" path="res://assets/ui/new-elements/fondo-menus-edificios-laboratorio.png" id="2"]
-[ext_resource type="Texture2D" path="res://assets/ui/new-elements/marco-horizontal-popup.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/ui/new-elements/betterui/panel_horizontal.png" id="3"]
 
 [sub_resource type="StyleBoxTexture" id="panel"]
 texture = ExtResource("3")

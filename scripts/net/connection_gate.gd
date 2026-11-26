@@ -699,7 +699,7 @@ func _create_overlay() -> void:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(640, 260)
 	var art := StyleBoxTexture.new()
-	art.texture = load("res://assets/ui/new-elements/marco-horizontal-popup-grande.png")
+	art.texture = load("res://assets/ui/new-elements/betterui/panel_horizontal.png")
 	art.content_margin_left = 45
 	art.content_margin_right = 45
 	art.content_margin_top = 35
@@ -814,7 +814,7 @@ func dungeon_warning(message_key: String, confirm_key: String, cancel_key: Strin
 	layer.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(620, 300)
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(55, 50, 55, 40)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(55, 50, 55, 40)))
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER

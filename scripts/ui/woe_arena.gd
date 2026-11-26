@@ -2,6 +2,7 @@ extends Control
 
 const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080.png")
 const ZEAL := preload("res://assets/forest/woe/zeal.png")
+const SCORE_BANNER := preload("res://assets/ui/new-elements/banner-listas.png")
 const UNIT := preload("res://scripts/ui/woe_unit.gd")
 const EFFECTS := preload("res://scripts/ui/woe_effects.gd")
 const POTION_VISUALS := preload("res://scripts/ui/woe_potion_visuals.gd")
@@ -172,10 +173,14 @@ var _potion_textures := {}
 var _lab_bars := {}
 var _lane_buttons := {}
 var _buttons: Array[Button] = []
+var _potion_art: Array[TextureRect] = []
+var _potion_names: Array[Label] = []
+var _potion_costs: Array[Label] = []
 var _canvas: Control
 var _stage: Control
 var _field: Node2D
 var _clock: Label
+var _score_banner: Label
 var _notice: Label
 var _result: Label
 var _zeal_meter: Meter
@@ -276,21 +281,39 @@ func _build() -> void:
 			marker.visible = false
 			_stage.add_child(marker)
 			_lane_buttons[team + ":" + lane] = marker
-	var top := HBoxContainer.new()
-	top.position = Vector2(320, 15) if _is_cd else Vector2(660, 15)
-	top.size = Vector2(1280, 55) if _is_cd else Vector2(600, 55)
-	top.alignment = BoxContainer.ALIGNMENT_CENTER
-	_stage.add_child(top)
 	_clock = Label.new()
-	_clock.add_theme_font_size_override("font_size", 25 if _is_cd else 32)
-	top.add_child(_clock)
+	_clock.position = Vector2(660, 8)
+	_clock.size = Vector2(600, 52)
+	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_clock.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_clock.add_theme_font_size_override("font_size", 36)
+	_clock.add_theme_color_override("font_color", Color("dc2424"))
+	_clock.add_theme_color_override("font_outline_color", Color.WHITE)
+	_clock.add_theme_constant_override("outline_size", 4)
+	_clock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage.add_child(_clock)
+	var banner := TextureRect.new()
+	banner.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	banner.texture = SCORE_BANNER
+	banner.position = Vector2(480, 62) if _is_cd else Vector2(680, 62)
+	banner.size = Vector2(960, 72) if _is_cd else Vector2(560, 72)
+	banner.stretch_mode = TextureRect.STRETCH_SCALE
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage.add_child(banner)
+	_score_banner = Label.new()
+	_score_banner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_score_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_score_banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_score_banner.add_theme_font_size_override("font_size", 24 if _is_cd else 28)
+	_score_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner.add_child(_score_banner)
 	_notice = Label.new()
-	_notice.position = Vector2(670,75)
+	_notice.position = Vector2(670,140)
 	_notice.size = Vector2(580,35)
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_stage.add_child(_notice)
 	_result = Label.new()
-	_result.position = Vector2(600,120)
+	_result.position = Vector2(600,180)
 	_result.size = Vector2(720,70)
 	_result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_result.add_theme_font_size_override("font_size", 38)
@@ -301,33 +324,79 @@ func _build() -> void:
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
 	hud.add_theme_constant_override("separation", 8)
 	_stage.add_child(hud)
+	var potion_font := SystemFont.new()
+	potion_font.font_names = PackedStringArray(["Arial", "Noto Sans", "sans-serif"])
 	for i in range(4):
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(170,120)
 		button.add_theme_font_size_override("font_size", 24)
 		MENU_ART.button(button)
-		button.expand_icon = true
-		button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(_select.bind(i))
 		hud.add_child(button)
 		_buttons.append(button)
+		var art := TextureRect.new()
+		art.position = Vector2(38, 4)
+		art.size = Vector2(94, 78)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.visible = false
+		button.add_child(art)
+		_potion_art.append(art)
+		var potion_name := Label.new()
+		potion_name.set_meta("minigame_native_typography", true)
+		potion_name.position = Vector2(8, 82)
+		potion_name.size = Vector2(154, 32)
+		potion_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		potion_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		potion_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		potion_name.clip_text = true
+		potion_name.add_theme_font_override("font", potion_font)
+		potion_name.add_theme_font_size_override("font_size", 16)
+		potion_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		potion_name.visible = false
+		button.add_child(potion_name)
+		_potion_names.append(potion_name)
+		var potion_cost := Label.new()
+		potion_cost.set_meta("minigame_native_typography", true)
+		potion_cost.position = Vector2(133, 8)
+		potion_cost.size = Vector2(25, 25)
+		potion_cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		potion_cost.add_theme_font_override("font", potion_font)
+		potion_cost.add_theme_font_size_override("font_size", 20)
+		potion_cost.add_theme_color_override("font_color", Color("ffe79a"))
+		potion_cost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		potion_cost.visible = false
+		button.add_child(potion_cost)
+		_potion_costs.append(potion_cost)
 	var zeal_box := VBoxContainer.new()
-	zeal_box.custom_minimum_size = Vector2(230,100)
-	hud.add_child(zeal_box)
+	zeal_box.position = Vector2(608, 800 if _is_cd else 827)
+	zeal_box.size = Vector2(704, 98)
+	zeal_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage.add_child(zeal_box)
 	var zeal_title := HBoxContainer.new()
+	zeal_title.alignment = BoxContainer.ALIGNMENT_CENTER
+	zeal_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	zeal_box.add_child(zeal_title)
 	var icon := TextureRect.new()
 	icon.texture = ZEAL
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.custom_minimum_size = Vector2(36,36)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	zeal_title.add_child(icon)
 	_zeal_label = Label.new()
+	_zeal_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_zeal_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	zeal_title.add_child(_zeal_label)
+	var meter_center := CenterContainer.new()
+	meter_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	zeal_box.add_child(meter_center)
 	_zeal_meter = Meter.new()
 	_zeal_meter.translucent_partial = true
-	_zeal_meter.custom_minimum_size = Vector2(220,18)
-	zeal_box.add_child(_zeal_meter)
+	_zeal_meter.custom_minimum_size = Vector2(360,18)
+	_zeal_meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	meter_center.add_child(_zeal_meter)
 	_forfeit = Button.new()
 	_forfeit.position = Vector2(1640, 30)
 	_forfeit.size = Vector2(230,55)
@@ -623,11 +692,14 @@ func _render_snapshot() -> void:
 	var time_left := maxi(0, 180 - int(_snapshot.get("tick", 0)) / 10)
 	if _is_cd:
 		var elapsed := int(_snapshot.get("tick", 0)) / 10
-		_clock.text = tr("CD_WAVE_STATUS") % [int(_snapshot.get("wave", 0)), int(_snapshot.get("completedWaves", 0)), int(_snapshot.get("enemiesKilled", 0)), int(_snapshot.get("pendingSpawns", 0)), elapsed / 60, elapsed % 60]
+		_clock.text = "%02d:%02d" % [elapsed / 60, elapsed % 60]
+		_score_banner.text = tr("CD_WAVE_BANNER") % [int(_snapshot.get("wave", 0)), int(_snapshot.get("completedWaves", 0)), int(_snapshot.get("enemiesKilled", 0)), int(_snapshot.get("pendingSpawns", 0))]
 		if _snapshot.get("phase") == "intermission": _notice.text = tr("CD_INTERMISSION") % (float(_snapshot.get("intermissionTicks", 0)) / 10.0) + "  " + tr("CD_REGEN_PAUSED")
 		elif bool(_snapshot.get("regeneration_blocked", false)): _notice.text = tr("CD_CAP_REACHED")
 	else:
-		_clock.text = "%s  %02d:%02d  %s" % [tr("WOE_BLUE"), time_left / 60, time_left % 60, tr("WOE_RED")]
+		_clock.text = "%02d:%02d" % [time_left / 60, time_left % 60]
+		var leader := _winning_team(_snapshot)
+		_score_banner.text = tr("WOE_WINNING") % (tr("WOE_" + leader.to_upper()) if not leader.is_empty() else "-")
 	var outcome: Variant = _snapshot.get("result")
 	_finished = outcome is Dictionary
 	if is_instance_valid(_defense_ranges):
@@ -645,6 +717,31 @@ func _render_snapshot() -> void:
 		_forfeit.disabled = true
 		_selected = -1
 	_update_hud()
+
+# Match the server's timeout ordering: surviving laboratories, then HP fraction.
+func _winning_team(snapshot: Dictionary) -> String:
+	var result: Variant = snapshot.get("result")
+	if result is Dictionary:
+		var winner: Variant = result.get("winner")
+		return winner if winner is String and winner in ["blue", "red"] else ""
+	var labs: Variant = snapshot.get("laboratories")
+	if not labs is Array: return ""
+	var counts := {"blue":0, "red":0}
+	var alive := {"blue":0, "red":0}
+	var hp := {"blue":0.0, "red":0.0}
+	for lab in labs:
+		if not lab is Dictionary: return ""
+		var team := str(lab.get("team", ""))
+		var maximum := float(lab.get("maxHp", 0))
+		if team not in counts or maximum <= 0.0: return ""
+		counts[team] += 1
+		var current := maxf(0.0, float(lab.get("hp", 0)))
+		if current > 0.0: alive[team] += 1
+		hp[team] += current / maximum
+	if counts.blue != 2 or counts.red != 2: return ""
+	if alive.blue != alive.red: return "blue" if alive.blue > alive.red else "red"
+	if hp.blue == hp.red: return ""
+	return "blue" if hp.blue > hp.red else "red"
 
 # Stable, bounded visual spacing based only on nearby authoritative positions.
 func _separate_units() -> void:
@@ -701,13 +798,19 @@ func _update_hud() -> void:
 		var id := str(slots[i]) if i < slots.size() else ""
 		var card: Dictionary = _cards.get(id, {})
 		var potion: bool = card.get("kind") == "potion"
-		button.add_theme_font_size_override("font_size", 16 if potion else 24)
+		button.add_theme_font_size_override("font_size", 24)
+		_potion_art[i].visible = not card.is_empty()
+		_potion_names[i].visible = not card.is_empty()
+		_potion_costs[i].visible = not card.is_empty()
 		if potion:
 			if not _potion_textures.has(id): _potion_textures[id] = load(str(card.get("texture", ""))) as Texture2D
-			button.icon = _potion_textures[id]
-		else: button.icon = UNIT.frame(id,"front",1)
-		var card_name := tr(str(card.get("name_key", ""))).replace(" ", "\n") if potion else id.capitalize()
-		button.text = "%s\n%d" % [card_name, int(_card_cost(card))] if not card.is_empty() else ""
+			_potion_art[i].texture = _potion_textures[id]
+			_potion_names[i].text = tr(str(card.get("name_key", "")))
+		else:
+			_potion_art[i].texture = UNIT.frame(id,"front",1) if not card.is_empty() else null
+			_potion_names[i].text = id.capitalize() if not card.is_empty() else ""
+		_potion_costs[i].text = str(int(_card_cost(card))) if not card.is_empty() else ""
+		button.text = ""
 		button.disabled = _returning or _finished or _missing_match or _forfeited or _acting or (capped and not potion) or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < _card_cost(card)
 		button.modulate = Color("ffe38a") if _selected == i else (Color(0.65,0.7,0.75,1) if button.disabled else Color.WHITE)
 	for key in _lane_buttons:

@@ -4,6 +4,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	TranslationServer.set_locale("en")
 	if OS.get_environment("EW_DUNGEON_DEBUG_E2E") == "1":
 		await _run_debug_entry()
 		return
@@ -52,7 +53,7 @@ func _run() -> void:
 	panel._style_dungeon_dialog(dungeon_dialog, [new_run])
 	assert(dungeon_dialog.transparent_bg and dungeon_dialog.borderless)
 	var dialog_frame := dungeon_dialog.get_theme_stylebox("panel") as StyleBoxTexture
-	assert(dialog_frame != null and dialog_frame.texture.resource_path.ends_with("marco-horizontal-popup.png"))
+	assert(dialog_frame != null and dialog_frame.texture.resource_path.ends_with("betterui/panel_horizontal.png"))
 	assert(dungeon_dialog.get_label().horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER)
 	for choice in [dungeon_dialog.get_ok_button(), dungeon_dialog.get_cancel_button(), new_run]:
 		assert(choice.get_theme_stylebox("normal") is StyleBoxTexture and choice.alignment == HORIZONTAL_ALIGNMENT_CENTER)

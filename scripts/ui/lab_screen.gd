@@ -222,11 +222,7 @@ func _setup_compact_navigation() -> void:
 	if navigation_back != null:
 		navigation_back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		MenuArt.button(navigation_back)
-	var background := StyleBoxFlat.new()
-	background.bg_color = Color(0.02, 0.07, 0.08, 0.9)
-	background.border_color = Color(0.47, 0.4, 0.25, 0.8)
-	background.set_border_width_all(1)
-	_right_panel.add_theme_stylebox_override("panel", background)
+	_right_panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png"))
 	for button in [_upgrade_btn, _route_btn, _claim_btn, _open_btn]:
 		if button:
 			button.custom_minimum_size = Vector2(100, 42)
@@ -726,7 +722,7 @@ func _build_spell_info() -> void:
 	var panel := PanelContainer.new()
 	_spell_info_panel = panel
 	panel.custom_minimum_size = Vector2(650, 400)
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(60, 65, 60, 48)))
 	_spell_info.add_child(panel)
 	panel.minimum_size_changed.connect(_queue_spell_info_layout)
 	_spell_info.resized.connect(_queue_spell_info_layout)
@@ -810,6 +806,8 @@ func _build_spell_rows() -> void:
 			current_group = group
 			var group_label := Label.new()
 			group_label.text = "SPELL_GROUP_INITIAL" if group == "Initial Spells" else "SPELL_FILTER_" + group.to_upper()
+			group_label.set_meta("medieval_sharp_font", true)
+			group_label.add_theme_font_size_override("font_size", 18)
 			_spell_list.add_child(group_label)
 		var panel := PanelContainer.new()
 		var style := StyleBoxFlat.new()
@@ -824,24 +822,27 @@ func _build_spell_rows() -> void:
 		var name_label := Label.new()
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		var types := SpellView.affinity(spell)
-		name_label.set_meta("localization_body_font", true)
+		name_label.set_meta("medieval_sharp_font", true)
 		name_label.text = "%s  |  %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), types]
 		name_label.add_theme_font_size_override("font_size", 18)
 		row.add_child(name_label)
 		var actions := HBoxContainer.new()
 		var status := Label.new()
+		status.set_meta("medieval_sharp_font", true)
+		status.add_theme_font_size_override("font_size", 16)
 		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		actions.add_child(status)
 		var info := Button.new()
 		info.text = "i"
 		info.tooltip_text = "SPELL_DETAILS"
-		info.custom_minimum_size = Vector2(38, 34)
-		MenuArt.button(info)
+		_style_spell_info_button(info)
 		info.pressed.connect(_show_spell_info.bind(spell))
 		actions.add_child(info)
 		var button := Button.new()
 		button.text = "SPELL_RESEARCH"
+		button.set_meta("medieval_sharp_font", true)
+		button.add_theme_font_size_override("font_size", 16)
 		button.custom_minimum_size = Vector2(110, 34)
 		MenuArt.button(button)
 		button.pressed.connect(_on_spell_research_pressed.bind(str(spell.id)))
@@ -849,6 +850,21 @@ func _build_spell_rows() -> void:
 		row.add_child(actions)
 		_spell_list.add_child(panel)
 		_spell_rows[str(spell.id)] = {"spell": spell, "status": status, "button": button, "name": name_label, "base_name": name_label.text}
+
+func _style_spell_info_button(button: Button) -> void:
+	button.set_meta("medieval_sharp_font", true)
+	button.custom_minimum_size = Vector2(36, 36)
+	button.add_theme_font_size_override("font_size", 20)
+	button.add_theme_color_override("font_color", Color("c3efff"))
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("173e52") if state in ["hover", "pressed"] else Color("0a202e")
+		style.border_color = Color("a7efff") if state in ["hover", "focus"] else Color("55b5d0")
+		style.set_border_width_all(2)
+		style.set_corner_radius_all(18)
+		style.set_content_margin_all(2)
+		button.add_theme_stylebox_override(state, style)
 
 func _featured_spell_ids(entity_type: String, tower_level: int, now_ms: int, rotation_seconds: int) -> Array[String]:
 	var result: Array[String] = []

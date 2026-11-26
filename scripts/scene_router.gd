@@ -402,12 +402,13 @@ static func go_to_summoner_selection() -> void:
 		return
 	_forest_summoner = ""
 	_forest_owner = _forest_verified_owner()
-	if not _forest_owner.is_empty():
-		var config := ConfigFile.new()
-		if config.load(FOREST_PREFERENCES) == OK:
-			var remembered := str(config.get_value("players", _forest_owner.sha256_text(), ""))
-			if remembered in FOREST_SUMMONERS:
-				_forest_summoner = remembered
+	var config := ConfigFile.new()
+	if config.load(FOREST_PREFERENCES) == OK:
+		var remembered := str(config.get_value("players", _forest_owner.sha256_text(), "")) if not _forest_owner.is_empty() else str(config.get_value("debug", "summoner", ""))
+		if remembered in FOREST_SUMMONERS:
+			_forest_summoner = remembered
+			_go_to(SCENE_FOREST_WORLD, "ForestWorld")
+			return
 	_go_to(SCENE_SUMMONER_SELECTION, "SummonerSelection")
 
 static func forest_selected_summoner() -> String:
@@ -422,12 +423,14 @@ static func enter_forest(summoner_id: String) -> void:
 	if owner != _forest_owner:
 		return
 	_forest_summoner = summoner_id
+	var config := ConfigFile.new()
+	config.load(FOREST_PREFERENCES)
 	if not owner.is_empty():
-		var config := ConfigFile.new()
-		config.load(FOREST_PREFERENCES)
 		config.set_value("players", owner.sha256_text(), summoner_id)
-		if config.save(FOREST_PREFERENCES) != OK:
-			push_warning("Could not save forest summoner preference.")
+	else:
+		config.set_value("debug", "summoner", summoner_id)
+	if config.save(FOREST_PREFERENCES) != OK:
+		push_warning("Could not save forest summoner preference.")
 	_go_to(SCENE_FOREST_WORLD, "ForestWorld")
 
 static func leave_forest() -> void:
@@ -577,13 +580,16 @@ static func finish_forest_change(summoner_id: String, confirmed: bool) -> void:
 	if selected not in FOREST_SUMMONERS:
 		return
 	var owner := _forest_verified_owner()
-	if confirmed and not owner.is_empty():
+	if confirmed:
 		var config := ConfigFile.new()
 		var err := config.load(FOREST_PREFERENCES)
 		if err != OK and err != ERR_FILE_NOT_FOUND:
 			push_warning("Could not read forest summoner preference.")
 			return
-		config.set_value("players", owner.sha256_text(), selected)
+		if not owner.is_empty():
+			config.set_value("players", owner.sha256_text(), selected)
+		else:
+			config.set_value("debug", "summoner", selected)
 		if config.save(FOREST_PREFERENCES) != OK:
 			push_warning("Could not save forest summoner preference.")
 			return

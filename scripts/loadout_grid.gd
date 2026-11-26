@@ -641,7 +641,7 @@ func _setup_build_dialog() -> void:
 	overlay.add_child(center_popup)
 	var dialog := PanelContainer.new()
 	dialog.custom_minimum_size = Vector2(720, 430)
-	dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+	dialog.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(62, 72, 62, 48)))
 	center_popup.add_child(dialog)
 	if lbl_build_error:
 		lbl_build_error.reparent(card)
@@ -687,13 +687,13 @@ func _setup_build_dialog() -> void:
 	for path in ["SelectedRow/PreviewFrame", "SelectedRow/HomPreviewFrame"]:
 		var portrait := card.get_node_or_null(path) as PanelContainer
 		if portrait:
-			portrait.add_theme_stylebox_override("panel", MenuArt.frame("marco-forma-carta-vertical.png", Vector4(16, 22, 16, 18)))
+			portrait.add_theme_stylebox_override("panel", MenuArt.frame("panel_vertical.png", Vector4(16, 22, 16, 18)))
 	var row := card.get_node("SelectedRow") as HBoxContainer
 	var info := row.get_node("InfoVBox") as VBoxContainer
 	var info_panel := PanelContainer.new()
 	info_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info_panel.custom_minimum_size.y = 275
-	info_panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-informativo-small.png", Vector4(48, 42, 48, 42)))
+	info_panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_vertical.png", Vector4(48, 42, 48, 42)))
 	row.add_child(info_panel)
 	info.reparent(info_panel)
 	info.get_node("InfoSpacer").custom_minimum_size.y = 0
@@ -898,7 +898,7 @@ func _build_spell_dialog() -> void:
 	_spell_dialog.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(1020, 620)
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(65, 75, 65, 55)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(65, 75, 65, 55)))
 	center.add_child(panel)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 8)
@@ -1297,7 +1297,7 @@ func _open_weapon_selector(target: Button) -> void:
 		_weapon_overlay.add_child(center)
 		var panel := PanelContainer.new()
 		panel.custom_minimum_size = Vector2(820, 550)
-		panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+		panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(62, 72, 62, 48)))
 		center.add_child(panel)
 		var layout := VBoxContainer.new()
 		layout.add_theme_constant_override("separation", 8)
@@ -1444,7 +1444,7 @@ func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) 
 	b.text = ""
 	b.focus_mode = Control.FOCUS_NONE
 	b.flat = false
-	var card_style := MenuArt.frame("marco-forma-carta-vertical.png", Vector4(12, 12, 12, 12))
+	var card_style := MenuArt.frame("panel_vertical.png", Vector4(12, 12, 12, 12))
 	for state in ["normal", "hover", "pressed"]:
 		b.add_theme_stylebox_override(state, card_style)
 	b.pressed.connect(func(): _on_card_picked(p_kind, p_id))
@@ -2015,7 +2015,7 @@ func _confirm_expedition_start(owner: String, payload: Dictionary) -> void:
 	confirm.transparent = true
 	confirm.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
 	confirm.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
-	confirm.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+	confirm.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(62, 72, 62, 48)))
 	confirm.dialog_text = tr("EXPEDITION_RISK_WARNING")
 	confirm.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	confirm.get_label().horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

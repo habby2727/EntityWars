@@ -65,6 +65,8 @@ func _excluded(node: Node) -> bool:
 func _apply_font(node: Node) -> void:
 	if not is_instance_valid(node) or not node.is_inside_tree() or _excluded(node):
 		return
+	if node is Button and node.has_meta("betterui_button"):
+		preload("res://scripts/ui/menu_art.gd").refresh_button(node)
 	_restore_font_sizes(node)
 	if node is Label or node is Button:
 		_tracked_text[node.get_instance_id()] = str(TranslationServer.get_locale(), "|", node.text)

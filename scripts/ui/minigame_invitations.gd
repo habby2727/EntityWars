@@ -2,6 +2,7 @@ extends VBoxContainer
 
 const MENU_ART := preload("res://scripts/ui/menu_art.gd")
 const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
+const PLAYER_NAMES := preload("res://scripts/ui/minigame_names.gd")
 
 signal admitted(room: Dictionary)
 var room_id := ""
@@ -119,7 +120,7 @@ func _render_cache() -> void:
 				var id := str(friend.get("player_id", ""))
 				var button := Button.new()
 				_style_button(button)
-				var display := str(friend.get("display_name", "")).strip_edges()
+				var display := PLAYER_NAMES.clean(friend.get("display_name"))
 				button.text = tr("CD_INVITE_FRIEND") % (display if not display.is_empty() else tr("INVITE_UNKNOWN_PLAYER"))
 				button.set_meta("invite_friend", true)
 				button.disabled = not can_invite
@@ -141,7 +142,7 @@ func _style_button(button: Button) -> void:
 	else: MENU_ART.button(button)
 
 func _friend_name(id: String) -> String:
-	var value := str(SocialClient.friends.get(id, "")).strip_edges()
+	var value := PLAYER_NAMES.clean(SocialClient.friends.get(id))
 	return value if not value.is_empty() else tr("INVITE_UNKNOWN_PLAYER")
 
 func set_inviting_enabled(enabled: bool) -> void:

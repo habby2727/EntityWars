@@ -1,6 +1,7 @@
 extends Control
 
 const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
+const PLAYER_NAMES := preload("res://scripts/ui/minigame_names.gd")
 const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080.png")
 
 var _identity := ""
@@ -124,11 +125,12 @@ func _render() -> void:
 		return
 	var names: Array[String] = []
 	for member in _room.get("members", []):
+		if not member is Dictionary: continue
 		var id := str(member.get("player_id", ""))
-		var display := str(member.get("display_name", SocialClient.friends.get(id, ""))).strip_edges()
+		var display := PLAYER_NAMES.first(member.get("display_name"), SocialClient.friends.get(id))
 		names.append(display if not display.is_empty() else tr("INVITE_UNKNOWN_PLAYER"))
 	var host_id := str(_room.get("host_id", ""))
-	var host_name := str(_room.get("host_name", SocialClient.friends.get(host_id, ""))).strip_edges()
+	var host_name := PLAYER_NAMES.first(_room.get("host_name"), SocialClient.friends.get(host_id))
 	_info.text = "%s\n%s: %s\n%s: %s" % [tr("CD_COOP"), tr("WOE_HOST"), host_name if not host_name.is_empty() else tr("INVITE_UNKNOWN_PLAYER"), tr("WOE_PLAYERS"), ", ".join(names)]
 	_start.disabled = _changing or str(_room.get("host_id", "")) != str(ConnectionGate.player_id) or names.size() != 2
 	_invites.visible = str(_room.get("host_id", "")) == str(ConnectionGate.player_id)

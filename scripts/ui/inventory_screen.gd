@@ -135,7 +135,7 @@ func _setup_inventory_layout() -> void:
 	_detail_panel = PanelContainer.new()
 	_detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_detail_panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-informativo-small.png", Vector4(95, 155, 80, 60)))
+	_detail_panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_vertical.png", Vector4(40, 45, 40, 35)))
 	_tab_layouts[0].add_child(_detail_panel)
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -148,7 +148,7 @@ func _setup_inventory_layout() -> void:
 	header.add_theme_constant_override("separation", 18)
 	content.add_child(header)
 	var icon_frame := UIThemeFactory.make_icon_slot() as TextureRect
-	icon_frame.texture = load(MenuArt.DIR + "marco-slot-small.png")
+	icon_frame.texture = load(MenuArt.DIR + "betterui/panel_vertical.png")
 	icon_frame.custom_minimum_size = Vector2(224, 224)
 	header.add_child(icon_frame)
 	_detail_icon = icon_frame.get_node("Icon") as TextureRect
@@ -599,7 +599,7 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	select.add_child(row)
 	var icon_slot := UIThemeFactory.make_icon_slot() as TextureRect
-	icon_slot.texture = load(MenuArt.DIR + "marco-slot-small.png")
+	icon_slot.texture = load(MenuArt.DIR + "betterui/panel_vertical.png")
 	icon_slot.custom_minimum_size = Vector2(58, 58)
 	icon_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var icon := icon_slot.get_node("Icon") as TextureRect

@@ -317,7 +317,7 @@ func _style_leave_confirmation() -> void:
 	var art = preload("res://scripts/ui/menu_art.gd")
 	confirm_popup.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var panel := confirm_popup.get_node("Panel") as PanelContainer
-	panel.add_theme_stylebox_override("panel", art.frame("marco-horizontal-popup-grande.png", Vector4(65, 38, 65, 32)))
+	panel.add_theme_stylebox_override("panel", art.frame("panel_horizontal.png", Vector4(65, 38, 65, 32)))
 	var title := confirm_popup.get_node("Panel/VBox/Title") as Label
 	title.add_theme_font_size_override("font_size", 24)
 	var body := confirm_popup.get_node("Panel/VBox/Body") as Label
@@ -3372,7 +3372,7 @@ func _add_label_plaque(label: Label, centered: bool = true) -> void:
 	plaque.name = "LabelPlaque"
 	plaque.show_behind_parent = true
 	plaque.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	plaque.texture = load("res://assets/ui/new-elements/boton-loadout-opciones.png")
+	plaque.texture = load("res://assets/ui/new-elements/betterui/boton_largo.png")
 	plaque.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	plaque.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	if centered:

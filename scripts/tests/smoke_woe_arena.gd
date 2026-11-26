@@ -52,6 +52,17 @@ func _run() -> void:
 	var arena = arena_script.new()
 	root.add_child(arena)
 	arena._build()
+	assert(arena._clock.get_theme_color("font_color") == Color("dc2424"))
+	assert(arena._clock.get_theme_color("font_outline_color") == Color.WHITE)
+	assert(arena._score_banner.get_parent().size == Vector2(560,72))
+	var score_labs := [{"team":"blue","hp":1000,"maxHp":1000},{"team":"blue","hp":1000,"maxHp":1000},{"team":"red","hp":1000,"maxHp":1000},{"team":"red","hp":1000,"maxHp":1000}]
+	assert(arena._winning_team({"laboratories":score_labs}) == "")
+	score_labs[0].hp = 900
+	assert(arena._winning_team({"laboratories":score_labs}) == "red")
+	score_labs[2].hp = 0
+	assert(arena._winning_team({"laboratories":score_labs}) == "blue")
+	assert(arena._winning_team({"laboratories":[],"result":{"winner":"red"}}) == "red")
+	assert(arena._winning_team({"laboratories":[],"result":{"winner":null}}) == "")
 	assert(arena._buttons.size() == 4 and arena._lab_bars.size() == 4 and arena._lane_buttons.size() == 4)
 	for viewport_size in [Vector2(1920,1080),Vector2(1280,720),Vector2(960,540)]:
 		arena._canvas.size = viewport_size
@@ -66,7 +77,7 @@ func _run() -> void:
 	arena._cards = {"neon":{"cost":2,"element":"mercury"}}
 	arena._snapshot = {"tick":1,"units":[],"laboratories":[],"players":[{"id":str(root.get_node("ConnectionGate").player_id),"team":"blue","zeal":5,"slots":["neon","neon","neon"],"allowedDeploymentLanes":["left","right"]}],"result":null}
 	arena._render_snapshot()
-	assert(arena._zeal_meter.segments == 10 and arena._buttons[0].icon != null)
+	assert(arena._zeal_meter.segments == 10 and arena._potion_art[0].texture != null)
 	arena._snapshot.players[0].zeal_regen_ticks = 15
 	arena._render_snapshot()
 	assert(arena._zeal_label.text.contains("5 / 10"))
@@ -87,30 +98,40 @@ func _run() -> void:
 	arena._cards["solcarp"] = {"cost":5,"woe_cost":7,"element":"gold"}
 	arena._snapshot.players[0].slots.append("solcarp")
 	arena._render_snapshot()
-	assert(arena._buttons[3].visible and arena._buttons[3].disabled and arena._buttons[3].text.ends_with("7"))
+	assert(arena._buttons[3].visible and arena._buttons[3].disabled and arena._potion_costs[3].text == "7")
 	arena._is_cd = true
 	arena._snapshot.allied_count = 4
 	arena._snapshot.allied_cap = 4
 	arena._snapshot.regeneration_blocked = true
 	arena._render_snapshot()
-	assert(arena._buttons[3].disabled and arena._buttons[3].text.ends_with("5"))
+	assert(arena._buttons[3].disabled and arena._potion_costs[3].text == "5")
 	var paused: float = arena._zeal_meter.value
 	arena._process(0.5)
 	assert(is_equal_approx(paused, arena._zeal_meter.value))
 	var card_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/woe_cards.json"))
+	for card in card_data.cards: arena._cards[str(card.id)] = card
 	for potion in card_data.potions: arena._cards[str(potion.id)] = potion
 	for mode in [false, true]:
 		arena._is_cd = mode
+		for card in card_data.cards:
+			var id := str(card.id)
+			arena._snapshot.players[0].slots[3] = id
+			arena._render_snapshot()
+			var art: TextureRect = arena._potion_art[3]
+			var name_label: Label = arena._potion_names[3]
+			assert(art.visible and art.texture != null and art.position == Vector2(38, 4) and art.size == Vector2(94, 78))
+			assert(name_label.visible and name_label.text == id.capitalize() and name_label.position.y >= art.position.y + art.size.y)
+			assert(arena._potion_costs[3].text == str(int(arena._card_cost(card))) and arena._buttons[3].text.is_empty())
 		assert(arena._card_cost(arena._cards.thunderlock) == 2.0 and arena._card_cost(arena._cards.vitriol_potion) == 3.0)
 		assert(arena._card_cost(arena._cards.blood_potion) == 4.0 and arena._card_cost(arena._cards.aether_potion) == 2.0)
 		for id in ["blood_potion", "aether_potion"]:
 			arena._snapshot.players[0].slots[3] = id
 			arena._render_snapshot()
-			assert(arena._buttons[3].icon != null and arena._buttons[3].text.ends_with(str(int(arena._cards[id].cost))))
+			assert(arena._potion_art[3].texture != null and arena._potion_names[3].visible and arena._potion_costs[3].text == str(int(arena._cards[id].cost)))
 	arena._is_cd = true
 	arena._snapshot.players[0].slots[3] = "thunderlock"
 	arena._render_snapshot()
-	assert(not arena._buttons[3].disabled and arena._buttons[3].icon != null and arena._buttons[3].text.ends_with("2"))
+	assert(not arena._buttons[3].disabled and arena._potion_art[3].texture != null and arena._potion_costs[3].text == "2")
 	arena._select(3)
 	assert(arena._potion_target.visible and arena._potion_target.radius == 80.0)
 	assert(not arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible)

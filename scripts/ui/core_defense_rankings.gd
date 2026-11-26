@@ -16,7 +16,7 @@ var _requests := 0
 
 func _ready() -> void:
 	_identity = CoreDefenseClient.identity()
-	add_theme_stylebox_override("panel", MENU_ART.frame("marco-horizontal-popup-grande.png", Vector4(22, 22, 22, 22)))
+	add_theme_stylebox_override("panel", MENU_ART.frame("panel_horizontal.png", Vector4(22, 22, 22, 22)))
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
 	add_child(box)

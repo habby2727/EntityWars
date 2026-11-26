@@ -1,6 +1,7 @@
 extends Control
 
 const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
+const PLAYER_NAMES := preload("res://scripts/ui/minigame_names.gd")
 
 const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080.png")
 const ARENA := "res://data/static/woe_arena.json"
@@ -196,24 +197,25 @@ func _render() -> void:
 		SceneRouter.enter_woe_match(_room)
 		return
 	_info.text = "%s  %s\n%s: %s" % [tr("WOE_TITLE"),mode,tr("WOE_HOST"),_display_name(host)]
-	_code_label.text = "%s: %s" % [tr("WOE_CODE"), _room.get("join_code", "")]
-	_copy_button.code = str(_room.get("join_code", ""))
+	var join_code := PLAYER_NAMES.clean(_room.get("join_code"))
+	_code_label.text = "%s: %s" % [tr("WOE_CODE"), join_code if not join_code.is_empty() else "-"]
+	_copy_button.code = join_code
 	_copy_button.disabled = _copy_button.code.is_empty()
 	var player_list: Array[String] = []
 	for member in _room.get("members", []):
 		if member is Dictionary:
-			var chosen := str(member.get("seat", ""))
+			var chosen := PLAYER_NAMES.clean(member.get("seat"))
 			player_list.append("%s (%s)" % [_display_name(str(member.get("player_id", ""))), chosen if not chosen.is_empty() else tr("WOE_EMPTY")])
 	_info.text += "\n" + tr("WOE_PLAYERS") + ": " + ", ".join(player_list)
 	var own_seat := ""
 	for member in _room.get("members", []):
-		if member is Dictionary and str(member.get("player_id", "")) == owner: own_seat = str(member.get("seat", ""))
+		if member is Dictionary and str(member.get("player_id", "")) == owner: own_seat = PLAYER_NAMES.clean(member.get("seat"))
 	for seat in _seat_buttons:
 		var button: Button = _seat_buttons[seat]
 		var occupant := ""
 		for member in _room.get("members", []):
 			if not member is Dictionary: continue
-			var selected := str(member.get("seat", ""))
+			var selected := PLAYER_NAMES.clean(member.get("seat"))
 			if selected == seat or (mode == "1v1" and not selected.is_empty() and selected.get_slice(":",0) == seat.get_slice(":",0)):
 				occupant = str(member.get("player_id", ""))
 		if started:
@@ -234,9 +236,9 @@ func _render() -> void:
 func _display_name(id: String) -> String:
 	for member in _room.get("members", []):
 		if member is Dictionary and str(member.get("player_id", "")) == id:
-			var name := str(member.get("display_name", "")).strip_edges()
+			var name := PLAYER_NAMES.clean(member.get("display_name"))
 			if not name.is_empty(): return name
-	var friend := str(SocialClient.friends.get(id, "")).strip_edges()
+	var friend := PLAYER_NAMES.clean(SocialClient.friends.get(id))
 	return friend if not friend.is_empty() else tr("INVITE_UNKNOWN_PLAYER")
 
 func _open_invites() -> void:
