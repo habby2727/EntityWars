@@ -63,6 +63,19 @@ func confirm_dialog(node: Node) -> bool:
 			return true
 	return false
 
+func movement_during_deploy(arena: Node, client: Node) -> bool:
+	if not await wait_for(func(): return client.deploy_in_flight, 3.0): return false
+	var before_tick := int(arena._snapshot.get("tick", 0))
+	var positions := {}
+	for id in arena._units:
+		if is_instance_valid(arena._units[id]): positions[id] = arena._units[id].position
+	var progressed := await wait_for(func(): return client.deploy_in_flight and int(arena._snapshot.get("tick", 0)) >= before_tick + 8, 2.5)
+	if not progressed or not arena._acting: return false
+	for id in positions:
+		if arena._units.has(id) and is_instance_valid(arena._units[id]) and arena._units[id].position.distance_to(positions[id]) > 0.5:
+			return true
+	return false
+
 func play_bot_game(mode: String) -> bool:
 	var world = current_scene
 	if not check(await open_woe(world), "bot game NPC"): return false
@@ -246,12 +259,19 @@ func _run() -> void:
 		quit(0)
 		return
 	if role == 0:
+		var delay_test := OS.get_environment("FOREST_ACTION_DELAY_TEST") == "1"
+		var delayed_client = root.get_node("WoeClient")
+		if delay_test:
+			if not check(await wait_for(func(): return not arena._requesting and not arena._acting), "before delayed actions"): quit(1); return
+			delayed_client.set_script(load("res://scripts/tests/woe_action_delay_client.gd"))
 		if OS.get_environment("FOREST_POTION_TEST") == "1":
 			if not check(await wait_file("potion_ready"), "potion fixture ready"): quit(1); return
 			if not check(await wait_for(func(): return arena._own.get("slots", []).size() == 4 and arena._own.slots[3] == "thunderlock" and not arena._buttons[3].disabled, 10.0), "potion hand ready"): quit(1); return
 			arena._select(3)
 			if not check(arena._potion_target.visible and not arena._lane_buttons["blue:left"].visible, "potion targeting"): quit(1); return
+			if delay_test: delayed_client.delay_next_deploy = true
 			arena._cast_potion(Vector2(960,540))
+			if delay_test and not check(await movement_during_deploy(arena, delayed_client), "movement and polling continue during potion request"): quit(1); return
 			if not check(await wait_for(func(): return not arena._acting and arena._own.get("slots", []).size() == 4 and arena._own.slots[3] != "thunderlock", 10.0), "authoritative potion cast"): quit(1); return
 			signal_file("potion_cast_0")
 		var slot := -1
@@ -261,7 +281,9 @@ func _run() -> void:
 		if not check(slot >= 0, "affordable card"): quit(1); return
 		arena._select(slot)
 		if not check(arena._selected == slot and arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:left"].size == Vector2(140,140), "selection and deployment target"): quit(1); return
+		if delay_test: delayed_client.delay_next_deploy = true
 		arena._deploy("left")
+		if delay_test and not check(await movement_during_deploy(arena, delayed_client), "movement and polling continue during unit request"): quit(1); return
 		if not check(await wait_for(func(): return not arena._acting and not arena._snapshot.units.is_empty()), "deploy in arena"): quit(1); return
 		var deployed: Dictionary = arena._snapshot.units[0]
 		signal_file("deployed", JSON.stringify({"id":deployed.id,"cardId":deployed.cardId,"team":deployed.team}))

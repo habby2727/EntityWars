@@ -3,6 +3,7 @@ extends Node2D
 const IDS := ["neon", "luny", "mantillo", "nebulynx", "venam", "cedix", "flincho", "solcarp", "hyrox", "astralotl"]
 const ENEMY_IDS := ["noxiris", "vitreous", "mortivane", "hexalith", "mycelion"]
 static var _textures := {}
+static var _sprite_bounds := {}
 var unit_id := 0
 var card_id := ""
 var team := "blue"
@@ -34,27 +35,25 @@ static func frame(card: String, facing: String, index: int) -> Texture2D:
 	if facing not in ["front", "back"] or index < 1 or index > 3: return null
 	var key := "%s:%s:%d" % [card, facing, index]
 	if _textures.has(key): return _textures[key]
-	# All six PNGs share a canvas. Preserve that registration with one union crop
-	# and scale, so an animation frame cannot shift or resize the creature.
-	var sources := {}
-	var common := Rect2i()
-	for direction in (["front"] if card in ENEMY_IDS else ["front", "back"]):
-		for number in range(1, 4):
-			var category := "enemies" if card in ENEMY_IDS else "homunculi"
-			var path := "res://assets/forest/woe/%s/%s/move_%s_%02d.png" % [category, card, direction, number]
-			var source := load(path) as Texture2D
-			if source == null: continue
-			sources["%s:%s:%d" % [card, direction, number]] = source
-			var bounds := source.get_image().get_used_rect()
-			if bounds.size.x > 0 and bounds.size.y > 0:
-				common = bounds if common.size == Vector2i.ZERO else common.merge(bounds)
-	for source_key in sources:
-		var source: Texture2D = sources[source_key]
-		var atlas := AtlasTexture.new()
-		atlas.atlas = source
-		atlas.region = Rect2(common) if common.size != Vector2i.ZERO else Rect2(Vector2.ZERO, source.get_size())
-		_textures[source_key] = atlas
-	return _textures.get(key)
+	# The union crop is calculated from all animation frames ahead of time, so
+	# spawning a new type never reads six textures back from the rendering server.
+	if _sprite_bounds.is_empty():
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/woe_sprite_bounds.json"))
+		if parsed is Dictionary: _sprite_bounds = parsed
+	var category := "enemies" if card in ENEMY_IDS else "homunculi"
+	var path := "res://assets/forest/woe/%s/%s/move_%s_%02d.png" % [category, card, facing, index]
+	var source := load(path) as Texture2D
+	if source == null: return null
+	var atlas := AtlasTexture.new()
+	atlas.atlas = source
+	var bounds: Variant = _sprite_bounds.get(card, [])
+	if bounds is Array and bounds.size() == 4:
+		atlas.region = Rect2(float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3]))
+	else:
+		# Missing metadata falls back to the complete canvas, without stalling play.
+		atlas.region = Rect2(Vector2.ZERO, source.get_size())
+	_textures[key] = atlas
+	return atlas
 
 func setup(data: Dictionary) -> void:
 	unit_id = int(data.get("id", 0))

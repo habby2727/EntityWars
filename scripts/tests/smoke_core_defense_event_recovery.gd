@@ -42,5 +42,11 @@ func _run() -> void:
 	arena._action_kind = "match/deploy"
 	arena._finish_action({"code":200,"data":{"accepted":true,"match_id":"event-match","revision":10}})
 	assert(arena._awaiting_deploy_state and arena._deploy_receipt_revision == 10 and arena._buttons[0].disabled)
+	# A concurrent poll can already contain the committed action before its receipt arrives.
+	arena._revision = 12
+	arena._poll = 0.25
+	arena._action_kind = "match/deploy"
+	arena._finish_action({"code":200,"data":{"accepted":true,"match_id":"event-match","revision":10}})
+	assert(not arena._awaiting_deploy_state and arena._deploy_receipt_revision == -1 and is_equal_approx(arena._poll, 0.25))
 	print("CORE_DEFENSE_EVENT_RECOVERY_PASS")
 	quit(0)

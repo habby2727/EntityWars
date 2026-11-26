@@ -15,6 +15,7 @@ func _run() -> void:
 	assert(renderer != null)
 	for id in renderer.IDS + renderer.ENEMY_IDS:
 		var common := Rect2()
+		var actual_union := Rect2i()
 		var dirs := ["front"] if id in renderer.ENEMY_IDS else ["front", "back"]
 		for direction in dirs:
 			for i in range(1,4):
@@ -22,6 +23,9 @@ func _run() -> void:
 				assert(texture != null)
 				if common.size == Vector2.ZERO: common = texture.region
 				assert(texture.region == common)
+				var used := texture.atlas.get_image().get_used_rect()
+				if used.size != Vector2i.ZERO: actual_union = used if actual_union.size == Vector2i.ZERO else actual_union.merge(used)
+		assert(common == Rect2(actual_union))
 		var node = renderer.new()
 		root.add_child(node)
 		var kind := "enemy" if id in renderer.ENEMY_IDS else "homunculus"

@@ -12,7 +12,7 @@ func _run() -> void:
 	var area := PackedVector2Array([Vector2(0,0),Vector2(1920,0),Vector2(1920,1080),Vector2(0,1080)])
 	var protected: Array[Vector2] = []
 	npc.setup(found, area, [], protected)
-	assert(npc.get_node("Nameplate").text == "War of Entities")
+	assert(npc.get_node("Nameplate").text == "War of Elements")
 	npc._process(100.0)
 	assert(npc.position == found.position and not npc.moving)
 	var browser = load("res://scripts/ui/woe_browser.gd").new()

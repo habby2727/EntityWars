@@ -4,6 +4,8 @@ var server_time_ms := 0
 var server_tick_ms := 0
 var _request_busy := false
 var _time_identity := ""
+var _time_request_seq := 0
+var _time_applied_seq := 0
 
 func recovery_file() -> String:
 	return "user://core_defense_recovery.cfg"
@@ -41,17 +43,28 @@ func authoritative_time() -> int:
 
 func request(path: String, body: Variant = null, request_owner: Node = null) -> Dictionary:
 	var key := identity()
-	while _request_busy:
-		await get_tree().process_frame
-		if key != identity(): return {"code":0,"error":"WOE_IDENTITY_CHANGED"}
-	_request_busy = true
-	var result: Dictionary = await super.request(path, body, null)
-	_request_busy = false
-	if key == identity() and body == null and int(result.get("code", 0)) == 200 and result.get("data") is Dictionary and int(result.data.get("server_time_unix_ms", 0)) > 0:
+	var time_seq := 0
+	if body == null:
+		_time_request_seq += 1
+		time_seq = _time_request_seq
+	# Match-state reads can overlap a mutation; action writes stay serialized.
+	var state_read := body == null and path.begins_with("/forest/core-defense/match/state?")
+	if not state_read:
+		while _request_busy:
+			await get_tree().process_frame
+			if key != identity(): return {"code":0,"error":"WOE_IDENTITY_CHANGED"}
+		_request_busy = true
+	var result: Dictionary = await _transport_request(path, body)
+	if not state_read: _request_busy = false
+	if key == identity() and body == null and time_seq > _time_applied_seq and int(result.get("code", 0)) == 200 and result.get("data") is Dictionary and int(result.data.get("server_time_unix_ms", 0)) > 0:
+		_time_applied_seq = time_seq
 		server_time_ms = int(result.data.server_time_unix_ms)
 		server_tick_ms = Time.get_ticks_msec()
 		_time_identity = key
 	return result
+
+func _transport_request(path: String, body: Variant = null) -> Dictionary:
+	return await super.request(path, body, null)
 
 func mutate(action: String, values: Dictionary = {}) -> Dictionary:
 	if action == "match/forfeit": return await _forfeit(values)

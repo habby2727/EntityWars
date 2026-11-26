@@ -527,7 +527,7 @@ FOREST_QUEST_HOURS_MINUTES,%dh %02dm,%dh %02dm
 FOREST_QUEST_ACTIVE_EXISTS,You already have an active mission.,Ya tienes una misión activa.
 FOREST_QUEST_CANCEL_COOLDOWN,This NPC is on cooldown.,Este PNJ está en espera.
 FOREST_QUEST_UNAVAILABLE,This mission is no longer available.,Esta misión ya no está disponible.
-FOREST_NPC_WAR_OF_ENTITIES_NAME,War of Entities,War of Entities
+FOREST_NPC_WAR_OF_ENTITIES_NAME,War of Elements,War of Elements
 FOREST_NPC_WAR_OF_ENTITIES_DIALOGUE,Enter the War of Elements and choose your laboratory.,Entra en la Guerra de los Elementos y elige tu laboratorio.
 FOREST_ACTION_WOE,Find a room,Buscar sala
 WOE_TITLE,War of Elements,Guerra de los Elementos

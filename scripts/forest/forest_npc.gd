@@ -65,7 +65,7 @@ func setup(data: Dictionary, area: PackedVector2Array, portals: Array, protected
 	if npc_id in ["war_of_entities", "core_defense", "duels_guide"]:
 		var nameplate := Label.new()
 		nameplate.name = "Nameplate"
-		nameplate.text = tr("FOREST_NPC_DUELS_GUIDE_NAME") if npc_id == "duels_guide" else ("Core Defense" if npc_id == "core_defense" else "War of Entities")
+		nameplate.text = tr("FOREST_NPC_DUELS_GUIDE_NAME") if npc_id == "duels_guide" else ("Core Defense" if npc_id == "core_defense" else tr("FOREST_NPC_WAR_OF_ENTITIES_NAME"))
 		nameplate.position = Vector2(-110, -155)
 		nameplate.size = Vector2(220, 30)
 		nameplate.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

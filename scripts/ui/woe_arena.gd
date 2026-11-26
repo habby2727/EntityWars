@@ -136,6 +136,7 @@ var _revision := -1
 var _poll := 0.0
 var _backoff := POLL_INTERVAL
 var _poll_period := POLL_INTERVAL
+var _rate_limit_until := 0
 var _delivery_ticks := 0
 var _awaiting_deploy_state := false
 var _deploy_receipt_revision := -1
@@ -367,10 +368,10 @@ func _process(delta: float) -> void:
 			else: _reconcile_other_matches()
 		return
 	_poll -= delta
-	if _poll <= 0.0 and not _requesting and not _finished and not _missing_match and (not _is_cd or not _acting) and _valid(): _poll_state()
+	if _poll <= 0.0 and not _requesting and not _finished and not _missing_match and _valid(): _poll_state()
 
 func _poll_state() -> void:
-	if _requesting or (_is_cd and _acting) or not _valid(): return
+	if _requesting or not _valid(): return
 	_requesting = true
 	var requested_id := _match_id
 	var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
@@ -391,12 +392,14 @@ func _poll_state() -> void:
 	if int(result.get("code", 0)) != 200 or not _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.get("match_id", "")) != _match_id:
 		_playback_ready = false
 		_notice.text = tr("WOE_ARENA_NETWORK")
-		if int(result.get("code",0)) == 429: _poll_period = 4.0
+		if int(result.get("code",0)) == 429:
+			_poll_period = 4.0
+			_rate_limit_until = Time.get_ticks_msec() + 4000
 		_backoff = minf(8.0, maxf(1.0, _backoff * 2.0))
-		_poll = _backoff
+		_poll = maxf(_backoff, 4.0) if int(result.get("code", 0)) == 429 else _backoff
 		return
 	_backoff = 1.0 if _is_cd else POLL_INTERVAL
-	if _poll_period > 1.0: _poll_period = 1.0
+	if _poll_period > 1.0 and Time.get_ticks_msec() >= _rate_limit_until: _poll_period = 1.0
 	_server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 	_notice.text = tr("WOE_FORFEITED_NOTICE") if _forfeited else ""
 	_accept_state(result.data, true)
@@ -408,7 +411,7 @@ func _poll_state() -> void:
 		_awaiting_deploy_state = false
 		_deploy_receipt_revision = -1
 		_update_hud()
-	_poll = 0.85 if _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
+	_poll = 0.85 if Time.get_ticks_msec() >= _rate_limit_until and _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
 	if _is_cd and not _finished and not _acting and str(_client.saved_forfeit_action().get("values", {}).get("match_id", "")) == _match_id:
 		_retry_forfeit()
 	elif not _acting and not _client.saved_pending().is_empty():
@@ -767,8 +770,9 @@ func _retry_forfeit() -> void:
 func _finish_action(result: Dictionary) -> void:
 	if _is_cd and _action_kind == "match/deploy" and int(result.get("code",0)) == 200 and result.get("data", {}).get("accepted", false):
 		_notice.text = ""
-		_awaiting_deploy_state = true
-		_deploy_receipt_revision = int(result.data.get("revision", -1))
+		var receipt_revision := int(result.data.get("revision", -1))
+		_awaiting_deploy_state = receipt_revision < 0 or _revision < receipt_revision
+		_deploy_receipt_revision = receipt_revision if _awaiting_deploy_state else -1
 	elif int(result.get("code",0)) == 200 and _client.valid_match(result.get("data"), str(ConnectionGate.player_id)):
 		if _action_kind == "match/forfeit":
 			_forfeited = true
@@ -788,8 +792,10 @@ func _finish_action(result: Dictionary) -> void:
 		if str(result.get("error", "")) != "ACTION_EXPIRED" or not _is_cd:
 			_notice.text = tr("WOE_ARENA_NETWORK") if int(result.get("code",0)) == 0 or int(result.get("code",0)) >= 500 else tr("WOE_ARENA_ACTION_FAILED")
 	_action_kind = ""
-	if int(result.get("code", 0)) == 429: _poll_period = 4.0
-	_poll = 4.0 if int(result.get("code", 0)) == 429 else (2.0 if int(result.get("code", 0)) == 0 or int(result.get("code", 0)) >= 500 else 0.85)
+	if int(result.get("code", 0)) == 429:
+		_poll_period = 4.0
+		_rate_limit_until = Time.get_ticks_msec() + 4000
+	if int(result.get("code", 0)) == 429: _poll = maxf(_poll, 4.0)
 	_update_hud()
 
 func _confirm_forfeit() -> void:

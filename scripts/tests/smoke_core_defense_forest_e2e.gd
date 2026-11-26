@@ -59,6 +59,19 @@ func confirm(node: Node) -> bool:
 			return true
 	return false
 
+func movement_during_deploy(arena: Node) -> bool:
+	if not await wait_for(func(): return cd.deploy_in_flight, 3.0): return false
+	var before_tick := int(arena._snapshot.get("tick", 0))
+	var positions := {}
+	for id in arena._units:
+		if is_instance_valid(arena._units[id]): positions[id] = arena._units[id].position
+	var progressed := await wait_for(func(): return cd.deploy_in_flight and int(arena._snapshot.get("tick", 0)) >= before_tick + 8, 2.5)
+	if not progressed or not arena._acting or not cd._request_busy: return false
+	for id in positions:
+		if arena._units.has(id) and is_instance_valid(arena._units[id]) and arena._units[id].position.distance_to(positions[id]) > 0.5:
+			return true
+	return false
+
 func _run() -> void:
 	cd = root.get_node("CoreDefenseClient")
 	role = int(OS.get_environment("FOREST_DUEL_ROLE"))
@@ -121,12 +134,20 @@ func _run() -> void:
 	if not check(await wait_file("cd_arena_%d" % (1-role)),"shared arena"): quit(1); return
 	if not check(await wait_for(func(): return arena._snapshot.units.any(func(u): return u.get("kind") == "enemy"),10.0),"enemy snapshot"): quit(1); return
 	if role == 0:
+		var delay_test := OS.get_environment("FOREST_ACTION_DELAY_TEST") == "1"
+		if delay_test:
+			if not check(await wait_for(func(): return not arena._requesting and not cd._request_busy), "before delayed actions"): quit(1); return
+			cd.set_script(load("res://scripts/tests/core_defense_e2e_fault_client.gd"))
+			arena._poll = 0
+			if not check(await wait_for(func(): return cd.authoritative_time() > 0 and not arena._requesting), "time after fault injection"): quit(1); return
 		if OS.get_environment("FOREST_POTION_TEST") == "1":
 			if not check(await wait_file("potion_ready"), "potion fixture ready"): quit(1); return
 			if not check(await wait_for(func(): return arena._own.get("slots", []).size() == 4 and arena._own.slots[3] == "thunderlock" and not arena._buttons[3].disabled, 10.0), "potion hand ready"): quit(1); return
 			arena._select(3)
 			if not check(arena._potion_target.visible and not arena._lane_buttons["blue:left"].visible, "potion targeting"): quit(1); return
+			if delay_test: cd.delay_next_deploy = true
 			arena._cast_potion(Vector2(960,540))
+			if delay_test and not check(await movement_during_deploy(arena), "movement and polling continue during potion request"): quit(1); return
 			if not check(await wait_for(func(): return not arena._acting and arena._own.get("slots", []).size() == 4 and arena._own.slots[3] != "thunderlock", 10.0), "authoritative potion cast"): quit(1); return
 			signal_file("potion_cast_0")
 		var slot := -1
@@ -136,7 +157,9 @@ func _run() -> void:
 		if not check(slot >= 0,"affordable card"): quit(1); return
 		arena._select(slot)
 		if not check(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible,"both lanes"): quit(1); return
+		if delay_test: cd.delay_next_deploy = true
 		arena._deploy("left")
+		if delay_test and not check(await movement_during_deploy(arena), "movement and polling continue during unit request"): quit(1); return
 		if not check(await wait_for(func(): return not arena._acting and arena._snapshot.units.any(func(u): return str(u.get("controllerId", "")) == str(gate.player_id))),"authoritative deployment"): quit(1); return
 		# Inject one transport outage, then reconnect to the same live server.
 		if not check(await wait_for(func(): return not arena._requesting and not cd._request_busy), "before disconnect"): quit(1); return

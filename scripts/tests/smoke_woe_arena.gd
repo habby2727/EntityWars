@@ -194,6 +194,12 @@ func _run() -> void:
 	arena._own.allowedDeploymentLanes = ["right"]
 	arena._update_hud()
 	assert(arena._lane_buttons["blue:right"].visible)
+	var action_snapshot: Dictionary = arena._snapshot.duplicate(true)
+	action_snapshot.kind = "woe"
+	arena._action_kind = "match/deploy"
+	arena._poll = 0.25
+	arena._finish_action({"code":200,"data":{"match_id":"m","status":"RUNNING","revision":arena._revision,"snapshot":action_snapshot}})
+	assert(is_equal_approx(arena._poll, 0.25))
 	arena._action_kind = "match/deploy"
 	arena._finish_action({"code":429,"error":"RATE_LIMIT"})
 	assert(arena._poll == 4.0 and arena._poll_period == 4.0)

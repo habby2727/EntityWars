@@ -1,6 +1,7 @@
 extends Control
 
 const PANEL_STYLE := preload("res://scripts/ui/minigame_panel_style.gd")
+const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080.png")
 
 var _identity := ""
 var _room := {}
@@ -19,6 +20,18 @@ func _ready() -> void:
 	if not SceneRouter.woe_context_valid() or SceneRouter._woe_context.get("kind") != "core_defense":
 		SceneRouter.finish_woe_safely.call_deferred()
 		return
+	var aspect := AspectRatioContainer.new()
+	aspect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	aspect.ratio = 16.0 / 9.0
+	aspect.stretch_mode = AspectRatioContainer.STRETCH_FIT
+	aspect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(aspect)
+	var background := TextureRect.new()
+	background.texture = BG
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_SCALE
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	aspect.add_child(background)
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
