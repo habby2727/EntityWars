@@ -21,6 +21,13 @@ func _run() -> void:
 	later.seq = 2
 	later.tick = 99
 	arena._accept_state({"match_id":"event-match","revision":2,"snapshot":snapshot,"events":[attack,later]}, true)
+	assert(arena._visual_events.size() == 2 and arena._visual_events[0].due < arena._visual_events[1].due)
+	assert(arena._effects.effects.is_empty() and arena._zeal_label.text.contains("5 / 10"))
+	arena._visual_clock.render_tick = 91.0
+	arena._drain_visual_events()
+	assert(arena._effects.effects.size() == 3 and arena._visual_events.size() == 1)
+	arena._visual_clock.render_tick = 99.0
+	arena._drain_visual_events()
 	assert(arena._cursor == 2 and arena._effects.effects.size() == 6)
 	arena._accept_state({"match_id":"event-match","revision":2,"snapshot":snapshot,"events":[attack,later]}, true)
 	assert(arena._effects.effects.size() == 6)
@@ -29,6 +36,7 @@ func _run() -> void:
 	unrelated.seq = 3
 	unrelated.cardId = "luny"
 	arena._accept_state({"match_id":"event-match","revision":3,"snapshot":snapshot,"events":[unrelated]}, true)
+	arena._drain_visual_events(true)
 	assert(arena._units[1].strike_time == 0.0)
 	arena._playback_ready = false
 	var backlog := attack.duplicate(true)
@@ -38,6 +46,7 @@ func _run() -> void:
 	assert(arena._cursor == 4 and arena._effects.effects.size() == before)
 	var death := {"seq":5,"tick":91,"type":"death","target":99,"targetKind":"unit","victimAssetId":"noxiris","victimKind":"enemy","victimTeam":"red","victimPosition":{"x":160,"y":100},"victimElement":"mercury"}
 	arena._accept_state({"match_id":"event-match","revision":4,"snapshot":snapshot,"events":[death]}, true)
+	arena._drain_visual_events(true)
 	assert(arena._cursor == 5 and arena._corpses.size() == 1)
 	snapshot.units[0]["blood_until"] = 140
 	snapshot.units[0]["aether_until"] = 140
@@ -45,6 +54,7 @@ func _run() -> void:
 	var before_heal: int = arena._effects.effects.size()
 	arena._accept_state({"match_id":"event-match","revision":5,"snapshot":snapshot,"events":[heal]}, true)
 	assert(arena._units[1].blood_remaining == 4.0 and arena._units[1].aether_remaining == 4.0)
+	arena._drain_visual_events(true)
 	assert(arena._effects.effects.size() == before_heal + 1)
 	assert(arena._field.get_children().any(func(node): return node is Label and node.text == "+12"))
 	arena._accept_state({"match_id":"event-match","revision":5,"snapshot":snapshot,"events":[heal]}, true)
@@ -58,5 +68,13 @@ func _run() -> void:
 	arena._action_kind = "match/deploy"
 	arena._finish_action({"code":200,"data":{"accepted":true,"match_id":"event-match","revision":10}})
 	assert(not arena._awaiting_deploy_state and arena._deploy_receipt_revision == -1 and is_equal_approx(arena._poll, 0.25))
+	for i in range(arena.MAX_VISUAL_EVENTS + 30):
+		arena._queue_visual_event({"type":"spawn", "tick":100 + i, "card_id":"neon", "team":"blue", "position":{"x":100, "y":100}})
+	assert(arena._visual_events.size() == arena.MAX_VISUAL_EVENTS)
+	var finished: Dictionary = snapshot.duplicate(true)
+	finished.result = {"winner":null, "reason":"laboratories"}
+	arena._debug_visual = true
+	arena._accept_state({"match_id":"event-match", "revision":13, "snapshot":finished, "events":[]}, false)
+	assert(arena._finished and arena._visual_events.is_empty())
 	print("CORE_DEFENSE_EVENT_RECOVERY_PASS")
 	quit(0)

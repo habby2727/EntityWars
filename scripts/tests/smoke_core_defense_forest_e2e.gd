@@ -62,15 +62,21 @@ func confirm(node: Node) -> bool:
 func movement_during_deploy(arena: Node) -> bool:
 	if not await wait_for(func(): return cd.deploy_in_flight, 3.0): return false
 	var before_tick := int(arena._snapshot.get("tick", 0))
+	var started := Time.get_ticks_msec()
 	var positions := {}
 	for id in arena._units:
 		if is_instance_valid(arena._units[id]): positions[id] = arena._units[id].position
-	var progressed := await wait_for(func(): return cd.deploy_in_flight and int(arena._snapshot.get("tick", 0)) >= before_tick + 8, 2.5)
-	if not progressed or not arena._acting or not cd._request_busy: return false
-	for id in positions:
-		if arena._units.has(id) and is_instance_valid(arena._units[id]) and arena._units[id].position.distance_to(positions[id]) > 0.5:
-			return true
-	return false
+	var progressed := await wait_for(func():
+		if not cd.deploy_in_flight or not arena._acting or not cd._request_busy or int(arena._snapshot.get("tick", 0)) < before_tick + 8: return false
+		for id in positions:
+			if arena._units.has(id) and is_instance_valid(arena._units[id]) and arena._units[id].position.distance_to(positions[id]) > 0.5: return true
+		return false, 2.5)
+	if progressed: print("CD_DELAYED_ACTION visual_progress_ms=", Time.get_ticks_msec() - started, " server_ticks=", int(arena._snapshot.tick) - before_tick)
+	else:
+		print("CD_DELAYED_DIAGNOSTIC before_tick=", before_tick, " now_tick=", arena._snapshot.get("tick"), " acting=", arena._acting, " inflight=", cd.deploy_in_flight, " before_units=", positions, " current_units=", arena._units.keys())
+		for id in positions:
+			if arena._units.has(id): print("CD_DELAYED_UNIT id=", id, " at=", arena._units[id].position, " target=", arena._units[id].target_position, " samples=", arena._units[id]._samples)
+	return progressed
 
 func _run() -> void:
 	cd = root.get_node("CoreDefenseClient")
@@ -145,6 +151,7 @@ func _run() -> void:
 			if potion_id.is_empty(): potion_id = "thunderlock"
 			if not check(await wait_file("potion_ready"), "potion fixture ready"): quit(1); return
 			if not check(await wait_for(func(): return arena._own.get("slots", []).size() == 4 and arena._own.slots[3] == potion_id and not arena._buttons[3].disabled, 10.0), "potion hand ready"): quit(1); return
+			if delay_test and not check(await wait_for(func(): return arena._units.values().any(func(unit): return is_instance_valid(unit) and unit.moving), 10.0), "moving unit before potion delay"): quit(1); return
 			arena._select(3)
 			if not check(arena._potion_target.visible and not arena._lane_buttons["blue:left"].visible, "potion targeting"): quit(1); return
 			if delay_test: cd.delay_next_deploy = true
@@ -157,6 +164,7 @@ func _run() -> void:
 		for i in range(4):
 			if not arena._buttons[i].disabled and arena._cards.get(str(arena._own.slots[i]), {}).get("kind") != "potion": slot = i; break
 		if not check(slot >= 0,"affordable card"): quit(1); return
+		if delay_test and not check(await wait_for(func(): return arena._units.values().any(func(unit): return is_instance_valid(unit) and unit.moving), 10.0), "moving unit before deploy delay"): quit(1); return
 		arena._select(slot)
 		if not check(arena._lane_buttons["blue:left"].visible and arena._lane_buttons["blue:right"].visible,"both lanes"): quit(1); return
 		if delay_test: cd.delay_next_deploy = true

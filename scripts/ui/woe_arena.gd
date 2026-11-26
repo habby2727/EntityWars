@@ -9,7 +9,17 @@ const POTION_VISUALS := preload("res://scripts/ui/woe_potion_visuals.gd")
 const ARENA := "res://data/static/woe_arena.json"
 const CARDS := "res://data/static/woe_cards.json"
 const POLL_INTERVAL := 1.0
+const MAX_VISUAL_EVENTS := 192
+const MAX_VISUAL_EVENTS_PER_FRAME := 24
 const MENU_ART := preload("res://scripts/ui/menu_art.gd")
+const VISUAL_CLOCK := preload("res://scripts/ui/woe_visual_clock.gd")
+
+class PrefetchPump extends Node:
+	var unit_script: Script
+	func _process(_delta: float) -> void:
+		unit_script.service_prefetch()
+		if unit_script._prefetch_pending.is_empty() and unit_script._prefetch_loading.is_empty():
+			queue_free()
 
 class Meter extends Control:
 	var segments := 10
@@ -138,6 +148,8 @@ var _match_id := ""
 var _cursor := 0
 var _revision := -1
 var _poll := 0.0
+var _next_poll_ms := 0
+var _recent_poll_rtts: Array[int] = []
 var _backoff := POLL_INTERVAL
 var _poll_period := POLL_INTERVAL
 var _rate_limit_until := 0
@@ -160,6 +172,8 @@ var _snapshot := {}
 var _own := {}
 var _team := ""
 var _units := {}
+var _visual_clock = VISUAL_CLOCK.new()
+var _visual_events: Array[Dictionary] = []
 var _known_units := {}
 var _corpses: Array = []
 var _playback_ready := false
@@ -212,11 +226,22 @@ func _ready() -> void:
 		for potion in catalog.get("potions", []): _cards[str(potion.id)] = potion
 	_forfeited = not _debug_visual and _client.saved_forfeit() == _match_id
 	_build()
+	_start_prefetch()
 	_forfeit.disabled = _forfeited
 	if _debug_visual:
 		_debug_render()
 	else:
 		_poll_state()
+
+func _start_prefetch() -> void:
+	UNIT.begin_prefetch()
+	if UNIT._prefetch_pending.is_empty() and UNIT._prefetch_loading.is_empty(): return
+	var root := get_tree().root
+	if root.has_node("WoeAssetPrefetch"): return
+	var pump := PrefetchPump.new()
+	pump.name = "WoeAssetPrefetch"
+	pump.unit_script = UNIT
+	root.add_child(pump)
 
 func _valid() -> bool:
 	return is_inside_tree() and _identity == _client.identity() and SceneRouter.woe_context_valid() and str(SceneRouter._woe_context.get("match_id", "")) == _match_id
@@ -422,6 +447,8 @@ func _process(delta: float) -> void:
 		return
 	if _returning: return
 	_seconds += delta
+	_visual_clock.advance(delta)
+	_drain_visual_events()
 	if is_instance_valid(_zeal_meter):
 		var whole := clampi(floori(float(_own.get("zeal", 0))), 0, 10)
 		var fresh := _debug_visual or (Time.get_ticks_msec() - _zeal_sync_ms <= 2000 and _playback_ready)
@@ -440,12 +467,26 @@ func _process(delta: float) -> void:
 			if str(_client.saved_pending().get("action", "")) == "start": _reconcile_pending_start()
 			else: _reconcile_other_matches()
 		return
-	_poll -= delta
+	if _next_poll_ms > 0:
+		_poll = maxf(0.0, float(_next_poll_ms - Time.get_ticks_msec()) / 1000.0)
 	if _poll <= 0.0 and not _requesting and not _finished and not _missing_match and _valid(): _poll_state()
+
+func _defer_poll(seconds: float) -> void:
+	_poll = maxf(0.0, seconds)
+	_next_poll_ms = Time.get_ticks_msec() + ceili(_poll * 1000.0)
+
+func _poll_rtt_budget_ms() -> int:
+	if _recent_poll_rtts.is_empty(): return 0
+	var total := 0
+	for value in _recent_poll_rtts: total += value
+	return ceili(float(total) / float(_recent_poll_rtts.size()))
 
 func _poll_state() -> void:
 	if _requesting or not _valid(): return
 	_requesting = true
+	# Anchor a steady cadence to the start time. A rolling RTT allowance keeps
+	# the long-term request rate at or below the previous completion-based rate.
+	_defer_poll(maxf(1.0, _poll_period) + float(_poll_rtt_budget_ms()) / 1000.0)
 	var requested_id := _match_id
 	var endpoint := "/forest/core-defense/" if _is_cd else "/forest/woe/"
 	var request_start := Time.get_ticks_msec()
@@ -460,18 +501,21 @@ func _poll_state() -> void:
 			_forfeit.disabled = true
 			_selected = -1
 			_update_hud()
-		else: _poll = 8.0
+		else: _defer_poll(8.0)
 		return
 	if int(result.get("code", 0)) != 200 or not _client.valid_match(result.get("data"), str(ConnectionGate.player_id)) or str(result.data.get("match_id", "")) != _match_id:
 		_playback_ready = false
+		_visual_events.clear()
 		_notice.text = tr("WOE_ARENA_NETWORK")
 		if int(result.get("code",0)) == 429:
 			_poll_period = 4.0
 			_rate_limit_until = Time.get_ticks_msec() + 4000
 		_backoff = minf(8.0, maxf(1.0, _backoff * 2.0))
-		_poll = maxf(_backoff, 4.0) if int(result.get("code", 0)) == 429 else _backoff
+		_defer_poll(maxf(_backoff, 4.0) if int(result.get("code", 0)) == 429 else _backoff)
 		return
 	_backoff = 1.0 if _is_cd else POLL_INTERVAL
+	_recent_poll_rtts.append(maxi(0, Time.get_ticks_msec() - request_start))
+	while _recent_poll_rtts.size() > 8: _recent_poll_rtts.pop_front()
 	if _poll_period > 1.0 and Time.get_ticks_msec() >= _rate_limit_until: _poll_period = 1.0
 	_server_score = result.data.get("score", {}) if result.data.get("score") is Dictionary else {}
 	_notice.text = tr("WOE_FORFEITED_NOTICE") if _forfeited else ""
@@ -484,7 +528,8 @@ func _poll_state() -> void:
 		_awaiting_deploy_state = false
 		_deploy_receipt_revision = -1
 		_update_hud()
-	_poll = 0.85 if Time.get_ticks_msec() >= _rate_limit_until and _cursor < int(result.data.get("latest_event_seq", _cursor)) else _poll_period
+	_next_poll_ms = maxi(_rate_limit_until, request_start + ceili(maxf(1.0, _poll_period) * 1000.0) + _poll_rtt_budget_ms())
+	_poll = maxf(0.0, float(_next_poll_ms - Time.get_ticks_msec()) / 1000.0)
 	if _is_cd and not _finished and not _acting and str(_client.saved_forfeit_action().get("values", {}).get("match_id", "")) == _match_id:
 		_retry_forfeit()
 	elif not _acting and not _client.saved_pending().is_empty():
@@ -519,18 +564,41 @@ func _accept_state(data: Dictionary, consume_events: bool) -> void:
 			_remember_event(event)
 			# Pages from startup, reconnect and long backlogs advance the cursor silently.
 			var laboratory_event := str(event.get("type", "")) in ["potion_cast", "potion_damage", "potion_heal"] or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "potion") or (not _is_cd and (str(event.get("type", "")) == "lab_attack" or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "laboratory")))
-			var window := maxi(10, ceili(_poll_period * 10.0)) + _delivery_ticks + 2 if _is_cd or laboratory_event else 5
+			var window := maxi(10, ceili(_poll_period * 10.0)) + _delivery_ticks + 2
 			if _playback_ready and seq > _silent_until_seq and int(event.get("tick", -100)) >= maxi(snapshot_tick, _last_snapshot_tick) - window and (laboratory_shown < 32 if laboratory_event else shown < 48):
-				_event(event)
+				_queue_visual_event(event)
 				if laboratory_event: laboratory_shown += 1
 				else: shown += 1
 	if consume_events: _playback_ready = true
+
+func _queue_visual_event(event: Dictionary) -> void:
+	if _finished or _visual_events.size() >= MAX_VISUAL_EVENTS:
+		return
+	var event_tick := int(event.get("tick", 0))
+	var due := maxf(float(event_tick), _visual_clock.render_tick)
+	if not _visual_events.is_empty():
+		var previous: Dictionary = _visual_events.back()
+		due = maxf(due, float(previous.due) + maxf(0.0, float(event_tick - int(previous.tick))))
+	# Never build an unbounded visual backlog when events arrive late.
+	due = minf(due, _visual_clock.render_tick + 20.0)
+	_visual_events.append({"tick":event_tick, "due":due, "event":event.duplicate(true)})
+
+func _drain_visual_events(force: bool = false) -> void:
+	var count := 0
+	while not _visual_events.is_empty() and count < MAX_VISUAL_EVENTS_PER_FRAME:
+		if not force and float(_visual_events[0].due) > _visual_clock.render_tick:
+			break
+		var item: Dictionary = _visual_events.pop_front()
+		_event(item.event)
+		count += 1
 
 func _clear_visuals() -> void:
 	for child in _field.get_children(): child.queue_free()
 	_units.clear()
 	_corpses.clear()
 	_known_units.clear()
+	_visual_events.clear()
+	_visual_clock = VISUAL_CLOCK.new()
 	if is_instance_valid(_effects): _effects.clear()
 
 func _remember(id: int, card: String, team: String, point: Vector2, unit_kind: String = "homunculus", element: String = "") -> void:
@@ -643,6 +711,7 @@ func _add_unit(data: Dictionary) -> Node:
 	var kind := str(data.get("kind", "homunculus"))
 	if (kind == "enemy" and asset not in UNIT.ENEMY_IDS) or (kind == "homunculus" and asset not in UNIT.IDS) or kind not in ["enemy", "homunculus"] or str(data.get("team", "")) not in ["blue", "red"]: return null
 	var unit := UNIT.new()
+	unit.visual_clock = _visual_clock
 	_field.add_child(unit)
 	unit.setup(data)
 	_units[id] = unit
@@ -662,15 +731,16 @@ func _damage(point: Vector2, amount: int, lab_id: String = "", healing: bool = f
 	tween.tween_callback(label.queue_free)
 
 func _render_snapshot() -> void:
+	_visual_clock.observe(int(_snapshot.get("tick", 0)), float(Time.get_ticks_msec()) / 1000.0)
 	var live := {}
 	for data in _snapshot.get("units", []):
 		if not data is Dictionary: continue
 		var id := int(data.get("id",0))
 		_remember(id, str(data.get("assetId", data.get("cardId", ""))), str(data.get("team", "")), Vector2(float(data.get("x",0)), float(data.get("y",0))), str(data.get("kind", "homunculus")), str(data.get("element", "")))
-		var unit := _add_unit(data)
+		var visual_data: Dictionary = data.duplicate()
+		visual_data["snapshot_tick"] = int(_snapshot.get("tick", 0))
+		var unit := _add_unit(visual_data)
 		if is_instance_valid(unit):
-			var visual_data: Dictionary = data.duplicate()
-			visual_data["snapshot_tick"] = int(_snapshot.get("tick", 0))
 			unit.update_state(visual_data)
 			live[id] = true
 	for id in _units.keys():
@@ -702,6 +772,7 @@ func _render_snapshot() -> void:
 		_score_banner.text = tr("WOE_WINNING") % (tr("WOE_" + leader.to_upper()) if not leader.is_empty() else "-")
 	var outcome: Variant = _snapshot.get("result")
 	_finished = outcome is Dictionary
+	if _finished: _visual_events.clear()
 	if is_instance_valid(_defense_ranges):
 		_defense_ranges.update_snapshot(_snapshot.get("laboratories", []), _snapshot.get("units", []), _finished)
 		_effects.prune_lab_defense(_defense_ranges.labs)
@@ -747,19 +818,31 @@ func _winning_team(snapshot: Dictionary) -> String:
 func _separate_units() -> void:
 	var ids := _units.keys()
 	ids.sort()
+	var buckets := {}
+	var counts := {}
+	var ranks := {}
 	for id in ids:
 		var unit: Node2D = _units[id]
-		var rank := 0
-		var neighbors := 0
-		for other_id in ids:
-			if other_id == id: continue
-			var other: Node2D = _units[other_id]
-			if unit.target_position.distance_squared_to(other.target_position) < 45.0 * 45.0:
-				neighbors += 1
-				if other_id < id: rank += 1
-		if neighbors == 0:
+		var point: Vector2 = unit.target_position
+		var cell := Vector2i(floori(point.x / 45.0), floori(point.y / 45.0))
+		counts[id] = 0
+		ranks[id] = 0
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				for other_id in buckets.get(cell + Vector2i(dx, dy), []):
+					var other: Node2D = _units[other_id]
+					if point.distance_squared_to(other.target_position) < 45.0 * 45.0:
+						counts[id] += 1
+						counts[other_id] += 1
+						ranks[id] += 1
+		if not buckets.has(cell): buckets[cell] = []
+		buckets[cell].append(id)
+	for id in ids:
+		var unit: Node2D = _units[id]
+		if counts[id] == 0:
 			unit.set_separation(Vector2.ZERO)
 			continue
+		var rank: int = ranks[id]
 		var column := (rank % 5) - 2
 		var row := (rank / 5) % 3
 		unit.set_separation(Vector2(float(column) * 3.0, float(row - 1) * 2.0), float(rank % 3) * 3.0)
@@ -913,7 +996,7 @@ func _finish_action(result: Dictionary) -> void:
 	if int(result.get("code", 0)) == 429:
 		_poll_period = 4.0
 		_rate_limit_until = Time.get_ticks_msec() + 4000
-	if int(result.get("code", 0)) == 429: _poll = maxf(_poll, 4.0)
+	if int(result.get("code", 0)) == 429: _defer_poll(maxf(_poll, 4.0))
 	_update_hud()
 
 func _confirm_forfeit() -> void:

@@ -66,15 +66,17 @@ func confirm_dialog(node: Node) -> bool:
 func movement_during_deploy(arena: Node, client: Node) -> bool:
 	if not await wait_for(func(): return client.deploy_in_flight, 3.0): return false
 	var before_tick := int(arena._snapshot.get("tick", 0))
+	var started := Time.get_ticks_msec()
 	var positions := {}
 	for id in arena._units:
 		if is_instance_valid(arena._units[id]): positions[id] = arena._units[id].position
-	var progressed := await wait_for(func(): return client.deploy_in_flight and int(arena._snapshot.get("tick", 0)) >= before_tick + 8, 2.5)
-	if not progressed or not arena._acting: return false
-	for id in positions:
-		if arena._units.has(id) and is_instance_valid(arena._units[id]) and arena._units[id].position.distance_to(positions[id]) > 0.5:
-			return true
-	return false
+	var progressed := await wait_for(func():
+		if not client.deploy_in_flight or not arena._acting or int(arena._snapshot.get("tick", 0)) < before_tick + 8: return false
+		for id in positions:
+			if arena._units.has(id) and is_instance_valid(arena._units[id]) and arena._units[id].position.distance_to(positions[id]) > 0.5: return true
+		return false, 2.5)
+	if progressed: print("WOE_DELAYED_ACTION visual_progress_ms=", Time.get_ticks_msec() - started, " server_ticks=", int(arena._snapshot.tick) - before_tick)
+	return progressed
 
 func play_bot_game(mode: String) -> bool:
 	var world = current_scene
@@ -264,6 +266,15 @@ func _run() -> void:
 		if delay_test:
 			if not check(await wait_for(func(): return not arena._requesting and not arena._acting), "before delayed actions"): quit(1); return
 			delayed_client.set_script(load("res://scripts/tests/woe_action_delay_client.gd"))
+			# The two-player match starts empty: deploy an actual moving unit before
+			# checking whether an unrelated slow action interrupts its animation.
+			var seed_slot := -1
+			for i in range(arena._own.slots.size()):
+				if not arena._buttons[i].disabled and arena._cards.get(str(arena._own.slots[i]), {}).get("kind") != "potion": seed_slot = i; break
+			if not check(seed_slot >= 0, "initial moving unit affordable"): quit(1); return
+			arena._select(seed_slot)
+			arena._deploy("left")
+			if not check(await wait_for(func(): return not arena._acting and not arena._snapshot.units.is_empty(), 10.0), "initial moving unit deployed"): quit(1); return
 		if OS.get_environment("FOREST_POTION_TEST") == "1":
 			var potion_id := OS.get_environment("FOREST_POTION_ID")
 			if potion_id.is_empty(): potion_id = "thunderlock"

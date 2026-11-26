@@ -186,21 +186,24 @@ func _run() -> void:
 	assert(arena._cursor == 2 and arena._effects.effects.is_empty())
 	attack.seq = 3
 	arena._accept_state({"match_id":"m","revision":3,"snapshot":snap,"events":[attack]},true)
+	arena._drain_visual_events(true)
 	assert(arena._cursor == 3 and arena._effects.effects.size() == 3 and arena._units.is_empty())
 	arena._accept_state({"match_id":"m","revision":3,"snapshot":snap,"events":[attack]},true)
 	assert(arena._effects.effects.size() == 3)
 	attack.seq = 4
-	attack.tick = 90
+	attack.tick = 80
 	arena._accept_state({"match_id":"m","revision":3,"snapshot":snap,"events":[attack]},true)
 	assert(arena._cursor == 4 and arena._effects.effects.size() == 3)
 	var death := {"seq":5,"tick":100,"type":"death","target":41,"targetKind":"unit","victimCardId":"neon","victimTeam":"red","victimPosition":{"x":100,"y":100}}
 	arena._accept_state({"match_id":"m","revision":3,"snapshot":snap,"events":[death]},true)
+	arena._drain_visual_events(true)
 	assert(arena._corpses.size() == 1 and arena._units.is_empty())
 	death.seq = 6
 	death.erase("victimCardId")
 	death.erase("victimTeam")
 	death.erase("targetKind")
 	arena._accept_state({"match_id":"m","revision":3,"snapshot":snap,"events":[death]},true)
+	arena._drain_visual_events(true)
 	assert(arena._corpses.size() == 2 and arena._units.is_empty())
 	arena._event({"type":"death","target":999,"targetPosition":{"x":100,"y":100}})
 	assert(arena._corpses.size() == 2 and arena._units.is_empty())
@@ -262,6 +265,7 @@ func _run() -> void:
 	var defense_snapshot := {"tick":100,"units":[{"id":81,"cardId":"neon","team":"blue","x":410,"y":320,"hp":100,"maxHp":150}],"laboratories":labs,"players":[],"result":null}
 	var shot := {"seq":1,"tick":90,"type":"lab_attack","labId":"red:left","team":"red","target":81,"targetPosition":{"x":410,"y":320},"position":{"x":410,"y":220},"damage":26}
 	defense._accept_state({"match_id":"defense","revision":1,"snapshot":defense_snapshot,"events":[shot]},true)
+	defense._drain_visual_events(true)
 	assert(defense._defense_ranges.radius == 120.0 and defense._defense_ranges.labs.size() == 4)
 	assert(defense._defense_ranges.labs["red:left"].active and not defense._defense_ranges.labs["blue:left"].active)
 	assert(defense._defense_ranges.labs["red:left"].center == Vector2(410,220))
@@ -291,6 +295,7 @@ func _run() -> void:
 	crowded_shot.seq = 50
 	crowded_events.append(crowded_shot)
 	defense._accept_state({"match_id":"defense","revision":1,"snapshot":defense_snapshot,"events":crowded_events},true)
+	for i in range(3): defense._drain_visual_events(true)
 	assert(defense._cursor == 50 and defense._effects.effects.any(func(effect): return effect.kind == "lab_defense"))
 	defense._effects.clear()
 	defense._event(shot)
