@@ -631,3 +631,14 @@ CD_PREVIOUS_MONTH,Previous month,Mes anterior
 CD_RANKING_HEADER,Position   Player   Waves,Posici?n   Jugador   Olas
 CD_RANKING_LOADING,Loading rankings?,Cargando clasificaci?n?
 CD_RANKING_EMPTY,No scores yet.,Todav?a no hay puntuaciones.
+
+PREVIOUS_ROOM_OPEN,Leave your previous room before joining another one,Sal de la sala anterior antes de entrar en otra
+INVITE_SENDING,Sending...,Enviando...
+INVITE_ACCEPTING,Accepting...,Aceptando...
+INVITE_RECONNECTING,Reconnecting...,Reconectando...
+INVITE_RECONNECT_FAILED,Connection unavailable. Reopen invitations to retry.,Conexi?n no disponible. Vuelve a abrir invitaciones para reintentar.
+INVITE_EXPIRED,Invitation expired or unavailable.,Invitaci?n caducada o no disponible.
+INVITE_ACTIVITY_BLOCKED,Finish your current activity before accepting.,Termina tu actividad actual antes de aceptar.
+INVITE_SESSION_CHANGED,Session changed. Select the invitation again to resume.,La sesi?n ha cambiado. Vuelve a seleccionar la invitaci?n para continuar.
+INVITE_TARGET_UNAVAILABLE,This player is unavailable.,Este jugador no est? disponible.
+INVITE_COOLDOWN,Please wait before inviting this player again.,Espera antes de volver a invitar a este jugador.

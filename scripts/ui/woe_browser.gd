@@ -98,6 +98,7 @@ func _show_error(result: Dictionary) -> void:
 	var key := "WOE_ERROR_NETWORK"
 	if code == 503: key = "WOE_ERROR_DISABLED"
 	elif error == "ROOM_FULL": key = "WOE_ERROR_FULL"
+	elif error == "PREVIOUS_ROOM_OPEN": key = "PREVIOUS_ROOM_OPEN"
 	elif error in ["PLAYER_BUSY", "WOE_BUSY"]: key = "WOE_ERROR_BUSY"
 	elif error == "REVISION_CONFLICT": key = "WOE_ERROR_STALE"
 	elif error == "FOREST_PRESENCE_REQUIRED": key = "WOE_ERROR_PRESENCE"

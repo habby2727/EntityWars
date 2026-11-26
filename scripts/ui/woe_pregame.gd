@@ -266,6 +266,7 @@ func _error(result: Dictionary) -> void:
 	var key := "WOE_ERROR_NETWORK"
 	if int(result.get("code", 0)) == 503: key = "WOE_ERROR_DISABLED"
 	elif error == "REVISION_CONFLICT": key = "WOE_ERROR_STALE"
+	elif error == "PREVIOUS_ROOM_OPEN": key = "PREVIOUS_ROOM_OPEN"
 	elif error in ["PLAYER_BUSY", "SEAT_TAKEN"]: key = "WOE_ERROR_BUSY"
 	elif error == "ROOM_NOT_FULL": key = "WOE_ERROR_NOT_FULL"
 	elif error == "SEAT_REQUIRED": key = "WOE_ERROR_SEAT_REQUIRED"

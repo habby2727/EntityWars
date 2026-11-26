@@ -97,7 +97,49 @@ static func begin_woe(room: Dictionary, zone_id: String, foot: Vector2, facing: 
 		_go_to(SCENE_WOE_PREGAME, "WOEPregame")
 
 static func woe_context_valid() -> bool:
-	return not _woe_context.is_empty() and str(_woe_context.get("player_id", "")) == _forest_verified_owner() and int(_woe_context.get("generation", -1)) == int(_connection_gate()._generation) and str(_woe_context.get("base_url", "")) == str(_connection_gate().base_url) and (bool(_woe_context.get("startup", false)) or forest_return_available())
+	return not _woe_context.is_empty() and str(_woe_context.get("player_id", "")) == _forest_verified_owner() and int(_woe_context.get("generation", -1)) == int(_connection_gate()._generation) and str(_woe_context.get("base_url", "")) == str(_connection_gate().base_url) and (bool(_woe_context.get("startup", false)) or bool(_woe_context.get("invitation", false)) or forest_return_available())
+
+# Invitation admission is separate from the NPC handoff and always requires a
+# freshly verified membership response and a safe, authenticated scene.
+static func invitation_handoff_safe() -> bool:
+	var tree := _get_tree()
+	if tree == null or not is_instance_valid(tree.current_scene) or not _forest_modes_safe() or not _friendly_context.is_empty() or not _woe_context.is_empty(): return false
+	var scene := tree.current_scene
+	if scene.scene_file_path not in tree.root.get_node("MinigameInvitationCache").SAFE_SCENES or scene.scene_file_path in [SCENE_WOE_PREGAME, SCENE_CD_PREGAME]: return false
+	if scene.has_method("auth_gate_screen"): return false
+	if scene.has_method("forest_return_safe") and not scene.forest_return_safe(): return false
+	var woe := tree.root.get_node("WoeClient")
+	var cd := tree.root.get_node("CoreDefenseClient")
+	if not woe.saved_pending().is_empty() or not cd.saved_pending().is_empty() or not cd.saved_forfeit_action().is_empty(): return false
+	if not woe.saved_match().is_empty() or not cd.saved_match().is_empty(): return false
+	return true
+
+static func begin_invited_minigame(kind: String, room: Dictionary, forest_context: Dictionary = {}) -> bool:
+	var tree := _get_tree()
+	if kind not in ["woe", "core_defense"] or not invitation_handoff_safe(): return false
+	var owner := _forest_verified_owner()
+	var client := tree.root.get_node("WoeClient" if kind == "woe" else "CoreDefenseClient")
+	if owner.is_empty() or not client.valid_room(room, owner): return false
+	var scene := tree.current_scene
+	if scene.scene_file_path == SCENE_FOREST_WORLD:
+		if not _valid_forest_context(forest_context): return false
+		_forest_return = forest_context.duplicate(true)
+		_forest_restore.clear()
+	elif not forest_return_available():
+		_clear_forest_return()
+	var destination := SCENE_MAIN_MENU if scene.scene_file_path == SCENE_MAIN_MENU else SCENE_LAB_HUB
+	_woe_context = {"kind":kind, "room_id":str(room.room_id), "player_id":owner, "generation":_connection_gate()._generation, "base_url":str(_connection_gate().base_url), "invitation":true, "return_scene":destination}
+	if room.get("status") == "STARTED":
+		var match_id := str(room.get("match_id", ""))
+		if match_id.is_empty():
+			_woe_context.clear()
+			return false
+		_woe_context.match_id = match_id
+		client.save_match(match_id)
+		_go_to(SCENE_WOE_ARENA, "WOEArena")
+	elif kind == "woe": _go_to(SCENE_WOE_PREGAME, "WOEPregame")
+	else: _go_to(SCENE_CD_PREGAME, "CoreDefensePregame")
+	return true
 
 # Editor-only visual preview; no server room or persistent match is created.
 static func begin_woe_debug(kind: String, zone_id: String, foot: Vector2, facing: int) -> void:
@@ -188,6 +230,12 @@ static func recover_core_defense_after_startup(match: Dictionary) -> bool:
 static func finish_woe_safely() -> void:
 	if woe_context_valid() and forest_return_available():
 		finish_woe()
+	elif woe_context_valid() and bool(_woe_context.get("invitation", false)) and _forest_modes_safe():
+		var destination := str(_woe_context.get("return_scene", SCENE_LAB_HUB))
+		_woe_context.clear()
+		_clear_forest_return()
+		if destination == SCENE_MAIN_MENU: go_to_main_menu()
+		else: go_to_lab_hub()
 	elif woe_context_valid() and bool(_woe_context.get("startup", false)) and _forest_modes_safe():
 		# Startup recovery has no saved Forest position, but it still belongs to
 		# the authenticated account. Return to the Forest's normal entry point.

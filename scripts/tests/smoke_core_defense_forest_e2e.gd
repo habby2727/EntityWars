@@ -116,7 +116,7 @@ func _run() -> void:
 		if not check(await wait_for(func(): return not pregame._room.is_empty() and not pregame._invites._busy),"host lobby"): quit(1); return
 		signal_file("cd_room", str(pregame._room.room_id))
 		pregame._invites._send(OS.get_environment("FOREST_TWO_OTHER"))
-		if not check(await wait_for(func(): return not pregame._invites._busy and pregame._invites._saved().is_empty()),"send invitation"): quit(1); return
+		if not check(await wait_for(func(): return not pregame._invites._busy and pregame._invites._saved().is_empty() and root.get_node("MinigameInvitationCache").operation("core_defense").is_empty()),"send invitation"): quit(1); return
 		signal_file("cd_sent")
 		if not check(await wait_for(func(): return pregame._room.get("members", []).size() == 2),"guest joined"): quit(1); return
 		pregame._start_match()
@@ -128,6 +128,8 @@ func _run() -> void:
 		var inbox: Dictionary = await cd.request("/forest/minigames/invitations")
 		if not check(inbox.code == 200 and inbox.data.get("incoming", []).size() == 1,"private inbox"): quit(1); return
 		var invite: Dictionary = inbox.data.incoming[0]
+		var cache = root.get_node("MinigameInvitationCache")
+		if not check(await wait_for(func(): return not cache.stale and cache.data.get("incoming", []).any(func(item): return str(item.get("invite_id", "")) == str(invite.invite_id)), 15.0), "verified invitation cache"): quit(1); return
 		invitations._respond(str(invite.invite_id),true,str(invite.room_id))
 	if not check(await wait_for(func(): return scene_is(ARENA),20.0),"arena transition"): quit(1); return
 	var arena = current_scene

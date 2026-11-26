@@ -13,6 +13,8 @@ class WeaponTooltip:
 	static func make(source: Control, text: String) -> Control:
 		var panel := PanelContainer.new()
 		panel.theme_type_variation = "TooltipPanel"
+		# Godot wraps custom tooltip content in the themed TooltipPanel.
+		panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		panel.set_meta("combat_font", true)
 		var label := Label.new()
 		label.text = text

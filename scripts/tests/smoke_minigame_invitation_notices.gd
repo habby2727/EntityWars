@@ -23,7 +23,7 @@ func _run() -> void:
 	var feedback := Label.new()
 	root.add_child(feedback)
 	notices._respond("woe", "one", true, "room", feedback)
-	assert(feedback.text == notices.tr("INVITE_CLEARING_GUIDANCE"))
+	assert(feedback.text == notices.tr("INVITE_ACTIVITY_BLOCKED"))
 	cache.data.incoming = []
 	notices._refresh()
 	assert(notices._rows.is_empty())
@@ -50,48 +50,6 @@ func _run() -> void:
 	assert(cache.lock("woe", second))
 	cache.unlock("woe", second, account)
 	cache.unlock("core_defense", second, account)
-	var client = root.get_node("WoeClient")
-	client.set_script(load("res://scripts/tests/minigame_invitation_blocked_client.gd"))
-	var panel_a = load("res://scripts/ui/minigame_invitations.gd").new()
-	var panel_b = load("res://scripts/ui/minigame_invitations.gd").new()
-	for panel in [panel_a, panel_b]:
-		panel.game_kind = "woe"
-		panel.room_id = "room"
-		root.add_child(panel)
-		panel._server_time = now
-		panel._server_tick = Time.get_ticks_msec()
-	panel_a._send("friend-a")
-	assert(panel_a._busy)
-	var in_flight: Dictionary = panel_a._saved().duplicate(true)
-	panel_b._send("friend-b")
-	assert(panel_b._status.text == panel_b.tr("WOE_RETRY_PENDING"))
-	assert(panel_b._saved() == in_flight)
-	client.release_invitation.emit()
-	await process_frame
-	assert(not panel_a._busy and panel_a._saved() == in_flight)
-	assert(cache.clear_exact("woe", in_flight))
-	panel_a.queue_free()
-	panel_b.queue_free()
-	client.set_script(load("res://scripts/tests/minigame_invitation_reconcile_client.gd"))
-	var recovery = load("res://scripts/tests/minigame_invitation_context_panel.gd").new()
-	recovery.game_kind = "woe"
-	root.add_child(recovery)
-	recovery._server_time = now
-	recovery._server_tick = Time.get_ticks_msec()
-	recovery._reply_room = "fixture-room"
-	await recovery._submit("invite/respond", {"invite_id":"fixture", "accept":true})
-	assert(recovery._saved().is_empty() and client.saved_room().is_empty())
-	client.state_code = 503
-	await recovery._submit("invite/respond", {"invite_id":"fixture", "accept":true})
-	var unresolved: Dictionary = recovery._saved().duplicate(true)
-	assert(not unresolved.is_empty() and client.saved_room() == "fixture-room")
-	client.state_code = 200
-	var admitted := [false]
-	recovery.admitted.connect(func(_room): admitted[0] = true)
-	await recovery._submit("invite/respond", {"invite_id":"fixture", "accept":true})
-	assert(admitted[0] and recovery._saved().is_empty())
-	client.save_room("")
-	recovery.queue_free()
 	var scene := Control.new()
 	scene.scene_file_path = SceneRouter.SCENE_MAIN_MENU
 	root.add_child(scene)

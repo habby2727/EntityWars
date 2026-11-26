@@ -145,7 +145,7 @@ func _recover() -> void:
 
 func _complete(result: Dictionary) -> void:
 	if int(result.get("code", 0)) != 200 or not CoreDefenseClient.valid_room(result.get("data"), str(ConnectionGate.player_id)):
-		_status.text = tr("CD_UNAVAILABLE")
+		_status.text = tr("PREVIOUS_ROOM_OPEN" if result.get("error") == "PREVIOUS_ROOM_OPEN" else "WOE_ERROR_BUSY" if result.get("error") == "PLAYER_BUSY" else "CD_UNAVAILABLE")
 		return
 	_busy = true
 	var verified: Dictionary = await CoreDefenseClient.request("/forest/core-defense/state?room_id=" + str(result.data.room_id).uri_encode(), null, self)

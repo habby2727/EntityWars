@@ -136,7 +136,21 @@ func request(path: String, body: Variant = null, request_owner: Node = null) -> 
 	var data: Variant = SocialClient._decode(response[3])
 	if SocialClient._auth_response(int(response[0]), code, data): return {"code":code,"error":"WOE_AUTH"}
 	if int(response[0]) != HTTPRequest.RESULT_SUCCESS: return {"code":0,"error":"WOE_NETWORK"}
-	return {"code":code,"data":data if data is Dictionary else {},"error":str(data.get("error", "")) if data is Dictionary else "WOE_NETWORK"}
+	var retry_after := 0.0
+	for header in response[2]:
+		var line := str(header)
+		if line.to_lower().begins_with("retry-after:"):
+			var value := line.substr(line.find(":") + 1).strip_edges()
+			if value.is_valid_float(): retry_after = maxf(0.0, value.to_float())
+			else:
+				var parts := value.replace(",", "").split(" ", false)
+				var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+				if parts.size() == 6 and parts[1].is_valid_int() and parts[3].is_valid_int() and parts[2] in months:
+					var clock := parts[4].split(":")
+					if clock.size() == 3 and clock[0].is_valid_int() and clock[1].is_valid_int() and clock[2].is_valid_int():
+						var date := {"year":int(parts[3]), "month":months.find(parts[2]) + 1, "day":int(parts[1]), "hour":int(clock[0]), "minute":int(clock[1]), "second":int(clock[2])}
+						retry_after = maxf(0.0, float(Time.get_unix_time_from_datetime_dict(date)) - Time.get_unix_time_from_system())
+	return {"code":code,"data":data if data is Dictionary else {},"error":str(data.get("error", "")) if data is Dictionary else "WOE_NETWORK","retry_after":retry_after}
 
 func mutate(action: String, values: Dictionary = {}) -> Dictionary:
 	if not available() or mutation_busy: return {"code":0,"error":"WOE_BUSY"}

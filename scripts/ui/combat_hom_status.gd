@@ -108,6 +108,8 @@ func set_expedition_type(type_id: String, attack_name: String) -> void:
 func _make_custom_tooltip(for_text: String) -> Object:
 	var panel := PanelContainer.new()
 	panel.theme_type_variation = "TooltipPanel"
+	# The enclosing TooltipPanel provides the single translucent background.
+	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	panel.set_meta("combat_font", true)
 	var label := Label.new()
 	label.text = for_text

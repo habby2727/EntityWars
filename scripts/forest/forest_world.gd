@@ -675,6 +675,20 @@ func _open_npc_action(action: String) -> void:
 	_resume_if_still_here()
 
 
+# Invitation consent and membership are checked by the invitation cache.
+func forest_invitation_allowed(zone_id: String, foot: Vector2, facing: int) -> bool:
+	return is_instance_valid(_player) and not _player.exit_pending and not _player.transition_locked and zone_id == str(_zones[_zone_index].id) and foot == _player.position and facing == _player.facing and not SceneRouter.forest_selected_summoner().is_empty() and SceneRouter._forest_modes_safe()
+
+func invitation_handoff(kind: String, room: Dictionary) -> void:
+	if _handoff_pending or not is_instance_valid(_player) or not forest_invitation_allowed(str(_zones[_zone_index].id), _player.position, _player.facing): return
+	var identity := WoeClient.identity()
+	var context := {"verified_owner":str(ConnectionGate.player_id), "summoner_id":SceneRouter.forest_selected_summoner(), "zone_id":str(_zones[_zone_index].id), "foot_position":_player.position, "facing":_player.facing, "debug":false, "identity_generation":ConnectionGate._generation}
+	await _prepare_handoff("suspend")
+	if not is_inside_tree(): return
+	if identity == WoeClient.identity() and forest_invitation_allowed(str(context.zone_id), context.foot_position, int(context.facing)) and SceneRouter.begin_invited_minigame(kind, room, context):
+		MinigameInvitationCache.invitation_navigation_complete(kind, room)
+	_resume_if_still_here()
+
 func _woe_admitted(room: Dictionary) -> void:
 	if _handoff_pending or not (WoeClient.valid_room(room, str(ConnectionGate.player_id)) or WoeClient.valid_match(room, str(ConnectionGate.player_id))) or not forest_action_allowed("woe", str(_zones[_zone_index].id), _player.position, _player.facing): return
 	var identity: String = WoeClient.identity()
