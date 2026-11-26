@@ -33,8 +33,9 @@ func _run() -> void:
 		push_error("Unauthenticated startup did not show the form")
 		quit(1)
 		return
-	auth.endpoint_safe = true
+	# Exercise local validation independently of the network preflight.
 	auth.preflight_ok = true
+	auth.endpoint_safe = true
 	auth.username[1].text = "test_user"
 	auth.password[1].text = "short"
 	auth.confirm.text = "short"

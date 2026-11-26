@@ -130,9 +130,9 @@ test("chat HTTP routes require authentication and share messages", async () => {
 		expect((await post("/chat/send", { text: "hello", client_message_id: "1", username: "Bob" }, alice.token)).status).toBe(200);
 		expect((await post("/chat/send", { text: "hi", client_message_id: "1" }, bob.token)).status).toBe(200);
 		const state = await (await fetch(base + "/chat/state", { headers: { Authorization: `Bearer ${bob.token}` } })).json() as any;
-		expect(state.messages.slice(0, 3).every((m: any) => m.source === "system" && m.league === null)).toBe(true);
-		expect(state.messages.slice(3).every((m: any) => m.source === "game")).toBe(true);
-		expect(state.messages.map((m: any) => [m.username, m.text])).toEqual([["Entity Wars", "Welcome, Alice!"], ["Entity Wars", "Welcome, Bob!"], ["Entity Wars", "Welcome back, Alice!"], ["Alice", "hello"], ["Bob", "hi"]]);
+		expect(state.messages.slice(0, 2).every((m: any) => m.source === "system" && m.league === null)).toBe(true);
+		expect(state.messages.slice(2).every((m: any) => m.source === "game")).toBe(true);
+		expect(state.messages.map((m: any) => [m.username, m.text])).toEqual([["Entity Wars", "Welcome, Alice!"], ["Entity Wars", "Welcome, Bob!"], ["Alice", "hello"], ["Bob", "hi"]]);
 		const event = {event_id: "1234567890abcdef1234567890abcdef"};
 		expect((await post("/chat/announce-reconnect", event, "invalid")).status).toBe(401);
 		const responses = await Promise.all([post("/chat/announce-reconnect", event, alice.token), post("/chat/announce-reconnect", event, alice.token)]);
@@ -140,8 +140,7 @@ test("chat HTTP routes require authentication and share messages", async () => {
 		expect((await Promise.all(responses.map(r => r.json()))).map((r:any) => r.duplicate).sort()).toEqual([false, true]);
 		expect((await post("/chat/announce-reconnect", {event_id: "abcdefabcdefabcdefabcdefabcdefab"}, alice.token)).status).toBe(429);
 		const after = await (await fetch(base + "/chat/state", { headers: { Authorization: `Bearer ${bob.token}` } })).json() as any;
-		expect(after.messages.at(-1)).toMatchObject({source:"system", username:"Entity Wars", text:"Welcome back, Alice!"});
-		expect(after.messages.length).toBe(state.messages.length + 1);
+		expect(after.messages.length).toBe(state.messages.length);
 
 	} finally {
 		server.kill(); await server.exited;
@@ -152,10 +151,11 @@ test("chat HTTP routes require authentication and share messages", async () => {
 test("system announcements use server names, share pruning and cannot be forged", () => {
  const db = new Database(":memory:");
  db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
- for (const file of ["0009_global_chat.sql", "0012_pvp_seasons.sql", "0015_discord_chat.sql", "0016_global_chat_system.sql", "0017_discord_system_outbox.sql"]) db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite", file), "utf8"));
+ for (const file of ["0009_global_chat.sql", "0012_pvp_seasons.sql", "0015_discord_chat.sql", "0016_global_chat_system.sql", "0017_discord_system_outbox.sql", "0018_global_chat_announcement_cooldown.sql"]) db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite", file), "utf8"));
  db.exec("INSERT INTO players VALUES ('a', 'Alice')");
- const chat = createGlobalChat(db, () => 100000, true);
- for (let i = 0; i < 21; i++) chat.announceLogin("a", i === 0);
+ let now = 100000;
+ const chat = createGlobalChat(db, () => now, true);
+ for (let i = 0; i < 21; i++) { chat.announceLogin("a", i === 0); now += 20 * 60_000; }
  const state = chat.state("a");
  expect(state.messages).toHaveLength(20);
  expect(new Set(state.messages.map((m: any) => m.client_message_id)).size).toBe(20);
@@ -166,4 +166,53 @@ test("system announcements use server names, share pruning and cannot be forged"
  expect(chat.acceptDiscord("123", "Entity Wars", "Welcome, Alice!")).toBe(true);
  expect(chat.state("a").messages.slice(-2).map((m: any) => [m.source, m.username])).toEqual([["game", "Alice"], ["discord", "[Discord] Entity Wars"]]);
  chat.close(); db.close();
+});
+
+
+test("announcement cooldown survives restart and suppressed calls do not extend it", async () => {
+ const dir = mkdtempSync(join(tmpdir(), "ew-announcement-"));
+ const path = join(dir, "chat.sqlite");
+ let db = new Database(path);
+ try {
+  db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
+  for (const file of ["0009_global_chat.sql", "0012_pvp_seasons.sql", "0015_discord_chat.sql", "0016_global_chat_system.sql", "0017_discord_system_outbox.sql", "0018_global_chat_announcement_cooldown.sql"]) db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite", file), "utf8"));
+  db.exec("INSERT INTO players VALUES ('a', 'Alice'), ('b', 'Alice')");
+  let now = 100000;
+  let chat = createGlobalChat(db, () => now, true);
+  expect(chat.announceLogin('a', true)).toBe(true);
+  expect(chat.announceLogin('a', false)).toBe(false);
+  expect(chat.announceLogin('b', true)).toBe(true);
+  chat.close(); db.close();
+  db = new Database(path);
+  chat = createGlobalChat(db, () => now, true);
+  now += 1_199_999;
+  expect(chat.announceLogin('a', false)).toBe(false);
+  now++;
+  expect(chat.announceLogin('a', false)).toBe(true);
+  expect(chat.announceLogin('a', false)).toBe(false);
+  expect(db.query("SELECT text FROM discord_chat_outbox ORDER BY message_id").all()).toEqual([{text:'Welcome, Alice!'}, {text:'Welcome, Alice!'}, {text:'Welcome back, Alice!'}]);
+  chat.close();
+ } finally { db.close(); for (let i = 0; ; i++) { try { rmSync(dir, {recursive:true, force:true}); break; } catch (e) { if (i >= 20 || (e as NodeJS.ErrnoException).code !== "EBUSY") throw e; await Bun.sleep(250); } } }
+});
+
+
+test("concurrent processes insert only one announcement and outbox entry", async () => {
+ const dir = mkdtempSync(join(tmpdir(), "ew-announcement-race-"));
+ const path = join(dir, "chat.sqlite");
+ const db = new Database(path);
+ try {
+  db.exec("CREATE TABLE players (player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL)");
+  for (const file of ["0009_global_chat.sql", "0012_pvp_seasons.sql", "0015_discord_chat.sql", "0016_global_chat_system.sql", "0017_discord_system_outbox.sql", "0018_global_chat_announcement_cooldown.sql"]) db.exec(readFileSync(resolve(import.meta.dir, "../../migrations/sqlite", file), "utf8"));
+  db.exec("INSERT INTO players VALUES ('a', 'Alice')");
+  const code = `import { Database } from 'bun:sqlite'; import { createGlobalChat } from './src/global_chat.ts'; const db = new Database(Bun.env.RACE_DB); db.exec('PRAGMA busy_timeout = 10000'); const chat = createGlobalChat(db, () => 100000, true); console.log(chat.announceLogin('a', false)); chat.close(); db.close();`;
+  const children = Array.from({length: 8}, () => Bun.spawn([process.execPath, '-e', code], {cwd: resolve(import.meta.dir, '../..'), env: {...process.env, RACE_DB: path}, stdout:'pipe', stderr:'pipe'}));
+  const results = await Promise.all(children.map(async child => ({code: await child.exited, out: await new Response(child.stdout).text(), err: await new Response(child.stderr).text()})));
+  expect(results.map(x => x.code)).toEqual(Array(8).fill(0));
+  expect(results.filter(x => x.out.trim() === 'true')).toHaveLength(1);
+  expect(db.query('SELECT * FROM global_chat_messages').all()).toHaveLength(1);
+  expect(db.query('SELECT * FROM discord_chat_outbox').all()).toHaveLength(1);
+ } finally {
+  db.close();
+  for (let i = 0; ; i++) { try { rmSync(dir, {recursive:true, force:true}); break; } catch (e) { if (i >= 20 || (e as NodeJS.ErrnoException).code !== 'EBUSY') throw e; await Bun.sleep(250); } }
+ }
 });

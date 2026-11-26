@@ -6,5 +6,5 @@ export function rankedAvailability(env: Record<string, string | undefined>): { s
 
 export function isRankedRoute(method: string, path: string): boolean {
   return (method === "GET" && ["/pvp/queue/state", "/pvp/match/state", "/pvp/leaderboard"].includes(path)) ||
-    (method === "POST" && ["/pvp/queue/join", "/pvp/queue/cancel", "/pvp/match/decision", "/pvp/match/forfeit", "/pvp/match/chat"].includes(path));
+    (method === "POST" && ["/pvp/queue/join", "/pvp/queue/cancel", "/pvp/match/decision", "/pvp/match/playback_ack", "/pvp/match/forfeit", "/pvp/match/chat"].includes(path));
 }

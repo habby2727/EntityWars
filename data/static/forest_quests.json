@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "npcs": [
+    {"id":"quest_central","zone":"central_clearing","position":[960,400],"front":"Underbrush_Eye_front.png","side":"Underbrush_Eye_side_right.png"},
+    {"id":"quest_alchemical","zone":"alchemical_ruins","position":[700,400],"front":"Minor_Astral_Stag_front.png","side":"Minor_Astral_Stag_side_right.png"},
+    {"id":"quest_crystal","zone":"crystal_grove","position":[550,570],"front":"Mycelial_Oracle_Front.png","side":"Mycelial_Oracle_Side_Right.png"},
+    {"id":"quest_ethereal","zone":"ethereal_mist","position":[1200,400],"front":"Spectral_Lamplighter_FRONT.png","side":"Spectral_Lamplighter_SIDE_RIGHT.png"},
+    {"id":"quest_arcane","zone":"arcane_sanctuary","position":[570,570],"front":"Crystal_Medusa_Front_1024.png","side":"Crystal_Medusa_Side_Right_1024.png"},
+    {"id":"quest_duel","zone":"duel_clearing","position":[550,590],"front":"Threshold_Mask_Spirit2_FRONT.png","side":"Threshold_Mask_Spirit2_SIDE_RIGHT.png"}
+  ]
+}

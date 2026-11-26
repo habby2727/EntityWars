@@ -16,6 +16,7 @@ static func release_cache() -> void:
 static func build_theme() -> Theme:
 	var theme := Theme.new()
 	var catalog := _get_catalog()
+	theme.set_stylebox("panel", "TooltipPanel", tooltip_style())
 
 	var panel_id := catalog.find_id_contains("lab_panel")
 	if panel_id == "":
@@ -41,6 +42,15 @@ static func build_theme() -> Theme:
 		theme.set_stylebox("pressed", "Button", _make_stylebox(hover_tex))
 
 	return theme
+
+static func tooltip_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.015, 0.02, 0.03, 0.88)
+	style.content_margin_left = 10
+	style.content_margin_top = 8
+	style.content_margin_right = 10
+	style.content_margin_bottom = 8
+	return style
 
 static func apply_theme_to(root: Control) -> void:
 	if root == null:
@@ -113,7 +123,7 @@ static func _apply_theme_recursive(node: Node, theme: Theme) -> void:
 			_apply_theme_recursive(child, theme)
 
 static func _apply_aspect_hint(node: Control) -> void:
-	if node == null:
+	if node == null or OS.has_feature("android"):
 		return
 	if node.custom_minimum_size != Vector2.ZERO:
 		return

@@ -3,7 +3,7 @@ import { pvpRank, pvpSeason } from "./pvp/ranking";
 import { ExpiringMap } from "./expiring_map";
 
 // Message text is plain text. Consumers must render it as text, never HTML or BBCode.
-export function createGlobalChat(db: Database, clock: () => number = Date.now, bridgeEnabled = false) {
+export function createGlobalChat(db: Database, clock: () => number = Date.now, bridgeEnabled = false, friendIds: (playerId: string) => string[] = () => [], activity?: (ids:string[], now:number)=>Map<string,string>, observers?: (id:string)=>string[]) {
 	const presence = new Map<string, number>();
 	const lastSend = new ExpiringMap<number>();
 	const messages = db.query(`SELECT m.id, m.player_id, COALESCE(m.external_name, p.display_name) AS username, m.text, m.created_at, m.client_message_id,
@@ -23,11 +23,15 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 	}
 	return {
 		onlineCount,
+		isOnline(id:string) { const seen=presence.get(id); return seen !== undefined && clock()-seen < 45_000; },
 		announceLogin(playerId: string, registered: boolean) {
 			return db.transaction(() => {
 				const player = db.query("SELECT display_name FROM players WHERE player_id = ?").get(playerId) as { display_name: string } | null;
 				if (!player) throw new Error("Player unavailable for announcement.");
 				const now = clock();
+				const previous = db.query("SELECT announced_at FROM global_chat_announcements WHERE player_id = ?").get(playerId) as { announced_at: number } | null;
+				if (previous && now - previous.announced_at < 20 * 60_000) return false;
+				db.query("INSERT INTO global_chat_announcements (player_id, announced_at) VALUES (?, ?) ON CONFLICT(player_id) DO UPDATE SET announced_at = excluded.announced_at").run(playerId, now);
 				const text = `${registered ? 'Welcome' : 'Welcome back'}, ${player.display_name}!`;
 				const inserted = db.query("INSERT INTO global_chat_messages (player_id, client_message_id, text, created_at, external_name, source) VALUES (?, ?, ?, ?, 'Entity Wars', 'system')")
 					.run('', crypto.randomUUID(), text, now);
@@ -36,6 +40,7 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 					db.query('DELETE FROM discord_chat_outbox WHERE message_id NOT IN (SELECT message_id FROM discord_chat_outbox ORDER BY message_id DESC LIMIT 1000)').run();
 				}
 				prune.run();
+				return true;
 			}).immediate();
 		},
 		close() { messages.finalize(); existing.finalize(); insert.finalize(); prune.finalize(); profile.finalize(); },
@@ -61,9 +66,12 @@ export function createGlobalChat(db: Database, clock: () => number = Date.now, b
 			const rows = messages.all().reverse() as any[];
 			const ids = [...new Set([...presence.keys(), ...rows.filter(row => row.source === 'game').map(row => row.player_id)])];
 			const profiles = new Map((profile.all(season, JSON.stringify(ids)) as { player_id: string; username: string; rating: number | null }[]).map(row => [row.player_id, { player_id: row.player_id, username: row.username, ...pvpRank(row.rating ?? 1000) }]));
+			const friends = new Set(friendIds(playerId));
+			const activities = activity ? activity([...presence.keys()].filter(id=>friends.has(id)),now) : new Map<string,string>();
 			const online_players = Array.from(presence.keys(), id => profiles.get(id)).filter(row => row !== undefined)
-				.sort((a, b) => a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
-			return { messages: rows.map(row => ({ ...row, league: row.source !== 'game' ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
+				.map(row => ({ ...row, is_friend: friends.has(row.player_id), ...(activities.has(row.player_id) ? {spectatable_activity:activities.get(row.player_id)} : {}) }))
+				.sort((a, b) => Number(b.is_friend) - Number(a.is_friend) || a.username.localeCompare(b.username) || a.player_id.localeCompare(b.player_id));
+			return { ...(observers ? {spectators:observers(playerId)} : {}), messages: rows.map(row => ({ ...row, league: row.source !== 'game' ? null : profiles.get(row.player_id)?.league ?? null })), online_count: online_players.length, online_players };
 		},
 		send(playerId: string, body: any) {
 			const text = body?.text;

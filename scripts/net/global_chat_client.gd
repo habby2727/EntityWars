@@ -7,6 +7,7 @@ var messages: Array = []
 var latest_id := 0
 var unread := false
 var online_count := 0
+var spectators: Array = []
 var online_players: Array = []
 var error_key := ""
 var panel_open := false
@@ -22,10 +23,20 @@ var _pending_text := ""
 var _pending_id := ""
 var _panel: CanvasLayer
 var _scene_id := 0
+var _epoch := 0
 
 func _ready() -> void:
 	_panel = preload("res://scripts/ui/global_chat_panel.gd").new()
 	add_child(_panel)
+	_reset_requests()
+
+func _reset_requests() -> void:
+	for node in [_poll, _send]:
+		if is_instance_valid(node):
+			node.cancel_request()
+			node.queue_free()
+	_poll_busy = false
+	_send_busy = false
 	_poll = HTTPRequest.new()
 	_send = HTTPRequest.new()
 	_poll.max_redirects = 0
@@ -34,8 +45,34 @@ func _ready() -> void:
 	_send.timeout = 8.0
 	add_child(_poll)
 	add_child(_send)
-	_poll.request_completed.connect(_poll_completed)
-	_send.request_completed.connect(_send_completed)
+	_poll.request_completed.connect(_poll_completed.bind(_epoch))
+	_send.request_completed.connect(_send_completed.bind(_epoch))
+
+func reset_for_logout() -> void:
+	_epoch += 1
+	_reset_requests()
+	_identity = ""
+	_was_available = false
+	messages.clear()
+	online_players.clear()
+	spectators.clear()
+	online_count = 0
+	latest_id = 0
+	unread = false
+	_initialized = false
+	error_key = ""
+	_pending_id = ""
+	_pending_text = ""
+	_next_poll = 0
+	panel_open = false
+	if is_instance_valid(_panel):
+		_panel._panel.hide()
+		_panel._online_panel.hide()
+		var input_field := _panel.get("_input") as LineEdit
+		if is_instance_valid(input_field):
+			input_field.clear()
+		_panel.hide()
+	updated.emit()
 
 func available() -> bool:
 	return not ConnectionGate.blocked() and not ConnectionGate.player_id.is_empty() and not ConnectionGate.token.is_empty() and not ConnectionGate.base_url.is_empty()
@@ -52,6 +89,7 @@ func _process(_delta: float) -> void:
 	var identity: String = ConnectionGate.player_id
 	if not identity.is_empty() and identity != _identity:
 		_identity = identity
+		spectators = []
 		messages = []
 		online_players = []
 		online_count = 0
@@ -88,7 +126,9 @@ func poll_now() -> void:
 		error_key = "CHAT_UNAVAILABLE"
 		updated.emit()
 
-func _poll_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+func _poll_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray, epoch: int) -> void:
+	if epoch != _epoch:
+		return
 	_poll_busy = false
 	if code == 401:
 		ConnectionGate.require_authentication()
@@ -126,10 +166,21 @@ func _apply_snapshot(data: Dictionary) -> void:
 	latest_id = newest
 	_initialized = true
 	messages = incoming
+	var viewers: Variant = data.get("spectators", [])
+	spectators = viewers.filter(func(item): return item is String).slice(0, 8) if viewers is Array else []
 	online_count = int(data.get("online_count", 0))
 	var players: Variant = data.get("online_players", [])
 	online_players = players if players is Array else []
 	updated.emit()
+
+func apply_combat_spectators(data: Dictionary) -> void:
+	var list: Variant = data.get("spectators")
+	if list == null and data.get("session") is Dictionary: list = data.session.get("spectators")
+	if not list is Array: return
+	var next: Array = list.filter(func(item): return item is String).slice(0, 8)
+	if spectators != next:
+		spectators = next
+		updated.emit()
 
 func set_panel_open(value: bool) -> void:
 	panel_open = value
@@ -164,7 +215,9 @@ func send_message(text: String) -> bool:
 		return false
 	return true
 
-func _send_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+func _send_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray, epoch: int) -> void:
+	if epoch != _epoch:
+		return
 	_send_busy = false
 	if code == 401:
 		ConnectionGate.require_authentication()

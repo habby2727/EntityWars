@@ -152,8 +152,8 @@ test("elemental advantage and all six on-hit passives use the acting fighter", (
 test("three support and attack-effect fixtures match HP, status, cooldown and event categories", () => {
  const fixtures = [
   {left:"sulfur",right:"mercury",a:"ash_temper",b:"silver_needle",hp:[88,91],damage:[16],draws:[0.775193333625793,0.54944521188736,0.714087608503178],categories:["buff","buff","buff","damage","damage"],status:"atk_boost",value:0.2,recipient:"left",cd:2,inspiration:0},
-  {left:"sodium",right:"aether",a:"brine_mend",b:"rift_touch",hp:[109,87],damage:[15,11],draws:[0.0138160288333893,0.28386664390564,0.93741182051599],categories:["buff","buff","damage","heal","damage","damage","debuff"],status:"vuln_pct",value:0.12,recipient:"left",cd:3,inspiration:0},
-  {left:"vitriol",right:"gold",a:"caustic_mark",b:"aurum_edge",hp:[109,87],damage:[8,11],draws:[0.801872670650482,0.909451206680387,0.222710683941841,0.41610933537595],categories:["damage","damage","debuff","inspiration","damage","damage","debuff"],status:"poison",value:1,recipient:"right",cd:2,inspiration:1},
+  {left:"sodium",right:"aether",a:"brine_mend",b:"rift_touch",hp:[100,96],damage:[6,11],draws:[0.0138160288333893,0.28386664390564,0.93741182051599],categories:["buff","buff","damage","heal","damage","damage","debuff"],status:"vuln_pct",value:0.12,recipient:"left",cd:4,inspiration:0},
+  {left:"vitriol",right:"gold",a:"caustic_mark",b:"aurum_edge",hp:[109,88],damage:[8,11],draws:[0.801872670650482,0.909451206680387,0.222710683941841,0.41610933537595],categories:["damage","damage","debuff","inspiration","damage","damage","debuff"],status:"poison",value:2,recipient:"right",cd:4,inspiration:1},
  ];
  for (const f of fixtures) {
   const s = createPvpCombatState(snapshot("a",f.left),snapshot("b",f.right),catalogs) as any;
@@ -193,7 +193,7 @@ test("shield provenance, neutralization, cleanse priority and toxic reflection",
  out = resolvePvpExchange(m,{turn:1,spell_id:"toxic_mirror"},{turn:1,spell_id:"cinder_fist"},()=>0.5) as any;
  expect(out.events.some((e: any)=>e.kind === "reflect")).toBe(true);
  expect(out.events.some((e: any)=>e.kind === "poison" && e.side === "right" && e.damage === 3)).toBe(true);
- expect(out.state.fighters.right.status.poison).toBe(0);
+ expect(out.state.fighters.right.status.poison).toBe(2);
  expect(out.state.fighters.right.hp).toBeLessThan(104);
 });
 
@@ -227,10 +227,10 @@ test("three successive different debuffs accrue inspiration from zero", () => {
  expect(state.fighters.left.inspiration_pending).toBe(true);
 });
 
-test("all catalog spells restricted to the fourteen supported effect kinds resolve", () => {
- const supported = new Set(["heal","shield","reflect","atk_boost","atk_down","vuln","poison","hom_stun","type_neutralize","focus_next","misalign_next","tempo_shift","cleanse_one","poison_on_reflect"]);
+test("catalog spells restricted to the seventeen supported effect kinds resolve", () => {
+ const supported = new Set(["heal","shield","reflect","atk_boost","atk_down","vuln","poison","hom_stun","type_neutralize","focus_next","misalign_next","tempo_shift","cleanse_one","poison_on_reflect","burn","lethargy","life_leech"]);
  const spells = catalogs.spells.filter((s: any)=>s.effects.every((e: any)=>supported.has(e.kind)));
- expect(spells).toHaveLength(44);
+ expect(spells).toHaveLength(46);
  for (const spell of spells) {
   const type = ["universal","hybrid"].includes(spell.type) ? spell.eligible_types[0] : spell.type;
   for (const side of ["left","right"] as const) {
@@ -244,7 +244,7 @@ test("all catalog spells restricted to the fourteen supported effect kinds resol
 });
 
 test("all 66 supported catalog spells resolve on both human sides", () => {
- const kinds = new Set(["heal","shield","reflect","atk_boost","atk_down","vuln","poison","hom_stun","type_neutralize","focus_next","misalign_next","tempo_shift","cleanse_one","poison_on_reflect","bonus_if_poisoned","bonus_if_hit_last_exchange","bonus_if_low_hp","bonus_if_marked","bonus_power_if_poisoned","bonus_if_shielded","bonus_power_if_hit_last_exchange","pierce_ward","ward_dispel","recoil","life_leech","consume_poison","hybrid_mark","shield_by_order","ward_convert"]);
+ const kinds = new Set(["heal","shield","reflect","atk_boost","atk_down","vuln","poison","hom_stun","type_neutralize","focus_next","misalign_next","tempo_shift","cleanse_one","poison_on_reflect","bonus_if_poisoned","bonus_if_hit_last_exchange","bonus_if_low_hp","bonus_if_marked","bonus_power_if_poisoned","bonus_if_shielded","bonus_power_if_hit_last_exchange","pierce_ward","ward_dispel","recoil","life_leech","consume_poison","hybrid_mark","shield_by_order","ward_convert","burn","lethargy"]);
  const spells = catalogs.spells.filter((s: any)=>s.effects.every((e: any)=>kinds.has(e.kind)));
  expect(spells).toHaveLength(66);
  for (const spell of spells) {
@@ -313,7 +313,7 @@ test("conditional modifiers use poison, prior hits, marks and HP before the hit"
  const out = resolvePvpExchange(s,{turn:1,spell_id:"corrosive_tribute"},{turn:1,spell_id:"aurum_edge"},(_t,i)=>draws[i]) as any;
  const noProc = resolvePvpExchange(s,{turn:1,spell_id:"corrosive_tribute"},{turn:1,spell_id:"aurum_edge"},()=>0.5) as any;
  expect(out.events.find((e: any)=>e.kind === "damage" && e.side === "left").damage).toBe(noProc.events.find((e: any)=>e.kind === "damage" && e.side === "left").damage);
- expect(out.state.fighters.right.status.poison).toBe(1);
+ expect(out.state.fighters.right.status.poison).toBe(2);
  expect(out.events.some((e: any)=>e.kind === "consume_poison")).toBe(false);
 });
 
@@ -455,7 +455,7 @@ test("effect preflight rejects either unsupported decision before RNG and ultra 
  const p = createPvpCombatState(snapshot("a","vitriol"),snapshot("b","gold"),catalogs) as any;
  p.battle_index = 3; p.wins = {left:1,right:1};
  const poisoned = resolvePvpExchange(p,{turn:1,spell_id:"caustic_mark",ultra:true},{turn:1,spell_id:"aurum_edge"},()=>0.5) as any;
- expect(poisoned.state.fighters.right.status.poison).toBe(3);
+ expect(poisoned.state.fighters.right.status.poison).toBe(2);
  const n = createPvpCombatState(snapshot("a","aether"),snapshot("b","sulfur"),catalogs) as any;
  n.battle_index = 3; n.wins = {left:1,right:1};
  const neutral = resolvePvpExchange(n,{turn:1,spell_id:"paradox_fold",ultra:true},{turn:1,spell_id:"cinder_fist"},()=>0.5) as any;
@@ -734,7 +734,7 @@ test("strategic traps, transfer and suppression follow exchange timing", () => {
  out = resolvePvpExchange(t, {turn: 1, spell_id: "brine_mend"}, {turn: 1, spell_id: "liquid_decoy"}, () => 0.5) as any;
  const heal = out.events.find((e: any) => e.kind === "heal" && e.side === "left");
  const drain = out.events.find((e: any) => e.kind === "damage" && e.side === "left" && e.spell_id === "brine_mend");
- expect(drain.damage).toBe(Math.round(15 * (1 - 0.18)));
+ expect(drain.damage).toBe(Math.round(Math.round(t.fighters.right.hp * 0.06) * (1 - 0.18)));
  expect(heal.amount).toBe(Math.floor(drain.damage / 2));
  expect(out.state.fighters.left.strategic_heal_suppression).toBeUndefined();
  expect(out.events.some((e: any) => e.kind === "heal_suppression_expired")).toBe(true);

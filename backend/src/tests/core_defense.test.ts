@@ -1,0 +1,49 @@
+﻿import {test,expect} from 'bun:test';
+import {existsSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {arena,cardById,elementalMultiplier} from '../woe/catalog';
+import {formationPoint,route} from '../woe/engine';
+import {initializeCoreDefense,advanceCoreDefenseTick,applyCoreDefenseDeployment,getCoreDefenseSnapshot,coreDefenseEnemies,coreDefenseRules,enemyStats,waveCount,type CoreDefenseState} from '../woe/core_defense';
+const make=(mode:'solo'|'coop'='solo')=>{const s=initializeCoreDefense(mode,'seed',mode==='solo'?['a']:['a','b']);for(const p of s.controllers){const i=p.slots.findIndex(id=>!!cardById[id]);[p.slots[0],p.slots[i]]=[p.slots[i],p.slots[0]];}return s;};
+function deploy(s:CoreDefenseState) {const p=s.controllers[0];p.zealTenths=100;const r=applyCoreDefenseDeployment(s,{actionId:'x',controllerId:p.id,slot:0,cardId:p.slots[0],lane:'left'});expect(r.accepted).toBe(true);return r.state;}
+function ticks(s:CoreDefenseState,n:number) {for(let i=0;i<n;i++)s=advanceCoreDefenseTick(s);return s;}
+test('crowded allied formations move deterministically without blocking',()=>{
+ const s=deploy(make());const template=s.units[0];
+ s.units=Array.from({length:75},(_,i)=>({...structuredClone(template),id:i+1,position:formationPoint(arena.spawns.blue.left,i+1),route:route('blue','left','left',i+1),waypoint:0}));
+ s.nextUnitId=76;s.phase='intermission';s.intermissionTicks=1000;
+ const a=ticks(s,40),b=ticks(JSON.parse(JSON.stringify(s)),40);
+ expect(a).toEqual(b);
+ expect(new Set(a.units.map(u=>`${u.position.x.toFixed(2)}:${u.position.y.toFixed(2)}`)).size).toBe(75);
+ expect(a.units.every(u=>u.position.y<arena.spawns.blue.left.y)).toBe(true);
+});
+test('solo and both coop humans may deploy at either surviving blue laboratory',()=>{
+ for(const mode of ['solo','coop'] as const) for(const index of mode==='solo'?[0]:[0,1]) for(const lane of ['left','right'] as const) {
+  const s=make(mode),p=s.controllers[index]; p.zealTenths=100;
+  const cmd={actionId:'lanes',controllerId:p.id,slot:0,cardId:p.slots[0],lane};
+  expect(applyCoreDefenseDeployment(s,cmd).accepted).toBe(true);
+  s.laboratories.find(l=>l.team==='blue'&&l.lane===lane)!.hp=0;
+  expect(applyCoreDefenseDeployment(s,cmd)).toMatchObject({accepted:false,reason:'LANE_DESTROYED'});
+ }
+});
+test('modes, deterministic replay and privacy',()=>{for(const mode of ['solo','coop'] as const){const run=()=>ticks(deploy(make(mode)),200);expect(run()).toEqual(run());const s=make(mode),snap=getCoreDefenseSnapshot(s,'a');expect(s.controllers.length).toBe(mode==='solo'?1:2);expect(snap.players[0].slots).toBeDefined();if(mode!=='solo')expect(snap.players[1].slots).toBeUndefined();expect(JSON.stringify(snap)).not.toContain('queue');}expect(()=>initializeCoreDefense('coop','x',['a','a'])).toThrow();expect(()=>initializeCoreDefense('solo_bot' as any,'x',['a','b'])).toThrow();});
+test('canonical assets, elements, roles and safe scaling',()=>{expect(coreDefenseEnemies.map(e=>e.id).sort()).toEqual(['hexalith','mortivane','mycelion','noxiris','vitreous']);expect(new Set(coreDefenseEnemies.map(e=>e.role)).size).toBe(5);for(const e of coreDefenseEnemies){for(let i=1;i<=3;i++)expect(existsSync(resolve(import.meta.dir,`../../../assets/forest/woe/enemies/${e.id}/move_front_0${i}.png`))).toBe(true);expect(elementalMultiplier(e.element,e.element)).toBe(1);expect(enemyStats(e.id,20).hp).toBeGreaterThan(e.hp);expect(enemyStats(e.id,Number.MAX_SAFE_INTEGER).hp).toBeLessThanOrEqual(coreDefenseRules.max_hp);expect(enemyStats(e.id,Number.MAX_SAFE_INTEGER).damage).toBeLessThanOrEqual(coreDefenseRules.max_damage);}expect(waveCount(1)).toBe(4);expect(waveCount(Number.MAX_SAFE_INTEGER)).toBe(coreDefenseRules.max_count);});
+test('spawn timing, wave completion and persistent allies',()=>{let s=deploy(make());s=advanceCoreDefenseTick(s);expect(s.enemiesSpawned).toBe(1);s=ticks(s,14);expect(s.enemiesSpawned).toBe(1);s=advanceCoreDefenseTick(s);expect(s.units.filter(u=>u.kind==='enemy').map(u=>u.lane)).toEqual(['left','right']);s.units=s.units.filter(u=>u.kind==='homunculus');s=advanceCoreDefenseTick(s);expect(s.completedWaves).toBe(0);s.pendingSpawns=0;s=advanceCoreDefenseTick(s);expect(s.phase).toBe('intermission');expect(s.completedWaves).toBe(1);const hp=s.units[0].hp,slots=[...s.controllers[0].slots];s=ticks(s,50);expect(s.wave).toBe(2);expect(s.pendingSpawns).toBe(5);expect(s.units[0].hp).toBe(hp);expect(s.controllers[0].slots).toEqual(slots);});
+test('card rotation, zeal and no automatic allied deployment',()=>{let s=make('coop');const p=s.controllers[0],old=p.slots[0],next=p.slots.slice(1).some(id=>!cardById[id])?p.queue.find(id=>!!cardById[id])!:p.queue[0];s=applyCoreDefenseDeployment(s,{actionId:'x',controllerId:'a',slot:0,cardId:old,lane:'right'}).state;expect(s.controllers[0].slots[0]).toBe(next);expect(s.controllers[0].queue.at(-1)).toBe(old);expect(s.controllers[0].zealTenths).toBe(50-cardById[old].cost*10);expect(applyCoreDefenseDeployment(s,{actionId:'x',controllerId:'a',slot:0,cardId:next,lane:'left'})).toMatchObject({accepted:false,reason:'DUPLICATE_ACTION_ID'});s=ticks(s,10);expect(s.units.some(u=>u.controllerId==='b')).toBe(false);expect(s.controllers[1].zealTenths).toBe(50);expect(s.controllers[1].zealRegenTicks).toBe(10);});
+test('WOE laboratory defense does not affect Core Defense enemies or laboratories',()=>{
+ let s=advanceCoreDefenseTick(make());const enemy=s.units.find(u=>u.kind==='enemy')!;const lab=s.laboratories.find(l=>l.id==='blue:left')!;
+ enemy.position={...lab.position};enemy.cooldown=1000;const hp=enemy.hp;s=advanceCoreDefenseTick(s);
+ expect(s.units.find(u=>u.id===enemy.id)!.hp).toBe(hp);expect(s.events.some(e=>String(e.type)==='lab_attack')).toBe(false);
+ expect(s.laboratories.every(l=>!('defenseCooldown' in l))).toBe(true);
+});
+test('intermission freezes both players zeal, including the transition tick',()=>{
+ let s=make('coop');s.controllers[0].zealTenths=40;s.controllers[1].zealTenths=90;
+ s.pendingSpawns=0;s=advanceCoreDefenseTick(s);expect(s.phase).toBe('intermission');
+ const frozen=s.controllers.map(p=>p.zealTenths);
+ s=ticks(s,coreDefenseRules.intermission_ticks-1);expect(s.phase).toBe('intermission');expect(s.controllers.map(p=>p.zealTenths)).toEqual(frozen);
+ s=advanceCoreDefenseTick(JSON.parse(JSON.stringify(s)));expect(s.phase).toBe('wave');expect(s.controllers.map(p=>p.zealTenths)).toEqual(frozen);
+ s=advanceCoreDefenseTick(s);expect(s.controllers.map(p=>p.zealTenths)).toEqual(frozen);expect(s.controllers.map(p=>p.zealRegenTicks)).toEqual([2,2]);
+});
+test('elemental combat, cadence and enemy kill metadata',()=>{let s=advanceCoreDefenseTick(deploy(make()));const a=s.units.find(u=>u.kind==='homunculus')!,e=s.units.find(u=>u.kind==='enemy')!;a.position={x:960,y:540};e.position={...a.position};a.damage=40;a.element='mercury';e.element='gold';e.defense=0;e.hp=1000;e.maxHp=1000;e.damage=0;s.pendingSpawns=0;s=advanceCoreDefenseTick(s);expect(s.events.find(x=>x.type==='attack'&&x.attacker===a.id)?.damage).toBe(47);s=ticks(s,9);expect(s.events.some(x=>x.type==='attack'&&x.attacker===a.id)).toBe(false);s=advanceCoreDefenseTick(s);expect(s.events.some(x=>x.type==='attack'&&x.attacker===a.id)).toBe(true);s.units.find(u=>u.kind==='enemy')!.hp=1;s.units.find(u=>u.kind==='homunculus')!.cooldown=0;s=advanceCoreDefenseTick(s);expect(s.enemiesKilled).toBe(1);expect(s.events.find(x=>x.type==='death')).toMatchObject({victimCardId:e.cardId,victimTeam:'red',targetKind:'unit'});expect(s.completedWaves).toBe(1);});
+test('entry invulnerability, rerouting and defeat',()=>{let s=deploy(make());s.units[0].position={...arena.laboratories.red.left};s=ticks(s,100);expect(s.laboratories.filter(l=>l.team==='red').every(l=>l.hp===1000)).toBe(true);s=advanceCoreDefenseTick(make());let e=s.units.find(u=>u.kind==='enemy')!;e.position={x:700,y:650};e.waypoint=7;s.laboratories.find(l=>l.id==='blue:left')!.hp=0;s=advanceCoreDefenseTick(s);e=s.units.find(u=>u.kind==='enemy')!;expect(e.targetLane).toBe('right');expect(e.route).toContainEqual(formationPoint(arena.plaza,e.id));const lab=s.laboratories.find(l=>l.id==='blue:right')!;lab.hp=1;e.position={...lab.position};e.cooldown=0;s=advanceCoreDefenseTick(s);expect(s.result).toEqual({winner:'red',reason:'laboratories'});expect(advanceCoreDefenseTick(s)).toBe(s);});
+test('reserved enemy capacity and delayed spawns',()=>{let s=deploy(make());const template=s.units[0];s.units=Array.from({length:75},(_,i)=>({...structuredClone(template),id:i+1}));s.nextUnitId=76;s.controllers[0].zealTenths=100;const p=s.controllers[0];expect(applyCoreDefenseDeployment(s,{actionId:'cap',controllerId:p.id,slot:0,cardId:p.slots[0],lane:'left'})).toMatchObject({reason:'UNIT_CAP'});s=advanceCoreDefenseTick(s);expect(s.enemiesSpawned).toBe(1);const enemy=s.units.find(u=>u.kind==='enemy')!;s.units=Array.from({length:100},(_,i)=>({...structuredClone(enemy),id:i+1}));s.pendingSpawns=1;s.spawnCooldown=0;const count=s.enemiesSpawned;s=advanceCoreDefenseTick(s);expect(s.pendingSpawns).toBe(1);expect(s.enemiesSpawned).toBe(count);expect(s.units.length).toBeLessThanOrEqual(100);expect(s.events.length).toBeLessThanOrEqual(200);});
+test('bounded duplicate window, safe unit IDs and score snapshot',()=>{let s=make();s.controllers[0].actionIds=Array.from({length:coreDefenseRules.action_id_limit},(_,i)=>`old:${i}`);s.nextUnitId=Number.MAX_SAFE_INTEGER;s=deploy(s);expect(s.controllers[0].actionIds.length).toBe(coreDefenseRules.action_id_limit);expect(s.units[0].id).toBe(Number.MAX_SAFE_INTEGER);s=advanceCoreDefenseTick(s);expect(s.units.find(u=>u.kind==='enemy')!.id).toBe(1);const snap=getCoreDefenseSnapshot(s);expect([snap.completedWaves,snap.enemiesKilled,snap.remainingBlueLabHp]).toEqual([0,0,2000]);});

@@ -10,6 +10,15 @@ const ids=["cinder_fist","furnace_rush","ash_temper","brimstone_crash"];
 const setup=()=>buildTrustedCombatSetup({player_id:"a",state_revision:0,boss_id:"hunt_common",boss_entity_id:"sodium_01",spell_progress:{}},{entity_id:"sulfur_01",weapon_ids:[null,null],homunculus_id:"cinder",spell_ids:ids,mode:"attack"},c,{independentLoadout:true});
 const snap=(player_id:string,type:string)=>({player_id,entity_id:`${type}_01`,weapon_ids:[null,null],homunculus_id:"cinder",spell_ids:c.spells.filter((s:any)=>s.type===type).slice(0,4).map((s:any)=>s.id)});
 
+test("U3.1 legacy homunculus corrosion reports only actual applied damage",()=>{
+ const hunt:any=createCombatState(setup());hunt.hom_synergy.dot_true=5;hunt.boss.hp=hunt.boss.max_hp=1000;hunt.boss.status.stun=1;
+ const result:any=resolveCombatTurn(hunt,{turn:1,spell_id:"cinder_fist",target:"boss"},()=>0.5);
+ expect(result.error).toBeUndefined();expect(result.events.find((event:any)=>event.kind==="hom_passive"&&event.trigger==="spell_hit")).toMatchObject({actor:"player",target:"boss",hom_id:"cinder",effects:[{kind:"dot_true",target:"boss",amount:5,unit:"hp"}]});
+ const p:any=createPvpCombatState(snap("a","sulfur"),snap("b","sulfur"),c);p.fighters.left.hom_synergy.dot_true=5;p.fighters.left.entity.base_stats.tempo=100;p.fighters.right.entity.base_stats.tempo=1;p.fighters.right.hp=p.fighters.right.max_hp=1000;
+ const ranked:any=resolvePvpExchange(p,{turn:1,spell_id:"cinder_fist"},{turn:1,spell_id:"ash_temper"},()=>0.5);
+ expect(ranked.error).toBeUndefined();expect(ranked.events.find((event:any)=>event.kind==="hom_passive"&&event.trigger==="spell_hit")).toMatchObject({actor:"left",target:"right",hom_id:"cinder",effects:[{kind:"dot_true",target:"right",amount:5,unit:"hp"}]});
+});
+
 test("elemental homunculus attacks use defender type in Hunt including old minion snapshots",()=>{
  const h=createCombatState(setup()); h.hom_energy=3; h.player.atk=100; h.player.hp=h.player.max_hp=10000; h.boss.hp=h.boss.max_hp=10000; h.boss.type="sulfur"; h.boss.atk=1;
  const spell=h.spells.find((s:any)=>s.id===ids[0]); spell.category="support";spell.power_mult=0;spell.accuracy=1;spell.effects=[];

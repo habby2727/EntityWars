@@ -113,6 +113,7 @@ var _hunt_details: Label
 var _hunt_portrait: TextureRect
 var _hunt_selected := ""
 var _hunt_loading := false
+var _forest_hunt_checked := false
 var _hunt_valid := false
 var _hunt_boundary := 0
 var _hunt_next_rotation := 0
@@ -139,6 +140,7 @@ func _ready() -> void:
 	_apply_panel_background()
 	_connect_backend()
 	_connect_buttons()
+	preload("res://scripts/ui/forest_return_button.gd").attach($Background/Margin/RootVBox/Header)
 	var expedition_button := get_node("Background/Margin/RootVBox/Tabs/Zones/Scroll/ZoneVBox/ExpeditionMargin/ExpeditionButton") as Button
 	MenuArt.button(expedition_button)
 	expedition_button.pressed.connect(SceneRouter.go_to_expeditions)
@@ -707,6 +709,7 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 	if data.has("server_time_unix_ms"):
 		_update_server_time(int(data.get("server_time_unix_ms", 0)))
 	if not ok:
+		if str(info.get("kind", "")) == "hunt_session": _forest_hunt_checked = false
 		_handle_api_error(info, data)
 		_flush_api_queue()
 		return
@@ -730,6 +733,7 @@ func _on_api_completed(request_id: String, ok: bool, data: Dictionary) -> void:
 		_hunt_status.text = "" if _hunt_valid else "Boss hunt schedule unavailable."
 		_render_hunt_rows()
 	elif kind == "hunt_session":
+		_forest_hunt_checked = data.has("session") and data.session == null
 		_hunt_active = data.get("session", {}) if data.get("session") is Dictionary else {}
 		_hunt_active_owner = _backend._verified_player_id if _backend != null else ""
 		_update_hunt_fight()
@@ -814,6 +818,7 @@ func _on_state_updated(state: Dictionary) -> void:
 	_state = state
 	_player_id = str(state.get("player_id", ""))
 	if previous_player != _player_id:
+		_forest_hunt_checked = false
 		_hunt_active.clear()
 		_hunt_active_owner = ""
 		_hunt_start_id = ""
@@ -1381,3 +1386,10 @@ func _render_missions() -> void:
 
 func _claim_mission(mission_id: String, period_name: String, period_key: String) -> void:
 	_send_api_request("POST", "/world/missions/claim", {"client_action_id": _make_client_id(), "mission_id": mission_id, "period_type": period_name, "period_key": period_key}, "mission_claim", false)
+
+func forest_return_safe() -> bool:
+	if _busy or not _api_queue.is_empty() or _hunt_loading or not _hunt_start_id.is_empty() or not _hunt_active.is_empty():
+		return false
+	if ConnectionGate.debug_lab_navigation_allowed():
+		return true
+	return _forest_hunt_checked and _backend != null and not _backend._verified_player_id.is_empty() and _backend._verified_player_id == ConnectionGate.player_id

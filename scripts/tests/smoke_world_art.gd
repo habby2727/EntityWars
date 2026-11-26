@@ -123,6 +123,14 @@ func _run() -> void:
 		for i in 3:
 			online_guardians.append({"guardian_id": "guardian_%d" % i, "name": "Guardian %d" % i, "tier": "common", "texture_id": "res://assets/lab/bosses/%s_zone_common/%s.png" % [world.to_lower(), entries[i]], "defeated": false})
 		zone._hunt_progress = {"guardians": online_guardians, "defeated_count": 0, "total_count": 3, "boss_unlocked": false}
+		zone._select_nearby_hunt(rare, false)
+		assert(zone._preview_status.text.contains("0/3"))
+		for guardian in online_guardians:
+			assert(not zone._preview_status.text.contains(str(guardian.name)), "Guardian list must not expand the encounter panel")
+		var encounter_close: Button = zone._world_modal.find_child("CloseEncounter", true, false)
+		assert(encounter_close != null and encounter_close.visible)
+		encounter_close.pressed.emit()
+		assert(not zone._world_modal.visible)
 		zone._show_map_hunt(rare)
 		await process_frame
 		if OS.has_environment("EW_CAPTURE_DIR"):

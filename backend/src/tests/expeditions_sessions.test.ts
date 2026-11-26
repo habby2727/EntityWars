@@ -134,6 +134,27 @@ test("authenticated persistent expedition battles, rewards, routing, loss and ex
       expect(next.data.session.combat_state.npc.item_level).toBe(5);
       expect(next.data.session.combat_state.npc.weapons).toHaveLength(1);
     }
+    // Route state and retries are authoritative even across persisted sessions.
+    const routeOwner=(await request("/auth/dev_login",{name:"expedition_route_limit"})).data;
+    const routeStart=await request("/expeditions/start",{...loadout,client_action_id:id()},routeOwner.token);
+    let routeSession=routeStart.data.session;
+    const forceRoute=()=>{ const state=JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(routeSession.run_id) as any).state_json); state.phase="ROUTE"; db.query("UPDATE expedition_runs SET state_json=? WHERE run_id=?").run(JSON.stringify(state),routeSession.run_id); };
+    for(let i=1;i<=3;i++) {
+      forceRoute();
+      const body={run_id:routeSession.run_id,expected_revision:routeSession.revision,direction:"right",client_action_id:id()};
+      const advanced=await request("/expeditions/advance",body,routeOwner.token);
+      expect(advanced.status).toBe(200);
+      expect((await request("/expeditions/advance",body,routeOwner.token)).data).toEqual(advanced.data);
+      routeSession=advanced.data.session;
+    }
+    forceRoute();
+    const beforeRoute=(db.query("SELECT state_json,revision FROM expedition_runs WHERE run_id=?").get(routeSession.run_id) as any);
+    const visible=(await request("/expeditions/state",undefined,routeOwner.token)).data.session;
+    expect(visible).toMatchObject({directions:["left","forward","right"],allowed_directions:["left","forward"],consecutive_right:3,last_direction:"right"});
+    expect((await request("/expeditions/advance",{run_id:routeSession.run_id,expected_revision:routeSession.revision,direction:"right",client_action_id:id()},routeOwner.token)).status).toBe(409);
+    expect(db.query("SELECT state_json,revision FROM expedition_runs WHERE run_id=?").get(routeSession.run_id)).toEqual(beforeRoute);
+    expect((await request("/expeditions/advance",{run_id:routeSession.run_id,expected_revision:routeSession.revision,direction:"forward",client_action_id:id()},routeOwner.token)).status).toBe(200);
+    expect(JSON.parse((db.query("SELECT state_json FROM expedition_runs WHERE run_id=?").get(routeSession.run_id) as any).state_json).consecutive_right).toBe(0);
     // Only equipped items at start determine the frozen NPC level.
     for (const level of [0, 1, 10]) {
       const owner=(await request("/auth/dev_login",{name:`expedition_item_level_${level}`})).data;

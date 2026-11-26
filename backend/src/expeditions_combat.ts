@@ -77,6 +77,31 @@ export function buildExpeditionEnemy(seed: Uint8Array, encounterKey: string, dep
     if (!available.length) throw new Error("INVALID_EXPEDITION_SPELL_CATALOG");
     selected.push(pick(available, `spell-${selected.length}`));
   }
+  // Normal encounters retain their original seeded loadout. Later encounters
+  // rank only legal catalog spells, with a seeded tie breaker for variety.
+  if (difficultyDepth >= (capturable ? 4 : 5)) {
+    const tie = (s: any) => draw(`loadout:${s.id}`) * 0.01;
+    const qualityScores = new Map<string, number>(candidates.map((s: any) => {
+      const factor = (t: string) => relation(t) > 1 ? 1.18 : relation(t) < 1 ? 0.84 : 1;
+      const element = s.type === "hybrid" ? Math.pow(factor(s.primary_type), 0.65) * Math.pow(factor(s.secondary_type), 0.35) : s.type === "universal" ? 1 : factor(s.type);
+      return [s.id, (s.category === "attack" ? s.power_mult * s.accuracy * element / (1 + s.cooldown_turns * 0.12) : 0.35 * s.accuracy) + tie(s)];
+    }));
+    const quality = (s: any) => qualityScores.get(s.id)!;
+    const rank = (a: any, b: any) => quality(b) - quality(a) || a.id.localeCompare(b.id);
+    const reliable = [...basic].sort((a, b) => (b.accuracy >= 0.9 ? 1 : 0) - (a.accuracy >= 0.9 ? 1 : 0) || rank(a, b))[0];
+    const comboValue = (a: any, b: any) => {
+      if (a.id === b.id) return 0;
+      const poison = has(a, "poison", "enemy") && ["bonus_if_poisoned", "bonus_power_if_poisoned", "consume_poison"].some(k => has(b, k));
+      const shield = has(a, "shield", "self") && ["ward_convert", "bonus_if_shielded"].some(k => has(b, k));
+      const mark = has(a, "hybrid_mark", "enemy") && has(b, "bonus_if_marked");
+      const debuff = has(a, "vuln", "enemy") && b.category === "attack";
+      return (poison || shield || mark || debuff ? (mark ? 1.25 : 0.65) * a.accuracy * b.accuracy + draw(`combo:${a.id}:${b.id}`) * 0.4 : 0) + (poison && ["venam", "crishvin"].includes(hom.id) || shield && hom.id === "ninux" || debuff && hom.id === "mantillo" ? 0.15 : 0);
+    };
+    const pairs = candidates.flatMap((a: any) => candidates.map((b: any) => ({a, b, score: comboValue(a, b)}))).filter((p: any) => p.score > 0 && p.a.id !== reliable.id && p.b.id !== reliable.id).map((p: any) => ({...p, rank: p.score + quality(p.a) + quality(p.b)})).sort((x: any, y: any) => y.rank - x.rank || x.a.id.localeCompare(y.a.id) || x.b.id.localeCompare(y.b.id));
+    selected.splice(0, selected.length, reliable);
+    if (pairs.length) selected.push(pairs[0].a, pairs[0].b);
+    while (selected.length < 4) selected.push(candidates.filter((s: any) => !selected.some(x => x.id === s.id)).sort(rank)[0]);
+  }
   const base = setup.entity.base_stats, bonus = setup.bonuses ?? {};
   const weapons = Array.isArray(setup.weapons) ? setup.weapons.filter((w: any) => w.id).map((w: any) => w.effects) : [setup.itemEffects ?? {}];
   const factor = Math.max(0, Math.min(2, setup.hom_id ? setup.hom_synergy?.item_effect_mult ?? 1 : 1));
@@ -108,7 +133,7 @@ export function createExpeditionCombatState(setup: any, enemy: any, catalogs: an
   if (JSON.stringify(Object.entries(effects).sort()) !== JSON.stringify(Object.entries(enemy.item_effects ?? {}).sort())) return {error:"UNTRUSTED_SETUP"};
   if (![enemy.item_power_allocated, enemy.item_guard_allocated].every(Number.isSafeInteger) || enemy.item_power_allocated !== Math.trunc(effects.power_flat ?? 0) || enemy.item_guard_allocated !== Math.trunc(effects.guard_flat ?? 0)) return {error:"UNTRUSTED_SETUP"};
   const state = createDungeonCombatState(setup, enemy, catalogs, previousActiveSlot);
-  if (!state.error) { const hom = expeditionCaptures.find(h => h.id === enemy.homunculus_id)!; state.npc.item_id = item.id; state.npc.item_level = enemy.item_level; state.npc.item_effects = effects; state.npc.weapons = [{id:item.id, level:enemy.item_level}]; state.tactics_enabled = true; state.combat_mode = "expedition"; state.npc.texture = manifest.texture; state.npc.preview_texture = manifest.preview_texture; state.npc.capturable = enemy.capturable; state.npc.hom_type = hom.type; state.npc.hom_texture = hom.combat_texture; }
+  if (!state.error) { const hom = expeditionCaptures.find(h => h.id === enemy.homunculus_id)!; state.npc.item_id = item.id; state.npc.item_level = enemy.item_level; state.npc.item_effects = effects; state.npc.weapons = [{id:item.id, level:enemy.item_level}]; state.tactics_enabled = true; state.tactical_tier = enemy.tactical_tier ?? "normal"; state.combat_mode = "expedition"; state.npc.texture = manifest.texture; state.npc.preview_texture = manifest.preview_texture; state.npc.capturable = enemy.capturable; state.npc.hom_type = hom.type; state.npc.hom_texture = hom.combat_texture; }
   return state;
 }
 export function resolveExpeditionTurn(state: any, decision: any, rng: (turn: number, draw: number) => number) {

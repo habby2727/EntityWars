@@ -14,29 +14,29 @@ SPELL_ECHO_SIPHON_DESC,"Heals 20% of damage dealt, up to 5 HP.","Cura el 20% del
 SPELL_REVERSE_QUILL_NAME,Reverse Quill,Pluma refleja
 SPELL_REVERSE_QUILL_DESC,Reflects 13% of the next hit.,Refleja un 13% del siguiente golpe.
 SPELL_CROOKED_RUNE_NAME,Crooked Rune,Runa torcida
-SPELL_CROOKED_RUNE_DESC,Reduces the target's next offensive accuracy by 10%.,Reduce un 10% la precisión de la siguiente acción ofensiva del objetivo.
+SPELL_CROOKED_RUNE_DESC,Reduces the target's next offensive accuracy by 10%. 25% chance to poison on hit.,Reduce un 10% la precisión de la siguiente acción ofensiva del objetivo. 25% de probabilidad de envenenar al golpear.
 SPELL_SECOND_MEASURE_NAME,Second Measure,Compás siguiente
 SPELL_SECOND_MEASURE_DESC,Adds 2 tempo to the next initiative.,Añade 2 de ritmo a la próxima iniciativa.
 SPELL_LAST_AXIOM_NAME,Last Axiom,Último axioma
 SPELL_LAST_AXIOM_DESC,Adds 20 percentage points of base power below 40% HP; takes 4 recoil on hit.,Añade 20 puntos porcentuales de potencia base por debajo del 40% de PV; sufre 4 de retroceso al golpear.
 SPELL_PARADOX_EDICT_NAME,Paradox Edict,Edicto paradójico
-SPELL_PARADOX_EDICT_DESC,Marks the enemy for two of the caster's actions.,Marca al enemigo durante dos acciones del lanzador.
+SPELL_PARADOX_EDICT_DESC,Marks the enemy for two of the caster's actions. 25% chance to inflict lethargy for the next two exchanges.,Marca al enemigo durante dos acciones del lanzador. 25% de probabilidad de causar letargo durante los dos turnos siguientes.
 SPELL_GILDED_EXCEPTION_NAME,Gilded Exception,Excepción dorada
 SPELL_GILDED_EXCEPTION_DESC,Adds 25 percentage points of base power when consuming a hybrid mark.,Añade 25 puntos porcentuales de potencia base al consumir una marca híbrida.
 SPELL_NULL_LATTICE_NAME,Null Lattice,Retícula nula
 SPELL_NULL_LATTICE_DESC,Reduces type deviation by 45% next exchange.,Reduce un 45% la desviación de tipo en el próximo intercambio.
 SPELL_SALT_RIFT_NAME,Salt Rift,Grieta salina
-SPELL_SALT_RIFT_DESC,Grants a 12% shield on hit.,Otorga un escudo del 12% al golpear.
+SPELL_SALT_RIFT_DESC,Grants a 12% shield on hit. 20% chance to inflict lethargy for the next two exchanges.,Otorga un escudo del 12% al golpear. 20% de probabilidad de causar letargo durante los dos turnos siguientes.
 SPELL_VOID_ETCHING_NAME,Void Etching,Grabado del vacío
 SPELL_VOID_ETCHING_DESC,Applies 12% vulnerability on hit.,Aplica un 12% de vulnerabilidad al golpear.
 SPELL_CAUSTIC_PARADOX_NAME,Caustic Paradox,Paradoja cáustica
 SPELL_CAUSTIC_PARADOX_DESC,Adds 25 percentage points of base power against poison; takes 4 recoil on hit.,Añade 25 puntos porcentuales de potencia base contra veneno; sufre 4 de retroceso al golpear.
 SPELL_EMBER_ANOMALY_NAME,Ember Anomaly,Anomalía de brasas
-SPELL_EMBER_ANOMALY_DESC,Takes 5 recoil on hit.,Sufre 5 de retroceso al golpear.
+SPELL_EMBER_ANOMALY_DESC,Takes 5 recoil on hit. 20% chance to burn for the next two exchanges.,Sufre 5 de retroceso al golpear. 20% de probabilidad de quemar durante los dos turnos siguientes.
 SPELL_ENTROPY_KILN_NAME,Entropy Kiln,Horno entrópico
 SPELL_ENTROPY_KILN_DESC,Reduces enemy attack by 12%.,Reduce un 12% el ataque enemigo.
 SPELL_PHASE_QUICKSILVER_NAME,Phase Quicksilver,Azogue espectral
-SPELL_PHASE_QUICKSILVER_DESC,Adds 10% accuracy to the next offensive action.,Añade un 10% de precisión a la siguiente acción ofensiva.
+SPELL_PHASE_QUICKSILVER_DESC,Adds 10% accuracy to the next offensive action. 30% chance to inflict lethargy for the next two exchanges.,Añade un 10% de precisión a la siguiente acción ofensiva. 30% de probabilidad de causar letargo durante los dos turnos siguientes.
 SPELL_MERCURIAL_RIFT_NAME,Mercurial Rift,Grieta mercurial
 SPELL_MERCURIAL_RIFT_DESC,Ignores 45% shield mitigation; gains 8% vulnerability on hit.,Ignora un 45% de mitigación de escudo; gana un 8% de vulnerabilidad al golpear.
 SPELL_CROWNED_BULWARK_NAME,Crowned Bulwark,Baluarte coronado
@@ -44,7 +44,7 @@ SPELL_CROWNED_BULWARK_DESC,Grants a 12% shield on hit.,Otorga un escudo del 12% 
 SPELL_SALT_TRIBUNAL_NAME,Salt Tribunal,Tribunal de sal
 SPELL_SALT_TRIBUNAL_DESC,Adds 22 percentage points of base power while shielded.,Añade 22 puntos porcentuales de potencia base mientras tenga escudo.
 SPELL_VERDIGRIS_OATH_NAME,Verdigris Oath,Juramento de verdín
-SPELL_VERDIGRIS_OATH_DESC,Poisons the enemy for two turns.,Envenena al enemigo durante dos turnos.
+SPELL_VERDIGRIS_OATH_DESC,Poisons the enemy for three escalating ticks.,Envenena al enemigo durante tres efectos de daño crecientes.
 SPELL_CORROSIVE_TRIBUTE_NAME,Corrosive Tribute,Tributo corrosivo
 SPELL_CORROSIVE_TRIBUTE_DESC,Adds 28 percentage points of base power against poison and consumes one poison turn on hit.,Añade 28 puntos porcentuales de potencia base contra veneno y consume un turno de veneno al golpear.
 SPELL_GOLDEN_CRUCIBLE_NAME,Golden Crucible,Crisol dorado
@@ -56,11 +56,11 @@ SPELL_LIQUID_DECREE_DESC,Reduces the next enemy offensive accuracy by 10%.,Reduc
 SPELL_SILVER_DEBT_NAME,Silver Debt,Deuda de plata
 SPELL_SILVER_DEBT_DESC,Adds 25 percentage points of base power if hurt in the previous exchange.,Añade 25 puntos porcentuales de potencia base si recibió daño en el intercambio anterior.
 SPELL_BRINE_TOXIN_NAME,Brine Toxin,Toxina salina
-SPELL_BRINE_TOXIN_DESC,Poisons for one turn and grants an 8% shield on hit.,Envenena durante un turno y otorga un escudo del 8% al golpear.
+SPELL_BRINE_TOXIN_DESC,Poisons for three escalating ticks and grants an 8% shield on hit.,Envenena con tres efectos de daño crecientes y otorga un escudo del 8% al golpear.
 SPELL_CRYSTAL_DECAY_NAME,Crystal Decay,Deterioro cristalino
 SPELL_CRYSTAL_DECAY_DESC,Ignores 50% shield mitigation.,Ignora un 50% de mitigación de escudo.
 SPELL_FLASH_BRINE_NAME,Flash Brine,Destello salino
-SPELL_FLASH_BRINE_DESC,Gains 10% vulnerability on hit.,Gana un 10% de vulnerabilidad al golpear.
+SPELL_FLASH_BRINE_DESC,Gains 10% vulnerability on hit. 25% chance to burn for the next two exchanges.,Gana un 10% de vulnerabilidad al golpear. 25% de probabilidad de quemar durante los dos turnos siguientes.
 SPELL_FURNACE_BULWARK_NAME,Furnace Bulwark,Baluarte del horno
 SPELL_FURNACE_BULWARK_DESC,Grants 14% reflect on hit.,Otorga un 14% de reflejo al golpear.
 SPELL_SALT_CIRCUIT_NAME,Salt Circuit,Circuito de sal
@@ -68,15 +68,15 @@ SPELL_SALT_CIRCUIT_DESC,Reduces enemy next initiative by 2.,Reduce en 2 la próx
 SPELL_FLUID_ANCHOR_NAME,Fluid Anchor,Ancla fluida
 SPELL_FLUID_ANCHOR_DESC,"Grants an 8% shield, or 18% when acting second.","Otorga un escudo del 8%, o del 18% si actúa en segundo lugar."
 SPELL_FUMING_DISTILLATE_NAME,Fuming Distillate,Destilado humeante
-SPELL_FUMING_DISTILLATE_DESC,Poisons the enemy for two turns.,Envenena al enemigo durante dos turnos.
+SPELL_FUMING_DISTILLATE_DESC,Poisons the enemy for three escalating ticks.,Envenena al enemigo durante tres efectos de daño crecientes.
 SPELL_CINDER_CORROSION_NAME,Cinder Corrosion,Corrosión de brasas
 SPELL_CINDER_CORROSION_DESC,Adds 27 percentage points of base power against poison and consumes one poison turn on hit.,Añade 27 puntos porcentuales de potencia base contra veneno y consume un turno de veneno al golpear.
 SPELL_QUICKSILVER_SOLVENT_NAME,Quicksilver Solvent,Disolvente de azogue
-SPELL_QUICKSILVER_SOLVENT_DESC,Reduces the enemy shield by 40% before damage.,Reduce un 40% el escudo enemigo antes de infligir daño.
+SPELL_QUICKSILVER_SOLVENT_DESC,Reduces the enemy shield by 40% before damage. 30% chance to poison on hit.,Reduce un 40% el escudo enemigo antes de infligir daño. 30% de probabilidad de envenenar al golpear.
 SPELL_TOXIC_MIRROR_NAME,Toxic Mirror,Espejo tóxico
-SPELL_TOXIC_MIRROR_DESC,Grants 16% reflect; poisons the attacker for one turn when it triggers.,Otorga un 16% de reflejo; al activarse envenena al atacante durante un turno.
+SPELL_TOXIC_MIRROR_DESC,Grants 16% reflect; poisons the attacker for three escalating ticks when triggered.,Otorga un 16% de reflejo; al activarse envenena al atacante con tres efectos de daño crecientes.
 SPELL_VOLATILE_CURRENT_NAME,Volatile Current,Corriente volátil
-SPELL_VOLATILE_CURRENT_DESC,Adds 8% accuracy to the next offensive action on hit.,Al golpear añade un 8% de precisión a la siguiente acción ofensiva.
+SPELL_VOLATILE_CURRENT_DESC,Adds 8% accuracy to the next offensive action on hit. 35% chance to burn for the next two exchanges.,Al golpear añade un 8% de precisión a la siguiente acción ofensiva. 35% de probabilidad de quemar durante los dos turnos siguientes.
 SPELL_BOILING_MERCURY_NAME,Boiling Mercury,Mercurio hirviente
 SPELL_BOILING_MERCURY_DESC,Takes 6 recoil and reduces enemy attack by 10% on hit.,Sufre 6 de retroceso y reduce un 10% el ataque enemigo al golpear.
 SPELL_TOXIC_SMOG_NAME,Toxic Smog,Bruma tóxica
@@ -140,21 +140,21 @@ SPELL_ASHEN_PATENT_DESC,Steals a buff and boosts attack.,Roba una mejora y aumen
 SPELL_DEBT_BOMB_NAME,Debt Bomb,Bomba de deuda
 SPELL_DEBT_BOMB_DESC,Deals delayed damage but leaves the caster vulnerable.,Inflige daño diferido pero deja vulnerable al lanzador.
 HOMUNCULUS_CINDER_NAME,Cinder,Cinder
-HOMUNCULUS_CINDER_DESC,Sulfur-leaning familiar. Adds a burst of Power.,Familiar afín al azufre. Otorga un impulso de potencia.
+HOMUNCULUS_CINDER_DESC,Sulfur-leaning familiar. Adds a burst of Power.,Homúnculo afín al azufre. Otorga un impulso de potencia.
 HOMUNCULUS_SILPHIDE_NAME,Silphide,Silphide
-HOMUNCULUS_SILPHIDE_DESC,Mercury familiar. Adds Tempo and slight evasion (reduces incoming).,Familiar de mercurio. Aumenta el ritmo y aporta una ligera evasión que reduce el daño recibido.
+HOMUNCULUS_SILPHIDE_DESC,Mercury familiar. Adds Tempo and slight evasion (reduces incoming).,Homúnculo de mercurio. Aumenta el ritmo y aporta una ligera evasión que reduce el daño recibido.
 HOMUNCULUS_SODIUM_NAME,Sodi,Sodi
-HOMUNCULUS_SODIUM_DESC,Sodium familiar. Adds Guard and stabilizes extremes.,Familiar de sodio. Aumenta la defensa y suaviza los extremos.
+HOMUNCULUS_SODIUM_DESC,Sodium familiar. Adds Guard and stabilizes extremes.,Homúnculo de sodio. Aumenta la defensa y suaviza los extremos.
 HOMUNCULUS_DRAKON_NAME,Drakon,Drakon
-HOMUNCULUS_DRAKON_DESC,Aether familiar. Tweaks rules: raises type advantage slightly for you.,Familiar de éter. Aumenta ligeramente tu ventaja de tipo.
+HOMUNCULUS_DRAKON_DESC,Aether familiar. Tweaks rules: raises type advantage slightly for you.,Homúnculo de éter. Aumenta ligeramente tu ventaja de tipo.
 HOMUNCULUS_PYRITC_NAME,Pyro,Pyro
-HOMUNCULUS_PYRITC_DESC,Vitriol familiar. Adds corrosion each round.,Familiar de vitriolo. Añade corrosión en cada ronda.
+HOMUNCULUS_PYRITC_DESC,Vitriol familiar. Adds corrosion each round.,Homúnculo de vitriolo. Añade corrosión en cada ronda.
 HOMUNCULUS_CHIMERA_NAME,Chimera,Chimera
-HOMUNCULUS_CHIMERA_DESC,Gold familiar. Adds reflect and discipline.,Familiar de oro. Aporta reflejo y disciplina.
+HOMUNCULUS_CHIMERA_DESC,Gold familiar. Adds reflect and discipline.,Homúnculo de oro. Aporta reflejo y disciplina.
 HOMUNCULUS_NIGHTY_NAME,Nighty,Nighty
-HOMUNCULUS_NIGHTY_DESC,Build-oriented familiar. Improves item effects slightly.,Familiar centrado en el equipo. Mejora ligeramente los efectos de los objetos.
+HOMUNCULUS_NIGHTY_DESC,Build-oriented familiar. Improves item effects slightly.,Homúnculo centrado en el equipo. Mejora ligeramente los efectos de los objetos.
 HOMUNCULUS_MOTHY_NAME,Mothy,Mothy
-HOMUNCULUS_MOTHY_DESC,Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).,Familiar antitáctico. Reduce ligeramente ambos multiplicadores de tipo y los acerca a la neutralidad.
+HOMUNCULUS_MOTHY_DESC,Anti-meta familiar. Slightly reduces BOTH type multipliers (more neutral).,Homúnculo antitáctico. Reduce ligeramente ambos multiplicadores de tipo y los acerca a la neutralidad.
 TECHNIQUE_ASSAULT_SIGIL_NAME,Assault Sigil,Sello de asalto
 TECHNIQUE_ASSAULT_SIGIL_DESC,"Round 1 burst: +Power, but lower Guard overall.","Explosión en la primera ronda: más potencia, pero menos defensa general."
 TECHNIQUE_PIERCING_RUNE_NAME,Piercing Rune,Runa perforante
@@ -212,3 +212,5 @@ SPELL_STRATEGIC_COUNTER_TRAP,"Counter Trap: retaliates for %d%% of direct spell 
 SPELL_STRATEGIC_WARD_CONVERT,"Consumes a pre-existing spell shield for %d%% of its max-HP value as direct damage, capped at 20%% of target HP. Shields gained by this spell are retained.","Consume un escudo de hechizo existente e inflige daño directo equivalente al %d%% de su valor en PV máximos, hasta el 20%% de los PV del objetivo. Conserva los escudos que otorga este hechizo."
 SPELL_STRATEGIC_HEAL_SUPPRESSION,Reduces enemy healing by 50% for two exchanges after casting.,Reduce un 50% la curación enemiga durante dos intercambios tras lanzarlo.
 SPELL_STRATEGIC_HOM_ENERGY_SIPHON,Transfers up to 2 homunculus energy; both combatants need an active homunculus and the recipient cannot exceed its maximum.,Transfiere hasta 2 de energía de homúnculo; ambos combatientes necesitan un homúnculo activo y el receptor no puede superar su máximo.
+STATUS_NAME_BURN_NAME,Burn,Quemadura
+STATUS_NAME_LETHARGY_NAME,Lethargy,Letargo

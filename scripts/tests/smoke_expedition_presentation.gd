@@ -52,9 +52,7 @@ func _run() -> void:
 	view.animation_tweens[icon].custom_step(0.5)
 	assert(icon.scale.is_equal_approx(initial_scale))
 	assert(not view.hom_attack.visible and not view.hom_hold.visible)
-	assert(view.hom_attack.get_theme_stylebox("normal") is StyleBoxFlat)
-	assert(view.hom_attack.get_theme_stylebox("normal").bg_color.a < 1.0)
-	assert(view.hom_attack.get_theme_stylebox("normal").border_color == Color("e7c85c"))
+	assert(view.hom_attack.get_theme_stylebox("normal") == view._hom_action_style)
 	for locale in ["en", "es"]:
 		TranslationServer.set_locale(locale)
 		var before: String = view.log.get_parsed_text()

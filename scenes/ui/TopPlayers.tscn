@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/top_players.gd" id="1"]
-[ext_resource type="Texture2D" path="res://assets/ui/new-elements/panel-con-detalles.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/ui/new-elements/betterui/panel_horizontal.png" id="2"]
 [ext_resource type="Theme" path="res://assets/ui/alchemy_kit/theme_alchemy.tres" id="3"]
 
 [node name="TopPlayers" type="Control"]

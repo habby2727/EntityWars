@@ -43,7 +43,7 @@ LAB_FAILURE_LABEL,Failed,Fallo
 LAB_START_EXPERIMENT,Start %s? Cost: %s,¿Iniciar %s? Coste: %s
 INVENTORY_TAB_ENTITIES,Entities,Entidades
 INVENTORY_TAB_BUILDS,Builds,Equipo
-INVENTORY_TAB_HOMUNCULI,Homunculi,Familiares
+INVENTORY_TAB_HOMUNCULI,Homunculi,Homúnculos
 INVENTORY_TAB_SPELLS,Spells,Hechizos
 INVENTORY_TAB_TECHS,Techs,Artes
 INVENTORY_NO_ENTRIES,No entries available.,No hay elementos disponibles.
@@ -51,13 +51,13 @@ INVENTORY_NO_DATA,No data available,No hay datos disponibles
 INVENTORY_ROW_LEVEL,Level %d / 10,Nivel %d / 10
 INVENTORY_ROW_UNAVAILABLE,Level unavailable,Nivel no disponible
 FORGE_CATALOG,WEAPONS CATALOG,ARMAS DISPONIBLES
-VAT_CATALOG,HOMUNCULUS CATALOG,FAMILIARES DISPONIBLES
+VAT_CATALOG,HOMUNCULUS CATALOG,HOMÚNCULOS DISPONIBLES
 LAB_OPEN_INVENTORY,Open Inventory,Abrir inventario
 VAT_MUTATIONS,Mutations,Mutaciones
 VAT_DESCRIPTION,"%s\nLevel %d / 10 | Mutation: %s\nCurrent: %s\nNext: %s\nMutations: Catalyst +1 Power | Vitality +5 HP | Resonance +3%% favorable type bonus\nSynergies:\n%s","%s\nNivel %d / 10 | Mutación: %s\nActual: %s\nSiguiente: %s\nMutaciones: Catalizador +1 potencia | Vitalidad +5 PV | Resonancia +3%% de daño favorable\nSinergias:\n%s"
 VAT_EQUIPPED,Currently equipped.,Actualmente equipada.
 VAT_SELECT,Select this mutation.,Selecciona esta mutación.
-FORGE_INFO,"%s\nSpecialization: %s | Unspent points: %d\n%s\nBase (Lv 0): %s\nLv 1: %s\nLv 2: %s\nCurrent: %s\nNext: %s","%s\nEspecialización: %s | Puntos sin gastar: %d\n%s\nBase (Nv 0): %s\nNv 1: %s\nNv 2: %s\nActual: %s\nSiguiente: %s"
+FORGE_INFO,"%s\nSpecialization: %s | Unspent points: %d%s\nBase (Lv 0): %s | Lv 1: %s | Lv 2: %s\nCurrent: %s | Next: %s","%s\nEspecialización: %s | Puntos sin gastar: %d%s\nBase (Nv 0): %s | Nv 1: %s | Nv 2: %s\nActual: %s | Siguiente: %s"
 FORGE_STATUS,Level %d / 10 | Next: %s | Essence: %d / %d,Nivel %d / 10 | Siguiente: %s | Esencia: %d / %d
 FORGE_AGGRESSIVE,Aggressive,Agresiva
 FORGE_DEFENSIVE,Defensive,Defensiva
@@ -220,7 +220,7 @@ LAB_OFFLINE_ESTIMATE,Unverified Offline (backend offline; estimates capped to 1h
 SPELL_FEATURED_HEADER,Daily Featured Research -%d%%\nRotation in %02d:%02d:%02d%s,Investigación destacada del día -%d%%\nRenovación en %02d:%02d:%02d%s
 SPELL_AWAITING_TIME, (awaiting server time), (esperando la hora del servidor)
 LAB_UNLOCK_BUILDING,%s\nUnlock at HQ Lv %s,%s\nSe desbloquea al nivel %s de la sala
-LAB_ACTION_UPGRADE_HOMUNCULUS,Upgrade Homunculus,Mejorar familiar
+LAB_ACTION_UPGRADE_HOMUNCULUS,Upgrade Homunculus,Mejorar homúnculo
 LAB_ACTION_REROLL,Reroll,Nueva tirada
 LAB_ACTION_NOT_IMPLEMENTED,Not implemented on the server.,Aún no disponible en el servidor.
 LAB_ACTION_UPGRADE_TALISMAN,Upgrade selected talisman,Mejorar el talismán seleccionado

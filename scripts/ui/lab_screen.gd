@@ -70,6 +70,8 @@ var _spell_server_offset_ms := 0
 var _spell_state_synced := false
 var _spell_filter := "All"
 var _spell_info: Control
+var _spell_info_panel: PanelContainer
+var _spell_info_layout_queued := false
 var _spell_info_title: Label
 var _spell_info_text: Label
 var _specialized_panel
@@ -149,6 +151,9 @@ func _ready() -> void:
 	_debug.reload()
 	_resolve_nodes()
 	_setup_compact_navigation()
+	var forest_return = preload("res://scripts/ui/forest_return_button.gd").attach($Background/ContentMargin/RootHBox/LeftPanel/Margin/LeftVBox/TopRow)
+	if forest_return != null:
+		forest_return.get_parent().move_child(forest_return, 1)
 	_setup_building_actions_layout()
 	_setup_section_scrolls()
 	_apply_ui_scale()
@@ -220,11 +225,7 @@ func _setup_compact_navigation() -> void:
 	if navigation_back != null:
 		navigation_back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		MenuArt.button(navigation_back)
-	var background := StyleBoxFlat.new()
-	background.bg_color = Color(0.02, 0.07, 0.08, 0.9)
-	background.border_color = Color(0.47, 0.4, 0.25, 0.8)
-	background.set_border_width_all(1)
-	_right_panel.add_theme_stylebox_override("panel", background)
+	_right_panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png"))
 	for button in [_upgrade_btn, _route_btn, _claim_btn, _open_btn]:
 		if button:
 			button.custom_minimum_size = Vector2(100, 42)
@@ -775,17 +776,13 @@ func _build_spell_info() -> void:
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_spell_info.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_spell_info.add_child(center)
 	var panel := PanelContainer.new()
+	_spell_info_panel = panel
 	panel.custom_minimum_size = Vector2(650, 400)
-	if OS.has_feature("android"):
-		var resize_panel := func(): panel.custom_minimum_size = get_viewport_rect().size * Vector2(0.9, 0.88)
-		center.resized.connect(resize_panel)
-		resize_panel.call()
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
-	center.add_child(panel)
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(60, 65, 60, 48)))
+	_spell_info.add_child(panel)
+	panel.minimum_size_changed.connect(_queue_spell_info_layout)
+	_spell_info.resized.connect(_queue_spell_info_layout)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 12)
 	panel.add_child(content)
@@ -807,10 +804,6 @@ func _build_spell_info() -> void:
 	MenuArt.button(close)
 	close.pressed.connect(_spell_info.hide)
 	header.add_child(close)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	content.add_child(scroll)
 	_spell_info_text = Label.new()
 	_spell_info_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -818,14 +811,46 @@ func _build_spell_info() -> void:
 		_spell_info_text.add_theme_font_size_override("font_size", 50)
 		_spell_info_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_spell_info_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		_spell_info_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_spell_info_text)
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		content.add_child(scroll)
+		scroll.add_child(_spell_info_text)
+	else:
+		content.add_child(_spell_info_text)
+
+func _queue_spell_info_layout() -> void:
+	if _spell_info_layout_queued:
+		return
+	_spell_info_layout_queued = true
+	_layout_spell_info.call_deferred()
+
+func _layout_spell_info() -> void:
+	_spell_info_layout_queued = false
+	if not is_instance_valid(_spell_info_panel) or not _spell_info.visible:
+		return
+	if OS.has_feature("android"):
+		_spell_info_panel.scale = Vector2.ONE
+		_spell_info_panel.size = _spell_info.size * Vector2(0.9, 0.88)
+		_spell_info_panel.position = (_spell_info.size - _spell_info_panel.size) * 0.5
+		return
+	var available := _spell_info.size - Vector2(48, 48)
+	if available.x <= 0 or available.y <= 0:
+		return
+	var minimum := _spell_info_panel.get_combined_minimum_size()
+	var width := maxf(minimum.x, minf(1100.0, available.x))
+	var height := maxf(400.0, minimum.y)
+	var factor := minf(1.0, minf(available.x / width, available.y / height))
+	_spell_info_panel.scale = Vector2.ONE * factor
+	_spell_info_panel.size = Vector2(width, height)
+	_spell_info_panel.position = (_spell_info.size - _spell_info_panel.size * factor) * 0.5
 
 func _show_spell_info(spell: Dictionary) -> void:
 	_spell_info.set_meta("spell", spell)
 	_spell_info_title.text = GameLocalization.catalog("spell", str(spell.get("id", "")), "name", str(spell.get("name", "")))
 	_spell_info_text.text = SpellView.detail(spell, "Research")
 	_spell_info.show()
+	_queue_spell_info_layout()
 
 func _spell_entity_id() -> String:
 	if _spell_entity_selector == null or _spell_entity_selector.selected < 0:
@@ -856,6 +881,8 @@ func _build_spell_rows() -> void:
 			current_group = group
 			var group_label := Label.new()
 			group_label.text = "SPELL_GROUP_INITIAL" if group == "Initial Spells" else "SPELL_FILTER_" + group.to_upper()
+			group_label.set_meta("medieval_sharp_font", true)
+			group_label.add_theme_font_size_override("font_size", 18)
 			_spell_list.add_child(group_label)
 		var panel := PanelContainer.new()
 		var style := StyleBoxFlat.new()
@@ -870,7 +897,7 @@ func _build_spell_rows() -> void:
 		var name_label := Label.new()
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		var types := SpellView.affinity(spell)
-		name_label.set_meta("localization_body_font", true)
+		name_label.set_meta("medieval_sharp_font", true)
 		name_label.text = "%s  |  %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), types]
 		name_label.add_theme_font_size_override("font_size", 18)
 		if OS.has_feature("android"):
@@ -879,18 +906,21 @@ func _build_spell_rows() -> void:
 		row.add_child(name_label)
 		var actions := HBoxContainer.new()
 		var status := Label.new()
+		status.set_meta("medieval_sharp_font", true)
+		status.add_theme_font_size_override("font_size", 16)
 		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		actions.add_child(status)
 		var info := Button.new()
 		info.text = "i"
 		info.tooltip_text = "SPELL_DETAILS"
-		info.custom_minimum_size = Vector2(38, 34)
-		MenuArt.button(info)
+		_style_spell_info_button(info)
 		info.pressed.connect(_show_spell_info.bind(spell))
 		actions.add_child(info)
 		var button := Button.new()
 		button.text = "SPELL_RESEARCH"
+		button.set_meta("medieval_sharp_font", true)
+		button.add_theme_font_size_override("font_size", 16)
 		button.custom_minimum_size = Vector2(110, 34)
 		MenuArt.button(button)
 		button.pressed.connect(_on_spell_research_pressed.bind(str(spell.id)))
@@ -898,6 +928,21 @@ func _build_spell_rows() -> void:
 		row.add_child(actions)
 		_spell_list.add_child(panel)
 		_spell_rows[str(spell.id)] = {"spell": spell, "status": status, "button": button, "name": name_label, "base_name": name_label.text}
+
+func _style_spell_info_button(button: Button) -> void:
+	button.set_meta("medieval_sharp_font", true)
+	button.custom_minimum_size = Vector2(38, 36) if OS.has_feature("android") else Vector2(36, 36)
+	button.add_theme_font_size_override("font_size", 20)
+	button.add_theme_color_override("font_color", Color("c3efff"))
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("173e52") if state in ["hover", "pressed"] else Color("0a202e")
+		style.border_color = Color("a7efff") if state in ["hover", "focus"] else Color("55b5d0")
+		style.set_border_width_all(2)
+		style.set_corner_radius_all(18)
+		style.set_content_margin_all(2)
+		button.add_theme_stylebox_override(state, style)
 
 func _featured_spell_ids(entity_type: String, tower_level: int, now_ms: int, rotation_seconds: int) -> Array[String]:
 	var result: Array[String] = []
@@ -2174,3 +2219,6 @@ func _make_panel_style(tex: Texture2D) -> StyleBoxTexture:
 	sb.texture = tex
 	UIThemeFactory._configure_stylebox(sb)
 	return sb
+
+func forest_return_safe() -> bool:
+	return _pending_by_id.is_empty() and _pending_action_to_building.is_empty()

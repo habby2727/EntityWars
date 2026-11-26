@@ -1,6 +1,8 @@
 extends CanvasLayer
 
 const MenuArt = preload("res://scripts/ui/menu_art.gd")
+const SocialGlyph = preload("res://scripts/ui/social_glyph.gd")
+const SocialSpanishFont = preload("res://scripts/ui/social_spanish_font.gd")
 const DISCORD_INVITE := "https://discord.gg/W2mrgZ69r9"
 
 var _button: Button
@@ -31,6 +33,7 @@ func _process(_delta: float) -> void:
 			_resize_to_viewport()
 
 func _ready() -> void:
+	SpectatorClient.failed.connect(func(key): if is_instance_valid(_status): _status.text = tr(key))
 	layer = 40
 	var anchor := Control.new()
 	anchor.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -67,6 +70,7 @@ func _ready() -> void:
 	# The project typography applies deferred; use the platform emoji font for this glyph.
 	_set_emoji_font.call_deferred()
 	_panel = PanelContainer.new()
+	_panel.set_meta("global_chat_font", true)
 	_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	if _android_ui():
 		_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -170,6 +174,7 @@ func _ready() -> void:
 	row.add_child(_send_button)
 	GlobalChatClient.updated.connect(_refresh)
 	GlobalChatClient.send_finished.connect(_send_finished)
+	SocialClient.state_changed.connect(_refresh_social)
 	_panel.hide()
 	get_viewport().size_changed.connect(_resize_to_viewport)
 	_resize_to_viewport()
@@ -239,6 +244,31 @@ func _refresh_online_list() -> void:
 	for child in _online_list.get_children():
 		_online_list.remove_child(child)
 		child.queue_free()
+	if SocialClient.enabled:
+		if not SocialClient.error_key.is_empty():
+			var status := Label.new()
+			status.text = tr(SocialClient.error_key)
+			status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_online_list.add_child(status)
+			SocialSpanishFont.apply(status, status.text)
+		if not SocialClient._pending_body.is_empty():
+			var retry := Button.new()
+			retry.text = tr("SOCIAL_RETRY_BUTTON")
+			retry.custom_minimum_size.y = 68
+			retry.disabled = SocialClient._mutation_busy
+			retry.pressed.connect(func(): SocialClient.retry_mutation())
+			_online_list.add_child(retry)
+		if not SocialClient.incoming.is_empty():
+			var heading := Label.new()
+			heading.text = tr("SOCIAL_INCOMING")
+			_online_list.add_child(heading)
+			for request in SocialClient.incoming:
+				var request_button := Button.new()
+				request_button.text = str(request.requester_name) + " · " + tr("SOCIAL_REVIEW")
+				request_button.custom_minimum_size.y = 68
+				request_button.pressed.connect(SocialClient._popup.open_request.bind(str(request.request_id)))
+				_online_list.add_child(request_button)
+				SocialSpanishFont.apply(request_button, request_button.text)
 	for player in GlobalChatClient.online_players:
 		if not player is Dictionary:
 			continue
@@ -252,12 +282,40 @@ func _refresh_online_list() -> void:
 			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			row.add_child(icon)
+		if SocialClient.enabled and bool(player.get("is_friend", false)):
+			var glyph := SocialGlyph.new()
+			glyph.custom_minimum_size = Vector2(24, 24)
+			row.add_child(glyph)
 		var username := Label.new()
 		username.text = str(player.get("username", ""))
 		username.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		username.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(username)
+		var player_id := str(player.get("player_id", ""))
+		if bool(player.get("is_friend", false)) and player.get("spectatable_activity") in ["ranked", "friendly", "practice", "hunt", "dungeon", "expedition"]:
+			var eye := Button.new()
+			eye.custom_minimum_size = Vector2(46, 46)
+			eye.tooltip_text = tr("SPECTATE")
+			var glyph: Control = preload("res://scripts/ui/spectator_eye.gd").new()
+			glyph.position = Vector2(10, 10)
+			glyph.size = Vector2(26, 26)
+			eye.add_child(glyph)
+			eye.pressed.connect(SpectatorClient.start.bind(player_id, str(player.get("username", ""))))
+			row.add_child(eye)
+		if SocialClient.enabled and not player_id.is_empty():
+			var incoming := SocialClient.incoming_for(player_id)
+			if not incoming.is_empty():
+				var action := Button.new()
+				action.custom_minimum_size = Vector2(72, 68)
+				action.disabled = SocialClient._mutation_busy or not SocialClient._pending_body.is_empty()
+				action.text = tr("SOCIAL_REVIEW")
+				action.pressed.connect(SocialClient._popup.open_request.bind(str(incoming.request_id)))
+				row.add_child(action)
 	_restore_online_scroll.call_deferred(old_scroll)
+
+func _refresh_social() -> void:
+	if is_instance_valid(_online_panel) and _online_panel.visible:
+		_refresh_online_list()
 
 func _restore_online_scroll(value: int) -> void:
 	if is_instance_valid(_online_scroll):

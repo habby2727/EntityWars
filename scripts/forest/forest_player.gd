@@ -1,0 +1,176 @@
+extends Node2D
+
+signal exit_attempt(direction: String, foot: Vector2, candidate: Vector2)
+
+const SPEED := 220.0
+const MAX_STEP := 2.0
+const SUMMONER_DIR := "res://assets/forest/summoners/"
+const FILES := {
+	"wizard": ["Wizard_front.png", "Wizard_side_right.png", "Wizard_back.png"],
+	"witch": ["Witch_Front.png", "Witch_Side_Right.png", "Witch_Back.png"],
+	"cyberghost": ["Cyberghost_Front.png", "Cyberghost_Side_Right.png", "Cyberghost_Back.png"]
+}
+var polygon := PackedVector2Array()
+var textures: Array[Texture2D] = []
+var bounds: Array[Rect2i] = []
+var sprite_scale := 1.0
+var facing := 0 # 0 front, 1 right, 2 back, 3 left
+var joystick_vector := Vector2.ZERO
+var blocked_point := Vector2.ZERO
+var blocked_visible := false
+var show_debug := false
+var _bob_time := 0.0
+var exit_pending := false
+var transition_locked := false
+var dialogue_locked := false
+var _held_keys: Array[int] = []
+var _display_name := ""
+var _nameplate: Label
+
+const KEY_DIRECTIONS := {KEY_W: Vector2.UP, KEY_UP: Vector2.UP, KEY_S: Vector2.DOWN, KEY_DOWN: Vector2.DOWN, KEY_A: Vector2.LEFT, KEY_LEFT: Vector2.LEFT, KEY_D: Vector2.RIGHT, KEY_RIGHT: Vector2.RIGHT}
+
+func _input(event: InputEvent) -> void:
+	if not event is InputEventKey or event.echo:
+		return
+	var code: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+	if code not in KEY_DIRECTIONS:
+		return
+	if not event.pressed:
+		_held_keys.erase(code)
+		return
+	var focus := get_viewport().gui_get_focus_owner()
+	if dialogue_locked or focus is LineEdit or focus is TextEdit:
+		return
+	_held_keys.erase(code)
+	_held_keys.append(code)
+
+func setup(summoner_id: String) -> void:
+	var max_height := 0
+	for file in FILES[summoner_id]:
+		var texture := load(SUMMONER_DIR + file) as Texture2D
+		textures.append(texture)
+		var rect := texture.get_image().get_used_rect()
+		bounds.append(rect)
+		max_height = maxi(max_height, rect.size.y)
+	# A single scale for all directions keeps each character's proportions stable.
+	sprite_scale = 120.0 / maxf(1.0, max_height)
+	if not is_instance_valid(_nameplate):
+		_nameplate = Label.new()
+		_nameplate.name = "Nameplate"
+		_nameplate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_nameplate.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		_nameplate.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_nameplate.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_nameplate.clip_text = true
+		_nameplate.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		_nameplate.add_theme_font_size_override("font_size", 22)
+		_nameplate.add_theme_color_override("font_color", Color.WHITE)
+		_nameplate.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		_nameplate.add_theme_constant_override("outline_size", 4)
+		add_child(_nameplate)
+	_nameplate.position = Vector2(-150, -max_height * sprite_scale - 44)
+	_nameplate.size = Vector2(300, 30)
+	_nameplate.text = _display_name
+	_nameplate.visible = not _display_name.is_empty()
+	queue_redraw()
+
+# Retains the full value; the label clips visually without parsing markup.
+func set_display_name(value: String) -> void:
+	_display_name = value
+	if is_instance_valid(_nameplate):
+		_nameplate.text = value
+		_nameplate.visible = not value.is_empty()
+
+func _process(delta: float) -> void:
+	_bob_time += delta
+	if exit_pending or transition_locked or dialogue_locked:
+		queue_redraw()
+		return
+	var input := joystick_vector
+	var keyboard := Vector2.ZERO
+	var focus := get_viewport().gui_get_focus_owner()
+	if not (focus is LineEdit or focus is TextEdit):
+		keyboard = Vector2(
+			int(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)) - int(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
+			int(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)) - int(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
+		input = (input + keyboard).limit_length(1.0)
+	if input.length_squared() > 0.0001:
+		_update_facing(input, keyboard)
+		move_by(input * SPEED * minf(delta, 0.25))
+	else:
+		blocked_visible = false
+	queue_redraw()
+
+func _update_facing(input: Vector2, keyboard: Vector2 = Vector2.ZERO) -> void:
+	# The last still-active key wins on keyboard diagonals, including aliases.
+	for i in range(_held_keys.size() - 1, -1, -1):
+		var direction: Vector2 = KEY_DIRECTIONS[_held_keys[i]]
+		if (direction.x != 0 and keyboard.x == direction.x) or (direction.y != 0 and keyboard.y == direction.y):
+			if direction.x != 0:
+				facing = 1 if direction.x > 0 else 3
+			else:
+				facing = 0 if direction.y > 0 else 2
+			return
+	var horizontal := absf(input.x)
+	var vertical := absf(input.y)
+	# Retain the current axis on equal diagonals to avoid jittering between sprites.
+	var use_horizontal := horizontal > vertical * 1.15 or (horizontal >= vertical / 1.15 and facing in [1, 3])
+	if use_horizontal:
+		facing = 1 if input.x >= 0.0 else 3
+	else:
+		facing = 2 if input.y < 0.0 else 0
+
+func move_by(displacement: Vector2) -> void:
+	if polygon.size() < 3 or exit_pending or transition_locked or dialogue_locked:
+		return
+	var steps := maxi(1, ceili(displacement.length() / MAX_STEP))
+	var step := displacement / steps
+	blocked_visible = false
+	for i in steps:
+		var candidate := position + step
+		if Geometry2D.is_point_in_polygon(candidate, polygon):
+			position = candidate
+			continue
+		# A crossing may have a tangential component, but never cross a corner.
+		var direction := ""
+		if candidate.x >= 0.0 and candidate.x <= 1920.0:
+			if displacement.y < 0.0 and candidate.y <= 0.0:
+				direction = "north"
+			elif displacement.y > 0.0 and candidate.y >= 1080.0:
+				direction = "south"
+		if candidate.y >= 0.0 and candidate.y <= 1080.0:
+			if displacement.x < 0.0 and candidate.x <= 0.0:
+				direction = "west"
+			elif displacement.x > 0.0 and candidate.x >= 1920.0:
+				direction = "east"
+		if not direction.is_empty():
+			exit_attempt.emit(direction, position, candidate)
+			if exit_pending:
+				return
+		blocked_point = candidate
+		blocked_visible = true
+		var along_x := position + Vector2(step.x, 0)
+		if Geometry2D.is_point_in_polygon(along_x, polygon):
+			position = along_x
+		var along_y := position + Vector2(0, step.y)
+		if Geometry2D.is_point_in_polygon(along_y, polygon):
+			position = along_y
+
+func _draw() -> void:
+	if textures.is_empty():
+		return
+	# Ellipse rendered in reference space; its position never follows the bob.
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.34))
+	draw_circle(Vector2.ZERO, 27.0, Color(0.01, 0.02, 0.02, 0.35))
+	draw_set_transform(Vector2.ZERO)
+	var texture_index := 1 if facing == 3 else facing
+	var used := bounds[texture_index]
+	var bob := sin(_bob_time * 2.8) * 2.0
+	var direction_scale := Vector2(-sprite_scale if facing == 3 else sprite_scale, sprite_scale)
+	draw_set_transform(Vector2(0, -5.0 + bob), 0.0, direction_scale)
+	draw_texture(textures[texture_index], Vector2(-used.get_center().x, -used.end.y))
+	draw_set_transform(Vector2.ZERO)
+	if show_debug:
+		draw_circle(Vector2.ZERO, 6.0, Color.YELLOW)
+		if blocked_visible:
+			draw_circle(blocked_point - position, 7.0, Color.RED)

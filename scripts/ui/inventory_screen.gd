@@ -76,6 +76,7 @@ func _ready() -> void:
 	_apply_panel_background()
 	_setup_inventory_layout()
 	_connect_buttons()
+	preload("res://scripts/ui/forest_return_button.gd").attach($Background/Margin/RootVBox/Header)
 	_return_to_lab = SceneRouter.consume_inventory_return_to_lab()
 	_entry_group.allow_unpress = false
 	_load_registry()
@@ -157,7 +158,7 @@ func _setup_inventory_layout() -> void:
 	_detail_panel = PanelContainer.new()
 	_detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_detail_panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-informativo-small.png", Vector4(95, 155, 80, 60)))
+	_detail_panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_vertical.png", Vector4(40, 45, 40, 35)))
 	_tab_layouts[0].add_child(_detail_panel)
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -173,7 +174,7 @@ func _setup_inventory_layout() -> void:
 	header.add_theme_constant_override("separation", 18)
 	content.add_child(header)
 	var icon_frame := UIThemeFactory.make_icon_slot() as TextureRect
-	icon_frame.texture = load(MenuArt.DIR + "marco-slot-small.png")
+	icon_frame.texture = load(MenuArt.DIR + "betterui/panel_vertical.png")
 	icon_frame.custom_minimum_size = Vector2(224, 224)
 	header.add_child(icon_frame)
 	_detail_icon = icon_frame.get_node("Icon") as TextureRect
@@ -635,7 +636,7 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	select.add_child(row)
 	var icon_slot := UIThemeFactory.make_icon_slot() as TextureRect
-	icon_slot.texture = load(MenuArt.DIR + "marco-slot-small.png")
+	icon_slot.texture = load(MenuArt.DIR + "betterui/panel_vertical.png")
 	icon_slot.custom_minimum_size = Vector2(58, 58)
 	if _android_ui():
 		icon_slot.custom_minimum_size = Vector2(80, 80)
@@ -655,6 +656,7 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	var title := Label.new()
 	title.name = "EntryTitle"
 	title.set_meta("localization_body_font", true)
+	title.add_theme_font_size_override("font_size", 11)
 	title.text = _extract_name(entry)
 	if _android_ui():
 		title.add_theme_font_size_override("font_size", 22)
@@ -666,7 +668,7 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 	if entry is Dictionary and entry.get("kind") == "build":
 		var item_level := Label.new()
 		item_level.name = "ItemLevel"
-		item_level.add_theme_font_size_override("font_size", 12)
+		item_level.add_theme_font_size_override("font_size", 9)
 		if _android_ui():
 			item_level.add_theme_font_size_override("font_size", 19)
 		item_level.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -676,14 +678,14 @@ func _make_entry_row(entry: Variant, _include_costs: bool = false) -> Control:
 		var hom_status := _hom_status(entry)
 		var subtitle := Label.new()
 		subtitle.text = tr("HOM_STATUS_" + hom_status.to_upper())
-		subtitle.add_theme_font_size_override("font_size", 12)
+		subtitle.add_theme_font_size_override("font_size", 9)
 		text_column.add_child(subtitle)
 	if entry is Dictionary and entry.get("kind") == "spell":
 		var status := str(entry.get("spell_status", "Unknown"))
 		var subtitle := Label.new()
 		subtitle.name = "SpellStatus"
 		subtitle.text = "%s  |  %s" % [SpellView.affinity(entry), SpellView.state_label(status)]
-		subtitle.add_theme_font_size_override("font_size", 12)
+		subtitle.add_theme_font_size_override("font_size", 9)
 		if _android_ui():
 			subtitle.add_theme_font_size_override("font_size", 19)
 			subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -912,3 +914,6 @@ func _add_placeholder(container: Control) -> void:
 func _hom_status(entry: Dictionary) -> String:
 	var id := str(entry.get("id", ""))
 	return HomProgress.collection_status(id, _registry != null and _registry.get_homunculi().has(id), _hom_progress, _hom_progress_known)
+
+func forest_return_safe() -> bool:
+	return true

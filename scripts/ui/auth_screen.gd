@@ -15,6 +15,7 @@ var username: Array[LineEdit] = []
 var password: Array[LineEdit] = []
 var confirm: LineEdit
 var message: Label
+var logout_notice: Label
 var submit_buttons: Array[Button] = []
 var retry: Button
 var debug_button: Button
@@ -37,6 +38,10 @@ func _ready() -> void:
 	client._load_auth()
 	_saved_session = not client.token.is_empty()
 	_build_ui()
+	if not SceneRouter.logout_notice.is_empty():
+		logout_notice.text = tr(SceneRouter.logout_notice)
+		logout_notice.show()
+		SceneRouter.logout_notice = ""
 	_auth_center.visible = not _saved_session
 	client.base_url = preload("res://scripts/net/backend_endpoint.gd").resolve(client.base_url)
 	var url := client.base_url.to_lower()
@@ -193,6 +198,11 @@ func _build_ui() -> void:
 		pass_field.text_submitted.connect(func(_text: String): _submit(index))
 		if index == 1:
 			confirm.text_submitted.connect(func(_text: String): _submit(index))
+	logout_notice = Label.new()
+	logout_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	logout_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	logout_notice.hide()
+	box.add_child(logout_notice)
 	message = Label.new()
 	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

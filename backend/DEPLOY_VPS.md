@@ -50,7 +50,9 @@ curl -fsS https://<nombre_dns>/health
 curl -i https://<nombre_dns>/metrics
 ```
 
-Comprueba `postgres: up` y `redis: up` en el JSON, y 404 para `/metrics`. `/health` devuelve HTTP 200 incluso con dependencias caídas: el chequeo del contenedor inspecciona ambos campos. API, PostgreSQL y Redis no publican puertos. CORS no autoriza orígenes web; un cliente nativo no necesita CORS. No cambies `DEBUG_BYPASS`, `DEV_DOCKER_LOCAL_LOGIN` ni el modo production. El límite de clientes es 5504. Solo hay una API; las migraciones SQLite y PostgreSQL se ejecutan antes de cada arranque y un fallo impide iniciarla.
+Comprueba `postgres: up` y `redis: up` en el JSON, y 404 para `/metrics`. `/health` devuelve HTTP 200 incluso con dependencias caídas: el chequeo del contenedor inspecciona ambos campos. API, PostgreSQL y Redis no publican puertos. CORS no autoriza orígenes web; un cliente nativo no necesita CORS. No cambies `DEBUG_BYPASS`, `DEV_DOCKER_LOCAL_LOGIN` ni el modo production. El límite de clientes es 5510. Solo hay una API; las migraciones SQLite y PostgreSQL se ejecutan antes de cada arranque y un fallo impide iniciarla.
+
+El bosque WebSocket está desactivado por defecto. Activa `FOREST_WS_ENABLED=1` solo después de desplegar y validar F4B. Las API habilitadas deben compartir el mismo Redis primario: una concesión exclusiva impide que dos procesos mantengan salas a la vez, y su pérdida detiene el proceso. Esta concesión depende de un único primario Redis; una conmutación por error que pierda escrituras puede perder la concesión y no ofrece garantías de consenso. Caddy es el único proxy de confianza configurado para el límite de conexiones del bosque.
 
 Límites máximos configurados: API 768 MiB, PostgreSQL 512 MiB, Redis 256 MiB y Caddy 192 MiB (1728 MiB en total). Redis limita datos a 128 MB y usa `noeviction`: al llenarse rechaza escrituras, por lo que hay que vigilarlo. AOF con `everysec` puede perder aproximadamente un segundo de escrituras ante un fallo brusco. Los límites no reservan memoria; deja espacio para Ubuntu, Docker, caché y picos. Observa memoria, disco y crecimiento de PostgreSQL. El worker no es necesario para el juego actual: las acciones encolan trabajos de auditoría de ejemplo que permanecerán en PostgreSQL y pueden hacer crecer la tabla `jobs`; monitorízala y define una política operativa antes de una beta grande. No borres datos automáticamente.
 
@@ -63,7 +65,7 @@ $env:ENTITYWARS_BACKEND_URL = 'https://<nombre_dns>'
 & '<ruta_al_ejecutable_de_Entity_Wars.exe>'
 ```
 
-Usa el nombre real del certificado, sin barra final. La pantalla de acceso usa `/auth/register` y `/auth/login`; los accesos de desarrollo no funcionan en producción. El ejecutable debe enviar `X-EntityWars-Client-Build` con un valor al menos 5504. Revisa que la compilación distribuida incluya esa cabecera.
+Usa el nombre real del certificado, sin barra final. La pantalla de acceso usa `/auth/register` y `/auth/login`; los accesos de desarrollo no funcionan en producción. El ejecutable debe enviar `X-EntityWars-Client-Build` con un valor al menos 5510. Revisa que la compilación distribuida incluya esa cabecera.
 
 ## 5. Actualizar, copias y recuperación
 
@@ -106,6 +108,6 @@ Examina migraciones, `PRAGMA integrity_check` de SQLite con herramientas apropia
 - **Redis:** revisa logs, contraseña y memoria; `noeviction` produce errores de escritura cuando se llena. No borres sesiones para ocultar el problema.
 - **PostgreSQL:** revisa logs, disco, credenciales originales, conexiones y migraciones. Cambiar `.env.prod` no rota la contraseña ya guardada.
 - **SQLite:** revisa espacio, permisos del volumen y logs de migración; conserva juntos `.sqlite`, `-wal` y `-shm`. No copies ni edites la base activa.
-- **VERSION-GATE / 426:** comprueba la cabecera `X-EntityWars-Client-Build`, el valor mínimo 5504 y `/static/version`. Actualiza el cliente cuando corresponda; no reduzcas el mínimo para evitar el control.
+- **VERSION-GATE / 426:** comprueba la cabecera `X-EntityWars-Client-Build`, el valor mínimo 5510 y `/static/version`. Actualiza el cliente cuando corresponda; no reduzcas el mínimo para evitar el control.
 
 Las credenciales de aplicación de ejemplo y la restauración no se consideran validadas hasta probar el flujo completo con datos aislados y registrar el resultado.

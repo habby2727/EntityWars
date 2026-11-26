@@ -306,11 +306,11 @@ test("minion stun and poison expire independently without affecting the other mi
   for (let turn = 1; turn <= 3; turn++) state = resolveCombatTurn(state, { turn, spell_id: "cinder_fist", target: "boss" }, () => 0.99).next_state;
   state.minions[0].status = { stun: 1, poison: 2 };
   const result = resolveCombatTurn(state, { turn: 4, spell_id: "cinder_fist", target: "minion_1" }, () => 0.99);
-  expect(result.next_state.minions[0].hp).toBe(21);
+  expect(result.next_state.minions[0].hp).toBe(23);
   expect(result.next_state.minions[0].status.stun).toBe(0);
   expect(result.events.filter((e: any) => e.kind === "status_consumed" && e.target === "minion_0" && e.status === "stun")).toHaveLength(1);
   expect(result.next_state.minions[0].status.poison).toBe(1);
-  expect(result.events.some((e: any) => e.kind === "status_tick" && e.target === "minion_0" && e.damage === 3 && e.hp === 21 && e.remaining === 1)).toBe(true);
+  expect(result.events.some((e: any) => e.kind === "status_tick" && e.target === "minion_0" && e.damage === 1 && e.hp === 23 && e.remaining === 1)).toBe(true);
   expect(result.events.find((e: any) => e.kind === "status_snapshot" && e.target === "minion_0").status).toEqual({ stun: 0, poison: 1 });
   expect(result.next_state.minions[1].hp).toBe(24);
   expect(result.events.filter((e: any) => e.kind === "minion_attack").map((e: any) => e.actor)).toEqual(["minion_1"]);
@@ -334,7 +334,7 @@ test("poison ticks once for each living fighter even while boss is protected", (
   const result = resolveCombatTurn(state, decision, () => 0.99);
   const ticks = result.events.filter((e: any) => e.kind === "status_tick");
   expect(ticks.map((e: any) => e.target)).toEqual(["player", "boss", "minion_0", "minion_1"]);
-  expect(ticks.map((e: any) => e.damage)).toEqual([3, 1, 1, 3]);
+  expect(ticks.map((e: any) => e.damage)).toEqual([3, 1, 1, 1]);
   expect(ticks.every((e: any) => e.remaining === 0)).toBe(true);
   expect(result.terminal_result).toBeNull();
   expect(result.next_state.minions[1].hp).toBeGreaterThan(0);
@@ -362,7 +362,7 @@ test("reflection poison transitions reflect changes and ignored effects", () => 
   const decision = { turn: 1, spell_id: "cinder_fist", target: "boss" };
   const state = make();
   const hit = resolveCombatTurn(state, decision, () => 0.5);
-  expect(hit.events.filter((e: any) => e.kind === "status_applied" && e.source === "poison_on_reflect")).toMatchObject([{ target: "player", previous: 0, value: 2 }]);
+  expect(hit.events.filter((e: any) => e.kind === "status_applied" && e.source === "poison_on_reflect")).toMatchObject([{ target: "player", previous: 0, value: 3 }]);
   expect(hit.events.filter((e: any) => e.kind === "status_consumed" && e.status === "poison_on_reflect")).toMatchObject([{ target: "boss", previous: 2, value: 0, ignored: false }]);
   expect(resolveCombatTurn(state, decision, () => 0.5)).toEqual(hit);
   const ignored = make(); ignored.item_effects.ignore_reflect_chance = 1;
@@ -709,7 +709,7 @@ test("six elemental procs resolve and update combat state", () => {
     expect(result.events.some((e: any) => e.kind === "elemental_proc" && e.type === type)).toBe(true);
     if (type === "mercury") expect(result.next_state.player.hp).toBe(90);
     if (type === "aether") expect(result.next_state.boss.status.vuln_pct).toBe(0.12);
-    if (type === "vitriol") expect(result.next_state.boss.status.poison).toBe(1);
+    if (type === "vitriol") expect(result.next_state.boss.status.poison).toBe(2);
     if (type === "gold") expect(result.next_state.player.hp).toBeGreaterThan(79);
     if (type === "sodium") expect(result.next_state.player.hp).toBeGreaterThan(79);
     if (type === "sulfur") expect(result.next_state.player.hp).toBeGreaterThan(79);
@@ -749,9 +749,9 @@ test("validated Mercury and Sodium defensive spells", () => {
   expect(barrierProc.next_state.boss.status.shield_pct).toBe(0.12);
   const injured = sodium(); injured.player.hp = 50;
   const healed = cast(injured, "brine_mend");
-  expect(healed.next_state.player.hp).toBe(57);
-  expect(healed.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(15);
-  expect(healed.events.find((e: any) => e.kind === "heal" && e.actor === "player").amount).toBe(15);
+  expect(healed.next_state.player.hp).toBe(49);
+  expect(healed.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(7);
+  expect(healed.events.find((e: any) => e.kind === "heal" && e.actor === "player").amount).toBe(7);
   const full = sodium(); full.boss.status.stun = 1;
   expect(cast(full, "brine_mend").next_state.player.hp).toBe(122);
   const reflected = cast(sodium(), "bastion_return");
@@ -802,7 +802,7 @@ test("native Aether and Vitriol spells, delayed neutralization and poison", () =
   const harvest = resolveCombatTurn(poisoned, action, draws).next_state;
   expect([harvest.boss.hp, harvest.boss.status.poison]).toEqual([102, 1]);
   const marked = resolveCombatTurn(plain, { turn: 1, spell_id: "caustic_mark", target: "boss" }, draws).next_state;
-  expect(marked.boss.status.poison).toBe(1);
+  expect(marked.boss.status.poison).toBe(2);
 });
 
 test("reflection uses calculated damage even when the target has little HP", () => {
@@ -844,7 +844,7 @@ test("Gold spells and received-hit tracking across exchanges", () => {
   expect(resolveCombatTurn(reflection, action(1, "aurum_edge"), rng).next_state.player.spell_hit_this_exchange).toBe(true);
   const poison = fixture(); poison.player.status.poison = 1; poison.boss.status.stun = 1;
   const poisoned = resolveCombatTurn(poison, action(1, "aurum_edge"), rng).next_state;
-  expect(poisoned.player.hp).toBe(95);
+  expect(poisoned.player.hp).toBe(96); // First tick is 4% of 100 max HP.
   expect(poisoned.player.spell_hit_this_exchange).toBe(true);
   const healing = fixture(); healing.player.hp = 97; healing.boss.status.stun = 1;
   expect(resolveCombatTurn(healing, action(1, "aurum_edge"), () => 0).next_state.player.hp).toBe(98);
@@ -921,7 +921,7 @@ test("precision, shields, leech and initiative have observable effects", () => {
   expect(cast(pierce, "needle_etch").next_state.boss.hp).toBe(114);
   const dispel = fixture("quicksilver_solvent", "mercury_01"); dispel.boss.status.shield_pct = 0.5; dispel.boss.status.stun = 1;
   const dispelled = cast(dispel, "quicksilver_solvent");
-  expect(dispelled.next_state.boss.hp).toBe(112);
+  expect(dispelled.next_state.boss.hp).toBe(109); // 10 direct damage and a 3 HP poison tick.
   expect(dispelled.events.find((e: any) => e.kind === "damage" && e.actor === "player").damage).toBe(10);
   expect(dispelled.events.some((e: any) => e.kind === "status_consumed" && e.status === "shield_pct" && e.target === "boss")).toBe(true);
   const leech = fixture("echo_siphon"); leech.player.hp = 80; leech.boss.status.stun = 1;
@@ -965,7 +965,7 @@ test("precision, shields, leech and initiative have observable effects", () => {
   const reflected = cast(toxic, "toxic_mirror", rng);
   expect(reflected.events.some((e: any) => e.kind === "reflect")).toBe(true);
   expect(reflected.events.some((e: any) => e.kind === "status_applied" && e.status === "poison_on_reflect" && e.target === "player" && e.value === 1)).toBe(true);
-  expect(reflected.next_state.boss.status.poison).toBe(0);
+  expect(reflected.next_state.boss.status.poison).toBe(2);
   expect(reflected.next_state.player.status.poison_on_reflect).toBeUndefined();
   const miss = fixture("toxic_mirror", "mercury_01"); miss.boss.status.stun = 1;
   const saved = cast(miss, "toxic_mirror", rng).next_state;
@@ -1310,7 +1310,7 @@ test("marks are owned, expire on actions and are consumed on hybrid hit", () => 
   const marked = markedResult.next_state;
   expect(marked.boss.status.hybrid_mark).toEqual({ owner: "player", remaining: 2 });
   marked.boss.status.stun = 1;
-  const consumedResult = resolveCombatTurn(marked, { turn: 2, spell_id: "gilded_exception", target: "boss" }, rng);
+  const consumedResult = resolveCombatTurn(marked, { turn: 2, spell_id: "gilded_exception", target: "boss" }, () => 0);
   expect(consumedResult.events.some((e: any) => e.kind === "status_consumed" && e.status === "hybrid_mark" && e.target === "boss")).toBe(true);
   const consumed = consumedResult.next_state;
   expect(consumed.boss.status.hybrid_mark).toBeUndefined();
@@ -1334,7 +1334,7 @@ test("inspiration status triggers, three offers and temporary spell lifecycle", 
   for (const id of ["brimstone_crash", "veil_rupture", "caustic_mark", "mercury_snare", "crooked_rune", "salt_circuit", "paradox_edict"]) {
     const state = build(id); state.boss.status.stun = 1;
     const result = resolveCombatTurn(state, { turn: 1, spell_id: id, target: "boss" }, rng);
-    expect(result.next_state.player.inspiration).toBe(1);
+    expect(result.next_state.player.inspiration, id).toBe(["crooked_rune", "paradox_edict"].includes(id) ? 2 : 1);
   }
   const equal = build("caustic_mark"); equal.boss.status.stun = 1; equal.boss.status.poison = 2;
   expect(resolveCombatTurn(equal, { turn: 1, spell_id: "caustic_mark", target: "boss" }, rng).next_state.player.inspiration).toBe(0);
@@ -1445,4 +1445,20 @@ test("Hunt spell accuracy respects debuffs and does not penalize guaranteed spel
  s.player.status.misalign_next = 0.1; expect(cast(s,"cinder_fist",0.95).events.some((e: any) => e.kind === "miss" && e.actor === "player")).toBe(true);
  s.player.status.focus_next = 0.2; expect(cast(s,"cinder_fist",0.999999).events.some((e: any) => e.kind === "damage" && e.actor === "player")).toBe(true);
  expect(cast(make(),"furnace_rush",0.9).events.some((e: any) => e.kind === "miss" && e.actor === "player")).toBe(true);
+});
+
+
+test("Ancient Hunt HP budgets are tier based and independent of entity HP", () => {
+  const caps: Record<string, number> = {common:110, mythic:135, rare:165, epic:205, legendary:250};
+  for (const [tier, cap] of Object.entries(caps)) {
+    const snap = {...snapshot, boss_id:`hunt_${tier}`};
+    const low = buildTrustedCombatSetup(snap, selection, catalogs, {independentLoadout:true, ancientHunt:true});
+    const high = buildTrustedCombatSetup({...snap, item_progress:{bismuth_talisman:{level:10}}, homunculus_progress:{cinder:{level:10}}}, {...selection, weapon_ids:["bismuth_talisman", null], homunculus_id:"cinder"}, catalogs, {independentLoadout:true, ancientHunt:true});
+    expect(createCombatState(low).boss.max_hp).toBe(Math.round(cap * 0.8));
+    expect(createCombatState(high).boss.max_hp).toBe(cap);
+    const changed = structuredClone(catalogs); changed.entities.find((e:any)=>e.id === "sodium_01").base_stats.hp = 999;
+    expect(createCombatState(buildTrustedCombatSetup(snap, selection, changed, {independentLoadout:true, ancientHunt:true})).boss.max_hp).toBe(Math.round(cap * 0.8));
+  }
+  const global = createCombatState(buildTrustedCombatSetup({...snapshot,boss_id:"hunt_legendary"}, selection, catalogs, {independentLoadout:true}));
+  expect(global.boss.max_hp).toBe(Math.round(122 * catalogs.bosses.find((b:any)=>b.tier === "legendary").hp_mult));
 });

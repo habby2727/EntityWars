@@ -110,7 +110,7 @@ func _ready() -> void:
 	_resolve_nodes()
 	_setup_background()
 	_connect_backend()
-	for button in [$Aspect/Canvas/TopOverlay/BackButton, _structures_button]:
+	for button in [$Aspect/Canvas/TopOverlay/BackButton, $Aspect/Canvas/TopOverlay/ForestButton, _structures_button]:
 		MenuArt.button(button)
 	if OS.has_feature("android"):
 		_structures_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -131,6 +131,7 @@ func _ready() -> void:
 	call_deferred("_layout_icons")
 
 func _resolve_nodes() -> void:
+	$Aspect/Canvas/TopOverlay/ForestButton.pressed.connect(SceneRouter.go_to_summoner_selection)
 	_backend = get_node_or_null(backend_path) as BackendClient
 	_canvas = get_node_or_null(canvas_path) as Control
 	_background = get_node_or_null(background_path) as TextureRect
@@ -199,6 +200,7 @@ func _build_icons() -> void:
 			button.texture_pressed = icon_tex
 		else:
 			var label := Label.new()
+			label.set_meta("medieval_sharp_font", true)
 			label.text = _get_building_display_name(building_id)
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -251,7 +253,7 @@ func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
 		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	if _resource_bar != null:
-		_resource_rows = ResourceBars.build(_resource_bar, _catalog, not OS.has_feature("android"), 5 if OS.has_feature("android") else -10)
+		_resource_rows = ResourceBars.build(_resource_bar, _catalog, not OS.has_feature("android"), 5 if OS.has_feature("android") else 0, not OS.has_feature("android"))
 		if OS.has_feature("android") and _resource_bar_panel != null:
 			var band := HBoxContainer.new()
 			band.add_theme_constant_override("separation", 10)

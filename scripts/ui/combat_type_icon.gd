@@ -17,20 +17,23 @@ func configure(type_id: String) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	draw_arc(Vector2(12, 12), 10, 0, TAU, 24, accent, 1.5, true)
+	draw_symbol(self, element, accent)
+
+static func draw_symbol(canvas: CanvasItem, element: String, accent: Color) -> void:
+	canvas.draw_arc(Vector2(12, 12), 10, 0, TAU, 24, accent, 1.5, true)
 	match element:
 		"sulfur":
-			draw_colored_polygon(PackedVector2Array([Vector2(12, 3), Vector2(5, 19), Vector2(19, 19)]), accent)
+			canvas.draw_colored_polygon(PackedVector2Array([Vector2(12, 3), Vector2(5, 19), Vector2(19, 19)]), accent)
 		"mercury":
-			draw_arc(Vector2(12, 9), 5, 0, TAU, 16, accent, 2, true)
-			draw_line(Vector2(12, 14), Vector2(12, 21), accent, 2, true)
-			draw_line(Vector2(8, 18), Vector2(16, 18), accent, 2, true)
+			canvas.draw_arc(Vector2(12, 9), 5, 0, TAU, 16, accent, 2, true)
+			canvas.draw_line(Vector2(12, 14), Vector2(12, 21), accent, 2, true)
+			canvas.draw_line(Vector2(8, 18), Vector2(16, 18), accent, 2, true)
 		"sodium":
-			draw_colored_polygon(PackedVector2Array([Vector2(12, 3), Vector2(19, 12), Vector2(12, 21), Vector2(5, 12)]), accent)
+			canvas.draw_colored_polygon(PackedVector2Array([Vector2(12, 3), Vector2(19, 12), Vector2(12, 21), Vector2(5, 12)]), accent)
 		"aether":
-			draw_line(Vector2(5, 5), Vector2(19, 19), accent, 3, true)
-			draw_line(Vector2(19, 5), Vector2(5, 19), accent, 3, true)
+			canvas.draw_line(Vector2(5, 5), Vector2(19, 19), accent, 3, true)
+			canvas.draw_line(Vector2(19, 5), Vector2(5, 19), accent, 3, true)
 		"vitriol":
-			draw_colored_polygon(PackedVector2Array([Vector2(12, 3), Vector2(6, 12), Vector2(6, 17), Vector2(12, 21), Vector2(18, 17), Vector2(18, 12)]), accent)
+			canvas.draw_colored_polygon(PackedVector2Array([Vector2(12, 3), Vector2(6, 12), Vector2(6, 17), Vector2(12, 21), Vector2(18, 17), Vector2(18, 12)]), accent)
 		"gold":
-			draw_arc(Vector2(12, 12), 5, 0, TAU, 20, accent, 3, true)
+			canvas.draw_arc(Vector2(12, 12), 5, 0, TAU, 20, accent, 3, true)

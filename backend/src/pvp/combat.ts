@@ -1,6 +1,7 @@
+import { applyPersistentStatus, cleansePersistentStatus, expirePersistentStatuses, statusActive, validChance, validPendingDrains, validPersistentFighter } from "../persistent_effects";
 import { effectiveTimedDefense, applyTimedDefense, expireTimedDefenses, drainHealth, applyTimedAwarePassive } from "../solo_hunt_combat";
 import { newExpeditionPassiveState, beginPassiveExchange, applyCombatPassive, passiveModifiers, finishPassiveAttack, finishPassiveExchange, recordPassiveSpellHit } from "../expedition_passive_state";
-import { recordPoisonChange, poisonTickMetadata, recordInspirationActivation } from "../combat_event_provenance";
+import { recordPoisonChange, poisonTickMetadata, poisonTickDamage, recordInspirationActivation } from "../combat_event_provenance";
 import { combatHomunculusAllowed, homunculusAttackMultiplierById } from "../homunculus_catalog";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly, validPhysicalAnomalySpell } from "../physical_anomaly";
 import { STRATEGIC_EFFECTS, finishStrategicExchange, jamStrategicCooldown, queueDelayedDamage, strategicCounter, strategicHeal, transferStrategicStatus, validStrategicStatusEffect } from "../strategic_effects";
@@ -34,14 +35,14 @@ export type PvpFighter = {
   spell_hit_this_exchange: boolean; spell_hit_last_exchange: boolean;
   spell_neutralize_pending: number; spell_neutralize_active: number;
 };
-export type PvpCombatState = { turn: number; round: number; player_turn: boolean; battle_index: number; wins: Record<PvpSide, number>; sudden_death: boolean; fighters: Record<PvpSide, PvpFighter>; types: unknown; physical_anomaly: any | null; strategic_delayed: any[]; strategic_jams: any[]; rng_counter: number; match_result?: PvpSide | "draw"; battle_result?: PvpSide | "draw"; battle_over?: boolean };
+export type PvpCombatState = { combat_rules_version?: number; pending_drains?: {source:PvpSide; target:PvpSide; due_exchange:number}[]; turn: number; round: number; player_turn: boolean; battle_index: number; wins: Record<PvpSide, number>; sudden_death: boolean; fighters: Record<PvpSide, PvpFighter>; types: unknown; physical_anomaly: any | null; strategic_delayed: any[]; strategic_jams: any[]; rng_counter: number; match_result?: PvpSide | "draw"; battle_result?: PvpSide | "draw"; battle_over?: boolean };
 
 const object = (x: any): x is Record<string, any> => x !== null && typeof x === "object" && !Array.isArray(x);
 const number = (x: any) => typeof x === "number" && Number.isFinite(x);
 const itemKeys = new Set(["power_flat", "guard_flat", "tempo_flat", "true_on_hit", "dot_true", "vuln_on_hit", "evasion_pct", "ward_pct", "reflect_pct", "disadvantage_reduction", "tempo_on_win", "ignore_reflect_chance"]);
 const pctKeys = new Set(["ward_pct", "reflect_pct", "evasion_pct", "disadvantage_reduction", "ignore_reflect_chance", "vuln_on_hit"]);
 const synergyKeys = new Set(["power_flat", "guard_flat", "tempo_flat", "type_adv_bonus", "type_neutralize", "incoming_mult", "reflect_pct", "dot_true", "item_effect_mult"]);
-const supportedEffects = new Set(["heal", "shield", "reflect", "atk_boost", "atk_down", "vuln", "poison", "hom_stun", "type_neutralize", "focus_next", "misalign_next", "tempo_shift", "cleanse_one", "poison_on_reflect", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "recoil", "life_leech", "consume_poison", "hybrid_mark", "shield_by_order", "ward_convert", "physical_anomaly", ...STRATEGIC_EFFECTS]);
+const supportedEffects = new Set(["burn", "lethargy", "heal", "shield", "reflect", "atk_boost", "atk_down", "vuln", "poison", "hom_stun", "type_neutralize", "focus_next", "misalign_next", "tempo_shift", "cleanse_one", "poison_on_reflect", "bonus_if_poisoned", "bonus_if_hit_last_exchange", "bonus_if_low_hp", "bonus_if_marked", "bonus_power_if_poisoned", "bonus_if_shielded", "bonus_power_if_hit_last_exchange", "pierce_ward", "ward_dispel", "recoil", "life_leech", "consume_poison", "hybrid_mark", "shield_by_order", "ward_convert", "physical_anomaly", ...STRATEGIC_EFFECTS]);
 const statusInitial = () => ({ poison: 0, stun: 0, shield_pct: 0, atk_boost: 0, vuln_pct: 0, atk_down: 0, hom_stun: 0, reflect_pct: 0, tempo_bonus: 0 });
 const validLevel = (v: any) => v === undefined || (Number.isInteger(v) && v >= 0 && v <= 10);
 const validCatalog = (entries: unknown): entries is any[] => Array.isArray(entries) && entries.every(e => object(e) && typeof e.id === "string" && e.id.length > 0) && new Set(entries.map(e => e.id)).size === entries.length;
@@ -104,7 +105,7 @@ function fighter(snapshot: PvpSnapshot, catalogs: PvpCatalogs): PvpFighter | nul
   if (!object(synergy) || Object.entries(synergy).some(([key, v]) => !synergyKeys.has(key) || !number(v))) return null;
   const level = entry.level ?? 0, me = mutation?.effects ?? {};
   const hom_bonus = hom ? { hp_flat: hom.buff_hp + level + (me.hp_flat ?? 0), power_flat: hom.buff_atk + Math.trunc(level / 5) + (me.power_flat ?? 0), guard_flat: hom.buff_def + Math.trunc(level / 3) + (me.guard_flat ?? 0), favorable_type_bonus: me.favorable_type_bonus ?? 0 } : { hp_flat: 0, power_flat: 0, guard_flat: 0, favorable_type_bonus: 0 };
-  const base: PvpFighter = structuredClone({ player_id: snapshot.player_id, entity, weapons: weapons.map(w => effectiveWeapon(w, itemProgress, catalogs)), homunculus: hom, spells, item_progress: itemProgress, homunculus_progress: homProgress, spell_progress: snapshot.spell_progress ?? {}, active_weapon_slot: 1, spell_cooldowns: {}, hom_energy: 0, hom_spent: hom === null, ultra_used: false, id: entity.id, name: entity.name, type: entity.type, hp: 0, max_hp: 0, atk: 0, def: 0, hom_id: hom?.id ?? "", hom_name: hom?.name ?? "", hom_max_energy: 6, hom_ready_at: 3, hom_synergy: synergy, hom_bonus, mutation, mods: { atk_flat: 0, def_flat: 0 }, item_fx: {}, active_weapon: null, status: statusInitial(), spell_ids: [...snapshot.spell_ids], original_spell_ids: [...snapshot.spell_ids], inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false, inspiration_offers: [], inspiration_catalog: catalogs.spells.filter(s => !snapshot.spell_ids.includes(s.id) && ["attack", "support"].includes(s.category) && number(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && number(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isSafeInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e: any) => object(e) && supportedEffects.has(e.kind) && number(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["self", "enemy"].includes(e.target) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e))) && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type)))).sort((a, b) => a.id.localeCompare(b.id)), temporary_spell_id: "", temporary_replaced_slot: -1, spell_hit_this_exchange: false, spell_hit_last_exchange: false, spell_neutralize_pending: 0, spell_neutralize_active: 0 });
+  const base: PvpFighter = structuredClone({ player_id: snapshot.player_id, entity, weapons: weapons.map(w => effectiveWeapon(w, itemProgress, catalogs)), homunculus: hom, spells, item_progress: itemProgress, homunculus_progress: homProgress, spell_progress: snapshot.spell_progress ?? {}, active_weapon_slot: 1, spell_cooldowns: {}, hom_energy: 0, hom_spent: hom === null, ultra_used: false, id: entity.id, name: entity.name, type: entity.type, hp: 0, max_hp: 0, atk: 0, def: 0, hom_id: hom?.id ?? "", hom_name: hom?.name ?? "", hom_max_energy: 6, hom_ready_at: 3, hom_synergy: synergy, hom_bonus, mutation, mods: { atk_flat: 0, def_flat: 0 }, item_fx: {}, active_weapon: null, status: statusInitial(), spell_ids: [...snapshot.spell_ids], original_spell_ids: [...snapshot.spell_ids], inspiration: 0, inspiration_pending: false, inspiration_used_this_battle: false, inspiration_offers: [], inspiration_catalog: catalogs.spells.filter(s => !snapshot.spell_ids.includes(s.id) && ["attack", "support"].includes(s.category) && number(s.power_mult) && (s.category === "attack" ? s.power_mult > 0 : s.power_mult === 0) && number(s.accuracy) && s.accuracy >= 0 && s.accuracy <= 1 && Number.isSafeInteger(s.cooldown_turns) && s.cooldown_turns >= 0 && Array.isArray(s.effects) && s.effects.every((e: any) => object(e) && supportedEffects.has(e.kind) && validChance(e) && number(e.value) && (e.value >= 0 || e.kind === "tempo_shift") && ["self", "enemy"].includes(e.target) && (e.kind !== "physical_anomaly" || validPhysicalAnomalySpell(s)) && (!STRATEGIC_EFFECTS.includes(e.kind) || validStrategicStatusEffect(e))) && (s.type === entity.type || (["universal", "hybrid"].includes(s.type) && Array.isArray(s.eligible_types) && s.eligible_types.includes(entity.type)))).sort((a, b) => a.id.localeCompare(b.id)), temporary_spell_id: "", temporary_replaced_slot: -1, spell_hit_this_exchange: false, spell_hit_last_exchange: false, spell_neutralize_pending: 0, spell_neutralize_active: 0 });
   if (hom?.passive) (base as any).expedition_passive = newExpeditionPassiveState(hom.id, level);
   base.name = displayName(base.name); base.hom_name = displayName(base.hom_name);
   const result = refreshPvpWeapon(base); result.hp = result.max_hp; return result;
@@ -116,7 +117,7 @@ export function createPvpCombatState(left: PvpSnapshot, right: PvpSnapshot, cata
   try {
     const l = fighter(left, catalogs), r = fighter(right, catalogs);
     if (!l || !r || !object(catalogs.types.effectiveness[l.type]) || !object(catalogs.types.effectiveness[r.type]) || !number(catalogs.types.effectiveness[l.type][r.type]) || !number(catalogs.types.effectiveness[r.type][l.type])) return { error: "UNTRUSTED_SETUP" };
-    return { turn: 0, round: 1, player_turn: true, battle_index: 1, wins: { left: 0, right: 0 }, sudden_death: false, fighters: { left: l, right: r }, types: structuredClone(catalogs.types), physical_anomaly: null, strategic_delayed: [], strategic_jams: [], rng_counter: 0 };
+    return { combat_rules_version: 2, turn: 0, round: 1, player_turn: true, battle_index: 1, wins: { left: 0, right: 0 }, sudden_death: false, fighters: { left: l, right: r }, types: structuredClone(catalogs.types), physical_anomaly: null, strategic_delayed: [], strategic_jams: [], rng_counter: 0 };
   } catch { return { error: "UNTRUSTED_SETUP" }; }
 }
 
@@ -161,7 +162,7 @@ export function resetPvpFighter(fighter: PvpFighter): PvpFighter {
   f.temporary_spell_id = ""; f.temporary_replaced_slot = -1;
   if (f.expedition_passive && !f.hom_spent) f.expedition_passive = newExpeditionPassiveState(f.expedition_passive.id, f.expedition_passive.level);
   f.inspiration = 0; f.inspiration_pending = false; f.inspiration_used_this_battle = false; f.inspiration_offers = [];
-  for (const key of ["timed_defenses", "strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline", "hom_reflect_active", "hom_other_reflect", "weapon_shield_pct", "other_shield_pct", "weapon_reflect_pct", "other_reflect_pct", "poison_source", "poison_reflect_source", "inspiration_activation"]) delete f[key];
+  for (const key of ["timed_defenses", "strategic_trap", "strategic_heal_suppression", "spell_ward", "spell_ward_baseline", "hom_reflect_active", "hom_other_reflect", "weapon_shield_pct", "other_shield_pct", "weapon_reflect_pct", "other_reflect_pct", "poison_source", "poison_reflect_source", "poison_effect", "poison_last_tick", "burn_effect", "lethargy_effect", "combat_exchange", "inspiration_activation"]) delete f[key];
   f.hom_energy = 0; f.hp = f.max_hp; f.spell_cooldowns = {}; f.status = statusInitial();
   f.spell_hit_this_exchange = false; f.spell_hit_last_exchange = false;
   f.spell_neutralize_pending = 0; f.spell_neutralize_active = 0;
@@ -172,7 +173,7 @@ export function resetPvpFighter(fighter: PvpFighter): PvpFighter {
 export function startPvpBattle(state: PvpCombatState): PvpCombatState {
   const next: PvpCombatState & Record<string, any> = structuredClone(state);
   next.turn = 0; next.rng_counter = 0; next.round = 1; next.player_turn = true; next.fighters.left = resetPvpFighter(next.fighters.left); next.fighters.right = resetPvpFighter(next.fighters.right);
-  next.physical_anomaly = null; next.strategic_delayed = []; next.strategic_jams = [];
+  next.physical_anomaly = null; next.strategic_delayed = []; next.strategic_jams = []; next.pending_drains = [];
   return next;
 }
 
@@ -204,18 +205,21 @@ export function validatePvpDecision(state: PvpCombatState, side: PvpSide, decisi
 export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecision, rightDecision: PvpDecision, rng: (turn: number, draw: number) => number): PvpError | { state: PvpCombatState; events: any[] } {
   if (!state || !Number.isSafeInteger(state.turn) || state.turn < 0 || !Number.isSafeInteger(state.round) || state.round < 1 || !Number.isSafeInteger(state.battle_index) || state.battle_index < 1 || !object(state.wins) || ![state.wins.left, state.wins.right].every(v => Number.isSafeInteger(v) && v >= 0 && v < 2) || typeof state.sudden_death !== "boolean" || typeof state.player_turn !== "boolean" || !object(state.types) || !object((state.types as any).effectiveness) || !Number.isSafeInteger(state.rng_counter) || state.rng_counter < 0 || (state as any).battle_over || state.match_result || state.fighters?.left?.hp <= 0 || state.fighters?.right?.hp <= 0 || "error" in validatePvpDecision(state, "left", leftDecision) || "error" in validatePvpDecision(state, "right", rightDecision) || typeof rng !== "function") return { error: "INVALID_DECISION" };
   const decisions = { left: leftDecision, right: rightDecision };
+  if (!validPendingDrains(state, ["left", "right"], ["left", "right"])) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   const supportedStatuses = new Set(["poison", "stun", "shield_pct", "atk_boost", "vuln_pct", "atk_down", "hom_stun", "reflect_pct", "tempo_bonus", "focus_next", "misalign_next", "poison_on_reflect", "hybrid_mark"]);
   for (const side of ["left", "right"] as const) {
     const f: any = state.fighters[side], d = decisions[side];
+    if (!validPersistentFighter(f, state.combat_rules_version, state.turn)) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
     const spell = f.spells.find((s: any) => s.id === d.spell_id);
     if (!object(f.status) || !object(f.item_fx) || !object(f.hom_synergy) || ![f.hp, f.max_hp, f.atk, f.def, f.hom_energy, f.hom_max_energy, f.hom_ready_at].every(number) || f.hp <= 0 || f.hp > f.max_hp || f.max_hp <= 0 || f.hom_energy < 0 || f.hom_energy > f.hom_max_energy || !Object.entries(f.spell_cooldowns).every(([id, value]) => typeof id === "string" && Number.isSafeInteger(value) && (value as number) >= 0) || !Object.entries(f.status).every(([key, value]) => key === "hybrid_mark" || (number(value) && (key === "tempo_bonus" || (value as number) >= 0))) || !object((state.types as any).effectiveness[f.type]) || !number((state.types as any).effectiveness[f.type][state.fighters[side === "left" ? "right" : "left"].type])) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
-    if (!["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(f.type) || (d.spell_id !== undefined && (!spell || !number(spell.power_mult) || !number(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !((spell.category === "attack" && spell.power_mult > 0) || (spell.category === "support" && spell.power_mult === 0)) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !object(e) || !supportedEffects.has(e.kind) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(spell)) || (STRATEGIC_EFFECTS.includes(e.kind) && !validStrategicStatusEffect(e)) || !["self", "enemy"].includes(e.target) || !number(e.value) || (e.kind !== "tempo_shift" && e.value < 0) || ["threshold", "max_heal", "second_value"].some(k => e[k] !== undefined && (!number(e[k]) || e[k] < 0)) || (e.threshold !== undefined && e.threshold > 1) || (e.kind === "hybrid_mark" && (!Number.isSafeInteger(e.value) || e.value < 1)) || (e.kind === "ward_convert" && (e.value > 1 || spell.category !== "attack"))))) || f.inspiration_pending || Object.keys(f.status).some(key => !supportedStatuses.has(key)) || (f.status.hybrid_mark !== undefined && (!object(f.status.hybrid_mark) || !["left", "right"].includes(f.status.hybrid_mark.owner) || !Number.isSafeInteger(f.status.hybrid_mark.remaining) || f.status.hybrid_mark.remaining < 1))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
+    if (!["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(f.type) || (d.spell_id !== undefined && (!spell || !number(spell.power_mult) || !number(spell.accuracy) || spell.accuracy < 0 || spell.accuracy > 1 || !Number.isSafeInteger(spell.cooldown_turns) || spell.cooldown_turns < 0 || !((spell.category === "attack" && spell.power_mult > 0) || (spell.category === "support" && spell.power_mult === 0)) || !Array.isArray(spell.effects) || spell.effects.some((e: any) => !object(e) || !supportedEffects.has(e.kind) || !validChance(e) || (e.kind === "physical_anomaly" && !validPhysicalAnomalySpell(spell)) || (STRATEGIC_EFFECTS.includes(e.kind) && !validStrategicStatusEffect(e)) || !["self", "enemy"].includes(e.target) || !number(e.value) || (e.kind !== "tempo_shift" && e.value < 0) || ["threshold", "max_heal", "second_value"].some(k => e[k] !== undefined && (!number(e[k]) || e[k] < 0)) || (e.threshold !== undefined && e.threshold > 1) || (e.kind === "hybrid_mark" && (!Number.isSafeInteger(e.value) || e.value < 1)) || (e.kind === "ward_convert" && (e.value > 1 || spell.category !== "attack"))))) || f.inspiration_pending || Object.keys(f.status).some(key => !supportedStatuses.has(key)) || (f.status.hybrid_mark !== undefined && (!object(f.status.hybrid_mark) || !["left", "right"].includes(f.status.hybrid_mark.owner) || !Number.isSafeInteger(f.status.hybrid_mark.remaining) || f.status.hybrid_mark.remaining < 1))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   }
   if (!Array.isArray(state.strategic_delayed) || !Array.isArray(state.strategic_jams) || state.strategic_jams.length || state.strategic_delayed.some((e: any) => !object(e) || !["left", "right"].includes(e.actor) || !["left", "right"].includes(e.target) || e.actor === e.target || !Number.isSafeInteger(e.amount) || e.amount <= 0 || !Number.isSafeInteger(e.due_turn) || e.due_turn <= state.turn) || (state.physical_anomaly && (!object(state.physical_anomaly) || typeof state.physical_anomaly.id !== "string" || !["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(state.physical_anomaly.favored_type) || !["sulfur", "mercury", "sodium", "aether", "vitriol", "gold"].includes(state.physical_anomaly.weakened_type) || state.physical_anomaly.favored_type === state.physical_anomaly.weakened_type || !Number.isSafeInteger(state.physical_anomaly.remaining_exchanges) || state.physical_anomaly.remaining_exchanges < 1 || state.physical_anomaly.remaining_exchanges > 3 || !Number.isSafeInteger(state.physical_anomaly.activated_exchange) || state.physical_anomaly.activated_exchange > state.turn))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   for (const f of Object.values(state.fighters) as any[]) {
     if ((f.strategic_trap && (!object(f.strategic_trap) || !number(f.strategic_trap.value) || f.strategic_trap.value < 0 || f.strategic_trap.value > 0.5 || !Number.isSafeInteger(f.strategic_trap.activated_turn) || !Number.isSafeInteger(f.strategic_trap.expires_turn) || f.strategic_trap.expires_turn <= state.turn)) || (f.strategic_heal_suppression && (!object(f.strategic_heal_suppression) || !Number.isSafeInteger(f.strategic_heal_suppression.expires_turn) || f.strategic_heal_suppression.expires_turn <= state.turn))) return { error: "PVP_COMBAT_PARITY_UNAVAILABLE" };
   }
   const next = structuredClone(state), events: any[] = [], turn = state.turn + 1;
+  if (next.combat_rules_version === 2) for (const fighter of Object.values(next.fighters) as any[]) { fighter.combat_rules_version = 2; fighter.combat_exchange = turn; }
   const vitriolCorrosionUsed = { left: 0, right: 0 };
   let counter = 0;
   const draw = () => { const v = rng(turn, counter++); if (!number(v) || v < 0 || v >= 1) throw new Error("INVALID_RNG"); return v; };
@@ -317,7 +321,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       if (focus > 0 || misalign > 0) { delete a.status.focus_next; delete a.status.misalign_next; }
       const evasion = Math.min(1, (b.item_fx.evasion_pct ?? 0) + (mods(b).evasion_pct ?? 0));
       if (evasion > 0 && draw() < evasion) { emit(opponent, "miss", " evades.", { kind: "evade", target_side: side, spell_id: spell.id }); firePassive(opponent, "dodge"); if (a.expedition_passive && !a.hom_spent) { a.expedition_passive = finishPassiveAttack(recordPassiveSpellHit(a.expedition_passive, false)); firePassive(side, "spell_miss"); } return; }
-      const accuracy = spell.accuracy + focus - misalign + (mods(a).accuracy_pct ?? 0);
+      const accuracy = spell.accuracy + focus - misalign + (mods(a).accuracy_pct ?? 0) - (statusActive(a, "lethargy", turn) ? 0.15 : 0);
       if (draw() >= Math.max(0, Math.min(1, accuracy))) { emit(side, "miss", " misses.", { kind: "miss", target_side: opponent, spell_id: spell.id }); if (a.expedition_passive && !a.hom_spent) { a.expedition_passive = finishPassiveAttack(recordPassiveSpellHit(a.expedition_passive, false)); firePassive(side, "spell_miss"); } return; }
       const as = a.hom_spent ? {} : a.hom_synergy, bs = b.hom_spent ? {} : b.hom_synergy;
       const mult = normalSpellMultiplier({ attacker_type: a.type, defender_type: b.type, spell_type: spell.type, primary_type: spell.primary_type, secondary_type: spell.secondary_type, effectiveness: (next.types as any).effectiveness, advantage_bonus: a.hom_spent ? 0 : (as.type_adv_bonus ?? 0) + (a.hom_bonus.favorable_type_bonus ?? 0), disadvantage_reduction: a.item_fx.disadvantage_reduction, attacker_neutralize: a.spell_neutralize_active, defender_neutralize: b.spell_neutralize_active, attacker_hom_neutralize: as.type_neutralize, defender_hom_neutralize: bs.type_neutralize });
@@ -326,7 +330,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       if (a.status.atk_boost > 0) emit(side, "combo", " expends the surge.", {kind: "status_consumed", status: "atk_boost", spell_id: spell.id});
       if (b.status.vuln_pct > 0) emit(side, "combo", " exploits vulnerability.", {kind: "status_consumed", status: "vuln_pct", target_side: opponent, spell_id: spell.id});
       a.status.atk_down = 0; a.status.atk_boost = 0; b.status.vuln_pct = 0;
-      if (b.status.shield_pct > 0) clearDefense(b, "shield_pct");
+      if (effectiveTimedDefense(b, "shield_pct") > 0 && b.status.shield_pct > 0) clearDefense(b, "shield_pct");
       spellContext.direct_damage = Math.min(b.hp, amount); spellContext.actual_damage += spellContext.direct_damage;
       dmg(side, opponent, amount, "damage", spell); events[events.length - 1].effectiveness = mult;
       if (a.expedition_passive && !a.hom_spent) a.expedition_passive = finishPassiveAttack(recordPassiveSpellHit(a.expedition_passive, true));
@@ -344,7 +348,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         if (key === "dot_true" && a.active_weapon?.id === "vitriol_vial") { value = Math.max(0, Math.min(value, 4 - vitriolCorrosionUsed[side])); vitriolCorrosionUsed[side] += value; }
         if (value > 0) { spellContext.actual_damage += Math.min(b.hp, value); dmg(side, opponent, value, key, spell); if (key === "dot_true" && a.item_fx.vuln_on_hit > 0) b.status.vuln_pct = Math.max(b.status.vuln_pct, a.item_fx.vuln_on_hit); }
       }
-      const homDot = Math.max(0, Math.trunc(as.dot_true ?? 0)); if (homDot > 0) dmg(side, opponent, homDot, "hom_dot", spell);
+      const homDot = Math.max(0, Math.trunc(as.dot_true ?? 0)); if (homDot > 0) { const actual = Math.min(b.hp, homDot); if (next.combat_rules_version === 2 && actual > 0) events.push({kind:"hom_passive", turn, actor:side, target:opponent, hom_id:a.hom_id, passive_id:a.hom_id, trigger:"spell_hit", effects:[{kind:"dot_true", target:opponent, amount:actual, unit:"hp", duration:"instant", remaining:0}]}); dmg(side, opponent, homDot, "hom_dot", spell); }
       const proc = Math.floor(draw() * 0x100000000) % 100;
       if (a.type === "vitriol" && proc < 30) { const previous = b.status.poison; b.status.poison = 2; recordPoisonChange(b, previous, side); }
       if (a.type === "mercury" && proc < 20) b.status.stun = 1;
@@ -354,7 +358,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
       if (a.type === "gold" && proc < 20) { const before = a.hp; a.hp = Math.min(a.max_hp, a.hp + strategicHeal(a, 3)); if (a.hp !== before) emit(side, "heal", " restores 3 HP.", { kind: "elemental_heal", spell_id: spell.id, hp: a.hp, amount: a.hp - before }); }
       if (proc < (a.type === "vitriol" ? 30 : 20) && a.type !== "gold") emit(side, a.type === "sodium" ? "shield" : "debuff", " triggers an elemental effect.", {kind: "elemental_proc", spell_id: spell.id, target_side: a.type === "sodium" ? side : opponent, status: ({vitriol:"poison",mercury:"stun",sulfur:"atk_down",sodium:"shield_pct",aether:"vuln_pct"} as Record<string,string>)[a.type]});
       } else {
-        if (draw() >= Math.max(0, Math.min(1, spell.accuracy + (mods(a).accuracy_pct ?? 0)))) { emit(side, "miss", "'s spell misses.", {kind: "miss", spell_id: spell.id}); firePassive(side, "spell_miss"); return; }
+        if (draw() >= Math.max(0, Math.min(1, spell.accuracy + (mods(a).accuracy_pct ?? 0) - (statusActive(a, "lethargy", turn) ? 0.15 : 0)))) { emit(side, "miss", "'s spell misses.", {kind: "miss", spell_id: spell.id}); firePassive(side, "spell_miss"); return; }
         emit(side, "buff", "'s spell succeeds.", {kind: "support_hit", spell_id: spell.id, show_spell_link: false});
       }
       if (spell.type === "hybrid" && marked) { delete b.status.hybrid_mark; emit(side, "combo", " consumes the hybrid mark.", {kind: "mark_consumed", target_side: opponent, spell_id: spell.id, show_spell_link: false}); }
@@ -373,6 +377,14 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         const targetSide: PvpSide = effect.target === "self" ? side : opponent;
         const recipient: any = next.fighters[targetSide];
         const kind: string = effect.kind;
+        if (effect.chance !== undefined && draw() >= effect.chance) continue;
+        if (kind === "burn" || kind === "lethargy") {
+          if (applyPersistentStatus(recipient, kind, side, turn)) {
+            emit(side, "debuff", " applies a status.", {kind:"status_applied", status:kind, target_side:targetSide, expires_exchange:turn + 2, spell_id:spell.id});
+            if (targetSide !== side && !a.inspiration_used_this_battle && a.inspiration < 3) { a.inspiration++; a.inspiration_pending = a.inspiration === 3; emit(side, "inspiration", " gains inspiration.", {kind:"inspiration", source:kind, value:a.inspiration, target_side:targetSide, spell_id:spell.id, show_spell_link:false}); }
+          }
+          continue;
+        }
         let value: number = effect.value;
         if (decision.ultra && ["heal", "recoil", "atk_boost", "atk_down", "shield", "reflect", "vuln", "poison", "hom_stun", "focus_next", "misalign_next", "tempo_shift", "hybrid_mark", "type_neutralize", "poison_on_reflect"].includes(kind)) {
           value *= 2;
@@ -433,8 +445,11 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         } else if (kind === "life_leech" && effect.health_drain === true) {
           const shield = effectiveTimedDefense(b, "shield_pct");
           const incoming = b.hom_spent ? 1 : Math.max(0.1, Math.min(1, b.hom_synergy.incoming_mult ?? 1));
-          const { damage, healed } = drainHealth(a, b, Math.trunc(effect.max_heal ?? 0) * (decision.ultra ? 2 : 1), shield, incoming);
-          if (b.status.shield_pct > 0) clearDefense(b, "shield_pct");
+          const brine = next.combat_rules_version === 2 && spell.id === "brine_mend";
+          const drainAmount = brine ? Math.round(b.hp * 0.06) : Math.trunc(effect.max_heal ?? 0) * (decision.ultra ? 2 : 1);
+          if (brine) { next.pending_drains ??= []; next.pending_drains.push({source:side, target:opponent, due_exchange:turn + 1}); }
+          const { damage, healed } = drainHealth(a, b, drainAmount, shield, incoming);
+          if (shield > 0 && b.status.shield_pct > 0) clearDefense(b, "shield_pct");
           emit(side, "damage", ` drains ${damage} HP.`, {kind: "damage", target_side: opponent, damage, hp: b.hp, spell_id: spell.id});
           emit(side, "heal", ` restores ${healed} HP.`, {kind: "heal", amount: healed, hp: a.hp, spell_id: spell.id});
           if (damage > 0) {
@@ -460,7 +475,8 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         } else if (kind === "cleanse_one") {
           const field = ["poison", "stun", "vuln_pct", "atk_down", "misalign_next"].find(k => (recipient.status[k] ?? 0) > 0);
           if (field) { recipient.status[field] = 0; if (field === "poison") recordPoisonChange(recipient, 0, null); }
-          emit(targetSide, "buff", " cleanses one negative status.", {kind: "cleanse_one", status: field ?? null, spell_id: spell.id, show_spell_link: false, source_side: side});
+          const cleansed = field ?? cleansePersistentStatus(recipient);
+          emit(targetSide, "buff", " cleanses one negative status.", {kind: "cleanse_one", status: cleansed ?? null, spell_id: spell.id, show_spell_link: false, source_side: side});
         } else if (kind === "type_neutralize") {
           recipient.spell_neutralize_pending = Math.max(recipient.spell_neutralize_pending, value);
           emit(targetSide, "buff", " prepares type neutralization.", {kind, value: recipient.spell_neutralize_pending, spell_id: spell.id, show_spell_link: false, source_side: side});
@@ -508,12 +524,12 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
           const incoming = b.hom_spent ? 1 : Math.max(0.1, Math.min(1, b.hom_synergy.incoming_mult ?? 1));
           const factor = homunculusAttackMultiplierById(actor.hom_id, b.type, next.types, [actor.spell_neutralize_active ?? 0, b.spell_neutralize_active ?? 0, actor.hom_synergy?.type_neutralize ?? 0, b.hom_spent ? 0 : b.hom_synergy?.type_neutralize ?? 0]);
           const raw = Math.max(1, Math.round((actor.atk + (mods(actor).power_flat ?? 0)) * (boosted ? 0.6 : 0.4) * incoming * factor));
-          const timedShield = (b as any).timed_defenses?.shield_pct?.value ?? 0;
+          const timedShield = statusActive(b, "burn", turn) ? 0 : (b as any).timed_defenses?.shield_pct?.value ?? 0;
           const amount = Math.max(0, Math.round(raw * (1 - timedShield)));
           b.hp = Math.max(0, b.hp - amount); b.spell_hit_this_exchange = true;
           if (amount > 0) firePassive(opponent, "damage_received");
           emit(side, "homunculus", " strikes.", { kind: "hom_attack", target_side: opponent, damage: amount, hp: b.hp, boosted });
-          const timedReflect = (b as any).timed_defenses?.reflect_pct?.value ?? 0;
+          const timedReflect = statusActive(b, "burn", turn) ? 0 : (b as any).timed_defenses?.reflect_pct?.value ?? 0;
           if (timedReflect > 0) {
             const ignored = (actor.item_fx.ignore_reflect_chance ?? 0) > 0 && draw() < actor.item_fx.ignore_reflect_chance;
             const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(amount * timedReflect));
@@ -522,8 +538,40 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         }
       }
     }
-    if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0) for (const side of sides) {
-      const f = next.fighters[side]; if (f.status.poison > 0) { const damage = Math.min(3, f.hp); const provenance = poisonTickMetadata(f, side, sides, damage, turn); f.status.poison--; f.hp -= damage; f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp, ...provenance }); if (provenance.source && provenance.source !== side && damage > 0) { firePassive(provenance.source as PvpSide, "opponent_poison_damage", damage); firePassive(side, "damage_received"); } recordPoisonChange(f, f.status.poison, null); }
+    if (next.pending_drains?.length) {
+      const future: NonNullable<PvpCombatState["pending_drains"]> = [];
+      for (const pending of next.pending_drains) {
+        if (pending.due_exchange > turn) { future.push(pending); continue; }
+        const actor = next.fighters[pending.source], target = next.fighters[pending.target];
+        if (actor.hp <= 0 || target.hp <= 0) continue;
+        const shield = effectiveTimedDefense(target, "shield_pct");
+        const incoming = target.hom_spent ? 1 : Math.max(0.1, Math.min(1, target.hom_synergy.incoming_mult ?? 1));
+        const {damage, healed} = drainHealth(actor, target, Math.round(target.hp * 0.06), shield, incoming);
+        if (shield > 0 && target.status.shield_pct > 0) clearDefense(target, "shield_pct");
+        if (damage > 0) { target.spell_hit_this_exchange = true; firePassive(pending.target, "damage_received"); }
+        emit(pending.source, "damage", " drains health.", {kind:"damage", target_side:pending.target, damage, actual_damage:damage, hp:target.hp, spell_id:"brine_mend", source:"pending_drain"});
+        emit(pending.source, "heal", " restores health.", {kind:"heal", target_side:pending.source, amount:healed, hp:actor.hp, spell_id:"brine_mend", source:"pending_drain"});
+        const reflect = effectiveTimedDefense(target, "reflect_pct");
+        if (damage > 0 && reflect > 0) {
+          const ignored = (actor.item_fx.ignore_reflect_chance ?? 0) > 0 && draw() < actor.item_fx.ignore_reflect_chance;
+          const reflected = ignored ? 0 : Math.min(actor.hp, Math.round(damage * reflect)); actor.hp -= reflected;
+          if (reflected > 0) firePassive(pending.source, "damage_received");
+          if (target.status.reflect_pct > 0) clearDefense(target, "reflect_pct");
+          const poison = target.status.poison_on_reflect ?? 0;
+          if (!ignored && poison > 0) { const previous = actor.status.poison; actor.status.poison = Math.max(previous, poison); recordPoisonChange(actor, previous, (target as any).poison_reflect_source ?? null); }
+          delete target.status.poison_on_reflect; delete (target as any).poison_reflect_source;
+          emit(pending.target, "damage", " reflects damage.", {kind:"reflect", target_side:pending.source, damage:reflected, hp:actor.hp});
+        }
+      }
+      next.pending_drains = future;
+    }
+    if (next.fighters.left.hp > 0 && next.fighters.right.hp > 0) {
+      const ticked = new Set<PvpSide>();
+      do {
+        for (const side of sides) {
+          const f = next.fighters[side]; if (!ticked.has(side) && f.hp > 0 && f.status.poison > 0) { ticked.add(side); const damage = Math.min(poisonTickDamage(f), f.hp); const provenance = poisonTickMetadata(f, side, sides, damage, turn); f.status.poison--; f.hp -= damage; f.spell_hit_this_exchange = true; emit(side, "debuff", " suffers poison.", { kind: "poison", damage, hp: f.hp, ...provenance }); if (provenance.source && provenance.source !== side && damage > 0) { firePassive(provenance.source as PvpSide, "opponent_poison_damage", damage); firePassive(side, "damage_received"); } recordPoisonChange(f, f.status.poison, null); }
+        }
+      } while (next.combat_rules_version === 2 && sides.some(side => !ticked.has(side) && next.fighters[side].hp > 0 && next.fighters[side].status.poison > 0));
     }
     for (const side of sides) { const f: any = next.fighters[side]; if (f.expedition_passive) f.expedition_passive = finishPassiveExchange(f.expedition_passive); }
     for (const side of sides) { const f = next.fighters[side]; if (!f.hom_spent) f.hom_energy = Math.min(f.hom_max_energy, f.hom_energy + 1); f.spell_neutralize_active = 0; }
@@ -542,7 +590,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
     for (const jam of next.strategic_jams) { const f = next.fighters[jam.target as PvpSide]; const ev: any[] = []; jamStrategicCooldown(f.spell_ids.map(id => f.spells.find(s => s.id === id)), f.spell_cooldowns, jam.actor, jam.target, ev); strategicEvents(ev); }
     next.strategic_jams = [];
     { const ev: any[] = []; finishStrategicExchange(next, next.fighters, turn, ev); strategicEvents(ev); }
-    for (const side of sides) expireTimedDefenses(next.fighters[side], turn);
+    for (const side of sides) { expireTimedDefenses(next.fighters[side], turn); for (const status of expirePersistentStatuses(next.fighters[side], turn)) emit(side, "debuff", " recovers from a status.", {kind:"status_expired", target_side:side, status}); }
     next.physical_anomaly = tickPhysicalAnomaly(next.physical_anomaly, turn);
     if (next.fighters.left.hp <= 0 || next.fighters.right.hp <= 0) {
       const defeated = { left: next.fighters.left.hp <= 0, right: next.fighters.right.hp <= 0 };
@@ -577,7 +625,7 @@ export function resolvePvpExchange(state: PvpCombatState, leftDecision: PvpDecis
         for (const side of sides) {
           const f: any = next.fighters[side], synergy = f.hom_spent ? {} : f.hom_synergy;
           const reflect = Math.max(0, Math.min(1, synergy.reflect_pct ?? 0));
-          if (reflect > 0) { f.hom_other_reflect = f.status.reflect_pct; f.hom_reflect_active = reflect; if (f.weapon_reflect_pct !== undefined) f.other_reflect_pct = Math.max(f.other_reflect_pct ?? 0, reflect); f.status.reflect_pct = Math.max(f.status.reflect_pct, reflect); }
+          if (reflect > 0) { const previous = f.status.reflect_pct; f.hom_other_reflect = previous; f.hom_reflect_active = reflect; if (f.weapon_reflect_pct !== undefined) f.other_reflect_pct = Math.max(f.other_reflect_pct ?? 0, reflect); f.status.reflect_pct = Math.max(previous, reflect); if (next.combat_rules_version === 2 && f.status.reflect_pct > previous) events.push({kind:"hom_passive", turn, actor:side, target:side, hom_id:f.hom_id, passive_id:f.hom_id, trigger:"round_start", effects:[{kind:"reflect_pct", target:side, amount:reflect, unit:"fraction", duration:"until_consumed", remaining:0}]}); }
           if (f.item_fx.ward_pct > 0) applyWeapon(f, "shield_pct", f.item_fx.ward_pct);
           if (f.item_fx.reflect_pct > 0) applyWeapon(f, "reflect_pct", f.item_fx.reflect_pct);
         }

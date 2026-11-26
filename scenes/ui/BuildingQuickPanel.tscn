@@ -16,9 +16,8 @@ theme_override_constants/margin_top = 82
 theme_override_constants/margin_right = 44
 theme_override_constants/margin_bottom = 50
 
-[node name="Scroll" type="ScrollContainer" parent="Margin"]
+[node name="Scroll" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-horizontal_scroll_mode = 0
 
 [node name="Content" type="VBoxContainer" parent="Margin/Scroll"]
 layout_mode = 2

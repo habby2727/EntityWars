@@ -4,6 +4,9 @@ const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const Recovery := preload("res://scripts/net/expedition_recovery.gd")
 const SeenRewards := preload("res://scripts/net/expedition_rewards_seen.gd")
 const BACKGROUNDS := "res://assets/entities/expeditions/backgrounds/"
+var spectator_mode := false
+var spectator_events: Array = []
+var spectator_latest := {}
 var backend: BackendClient
 var account_id := ""
 var request := ""
@@ -65,6 +68,22 @@ func _ready() -> void:
 	UIThemeFactory.apply_theme_scaled(self, clampf(minf(get_viewport_rect().size.x / 1920.0, get_viewport_rect().size.y / 1080.0), 0.65, 1.0))
 	$Background.hide()
 	_build_ui()
+	spectator_mode = str(SceneRouter._spectator_context.get("mode", "")) == "expedition"
+	if spectator_mode:
+		back_button.pressed.disconnect(SceneRouter.go_to_world_gate)
+		back_button.pressed.connect(SceneRouter.finish_spectating)
+		back_button.text = tr("SPECTATOR_LEAVE")
+		status.text = tr("SPECTATING") % str(SceneRouter._spectator_context.get("username", ""))
+		mana_bar.get_parent().hide()
+		crystal_bar.get_parent().hide()
+		retry.hide()
+		exit_button.hide()
+		SpectatorClient.updated.connect(_spectator_update)
+		SpectatorClient.failed.connect(_spectator_failure)
+		SpectatorClient.ready_to_observe()
+		return
+	var observer_indicator := preload("res://scripts/ui/spectator_indicator.gd").new()
+	content.add_child(observer_indicator)
 	Recovery.clear_legacy()
 	if _visual_debug_allowed():
 		status.text = "VISUAL DEBUG · OFFLINE"
@@ -212,6 +231,7 @@ func _build_ui() -> void:
 	MenuArt.button(back_button)
 	back_button.pressed.connect(SceneRouter.go_to_world_gate)
 	top.add_child(back_button)
+	preload("res://scripts/ui/forest_return_button.gd").attach(top)
 	status = Label.new()
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -251,7 +271,7 @@ func _build_ui() -> void:
 	exit_confirmation.cancel_button_text = tr("COMBAT_STAY")
 	exit_confirmation.dialog_text = tr("EXPEDITION_RISK_WARNING")
 	exit_confirmation.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	exit_confirmation.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(64, 50, 64, 45)))
+	exit_confirmation.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(64, 50, 64, 45)))
 	exit_confirmation.get_label().horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	exit_confirmation.get_label().add_theme_font_size_override("font_size", 22)
 	MenuArt.button(exit_confirmation.get_ok_button())
@@ -321,6 +341,7 @@ func _stop_lease() -> void:
 	if is_instance_valid(heartbeat_http): heartbeat_http.cancel_request()
 
 func _forfeit() -> void:
+	if spectator_mode: return
 	if forfeited: return
 	forfeited = true
 	_stop_lease()
@@ -342,6 +363,9 @@ func _forfeit() -> void:
 	retry.disabled = true
 
 func connection_gate_lost() -> void:
+	if spectator_mode:
+		SpectatorClient.pause_for_recovery()
+		return
 	if lease.is_empty() and pending.is_empty(): return
 	recovery_required = true
 	playback_epoch += 1
@@ -350,7 +374,13 @@ func connection_gate_lost() -> void:
 	if is_instance_valid(combat_view): combat_view.lock_controls()
 	_update_controls()
 
+func connection_gate_recover() -> void:
+	if spectator_mode:
+		if SpectatorClient.recover_after_gate(): ConnectionGate.recovery_completed()
+	else: ConnectionGate.recovery_completed()
+
 func _heartbeat() -> void:
+	if spectator_mode: return
 	if lease.is_empty() or forfeited or heartbeat_in_flight: return
 	var gate = get_node("/root/ConnectionGate")
 	if backend == null or backend.token != lease_token or (gate.blocked() and gate.state != gate.State.RECONNECTING): return
@@ -414,6 +444,7 @@ func _identity_changed(state: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	if video.is_playing(): _fit_video()
+	if spectator_mode: return
 	if visual_debug:
 		if not _visual_debug_allowed():
 			visual_debug = false
@@ -442,6 +473,7 @@ func _process(delta: float) -> void:
 	if not state_data.is_empty(): _update_status()
 
 func _refresh() -> void:
+	if spectator_mode: return
 	if visual_debug or backend == null: return
 	if recovery_conflict or playing_events or is_instance_valid(reward_popup) or account_id.is_empty() or backend._verified_player_id != account_id or not request.is_empty(): return
 	if get_node("/root/ConnectionGate").blocked(): return
@@ -466,6 +498,7 @@ func _refresh() -> void:
 		_update_controls()
 
 func _completed(id: String, ok: bool, data: Dictionary) -> void:
+	if ok and not spectator_mode and id == request and not id.is_empty() and backend != null and backend._verified_player_id == account_id and account_id == str(ConnectionGate.player_id): GlobalChatClient.apply_combat_spectators(data)
 	if id != request or id.is_empty(): return
 	request = ""
 	if account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty():
@@ -567,7 +600,7 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 	if response_kind == "state":
 		recovery_required = false
 		if mana_continue_requested:
-			mana_prompt = float(data.get("mana", 0)) < 0.1
+			mana_prompt = float(data.get("mana", 0)) < 0.3
 			mana_continue_requested = false
 	var response_events: Array = data.get("events", []) if data.get("events") is Array else []
 	state_data = data.duplicate(true)
@@ -575,7 +608,7 @@ func _completed(id: String, ok: bool, data: Dictionary) -> void:
 	received_ticks = Time.get_ticks_msec()
 	countdown_refresh = false
 	session = received.duplicate(true) if received is Dictionary else {}
-	if session.get("status") == "ACTIVE" and float(data.get("mana", 0)) < 0.1 and str(session.get("phase", "")) != "COMBAT": mana_prompt = true
+	if session.get("status") == "ACTIVE" and float(data.get("mana", 0)) < 0.3 and str(session.get("phase", "")) != "COMBAT": mana_prompt = true
 	if request_kind != "state":
 		pending.clear()
 		if response_kind == "exit":
@@ -604,6 +637,7 @@ func _valid_action_response(received: Variant) -> bool:
 	return str(received.get("run_id", "")) == str(payload.get("run_id", "")) and int(received.get("revision", 0)) == int(payload.get("expected_revision", 0)) + 1
 
 func send_combat_decision(kind: String, decision: Dictionary) -> void:
+	if spectator_mode: return
 	if visual_debug: return
 	if kind not in ["turn", "inspiration"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("phase", "")) != "COMBAT": return
 	var combat: Dictionary = session.get("combat_state", {})
@@ -630,10 +664,12 @@ func _update_controls() -> void:
 		if is_instance_valid(button): button.disabled = busy or bool(button.get_meta("unavailable", false))
 
 func _confirm_exit() -> void:
+	if spectator_mode: return
 	if exit_button.disabled or not exit_button.visible: return
 	exit_confirmation.popup_centered(Vector2i(750, 300))
 
 func _send_phase_action(kind: String, direction: String = "") -> void:
+	if spectator_mode: return
 	if visual_debug: return
 	if kind not in ["capture", "skip", "advance", "exit", "buy_mana"] or recovery_required or playing_events or not request.is_empty() or not pending.is_empty() or is_instance_valid(reward_popup) or state_data.is_empty() or account_id.is_empty() or backend._verified_player_id != account_id or backend.token.is_empty() or get_node("/root/ConnectionGate").blocked() or str(session.get("status", "")) != "ACTIVE": return
 	var phase := str(session.get("phase", ""))
@@ -794,6 +830,13 @@ func _clear_body() -> void:
 func _render() -> void:
 	background_shade.color = Color(0.2, 0.2, 0.2, 0.55) if session.is_empty() else Color(0, 0, 0, 0.38)
 	background_shade.visible = str(session.get("phase", "")) not in ["EXPLORE", "COMBAT"]
+	var retained_icons: Array = []
+	if str(session.get("phase", "")) == "COMBAT" and is_instance_valid(combat_view):
+		var previous: Dictionary = combat_view.session
+		var old_combat: Dictionary = previous.get("combat_state", {})
+		var new_combat: Dictionary = session.get("combat_state", {})
+		if previous.get("run_id") == session.get("run_id") and old_combat.get("floor") == new_combat.get("floor") and old_combat.get("npc", {}).get("id") == new_combat.get("npc", {}).get("id") and int(new_combat.get("turn", 0)) >= int(old_combat.get("turn", 0)):
+			retained_icons = combat_view.take_status_icons()
 	_clear_body()
 	_update_status()
 	_update_controls()
@@ -816,7 +859,7 @@ func _render() -> void:
 		return
 	match str(session.get("phase", "")):
 		"EXPLORE": _render_choices()
-		"COMBAT": _render_combat()
+		"COMBAT": _render_combat(retained_icons)
 		"REWARD": _render_terminal(true)
 		"ROUTE": _render_route()
 		"LOSS": _render_terminal(false)
@@ -843,7 +886,7 @@ func _render_mana_prompt() -> void:
 	var proceed := Button.new()
 	proceed.text = tr("EXPEDITION_CONTINUE")
 	proceed.custom_minimum_size = Vector2(320, 56)
-	proceed.set_meta("unavailable", float(state_data.get("mana", 0)) < 0.1)
+	proceed.set_meta("unavailable", float(state_data.get("mana", 0)) < 0.3)
 	MenuArt.button(proceed)
 	proceed.pressed.connect(func():
 		mana_continue_requested = true
@@ -886,6 +929,7 @@ func _render_choices() -> void:
 	_update_controls()
 
 func _select(index: int) -> void:
+	if spectator_mode: return
 	if visual_debug: return
 	if backend == null or recovery_required or account_id.is_empty() or not request.is_empty() or not pending.is_empty() or account_id != backend._verified_player_id or str(session.get("phase", "")) != "EXPLORE": return
 	var payload := {"run_id": str(session.get("run_id", "")), "expected_revision": int(session.get("revision", 0)), "choice": index, "client_action_id": backend._make_uuid()}
@@ -897,11 +941,52 @@ func _select(index: int) -> void:
 		recovery_required = true
 		message.text = tr("EXPEDITION_CONNECTION")
 
-func _render_combat() -> void:
+func _spectator_failure(key: String) -> void:
+	if spectator_mode and is_instance_valid(status): status.text = tr(key)
+
+func _spectator_update(data: Dictionary, initial: bool) -> void:
+	if not spectator_mode or SceneRouter._spectator_context.is_empty(): return
+	spectator_latest = data.get("snapshot", {}).duplicate(true)
+	var events: Array = data.get("events", [])
+	if initial:
+		session = spectator_latest.duplicate(true)
+		session["battle_log"] = events
+		_set_background(str(session.get("background_key", "")))
+		_render_combat()
+		combat_view.lock_controls()
+		return
+	if bool(data.get("cursor_reset", false)) or spectator_events.size() + events.size() > 50:
+		playback_epoch += 1
+		spectator_events.clear()
+		playing_events = false
+		_spectator_reconcile()
+		return
+	spectator_events.append_array(events)
+	if not playing_events: _spectator_play()
+
+func _spectator_play() -> void:
+	if playing_events or not is_instance_valid(combat_view): return
+	playing_events = true
+	var current := playback_epoch
+	while not spectator_events.is_empty() and is_inside_tree() and current == playback_epoch:
+		var event: Dictionary = spectator_events.pop_front()
+		await combat_view.present_events([event], current)
+	if current == playback_epoch:
+		playing_events = false
+		_spectator_reconcile()
+
+func _spectator_reconcile() -> void:
+	if not is_instance_valid(combat_view) or spectator_latest.is_empty(): return
+	session = spectator_latest.duplicate(true)
+	var outcome := str(session.get("combat_state", {}).get("terminal_result", ""))
+	if outcome in ["WIN", "LOSS"]: status.text = (tr("SPECTATING") % str(SceneRouter._spectator_context.get("username", ""))) + "  |  " + tr("EXPEDITION_VICTORY" if outcome == "WIN" else "EXPEDITION_DEFEAT")
+	combat_view.apply_spectator_snapshot(session)
+
+func _render_combat(retained_icons: Array = []) -> void:
 	combat_view = preload("res://scripts/ui/expedition_combat.gd").new()
 	combat_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	body.add_child(combat_view)
-	combat_view.configure(self, session)
+	combat_view.configure(self, session, retained_icons)
 	message.text = ""
 
 func _render_terminal(won: bool) -> void:
@@ -986,6 +1071,10 @@ func _render_route() -> void:
 		arrow.add_theme_font_size_override("font_size", 34)
 		arrow.text = ("←" if direction == "left" else "↑" if direction == "forward" else "→") + "\n" + tr("EXPEDITION_DIRECTION_" + str(direction).to_upper())
 		MenuArt.button(arrow)
+		var allowed: Variant = session.get("allowed_directions", directions)
+		if direction == "right" and allowed is Array and not direction in allowed:
+			arrow.set_meta("unavailable", true)
+			arrow.tooltip_text = tr("EXPEDITION_RIGHT_LIMIT")
 		arrow.pressed.connect(_send_phase_action.bind("advance", str(direction)))
 		row.add_child(arrow)
 		phase_buttons.append(arrow)
@@ -1052,3 +1141,12 @@ func _fit_video() -> void:
 	var factor := maxf(viewport.x / dimensions.x, viewport.y / dimensions.y)
 	video.size = dimensions * factor
 	video.position = (viewport - video.size) * 0.5
+
+func forest_return_safe() -> bool:
+	if not lease.is_empty() or not lease_run.is_empty() or not pending.is_empty() or not request.is_empty() or recovery_required or recovery_conflict or playing_events or heartbeat_in_flight or is_instance_valid(reward_popup) or forfeited or visual_debug:
+		return false
+	if not session.is_empty() and str(session.get("status", "")) != "LOSS":
+		return false
+	if _visual_debug_allowed() and backend == null:
+		return true
+	return not state_data.is_empty() and backend != null and not account_id.is_empty() and backend._verified_player_id == account_id and account_id == ConnectionGate.player_id and not backend.token.is_empty() and not ConnectionGate.blocked()

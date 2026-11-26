@@ -7,6 +7,28 @@ const HomStatus := preload("res://scripts/ui/combat_hom_status.gd")
 const SpellView := preload("res://scripts/ui/spell_presentation.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const LogPresenter := preload("res://scripts/ui/combat_log_presenter.gd")
+const CombatVFX := preload("res://scripts/ui/combat_vfx.gd")
+
+class WeaponTooltip:
+	static func make(source: Control, text: String) -> Control:
+		var panel := PanelContainer.new()
+		panel.theme_type_variation = "TooltipPanel"
+		# Godot wraps custom tooltip content in the themed TooltipPanel.
+		panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		panel.set_meta("combat_font", true)
+		var label := Label.new()
+		label.text = text
+		label.add_theme_font_size_override("font_size", maxi(1, source.get_theme_font_size("font_size", "TooltipLabel")) * 2)
+		panel.add_child(label)
+		return panel
+
+class WeaponButton extends Button:
+	func _make_custom_tooltip(for_text: String) -> Object:
+		return WeaponTooltip.make(self, for_text)
+
+class WeaponSlot extends Control:
+	func _make_custom_tooltip(for_text: String) -> Object:
+		return WeaponTooltip.make(self, for_text)
 
 class GroundShadow extends Control:
 	func _draw() -> void:
@@ -28,6 +50,8 @@ var decline_button: Button
 var hom_attack: Button
 var hom_hold: Button
 var pending_hom_decision := {}
+var _hom_action_style: StyleBoxFlat
+var _hom_action_pulse: Tween
 var player_sprite: TextureRect
 var player_hom_sprite: TextureRect
 var enemy_sprite: TextureRect
@@ -74,15 +98,28 @@ func _show_spell_on_hold(button: Button, token: int) -> void:
 	if spell.is_empty(): return
 	_spell_touch_info_open = true
 	_details(spell)
+var retained_status_icons: Array = []
 
 func _exit_tree() -> void:
+	for sprite in [player_sprite, enemy_sprite, player_hom_sprite, enemy_hom_sprite]: CombatVFX.clear(sprite)
 	if is_instance_valid(registry): registry.free()
 
-func configure(scene: Control, data: Dictionary) -> void:
+func configure(scene: Control, data: Dictionary, retained_icons: Array = []) -> void:
+	set_meta("combat_font", true)
 	host = scene
 	session = data.duplicate(true)
+	retained_status_icons = retained_icons
 	registry = preload("res://scripts/data_registry.gd").new()
 	_build()
+
+func take_status_icons() -> Array:
+	var result: Array = []
+	for icon_name in ["PlayerStatus", "EnemyStatus"]:
+		var icon := stage.get_node_or_null(icon_name)
+		if icon == null: return []
+		result.append(icon)
+	for icon in result: stage.remove_child(icon)
+	return result
 
 const ITEM_ICONS := {"bismuth_talisman":"talisman_bismuth.png", "wind_amulet":"wind_amulet.png", "saltstone_charm":"saltstone_charm.png", "mirror_sigel":"mirror.png", "vitriol_vial":"vitriol.png", "gilded_scale":"gilded_scale.png", "mercury_lens":"mercury_lens.png", "aether_knot":"aether_knot.png"}
 var stage: Control
@@ -149,6 +186,7 @@ func _build() -> void:
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	log_box.add_child(heading)
 	log = RichTextLabel.new()
+	log.set_meta("global_chat_font", true)
 	log.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	log.scroll_following = true
 	log.add_theme_font_size_override("normal_font_size", 18)
@@ -164,7 +202,7 @@ func _build() -> void:
 	for i in 2:
 		var item_id := str(equipped[i].get("id", "")) if i < equipped.size() and equipped[i] is Dictionary and equipped[i].get("id") != null else ""
 		var item: Dictionary = registry.get_items().get(item_id, {})
-		var button := Button.new()
+		var button := WeaponButton.new()
 		button.name = "WeaponSlot%d" % (i + 1)
 		button.flat = true
 		button.tooltip_text = GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id)))
@@ -172,7 +210,7 @@ func _build() -> void:
 		button.pressed.connect(_switch.bind(i + 1))
 		_place(button, Vector2(400 + i * 112, 765), Vector2(104, 104))
 		var frame := TextureRect.new()
-		frame.texture = preload("res://assets/ui/new-elements/marco-slot-small.png")
+		frame.texture = preload("res://assets/ui/new-elements/betterui/panel_vertical.png")
 		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -198,12 +236,12 @@ func _build() -> void:
 			var item_id := str(entry.get("id", "")) if entry is Dictionary and entry.get("id") != null else ""
 			if item_id.is_empty(): continue
 			var item: Dictionary = registry.get_items().get(item_id, {})
-			var slot := Control.new()
+			var slot := WeaponSlot.new()
 			slot.name = "EnemyWeaponSlot%d" % (i + 1)
 			slot.tooltip_text = "%s  |  +%d" % [GameLocalization.catalog("item", item_id, "name", str(item.get("name", item_id))), int(entry.get("level", 0))]
 			_place(slot, Vector2(1296 + i * 112, 765), Vector2(104, 104))
 			var frame := TextureRect.new()
-			frame.texture = preload("res://assets/ui/new-elements/marco-slot-small.png")
+			frame.texture = preload("res://assets/ui/new-elements/betterui/panel_vertical.png")
 			frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -271,7 +309,7 @@ func _build() -> void:
 	controls.append(switch)
 	hom_attack = Button.new()
 	hom_attack.name = "HomAttack"
-	_style_hom_decision(hom_attack)
+	_style_hom_action(hom_attack)
 	hom_attack.add_theme_font_size_override("font_size", 18)
 	hom_attack.text = tr("COMBAT_ATTACK")
 	hom_attack.pressed.connect(_choose_hom.bind("attack"))
@@ -280,7 +318,7 @@ func _build() -> void:
 	hom_attack.hide()
 	hom_hold = Button.new()
 	hom_hold.name = "HomHold"
-	_style_hom_decision(hom_hold)
+	_style_hom_action(hom_hold)
 	hom_hold.add_theme_font_size_override("font_size", 18)
 	hom_hold.text = tr("COMBAT_HOLD")
 	hom_hold.tooltip_text = tr("COMBAT_HOLD_HINT")
@@ -292,6 +330,17 @@ func _build() -> void:
 		var offers := VBoxContainer.new()
 		_place(offers, Vector2(580, 270) if _android_ui() else Vector2(580, 300), Vector2(760, 400) if _android_ui() else Vector2(760, 180))
 		_build_inspiration(offers, player)
+
+func _style_hom_action(button: Button) -> void:
+	if _hom_action_style == null:
+		_hom_action_style = StyleBoxFlat.new()
+		_hom_action_style.bg_color = Color(0.25, 0.20, 0.025, 0.78)
+		_hom_action_style.border_color = Color("ffe13d")
+		_hom_action_style.set_border_width_all(3)
+		_hom_action_style.set_corner_radius_all(6)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		button.add_theme_stylebox_override(state, _hom_action_style)
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 
 func _add_ground_shadow(sprite: TextureRect, is_hom: bool, enemy: bool) -> void:
 	if sprite.texture == null: return
@@ -385,34 +434,28 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp.add_child(hp_label)
 	_update_hp(hp)
-	var icons := StatusIcons.new()
+	var icons: Variant = retained_status_icons[1 if enemy else 0] if retained_status_icons.size() == 2 else StatusIcons.new()
 	icons.name = "EnemyStatus" if enemy else "PlayerStatus"
 	_place(icons, Vector2(1280 if enemy else 40, 40), Vector2(600, 64))
 	var normalized: Dictionary = fighter.get("status", {}).duplicate(true)
-	for pair in [["shield", "shield_pct"], ["reflect", "reflect_pct"], ["vuln", "vuln_pct"]]: normalized[pair[1]] = normalized.get(pair[0], 0)
+	for pair in [["shield", "shield_pct"], ["reflect", "reflect_pct"], ["vuln", "vuln_pct"]]: normalized[pair[1]] = normalized.get(pair[0], normalized.get(pair[1], 0))
 	var extra := []
 	for delayed in state.get("strategic_delayed", []):
-		if str(delayed.get("target", "")) == ("npc" if enemy else "player"): extra.append({"icon":"hourglass", "label":str(delayed.get("amount", 0)), "tooltip":tr("EXPEDITION_DELAYED") % int(delayed.get("due_turn", 0))})
+		if str(delayed.get("target", "")) == ("npc" if enemy else "player"): extra.append({"icon":"hourglass", "label":str(delayed.get("amount", 0)), "tooltip":tr("STATUS_DELAYED_DETAIL") % [int(delayed.get("amount", 0)), int(delayed.get("due_turn", 0))]})
 	for field in ["strategic_trap", "strategic_heal_suppression"]:
-		if fighter.has(field): extra.append({"icon":"trap" if field == "strategic_trap" else "heal_block", "label":"%dT" % maxi(0, int(fighter[field].get("expires_turn", 0)) - int(state.get("turn", 0))), "tooltip":field.replace("_", " ").capitalize()})
-	var passive: Variant = fighter.get("expedition_passive")
-	if passive is Dictionary:
-		for marker in passive.get("markers", []):
-			extra.append({"icon":"type", "label":"•", "tooltip":str(marker).replace("_", " ").capitalize()})
-		for modifier in passive.get("modifiers", []):
-			if modifier is Dictionary:
-				var modifier_type := str(modifier.get("stat", modifier.get("kind", ""))).replace("_", " ").capitalize()
-				var amount := str(modifier.get("amount", ""))
-				var duration := str(modifier.get("expires_at", modifier.get("duration", "")))
-				extra.append({"icon":"power", "label":amount, "tooltip":"%s: %s  %s" % [modifier_type, amount, duration]})
+		if fighter.has(field):
+			var remaining := maxi(0, int(fighter[field].get("expires_turn", 0)) - int(state.get("turn", 0)))
+			var description := tr("STATUS_TRAP_DETAIL") % [roundi(float(fighter[field].get("value", 0)) * 100), remaining] if field == "strategic_trap" else tr("STATUS_HEAL_SUPPRESSION_DETAIL") % remaining
+			extra.append({"icon":"trap" if field == "strategic_trap" else "heal_block", "label":"%dT" % remaining, "tooltip":description})
 	var anomaly: Variant = state.get("physical_anomaly")
 	if anomaly is Dictionary and not anomaly.is_empty():
 		var affinity := str(fighter.get("type", ""))
 		var modifier := 15 if affinity == str(anomaly.get("favored_type", "")) else -15 if affinity == str(anomaly.get("weakened_type", "")) else 0
 		if modifier != 0: extra.append({"icon":"type", "label":("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip":tr("ANOMALY_TOOLTIP_GAIN") % [GameLocalization.catalog("type", str(anomaly.get("favored_type", "")), "name", str(anomaly.get("favored_type", "")).capitalize()), GameLocalization.catalog("type", str(anomaly.get("weakened_type", "")), "name", str(anomaly.get("weakened_type", "")).capitalize()), int(anomaly.get("remaining_exchanges", 0))]})
 	icons.set_boss_effects(true, extra)
-	icons.set_fighter(0, {"status":normalized, "spell_neutralize_active":fighter.get("spell_neutralize_active", 0), "spell_neutralize_pending":fighter.get("spell_neutralize_pending", 0)})
+	icons.set_fighter(0, {"status":normalized, "persistent_statuses":fighter.get("persistent_statuses", {}), "defense_presentation":fighter.get("defense_presentation", {}), "passive_modifiers":fighter.get("passive_modifiers", []), "pending_drain":fighter.get("pending_drain", []), "spell_neutralize_active":fighter.get("spell_neutralize_active", 0), "spell_neutralize_pending":fighter.get("spell_neutralize_pending", 0)})
 	var inspiration := Inspiration.new()
+	inspiration.name = "EnemyInspiration" if enemy else "PlayerInspiration"
 	_place(inspiration, Vector2(x, 725), Vector2(200, 26))
 	inspiration.set_fighter({"inspiration":fighter.get("inspiration", 0), "inspiration_used_this_battle":fighter.get("inspiration_used", false)})
 	if not hom_id.is_empty() and not hom_path.is_empty():
@@ -421,12 +464,7 @@ func _fighter(fighter: Dictionary, enemy: bool, state: Dictionary) -> void:
 		_place(meter, Vector2(1670 if enemy else 30, 690), Vector2(240, 90))
 		meter.scale = Vector2(0.9, 0.9)
 		var hom_name := GameLocalization.catalog("homunculus", hom_id, "name", str(hom.get("name", hom_id)))
-		var hom_passive: Variant = hom.get("passive", {})
-		var passive_name := ""
-		if hom_passive is Dictionary and hom_passive.get("name") is Dictionary:
-			passive_name = str(hom_passive.name.get(TranslationServer.get_locale().substr(0, 2), hom_passive.name.get("en", "")))
-		meter.set_fighter({"hom_name":hom_name, "hom_energy":clampi(int(fighter.get("hom_energy", 0)), 0, 6)})
-		meter.set_expedition_type(str(hom.get("type", fighter.get("hom_type", ""))), passive_name)
+		meter.set_fighter({"hom_name":hom_name, "hom_data":hom, "hom_energy":clampi(int(fighter.get("hom_energy", 0)), 0, 6)})
 		meter.size = Vector2(190, 90)
 
 func _update_hp(hp: ProgressBar) -> void:
@@ -527,6 +565,7 @@ func _build_inspiration(main: VBoxContainer, player: Dictionary) -> void:
 	controls.append(decline)
 
 func _cast(id: String) -> void:
+	if is_instance_valid(host) and host.get("spectator_mode") == true: return
 	if not pending_hom_decision.is_empty(): return
 	var state: Dictionary = session.get("combat_state", {})
 	var player: Dictionary = state.get("player", {})
@@ -536,11 +575,15 @@ func _cast(id: String) -> void:
 		pending_hom_decision = decision
 		hom_attack.show()
 		hom_hold.show()
+		_hom_action_pulse = create_tween().set_loops()
+		_hom_action_pulse.tween_property(_hom_action_style, "bg_color", Color(0.8, 0.64, 0.04, 0.88), 0.55)
+		_hom_action_pulse.tween_property(_hom_action_style, "bg_color", Color(0.25, 0.20, 0.025, 0.78), 0.55)
 		hom_hold.grab_focus()
 	else:
 		host.send_combat_decision("turn", decision)
 
 func _choose_hom(choice: String) -> void:
+	if is_instance_valid(host) and host.get("spectator_mode") == true: return
 	if pending_hom_decision.is_empty() or choice not in ["attack", "hold"]: return
 	var decision := pending_hom_decision.duplicate(true)
 	decision.hom_action = choice
@@ -548,9 +591,15 @@ func _choose_hom(choice: String) -> void:
 	host.send_combat_decision("turn", decision)
 
 func _switch(slot: int) -> void:
+	if is_instance_valid(host) and host.get("spectator_mode") == true: return
 	host.send_combat_decision("turn", {"turn":int(session.get("combat_state", {}).get("turn", 0)) + 1, "switch_slot":slot})
 
 func lock_controls() -> void:
+	if is_instance_valid(_hom_action_pulse):
+		_hom_action_pulse.kill()
+		_hom_action_pulse = null
+	if _hom_action_style != null:
+		_hom_action_style.bg_color = Color(0.25, 0.20, 0.025, 0.78)
 	pending_hom_decision.clear()
 	if is_instance_valid(hom_attack): hom_attack.hide()
 	if is_instance_valid(hom_hold): hom_hold.hide()
@@ -559,6 +608,11 @@ func lock_controls() -> void:
 func _append_event(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
 	var actor := str(event.get("actor", event.get("side", "")))
+	if kind == "hom_passive" and event.has("effects"):
+		var hom: Dictionary = registry.get_homunculus_collection().get(str(event.get("hom_id", "")), {})
+		if not hom.is_empty():
+			log_presenter.append(log, int(event.get("turn", -1)), log_presenter.passive_message(event, hom), {"category":"homunculus"})
+			return
 	var event_key := "EXPEDITION_EVENT_" + kind.to_upper()
 	var translated := tr(event_key)
 	if translated == event_key: translated = kind.replace("_", " ").capitalize()
@@ -655,8 +709,14 @@ func _animate_event(event: Dictionary) -> void:
 	if kind == "spell" and actor in ["player", "npc"]:
 		var spell: Dictionary = registry.get_spell_by_id(str(event.get("spell_id", "")))
 		var sprite := player_sprite if actor == "player" else enemy_sprite
-		if str(spell.get("category", "")) == "attack": _animate_lunge(sprite, 20.0 if actor == "player" else -20.0)
+		if str(spell.get("category", "")) == "attack" or str(event.get("spell_id", "")) == "basic_attack":
+			_animate_lunge(sprite, 20.0 if actor == "player" else -20.0)
+			if bool(event.get("hit", false)):
+				var source: Dictionary = session.get("combat_state", {}).get(actor, {})
+				CombatVFX.hit_fighter(enemy_sprite if actor == "player" else player_sprite, source)
 		else: _animate_pulse(sprite, Color(0.68, 0.85, 1.0))
+	elif kind == "hom_passive" and event.has("effects") and actor in ["player", "npc"]:
+		CombatVFX.passive(player_hom_sprite if actor == "player" else enemy_hom_sprite, player_sprite if actor == "player" else enemy_sprite)
 	elif kind in ["hom_attack", "hom_miss"] and actor in ["player", "npc"]:
 		_animate_lunge(player_hom_sprite if actor == "player" else enemy_hom_sprite, 14.0 if actor == "player" else -14.0)
 	elif kind == "evade" and actor in ["player", "npc"]:
@@ -677,6 +737,7 @@ func _animate_event(event: Dictionary) -> void:
 			_animate_pulse(sprite, Color(0.68, 1.0, 0.75))
 
 func _event_delay(kind: String) -> float:
+	if kind == "hom_passive": return 0.7
 	if kind in ["spell", "hom_attack", "hom_miss", "damage", "heal", "evade", "miss", "switch"]:
 		return 0.65
 	if kind in ["poison", "hom_dot", "true_on_hit", "dot_true", "delayed_damage", "reflect", "ward_convert", "recoil", "status_applied", "hom_passive"]:
@@ -710,6 +771,57 @@ func _show_damage_number(sprite: Control, damage: int) -> void:
 	tween.tween_property(label, "position:y", label.position.y - 50.0, 2.0)
 	tween.tween_property(label, "modulate:a", 0.0, 2.0)
 	tween.chain().tween_callback(label.queue_free)
+
+func _spectator_status_effects(fighter: Dictionary, state: Dictionary, side: String) -> Array:
+	var effects: Array = []
+	for delayed in state.get("strategic_delayed", []):
+		if str(delayed.get("target", "")) == side: effects.append({"icon":"hourglass", "label":str(delayed.get("amount", 0)), "tooltip":tr("STATUS_DELAYED_DETAIL") % [int(delayed.get("amount", 0)), int(delayed.get("due_turn", 0))]})
+	for field in ["strategic_trap", "strategic_heal_suppression"]:
+		if fighter.has(field):
+			var remaining := maxi(0, int(fighter[field].get("expires_turn", 0)) - int(state.get("turn", 0)))
+			var description := tr("STATUS_TRAP_DETAIL") % [roundi(float(fighter[field].get("value", 0)) * 100), remaining] if field == "strategic_trap" else tr("STATUS_HEAL_SUPPRESSION_DETAIL") % remaining
+			effects.append({"icon":"trap" if field == "strategic_trap" else "heal_block", "label":"%dT" % remaining, "tooltip":description})
+	var current: Variant = state.get("physical_anomaly")
+	if current is Dictionary and not current.is_empty():
+		var affinity := str(fighter.get("type", ""))
+		var modifier := 15 if affinity == str(current.get("favored_type", "")) else -15 if affinity == str(current.get("weakened_type", "")) else 0
+		if modifier != 0: effects.append({"icon":"type", "label":("+" if modifier > 0 else "") + str(modifier) + "%", "tooltip":tr("ANOMALY_TOOLTIP_GAIN") % [GameLocalization.catalog("type", str(current.get("favored_type", "")), "name", str(current.get("favored_type", "")).capitalize()), GameLocalization.catalog("type", str(current.get("weakened_type", "")), "name", str(current.get("weakened_type", "")).capitalize()), int(current.get("remaining_exchanges", 0))]})
+	return effects
+
+func apply_spectator_snapshot(data: Dictionary) -> void:
+	if not is_instance_valid(host) or not host.get("spectator_mode") == true: return
+	session = data.duplicate(true)
+	var combat: Dictionary = session.get("combat_state", {})
+	for pair in [[player_hp, "player", "PlayerStatus"], [enemy_hp, "npc", "EnemyStatus"]]:
+		var fighter: Dictionary = combat.get(pair[1], {})
+		if is_instance_valid(pair[0]):
+			pair[0].max_value = maxi(1, int(fighter.get("max_hp", 1)))
+			pair[0].value = int(fighter.get("hp", 0))
+			_update_hp(pair[0])
+		var icon = stage.get_node_or_null(pair[2])
+		if icon != null:
+			var normalized: Dictionary = fighter.get("status", {}).duplicate(true)
+			for aliases in [["shield", "shield_pct"], ["reflect", "reflect_pct"], ["vuln", "vuln_pct"]]: normalized[aliases[1]] = normalized.get(aliases[0], normalized.get(aliases[1], 0))
+			var view := fighter.duplicate(true)
+			view["status"] = normalized
+			icon.set_boss_effects(true, _spectator_status_effects(fighter, combat, str(pair[1])))
+			icon.set_fighter(0, view)
+		var inspiration = stage.get_node_or_null("PlayerInspiration" if pair[1] == "player" else "EnemyInspiration")
+		if inspiration != null: inspiration.set_fighter({"inspiration":fighter.get("inspiration", 0), "inspiration_used_this_battle":fighter.get("inspiration_used", false)})
+		var meter = stage.get_node_or_null("PlayerHomunculusMeter" if pair[1] == "player" else "EnemyHomunculusMeter")
+		if meter != null: meter.set_fighter({"hom_name":str(fighter.get("hom_name", fighter.get("hom_id", ""))), "hom_energy":int(fighter.get("hom_energy", 0)), "hom_spent":bool(fighter.get("hom_spent", false))})
+	displayed_weapon_slot = int(combat.get("active_weapon_slot", 0))
+	for index in weapon_buttons.size():
+		if weapon_buttons[index].get_child_count() > 0:
+			weapon_buttons[index].get_child(0).modulate = Color.WHITE if index + 1 == displayed_weapon_slot else Color(0.6, 0.6, 0.6)
+	var player: Dictionary = combat.get("player", {})
+	var ids: Array = player.get("spell_ids", [])
+	for i in mini(spell_buttons.size(), ids.size()):
+		var id := str(ids[i])
+		var spell: Dictionary = registry.get_spell_by_id(id)
+		var cooldown := int(player.get("cooldowns", {}).get(id, 0))
+		spell_buttons[i].text = "%s\n%s  |  %s%%  |  CD %d" % [GameLocalization.catalog("spell", id, "name", str(spell.get("name", id))), str(roundi(float(spell.get("power_mult", 0)) * 100)) + "%", roundi(float(spell.get("accuracy", 0)) * 100), cooldown]
+	lock_controls()
 
 func present_events(events: Array, epoch: int) -> void:
 	lock_controls()

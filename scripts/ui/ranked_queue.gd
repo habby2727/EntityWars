@@ -1,13 +1,18 @@
-﻿extends Node
+extends Node
 
 const SETTINGS_PATH := "user://settings.cfg"
 
+const PracticeRecovery := preload("res://scripts/net/practice_recovery.gd")
+var practice_recovery := {}
+var practice_checked := false
 var host
 var backend: BackendClient
 var request_id := ""
 var request_kind := ""
 var selected := false
+var friendly := false
 var queued := false
+var forest_idle_verified := false
 var cancel_requested := false
 var joined_at := 0
 var expires_at := 0
@@ -35,6 +40,7 @@ var margin_bottom_before: float
 
 func _ready() -> void:
 	host = get_parent()
+	friendly = not SceneRouter._friendly_context.is_empty() and str(SceneRouter._friendly_context.get("player_id", "")) == str(ConnectionGate.player_id)
 	practice_selected_label = _make_selected_label(host.btn_seal_attack)
 	ranked_selected_label = _make_selected_label(host.btn_seal_defense)
 	_update_selected_labels()
@@ -94,15 +100,36 @@ func _ready() -> void:
 	backend.auth_changed.connect(_on_auth)
 	backend.api_completed.connect(_on_response)
 	add_child(backend)
-	var config := ConfigFile.new()
-	config.load(SETTINGS_PATH)
-	if str(config.get_value("combat", "selected_seal", "practice")) == "pvp":
-		_select()
+	if friendly:
+		selected = true
+		info.custom_minimum_size.y = 140
+		info.max_lines_visible = 5
+		info.clip_text = false
+		host.btn_seal_attack.hide()
+		host.btn_seal_defense.hide()
+		practice_selected_label.hide()
+		ranked_selected_label.hide()
+		top_button.hide()
+		if is_instance_valid(debug_button): debug_button.hide()
+		cancel_button.show()
+		cancel_button.pressed.disconnect(_cancel)
+		cancel_button.pressed.connect(_friendly_cancel)
+		DuelClient.state_changed.connect(_friendly_update)
+		DuelClient.mutation_finished.connect(_friendly_mutation)
+		DuelClient.match_started.connect(_friendly_match)
+		host.btn_play.text = tr("DUEL_READY")
+		info.text = tr("DUEL_TITLE") + "\n" + str(SceneRouter._friendly_context.get("opponent", ""))
+		DuelClient.poll_now()
+	else:
+		var config := ConfigFile.new()
+		config.load(SETTINGS_PATH)
+		if str(config.get_value("combat", "selected_seal", "practice")) == "pvp":
+			_select()
 
 func _make_selected_label(seal: BaseButton) -> Label:
 	var label := Label.new()
 	label.text = "SELECTED"
-	label.add_theme_font_override("font", preload("res://assets/fonts/old-newspaper-types-font/Oldnewspapertypes-449D.ttf"))
+	label.add_theme_font_override("font", preload("res://assets/fonts/MedievalFont/JimNightshade-Regular.ttf"))
 	label.add_theme_font_size_override("font_size", 18)
 	label.add_theme_color_override("font_color", Color.WHITE)
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
@@ -123,6 +150,9 @@ func _update_selected_labels() -> void:
 		debug_button.visible = selected and ConnectionGate.debug_lab_navigation_allowed()
 
 func _on_auth(_token: String) -> void:
+	practice_recovery = {}
+	practice_checked = false
+	forest_idle_verified = false
 	request_id = ""
 	request_kind = ""
 	synced = false
@@ -132,7 +162,7 @@ func _on_auth(_token: String) -> void:
 		info.text = "Reconnect to recover queue"
 
 func _on_identity(state: Dictionary) -> void:
-	if state.is_empty() or str(state.get("player_id", "")) != backend._verified_player_id:
+	if state.is_empty() or str(state.get("player_id", "")) != backend._verified_player_id or backend._verified_player_id != str(ConnectionGate.player_id) or str(backend.base_url).strip_edges().trim_suffix("/") != str(ConnectionGate.base_url).strip_edges().trim_suffix("/"):
 		return
 	server_state = state.duplicate(true)
 	synced = true
@@ -176,8 +206,11 @@ func _send(method: String, path: String, body: Variant, kind: String) -> bool:
 	request_kind = kind
 	return true
 
-func _join() -> void:
-	if not selected or queued:
+func _join(practice: bool = false) -> void:
+	if friendly and not DuelClient._pending_body.is_empty():
+		DuelClient.retry_mutation()
+		return
+	if (not selected and not practice) or queued:
 		return
 	if not synced:
 		info.text = "Sign in and wait for Ranked connection"
@@ -234,7 +267,30 @@ func _join() -> void:
 		info.text = tr("LOADOUT_HOM_PENDING")
 		return
 	var selection := {"entity_id": entity, "weapon_ids": [null if a.is_empty() else a, null if b.is_empty() else b], "homunculus_id": null if hom.is_empty() else hom, "spell_ids": spells.duplicate(), "mode": "attack"}
-	if _send("POST", "/pvp/queue/join", {"client_action_id": backend._make_uuid(), "selection": selection}, "join"):
+	if practice:
+		if not practice_checked or not practice_recovery.is_empty():
+			info.text = tr("PRACTICE_RECOVERING")
+			next_poll = 0.0
+			return
+		practice_recovery = {"body": {"client_action_id": backend._make_uuid(), "selection": selection}, "created_at": int(Time.get_unix_time_from_system())}
+		if not PracticeRecovery.write(practice_recovery):
+			practice_recovery = {}
+			info.text = tr("PRACTICE_RECOVERY_ERROR")
+			return
+		if not _send("POST", "/practice/start", practice_recovery.body, "practice_start"):
+			info.text = tr("PRACTICE_RECOVERING")
+			next_poll = 0.0
+		return
+	if friendly:
+		if str(SceneRouter._friendly_context.get("player_id", "")) != str(ConnectionGate.player_id) or int(SceneRouter._friendly_context.get("generation", -1)) != ConnectionGate._generation:
+			info.text = tr("SOCIAL_FAILURE")
+			return
+		if DuelClient.submit_ready(str(SceneRouter._friendly_context.get("invite_id", "")), selection):
+			info.text = tr("DUEL_CONFIRMING")
+		else:
+			info.text = tr("SOCIAL_RETRY")
+		return
+	if _send("POST", "/pvp/queue/join", {"client_action_id": backend._make_uuid(), "selection": selection, "playback_protocol": 1}, "join"):
 		joined_at = 0
 		_set_queued(true)
 		info.text = "Joining queue..."
@@ -253,6 +309,7 @@ func _cancel() -> void:
 		info.text = "Connection unavailable. Retry."
 
 func _set_queued(value: bool) -> void:
+	if value: forest_idle_verified = false
 	if value and not queued:
 		var margin: Control = host.get_node("RootMargin")
 		margin_bottom_before = margin.offset_bottom
@@ -290,8 +347,8 @@ func _set_queued(value: bool) -> void:
 		cancel_requested = false
 	queued = value
 	overlay.visible = value
-	host.btn_play.text = "Searching... 00:00" if value else tr("LOADOUT_READY_BO3")
-	cancel_button.visible = value
+	host.btn_play.text = (tr("DUEL_WAITING") if friendly else "Searching... 00:00") if value else tr("LOADOUT_READY_BO3")
+	cancel_button.visible = value or friendly
 	top_button.disabled = value
 
 func _lock_controls(node: Node) -> void:
@@ -303,13 +360,62 @@ func _lock_controls(node: Node) -> void:
 	for child in node.get_children():
 		_lock_controls(child)
 
+func _friendly_update() -> void:
+	if not friendly: return
+	var invite_id := str(SceneRouter._friendly_context.get("invite_id", ""))
+	for invite in DuelClient.accepted_invites:
+		if invite is Dictionary and str(invite.get("invite_id", "")) == invite_id:
+			if str(SceneRouter._friendly_context.get("player_id", "")) != str(ConnectionGate.player_id): return
+			SceneRouter._friendly_context["generation"] = ConnectionGate._generation
+			var ready: Dictionary = invite.get("ready", {})
+			if bool(ready.get("player", false)) and not queued: _set_queued(true)
+			var seconds := maxi(0, ceili(float(int(invite.get("expires_at", 0)) - DuelClient.server_now()) / 1000.0))
+			info.text = "%s\n%s\n%s: %s | %s: %s\n%ds" % [tr("DUEL_TITLE"), str(SceneRouter._friendly_context.get("opponent", "")), tr("DUEL_YOU"), tr("DUEL_READY") if bool(ready.get("player", false)) else "--", tr("DUEL_OPPONENT"), tr("DUEL_READY") if bool(ready.get("enemy", false)) else "--", seconds]
+			preload("res://scripts/ui/social_spanish_font.gd").apply(info, info.text)
+			return
+	if DuelClient.enabled and DuelClient.server_now() > 0 and str(DuelClient.started.get("invite_id", "")) != invite_id:
+		SceneRouter.finish_friendly.call_deferred()
+
+func _friendly_cancel() -> void:
+	if not DuelClient._pending_body.is_empty():
+		DuelClient.retry_mutation()
+		return
+	DuelClient.cancel(str(SceneRouter._friendly_context.get("invite_id", "")))
+
+func _friendly_mutation(success: bool, action: String) -> void:
+	if not friendly: return
+	if success and action == "cancel":
+		SceneRouter.finish_friendly.call_deferred()
+	elif not success:
+		info.text = tr("SOCIAL_RETRY")
+
+func _friendly_match(invite_id: String, match_id: String) -> void:
+	if friendly and str(SceneRouter._friendly_context.get("invite_id", "")) == invite_id and str(SceneRouter._friendly_context.get("player_id", "")) == str(ConnectionGate.player_id):
+		SceneRouter._friendly_context["generation"] = ConnectionGate._generation
+		SceneRouter.go_to_friendly_combat.call_deferred(invite_id, match_id)
+
 func _process(delta: float) -> void:
+	if friendly:
+		cancel_button.global_position = host.btn_play.global_position + Vector2((host.btn_play.size.x - cancel_button.size.x) / 2.0, host.btn_play.size.y + 4.0)
+		return
 	next_poll -= delta
 	if queued:
 		cancel_button.global_position = host.btn_play.global_position + Vector2((host.btn_play.size.x - cancel_button.size.x) / 2.0, host.btn_play.size.y + 4.0)
 	if queued and joined_at > 0:
 		var seconds := clampi(int(Time.get_unix_time_from_system()) - int(joined_at / 1000), 0, 3600)
 		host.btn_play.text = "Searching... %02d:%02d" % [seconds / 60, seconds % 60]
+	if synced and request_id.is_empty() and next_poll <= 0.0 and (not practice_checked or not practice_recovery.is_empty()):
+		next_poll = 3.0
+		if not practice_checked:
+			practice_recovery = PracticeRecovery.read()
+			if practice_recovery.has("error"):
+				info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+		var match_id := str(practice_recovery.get("match_id", ""))
+		var path := "/practice/match/state"
+		if not match_id.is_empty(): path += "?match_id=" + match_id.uri_encode()
+		_send("GET", path, null, "practice_state")
+		return
 	if synced and not availability_blocked and request_id.is_empty() and next_poll <= 0.0:
 		next_poll = 3.0
 		if rating_needed and selected and not queued:
@@ -323,7 +429,42 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 	var kind := request_kind
 	request_id = ""
 	request_kind = ""
+	if kind in ["practice_start", "practice_state"]:
+		if not ok:
+			var code := int(data.get("http_status", 0))
+			if kind == "practice_state" and code == 404 and not str(practice_recovery.get("match_id", "")).is_empty():
+				if PracticeRecovery.write({}):
+					practice_recovery = {}
+					practice_checked = false
+					next_poll = 0.0
+				return
+			if kind == "practice_start" and code >= 400 and code < 500:
+				if PracticeRecovery.write({}): practice_recovery = {}
+			info.text = tr("PRACTICE_RECOVERING")
+			next_poll = 3.0
+			return
+		var match_id := str(data.get("match_id", ""))
+		if not match_id.is_empty():
+			practice_recovery = {"match_id": match_id}
+			if not PracticeRecovery.write(practice_recovery):
+				info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+			SceneRouter.go_to_practice_combat(match_id, backend._verified_player_id)
+			return
+		practice_checked = true
+		if practice_recovery.get("body") is Dictionary:
+			var age := int(Time.get_unix_time_from_system()) - int(practice_recovery.get("created_at", 0))
+			if age < 0:
+				info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+			if age > 6 * 86400:
+				if PracticeRecovery.write({}): practice_recovery = {}
+				else: info.text = tr("PRACTICE_RECOVERY_ERROR")
+				return
+			_send("POST", "/practice/start", practice_recovery.body, "practice_start")
+		return
 	if not ok:
+		forest_idle_verified = false
 		if str(data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED"]:
 			availability_blocked = true
 		if str(data.get("error", "")) in ["PVP_DISABLED", "PVP_SECRET_REQUIRED"] or (int(data.get("http_status", 0)) >= 400 and int(data.get("http_status", 0)) < 500):
@@ -344,12 +485,15 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		var rank: Dictionary = data.get("player", {})
 		info.text = "%d MP · %s %s" % [int(rank.get("mp", 1000)), str(rank.get("league", "Copper")), str(rank.get("division", "IV"))]
 		return
+	forest_idle_verified = false
 	var state := str(data.get("state", ""))
 	if state == "MATCHED":
+		forest_idle_verified = false
 		var match_id := str(data.get("match_id", ""))
 		if not match_id.is_empty():
 			SceneRouter.go_to_ranked_combat(match_id)
 	elif state == "QUEUED":
+		forest_idle_verified = false
 		joined_at = int(data.get("joined_at", 0))
 		expires_at = int(data.get("expires_at", 0))
 		selected = true
@@ -361,6 +505,7 @@ func _on_response(id: String, ok: bool, data: Dictionary) -> void:
 		if cancel_requested:
 			_cancel()
 	elif state == "IDLE":
+		forest_idle_verified = true
 		var was_queued := queued
 		_set_queued(false)
 		if was_queued:

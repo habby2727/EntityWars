@@ -1,7 +1,9 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { recordPoisonChange, poisonTickMetadata, resolveOpponentPoisonDamage, recordInspirationActivation } from "../combat_event_provenance";
+import { recordPoisonChange, poisonTickDamage, poisonTickMetadata, resolveOpponentPoisonDamage, recordInspirationActivation } from "../combat_event_provenance";
+import { transferStrategicStatus } from "../strategic_effects";
+import { publicCombatStatus, publicIncomingDrains } from "../public_combat_status";
 import { newExpeditionPassiveState, beginPassiveExchange, finishPassiveExchange, triggerInspirationActivation, passiveModifiers } from "../expedition_passive_state";
 import { buildTrustedCombatSetup, createCombatState, resolveCombatTurn, resolveInspirationDecision } from "../solo_hunt_combat";
 import { createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration } from "../dungeon_combat";
@@ -20,6 +22,25 @@ test("provenance changes only on an effective application and expires, including
  const tick=poisonTickMetadata(victim,"player",["player","boss"],1,2); expect(resolveOpponentPoisonDamage(tick,"boss",[])).toEqual({marker:"poison:2:player",amount:1});
  expect(resolveOpponentPoisonDamage(tick,"boss",["poison:2:player"])).toBeNull(); expect(resolveOpponentPoisonDamage(tick,"player",[])).toBeNull(); expect(resolveOpponentPoisonDamage({...tick,source:"player"},"player",[])).toBeNull(); expect(resolveOpponentPoisonDamage({...tick,actual_damage:0},"boss",[])).toBeNull();
  victim.status.poison=0; recordPoisonChange(victim,0,null); expect(victim.poison_source).toBeUndefined();
+});
+
+test("U3.1 poison reapplication and transfer preserve progression and source",()=>{
+ const a:any={combat_rules_version:2,combat_exchange:1,hp:100,max_hp:100,status:{poison:1}};
+ const b:any={combat_rules_version:2,combat_exchange:1,hp:200,max_hp:200,status:{}};
+ recordPoisonChange(a,0,"boss");expect(a.status.poison).toBe(3);expect(poisonTickDamage(a)).toBe(3);a.status.poison--;
+ a.status.poison=4;recordPoisonChange(a,2,"player");expect(a.status.poison).toBe(2);expect(a.poison_source).toBe("boss");expect(a.poison_effect.stage).toBe(1);
+ const events:any[]=[];
+ transferStrategicStatus("debuff_transfer",a,b,"player","boss",{vuln:"vuln",shield:"shield",reflect:"reflect"},events,(f,k)=>delete f.status[k],(f,k,v)=>f.status[k]=v);
+ recordPoisonChange(b,0,"player");recordPoisonChange(a,0,null);
+ expect(a.poison_effect).toBeUndefined();expect(b.status.poison).toBe(2);expect(b.poison_source).toBe("boss");expect(b.poison_effect.stage).toBe(1);expect(poisonTickDamage(b)).toBe(10);
+});
+
+test("U3.1 status projection shows effective defenses without mutating combat state",()=>{
+ const fighter:any={status:{shield_pct:0.4,reflect_pct:0.2,poison:2},timed_defenses:{shield_pct:{value:0.5,expires_turn:3}},poison_effect:{stage:1,applied_exchange:1,expires_exchange:3,source:"left"},burn_effect:{source:"right",applied_exchange:1,expires_exchange:3}};
+ const before=structuredClone(fighter),view=publicCombatStatus(fighter,1);
+ expect(view.status.shield_pct).toBe(0);expect(view.status.reflect_pct).toBe(0);expect(view.defense_presentation.shield_pct).toEqual({value:0.5,remaining:2});
+ expect(view.persistent_statuses).toEqual({poison:{stage:2,remaining:2},burn:{remaining:2}});expect(fighter).toEqual(before);
+ expect(publicIncomingDrains({turn:1,pending_drains:[{source:"left",target:"right",due_exchange:2}]},"right")).toEqual([{remaining:1}]);
 });
 
 test("Hunt, Dungeon and Ranked emit capped attributable ticks and survive JSON replay",()=>{
@@ -52,12 +73,12 @@ test("each Inspiration resolver records only a validated choice, with determinis
 test("ranked spell application and reflection maintain sources",()=>{
  const p:any=createPvpCombatState(snap("a","sulfur"),snap("b","mercury"),c); const a=p.fighters.left, b=p.fighters.right; const l=a.spells.find((x:any)=>x.id===a.spell_ids[0]), r=b.spells.find((x:any)=>x.id===b.spell_ids[0]);
  l.category="support"; l.power_mult=0; l.accuracy=1; l.effects=[{kind:"poison",target:"enemy",value:3}]; r.category="support"; r.power_mult=0; r.accuracy=1; r.effects=[];
- const out:any=resolvePvpExchange(p,{turn:1,spell_id:l.id},{turn:1,spell_id:r.id},()=>0.5); expect(out.events.find((e:any)=>e.kind==="poison" && e.side==="right")).toMatchObject({source:"left",actual_damage:3}); expect(out.state.fighters.right.poison_source).toBe("left");
+ const out:any=resolvePvpExchange(p,{turn:1,spell_id:l.id},{turn:1,spell_id:r.id},()=>0.5); expect(out.events.find((e:any)=>e.kind==="poison" && e.side==="right")).toMatchObject({source:"left",actual_damage:Math.max(1,Math.round(b.max_hp*0.025))}); expect(out.state.fighters.right.poison_source).toBe("left");
  const q:any=createPvpCombatState(snap("a","sulfur"),snap("b","mercury"),c); q.fighters.right.status.reflect_pct=0.5; q.fighters.right.status.poison_on_reflect=3; q.fighters.right.poison_reflect_source="right"; const reflected:any=resolvePvpExchange(q,{turn:1,spell_id:q.fighters.left.spell_ids[0]},{turn:1,spell_id:q.fighters.right.spell_ids[0]},()=>0.5); expect(reflected.events.find((e:any)=>e.kind==="poison" && e.side==="left")).toMatchObject({source:"right",victim:"left"});
- const z:any=createPvpCombatState(snap("a","sulfur"),snap("b","mercury"),c); const zl=z.fighters.left, zr=z.fighters.right; zl.status.poison=4; zl.poison_source="right"; const clean=zl.spells.find((x:any)=>x.id===zl.spell_ids[0]); clean.category="support"; clean.power_mult=0; clean.effects=[{kind:"cleanse_one",target:"self",value:1}]; clean.accuracy=1; const zrSpell=zr.spells.find((x:any)=>x.id===zr.spell_ids[0]); zrSpell.category="support"; zrSpell.power_mult=0; zrSpell.effects=[]; const cleansed:any=resolvePvpExchange(z,{turn:1,spell_id:clean.id},{turn:1,spell_id:zrSpell.id},()=>0.5); expect(cleansed.state.fighters.left.status.poison).toBe(0); expect(cleansed.state.fighters.left.poison_source).toBeUndefined();
+ const z:any=createPvpCombatState(snap("a","sulfur"),snap("b","mercury"),c); const zl=z.fighters.left, zr=z.fighters.right; zl.status.poison=3; zl.poison_source="right"; const clean=zl.spells.find((x:any)=>x.id===zl.spell_ids[0]); clean.category="support"; clean.power_mult=0; clean.effects=[{kind:"cleanse_one",target:"self",value:1}]; clean.accuracy=1; const zrSpell=zr.spells.find((x:any)=>x.id===zr.spell_ids[0]); zrSpell.category="support"; zrSpell.power_mult=0; zrSpell.effects=[]; const cleansed:any=resolvePvpExchange(z,{turn:1,spell_id:clean.id},{turn:1,spell_id:zrSpell.id},()=>0.5); expect(cleansed.state.fighters.left.status.poison).toBe(0); expect(cleansed.state.fighters.left.poison_source).toBeUndefined();
 });
 
 test("direct Hunt and Dungeon spells attribute new poison without changing duration",()=>{
  const hunt=createCombatState(setup()); const hs=hunt.spells.find((s:any)=>s.id===ids[0]); hs.category="support"; hs.power_mult=0; hs.accuracy=1; hs.effects=[{kind:"poison",target:"enemy",value:3}]; const h=resolveCombatTurn(hunt,{turn:1,spell_id:hs.id,target:"boss"},()=>0.5); expect(h.events.find((e:any)=>e.kind==="status_tick" && e.target==="boss")).toMatchObject({source:"player",actual_damage:3}); expect(h.next_state.boss.status.poison).toBe(2);
- const d=createDungeonCombatState(setup(),{floor:1,entity_id:"sulfur_01",type:"sulfur",hp:1000,attack:1,defense:1,homunculus_id:"cinder",homunculus_level:0,spell_ids:ids},c); const ds=d.spells.find((s:any)=>s.id===ids[0]); ds.category="support"; ds.power_mult=0; ds.accuracy=1; ds.effects=[{kind:"poison",target:"enemy",value:3}]; const out=resolveDungeonTurn(d,{turn:1,spell_id:ds.id},()=>0.5); expect(out.events.find((e:any)=>e.kind==="poison" && e.side==="npc")).toMatchObject({source:"player",actual_damage:3}); expect(out.next_state.npc.status.poison).toBe(2);
+ const d=createDungeonCombatState(setup(),{floor:1,entity_id:"sulfur_01",type:"sulfur",hp:1000,attack:1,defense:1,homunculus_id:"cinder",homunculus_level:0,spell_ids:ids},c); const ds=d.spells.find((s:any)=>s.id===ids[0]); ds.category="support"; ds.power_mult=0; ds.accuracy=1; ds.effects=[{kind:"poison",target:"enemy",value:3}]; const out=resolveDungeonTurn(d,{turn:1,spell_id:ds.id},()=>0.5); expect(out.events.find((e:any)=>e.kind==="poison" && e.side==="npc")).toMatchObject({source:"player",actual_damage:Math.round(d.npc.max_hp*0.025)}); expect(out.next_state.npc.status.poison).toBe(2);
 });

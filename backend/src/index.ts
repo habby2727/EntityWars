@@ -1,13 +1,32 @@
+import { createSpectatorService } from "./spectator_service";
+import { createSpectatorAdapters } from "./spectator_adapters";
+import { spectatableActivities } from "./spectator_discovery";
+import { recordSpectatorEvents } from "./spectator_events";
+import { installSpectatorStartGuard, endSpectatingForStart, spectatorNames } from "./spectator_guard";
+import { publicExpeditionCombat } from "./expeditions_service";
+import { createPracticeService, activePractice } from "./practice_service";
 import { ownsHomunculus, combatHomunculusAllowed, legacyHomunculusIds, expeditionHomunculusIds, buildHomunculusCombatCatalog, homunculusCatalog } from "./homunculus_catalog";
 import { normalizeHomunculusProgress as normalizeProgress, xpThreshold, grantXp, PVE_VICTORY_XP, type HomunculusProgress } from "./homunculus_experience";
 import * as missions from "./world_missions";
 import { Database } from "bun:sqlite";
 import { createGlobalChat } from "./global_chat";
+import { createFriends } from "./social/friends";
+import { createForestPresence, loadCatalog, type ForestData } from "./forest/presence";
+import { createForestDuels } from "./forest/duels";
+import { createWoeLobby } from "./woe/lobby";
+import { createMinigameInvitations } from "./social/minigame_invitations";
+import { createWoeMatchService } from "./woe/match_service";
+import { createCoreDefenseLobby } from "./woe/core_defense_lobby";
+import { createCoreDefenseMatchService } from "./woe/core_defense_match_service";
+import { createForestQuests, ForestQuestError } from "./forest_quests";
 import { startDiscordBridge } from "./discord_bridge";
 import { isRankedRoute, rankedAvailability } from "./pvp/availability";
-import { createPvpChat, createPvpMatches, createPvpQueue, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
+import { createPvpChat, createPvpMatches, createPvpQueue, createSharedPvpMatch, dispatchPvpRequest, trustedPvpSnapshot } from "./pvp/service";
 import { createPvpRanking } from "./pvp/ranking";
+import { createPvpFighter } from "./pvp/combat";
 import { createHash, createHmac } from "crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import defaultConfig from "./config/default";
@@ -25,7 +44,7 @@ import {
 import { AuthStorageUnavailableError } from "./auth/storage_error";
 import { checkIdle, checkRefreshIdle, idleEnabled, resetIdle, rotateRefreshIdle, touchIdle } from "./auth/idle";
 import { AccountStatusUnavailableError, isUserDisabled, pingPostgres, postgresExample, upsertUser } from "./db/postgres";
-import { ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
+import { acquireLock, renewLock, releaseLock, ensureRedisReady, getRedis, pingRedis, redisExample } from "./db/redis";
 import { extractToken, getSession as getLegacySession, issueSession, revokeSession } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
 import { getJobQueueSize } from "./jobs/queue";
@@ -36,6 +55,8 @@ import { recordError, recordRequest, snapshotMetrics } from "./observability/met
 import { normalizeSpellProgress, startSpellResearch, claimSpellResearch, setSpellLoadout, type SpellProgress } from "./spell_research";
 import { claimVerifiedCombatReward, CombatRewardError } from "./combat_rewards";
 import { buildTrustedCombatSetup, createCombatState, deterministicDraw, resolveCombatTurn, resolveInspirationDecision } from "./solo_hunt_combat";
+import { publicCombatStatus, publicIncomingDrains } from "./public_combat_status";
+import { statusActive } from "./persistent_effects";
 import { dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, dungeonEliteTrait, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, createDungeonBlessing, publicDungeonBlessing, resolveDungeonBlessing } from "./dungeon_combat";
 import { createExpeditionService, ExpeditionError, maintainExpeditionReplays } from "./expeditions_service";
 import { commonAppearance, commonAppearances, guardiansFor } from "./solo_guardians";
@@ -225,7 +246,7 @@ function normalizeHomunculusProgress(value: unknown): Record<string, HomunculusP
 	return normalizeProgress(progress, staticData.homunculusIds, staticData.expeditionHomunculusIds, staticData.mutationIds);
 }
 
-function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number): void {
+function awardHomunculusVictory(playerId: string, loadoutJson: string | null, now: number, pvp = false, maxXp = PVE_VICTORY_XP): {homunculus_id:string; xp_granted:number; level_before:number; level_after:number} | undefined {
 	if (!loadoutJson) return;
 	let selection: any;
 	try { selection = JSON.parse(loadoutJson); } catch { throw new HttpError(409, "Invalid stored loadout."); }
@@ -236,11 +257,13 @@ function awardHomunculusVictory(playerId: string, loadoutJson: string | null, no
 	if (!row) throw new HttpError(404, "Player not found.");
 	const player = safeParseState(row.state_json, playerId, row.display_name);
 	if (!player) throw new HttpError(409, "Invalid player state.");
-	if (!combatHomunculusAllowed(player.homunculus_progress, id)) throw new HttpError(409, "Homunculus is not available for combat.");
+	if (!combatHomunculusAllowed(player.homunculus_progress, id)) { if (pvp) return; throw new HttpError(409, "Homunculus is not available for combat."); }
 	const current = player.homunculus_progress[id] ?? { level: 0, xp: 0, owned: true };
-	player.homunculus_progress[id] = grantXp(current, PVE_VICTORY_XP);
+	const amount = pvp ? Math.min(maxXp, Math.max(0, xpThreshold(10) - current.xp)) : PVE_VICTORY_XP;
+	player.homunculus_progress[id] = grantXp(current, amount);
 	player.updated_at = now;
 	if (updatePlayerStmt.run(JSON.stringify(player), now, playerId).changes !== 1) throw new HttpError(409, "Player unavailable.");
+	return {homunculus_id:id, xp_granted:amount, level_before:current.level, level_after:player.homunculus_progress[id].level};
 }
 
 function captureExpeditionHomunculus(playerId: string, id: string, now: number): { duplicate: boolean } {
@@ -314,13 +337,23 @@ for (let attempt = 0; ; attempt++) {
 		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
 	}
 }
-const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN);
+const socialEnabled = Bun.env.SOCIAL_ENABLED === "1";
+const friends = createFriends(db);
+const spectatorEnabled = Bun.env.SPECTATOR_ENABLED === "1";
+let spectatorService: ReturnType<typeof createSpectatorService> | null = null;
+const globalChat = createGlobalChat(db, Date.now, !!Bun.env.DISCORD_BOT_TOKEN, socialEnabled ? friends.friendIds : undefined, spectatorEnabled ? (ids, now) => spectatableActivities(db, ids, now) : undefined, spectatorEnabled ? id => spectatorService?.namesForTarget(id) ?? [] : undefined);
+if (spectatorEnabled) {
+ const adapters=createSpectatorAdapters(db,{dungeon:publicDungeonCombat,hunt:publicHuntCombat,expedition:publicExpeditionCombat});
+ spectatorService=createSpectatorService({db,online:id=>globalChat.isOnline(id),enabledAccount:async id=>!!getPlayerByIdStmt.get(id) && !(await isUserDisabled(id)),...adapters});
+ installSpectatorStartGuard(id=>spectatorService?.endViewer(id),id=>spectatorService?.namesForTarget(id) ?? []);
+}
 let expeditionService: ReturnType<typeof createExpeditionService> | null = null;
+let forestQuests: ReturnType<typeof createForestQuests> | null = null;
 function getExpeditionService() {
 	if (expeditionService) return expeditionService;
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
 	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance, bosses: staticData.soloBosses.bosses };
-	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
+	expeditionService = createExpeditionService({ db, secret: WORLD_SECRET, catalogs, getPlayer: ensurePlayerState, questProgress: Bun.env.FOREST_QUESTS_ENABLED === "1" ? event => forestQuests?.progress(event) : undefined, awardVictory: awardHomunculusVictory, grantVictoryLoot: (playerId, grants, rewardId, now) => {
 		const row = getPlayerByIdStmt.get(playerId) as { state_json: string } | undefined;
 		if (!row) throw new HttpError(404, "Player not found.");
 		let player: PlayerState;
@@ -354,7 +387,7 @@ function getExpeditionService() {
 	} });
 	return expeditionService;
 }
-let rankedServices: { db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking> } | null = null;
+let rankedServices: { practice: ReturnType<typeof createPracticeService>; db: Database; queue: ReturnType<typeof createPvpQueue>; matches: ReturnType<typeof createPvpMatches>; chat: ReturnType<typeof createPvpChat>; ranking: ReturnType<typeof createPvpRanking>; snapshot: (id:string,selection:unknown)=>any; startFriendly: (a:any,b:any,now:number,invite:string,playbackProtocol?:number)=>string } | null = null;
 function getRankedServices() {
 	if (rankedServices) return rankedServices;
 	const secret = Bun.env.PVP_RNG_SECRET;
@@ -362,10 +395,14 @@ function getRankedServices() {
 	const dataDir = resolve(import.meta.dir, "..", "..", "data");
 	const catalogs = { entities: readJsonFile(resolve(dataDir, "entities.json"))?.entities, items: readJsonFile(resolve(dataDir, "items.json"))?.items, homunculi: homunculusCatalog().all, spells: readJsonFile(resolve(dataDir, "spells.json"))?.spells, types: readJsonFile(resolve(dataDir, "types.json")), mutations: readJsonFile(resolve(dataDir, "static", "mutations.json"))?.mutations, balance: readJsonFile(resolve(dataDir, "static", "balance.json"))?.balance };
 	if (![catalogs.entities, catalogs.items, catalogs.homunculi, catalogs.spells, catalogs.mutations].every(Array.isArray) || !catalogs.types || !catalogs.balance) throw new Error("PVP_CATALOG_UNAVAILABLE");
-	const matches = createPvpMatches(db, new TextEncoder().encode(secret));
-	rankedServices = { db, matches, queue: createPvpQueue(db, catalogs, (id, selection) => trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs)), chat: createPvpChat(db), ranking: createPvpRanking(db) };
+	const matches = createPvpMatches(db, new TextEncoder().encode(secret), Date.now, (id,snapshot,now) => awardHomunculusVictory(id,snapshot,now,true));
+	const snapshot = (id:string, selection:unknown) => { const value=trustedPvpSnapshot(id, selection, ensurePlayerState(id), catalogs); return value && !("error" in createPvpFighter(value,catalogs)) ? value : null; };
+	const practice = createPracticeService(db, catalogs, new TextEncoder().encode(secret), snapshot, (id, saved, now, amount) => awardHomunculusVictory(id, saved, now, true, amount));
+	rankedServices = { db, matches, snapshot, practice, startFriendly: (a,b,now,invite,protocol) => createSharedPvpMatch(db,catalogs,a,b,now,"friendly",invite,protocol), queue: createPvpQueue(db, catalogs, snapshot), chat: createPvpChat(db), ranking: createPvpRanking(db) };
 	const timer = setInterval(() => { try { matches.sweep(); } catch (error) { logError("pvp deadline sweep failed", { error: String(error) }); } }, 1000);
 	timer.unref();
+	const practiceTimer = setInterval(() => { try { practice.sweep(); } catch (error) { logError("practice cleanup failed", { error: String(error) }); } }, 60_000);
+	practiceTimer.unref();
 	return rankedServices;
 }
 const getPlayerByIdStmt = db.prepare(
@@ -687,6 +724,26 @@ function jsonResponse(data: unknown, status = 200): Response {
 		status,
 		headers: { "Content-Type": "application/json" }
 	});
+}
+
+async function readSocialJson(req: Request, limit: number): Promise<any> {
+	const reader = req.body?.getReader();
+	if (!reader) return {};
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for (;;) {
+		const { value, done } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > limit) { await reader.cancel(); throw new HttpError(413, "Body too large."); }
+		chunks.push(value);
+	}
+	if (!size) return {};
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+	try { return JSON.parse(new TextDecoder().decode(bytes)); }
+	catch { throw new HttpError(400, "Invalid JSON."); }
 }
 
 function getSchemaVersion(): string | null {
@@ -1272,6 +1329,99 @@ async function maybeRunExternalExamples(): Promise<void> {
 }
 
 async function startServer(): Promise<void> {
+	const forestEnabled = Bun.env.FOREST_WS_ENABLED === "1";
+	const forestZones = loadCatalog(resolve(import.meta.dir, "..", "..", "data", "static", "forest_zones.json"));
+	const leaseKey = "forest:presence:leader", leaseTtl = 15000;
+	const acquiredAt = performance.now();
+	const leaseToken = forestEnabled ? await acquireLock(leaseKey, leaseTtl) : null;
+	// Fence well before Redis's 15-second expiry: renewal is due at four seconds,
+	// with at most two seconds for scheduling and a confirmed response.
+	if (forestEnabled && (!leaseToken || performance.now() - acquiredAt >= 6000)) throw new Error("Forest Redis lease unavailable");
+	let leaseDeadline = acquiredAt + 6000, leaseFenced = false, leaseRenewing = false;
+	const forest = forestEnabled ? createForestPresence(forestZones, async (data) => {
+		const request = new Request("http://localhost/forest/ws", { headers: { authorization: `Bearer ${data.token}` } });
+		return await requireAuth(request) === data.playerId;
+	}, Date.now, () => leaseValid()) : null;
+	function fenceLease(): void {
+		if (leaseFenced) return;
+		leaseFenced = true;
+		forest?.fence();
+		console.error("Forest lease lost; terminating process.");
+		process.exit(1);
+	}
+	function leaseValid(): boolean {
+		if (!forest || leaseFenced) return false;
+		if (performance.now() >= leaseDeadline) { fenceLease(); return false; }
+		return true;
+	}
+	if (Bun.env.FOREST_QUESTS_ENABLED === "1" && forest) {
+		const catalog = readJsonFile(resolve(import.meta.dir, "..", "..", "data", "static", "forest_quests.json"));
+		forestQuests = createForestQuests({db,secret:WORLD_SECRET,npcs:catalog.npcs,position:id=>leaseValid() ? forest.positionOf(id) : null,grant:(id,reward,questId,now)=>{
+			const row=getPlayerByIdStmt.get(id) as {state_json:string}|undefined;
+			if (!row) throw new HttpError(404,"Player not found.");
+			const player=JSON.parse(row.state_json) as PlayerState;
+			assertWalletInvariant(player.wallet);
+			const before={...player.wallet}, caps=walletCapacities(player);
+			for (const [resource,amount] of Object.entries(reward)) if ((player.wallet[resource] ?? 0)+amount>(caps[resource] ?? getWalletCap(resource))) throw new ForestQuestError(409,"QUEST_STORAGE_FULL");
+			applyWalletGrant(player.wallet,reward); assertWalletInvariant(player.wallet); player.updated_at=now;
+			if (updatePlayerStmt.run(JSON.stringify(player),now,id).changes!==1) throw new HttpError(409,"Player unavailable.");
+			auditWalletMutation(id,computeWalletDelta(before,player.wallet),"FOREST_QUEST_REWARD",questId,now);
+		}});
+	}
+	const duels = createForestDuels(db, id => forest?.roomOf(id) ?? null, () => !!forest && leaseValid(), Date.now, { snapshot: (id,selection) => getRankedServices()?.snapshot(id,selection) ?? null, start: (a,b,now,invite,protocol) => { const service=getRankedServices(); if (!service) throw new Error("PVP_SECRET_REQUIRED"); return service.startFriendly(a,b,now,invite,protocol); } }, () => { try { return !!getRankedServices(); } catch { return false; } });
+	const woe = createWoeLobby(db, id => forest?.roomOf(id) ?? null, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid());
+	const coreEnabled = () => Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1" && !!forest && leaseValid();
+	const coreDefense = createCoreDefenseLobby(db, id => forest?.roomOf(id) ?? null, coreEnabled);
+	const coreMatches = createCoreDefenseMatchService(db, coreEnabled);
+	const minigameInvites = createMinigameInvitations(db, {canServe:()=>socialEnabled && !!forest && leaseValid(), enabled:kind=>kind==="woe" ? Bun.env.FOREST_WOE_ENABLED==="1" : Bun.env.FOREST_CORE_DEFENSE_ENABLED==="1", online:id=>globalChat.isOnline(id), join:{woe:woe.joinFromInvitation,core_defense:coreDefense.joinFromInvitation}});
+	const woeMatches = createWoeMatchService(db, () => Bun.env.FOREST_WOE_ENABLED === "1" && !!forest && leaseValid(), Date.now, {canSchedule:()=>!!forest && leaseValid(), coreDefense:coreMatches});
+	if ((Bun.env.FOREST_WOE_ENABLED === "1" || Bun.env.FOREST_CORE_DEFENSE_ENABLED === "1") && forest) woeMatches.start();
+	if (forest && leaseToken) {
+		getRedis().on("error", fenceLease);
+		getRedis().on("close", fenceLease);
+		getRedis().on("end", fenceLease);
+		const watchdog = setInterval(() => { leaseValid(); }, 250); watchdog.unref();
+		const renewal = setInterval(() => {
+			if (!leaseValid() || leaseRenewing) return;
+			leaseRenewing = true;
+			const started = performance.now();
+			void renewLock(leaseKey, leaseToken, leaseTtl).then(ok => {
+				leaseRenewing = false;
+				if (!leaseValid() || !ok || performance.now() - started >= 4000) { fenceLease(); return; }
+				leaseDeadline = started + 6000;
+			}).catch(fenceLease);
+		}, 4000); renewal.unref();
+		const flush = setInterval(() => { if (leaseValid()) forest.flush(); }, 50); flush.unref();
+		const sweep = setInterval(() => { if (leaseValid()) void forest.sweep(); }, 30000); sweep.unref();
+		let stopping = false;
+		const shutdown = () => {
+			if (stopping) return; stopping = true; leaseFenced = true; forest.fence();
+			clearInterval(watchdog); clearInterval(renewal); clearInterval(flush); clearInterval(sweep);
+			void releaseLock(leaseKey, leaseToken).finally(() => process.exit(0));
+		};
+		process.once("SIGTERM", shutdown); process.once("SIGINT", shutdown);
+	}
+	// Resolve only the explicitly configured proxy, never arbitrary private peers.
+	const trustedProxy = Bun.env.FOREST_WS_TRUSTED_PROXY?.trim() || "";
+	let proxyAddresses = new Set<string>(), proxyRefreshAt = 0, proxyLookup: Promise<void> | null = null;
+	const normalizeIp = (ip: string) => ip.toLowerCase().startsWith("::ffff:") && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip.toLowerCase();
+	async function forestClientIp(req: Request, remote: string): Promise<string> {
+		const actual = normalizeIp(remote);
+		if (!trustedProxy) return actual;
+		if (Date.now() >= proxyRefreshAt) {
+			if (!proxyLookup) proxyLookup = (async () => {
+				try { proxyAddresses = new Set((await lookup(trustedProxy, { all: true })).map(a => normalizeIp(a.address))); }
+				catch { proxyAddresses.clear(); }
+				finally { proxyRefreshAt = Date.now() + 5000; }
+			})();
+			try { await proxyLookup; } finally { proxyLookup = null; }
+		}
+		if (!proxyAddresses.has(actual)) return actual;
+		const forwarded = (req.headers.get("x-real-ip") ?? "").trim();
+		return isIP(forwarded) ? normalizeIp(forwarded) : actual;
+	}
+	const handshakes = new Map<string, { start: number; count: number }>();
+	let handshakeWindow = Date.now(), handshakeTotal = 0;
 	void maybeRunExternalExamples();
 	startDiscordBridge(db, globalChat);
 	const huntMaintenance = setInterval(() => {
@@ -1301,12 +1451,37 @@ async function startServer(): Promise<void> {
 			try {
 				const res = await (async () => {
 					const url = new URL(req.url);
+				if (url.pathname === "/forest/ws") {
+					if (!forest) return jsonResponse({ error: "WebSocket unavailable." }, 404);
+					if (!leaseValid()) return jsonResponse({ error: "WebSocket unavailable." }, 503);
+					if (req.method !== "GET" || req.headers.get("upgrade")?.toLowerCase() !== "websocket") return jsonResponse({ error: "Upgrade required" }, 426);
+					const now = Date.now();
+					if (now - handshakeWindow >= 60000) { handshakeWindow = now; handshakeTotal = 0; }
+					if (++handshakeTotal > 2000) return jsonResponse({ error: "Rate limit" }, 429);
+					const ip = await forestClientIp(req, server.requestIP(req)?.address ?? "unknown");
+					if (!leaseValid()) return jsonResponse({ error: "WebSocket unavailable." }, 503);
+					for (const [key, value] of handshakes) if (now - value.start >= 60000) handshakes.delete(key);
+					let limit = handshakes.get(ip);
+					if (!limit) { if (handshakes.size >= 4096) return jsonResponse({ error: "Rate limit" }, 429); limit = { start: now, count: 0 }; handshakes.set(ip, limit); }
+					if (++limit.count > 120) return jsonResponse({ error: "Rate limit" }, 429);
+					const build = req.headers.get("X-EntityWars-Client-Build") ?? "";
+					if (!/^[1-9][0-9]*$/.test(build) || !Number.isSafeInteger(Number(build)) || Number(build) < config.minClientBuild) return jsonResponse({ error: "CLIENT_UPDATE_REQUIRED", min_client_build: config.minClientBuild }, 426);
+					const authorization = req.headers.get("authorization") ?? "";
+					if (!/^Bearer [^\s]+$/i.test(authorization)) throw new HttpError(401, "Missing auth token.");
+					const playerId = await requireAuth(req, ctx);
+					if (!leaseValid()) return jsonResponse({ error: "WebSocket unavailable." }, 503);
+					const player = getPlayerByIdStmt.get(playerId) as { display_name: string } | null;
+					if (!player || typeof player.display_name !== "string") throw new HttpError(401, "Player unavailable.");
+					const data: ForestData = { kind: "forest", playerId, displayName: player.display_name, token: authorization.slice(7) };
+					if (server.upgrade(req, { data })) return;
+					return jsonResponse({ error: "Upgrade required" }, 426);
+				}
 				if (url.pathname == "/ws") {
 						const address = server.requestIP(req)?.address;
 						if (IS_PRODUCTION || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
 							return jsonResponse({ error: "WebSocket unavailable." }, 403);
 						}
-					const upgraded = server.upgrade(req, { data: { ip: getClientIp(req) } });
+					const upgraded = server.upgrade(req, { data: { kind: "debug", ip: getClientIp(req) } });
 					if (upgraded) {
 						return;
 					}
@@ -1448,13 +1623,21 @@ async function startServer(): Promise<void> {
 					const body = await readJson(req, config.maxBodyBytes);
 					const refreshToken =
 						typeof body?.refresh_token == "string" ? body.refresh_token.trim() : "";
+					const accessToken = extractToken(req);
+					let forestPlayerId: string | null = null;
+					if (forest || spectatorService) {
+						const access = accessToken ? await getAccessToken(accessToken) : null;
+						const refresh = refreshToken ? await getRefreshToken(refreshToken) : null;
+						if (!access || !refresh || access.userId === refresh.userId) forestPlayerId = access?.userId ?? refresh?.userId ?? null;
+					}
 					if (refreshToken) {
 						await revokeRefreshToken(refreshToken);
 					}
-					const accessToken = extractToken(req);
 					if (accessToken) {
 						await revokeAccessToken(accessToken);
 					}
+					if (forestPlayerId) spectatorService?.endForPlayer(forestPlayerId);
+					if (forestPlayerId && leaseValid()) forest?.evict(forestPlayerId);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 
@@ -1471,26 +1654,71 @@ async function startServer(): Promise<void> {
 					if (!token) {
 						throw new HttpError(401, "Missing auth token.");
 					}
-					if (idleEnabled()) await requireAuth(req, ctx);
+					let forestPlayerId: string | null = null;
+					if (idleEnabled()) forestPlayerId = await requireAuth(req, ctx);
+					else if (forest || spectatorService) { try { forestPlayerId = await requireAuth(req, ctx); } catch { /* Preserve logout semantics. */ } }
 					await revokeSession(token);
 					await revokeAccessToken(token);
+					if (forestPlayerId) spectatorService?.endForPlayer(forestPlayerId);
+					if (forestPlayerId && leaseValid()) forest?.evict(forestPlayerId);
 					return jsonResponse({ ok: true, server_time_unix_ms: Date.now() });
 				}
 
-				if (isRankedRoute(req.method, url.pathname)) {
+				if ((req.method === "POST" && ["/spectator/start","/spectator/leave"].includes(url.pathname)) || (req.method === "GET" && url.pathname === "/spectator/state")) {
+                    const viewer = await requireAuth(req,ctx);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:pvp",windowSeconds:EXPENSIVE_RATE_WINDOW,max:EXPENSIVE_RATE_MAX,keyBy:"user",userId:viewer});
+                    if (!spectatorService) return jsonResponse({error:"SPECTATOR_DISABLED"},503);
+                    try {
+                        if (req.method === "GET") { const raw=url.searchParams.get('after') ?? '0'; if (!/^\d+$/.test(raw)) throw new Error('INVALID_REQUEST'); return jsonResponse(await spectatorService.state(viewer,url.searchParams.get('observation_id') ?? '',Number(raw))); }
+                        const body=await readJson(req,config.maxBodyBytes);
+                        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('INVALID_REQUEST');
+                        if (url.pathname === '/spectator/start') {if(Object.keys(body).some(k=>k!=='target_player_id'))throw new Error('INVALID_REQUEST');return jsonResponse(await spectatorService.start(viewer,body.target_player_id));}
+                        if(Object.keys(body).some(k=>k!=='observation_id'))throw new Error('INVALID_REQUEST');return jsonResponse(spectatorService.leave(viewer,body.observation_id));
+                    } catch(error) {const code=error instanceof Error?error.message:'SPECTATOR_UNAVAILABLE';if(['INVALID_REQUEST','INVALID_TARGET'].includes(code))return jsonResponse({error:code},400);if(code==='OBSERVATION_NOT_FOUND')return jsonResponse({error:code},404);if(['SPECTATOR_UNAVAILABLE','SPECTATOR_CAPACITY','OBSERVATION_CLOSED'].includes(code))return jsonResponse({error:code},409);logError('spectator request failed',{error:String(error)});return jsonResponse({error:'SPECTATOR_UNAVAILABLE'},503);}
+                }
+
+				if ((req.method === "POST" && ["/practice/start","/practice/match/decision","/practice/match/forfeit"].includes(url.pathname)) || (req.method === "GET" && url.pathname === "/practice/match/state")) {
+                    const playerId = await requireAuth(req, ctx);
+                    await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
+                    try {
+                        const service = getRankedServices()?.practice;
+                        if (!service) return jsonResponse({error:"PVP_SECRET_REQUIRED"},503);
+                        if (req.method === "GET") {
+                            const raw=url.searchParams.get("after") ?? "0";
+                            if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error("INVALID_CURSOR");
+                            return jsonResponse(service.state(playerId,url.searchParams.get("match_id"),Number(raw)));
+                        }
+                        const body=await readJson(req,config.maxBodyBytes);
+                        const fields=(allowed:string[]) => body && typeof body==='object' && !Array.isArray(body) && Object.keys(body).every(k=>allowed.includes(k));
+                        if (url.pathname==='/practice/start') { if (!fields(['client_action_id','selection'])) throw new Error('INVALID_REQUEST'); return jsonResponse(service.start(playerId,body.client_action_id,body.selection)); }
+                        if (url.pathname==='/practice/match/decision') { if (!fields(['match_id','client_action_id','combat_revision','decision']) || typeof body.match_id!=='string') throw new Error('INVALID_REQUEST'); return jsonResponse(service.decide(playerId,body.match_id,body.client_action_id,body.combat_revision,body.decision)); }
+                        if (!fields(['match_id','client_action_id']) || typeof body.match_id!=='string') throw new Error('INVALID_REQUEST');
+                        return jsonResponse(service.forfeit(playerId,body.match_id,body.client_action_id));
+                    } catch (error) {
+                        const code=error instanceof Error ? error.message : 'PRACTICE_UNAVAILABLE';
+                        if (code==='MATCH_NOT_FOUND') return jsonResponse({error:code},404);
+                        if (['PLAYER_BUSY','ACTION_CONFLICT','STALE_REVISION','MATCH_FINISHED','ACTION_LIMIT'].includes(code)) return jsonResponse({error:code},409);
+                        if (['INVALID_REQUEST','INVALID_CURSOR','INVALID_ACTION_ID','INVALID_DECISION','UNTRUSTED_SETUP'].includes(code)) return jsonResponse({error:code},400);
+                        logError('practice request failed',{error:String(error)}); return jsonResponse({error:'PRACTICE_UNAVAILABLE'},503);
+                    }
+                }
+
+				if (isRankedRoute(req.method, url.pathname) || (req.method === "GET" && url.pathname === "/forest/duels/match/state") || (req.method === "POST" && ["/forest/duels/match/decision","/forest/duels/match/playback_ack","/forest/duels/match/forfeit","/forest/duels/match/chat"].includes(url.pathname))) {
+                    const friendly = url.pathname.startsWith("/forest/duels/");
 					const playerId = await requireAuth(req, ctx);
 					await applyRateLimit(ctx, { keyPrefix: "rl:pvp", windowSeconds: EXPENSIVE_RATE_WINDOW, max: EXPENSIVE_RATE_MAX, keyBy: "user", userId: playerId });
-					if (Bun.env.PVP_ENABLED !== "1") { const result = rankedAvailability(Bun.env); return jsonResponse(result.data, result.status); }
+					if (friendly && (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid())) return jsonResponse({error:"FOREST_DUELS_UNAVAILABLE"},503);
+					if (!friendly && Bun.env.PVP_ENABLED !== "1") { const result = rankedAvailability(Bun.env); return jsonResponse(result.data, result.status); }
 					try {
 						const services = getRankedServices();
 						if (!services) return jsonResponse({ error: "PVP_SECRET_REQUIRED" }, 503);
 						const body = req.method === "POST" ? await readJson(req, config.maxBodyBytes) : undefined;
-						return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams));
+						return jsonResponse(dispatchPvpRequest(services, playerId, req.method, url.pathname, body, url.searchParams, friendly ? "friendly" : "ranked"));
 					} catch (error) {
 						const code = error instanceof Error ? error.message : "PVP_UNAVAILABLE";
 						if (code === "MATCH_NOT_FOUND") return jsonResponse({ error: code }, 404);
 						if (code === "CHAT_RATE_LIMIT") return jsonResponse({ error: code }, 429);
-						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT"].includes(code)) return jsonResponse({ error: code }, 409);
+						if (["ACTION_CONFLICT", "QUEUE_CONFLICT", "STALE_REVISION", "PLAYBACK_PENDING", "DECISION_ALREADY_SUBMITTED", "MATCH_FINISHED", "RESULT_CONFLICT", "PLAYER_BUSY"].includes(code)) return jsonResponse({ error: code }, 409);
 						if (["INVALID_REQUEST", "INVALID_CURSOR", "INVALID_SEASON", "INVALID_ACTION_ID", "INVALID_DECISION", "INVALID_CHAT", "UNTRUSTED_SETUP"].includes(code)) return jsonResponse({ error: code }, 400);
 						logError("pvp request failed", { error: String(error) }); return jsonResponse({ error: "PVP_UNAVAILABLE" }, 503);
 					}
@@ -1516,12 +1744,131 @@ async function startServer(): Promise<void> {
 					}).immediate();
 				}
 
+				if (["/forest/quests", "/forest/quests/accept", "/forest/quests/claim", "/forest/quests/cancel"].includes(url.pathname)) {
+					const playerId=await requireAuth(req,ctx);
+					if (!forest || !leaseValid()) return jsonResponse({error:"FOREST_QUESTS_UNAVAILABLE"},503);
+					if (!forestQuests && req.method==="GET" && url.pathname==="/forest/quests") return jsonResponse({quest:null,server_time_unix_ms:Date.now()});
+					if (!forestQuests) return jsonResponse({error:"FOREST_QUESTS_UNAVAILABLE"},503);
+					await applyRateLimit(ctx,{keyPrefix:"rl:forest-quests",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+					if (req.method==="GET" && url.pathname==="/forest/quests") return jsonResponse(forestQuests.get(playerId));
+					if (req.method!=="POST" || url.pathname==="/forest/quests") return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+					return jsonResponse(forestQuests.action(playerId,url.pathname.endsWith("/accept") ? "accept" : url.pathname.endsWith("/cancel") ? "cancel" : "claim",await readSocialJson(req,Math.min(config.maxBodyBytes,4096))));
+				}
+				if (["/forest/minigames/invitations","/forest/minigames/invite-friends","/forest/minigames/invite","/forest/minigames/invite/respond","/forest/minigames/invite/cancel"].includes(url.pathname)) {
+                    const playerId=await requireAuth(req,ctx);
+                    if(!socialEnabled)return jsonResponse({error:"SOCIAL_DISABLED"},503);
+                    if(!forest || !leaseValid() || (Bun.env.FOREST_WOE_ENABLED!=="1" && Bun.env.FOREST_CORE_DEFENSE_ENABLED!=="1"))return jsonResponse({error:"MINIGAMES_UNAVAILABLE"},503);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:forest-minigames",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+                    let result;
+                    if(req.method==="GET" && url.pathname.endsWith('/invitations'))result=minigameInvites.state(playerId);
+                    else if(req.method==="GET" && url.pathname.endsWith('/invite-friends'))result=minigameInvites.friends(playerId,url.searchParams.get('room_id'));
+                    else if(req.method==="POST" && ['/forest/minigames/invite','/forest/minigames/invite/respond','/forest/minigames/invite/cancel'].includes(url.pathname)) {
+                        const body=await readSocialJson(req,Math.min(config.maxBodyBytes,4096));
+                        result=url.pathname.endsWith('/respond')?minigameInvites.respond(playerId,body):url.pathname.endsWith('/cancel')?minigameInvites.cancel(playerId,body):minigameInvites.invite(playerId,body);
+                    } else return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+                    return jsonResponse(result.data,result.status);
+                }
+
+				if (["/forest/core-defense/leaderboard", "/forest/core-defense/match/state", "/forest/core-defense/match/current", "/forest/core-defense/match/deploy", "/forest/core-defense/match/forfeit", "/forest/core-defense/rooms", "/forest/core-defense/state", "/forest/core-defense/create", "/forest/core-defense/join", "/forest/core-defense/start", "/forest/core-defense/leave"].includes(url.pathname)) {
+                    const playerId=await requireAuth(req,ctx);
+                    if(!coreEnabled()) return jsonResponse({error:"FOREST_CORE_DEFENSE_UNAVAILABLE"},503);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:forest-core-defense",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+                    let result;
+                    if(req.method==="GET" && url.pathname==="/forest/core-defense/leaderboard") { const keys=[...url.searchParams.keys()]; result=keys.length===2 && keys.filter(k=>k==="mode").length===1 && keys.filter(k=>k==="month").length===1 ? coreMatches.leaderboard(url.searchParams.get("mode"),url.searchParams.get("month")) : {status:400,data:{error:"INVALID_REQUEST"}}; }
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/rooms") result=coreDefense.list();
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/state") result=coreDefense.state(playerId,url.searchParams.get("room_id"));
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/match/state") result=coreMatches.state(playerId,url.searchParams.get("match_id"),url.searchParams.get("after")??"0");
+                    else if(req.method==="GET" && url.pathname==="/forest/core-defense/match/current") result=coreMatches.current(playerId);
+                    else if(req.method==="POST" && ["/forest/core-defense/create","/forest/core-defense/join","/forest/core-defense/start","/forest/core-defense/leave","/forest/core-defense/match/deploy","/forest/core-defense/match/forfeit"].includes(url.pathname)) {
+                        const body=await readSocialJson(req,Math.min(config.maxBodyBytes,4096));
+                        if(url.pathname.endsWith('/match/deploy')) result=coreMatches.deploy(playerId,body);
+                        else if(url.pathname.endsWith('/match/forfeit')) result=coreMatches.forfeit(playerId,body);
+                        else {const action=url.pathname.substring('/forest/core-defense/'.length) as 'create'|'join'|'start'|'leave';result=coreDefense[action](playerId,body);}
+                    } else return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+                    return jsonResponse(result.data,result.status);
+                }
+
+				if (["/forest/woe/match/state", "/forest/woe/match/current", "/forest/woe/match/deploy", "/forest/woe/match/forfeit"].includes(url.pathname)) {
+                    const playerId = await requireAuth(req, ctx);
+                    if (Bun.env.FOREST_WOE_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_WOE_UNAVAILABLE"},503);
+                    await applyRateLimit(ctx,{keyPrefix:"rl:forest-woe",windowSeconds:60,max:120,keyBy:"user",userId:playerId});
+                    let result;
+                    if(req.method === "GET" && url.pathname.endsWith("/state")) result=woeMatches.state(playerId,url.searchParams.get("match_id"),url.searchParams.get("after") ?? "0");
+                    else if(req.method === "GET" && url.pathname.endsWith("/current")) result=woeMatches.current(playerId);
+                    else if(req.method === "POST" && (url.pathname.endsWith("/deploy") || url.pathname.endsWith("/forfeit"))) {
+                        const body=await readSocialJson(req,Math.min(config.maxBodyBytes,4096));
+                        result=url.pathname.endsWith("/deploy")?woeMatches.deploy(playerId,body):woeMatches.forfeit(playerId,body);
+                    } else return jsonResponse({error:"METHOD_NOT_ALLOWED"},405);
+                    return jsonResponse(result.data,result.status);
+                }
+
+				if (["/forest/woe/rooms", "/forest/woe/state", "/forest/woe/create", "/forest/woe/join", "/forest/woe/seat", "/forest/woe/leave", "/forest/woe/start"].includes(url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					if (Bun.env.FOREST_WOE_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_WOE_UNAVAILABLE"}, 503);
+					await applyRateLimit(ctx, {keyPrefix:"rl:forest-woe", windowSeconds:60, max:120, keyBy:"user", userId:playerId});
+					let result;
+					if (req.method === "GET" && url.pathname === "/forest/woe/rooms") result = woe.list();
+					else if (req.method === "GET" && url.pathname === "/forest/woe/state") result = woe.state(playerId, url.searchParams.get("room_id"));
+					else if (req.method === "POST" && !["/forest/woe/rooms", "/forest/woe/state"].includes(url.pathname)) {
+						const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+						const action = url.pathname.substring("/forest/woe/".length) as "create" | "join" | "seat" | "leave" | "start";
+						result = woe[action](playerId, body);
+					} else return jsonResponse({error:"METHOD_NOT_ALLOWED"}, 405);
+					return jsonResponse(result.data, result.status);
+				}
+
+				if (["/forest/duels/state", "/forest/duels/request", "/forest/duels/respond", "/forest/duels/cancel", "/forest/duels/ready"].includes(url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					if (Bun.env.FOREST_DUELS_ENABLED !== "1" || !forest || !leaseValid()) return jsonResponse({error:"FOREST_DUELS_UNAVAILABLE"}, 503);
+					await applyRateLimit(ctx, {keyPrefix:"rl:forest-duels", windowSeconds:60, max:120, keyBy:"user", userId:playerId});
+					if (req.method === "GET" && url.pathname === "/forest/duels/state") { const result = duels.state(playerId); return jsonResponse(result.data, result.status); }
+					if (req.method !== "POST" || url.pathname === "/forest/duels/state") return jsonResponse({error:"METHOD_NOT_ALLOWED"}, 405);
+					const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+					let result;
+					if (url.pathname === "/forest/duels/request") {
+						const target = body?.target_player_id;
+						const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !(await isUserDisabled(target));
+						result = duels.request(playerId, body, available);
+					} else if (url.pathname === "/forest/duels/respond") {
+						const challenger = body?.accept === true ? duels.challengerFor(playerId, body?.invite_id) : null;
+						const available = !challenger || !(await isUserDisabled(challenger));
+						result = duels.respond(playerId, body, available);
+					} else if (url.pathname === "/forest/duels/ready") {
+                        if (!getRankedServices()) return jsonResponse({error:"PVP_SECRET_REQUIRED"},503);
+                        const participants = duels.participants(body?.invite_id);
+                        const available = (await Promise.all(participants.map(id=>isUserDisabled(id)))).every(disabled=>!disabled);
+                        result = duels.ready(playerId,body,available);
+                    } else result = duels.cancel(playerId, body);
+					return jsonResponse(result.data, result.status);
+				}
+
+				if (["/social/state", "/social/friends/request", "/social/friends/respond", "/social/friends/cancel"].includes(url.pathname)) {
+					const playerId = await requireAuth(req, ctx);
+					if (!socialEnabled) return jsonResponse({ error: "SOCIAL_DISABLED" }, 503);
+					if (req.method === "GET" && url.pathname === "/social/state") return jsonResponse(friends.state(playerId));
+					if (req.method !== "POST" || url.pathname === "/social/state") return jsonResponse({ error: "Method not allowed." }, 405);
+					const body = await readSocialJson(req, Math.min(config.maxBodyBytes, 4096));
+					let result;
+					if (url.pathname === "/social/friends/request") {
+						const target = body?.target_player_id;
+						const available = typeof target === "string" && target.length <= 128 && !!getPlayerByIdStmt.get(target) && !(await isUserDisabled(target));
+						result = friends.request(playerId, body, available, !!forest && leaseValid() && (forest.isBusy(playerId) || (typeof target === "string" && forest.isBusy(target))));
+					} else if (url.pathname === "/social/friends/respond") result = friends.respond(playerId, body);
+					else result = friends.cancel(playerId, body);
+					return jsonResponse(result.data, result.status);
+				}
+
 				if (req.method == "GET" && url.pathname == "/chat/state") {
-					return jsonResponse(globalChat.state(await requireAuth(req, ctx)));
+					const playerId = await requireAuth(req, ctx);
+					if (forest && leaseValid()) forest.renewBusy(playerId, extractToken(req)!);
+					return jsonResponse(globalChat.state(playerId));
 				}
 				if (req.method == "POST" && url.pathname == "/chat/send") {
 					const playerId = await requireAuth(req, ctx);
 					const result = globalChat.send(playerId, await readJson(req, config.maxBodyBytes));
+					if (result.status === 200 && result.data && "duplicate" in result.data && !result.data.duplicate && "message" in result.data && result.data.message) {
+						try { forest?.peerChat(playerId, result.data.message as any); } catch (error) { logError("forest chat notification failed", {error:String(error)}); }
+					}
 					return jsonResponse(result.data, result.status);
 				}
 
@@ -2412,7 +2759,7 @@ async function startServer(): Promise<void> {
 						combat.elite_trait_used = false;
 						combat.tactics_enabled = tacticsEnabled;
 						if (db.query("UPDATE dungeon_runs SET loadout_json = ?, combat_state_json = ?, combat_revision = 1 WHERE run_id = ? AND player_id = ? AND status = 'ACTIVE' AND expires_at > ? AND loadout_json IS NULL").run(JSON.stringify(selection), JSON.stringify(combat), body.run_id, playerId, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
-						const response = { run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
+						const response = { ...spectatorNames(playerId), run_id: body.run_id, season: row.season, status: "ACTIVE", cleared_floor: 0, total_turns: 0, loadout: selection, combat_ready: true, combat_revision: 1, combat_state: publicDungeonCombat(combat), phase: "COMBAT", floor: 1 };
 						insertActionStmt.run(playerId, actionId, "DUNGEON_LOADOUT", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
@@ -2485,7 +2832,12 @@ async function startServer(): Promise<void> {
 						}
 						if (db.query("UPDATE dungeon_runs SET combat_state_json=?,combat_revision=combat_revision+1,cleared_floor=?,total_turns=?,status=?,finished_at=? WHERE run_id=? AND player_id=? AND status='ACTIVE' AND combat_revision=? AND expires_at>?").run(JSON.stringify(combat), cleared, turns, status, status === "LOSS" ? now : null, row.run_id, playerId, row.combat_revision, now).changes !== 1) throw new HttpError(409, "Dungeon run changed.");
 						if (isTurn && combat.terminal_result === "WIN" && cleared === combat.floor && row.cleared_floor < cleared) awardHomunculusVictory(playerId, row.loadout_json, now);
-						const response = { run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };
+						if (spectatorEnabled && (isTurn || isInspiration)) recordSpectatorEvents(db,"dungeon",row.run_id,String(current.floor),row.combat_revision+1,events,now);
+						if (spectatorEnabled && combat.terminal_result && (isTurn || isInspiration)) {
+							db.query("INSERT OR REPLACE INTO spectator_final_combats(mode,session_id,encounter,combat_json,created_at) VALUES ('dungeon',?,?,?,?)").run(row.run_id,String(current.floor),JSON.stringify(combat),now);
+							db.query("DELETE FROM spectator_final_combats WHERE rowid IN (SELECT rowid FROM spectator_final_combats WHERE created_at<? ORDER BY created_at LIMIT 50)").run(now-86_400_000);
+						}
+						const response = { ...spectatorNames(playerId), run_id: row.run_id, season: row.season, status, floor: combat.floor, cleared_floor: cleared, total_turns: turns, combat_revision: row.combat_revision + 1, phase: combat.terminal_result === "WIN" ? "FLOOR_CLEARED" : status === "LOSS" ? "LOSS" : "COMBAT", combat_state: publicDungeonCombat(combat), events };
 						insertActionStmt.run(playerId, actionId, actionType, JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
 					}).immediate();
@@ -2498,7 +2850,7 @@ async function startServer(): Promise<void> {
 						const runId = url.searchParams.get("run_id");
 						const columns = "run_id, season, status, started_at, expires_at, finished_at, cleared_floor, total_turns, combat_revision";
 						const session = (runId ? db.query(`SELECT ${columns} FROM dungeon_runs WHERE player_id = ? AND run_id = ?`).get(playerId, runId) : null) ?? null;
-						return jsonResponse({ session, server_time_unix_ms: now });
+						return jsonResponse({ ...spectatorNames(playerId), session, server_time_unix_ms: now });
 					}).immediate();
 				}
 				if (req.method == "POST" && url.pathname == "/dungeon/heartbeat") {
@@ -2535,6 +2887,8 @@ async function startServer(): Promise<void> {
 						let runId: string;
 						let spellProgress: unknown;
 						if (start) {
+							endSpectatingForStart(playerId);
+							if (activePractice(db,playerId,now)) throw new HttpError(409, "Practice is active.");
 							const state = ensurePlayerState(playerId);
 							if (state.lab.hqLevel < HQ_RULES.sync_nexus.unlock || (state.lab.buildings.sync_nexus?.level ?? 0) < 1) throw new HttpError(409, "Sync Nexus unavailable.");
 							db.query("UPDATE dungeon_runs SET status = 'ABANDONED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE'").run(now, playerId);
@@ -2621,12 +2975,15 @@ async function startServer(): Promise<void> {
 					const zoneId = url.searchParams.get("zone_id") ?? "";
 					const huntId = url.searchParams.get("hunt_id") ?? "";
 					return db.transaction(() => {
-					const definitions = guardianRoster(playerId, zoneId, huntId, Date.now());
+					const now = Date.now();
+					const definitions = guardianRoster(playerId, zoneId, huntId, now);
 					if (!definitions) throw new HttpError(400, "Invalid zone or boss hunt.");
 					const rows = db.query("SELECT guardian_id FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ?").all(playerId, zoneId, huntId) as { guardian_id: string }[];
 					const defeated = new Set(rows.map(row => row.guardian_id));
 					const guardians = definitions.map(definition => ({ ...definition, entity_id: SOLO_HUNT_BOSS_ENTITIES[definition.template_id], type: staticData.soloBossEntityTypes[definition.template_id], defeated: defeated.has(definition.guardian_id) }));
-					return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter(g => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every(g => g.defeated) });
+					const unlocked = guardians.length > 0 && guardians.every(g => g.defeated);
+					const availability = parentBossAvailability(playerId, zoneId, huntId, unlocked, now);
+					return jsonResponse({ zone_id: zoneId, hunt_id: huntId, guardians, defeated_count: guardians.filter(g => g.defeated).length, total_count: guardians.length, boss_unlocked: guardians.every(g => g.defeated), ...availability });
 					}).immediate();
 				}
 				if (req.method == "GET" && url.pathname == "/world/boss-hunts/commons") {
@@ -2732,6 +3089,7 @@ async function startServer(): Promise<void> {
 							db.query("INSERT INTO solo_guardian_victories (player_id, zone_id, parent_hunt_id, guardian_id, session_id, defeated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(playerId, row.guardian_zone_id, row.guardian_parent_id, row.guardian_id, row.session_id, now);
 						}
 						const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId) as SoloHuntRow;
+						if (spectatorEnabled) recordSpectatorEvents(db,"hunt",row.session_id,"0",row.combat_revision+1,[...(typeof body.decision.spell_id === "string" ? [{kind:"player_cast",actor:"player",spell_id:body.decision.spell_id,turn:result.next_state.turn}] : []),...result.events],now);
 						const response = { ...soloHuntResponse(current), events: result.events };
 						insertActionStmt.run(playerId, actionId, "SOLO_HUNT_TURN", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
@@ -2766,6 +3124,7 @@ async function startServer(): Promise<void> {
 						if (updated.changes !== 1) throw new HttpError(409, "Combat session changed.");
 						const current = db.query("SELECT * FROM solo_hunt_sessions WHERE session_id = ? AND player_id = ?").get(row.session_id, playerId) as SoloHuntRow;
 						if (!row.global_event_id && !row.guardian_id && body.decision.kind === "choose") missions.record(db,playerId,now,{guardian:false,choose:true,session:row.session_id});
+						if (spectatorEnabled && result.events.length) recordSpectatorEvents(db,"hunt",row.session_id,"0",row.combat_revision+1,result.events,now);
 						const response = soloHuntResponse(current);
 						insertActionStmt.run(playerId, actionId, "SOLO_HUNT_INSPIRATION", JSON.stringify(payload), JSON.stringify(response), now);
 						return jsonResponse(response);
@@ -2798,7 +3157,7 @@ async function startServer(): Promise<void> {
 						if (saved.player_id !== undefined && saved.player_id !== playerId) throw new HttpError(400, "Invalid player snapshot.");
 						const trusted = { ...saved, player_id: playerId, state_revision: Number.isSafeInteger(saved.state_revision) ? saved.state_revision : 0, boss_id: row.hunt_id, boss_entity_id: SOLO_HUNT_BOSS_ENTITIES[row.hunt_id] };
 						if (selection.homunculus_id && !ownsHomunculus(saved.homunculus_progress, selection.homunculus_id)) throw new HttpError(400, "Homunculus is not owned.");
-						const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true });
+						const setup = buildTrustedCombatSetup(trusted, selection, { ...catalogs, bosses: [boss] }, { independentLoadout: true, ancientHunt: !row.global_event_id });
 						if (setup.error) throw new HttpError(400, "Invalid or unsupported hunt loadout.");
 						const seed = createHmac("sha256", WORLD_SECRET).update("solo-hunt-combat:" + row.session_id).digest();
 						const combat = createCombatState(setup, (turn, draw) => deterministicDraw(seed, row.session_id, turn, draw));
@@ -2842,19 +3201,26 @@ async function startServer(): Promise<void> {
 						let row: SoloHuntRow;
 						let replacedSessionId: string | null = null;
 						if (start) {
+							endSpectatingForStart(playerId);
+							if (activePractice(db,playerId,now)) throw new HttpError(409, "Practice is active.");
 							const schedule = soloBossSchedule(now);
 							const globalEvent = requestedGlobal ? db.query("SELECT * FROM global_boss_events WHERE event_id = ? AND status = 'ACTIVE'").get(requestedGlobal) as any : null;
 							if (requestedGlobal && (!globalEvent || (payload as any).guardian_id !== undefined)) throw new HttpError(409, "Global event unavailable.");
 							if (globalEvent && (payload as any).zone_id !== undefined && (payload as any).zone_id !== globalEvent.zone_id) throw new HttpError(409, "Global event zone mismatch.");
 							if (globalEvent && db.query("SELECT 1 FROM global_boss_winners WHERE event_id = ? AND player_id = ?").get(requestedGlobal, playerId)) throw new HttpError(409, "Already defeated.");
 							const boss = globalEvent ? { ...JSON.parse(globalEvent.boss_snapshot_json), available: true } : schedule.bosses.find(candidate => candidate.id === payload.hunt_id);
-							if (!globalEvent && (payload.rotation_key !== schedule.rotation_key || !boss || (!(payload as any).guardian_id && !boss.available))) throw new HttpError(409, "Boss hunt is not available for this rotation.");
+							if (!boss) throw new HttpError(409, "Boss hunt is not available for this rotation.");
 							const zoneId = globalEvent ? undefined : (payload as any).zone_id;
 							const guardianId = (payload as any).guardian_id;
 							if ((zoneId !== undefined && typeof zoneId !== "string") || (guardianId !== undefined && (typeof guardianId !== "string" || !guardianId))) throw new HttpError(400, "Invalid guardian selection.");
 							const definitions = zoneId === undefined ? null : guardianRoster(playerId, zoneId, boss.id, now);
 							if ((zoneId !== undefined && !definitions) || (guardianId !== undefined && !definitions)) throw new HttpError(400, "Invalid guardian zone.");
 							if (!globalEvent && boss.tier !== "common" && !definitions) throw new HttpError(409, "Guardian zone required.");
+							const unlocked = !!definitions?.length && definitions.every(guardian => !!db.query("SELECT 1 FROM solo_guardian_victories WHERE player_id = ? AND zone_id = ? AND parent_hunt_id = ? AND guardian_id = ?").get(playerId, zoneId, boss.id, guardian.guardian_id));
+							const availability = !globalEvent && !appearance && guardianId === undefined && zoneId !== undefined ? parentBossAvailability(playerId, zoneId, boss.id, unlocked, now) : null;
+							if (availability?.rotation_victory) throw new HttpError(409, "Boss already defeated this rotation.");
+							const personalAvailable = availability?.personal_boss_available ?? false;
+							if (!globalEvent && guardianId === undefined && !personalAvailable && (payload.rotation_key !== schedule.rotation_key || !boss.available)) throw new HttpError(409, "Boss hunt is not available for this rotation.");
 							let encounter = appearance ? { ...boss, ...appearance, display_texture_id: appearance.texture_id } : boss;
 							if (guardianId !== undefined) {
 								const guardian = definitions!.find(entry => entry.guardian_id === guardianId);
@@ -3001,8 +3367,8 @@ async function startServer(): Promise<void> {
 			} catch (err) {
 				recordError();
 				const sqliteBusy = typeof err === "object" && err !== null && typeof (err as { code?: unknown }).code === "string" && String((err as { code: string }).code).startsWith("SQLITE_BUSY");
-				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
-				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof CombatRewardError ? err.status : 500;
+				const message = sqliteBusy ? "Database temporarily busy; retry the same action ID." : err instanceof HttpError || err instanceof ExpeditionError || err instanceof ForestQuestError || err instanceof CombatRewardError || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? err.message : "Internal server error";
+				const status = sqliteBusy || err instanceof AccountStatusUnavailableError || err instanceof AuthStorageUnavailableError ? 503 : err instanceof HttpError || err instanceof ExpeditionError || err instanceof ForestQuestError || err instanceof CombatRewardError ? err.status : 500;
 				const res = errorResponse(message, status);
 				const finalRes = applyResponseHeaders(res, ctx, corsHeaders);
 				recordRequest(finalRes.status, Date.now() - ctx.startAt);
@@ -3017,16 +3383,22 @@ async function startServer(): Promise<void> {
 			}
 		},
 		websocket: {
+			maxPayloadLength: 65536,
+			backpressureLimit: 65536,
+			closeOnBackpressureLimit: true,
 			open(ws) {
+				if (ws.data.kind === "forest") { if (leaseValid()) forest?.open(ws as any); else ws.close(1011, "service unavailable"); return; }
 				sockets.add(ws);
 				ws.send(JSON.stringify({ type: "hello", server_time: Date.now() }));
 			},
 			message(ws, message) {
+				if (ws.data.kind === "forest") { if (leaseValid()) forest?.message(ws as any, message as any); return; }
 				if (typeof message == "string" && message.toLowerCase() == "ping") {
 					ws.send("pong");
 				}
 			},
 			close(ws) {
+				if (ws.data.kind === "forest") { if (leaseValid()) forest?.close(ws as any); return; }
 				sockets.delete(ws);
 			}
 		}
@@ -3116,11 +3488,25 @@ type SoloHuntRow = { session_id: string; player_id: string; hunt_id: string; rot
 function publicDungeonCombat(combat: any) {
 	const trait = dungeonEliteTrait(combat);
 	const encounter = combat.special_encounter;
-	return { player: combat.player, npc: combat.npc, floor: combat.floor, blessing: publicDungeonBlessing(combat.blessing), ...(encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}), ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
+	const { spell_ids, original_spell_ids, cooldowns, inspiration_offers, temporary_spell_id, temporary_replaced_slot, ...visibleNpc } = combat.npc;
+	const fighter = (entry: any, side: string) => ({ ...entry, ...publicCombatStatus(entry, combat.turn), pending_drain: publicIncomingDrains(combat, side) });
+	return { player: fighter(combat.player, "player"), npc: fighter(visibleNpc, "npc"), floor: combat.floor, blessing: publicDungeonBlessing(combat.blessing), ...(encounter ? { special_encounter: { kind: encounter.kind, label: encounter.label, hint: encounter.hint } } : {}), ...(combat.elite ? { elite: combat.elite } : {}), ...(trait ? { elite_trait: { trait: trait.trait, label: trait.label, hint: trait.hint, used: combat.elite_trait_used === true } } : {}), ...(combat.npc_personality ? { npc_personality: combat.npc_personality } : {}), turn: combat.turn, terminal_result: combat.terminal_result, physical_anomaly: combat.physical_anomaly ?? null, strategic_delayed: combat.strategic_delayed ?? [], weapons: (combat.weapons ?? []).map((weapon: any) => ({ id: weapon.id })), active_weapon_slot: combat.active_weapon_slot ?? 0, item_id: combat.item_id ?? null, item_effects: combat.item_effects ?? {} };
 }
 
 function expireSoloHunts(playerId: string, now: number): void {
 	db.query("UPDATE solo_hunt_sessions SET status = 'EXPIRED', finished_at = ? WHERE player_id = ? AND status = 'ACTIVE' AND expires_at <= ?").run(now, playerId, now);
+}
+
+// A verified, zone-attributed boss victory is the durable consumption record.
+function personalBossWon(playerId: string, zoneId: string, huntId: string): boolean {
+	return !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL LIMIT 1").get(playerId, zoneId, huntId);
+}
+function parentBossAvailability(playerId: string, zoneId: string, huntId: string, unlocked: boolean, now: number) {
+	const schedule = soloBossSchedule(now), interval = staticData.soloBosses.rotation.interval_seconds * 1000;
+	const start = schedule.rotation_key * interval;
+	const rotationVictory = !!db.query("SELECT 1 FROM solo_hunt_sessions WHERE player_id = ? AND guardian_zone_id = ? AND hunt_id = ? AND status = 'VERIFIED_WIN' AND guardian_id IS NULL AND global_event_id IS NULL AND common_cycle IS NULL AND (rotation_key = ? OR (finished_at >= ? AND finished_at < ?)) LIMIT 1").get(playerId, zoneId, huntId, schedule.rotation_key, start, start + interval);
+	const personal = unlocked && !personalBossWon(playerId, zoneId, huntId);
+	return { personal_boss_available: personal, rotation_victory: rotationVictory, parent_boss_available: unlocked && !rotationVictory && (personal || !!schedule.bosses.find(b => b.id === huntId)?.available), rotation_key: schedule.rotation_key };
 }
 
 function guardianRoster(playerId: string, zoneId: string, parentId: string, now: number) {
@@ -3150,7 +3536,7 @@ function publicHuntCombat(state: any) {
 		if (typeof raw?.hybrid_mark?.remaining === "number" && raw.hybrid_mark.remaining > 0) result.hybrid_mark = { owner: raw.hybrid_mark.owner, remaining: raw.hybrid_mark.remaining };
 		return result;
 	};
-	const fighter = (entry: any) => ({ id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(entry.status), ...(entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}), ...(entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {}) });
+	const fighter = (entry: any, side: string) => { const view = publicCombatStatus(entry, state.turn); return { pending_drain: publicIncomingDrains(state, side), persistent_statuses: view.persistent_statuses, passive_modifiers: view.passive_modifiers, id: entry.id, type: entry.type, hp: entry.hp, max_hp: entry.max_hp, status: publicStatus(view.status), defense_presentation: view.defense_presentation, spell_neutralize_active: entry.spell_neutralize_active ?? 0, spell_neutralize_pending: entry.spell_neutralize_pending ?? 0, ...(entry.strategic_trap ? { strategic_trap: { value: entry.strategic_trap.value, expires_turn: entry.strategic_trap.expires_turn } } : {}), ...(entry.strategic_heal_suppression ? { strategic_heal_suppression: { expires_turn: entry.strategic_heal_suppression.expires_turn } } : {}) }; };
 	const moves = (state.spell_ids ?? []).map((id: string) => {
 		const spell = (state.spells ?? []).find((entry: any) => entry.id === id);
 		return { id, name: spell?.name, type: spell?.type, category: spell?.category, power_mult: spell?.power_mult, accuracy: spell?.accuracy, cooldown_remaining: state.cooldowns?.[id] ?? 0 };
@@ -3159,11 +3545,11 @@ function publicHuntCombat(state: any) {
 		turn: state.turn,
 		physical_anomaly: state.physical_anomaly ?? null,
 		strategic_delayed: (state.strategic_delayed ?? []).map((entry: any) => ({ actor: entry.actor, target: entry.target, amount: entry.amount, due_turn: entry.due_turn })),
-		player: { ...fighter(state.player), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
-		boss: { ...fighter(state.boss), tier: state.boss_tier, intent: state.boss_intent, ...(state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {}) },
-		minions: (state.minions ?? []).map(fighter),
+		player: { ...fighter(state.player, "player"), active_weapon_slot: state.active_weapon_slot, homunculus_id: state.hom_id, homunculus_energy: state.hom_energy, homunculus_spent: state.hom_spent },
+		boss: { ...fighter(state.boss, "boss"), tier: state.boss_tier, intent: state.boss_intent, ...(state.boss_intent === "Special" ? { intent_spell_id: state.selected_signature } : {}) },
+		minions: (state.minions ?? []).map((entry: any) => fighter(entry, entry.id)),
 		moves,
-		shield: { turns: state.boss_shield_turns, reduction: state.boss_shield_turns > 0 ? state.boss_shield_config?.reduction : 0 },
+		shield: { turns: state.boss_shield_turns, reduction: state.boss_shield_turns > 0 && !statusActive(state.boss, "burn", state.turn + 1) ? state.boss_shield_config?.reduction : 0, suppressed: state.boss_shield_turns > 0 && statusActive(state.boss, "burn", state.turn + 1) },
 		fury: { pending: state.fury_pending, multiplier: state.fury_pending ? state.fury_mult : null },
 		power_turn: { active: state.power_turn_active, used: state.power_turn_used },
 		inspiration: { pending: !!state.player.inspiration_pending, offers: state.player.inspiration_pending ? [...(state.inspiration_offers ?? [])] : [] },
@@ -3172,7 +3558,7 @@ function publicHuntCombat(state: any) {
 }
 
 function soloHuntResponse(row: SoloHuntRow) {
-	return { ...(row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}), session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(readHuntCombat(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
+	return { ...spectatorNames(row.player_id), ...(row.global_event_id ? { global_event_id: row.global_event_id, global_status: globalBossStatus(row.global_event_id, row.player_id) } : {}), session_id: row.session_id, hunt_id: row.hunt_id, rotation_key: row.rotation_key, status: row.status, started_at: row.started_at, expires_at: row.expires_at, finished_at: row.finished_at, ...(row.status === "VERIFIED_WIN" && row.result_metadata_json ? { pve_reward: JSON.parse(row.result_metadata_json).pve_reward } : {}), ...(row.guardian_zone_id ? { zone_id: row.guardian_zone_id } : {}), ...(row.guardian_id ? { guardian_id: row.guardian_id, parent_hunt_id: row.guardian_parent_id } : {}), boss_definition: JSON.parse(row.boss_snapshot_json), ...(row.combat_state_json ? { combat_loadout: JSON.parse(row.combat_loadout_json!), combat_state: publicHuntCombat(readHuntCombat(row.combat_state_json)), combat_revision: row.combat_revision } : {}) };
 }
 
 function globalBossStatus(eventId: string, playerId: string) {

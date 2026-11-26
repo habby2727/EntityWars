@@ -102,15 +102,30 @@ anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
 offset_top = 12.0
-offset_right = 84.0
-offset_bottom = 38.0
-text = "SETTINGS_BACK"
+offset_right = 132.0
+offset_bottom = 52.0
+text = "LAB_MENU"
 focus_mode = 0
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 20
 script = ExtResource("3_back_button")
 target = "main_menu"
 z_index = 50
 z_as_relative = true
+
+[node name="ForestButton" type="Button" parent="Aspect/Canvas/TopOverlay"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -98.0
+offset_top = 6.0
+offset_right = 98.0
+offset_bottom = 40.0
+grow_horizontal = 2
+text = "FOREST_ENTER"
+focus_mode = 0
+theme_override_font_sizes/font_size = 18
+z_index = 50
 
 [node name="StructuresButton" type="Button" parent="Aspect/Canvas/TopOverlay"]
 layout_mode = 1
@@ -138,9 +153,9 @@ anchor_left = 0.0
 anchor_right = 0.0
 anchor_bottom = 0.0
 offset_left = 12.0
-offset_top = 42.0
-offset_right = 204.0
-offset_bottom = 178.0
+offset_top = 58.0
+offset_right = 281.0
+offset_bottom = 228.0
 size_flags_horizontal = 3
 clip_contents = false
 z_index = 40
@@ -148,14 +163,14 @@ z_as_relative = true
 
 [node name="BarMargin" type="MarginContainer" parent="Aspect/Canvas/TopOverlay/ResourceBarPanel"]
 layout_mode = 2
-theme_override_constants/margin_left = 6
+theme_override_constants/margin_left = 2
 theme_override_constants/margin_top = 4
-theme_override_constants/margin_right = 6
-theme_override_constants/margin_bottom = 4
+theme_override_constants/margin_right = 2
+theme_override_constants/margin_bottom = 2
 
 [node name="ResourceBar" type="VBoxContainer" parent="Aspect/Canvas/TopOverlay/ResourceBarPanel/BarMargin"]
 layout_mode = 2
-theme_override_constants/separation = 0
+theme_override_constants/separation = 2
 alignment = 0
 
 [node name="PlaceholderPopup" type="PopupPanel" parent="."]

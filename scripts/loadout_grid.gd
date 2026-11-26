@@ -1,5 +1,21 @@
 extends Control
 
+class HomTooltipButton extends Button:
+	func _make_custom_tooltip(for_text: String) -> Object:
+		var panel := PanelContainer.new()
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.04, 0.04, 0.05, 0.97)
+		style.set_content_margin_all(12)
+		panel.add_theme_stylebox_override("panel", style)
+		var label := Label.new()
+		label.text = for_text
+		label.custom_minimum_size.x = 360
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.add_theme_color_override("font_color", Color.WHITE)
+		panel.add_child(label)
+		return panel
+
+
 ## Loadout screen (Attack/Defense seals).
 ## Nodes are resolved by explicit scene paths to avoid %UniqueName shorthand.
 
@@ -320,9 +336,23 @@ func _ready() -> void:
 	if not _hunt_mode and not _dungeon_mode and not _expedition_mode:
 		ranked_queue = preload("res://scripts/ui/ranked_queue.gd").new()
 		add_child(ranked_queue)
-		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "PRACTICE"
-		$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseLabel.text = "RANKED PvP"
+		$RootMargin/MainHSplit/LeftPanel/ModeRow/AttackCol/AttackLabel.text = "" if ranked_queue.friendly else "PRACTICE"
+		$RootMargin/MainHSplit/LeftPanel/ModeRow/DefenseCol/DefenseLabel.text = "" if ranked_queue.friendly else "RANKED PvP"
 		btn_seal_attack.set_pressed_no_signal(not ranked_queue.selected)
+		if ranked_queue.friendly:
+			var back := $BackButton as Button
+			var original_back := Callable(back, "_on_pressed")
+			if back.pressed.is_connected(original_back): back.pressed.disconnect(original_back)
+			back.pressed.connect(ranked_queue._friendly_cancel)
+	if not _hunt_mode and not _dungeon_mode and not _expedition_mode and not _expedition_preview and not ranked_queue.friendly:
+		var forest_return = preload("res://scripts/ui/forest_return_button.gd").attach(self)
+		if forest_return != null:
+			forest_return.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+			forest_return.offset_left = -460
+			forest_return.offset_right = -210
+			forest_return.offset_top = 12
+			forest_return.offset_bottom = 64
+			forest_return.z_index = 40
 	if not _hunt_mode and not _dungeon_mode:
 		_restore_build_preferences(_verified_preferences_identity())
 	_refresh_details()
@@ -621,7 +651,7 @@ func _setup_build_dialog() -> void:
 	overlay.add_child(center_popup)
 	var dialog := PanelContainer.new()
 	dialog.custom_minimum_size = Vector2(720, 430)
-	dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+	dialog.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(62, 72, 62, 48)))
 	center_popup.add_child(dialog)
 	if lbl_build_error:
 		lbl_build_error.reparent(card)
@@ -681,13 +711,13 @@ func _setup_build_dialog() -> void:
 	for path in ["SelectedRow/PreviewFrame", "SelectedRow/HomPreviewFrame"]:
 		var portrait := card.get_node_or_null(path) as PanelContainer
 		if portrait:
-			portrait.add_theme_stylebox_override("panel", MenuArt.frame("marco-forma-carta-vertical.png", Vector4(16, 22, 16, 18)))
+			portrait.add_theme_stylebox_override("panel", MenuArt.frame("panel_vertical.png", Vector4(16, 22, 16, 18)))
 	var row := card.get_node("SelectedRow") as HBoxContainer
 	var info := row.get_node("InfoVBox") as VBoxContainer
 	var info_panel := PanelContainer.new()
 	info_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info_panel.custom_minimum_size.y = 275
-	info_panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-informativo-small.png", Vector4(48, 42, 48, 42)))
+	info_panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_vertical.png", Vector4(48, 42, 48, 42)))
 	row.add_child(info_panel)
 	info.reparent(info_panel)
 	info.get_node("InfoSpacer").custom_minimum_size.y = 0
@@ -773,6 +803,9 @@ func _setup_spell_state() -> void:
 		_spell_synced = true
 		return
 	_spell_debug.reload()
+	if not SceneRouter._friendly_context.is_empty():
+		_spell_debug.unlock_all_buildings = false
+		_spell_debug.force_all_clickable = false
 	if _spell_debug.unlock_all_buildings and not _dungeon_mode and not _expedition_mode:
 		_spell_state = _spell_debug.load_lab_state()
 		_spell_synced = true
@@ -889,7 +922,7 @@ func _build_spell_dialog() -> void:
 	_spell_dialog.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(1020, 620)
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(65, 75, 65, 55)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(65, 75, 65, 55)))
 	center.add_child(panel)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 8)
@@ -1288,7 +1321,7 @@ func _open_weapon_selector(target: Button) -> void:
 		_weapon_overlay.add_child(center)
 		var panel := PanelContainer.new()
 		panel.custom_minimum_size = Vector2(820, 550)
-		panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+		panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(62, 72, 62, 48)))
 		center.add_child(panel)
 		var layout := VBoxContainer.new()
 		layout.add_theme_constant_override("separation", 8)
@@ -1428,14 +1461,14 @@ func _build_cards() -> void:
 
 func _make_card(p_kind: String, p_id: String, p_name: String, p_tex: Texture2D) -> Control:
 	# Simple self-contained card to avoid theme/scene inconsistencies.
-	var b := Button.new()
+	var b: Button = HomTooltipButton.new() if p_kind == "homunculus" else Button.new()
 	b.custom_minimum_size = Vector2(150, 150) if p_kind == "homunculus" else Vector2(170, 200)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	b.text = ""
 	b.focus_mode = Control.FOCUS_NONE
 	b.flat = false
-	var card_style := MenuArt.frame("marco-forma-carta-vertical.png", Vector4(12, 12, 12, 12))
+	var card_style := MenuArt.frame("panel_vertical.png", Vector4(12, 12, 12, 12))
 	for state in ["normal", "hover", "pressed"]:
 		b.add_theme_stylebox_override(state, card_style)
 	b.pressed.connect(func(): _on_card_picked(p_kind, p_id))
@@ -1972,6 +2005,9 @@ func _on_play_pressed() -> void:
 		SceneRouter._hunt_loadout_active = false
 		SceneRouter.go_to_combat()
 		return
+	if ranked_queue != null and not str(ConnectionGate.token).is_empty() and not ConnectionGate.debug_lab_navigation_allowed():
+		ranked_queue._join(true)
+		return
 	SceneRouter.set_combat_seal_mode(_mode)
 	if ResourceLoader.exists("res://scenes/Combat.tscn"):
 		get_tree().change_scene_to_file("res://scenes/Combat.tscn")
@@ -2003,7 +2039,7 @@ func _confirm_expedition_start(owner: String, payload: Dictionary) -> void:
 	confirm.transparent = true
 	confirm.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
 	confirm.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
-	confirm.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(62, 72, 62, 48)))
+	confirm.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(62, 72, 62, 48)))
 	confirm.dialog_text = tr("EXPEDITION_RISK_WARNING")
 	confirm.get_label().autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	confirm.get_label().horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2624,3 +2660,10 @@ func _revalidate_hom_selection() -> void:
 
 func _dungeon_exit_warning() -> void:
 	get_node("/root/ConnectionGate").dungeon_exit_warning()
+
+func forest_return_safe() -> bool:
+	if _hunt_mode or _dungeon_mode or _expedition_mode or _expedition_preview or not _spell_pending_id.is_empty() or not is_instance_valid(ranked_queue):
+		return false
+	if ranked_queue.queued or ranked_queue.cancel_requested or not ranked_queue.request_id.is_empty():
+		return false
+	return ConnectionGate.debug_lab_navigation_allowed() or ranked_queue.forest_idle_verified

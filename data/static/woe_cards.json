@@ -1,0 +1,121 @@
+{
+  "cards": [
+    {
+      "id": "neon",
+      "element": "mercury",
+      "cost": 2,
+      "hp": 150,
+      "damage": 33,
+      "defense": 4,
+      "speed": 110,
+      "range": 70,
+      "role": "fast skirmisher"
+    },
+    {
+      "id": "luny",
+      "element": "aether",
+      "cost": 3,
+      "hp": 180,
+      "damage": 32,
+      "defense": 3,
+      "speed": 90,
+      "range": 150,
+      "role": "ranged attacker"
+    },
+    {
+      "id": "mantillo",
+      "element": "mercury",
+      "cost": 3,
+      "hp": 240,
+      "damage": 27,
+      "defense": 9,
+      "speed": 75,
+      "range": 70,
+      "role": "durable fighter"
+    },
+    {
+      "id": "nebulynx",
+      "element": "aether",
+      "cost": 4,
+      "hp": 220,
+      "damage": 42,
+      "defense": 4,
+      "speed": 90,
+      "range": 175,
+      "role": "ranged striker"
+    },
+    {
+      "id": "venam",
+      "element": "vitriol",
+      "cost": 4,
+      "hp": 260,
+      "damage": 46,
+      "defense": 6,
+      "speed": 85,
+      "range": 95,
+      "role": "close-range fighter"
+    },
+    {
+      "id": "cedix",
+      "element": "sulfur",
+      "cost": 4,
+      "hp": 160,
+      "damage": 53,
+      "defense": 2,
+      "speed": 100,
+      "range": 110,
+      "role": "fragile burst attacker"
+    },
+    {
+      "id": "flincho",
+      "element": "sodium",
+      "cost": 5,
+      "hp": 290,
+      "damage": 53,
+      "defense": 8,
+      "speed": 105,
+      "range": 95,
+      "role": "mobile striker"
+    },
+    {
+      "id": "solcarp",
+      "element": "gold",
+      "cost": 5,
+      "woe_cost": 7,
+      "hp": 270,
+      "damage": 50,
+      "defense": 5,
+      "speed": 75,
+      "range": 200,
+      "role": "long-range artillery"
+    },
+    {
+      "id": "hyrox",
+      "element": "gold",
+      "cost": 6,
+      "hp": 440,
+      "damage": 38,
+      "defense": 15,
+      "speed": 80,
+      "range": 75,
+      "role": "tank"
+    },
+    {
+      "id": "astralotl",
+      "element": "aether",
+      "cost": 6,
+      "hp": 340,
+      "damage": 64,
+      "defense": 8,
+      "speed": 85,
+      "range": 120,
+      "role": "heavy attacker"
+    }
+  ],
+  "potions": [
+    {"id":"thunderlock","kind":"potion","cost":2,"radius":80,"duration_ticks":50,"texture":"res://assets/forest/woe/potions/thunderlock_256.png","name_key":"WOE_POTION_THUNDERLOCK"},
+    {"id":"vitriol_potion","kind":"potion","cost":3,"radius":130,"duration_ticks":30,"texture":"res://assets/forest/woe/potions/vitriol_256.png","name_key":"WOE_POTION_VITRIOL"},
+    {"id":"blood_potion","kind":"potion","cost":4,"radius":110,"duration_ticks":40,"texture":"res://assets/forest/woe/potions/blood_256.png","name_key":"WOE_POTION_BLOOD"},
+    {"id":"aether_potion","kind":"potion","cost":2,"radius":120,"duration_ticks":40,"texture":"res://assets/forest/woe/potions/aether_256.png","name_key":"WOE_POTION_AETHER"}
+  ]
+}

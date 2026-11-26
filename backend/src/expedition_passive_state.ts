@@ -8,7 +8,7 @@ type TemporaryKind = "power_flat" | "guard_flat" | "tempo_flat" | "accuracy_pct"
 type Duration = "current_attack" | "current_exchange" | "next_exchange";
 type Modifier = { kind: TemporaryKind; amount: number; duration: Duration; exchange: number };
 export type ExpeditionPassiveState = { id: string; level: number; exchange: number; markers: string[]; modifiers: Modifier[]; attacks_made: number; consecutive_spell_hits: number };
-export type PassiveOutcome = { state: ExpeditionPassiveState; instant: {kind: string; target: string; amount: number}[]; activated: boolean };
+export type PassiveOutcome = { state: ExpeditionPassiveState; instant: {kind: string; target: string; amount: number}[]; activated: boolean; effects: {kind: string; target: string; duration: string; amount: number}[] };
 
 export function newExpeditionPassiveState(id: string, level: number): ExpeditionPassiveState {
   // Validate identity and level against the single authoritative E3 catalog.
@@ -29,7 +29,7 @@ export function triggerExpeditionPassive(state: ExpeditionPassiveState, event: P
   if (state.exchange < 1) throw new Error("INVALID_PASSIVE_EXCHANGE");
   const next = structuredClone(state);
   const proposal = evaluateExpeditionPassive(next.id, next.level, {...context, exchange: next.exchange, applied_markers: next.markers, fighter: {...context.fighter, attacks_made: next.attacks_made, consecutive_spell_hits: next.consecutive_spell_hits}}, event);
-  if (!proposal) return {state: next, instant: [], activated: false};
+  if (!proposal) return {state: next, instant: [], activated: false, effects: []};
   next.markers.push(proposal.marker);
   const instant: PassiveOutcome["instant"] = [];
   for (const effect of proposal.effects) {
@@ -39,7 +39,7 @@ export function triggerExpeditionPassive(state: ExpeditionPassiveState, event: P
     next.modifiers = next.modifiers.filter(m => !(m.kind === effect.kind && m.exchange === activeExchange));
     next.modifiers.push({kind: effect.kind as TemporaryKind, amount: effect.amount, duration: effect.duration as Duration, exchange: activeExchange});
   }
-  return {state: next, instant, activated: true};
+  return {state: next, instant, activated: true, effects: proposal.effects};
 }
 
 export function passiveModifiers(state: ExpeditionPassiveState): Record<string, number> {
@@ -91,23 +91,25 @@ export function applyCombatPassive(fighter: any, target: any, event: PassiveEven
     } else relation = relationFor(attack.type);
   }
   const debuffs = ["poison", "stun", "vuln", "vuln_pct", "atk_down", "hom_stun", "misalign_next"];
-  const context = {fighter: {hp: fighter.hp, max_hp: fighter.max_hp, shielded: (fighter.status?.shield_pct ?? fighter.status?.shield ?? 0) > 0, consecutive_spell_hits: 0, attacks_made: 0}, target: {debuffed: debuffs.some(key => (target.status?.[key] ?? 0) > 0) || !!target.status?.hybrid_mark || !!target.strategic_heal_suppression}, type_relation: relation > 1 ? "advantage" as const : relation < 1 ? "disadvantage" as const : "neutral" as const, poison_damage: poisonDamage};
+  const context = {fighter: {hp: fighter.hp, max_hp: fighter.max_hp, shielded: (fighter.status?.shield_pct ?? fighter.status?.shield ?? 0) > 0, consecutive_spell_hits: 0, attacks_made: 0}, target: {debuffed: debuffs.some(key => (target.status?.[key] ?? 0) > 0) || !!target.status?.hybrid_mark || !!target.strategic_heal_suppression || !!target.burn_effect || !!target.lethargy_effect}, type_relation: relation > 1 ? "advantage" as const : relation < 1 ? "disadvantage" as const : "neutral" as const, poison_damage: poisonDamage};
   const result = event === "inspiration_activated" && fighter.inspiration_activation
     ? triggerInspirationActivation(fighter.expedition_passive, fighter.inspiration_activation, context)
     : triggerExpeditionPassive(fighter.expedition_passive, event, context);
   fighter.expedition_passive = result.state;
   if (!result.activated) return;
-  events.push({kind: "hom_passive", actor: actorId, target: targetId, passive_id: result.state.id, trigger: event});
+  const applied: any[] = result.effects.filter(effect => effect.duration !== "instant").map(effect => ({ kind: effect.kind, target: actorId, amount: effect.amount, unit: effect.kind.endsWith("_pct") ? "fraction" : "flat", duration: effect.duration, remaining: 1 }));
+  const insertion = events.length;
   for (const effect of result.instant) {
     if (effect.kind === "poison" && target.hp > 0) {
       const previous = target.status.poison ?? 0;
       target.status.poison = Math.max(previous, effect.amount);
       recordPoisonChange(target, previous, actorId);
-      if (target.status.poison > previous) events.push({kind: "status_applied", actor: actorId, target: targetId, status: "poison", previous, value: target.status.poison, source: "hom_passive"});
+      if (target.status.poison > previous) { applied.push({kind: "poison", target: targetId, amount: target.status.poison - previous, unit: "turns", duration: "instant", remaining: target.status.poison}); events.push({kind: "status_applied", actor: actorId, target: targetId, status: "poison", previous, value: target.status.poison, source: "hom_passive"}); }
     } else if (effect.kind === "heal" && fighter.hp > 0) {
       const amount = Math.min(strategicHeal(fighter, effect.amount), fighter.max_hp - fighter.hp);
       fighter.hp += amount;
-      if (amount > 0) events.push({kind: "heal", actor: actorId, target: actorId, amount, hp: fighter.hp, source: "hom_passive"});
+      if (amount > 0) { applied.push({kind: "heal", target: actorId, amount, unit: "hp", duration: "instant", remaining: 0}); events.push({kind: "heal", actor: actorId, target: actorId, amount, hp: fighter.hp, source: "hom_passive"}); }
     }
   }
+  if (applied.length) events.splice(insertion, 0, {kind: "hom_passive", turn: result.state.exchange, actor: actorId, target: applied[0].target, hom_id: fighter.hom_id ?? result.state.id, passive_id: result.state.id, trigger: event, effects: applied});
 }

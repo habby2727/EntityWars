@@ -1,0 +1,14 @@
+﻿{
+  "initial_count": 4,
+  "count_per_wave": 1,
+  "max_count": 200,
+  "spawn_interval_ticks": 15,
+  "intermission_ticks": 50,
+  "hp_growth_per_wave": 0.06,
+  "damage_growth_per_wave": 0.035,
+  "max_hp": 10000,
+  "max_damage": 10000,
+  "allied_unit_cap": 75,
+  "red_lab_protection_radius": 100,
+  "action_id_limit": 2048
+}

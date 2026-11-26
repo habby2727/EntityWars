@@ -8,6 +8,7 @@ import { Database } from "bun:sqlite";
 import { chooseDungeonNpcSpell, createDungeonCombatState, resolveDungeonTurn, resolveDungeonInspiration, hydrateDungeonInspiration, dungeonLeaderboard, dungeonSeason, generateDungeonEnemy, generateDungeonEncounter, dungeonPreviousBase, createDungeonBlessing, resolveDungeonBlessing, publicDungeonBlessing } from "../dungeon_combat";
 import { buildTrustedCombatSetup } from "../solo_hunt_combat";
 import { castPhysicalAnomaly, physicalAnomalyMultiplier, tickPhysicalAnomaly } from "../physical_anomaly";
+import { publicCombatStatus, publicIncomingDrains } from "../public_combat_status";
 
 const read = (name: string) => JSON.parse(readFileSync(resolve(import.meta.dir, "../../../data", name), "utf8"));
 const catalogs = { entities: read("entities.json").entities, homunculi: read("homunculi.json").homunculi, spells: read("spells.json").spells };
@@ -50,13 +51,13 @@ test("blessing damage, poison remainder and energy are bounded", () => {
   const a = turn(base), b = turn(surge);
   expect(b.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount).toBeGreaterThan(a.events.find((e: any) => e.kind === "damage" && e.actor === "player").amount);
   expect(b.events.find((e: any) => e.kind === "reflect").amount).toBe(a.events.find((e: any) => e.kind === "reflect").amount);
-  let ward = make("toxin_ward"); ward.player.status.poison = 4;
+  let ward = make("toxin_ward"); delete ward.combat_rules_version; ward.player.status.poison = 4;
   const ticks = []; for (let i = 0; i < 4; i++) { const r = turn(ward); ticks.push(r.events.find((e: any) => e.kind === "poison" && e.side === "player").amount); ward = r.next_state; }
   expect(ticks).toEqual([3, 2, 3, 2]);
   for (const [floor, percentage] of [[3, 20], [6, 25], [9, 30], [21, 50], [30, 50]] as const) {
     const info = publicDungeonBlessing(createDungeonBlessing(new Uint8Array(32).fill(2), "run", floor, true));
     expect(info.offers.find((offer: any) => offer.id === "toxin_ward").description).toContain(`${percentage}%`);
-    let state = make("toxin_ward", floor); state.player.status.poison = 5;
+    let state = make("toxin_ward", floor); delete state.combat_rules_version; state.player.status.poison = 5;
     let damage = 0; for (let i = 0; i < 5; i++) { const result = turn(state); damage += result.events.find((event: any) => event.kind === "poison" && event.side === "player").amount; state = result.next_state; }
     expect(damage).toBe(15 - Math.floor(15 * percentage / 100));
   }
@@ -422,7 +423,7 @@ test("NPC executes poison then Pyrolytic Fuse as an authoritative two-turn combo
   const initial = createDungeonCombatState(setup, enemy, all); initial.player.hp = initial.player.max_hp = 1000;
   const first = resolveDungeonTurn(initial, { turn: 1, spell_id: "ash_temper" }, () => 0);
   expect(first.events.find((e: any) => e.kind === "spell" && e.actor === "npc").spell_id).toBe("caustic_mark");
-  expect(first.next_state.player.status.poison).toBe(1);
+  expect(first.next_state.player.status.poison).toBe(2);
   const second = resolveDungeonTurn(first.next_state, { turn: 2, spell_id: "cinder_fist" }, () => 0);
   expect(second.events.find((e: any) => e.kind === "spell" && e.actor === "npc").spell_id).toBe("pyrolytic_fuse");
   expect(second.events.find((e: any) => e.kind === "combo_trigger")).toMatchObject({ actor: "npc", target: "player", source_spell_id: "pyrolytic_fuse", prerequisite: "poison" });
@@ -584,8 +585,14 @@ test("physical anomalies affect Dungeon direct attacks and expire without stacki
   const homAction = { ...action, hom_action: "attack" };
   expect(resolveDungeonTurn(homBoosted, homAction, random).events.find((e: any) => e.kind === "hom_attack" && e.actor === "player").amount).toBe(resolveDungeonTurn(homBase, homAction, random).events.find((e: any) => e.kind === "hom_attack" && e.actor === "player").amount);
   const poisonState = structuredClone(activated.next_state); poisonState.npc.status.poison = 2;
+  poisonState.npc.poison_source = "player";
+  poisonState.npc.poison_effect = { stage: 1, applied_exchange: 1, expires_exchange: 3, source: "player" };
   const poisoned = resolveDungeonTurn(poisonState, action, random);
-  expect(poisoned.events.find((e: any) => e.kind === "damage" && e.actor === "player").hp - poisoned.next_state.npc.hp).toBe(3);
+  const poisonBase = structuredClone(poisonState); poisonBase.physical_anomaly = null;
+  const normalPoisoned = resolveDungeonTurn(poisonBase, action, random);
+  const poisonTick = (r: any) => r.events.find((e: any) => e.kind === "poison" && e.side === "npc");
+  expect(poisonTick(poisoned)).toMatchObject({ amount: Math.max(1, Math.round(poisonState.npc.max_hp * 0.05)), source: "player" });
+  expect(poisonTick(poisoned).amount).toBe(poisonTick(normalPoisoned).amount);
   expect(boosted.next_state.physical_anomaly.remaining_exchanges).toBe(2);
   let next = boosted.next_state;
   for (let turn = 3; turn <= 4; turn++) next = resolveDungeonTurn(next, { turn, spell_id: "cinder_fist" }, random).next_state;
@@ -640,7 +647,7 @@ test("pure dungeon combat resolves damage, effects, cooldowns, homunculus and te
   const poisonSetup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "vitriol_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: poisonedIds, mode: "attack" }, all);
   const poisonState = createDungeonCombatState(poisonSetup, enemy, all);
   const poisonResult = resolveDungeonTurn(poisonState, { turn: 1, spell_id: "caustic_mark" }, random);
-  expect(poisonResult.next_state.npc.status.poison).toBe(1);
+  expect(poisonResult.next_state.npc.status.poison).toBe(2);
   expect(poisonResult.events.some((e: any) => e.kind === "poison" && e.target === "sulfur_01")).toBe(true);
   const sodiumIds = ["crystal_ram", "salt_barrier", "brine_mend", "bastion_return"];
   const sodiumSetup = buildTrustedCombatSetup({ player_id: "test", state_revision: 1, boss_id: "hunt_common", boss_entity_id: "sodium_01", spell_progress: {} }, { entity_id: "sodium_01", weapon_ids: [null, null], homunculus_id: "cinder", spell_ids: sodiumIds, mode: "attack" }, all);
@@ -717,7 +724,8 @@ test("Dungeon Inspiration effects change real combat state and consume the corre
   expect(tempo.next_state.player.inspiration).toBe(1);
   const mark = cast("paradox_edict");
   expect(mark.next_state.npc.status.hybrid_mark).toEqual({ owner: "player", remaining: 2 });
-  expect(mark.next_state.player.inspiration).toBe(1);
+  expect(mark.next_state.player.inspiration).toBe(2);
+  expect(mark.next_state.npc.lethargy_effect).toMatchObject({ source: "player", applied_exchange: 1, expires_exchange: 3 });
   const neutralize = cast("paradox_fold");
   expect(neutralize.next_state.player.spell_neutralize_pending).toBe(0.5);
   expect(neutralize.next_state.player.spell_neutralize_active).toBe(0);
@@ -725,10 +733,14 @@ test("Dungeon Inspiration effects change real combat state and consume the corre
   expect(stun.events.some((e: any) => e.kind === "status_consumed" && e.target === "npc" && e.status === "hom_stun")).toBe(true);
   expect(stun.events.some((e: any) => e.kind === "hom_attack" && e.actor === "npc")).toBe(false);
   expect(stun.next_state.player.inspiration).toBe(1);
-  expect(cast("crooked_rune").next_state.player.inspiration).toBe(1);
+  const crooked = cast("crooked_rune");
+  expect(crooked.next_state.player.inspiration).toBe(2);
+  expect(crooked.next_state.npc.status.poison).toBe(2);
+  expect(crooked.events).toContainEqual({ kind: "inspiration", actor: "player", value: 1, source: "misalign_next" });
+  expect(crooked.events).toContainEqual({ kind: "inspiration", actor: "player", value: 2, source: "poison" });
   expect(cast("brimstone_crash").next_state.player.inspiration).toBe(1);
   expect(cast("caustic_mark").next_state.player.inspiration).toBe(1);
-  expect(cast("caustic_mark", s => { s.npc.status.poison = 5; }).next_state.player.inspiration).toBe(0);
+  expect(cast("caustic_mark", s => { s.npc.status.poison = 2; s.npc.poison_source = "player"; s.npc.poison_effect = { stage: 1, applied_exchange: 0, expires_exchange: 2, source: "player" }; }).next_state.player.inspiration).toBe(0);
   expect(cast("brimstone_crash", s => { s.npc.status.atk_down = 0.9; }).next_state.player.inspiration).toBe(0);
   expect(cast("furnace_rush").next_state.player.inspiration).toBe(0);
 });
@@ -1261,8 +1273,14 @@ test("authenticated active dungeon runs isolate owners and replay atomically", a
     token = (await request("/auth/dev_login", { name: "dungeon_test_a" })).data.token; heartbeatToken = token;
     const savedSpecial = stored(eliteRun.data.run_id).combat;
     expect(savedSpecial.special_encounter).toEqual(special.data.combat_state.special_encounter);
-    expect(savedSpecial.player).toEqual(special.data.combat_state.player);
-    expect(savedSpecial.npc).toEqual(special.data.combat_state.npc);
+    for (const side of ["player", "npc"] as const) {
+      const storedFighter = savedSpecial[side], visible = special.data.combat_state[side];
+      expect(visible).toMatchObject({ id: storedFighter.id, hp: storedFighter.hp, max_hp: storedFighter.max_hp, atk: storedFighter.atk, def: storedFighter.def });
+      expect(visible).toMatchObject(publicCombatStatus(storedFighter, savedSpecial.turn));
+      expect(visible.pending_drain).toEqual(publicIncomingDrains(savedSpecial, side));
+      expect(visible.defense_presentation).toBeDefined(); expect(visible.persistent_statuses).toBeDefined(); expect(visible.passive_modifiers).toBeArray();
+    }
+    for (const field of ["spell_ids", "original_spell_ids", "cooldowns", "inspiration_offers", "temporary_spell_id", "temporary_replaced_slot"]) expect(special.data.combat_state.npc[field]).toBeUndefined();
     expect((await request("/dungeon/next", specialAction, token)).data).toEqual(special.data);
     const finishedSpecial = JSON.parse((db.query("SELECT combat_state_json FROM dungeon_runs WHERE run_id = ?").get(eliteRun.data.run_id) as any).combat_state_json);
     finishedSpecial.terminal_result = "WIN";

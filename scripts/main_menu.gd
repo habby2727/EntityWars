@@ -38,6 +38,32 @@ func _ready() -> void:
 	if settings_btn:
 		settings_btn.pressed.connect(SceneRouter.go_to_settings)
 	$ExitButton.pressed.connect(_show_exit_confirmation)
+	_recover_minigames.call_deferred()
+
+func _recover_minigames() -> void:
+	if not WoeClient.available() or not CoreDefenseClient.available() or ConnectionGate.debug_offline_enabled: return
+	var identity: String = WoeClient.identity()
+	var cd_identity: String = CoreDefenseClient.identity()
+	var woe: Dictionary = await WoeClient.request("/forest/woe/match/current", null, self)
+	if not is_inside_tree() or identity != WoeClient.identity() or cd_identity != CoreDefenseClient.identity(): return
+	var cd: Dictionary = await CoreDefenseClient.request("/forest/core-defense/match/current", null, self)
+	if not is_inside_tree() or identity != WoeClient.identity() or cd_identity != CoreDefenseClient.identity(): return
+	var owner := str(ConnectionGate.player_id)
+	var woe_valid: bool = woe.code == 200 and WoeClient.valid_match(woe.get("data"), owner)
+	var cd_valid: bool = cd.code == 200 and CoreDefenseClient.valid_match(cd.get("data"), owner)
+	if woe_valid and woe.data.status == "RUNNING":
+		SceneRouter.recover_woe_after_startup(woe.data)
+	elif cd_valid and cd.data.status == "RUNNING":
+		SceneRouter.recover_core_defense_after_startup(cd.data)
+	# Do not open a retained result until both services have ruled out a live match.
+	elif woe.code != 200 or cd.code != 200:
+		return
+	elif not (woe_valid or (woe.get("data") is Dictionary and woe.data.has("match") and woe.data.match == null)) or not (cd_valid or (cd.get("data") is Dictionary and cd.data.has("match") and cd.data.match == null)):
+		return
+	elif woe_valid and str(woe.data.match_id) == WoeClient.saved_match():
+		SceneRouter.recover_woe_after_startup(woe.data)
+	elif cd_valid and str(cd.data.match_id) == CoreDefenseClient.saved_match():
+		SceneRouter.recover_core_defense_after_startup(cd.data)
 
 func _exit_tree() -> void:
 	background_video.stop()
@@ -77,7 +103,7 @@ func _show_exit_confirmation() -> void:
 	_exit_overlay.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(520, 220)
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(45, 35, 45, 35)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(45, 35, 45, 35)))
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER

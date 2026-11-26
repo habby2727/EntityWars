@@ -72,16 +72,23 @@ func set_token(new_token: String) -> void:
 func _invalidate_session() -> void:
 	_session_generation += 1
 	_verified_player_id = ""
+	last_server_time_unix_ms = -1
 	_pending_keys.clear()
 	_recovery_attempts.clear()
 	_pending.clear_identity()
 	_reconcile.clear_identity()
 	_in_flight.clear()
 	_api_in_flight.clear()
-	if _http != null:
+	if is_instance_valid(_http):
 		_http.cancel_request()
-	if _api_http != null:
+		_http.request_completed.disconnect(_on_request_completed)
+		_http.queue_free()
+		_http = null
+	if is_instance_valid(_api_http):
 		_api_http.cancel_request()
+		_api_http.request_completed.disconnect(_on_api_request_completed)
+		_api_http.queue_free()
+		_api_http = null
 	emit_signal("state_updated", {})
 
 func _verify_identity(state: Dictionary) -> bool:
@@ -635,6 +642,30 @@ func _save_auth() -> void:
 		return
 	f.store_string(JSON.stringify(data))
 	f.close()
+
+static func clear_saved_token() -> bool:
+	# Preserve non-secret preferences while atomically replacing the credential file.
+	var data := {}
+	if FileAccess.file_exists(AUTH_PATH):
+		var existing := FileAccess.open(AUTH_PATH, FileAccess.READ)
+		if existing == null:
+			return false
+		var parsed: Variant = JSON.parse_string(existing.get_as_text())
+		existing.close()
+		if not parsed is Dictionary:
+			return false
+		data = parsed
+	data.erase("token")
+	var temp := AUTH_PATH + ".logout.tmp"
+	var file := FileAccess.open(temp, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify(data))
+	var error := file.get_error()
+	file.close()
+	if error != OK:
+		return false
+	return DirAccess.rename_absolute(ProjectSettings.globalize_path(temp), ProjectSettings.globalize_path(AUTH_PATH)) == OK
 
 func _get_dev_name() -> String:
 	if dev_display_name != "":

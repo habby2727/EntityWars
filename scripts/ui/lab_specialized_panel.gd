@@ -278,7 +278,7 @@ func _setup_dungeon_ranking(parent: Control) -> void:
 	_dungeon_ranking_dialog.transparent_bg = true
 	_dungeon_ranking_dialog.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
 	_dungeon_ranking_dialog.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
-	_dungeon_ranking_dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup-grande.png", Vector4(60, 65, 60, 48)))
+	_dungeon_ranking_dialog.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(60, 65, 60, 48)))
 	MenuArt.button(_dungeon_ranking_dialog.get_ok_button())
 	add_child(_dungeon_ranking_dialog)
 	var ranking_content := VBoxContainer.new()
@@ -303,7 +303,7 @@ func _sync_card(parent: Control, title: String) -> VBoxContainer:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(275, 220)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(35, 35, 35, 30)))
+	panel.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(35, 35, 35, 30)))
 	parent.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -395,7 +395,7 @@ func _style_dungeon_dialog(dialog: ConfirmationDialog, extra_buttons: Array = []
 	dialog.transparent_bg = true
 	dialog.add_theme_stylebox_override("embedded_border", StyleBoxEmpty.new())
 	dialog.add_theme_stylebox_override("embedded_unfocused_border", StyleBoxEmpty.new())
-	dialog.add_theme_stylebox_override("panel", MenuArt.frame("marco-horizontal-popup.png", Vector4(55, 50, 55, 40)))
+	dialog.add_theme_stylebox_override("panel", MenuArt.frame("panel_horizontal.png", Vector4(55, 50, 55, 40)))
 	var message := dialog.get_label()
 	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -682,10 +682,16 @@ func _unconfigured(title: String, tabs: Array) -> void:
 func _catalog(homunculi: bool) -> void:
 	var title := Label.new()
 	title.text = "VAT_CATALOG" if homunculi else "FORGE_CATALOG"
-	title.add_theme_font_size_override("font_size", 18)
-	if not homunculi:
+	title.add_theme_font_size_override("font_size", 18 if OS.has_feature("android") else 14)
+	var vat_header: HBoxContainer
+	if homunculi:
+		vat_header = HBoxContainer.new()
+		vat_header.add_theme_constant_override("separation", 20)
+		add_child(vat_header)
+		vat_header.add_child(title)
+	else:
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	add_child(title)
+		add_child(title)
 	var row := HBoxContainer.new()
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 14)
@@ -695,21 +701,14 @@ func _catalog(homunculi: bool) -> void:
 		var center := HBoxContainer.new()
 		center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		add_child(center)
-		var left_space := Control.new()
-		left_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		center.add_child(left_space)
-		row.custom_minimum_size.x = 1050
-		row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		center.add_child(row)
-		var right_space := Control.new()
-		right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		center.add_child(right_space)
 	var entries: Dictionary = _registry.get_homunculus_collection() if homunculi else _registry.get_items()
 	var list := ItemList.new()
 	list.name = "LocalizationCatalogItems"
 	list.set_meta("catalog_kind", "homunculus" if homunculi else "item")
 	list.custom_minimum_size = Vector2(220, 150)
-	list.add_theme_font_size_override("font_size", 19)
+	list.add_theme_font_size_override("font_size", 19 if OS.has_feature("android") else (12 if homunculi else 13))
 	var list_bg := StyleBoxFlat.new()
 	list_bg.bg_color = Color(0.02, 0.08, 0.08, 0.94)
 	list.add_theme_stylebox_override("panel", list_bg)
@@ -737,12 +736,12 @@ func _catalog(homunculi: bool) -> void:
 		details.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		details.alignment = BoxContainer.ALIGNMENT_BEGIN
 	if not homunculi:
-		details.add_theme_constant_override("separation", 8)
+		details.add_theme_constant_override("separation", 4)
 	row.add_child(details)
 	var heading := Label.new()
 	heading.name = "LocalizationCatalogHeading"
 	heading.set_meta("localization_body_font", true)
-	heading.add_theme_font_size_override("font_size", 18)
+	heading.add_theme_font_size_override("font_size", 18 if OS.has_feature("android") else (12 if homunculi else 14))
 	if not homunculi:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.add_child(heading)
@@ -756,7 +755,9 @@ func _catalog(homunculi: bool) -> void:
 	preview_center.name = "PreviewSlot"
 	if OS.has_feature("android") and not homunculi:
 		preview_center.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	preview_center.custom_minimum_size = Vector2(150, 150) if homunculi else Vector2(190, 190)
+		preview_center.custom_minimum_size = Vector2(190, 190)
+	else:
+		preview_center.custom_minimum_size = Vector2(150, 150 if homunculi else 135)
 	if homunculi:
 		catalog_column.add_child(preview_center)
 		catalog_column.move_child(preview_center, 0)
@@ -764,7 +765,7 @@ func _catalog(homunculi: bool) -> void:
 		stats_area.add_child(preview_center)
 	var frame := TextureRect.new()
 	frame.custom_minimum_size = preview_center.custom_minimum_size
-	frame.texture = load("res://assets/ui/new-elements/marco-slot-small.png")
+	frame.texture = load("res://assets/ui/new-elements/betterui/panel_vertical.png")
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -785,7 +786,7 @@ func _catalog(homunculi: bool) -> void:
 		scroll.clip_contents = true
 	stats_area.add_child(scroll)
 	var info := Label.new()
-	info.add_theme_font_size_override("font_size", 19)
+	info.add_theme_font_size_override("font_size", 19 if OS.has_feature("android") else 12)
 	if not homunculi:
 		_forge_info = info
 	else:
@@ -801,19 +802,15 @@ func _catalog(homunculi: bool) -> void:
 		scroll.add_child(text_column)
 		text_column.add_child(info)
 		_vat_synergies = Label.new()
-		_vat_synergies.add_theme_font_size_override("font_size", 15)
+		_vat_synergies.add_theme_font_size_override("font_size", 15 if OS.has_feature("android") else 11)
 		_vat_synergies.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_vat_synergies.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		text_column.add_child(_vat_synergies)
 	else:
 		scroll.add_child(info)
-	var actions: BoxContainer = HBoxContainer.new()
+	var actions: Container
 	if OS.has_feature("android"):
 		actions = VBoxContainer.new()
-	if not homunculi:
-		actions.alignment = BoxContainer.ALIGNMENT_CENTER
-		actions.add_theme_constant_override("separation", 10)
-	if OS.has_feature("android"):
 		var actions_scroll := ScrollContainer.new()
 		actions_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		actions_scroll.custom_minimum_size.x = 200
@@ -823,6 +820,11 @@ func _catalog(homunculi: bool) -> void:
 		actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		actions_scroll.add_child(actions)
 	else:
+		var flow := HFlowContainer.new()
+		flow.alignment = FlowContainer.ALIGNMENT_CENTER
+		flow.add_theme_constant_override("h_separation", 10)
+		flow.add_theme_constant_override("v_separation", 4)
+		actions = flow
 		details.add_child(actions)
 	for label in ([] if homunculi else ["Upgrade", "Reroll"]):
 		var action := Button.new()
@@ -842,11 +844,19 @@ func _catalog(homunculi: bool) -> void:
 	inventory.text = "LAB_OPEN_INVENTORY"
 	MenuArt.button(inventory)
 	inventory.pressed.connect(func(): SceneRouter.go_to_inventory("Homunculi" if homunculi else "Builds", true))
-	actions.add_child(inventory)
 	if homunculi:
+		inventory.add_theme_font_size_override("font_size", 12)
+		vat_header.add_child(inventory)
+		var status_row := HBoxContainer.new()
+		status_row.add_theme_constant_override("separation", 16)
+		details.add_child(status_row)
 		_vat_xp = Label.new()
 		_vat_xp.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		details.add_child(_vat_xp)
+		status_row.add_child(_vat_xp)
+		_vat_status = Label.new()
+		_vat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_vat_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		status_row.add_child(_vat_status)
 		var mutation_parent: Control = actions if OS.has_feature("android") else details
 		var mutation_heading := Label.new()
 		mutation_heading.text = "VAT_MUTATIONS"
@@ -859,25 +869,27 @@ func _catalog(homunculi: bool) -> void:
 				button.custom_minimum_size = Vector2(200, 64)
 				button.add_theme_font_size_override("font_size", 24)
 			button.text = GameLocalization.catalog("mutation", mutation_id, "name", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("name", mutation_id)))
+			button.add_theme_font_size_override("font_size", 24 if OS.has_feature("android") else 12)
 			button.tooltip_text = GameLocalization.catalog("mutation", mutation_id, "desc", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("description", "")))
 			MenuArt.button(button)
 			button.pressed.connect(_request_vat_mutation.bind(mutation_id))
 			mutation_row.add_child(button)
 			_vat_mutations.append(button)
-		_vat_status = Label.new()
-		_vat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		mutation_parent.add_child(_vat_status)
 		_vat_confirm = ConfirmationDialog.new()
 		_vat_confirm.title = "Confirm Homunculus Vat"
 		_vat_confirm.confirmed.connect(_send_vat_action)
 		add_child(_vat_confirm)
+	else:
+		actions.add_child(inventory)
 	if not homunculi:
-		var trait_actions = HFlowContainer.new() if OS.has_feature("android") else HBoxContainer.new()
-		trait_actions.alignment = BoxContainer.ALIGNMENT_CENTER
-		trait_actions.add_theme_constant_override("separation", 8)
+		var trait_actions := HFlowContainer.new()
+		trait_actions.alignment = FlowContainer.ALIGNMENT_CENTER
+		trait_actions.add_theme_constant_override("h_separation", 8)
+		trait_actions.add_theme_constant_override("v_separation", 4)
 		details.add_child(trait_actions)
 		_forge_reroll_slot = OptionButton.new()
 		_forge_reroll_slot.set_meta("localization_body_font", true)
+		_forge_reroll_slot.add_theme_font_size_override("font_size", 10)
 		_forge_reroll_slot.get_popup().set_meta("localization_body_font", true)
 		_forge_reroll_slot.tooltip_text = "FORGE_REROLL_TRAIT"
 		for i in range(3):
@@ -886,6 +898,7 @@ func _catalog(homunculi: bool) -> void:
 		for i in range(3):
 			var trait_button := Button.new()
 			trait_button.set_meta("localization_body_font", true)
+			trait_button.add_theme_font_size_override("font_size", 10)
 			trait_button.custom_minimum_size = Vector2(90, 38)
 			MenuArt.button(trait_button)
 			trait_actions.add_child(trait_button)
@@ -897,6 +910,7 @@ func _catalog(homunculi: bool) -> void:
 		details.add_child(fusion_row)
 		_fusion_donor = OptionButton.new()
 		_fusion_donor.set_meta("localization_body_font", true)
+		_fusion_donor.add_theme_font_size_override("font_size", 10)
 		_fusion_donor.get_popup().set_meta("localization_body_font", true)
 		_fusion_donor.custom_minimum_size.x = 165
 		for donor_id in entries:
@@ -910,10 +924,12 @@ func _catalog(homunculi: bool) -> void:
 		_fusion_button.pressed.connect(_request_fusion)
 		fusion_row.add_child(_fusion_button)
 		_fusion_info = Label.new()
+		_fusion_info.add_theme_font_size_override("font_size", 10)
 		_fusion_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_fusion_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		details.add_child(_fusion_info)
 		_forge_status = Label.new()
+		_forge_status.add_theme_font_size_override("font_size", 10)
 		_forge_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_forge_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		details.add_child(_forge_status)
@@ -1056,7 +1072,7 @@ func _update_forge_button() -> void:
 		var base: Dictionary = helper.effective_item(item, {_forge_item: {"level": 0}})
 		var level_one: Dictionary = helper.effective_item(item, {_forge_item: {"level": 1}})
 		var level_two: Dictionary = helper.effective_item(item, {_forge_item: {"level": 2}})
-		_forge_info.text = tr("FORGE_INFO").replace("\\n", "\n") % [GameLocalization.catalog("item", _forge_item, "desc", str(item.get("desc", ""))), GameLocalization.catalog("specialization", specialization if specialization != "" else "none", "name", specialization.capitalize() if specialization != "" else "None"), maxi(0, level - allocated), "\n".join(trait_lines), _format_values(base.get("effects", {})).replace("\n", ", "), _format_values(level_one.get("effects", {})).replace("\n", ", "), _format_values(level_two.get("effects", {})).replace("\n", ", "), _format_values(current.get("effects", {})).replace("\n", ", "), _format_values(next.get("effects", {})).replace("\n", ", ")]
+		_forge_info.text = tr("FORGE_INFO").replace("\\n", "\n") % [GameLocalization.catalog("item", _forge_item, "desc", str(item.get("desc", ""))), GameLocalization.catalog("specialization", specialization if specialization != "" else "none", "name", specialization.capitalize() if specialization != "" else "None"), maxi(0, level - allocated), (" | " + " | ".join(trait_lines)) if not trait_lines.is_empty() else "", _format_values(base.get("effects", {})).replace("\n", ", "), _format_values(level_one.get("effects", {})).replace("\n", ", "), _format_values(level_two.get("effects", {})).replace("\n", ", "), _format_values(current.get("effects", {})).replace("\n", ", "), _format_values(next.get("effects", {})).replace("\n", ", ")]
 	var forge_level := int(_forge_state.get("lab", {}).get("buildings", {}).get("build_forge", {}).get("level", 0))
 	var cost := maxi(0, _forge_base_cost + level * _forge_cost_per_level)
 	var essence := int(_forge_state.get("wallet", {}).get("essence", 0))
