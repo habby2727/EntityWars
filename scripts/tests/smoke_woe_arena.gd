@@ -99,9 +99,18 @@ func _run() -> void:
 	assert(is_equal_approx(paused, arena._zeal_meter.value))
 	var card_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/static/woe_cards.json"))
 	for potion in card_data.potions: arena._cards[str(potion.id)] = potion
+	for mode in [false, true]:
+		arena._is_cd = mode
+		assert(arena._card_cost(arena._cards.thunderlock) == 2.0 and arena._card_cost(arena._cards.vitriol_potion) == 3.0)
+		assert(arena._card_cost(arena._cards.blood_potion) == 4.0 and arena._card_cost(arena._cards.aether_potion) == 2.0)
+		for id in ["blood_potion", "aether_potion"]:
+			arena._snapshot.players[0].slots[3] = id
+			arena._render_snapshot()
+			assert(arena._buttons[3].icon != null and arena._buttons[3].text.ends_with(str(int(arena._cards[id].cost))))
+	arena._is_cd = true
 	arena._snapshot.players[0].slots[3] = "thunderlock"
 	arena._render_snapshot()
-	assert(not arena._buttons[3].disabled and arena._buttons[3].icon != null)
+	assert(not arena._buttons[3].disabled and arena._buttons[3].icon != null and arena._buttons[3].text.ends_with("2"))
 	arena._select(3)
 	assert(arena._potion_target.visible and arena._potion_target.radius == 80.0)
 	assert(not arena._lane_buttons["blue:left"].visible and not arena._lane_buttons["blue:right"].visible)

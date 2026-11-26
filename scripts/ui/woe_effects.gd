@@ -8,14 +8,17 @@ const COLORS := {
 	"sodium": [Color("ffd048"), Color("fff1a5")],
 	"vitriol": [Color("b990ed"), Color("a2e88d")],
 	"gold": [Color("f4c66a"), Color("fff1b6")],
-	"aether": [Color("7ddff1"), Color("c3a1ff")]
+	"aether": [Color("7ddff1"), Color("c3a1ff")],
+	"blood": [Color("d02f42"), Color("ff7880")],
+	"aether_buff": [Color("53dced"), Color("b47fff")]
 }
+const POTIONS := preload("res://scripts/ui/woe_potion_visuals.gd")
 var effects: Array[Dictionary] = []
 var potion_areas: Array[Dictionary] = []
 var elapsed := 0.0
 
 func show_potion_area(element: String, point: Vector2, radius: float, duration: float, age: float = 0.0) -> void:
-	if element not in ["aether", "vitriol"] or radius <= 0.0 or duration <= age: return
+	if element not in ["aether", "vitriol", "blood", "aether_buff"] or radius <= 0.0 or duration <= age: return
 	if potion_areas.size() >= CAP: potion_areas.pop_front()
 	potion_areas.append({"element":element, "point":point, "radius":radius, "duration":duration, "age":maxf(0.0, age)})
 	queue_redraw()
@@ -53,7 +56,9 @@ func _draw() -> void:
 	for area in potion_areas:
 		var pulse := 0.5 + 0.5 * sin(float(area.age) * TAU / 2.4)
 		var end_fade := minf(1.0, (float(area.duration) - float(area.age)) / 0.3)
-		var color := Color(1.0, 0.46, 0.06) if area.element == "aether" else Color(0.3, 0.88, 0.23)
+		var color := Color.WHITE
+		for visual in POTIONS.MAP.values():
+			if visual.element == area.element: color = visual.color; break
 		color.a = (0.07 + 0.08 * pulse) * end_fade
 		draw_circle(area.point, area.radius, color)
 		color.a = (0.22 + 0.2 * pulse) * end_fade
@@ -76,8 +81,14 @@ func _draw() -> void:
 		var radius := 4.0 + 13.0 * t
 		if effect.kind == "potion_cast":
 			var area := float(effect.radius)
-			var splash := Color(0.4,0.75,1.0,fade*0.2) if effect.element == "aether" else Color(0.45,0.9,0.25,fade*0.2)
-			accent = Color(1.0,0.9,0.35,fade*0.8) if effect.element == "aether" else Color(0.7,0.4,0.95,fade*0.8)
+			var splash := c
+			for visual in POTIONS.MAP.values():
+				if visual.element == effect.element:
+					splash = visual.get("splash", visual.color)
+					accent = visual.accent
+					break
+			splash.a = fade * 0.2
+			accent.a = fade * 0.8
 			draw_circle(point,area * (0.55 + 0.45*t),splash)
 			draw_arc(point,area,0,TAU,48,accent,3.0)
 			for i in range(8):

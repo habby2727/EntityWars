@@ -16,7 +16,7 @@ export const cards: readonly Readonly<Card>[] = Object.freeze(cardData.cards.map
 if (cards.length !== 10 || new Set(cards.map(c => c.id)).size !== 10) throw new Error("INVALID_WOE_CATALOG");
 export const cardById: Readonly<Record<string, Readonly<Card>>> = Object.freeze(Object.fromEntries(cards.map(c => [c.id, c])));
 export const potions: readonly Readonly<Potion>[] = Object.freeze(cardData.potions.map(raw=>Object.freeze(raw as Potion)));
-if(potions.length!==2 || new Set(potions.map(p=>p.id)).size!==2 || potions.some(p=>!['thunderlock','vitriol_potion'].includes(p.id)||p.kind!=='potion'||![p.cost,p.radius,p.duration_ticks].every(n=>Number.isSafeInteger(n)&&n>0)||!p.texture||!p.name_key))throw new Error('INVALID_WOE_POTION');
+if(potions.length!==4 || new Set(potions.map(p=>p.id)).size!==4 || potions.some(p=>!['thunderlock','vitriol_potion','blood_potion','aether_potion'].includes(p.id)||p.kind!=='potion'||![p.cost,p.radius,p.duration_ticks].every(n=>Number.isSafeInteger(n)&&n>0)||!p.texture||!p.name_key))throw new Error('INVALID_WOE_POTION');
 export const potionById: Readonly<Record<string,Readonly<Potion>>> = Object.freeze(Object.fromEntries(potions.map(p=>[p.id,p])));
 export function cardCost(card: Readonly<Card>, kind: string): number { return kind === 'woe' ? card.woe_cost ?? card.cost : card.cost; }
 export const arena = arenaData;

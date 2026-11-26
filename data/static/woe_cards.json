@@ -113,7 +113,9 @@
     }
   ],
   "potions": [
-    {"id":"thunderlock","kind":"potion","cost":3,"radius":80,"duration_ticks":50,"texture":"res://assets/forest/woe/potions/thunderlock_256.png","name_key":"WOE_POTION_THUNDERLOCK"},
-    {"id":"vitriol_potion","kind":"potion","cost":4,"radius":130,"duration_ticks":30,"texture":"res://assets/forest/woe/potions/vitriol_256.png","name_key":"WOE_POTION_VITRIOL"}
+    {"id":"thunderlock","kind":"potion","cost":2,"radius":80,"duration_ticks":50,"texture":"res://assets/forest/woe/potions/thunderlock_256.png","name_key":"WOE_POTION_THUNDERLOCK"},
+    {"id":"vitriol_potion","kind":"potion","cost":3,"radius":130,"duration_ticks":30,"texture":"res://assets/forest/woe/potions/vitriol_256.png","name_key":"WOE_POTION_VITRIOL"},
+    {"id":"blood_potion","kind":"potion","cost":4,"radius":110,"duration_ticks":40,"texture":"res://assets/forest/woe/potions/blood_256.png","name_key":"WOE_POTION_BLOOD"},
+    {"id":"aether_potion","kind":"potion","cost":2,"radius":120,"duration_ticks":40,"texture":"res://assets/forest/woe/potions/aether_256.png","name_key":"WOE_POTION_AETHER"}
   ]
 }

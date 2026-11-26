@@ -265,14 +265,16 @@ func _run() -> void:
 			if not check(await wait_for(func(): return not arena._requesting and not arena._acting), "before delayed actions"): quit(1); return
 			delayed_client.set_script(load("res://scripts/tests/woe_action_delay_client.gd"))
 		if OS.get_environment("FOREST_POTION_TEST") == "1":
+			var potion_id := OS.get_environment("FOREST_POTION_ID")
+			if potion_id.is_empty(): potion_id = "thunderlock"
 			if not check(await wait_file("potion_ready"), "potion fixture ready"): quit(1); return
-			if not check(await wait_for(func(): return arena._own.get("slots", []).size() == 4 and arena._own.slots[3] == "thunderlock" and not arena._buttons[3].disabled, 10.0), "potion hand ready"): quit(1); return
+			if not check(await wait_for(func(): return arena._own.get("slots", []).size() == 4 and arena._own.slots[3] == potion_id and not arena._buttons[3].disabled, 10.0), "potion hand ready"): quit(1); return
 			arena._select(3)
 			if not check(arena._potion_target.visible and not arena._lane_buttons["blue:left"].visible, "potion targeting"): quit(1); return
 			if delay_test: delayed_client.delay_next_deploy = true
 			arena._cast_potion(Vector2(960,540))
 			if delay_test and not check(await movement_during_deploy(arena, delayed_client), "movement and polling continue during potion request"): quit(1); return
-			if not check(await wait_for(func(): return not arena._acting and arena._own.get("slots", []).size() == 4 and arena._own.slots[3] != "thunderlock", 10.0), "authoritative potion cast"): quit(1); return
+			if not check(await wait_for(func(): return not arena._acting and arena._own.get("slots", []).size() == 4 and arena._own.slots[3] != potion_id, 10.0), "authoritative potion cast"): quit(1); return
 			signal_file("potion_cast_0")
 		var slot := -1
 		if not check(await wait_for(func(): return arena._own.get("slots", []).any(func(id): return arena._cards.get(str(id), {}).get("kind") != "potion" and arena._card_cost(arena._cards.get(str(id), {})) <= float(arena._own.get("zeal", 0))), 15.0), "unit affordable"): quit(1); return

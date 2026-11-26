@@ -59,19 +59,20 @@ test('laboratories do not attack units killed earlier in the same tick',()=>{
  s=advanceTick(s);expect(s.events.filter(e=>e.type==='death'&&e.target===victim.id)).toHaveLength(1);
  expect(s.events.some(e=>e.type==='lab_attack'&&e.target===victim.id)).toBe(false);
 });
-test("twelve-card rotation cycles units and potions through four slots",()=>{
- let s=make(); const initial=[...s.controllers[0].slots], deployed:string[]=[];
- expect(s.controllers[0].queue.length).toBe(8);
- for(let i=0;i<16;i++) {
+test("fourteen-card rotation conserves the deck with at most one visible potion",()=>{
+ let s=make(); const expected=new Set([...cards,...potions].map(c=>c.id));
+ expect(s.controllers[0].queue.length).toBe(10);
+ for(let i=0;i<300;i++) {
    s.controllers[0].zealTenths=100;
-   const slot=i%4, card=s.controllers[0].slots[slot]; deployed.push(card);
+   const slot=i%4, card=s.controllers[0].slots[slot];
    const command={actionId:`rotation-${i}`,controllerId:s.controllers[0].id,slot,cardId:card,...(potionById[card]?{target_x:0,target_y:0}:{lane:'left' as const})};
    const result=applyDeployment(s,command);expect(result.accepted).toBe(true);s=result.state;
    expect(s.controllers[0].zealTenths).toBe(100-(potionById[card]?.cost??cardCost(cardById[card],'woe'))*10);
    expect(s.controllers[0].slots.length).toBe(4);
+   expect(s.controllers[0].slots.filter(id=>potionById[id]).length).toBeLessThanOrEqual(1);
+   expect(new Set([...s.controllers[0].slots,...s.controllers[0].queue])).toEqual(expected);
+   s.units=[];
  }
- expect(new Set(deployed.slice(0,12))).toEqual(new Set([...cards,...potions].map(c=>c.id)));
- expect(deployed.slice(12)).toEqual(initial);
 });
 test("Cedix attacks use sulfur effectiveness once",()=>{
  for(const [defender,multiplier] of [["venam",1.18],["luny",0.84]] as const) {

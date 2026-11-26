@@ -1,5 +1,5 @@
 import { arena, cards, cardById, cardCost, potions, potionById, elementalMultiplier, attackDamage, ATTACK_INTERVAL_MS } from "./catalog";
-import {castPotion,processPotionStatuses,advanceUnitCooldown,paralyzed,poisoned,potionSnapshot} from './potions';
+import {castPotion,processPotionStatuses,advanceUnitCooldown,paralyzed,poisoned,empowered,potionSnapshot} from './potions';
 
 export type Team = "blue" | "red";
 export type Lane = "left" | "right";
@@ -7,8 +7,8 @@ export type Mode = "1v1" | "2v2";
 export interface Point { x: number; y: number }
 export interface Controller { id: string; team: Team; zealTenths: number; zealRegenTicks?: number; slots: string[]; queue: string[]; actionIds: string[] }
 export interface Laboratory { id: string; team: Team; lane: Lane; hp: number; maxHp: number; position: Point; defenseCooldown?: number }
-export interface Unit { id: number; controllerId: string; team: Team; lane: Lane; cardId: string; hp: number; position: Point; route: Point[]; waypoint: number; targetLane: Lane; cooldown: number; cooldownFraction?:number; paralyzedUntil?:number; poisonUntil?:number; poisonNextTick?:number; poisonTeam?:Team; formation?: boolean }
-export type CombatEvent = { type: "attack" | "death" | "lab_attack" | "potion_cast" | "potion_damage"; attacker?: number; labId?: string; attackerKind?: "laboratory" | "potion"; target: number | string; damage?: number; radius?:number; tick: number; team: Team; cardId: string; position: Point; targetPosition: Point; victimCardId?: string | null; victimTeam?: Team; victimPosition?: Point; targetKind?: "unit" | "laboratory" };
+export interface Unit { id: number; controllerId: string; team: Team; lane: Lane; cardId: string; hp: number; position: Point; route: Point[]; waypoint: number; targetLane: Lane; cooldown: number; cooldownFraction?:number; paralyzedUntil?:number; poisonUntil?:number; poisonNextTick?:number; poisonTeam?:Team; bloodUntil?:number; bloodNextTick?:number; aetherUntil?:number; formation?: boolean }
+export type CombatEvent = { type: "attack" | "death" | "lab_attack" | "potion_cast" | "potion_damage" | "potion_heal"; attacker?: number; labId?: string; attackerKind?: "laboratory" | "potion"; target: number | string; damage?: number; healing?:number; radius?:number; tick: number; team: Team; cardId: string; position: Point; targetPosition: Point; victimCardId?: string | null; victimTeam?: Team; victimPosition?: Point; targetKind?: "unit" | "laboratory" };
 export interface MatchState { mode: Mode; kind: "woe"; tick: number; controllers: Controller[]; laboratories: Laboratory[]; units: Unit[]; nextUnitId: number; events: CombatEvent[]; result: { winner: Team | null; reason: "laboratories" | "timeout" | "forfeit" | "abandoned" } | null }
 export interface DeploymentCommand { actionId: string; controllerId: string; slot: number; cardId: string; lane?: Lane; target_x?:number; target_y?:number }
 export type DeploymentResult = { accepted: true; state: MatchState } | { accepted: false; state: MatchState; reason: string };
@@ -48,10 +48,23 @@ function shuffle(seed: string): string[] {
     n ^= n << 13; n ^= n >>> 17; n ^= n << 5; n >>>= 0;
     const j = n % (i+1); [deck[i], deck[j]] = [deck[j], deck[i]];
   }
+  const opening:string[]=[], waiting:string[]=[];
+  for(const id of deck) {
+    if(opening.length<4 && (!potionById[id] || !opening.some(c=>!!potionById[c])))opening.push(id);
+    else waiting.push(id);
+  }
+  deck.splice(0,deck.length,...opening,...waiting);
   if (!deck.slice(0,4).some(id => cardById[id] && cardCost(cardById[id], 'woe') <= 3)) {
     const j = deck.findIndex(id => cardById[id] && cardCost(cardById[id], 'woe') <= 3); [deck[0], deck[j]] = [deck[j], deck[0]];
   }
   return deck;
+}
+/** Skip waiting potions while another remains visible; preserve queue order. */
+export function replaceCard(player:Controller,slot:number):void {
+ const held=player.slots.some((id,i)=>i!==slot && !!potionById[id]);
+ let index=held?player.queue.findIndex(id=>!!cardById[id]):0;
+ if(index<0)index=0;
+ const consumed=player.slots[slot];player.slots[slot]=player.queue.splice(index,1)[0];player.queue.push(consumed);
 }
 /** Controller IDs are ordered blue first, then red. IDs must be unique. */
 export function initializeMatch(mode: Mode, seed: string, controllerIds: string[]): MatchState {
@@ -119,7 +132,7 @@ export function applyDeployment(state: MatchState, command: DeploymentCommand): 
   const potion=potionById[command.cardId];
   player.zealTenths -= (potion ? potion.cost : cardCost(cardById[command.cardId], state.kind)) * 10;
   player.actionIds.push(command.actionId);
-  player.slots[command.slot] = player.queue.shift()!; player.queue.push(command.cardId);
+  replaceCard(player,command.slot);
   if(potion){
     const position={x:command.target_x!,y:command.target_y!};castPotion(next.units,player.team,potion,position,next.tick);
     next.events.push({type:'potion_cast',tick:next.tick,team:player.team,cardId:potion.id,target:0,position:copy(position),targetPosition:copy(position),radius:potion.radius});
@@ -144,7 +157,7 @@ export function advanceTick(state: MatchState): MatchState {
   if (state.result) return state;
   const next = copy(state); next.events = []; next.tick++;
   for (const player of next.controllers) regenerateZeal(player, true);
-  processPotionStatuses(next.units,next.tick,u=>cardById[u.cardId].hp,(event,_u,died)=>{next.events.push({type:'potion_damage',...event});if(died)next.events.push({type:'death',...event});});
+  processPotionStatuses(next.units,next.tick,u=>cardById[u.cardId].hp,(event,_u,died)=>{next.events.push(event);if(died)next.events.push({...event,type:'death'});});
   for (const unit of next.units) {
     if (unit.hp <= 0 || next.result) continue;
     if(paralyzed(unit,next.tick))continue;
@@ -161,7 +174,8 @@ export function advanceTick(state: MatchState): MatchState {
     const target = nearestTarget(unit, next.units, card.range);
     if (target || (lab.hp > 0 && dist2(unit.position,lab.position) <= card.range ** 2)) {
       if (unit.cooldown === 0) {
-        const damage = target ? attackDamage(card.damage,cardById[target.cardId].defense,elementalMultiplier(card.element,cardById[target.cardId].element)) : attackDamage(card.damage,0);
+        const baseDamage = target ? attackDamage(card.damage,cardById[target.cardId].defense,elementalMultiplier(card.element,cardById[target.cardId].element)) : attackDamage(card.damage,0);
+        const damage = empowered(unit,next.tick) ? Math.round(baseDamage*1.2) : baseDamage;
         const victim = target ?? lab; const dealt = Math.min(victim.hp,damage); victim.hp -= dealt;
         next.events.push({ type: "attack", attacker: unit.id, target: victim.id, damage: dealt, tick: next.tick, team: unit.team, cardId: unit.cardId, position: copy(unit.position), targetPosition: copy(victim.position) });
         unit.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
@@ -171,7 +185,7 @@ export function advanceTick(state: MatchState): MatchState {
           if (!target && next.laboratories.every(l => l.team !== lab.team || l.hp === 0)) finish(next,unit.team);
         }
       }
-    } else move(unit,card.speed * WOE_MOVEMENT_MULTIPLIER * (slow?0.6:1) * arena.tick_ms / 1000);
+    } else move(unit,card.speed * WOE_MOVEMENT_MULTIPLIER * (slow?0.6:1) * (empowered(unit,next.tick)?1.15:1) * arena.tick_ms / 1000);
   }
   // Laboratories act after units, so a destroyed laboratory cannot fire and
   // an enemy entering range this tick is targeted without an extra delay.

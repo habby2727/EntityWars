@@ -17840,8 +17840,10 @@ var woe_cards_default = {
     }
   ],
   potions: [
-    { id: "thunderlock", kind: "potion", cost: 3, radius: 80, duration_ticks: 50, texture: "res://assets/forest/woe/potions/thunderlock_256.png", name_key: "WOE_POTION_THUNDERLOCK" },
-    { id: "vitriol_potion", kind: "potion", cost: 4, radius: 130, duration_ticks: 30, texture: "res://assets/forest/woe/potions/vitriol_256.png", name_key: "WOE_POTION_VITRIOL" }
+    { id: "thunderlock", kind: "potion", cost: 2, radius: 80, duration_ticks: 50, texture: "res://assets/forest/woe/potions/thunderlock_256.png", name_key: "WOE_POTION_THUNDERLOCK" },
+    { id: "vitriol_potion", kind: "potion", cost: 3, radius: 130, duration_ticks: 30, texture: "res://assets/forest/woe/potions/vitriol_256.png", name_key: "WOE_POTION_VITRIOL" },
+    { id: "blood_potion", kind: "potion", cost: 4, radius: 110, duration_ticks: 40, texture: "res://assets/forest/woe/potions/blood_256.png", name_key: "WOE_POTION_BLOOD" },
+    { id: "aether_potion", kind: "potion", cost: 2, radius: 120, duration_ticks: 40, texture: "res://assets/forest/woe/potions/aether_256.png", name_key: "WOE_POTION_AETHER" }
   ]
 };
 // ../data/static/woe_arena.json
@@ -17994,7 +17996,7 @@ if (cards.length !== 10 || new Set(cards.map((c) => c.id)).size !== 10)
   throw new Error("INVALID_WOE_CATALOG");
 var cardById = Object.freeze(Object.fromEntries(cards.map((c) => [c.id, c])));
 var potions = Object.freeze(woe_cards_default.potions.map((raw) => Object.freeze(raw)));
-if (potions.length !== 2 || new Set(potions.map((p) => p.id)).size !== 2 || potions.some((p) => !["thunderlock", "vitriol_potion"].includes(p.id) || p.kind !== "potion" || ![p.cost, p.radius, p.duration_ticks].every((n) => Number.isSafeInteger(n) && n > 0) || !p.texture || !p.name_key))
+if (potions.length !== 4 || new Set(potions.map((p) => p.id)).size !== 4 || potions.some((p) => !["thunderlock", "vitriol_potion", "blood_potion", "aether_potion"].includes(p.id) || p.kind !== "potion" || ![p.cost, p.radius, p.duration_ticks].every((n) => Number.isSafeInteger(n) && n > 0) || !p.texture || !p.name_key))
   throw new Error("INVALID_WOE_POTION");
 var potionById = Object.freeze(Object.fromEntries(potions.map((p) => [p.id, p])));
 function cardCost(card, kind) {
@@ -18016,9 +18018,11 @@ function attackDamage(damage, defense, multiplier = 1) {
 // src/woe/potions.ts
 var paralyzed = (u, tick) => (u.paralyzedUntil ?? 0) >= tick && (u.paralyzedUntil ?? 0) > 0;
 var poisoned = (u, tick) => (u.poisonUntil ?? 0) >= tick && (u.poisonUntil ?? 0) > 0;
+var empowered = (u, tick) => (u.aetherUntil ?? 0) >= tick && (u.aetherUntil ?? 0) > 0;
 function castPotion(units, team, potion, point, tick) {
   for (const u of units) {
-    if (u.hp <= 0 || u.team === team || (u.position.x - point.x) ** 2 + (u.position.y - point.y) ** 2 > potion.radius ** 2)
+    const friendly = potion.id === "blood_potion" || potion.id === "aether_potion";
+    if (u.hp <= 0 || (friendly ? u.team !== team : u.team === team) || (u.position.x - point.x) ** 2 + (u.position.y - point.y) ** 2 > potion.radius ** 2)
       continue;
     if (potion.id === "thunderlock" && (u.paralyzedUntil ?? 0) <= tick)
       u.paralyzedUntil = tick + potion.duration_ticks;
@@ -18027,6 +18031,12 @@ function castPotion(units, team, potion, point, tick) {
       u.poisonNextTick = tick + 10;
       u.poisonTeam = team;
     }
+    if (potion.id === "blood_potion" && (u.bloodUntil ?? 0) <= tick) {
+      u.bloodUntil = tick + potion.duration_ticks;
+      u.bloodNextTick = tick + 10;
+    }
+    if (potion.id === "aether_potion" && (u.aetherUntil ?? 0) <= tick)
+      u.aetherUntil = tick + potion.duration_ticks;
   }
 }
 function processPotionStatuses(units, tick, maxHp, emit) {
@@ -18038,14 +18048,31 @@ function processPotionStatuses(units, tick, maxHp, emit) {
       delete u.poisonNextTick;
       delete u.poisonTeam;
     }
-    if (u.hp <= 0 || !poisoned(u, tick) || u.poisonNextTick === undefined || tick < u.poisonNextTick)
+    if (u.bloodUntil !== undefined && tick > u.bloodUntil) {
+      delete u.bloodUntil;
+      delete u.bloodNextTick;
+    }
+    if (u.aetherUntil !== undefined && tick > u.aetherUntil)
+      delete u.aetherUntil;
+    if (u.hp <= 0)
       continue;
-    const damage = Math.min(u.hp, Math.max(1, Math.round(maxHp(u) * 0.1)));
-    u.hp -= damage;
-    u.poisonNextTick += 10;
-    const pos = { ...u.position };
-    const event = { tick, team: u.poisonTeam ?? (u.team === "blue" ? "red" : "blue"), cardId: "vitriol_potion", target: u.id, position: pos, targetPosition: pos, damage, attackerKind: "potion", targetKind: "unit", victimCardId: u.cardId, victimAssetId: u.cardId, victimTeam: u.team, victimPosition: pos, victimKind: u.kind ?? "homunculus", victimElement: u.element };
-    emit(event, u, u.hp === 0);
+    if (poisoned(u, tick) && u.poisonNextTick !== undefined && tick >= u.poisonNextTick) {
+      const damage = Math.min(u.hp, Math.max(1, Math.round(maxHp(u) * 0.1)));
+      u.hp -= damage;
+      u.poisonNextTick += 10;
+      const pos = { ...u.position };
+      const event = { type: "potion_damage", tick, team: u.poisonTeam ?? (u.team === "blue" ? "red" : "blue"), cardId: "vitriol_potion", target: u.id, position: pos, targetPosition: pos, damage, attackerKind: "potion", targetKind: "unit", victimCardId: u.cardId, victimAssetId: u.cardId, victimTeam: u.team, victimPosition: pos, victimKind: u.kind ?? "homunculus", victimElement: u.element };
+      emit(event, u, u.hp === 0);
+    }
+    if (u.hp > 0 && (u.bloodUntil ?? 0) >= tick && (u.bloodUntil ?? 0) > 0 && u.bloodNextTick !== undefined && tick >= u.bloodNextTick) {
+      u.bloodNextTick += 10;
+      const healing = Math.min(maxHp(u) - u.hp, Math.max(1, Math.round(maxHp(u) * 0.1)));
+      if (healing > 0) {
+        u.hp += healing;
+        const pos = { ...u.position };
+        emit({ type: "potion_heal", tick, team: u.team, cardId: "blood_potion", target: u.id, position: pos, targetPosition: pos, healing, attackerKind: "potion", targetKind: "unit" }, u, false);
+      }
+    }
   }
 }
 function advanceUnitCooldown(u, slow) {
@@ -18064,7 +18091,7 @@ function advanceUnitCooldown(u, slow) {
   u.cooldownFraction = u.cooldown * 5 - remaining;
 }
 function potionSnapshot(u, tick) {
-  return { ...(u.paralyzedUntil ?? 0) > tick ? { paralyzed_until: u.paralyzedUntil } : {}, ...(u.poisonUntil ?? 0) > tick ? { poison_until: u.poisonUntil } : {} };
+  return { ...(u.paralyzedUntil ?? 0) > tick ? { paralyzed_until: u.paralyzedUntil } : {}, ...(u.poisonUntil ?? 0) > tick ? { poison_until: u.poisonUntil } : {}, ...(u.bloodUntil ?? 0) > tick ? { blood_until: u.bloodUntil } : {}, ...(u.aetherUntil ?? 0) > tick ? { aether_until: u.aetherUntil } : {} };
 }
 
 // src/woe/engine.ts
@@ -18112,11 +18139,28 @@ function shuffle(seed) {
     const j = n % (i + 1);
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
+  const opening = [], waiting = [];
+  for (const id of deck) {
+    if (opening.length < 4 && (!potionById[id] || !opening.some((c) => !!potionById[c])))
+      opening.push(id);
+    else
+      waiting.push(id);
+  }
+  deck.splice(0, deck.length, ...opening, ...waiting);
   if (!deck.slice(0, 4).some((id) => cardById[id] && cardCost(cardById[id], "woe") <= 3)) {
     const j = deck.findIndex((id) => cardById[id] && cardCost(cardById[id], "woe") <= 3);
     [deck[0], deck[j]] = [deck[j], deck[0]];
   }
   return deck;
+}
+function replaceCard(player, slot) {
+  const held = player.slots.some((id, i) => i !== slot && !!potionById[id]);
+  let index = held ? player.queue.findIndex((id) => !!cardById[id]) : 0;
+  if (index < 0)
+    index = 0;
+  const consumed = player.slots[slot];
+  player.slots[slot] = player.queue.splice(index, 1)[0];
+  player.queue.push(consumed);
 }
 function initializeMatch(mode, seed, controllerIds) {
   if (mode !== "1v1" && mode !== "2v2" || typeof seed !== "string" || !Array.isArray(controllerIds) || controllerIds.length !== (mode === "1v1" ? 2 : 4) || controllerIds.some((id) => typeof id !== "string" || !id || id.length > 128) || new Set(controllerIds).size !== controllerIds.length)
@@ -18203,8 +18247,7 @@ function applyDeployment(state, command) {
   const potion = potionById[command.cardId];
   player.zealTenths -= (potion ? potion.cost : cardCost(cardById[command.cardId], state.kind)) * 10;
   player.actionIds.push(command.actionId);
-  player.slots[command.slot] = player.queue.shift();
-  player.queue.push(command.cardId);
+  replaceCard(player, command.slot);
   if (potion) {
     const position = { x: command.target_x, y: command.target_y };
     castPotion(next.units, player.team, potion, position, next.tick);
@@ -18246,9 +18289,9 @@ function advanceTick(state) {
   for (const player of next.controllers)
     regenerateZeal(player, true);
   processPotionStatuses(next.units, next.tick, (u) => cardById[u.cardId].hp, (event, _u, died) => {
-    next.events.push({ type: "potion_damage", ...event });
+    next.events.push(event);
     if (died)
-      next.events.push({ type: "death", ...event });
+      next.events.push({ ...event, type: "death" });
   });
   for (const unit of next.units) {
     if (unit.hp <= 0 || next.result)
@@ -18269,7 +18312,8 @@ function advanceTick(state) {
     const target = nearestTarget(unit, next.units, card.range);
     if (target || lab.hp > 0 && dist2(unit.position, lab.position) <= card.range ** 2) {
       if (unit.cooldown === 0) {
-        const damage = target ? attackDamage(card.damage, cardById[target.cardId].defense, elementalMultiplier(card.element, cardById[target.cardId].element)) : attackDamage(card.damage, 0);
+        const baseDamage = target ? attackDamage(card.damage, cardById[target.cardId].defense, elementalMultiplier(card.element, cardById[target.cardId].element)) : attackDamage(card.damage, 0);
+        const damage = empowered(unit, next.tick) ? Math.round(baseDamage * 1.2) : baseDamage;
         const victim = target ?? lab;
         const dealt = Math.min(victim.hp, damage);
         victim.hp -= dealt;
@@ -18283,7 +18327,7 @@ function advanceTick(state) {
         }
       }
     } else
-      move(unit, card.speed * WOE_MOVEMENT_MULTIPLIER * (slow ? 0.6 : 1) * arena.tick_ms / 1000);
+      move(unit, card.speed * WOE_MOVEMENT_MULTIPLIER * (slow ? 0.6 : 1) * (empowered(unit, next.tick) ? 1.15 : 1) * arena.tick_ms / 1000);
   }
   if (!next.result)
     for (const lab of next.laboratories) {
@@ -18662,18 +18706,22 @@ function chooseBotDeployment(state, id, options) {
   const choices = [];
   const bias = [...id].reduce((n, c) => n * 33 + c.charCodeAt(0) >>> 0, 0);
   const enemiesVisible = state.units.filter((u) => u.hp > 0 && u.team !== p.team).sort((a, b) => a.id - b.id);
+  const alliesVisible = state.units.filter((u) => u.hp > 0 && u.team === p.team).sort((a, b) => a.id - b.id);
   for (let slot = 0;slot < p.slots.length; slot++) {
     const potion = potionById[p.slots[slot]];
     if (!potion)
       continue;
-    for (const center of enemiesVisible) {
-      const targets = enemiesVisible.filter((u) => (u.position.x - center.position.x) ** 2 + (u.position.y - center.position.y) ** 2 <= potion.radius ** 2 && (potion.id === "thunderlock" ? (u.paralyzedUntil ?? 0) <= state.tick : (u.poisonUntil ?? 0) <= state.tick));
-      if (targets.length < 2)
+    const friendly = potion.id === "blood_potion" || potion.id === "aether_potion", candidates = friendly ? alliesVisible : enemiesVisible;
+    for (const center of candidates) {
+      const nearEnemy = (u) => enemiesVisible.some((e) => (u.position.x - e.position.x) ** 2 + (u.position.y - e.position.y) ** 2 <= 400 ** 2);
+      const targets = candidates.filter((u) => (u.position.x - center.position.x) ** 2 + (u.position.y - center.position.y) ** 2 <= potion.radius ** 2 && (potion.id === "thunderlock" ? (u.paralyzedUntil ?? 0) <= state.tick : potion.id === "vitriol_potion" ? (u.poisonUntil ?? 0) <= state.tick : potion.id === "blood_potion" ? (u.bloodUntil ?? 0) <= state.tick && u.hp < (cardById[u.cardId]?.hp ?? u.hp) * 0.8 : (u.aetherUntil ?? 0) <= state.tick && nearEnemy(u)));
+      if (targets.length < (friendly ? 1 : 2))
         continue;
       const cmd = { actionId: `bot:${state.tick}:${id}`, controllerId: id, slot, cardId: potion.id, target_x: center.position.x, target_y: center.position.y };
       if ((options?.validate ?? validateDeployment)(state, cmd))
         continue;
-      choices.push({ cmd, score: targets.length * 5 - potion.cost * 0.12 - slot * 0.001 });
+      const value = potion.id === "blood_potion" ? targets.reduce((n, u) => n + Math.min((cardById[u.cardId]?.hp ?? u.hp) - u.hp, (cardById[u.cardId]?.hp ?? u.hp) * 0.4) / 30, 0) : targets.length * 5;
+      choices.push({ cmd, score: value - potion.cost * 0.12 - slot * 0.001 });
     }
   }
   if (alliesAlive !== enemiesAlive || alliesAlive < 3)
@@ -19180,9 +19228,9 @@ function advanceCoreDefenseTick(state) {
   for (const u of s.units)
     strikeCampingAlly(s, u);
   processPotionStatuses(s.units, s.tick, (u) => u.maxHp, (event, u, died) => {
-    s.events.push({ type: "potion_damage", ...event });
+    s.events.push(event);
     if (died) {
-      s.events.push({ type: "death", ...event });
+      s.events.push({ ...event, type: "death" });
       if (u.kind === "enemy")
         s.enemiesKilled = plus(s.enemiesKilled);
     }
@@ -19228,7 +19276,8 @@ function advanceCoreDefenseTick(state) {
     const victim = target ?? (lab && lab.hp > 0 && dist22(u.position, lab.position) <= u.range ** 2 ? lab : undefined);
     if (victim) {
       if (u.cooldown === 0) {
-        const damage = target ? attackDamage(u.damage, target.defense, elementalMultiplier(u.element, target.element)) : attackDamage(u.damage, 0);
+        const baseDamage = target ? attackDamage(u.damage, target.defense, elementalMultiplier(u.element, target.element)) : attackDamage(u.damage, 0);
+        const damage = empowered(u, s.tick) ? Math.round(baseDamage * 1.2) : baseDamage;
         const dealt = Math.min(victim.hp, damage);
         victim.hp -= dealt;
         u.cooldown = ATTACK_INTERVAL_MS / arena.tick_ms;
@@ -19245,7 +19294,7 @@ function advanceCoreDefenseTick(state) {
         }
       }
     } else {
-      move(u, u.speed * (slow ? 0.6 : 1) * arena.tick_ms / 1000);
+      move(u, u.speed * (slow ? 0.6 : 1) * (empowered(u, s.tick) ? 1.15 : 1) * arena.tick_ms / 1000);
       strikeCampingAlly(s, u);
     }
   }

@@ -7,7 +7,7 @@ import {initializeCoreDefense,applyCoreDefenseDeployment,advanceCoreDefenseTick,
 test('four-card decks, legal fourth slot, legacy hand and mode-specific Solcarp',()=>{
  for(const seed of ['one','two','three']) {
   const s=initializeMatch('1v1',seed,['a','b']);expect(s).toEqual(initializeMatch('1v1',seed,['a','b']));
-  for(const p of s.controllers){expect(p.slots).toHaveLength(4);expect(p.queue).toHaveLength(8);expect(new Set([...p.slots,...p.queue])).toEqual(new Set([...cards,...potions].map(c=>c.id)));expect(p.slots.some(id=>cardById[id]&&cardCost(cardById[id],'woe')<=3)).toBe(true);}
+  for(const p of s.controllers){expect(p.slots).toHaveLength(4);expect(p.queue).toHaveLength(10);expect(p.slots.filter(id=>!cardById[id]).length).toBeLessThanOrEqual(1);expect(new Set([...p.slots,...p.queue])).toEqual(new Set([...cards,...potions].map(c=>c.id)));expect(p.slots.some(id=>cardById[id]&&cardCost(cardById[id],'woe')<=3)).toBe(true);}
   expect(getPublicSnapshot(s,'a').players[1]).not.toHaveProperty('slots');
  }
  let w=initializeMatch('1v1','slots',['a','b']);w.controllers[0].slots[3]='solcarp';w.controllers[0].zealTenths=60;
@@ -58,7 +58,7 @@ test('red lab strikes both lanes once without enemy kills and does not affect WO
   let s=initializeCoreDefense('solo','tower',['a']);s.controllers[0].zealTenths=100;const p=s.controllers[0];s=applyCoreDefenseDeployment(s,{actionId:'x',controllerId:'a',slot:0,cardId:p.slots[0],lane}).state;
   const unit=s.units[0],lab=s.laboratories.find(l=>l.id==='red:'+lane)!;unit.position={...lab.position};s.phase='intermission';s.intermissionTicks=20;
   s=advanceCoreDefenseTick(s);expect(s.units.some(u=>u.id===unit.id)).toBe(false);expect(s.enemiesKilled).toBe(0);expect(s.events.filter(e=>e.type==='tower_strike')).toHaveLength(1);expect(s.events.filter(e=>e.type==='death')).toHaveLength(1);expect(s.events[0].position).toEqual(lab.position);expect(advanceCoreDefenseTick(s).events).toHaveLength(0);
-  let moving=initializeCoreDefense('solo','tower-move',['a']);moving.controllers[0].zealTenths=100;const player=moving.controllers[0];moving=applyCoreDefenseDeployment(moving,{actionId:'move',controllerId:'a',slot:0,cardId:player.slots[0],lane}).state;
+  let moving=initializeCoreDefense('solo','tower-move',['a']);moving.controllers[0].zealTenths=100;const player=moving.controllers[0],moveSlot=player.slots.findIndex(id=>!!cardById[id]);moving=applyCoreDefenseDeployment(moving,{actionId:'move',controllerId:'a',slot:moveSlot,cardId:player.slots[moveSlot],lane}).state;
   const mover=moving.units[0];mover.position={x:lab.position.x+101,y:lab.position.y};mover.route=[{...lab.position}];mover.waypoint=0;moving.phase='intermission';moving.intermissionTicks=20;
   moving=advanceCoreDefenseTick(moving);expect(moving.units.some(u=>u.id===mover.id)).toBe(false);expect(moving.events.filter(e=>e.type==='tower_strike')).toHaveLength(1);
   let w=initializeMatch('1v1','tower',['a','b']);w.controllers[0].zealTenths=100;w=applyDeployment(w,{actionId:'x',controllerId:'a',slot:0,cardId:w.controllers[0].slots[0],lane}).state;w.units[0].position={...arena.laboratories.red[lane]};w=advanceTick(w);expect(w.units).toHaveLength(1);

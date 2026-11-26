@@ -607,6 +607,8 @@ CD_WAVE_STATUS,Wave %d | Cleared %d | Kills %d | Pending %d | %02d:%02d,Ola %d |
 CD_ALLIED_CAP,Units %d/%d,Unidades %d/%d
 WOE_POTION_THUNDERLOCK,Thunderlock,Poción de rayo
 WOE_POTION_VITRIOL,Vitriol Potion,Poción de vitriolo
+WOE_POTION_BLOOD,Blood Potion,Poción de sangre
+WOE_POTION_AETHER,Aether Potion,Poción de éter
 CD_REGEN_PAUSED,Zeal regeneration paused.,Regeneración de fervor detenida.
 CD_CAP_REACHED,Unit cap reached. Zeal regeneration paused.,Límite de unidades alcanzado. Regeneración de fervor detenida.
 CD_INTERMISSION,Next wave in %.1f seconds,Siguiente ola en %.1f segundos

@@ -61,8 +61,9 @@ try {
   try {fixtureDb.transaction(()=>{
    const row=fixtureDb.query("SELECT state_json FROM woe_matches WHERE match_id=? AND status='RUNNING'").get(id) as any;assert(row);
    const s=JSON.parse(row.state_json),p=s.controllers.find((c:any)=>c.id===records[0].id);assert(p);
-   let slot=p.slots.indexOf('thunderlock');if(slot>=0)[p.slots[slot],p.slots[3]]=[p.slots[3],p.slots[slot]];
-   else {slot=p.queue.indexOf('thunderlock');assert(slot>=0);[p.queue[slot],p.slots[3]]=[p.slots[3],p.queue[slot]];}
+   const potion=process.env.FOREST_POTION_ID||'thunderlock';
+   let slot=p.slots.indexOf(potion);if(slot>=0)[p.slots[slot],p.slots[3]]=[p.slots[3],p.slots[slot]];
+   else {slot=p.queue.indexOf(potion);assert(slot>=0);const held=p.slots.findIndex((id:string)=>['thunderlock','vitriol_potion','blood_potion','aether_potion'].includes(id));const replace=held>=0?held:3;[p.queue[slot],p.slots[replace]]=[p.slots[replace],p.queue[slot]];[p.slots[replace],p.slots[3]]=[p.slots[3],p.slots[replace]];}
    p.zealTenths=100;fixtureDb.query('UPDATE woe_matches SET state_json=?,revision=revision+1 WHERE match_id=?').run(JSON.stringify(s),id);
   }).immediate()} finally {fixtureDb.close()}
   writeFileSync(join(dir,'potion_ready'),'ok');

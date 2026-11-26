@@ -4,6 +4,7 @@ const BG := preload("res://assets/forest/woe/backgrounds/Classic_Arena_1920x1080
 const ZEAL := preload("res://assets/forest/woe/zeal.png")
 const UNIT := preload("res://scripts/ui/woe_unit.gd")
 const EFFECTS := preload("res://scripts/ui/woe_effects.gd")
+const POTION_VISUALS := preload("res://scripts/ui/woe_potion_visuals.gd")
 const ARENA := "res://data/static/woe_arena.json"
 const CARDS := "res://data/static/woe_cards.json"
 const POLL_INTERVAL := 1.0
@@ -95,6 +96,7 @@ class DeployMarker extends Button:
 		draw_circle(center, 6.0, Color("fff7c9"))
 
 class PotionTarget extends Control:
+	const VISUALS := preload("res://scripts/ui/woe_potion_visuals.gd")
 	signal cast_requested(point: Vector2)
 	signal cancel_requested
 	var radius := 0.0
@@ -115,7 +117,8 @@ class PotionTarget extends Control:
 			accept_event()
 	func _draw() -> void:
 		if not showing: return
-		var color := Color(0.45,0.8,1.0,0.18) if potion_id == "thunderlock" else Color(0.45,0.85,0.35,0.18)
+		var color: Color = VISUALS.MAP.get(potion_id, {}).get("color", Color.WHITE)
+		color.a = 0.18
 		draw_circle(point,radius,color)
 		color.a = 0.7
 		draw_arc(point,radius,0,TAU,48,color,2.0)
@@ -165,6 +168,7 @@ var _effects: Node2D
 var _defense_ranges: DefenseRanges
 var _potion_target: PotionTarget
 var _cards := {}
+var _potion_textures := {}
 var _lab_bars := {}
 var _lane_buttons := {}
 var _buttons: Array[Button] = []
@@ -445,7 +449,7 @@ func _accept_state(data: Dictionary, consume_events: bool) -> void:
 			_cursor = seq
 			_remember_event(event)
 			# Pages from startup, reconnect and long backlogs advance the cursor silently.
-			var laboratory_event := str(event.get("type", "")) in ["potion_cast", "potion_damage"] or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "potion") or (not _is_cd and (str(event.get("type", "")) == "lab_attack" or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "laboratory")))
+			var laboratory_event := str(event.get("type", "")) in ["potion_cast", "potion_damage", "potion_heal"] or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "potion") or (not _is_cd and (str(event.get("type", "")) == "lab_attack" or (str(event.get("type", "")) == "death" and str(event.get("attackerKind", "")) == "laboratory")))
 			var window := maxi(10, ceili(_poll_period * 10.0)) + _delivery_ticks + 2 if _is_cd or laboratory_event else 5
 			if _playback_ready and seq > _silent_until_seq and int(event.get("tick", -100)) >= maxi(snapshot_tick, _last_snapshot_tick) - window and (laboratory_shown < 32 if laboratory_event else shown < 48):
 				_event(event)
@@ -509,9 +513,17 @@ func _event(event: Dictionary) -> void:
 		var card_id := str(event.get("cardId", ""))
 		var card: Dictionary = _cards.get(card_id, {})
 		if card.get("kind") != "potion": return
+		if not POTION_VISUALS.MAP.has(card_id): return
 		var point := _point(event.get("position"))
-		_effects.emit_effect("potion_cast", "aether" if card_id == "thunderlock" else "vitriol", point, point, str(event.get("team", "")), "", float(card.get("radius", 0)))
-		_effects.show_potion_area("aether" if card_id == "thunderlock" else "vitriol", point, float(card.get("radius", 0)), float(card.get("duration_ticks", 0)) / 10.0, maxf(0.0, float(_last_snapshot_tick - int(event.get("tick", _last_snapshot_tick))) / 10.0))
+		var element := str(POTION_VISUALS.MAP[card_id].element)
+		_effects.emit_effect("potion_cast", element, point, point, str(event.get("team", "")), "", float(card.get("radius", 0)))
+		_effects.show_potion_area(element, point, float(card.get("radius", 0)), float(card.get("duration_ticks", 0)) / 10.0, maxf(0.0, float(_last_snapshot_tick - int(event.get("tick", _last_snapshot_tick))) / 10.0))
+	elif kind == "potion_heal":
+		var target := _point(event.get("targetPosition"))
+		var victim: Variant = _units.get(int(event.get("target", 0)))
+		if is_instance_valid(victim) and victim.target_position.distance_to(target) < 80.0: target = victim.position
+		_effects.emit_effect("impact", "blood", target, target)
+		_damage(target, int(event.get("healing", 0)), "", true)
 	elif kind == "potion_damage":
 		var target := _point(event.get("targetPosition"))
 		var victim: Variant = _units.get(int(event.get("target", 0)))
@@ -567,13 +579,13 @@ func _add_unit(data: Dictionary) -> Node:
 	_units[id] = unit
 	return unit
 
-func _damage(point: Vector2, amount: int, lab_id: String = "") -> void:
+func _damage(point: Vector2, amount: int, lab_id: String = "", healing: bool = false) -> void:
 	if _field.get_child_count() >= 220: return
 	var label := Label.new()
 	if not lab_id.is_empty(): label.set_meta("defense_lab_id", lab_id)
 	label.position = point + Vector2(-20,-65)
-	label.text = str(amount)
-	label.add_theme_color_override("font_color", Color("fff1a1"))
+	label.text = ("+" if healing else "") + str(amount)
+	label.add_theme_color_override("font_color", Color("83f5a3") if healing else Color("fff1a1"))
 	_field.add_child(label)
 	var tween := create_tween()
 	tween.tween_property(label, "position:y", label.position.y - 35, 0.7)
@@ -690,7 +702,10 @@ func _update_hud() -> void:
 		var card: Dictionary = _cards.get(id, {})
 		var potion: bool = card.get("kind") == "potion"
 		button.add_theme_font_size_override("font_size", 16 if potion else 24)
-		button.icon = load(str(card.get("texture", ""))) as Texture2D if potion else UNIT.frame(id,"front",1)
+		if potion:
+			if not _potion_textures.has(id): _potion_textures[id] = load(str(card.get("texture", ""))) as Texture2D
+			button.icon = _potion_textures[id]
+		else: button.icon = UNIT.frame(id,"front",1)
 		var card_name := tr(str(card.get("name_key", ""))).replace(" ", "\n") if potion else id.capitalize()
 		button.text = "%s\n%d" % [card_name, int(_card_cost(card))] if not card.is_empty() else ""
 		button.disabled = _returning or _finished or _missing_match or _forfeited or _acting or (capped and not potion) or (_is_cd and _awaiting_deploy_state) or card.is_empty() or zeal < _card_cost(card)

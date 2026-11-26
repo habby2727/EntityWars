@@ -39,6 +39,16 @@ func _run() -> void:
 	var death := {"seq":5,"tick":91,"type":"death","target":99,"targetKind":"unit","victimAssetId":"noxiris","victimKind":"enemy","victimTeam":"red","victimPosition":{"x":160,"y":100},"victimElement":"mercury"}
 	arena._accept_state({"match_id":"event-match","revision":4,"snapshot":snapshot,"events":[death]}, true)
 	assert(arena._cursor == 5 and arena._corpses.size() == 1)
+	snapshot.units[0]["blood_until"] = 140
+	snapshot.units[0]["aether_until"] = 140
+	var heal := {"seq":6,"tick":100,"type":"potion_heal","cardId":"blood_potion","target":1,"targetPosition":{"x":100,"y":100},"healing":12}
+	var before_heal: int = arena._effects.effects.size()
+	arena._accept_state({"match_id":"event-match","revision":5,"snapshot":snapshot,"events":[heal]}, true)
+	assert(arena._units[1].blood_remaining == 4.0 and arena._units[1].aether_remaining == 4.0)
+	assert(arena._effects.effects.size() == before_heal + 1)
+	assert(arena._field.get_children().any(func(node): return node is Label and node.text == "+12"))
+	arena._accept_state({"match_id":"event-match","revision":5,"snapshot":snapshot,"events":[heal]}, true)
+	assert(arena._effects.effects.size() == before_heal + 1)
 	arena._action_kind = "match/deploy"
 	arena._finish_action({"code":200,"data":{"accepted":true,"match_id":"event-match","revision":10}})
 	assert(arena._awaiting_deploy_state and arena._deploy_receipt_revision == 10 and arena._buttons[0].disabled)

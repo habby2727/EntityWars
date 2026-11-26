@@ -52,7 +52,7 @@ func _run() -> void:
 		arena._sync_zeal_display()
 		if OS.get_environment("WOE_POTION_CAPTURE") == "1":
 			var potion_id := OS.get_environment("WOE_POTION_ID")
-			if potion_id not in ["thunderlock", "vitriol_potion"]: potion_id = "thunderlock"
+			if potion_id not in ["thunderlock", "vitriol_potion", "blood_potion", "aether_potion"]: potion_id = "thunderlock"
 			arena._own.slots[3] = potion_id
 			arena._select(3)
 			arena._potion_target.point = Vector2(960,540)
@@ -61,7 +61,7 @@ func _run() -> void:
 			var count := 0
 			for unit in arena._units.values():
 				if count >= 4: break
-				unit.update_state({"x":unit.target_position.x,"y":unit.target_position.y,"snapshot_tick":100,"paralyzed_until":150,"poison_until":130})
+				unit.update_state({"x":unit.target_position.x,"y":unit.target_position.y,"snapshot_tick":100,"paralyzed_until":150,"poison_until":130,"blood_until":140,"aether_until":140})
 				count += 1
 		if kind == "core_defense":
 			arena._snapshot["allied_count"] = 2

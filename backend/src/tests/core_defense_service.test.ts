@@ -45,7 +45,7 @@ test('potion receipts preserve timestamps and conflict on coordinate reuse',()=>
  const body={match_id:room.match_id,client_action_id:`${h.clock()}:cast`,slot,card_id:'thunderlock',target_x:500,target_y:400};
  const first=h.cd.deploy('a',body);expect(first.status).toBe(200);expect(h.cd.deploy('a',body)).toEqual(first);expect(h.cd.deploy('a',{...body,target_y:401}).data.error).toBe('ACTION_CONFLICT');
  expect(h.cd.deploy('a',{...body,client_action_id:`${h.clock()}:mixed`,lane:'left'}).status).toBe(400);
- s=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(room.match_id) as any).state_json);expect(s.controllers[0].zealTenths).toBe(20);expect(s.units).toHaveLength(0);
+ s=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(room.match_id) as any).state_json);expect(s.controllers[0].zealTenths).toBe(30);expect(s.units).toHaveLength(0);
  expect(h.cd.state('a',room.match_id,'0').data.events.filter((e:any)=>e.type==='potion_cast')).toHaveLength(1);h.db.close();
 });
 test('coop potion commands in the same simulation tick serialize independently',async()=>{
@@ -57,7 +57,20 @@ test('coop potion commands in the same simulation tick serialize independently',
  const results=await Promise.all(commands.map((body:any,i:number)=>Promise.resolve().then(()=>h.cd.deploy(s.controllers[i].id,body))));
  expect(results.map(r=>r.status)).toEqual([200,200]);
  const saved=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(room.match_id) as any).state_json);
- expect(saved.controllers.map((p:any)=>p.zealTenths)).toEqual([20,20]);
+ expect(saved.controllers.map((p:any)=>p.zealTenths)).toEqual([30,30]);
+ expect(h.cd.state('a',room.match_id,'0').data.events.filter((e:any)=>e.type==='potion_cast')).toHaveLength(2);h.db.close();
+});
+test('coop healing and aether casts affect the same ally and replay once',async()=>{
+ const h=setup();let room=create(h,'coop').data;room=joinCoop(h,'a','b',room.room_id);room=h.lobby.start('a',{room_id:room.room_id,expected_revision:room.revision,client_action_id:'friendly-potions'}).data;
+ let s=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(room.match_id) as any).state_json);
+ s.controllers[0].slots[0]='neon';s.controllers[0].zealTenths=100;s=applyCoreDefenseDeployment(s,{controllerId:'a',actionId:'seed',slot:0,cardId:'neon',lane:'left'}).state;
+ s.units[0].position={x:960,y:540};s.units[0].hp=50;
+ for(const [i,id] of ['blood_potion','aether_potion'].entries()){const p=s.controllers[i],inSlot=p.slots.indexOf(id),inQueue=p.queue.indexOf(id);if(inSlot>=0)[p.slots[0],p.slots[inSlot]]=[p.slots[inSlot],p.slots[0]];else [p.slots[0],p.queue[inQueue]]=[p.queue[inQueue],p.slots[0]];p.zealTenths=100;}
+ h.db.query('UPDATE woe_matches SET state_json=? WHERE match_id=?').run(JSON.stringify(s),room.match_id);
+ const cmds=['blood_potion','aether_potion'].map((id,i)=>({match_id:room.match_id,client_action_id:`${h.clock()}:friendly-${i}`,slot:0,card_id:id,target_x:960,target_y:540}));
+ const result=await Promise.all(cmds.map((cmd,i)=>Promise.resolve().then(()=>h.cd.deploy(['a','b'][i],cmd))));expect(result.map(r=>r.status)).toEqual([200,200]);
+ expect(h.cd.deploy('a',cmds[0])).toEqual(result[0]);s=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(room.match_id) as any).state_json);
+ expect(s.units[0]).toMatchObject({bloodUntil:40,aetherUntil:40,hp:50});expect(s.controllers.map((p:any)=>p.zealTenths)).toEqual([60,80]);
  expect(h.cd.state('a',room.match_id,'0').data.events.filter((e:any)=>e.type==='potion_cast')).toHaveLength(2);h.db.close();
 });
 test('coop last shared slot is committed once and rejected deployment never charges',()=>{

@@ -10,14 +10,18 @@ export function chooseBotDeployment(state: MatchState, id: string, options?: { v
  const choices: {cmd:DeploymentCommand;score:number}[]=[];
  const bias=[...id].reduce((n,c)=>(n*33+c.charCodeAt(0))>>>0,0);
  const enemiesVisible=state.units.filter(u=>u.hp>0&&u.team!==p.team).sort((a,b)=>a.id-b.id);
+ const alliesVisible=state.units.filter(u=>u.hp>0&&u.team===p.team).sort((a,b)=>a.id-b.id);
  for(let slot=0;slot<p.slots.length;slot++){
   const potion=potionById[p.slots[slot]];if(!potion)continue;
-  for(const center of enemiesVisible){
-   const targets=enemiesVisible.filter(u=>(u.position.x-center.position.x)**2+(u.position.y-center.position.y)**2<=potion.radius**2 && (potion.id==='thunderlock'?(u.paralyzedUntil??0)<=state.tick:(u.poisonUntil??0)<=state.tick));
-   if(targets.length<2)continue;
+  const friendly=potion.id==='blood_potion'||potion.id==='aether_potion',candidates=friendly?alliesVisible:enemiesVisible;
+  for(const center of candidates){
+   const nearEnemy=(u:typeof center)=>enemiesVisible.some(e=>(u.position.x-e.position.x)**2+(u.position.y-e.position.y)**2<=400**2);
+   const targets=candidates.filter(u=>(u.position.x-center.position.x)**2+(u.position.y-center.position.y)**2<=potion.radius**2 && (potion.id==='thunderlock'?(u.paralyzedUntil??0)<=state.tick:potion.id==='vitriol_potion'?(u.poisonUntil??0)<=state.tick:potion.id==='blood_potion'?(u.bloodUntil??0)<=state.tick && u.hp<(cardById[u.cardId]?.hp??u.hp)*0.8:(u.aetherUntil??0)<=state.tick && nearEnemy(u)));
+   if(targets.length<(friendly?1:2))continue;
    const cmd={actionId:`bot:${state.tick}:${id}`,controllerId:id,slot,cardId:potion.id,target_x:center.position.x,target_y:center.position.y};
    if((options?.validate ?? validateDeployment)(state,cmd))continue;
-   choices.push({cmd,score:targets.length*5-potion.cost*0.12-slot*0.001});
+   const value=potion.id==='blood_potion'?targets.reduce((n,u)=>n+Math.min((cardById[u.cardId]?.hp??u.hp)-u.hp,(cardById[u.cardId]?.hp??u.hp)*0.4)/30,0):targets.length*5;
+   choices.push({cmd,score:value-potion.cost*0.12-slot*0.001});
   }
  }
  if(alliesAlive!==enemiesAlive || alliesAlive<3)for(const lane of ['left','right'] as Lane[]) for(let slot=0;slot<p.slots.length;slot++) {

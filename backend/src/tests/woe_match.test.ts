@@ -44,7 +44,7 @@ test('potion receipts replay exactly and coordinate changes conflict',()=>{
  expect(h.service.deploy('a',{...body,target_x:501}).data.error).toBe('ACTION_CONFLICT');
  expect(h.service.deploy('a',{...body,client_action_id:'mixed',lane:'left'}).status).toBe(400);
  const state=JSON.parse((h.db.query('SELECT state_json FROM woe_matches WHERE match_id=?').get(h.id) as any).state_json);
- expect(state.controllers.find((x:any)=>x.id==='a').zealTenths).toBe(20);expect(state.units).toHaveLength(0);
+ expect(state.controllers.find((x:any)=>x.id==='a').zealTenths).toBe(30);expect(state.units).toHaveLength(0);
  expect(h.service.state('a',h.id,'0').data.events.filter((e:any)=>e.type==='potion_cast')).toHaveLength(1);
  h.db.close();
 });

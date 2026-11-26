@@ -27,6 +27,8 @@ var animation_time := 0.0
 var moving := false
 var paralyzed_remaining := 0.0
 var poison_remaining := 0.0
+var blood_remaining := 0.0
+var aether_remaining := 0.0
 var sprite: Sprite2D
 
 static func frame(card: String, facing: String, index: int) -> Texture2D:
@@ -75,6 +77,8 @@ func update_state(data: Dictionary) -> void:
 	var tick := int(data.get("snapshot_tick", 0))
 	paralyzed_remaining = maxf(0.0, float(int(data.get("paralyzed_until", tick)) - tick) / 10.0)
 	poison_remaining = maxf(0.0, float(int(data.get("poison_until", tick)) - tick) / 10.0)
+	blood_remaining = maxf(0.0, float(int(data.get("blood_until", tick)) - tick) / 10.0)
+	aether_remaining = maxf(0.0, float(int(data.get("aether_until", tick)) - tick) / 10.0)
 	var next_position := Vector2(float(data.get("x", target_position.x)), float(data.get("y", target_position.y)))
 	if not next_position.is_equal_approx(target_position):
 		_move_origin = position
@@ -134,6 +138,8 @@ func _process(delta: float) -> void:
 			position = _move_origin.lerp(target_position, _move_elapsed / _move_duration)
 			moving = position.distance_squared_to(previous) > 0.000001
 		poison_remaining = maxf(0.0, poison_remaining - delta)
+		blood_remaining = maxf(0.0, blood_remaining - delta)
+		aether_remaining = maxf(0.0, aether_remaining - delta)
 	separation = separation.lerp(desired_separation, 1.0 - exp(-delta * 5.0))
 	queue_redraw()
 	strike_time = maxf(0.0, strike_time - delta)
@@ -148,6 +154,12 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if dying: return
 	var aura := Vector2(clampf(visual_offset + separation.x, -20.0, 20.0), -28.0 + separation.y)
+	if blood_remaining > 0.0:
+		draw_circle(aura, 27.0, Color(0.85,0.12,0.18,0.14))
+		draw_arc(aura, 27.0, 0, TAU, 24, Color(0.94,0.31,0.35,0.5), 1.5)
+	if aether_remaining > 0.0:
+		draw_circle(aura, 30.0, Color(0.28,0.84,0.95,0.12))
+		draw_arc(aura, 30.0, 0, TAU, 24, Color(0.7,0.48,1.0,0.5), 1.5)
 	if poison_remaining > 0.0:
 		draw_circle(aura, 27.0, Color(0.4,0.8,0.2,0.15))
 		draw_arc(aura, 25.0, 0, TAU, 24, Color(0.65,0.35,0.9,0.6), 2.0)
