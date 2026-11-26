@@ -16,7 +16,7 @@ func _run() -> void:
 	for action in [panel._close, panel._upgrade, panel._collect, panel._manage]:
 		assert(action.get_theme_stylebox("normal") is StyleBoxTexture)
 		assert(action.has_meta("betterui_button"))
-	for viewport_size in [Vector2i(1920, 1080), Vector2i(1280, 720)]:
+	for viewport_size in [Vector2i(1920, 1080), Vector2i(2400, 1080), Vector2i(1280, 720)]:
 		root.size = viewport_size
 		for locale in ["es", "en"]:
 			TranslationServer.set_locale(locale)
@@ -43,6 +43,7 @@ func _run() -> void:
 					if control.is_visible_in_tree():
 						var rect: Rect2 = control.get_global_rect()
 						assert(rect.position.y >= bounds.position.y - 2 and rect.end.y <= bounds.end.y + 2)
+						assert(rect.position.x >= bounds.position.x - 2 and rect.end.x <= bounds.end.x + 2)
 	print("PASS laboratory cards")
 	quit()
 

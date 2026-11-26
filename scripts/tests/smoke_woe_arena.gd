@@ -119,7 +119,8 @@ func _run() -> void:
 			arena._render_snapshot()
 			var art: TextureRect = arena._potion_art[3]
 			var name_label: Label = arena._potion_names[3]
-			assert(art.visible and art.texture != null and art.position == Vector2(38, 4) and art.size == Vector2(94, 78))
+			var mobile := OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1"
+			assert(art.visible and art.texture != null and art.position == (Vector2(39, 4) if mobile else Vector2(38, 4)) and art.size == (Vector2(117, 94) if mobile else Vector2(94, 78)))
 			assert(name_label.visible and name_label.text == id.capitalize() and name_label.position.y >= art.position.y + art.size.y)
 			assert(arena._potion_costs[3].text == str(int(arena._card_cost(card))) and arena._buttons[3].text.is_empty())
 		assert(arena._card_cost(arena._cards.thunderlock) == 2.0 and arena._card_cost(arena._cards.vitriol_potion) == 3.0)

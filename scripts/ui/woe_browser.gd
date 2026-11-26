@@ -11,10 +11,13 @@ var _buttons: Array[Button] = []
 var _busy := false
 var _epoch := ""
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _ready() -> void:
 	PANEL_STYLE.panel(self)
 	_epoch = WoeClient.identity()
-	custom_minimum_size = Vector2(420, 360)
+	custom_minimum_size = Vector2.ZERO if _android_ui() else Vector2(420, 360)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
 	add_child(box)
@@ -62,12 +65,34 @@ func _ready() -> void:
 	close.text = tr("FOREST_CLOSE")
 	close.pressed.connect(queue_free)
 	box.add_child(close)
+	if _android_ui():
+		_make_mobile_columns(box, invite_scroll, close)
 	if not WoeClient.saved_pending().is_empty():
 		_status.text = tr("WOE_RETRY_PENDING")
 	elif not WoeClient.saved_room().is_empty() or not WoeClient.saved_match().is_empty():
 		_recover()
 	else:
 		_recover_current()
+
+
+func _make_mobile_columns(box: VBoxContainer, invitation_list: ScrollContainer, close: Button) -> void:
+	var existing := box.get_children()
+	var columns := HBoxContainer.new()
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	columns.add_theme_constant_override("separation", 16)
+	box.add_child(columns)
+	box.move_child(columns, 0)
+	var left := VBoxContainer.new()
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.add_theme_constant_override("separation", 6)
+	columns.add_child(left)
+	invitation_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	invitation_list.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	invitation_list.reparent(columns)
+	for child in existing:
+		if child != invitation_list and child != close:
+			child.reparent(left)
+	close.size_flags_horizontal = Control.SIZE_SHRINK_END
 
 func _process(_delta: float) -> void:
 	if _epoch != WoeClient.identity(): queue_free()

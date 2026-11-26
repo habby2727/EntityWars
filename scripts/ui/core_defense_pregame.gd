@@ -16,6 +16,9 @@ var _info: Label
 var _start: Button
 var _invites
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _ready() -> void:
 	_identity = CoreDefenseClient.identity()
 	if not SceneRouter.woe_context_valid() or SceneRouter._woe_context.get("kind") != "core_defense":
@@ -38,7 +41,7 @@ func _ready() -> void:
 	add_child(center)
 	var panel := PanelContainer.new()
 	PANEL_STYLE.panel(panel)
-	panel.custom_minimum_size = Vector2(700, 520)
+	panel.custom_minimum_size = Vector2(1000, 0) if _android_ui() else Vector2(700, 520)
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
@@ -86,6 +89,21 @@ func _ready() -> void:
 	local_return.add_theme_font_size_override("font_size", 22)
 	local_return.pressed.connect(SceneRouter.finish_woe_safely)
 	box.add_child(local_return)
+	if _android_ui():
+		var children := box.get_children()
+		var columns := HBoxContainer.new()
+		columns.add_theme_constant_override("separation", 16)
+		box.add_child(columns)
+		var actions := VBoxContainer.new()
+		actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		actions.add_theme_constant_override("separation", 8)
+		columns.add_child(actions)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.reparent(columns)
+		for child in children:
+			if child != scroll:
+				child.reparent(actions)
 	_refresh()
 
 func _valid() -> bool:

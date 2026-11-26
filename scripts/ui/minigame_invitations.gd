@@ -96,6 +96,8 @@ func _render_cache() -> void:
 		row.set_meta("incoming", true)
 		_items.add_child(row)
 		var label := Label.new()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.set_meta("label", label)
 		var remaining := maxi(0, int(ceil(float(int(invite.get("expires_at", 0)) - (_server_time + Time.get_ticks_msec() - _server_tick)) / 1000.0)))
 		label.text = (tr("CD_INVITED_BY") % _friend_name(str(invite.get("inviter_id", "")))) + (" (%ds)" % remaining)
@@ -110,12 +112,15 @@ func _render_cache() -> void:
 		row.set_meta("invitation", invite)
 		_items.add_child(row)
 		var label := Label.new()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.text = tr("CD_PENDING") % _friend_name(str(invite.get("recipient_id", "")))
 		row.add_child(label)
 		_add_button(row, "CD_CANCEL_INVITE", _cancel.bind(str(invite.invite_id)))
 	for invite in data.get("recent", []):
 		if not invite is Dictionary or str(invite.get("game_kind", "")) != game_kind: continue
 		var label := Label.new()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.text = "%s: %s" % [_friend_name(str(invite.get("recipient_id", ""))), tr("CD_INVITE_STATUS_" + str(invite.get("status", "")).to_upper())]
 		_items.add_child(label)
 	if not room_id.is_empty() and can_invite:

@@ -679,10 +679,13 @@ func _unconfigured(title: String, tabs: Array) -> void:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		container.add_child(label)
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _catalog(homunculi: bool) -> void:
 	var title := Label.new()
 	title.text = "VAT_CATALOG" if homunculi else "FORGE_CATALOG"
-	title.add_theme_font_size_override("font_size", 18 if OS.has_feature("android") else 14)
+	title.add_theme_font_size_override("font_size", 18 if _android_ui() else 14)
 	var vat_header: HBoxContainer
 	if homunculi:
 		vat_header = HBoxContainer.new()
@@ -695,7 +698,7 @@ func _catalog(homunculi: bool) -> void:
 	var row := HBoxContainer.new()
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 14)
-	if homunculi or OS.has_feature("android"):
+	if homunculi or _android_ui():
 		add_child(row)
 	else:
 		var center := HBoxContainer.new()
@@ -708,7 +711,7 @@ func _catalog(homunculi: bool) -> void:
 	list.name = "LocalizationCatalogItems"
 	list.set_meta("catalog_kind", "homunculus" if homunculi else "item")
 	list.custom_minimum_size = Vector2(220, 150)
-	list.add_theme_font_size_override("font_size", 19 if OS.has_feature("android") else (12 if homunculi else 13))
+	list.add_theme_font_size_override("font_size", 19 if _android_ui() else (12 if homunculi else 13))
 	var list_bg := StyleBoxFlat.new()
 	list_bg.bg_color = Color(0.02, 0.08, 0.08, 0.94)
 	list.add_theme_stylebox_override("panel", list_bg)
@@ -732,7 +735,7 @@ func _catalog(homunculi: bool) -> void:
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var details := VBoxContainer.new()
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	if OS.has_feature("android") and not homunculi:
+	if _android_ui() and not homunculi:
 		details.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		details.alignment = BoxContainer.ALIGNMENT_BEGIN
 	if not homunculi:
@@ -741,7 +744,7 @@ func _catalog(homunculi: bool) -> void:
 	var heading := Label.new()
 	heading.name = "LocalizationCatalogHeading"
 	heading.set_meta("localization_body_font", true)
-	heading.add_theme_font_size_override("font_size", 18 if OS.has_feature("android") else (12 if homunculi else 14))
+	heading.add_theme_font_size_override("font_size", 18 if _android_ui() else (12 if homunculi else 14))
 	if not homunculi:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.add_child(heading)
@@ -753,7 +756,7 @@ func _catalog(homunculi: bool) -> void:
 	details.add_child(stats_area)
 	var preview_center := CenterContainer.new()
 	preview_center.name = "PreviewSlot"
-	if OS.has_feature("android") and not homunculi:
+	if _android_ui() and not homunculi:
 		preview_center.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		preview_center.custom_minimum_size = Vector2(190, 190)
 	else:
@@ -776,40 +779,40 @@ func _catalog(homunculi: bool) -> void:
 	preview.offset_top = 18
 	preview.offset_right = -18
 	preview.offset_bottom = -18
-	var scroll := ScrollContainer.new()
-	scroll.name = "StatsScroll"
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size.y = 60 if homunculi else 135
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	if OS.has_feature("android") and not homunculi:
-		scroll.clip_contents = true
-	stats_area.add_child(scroll)
+	var stats_content: Container
+	if homunculi:
+		stats_content = VBoxContainer.new()
+	else:
+		var scroll := ScrollContainer.new()
+		scroll.name = "StatsScroll"
+		scroll.custom_minimum_size.y = 190 if _android_ui() else 135
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		stats_content = scroll
+	stats_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stats_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stats_area.add_child(stats_content)
 	var info := Label.new()
-	info.add_theme_font_size_override("font_size", 19 if OS.has_feature("android") else 12)
+	info.add_theme_font_size_override("font_size", 19 if _android_ui() else 12)
 	if not homunculi:
 		_forge_info = info
 	else:
 		_vat_info = info
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	if OS.has_feature("android") and not homunculi:
+	if _android_ui() and not homunculi:
 		info.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 		info.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	if homunculi:
-		var text_column := VBoxContainer.new()
-		text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		scroll.add_child(text_column)
-		text_column.add_child(info)
+		stats_content.add_child(info)
 		_vat_synergies = Label.new()
-		_vat_synergies.add_theme_font_size_override("font_size", 15 if OS.has_feature("android") else 11)
+		_vat_synergies.add_theme_font_size_override("font_size", 15 if _android_ui() else 11)
 		_vat_synergies.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_vat_synergies.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		text_column.add_child(_vat_synergies)
+		stats_content.add_child(_vat_synergies)
 	else:
-		scroll.add_child(info)
+		stats_content.add_child(info)
 	var actions: Container
-	if OS.has_feature("android"):
+	if _android_ui():
 		actions = VBoxContainer.new()
 		var actions_scroll := ScrollContainer.new()
 		actions_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -857,19 +860,19 @@ func _catalog(homunculi: bool) -> void:
 		_vat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_vat_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		status_row.add_child(_vat_status)
-		var mutation_parent: Control = actions if OS.has_feature("android") else details
+		var mutation_parent: Control = actions if _android_ui() else details
 		var mutation_heading := Label.new()
 		mutation_heading.text = "VAT_MUTATIONS"
 		mutation_parent.add_child(mutation_heading)
-		var mutation_row: BoxContainer = VBoxContainer.new() if OS.has_feature("android") else HBoxContainer.new()
+		var mutation_row: BoxContainer = VBoxContainer.new() if _android_ui() else HBoxContainer.new()
 		mutation_parent.add_child(mutation_row)
 		for mutation_id in ["catalyst", "vitality", "resonance"]:
 			var button := Button.new()
-			if OS.has_feature("android"):
+			if _android_ui():
 				button.custom_minimum_size = Vector2(200, 64)
 				button.add_theme_font_size_override("font_size", 24)
 			button.text = GameLocalization.catalog("mutation", mutation_id, "name", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("name", mutation_id)))
-			button.add_theme_font_size_override("font_size", 24 if OS.has_feature("android") else 12)
+			button.add_theme_font_size_override("font_size", 24 if _android_ui() else 12)
 			button.tooltip_text = GameLocalization.catalog("mutation", mutation_id, "desc", str(HomProgress.mutation_catalog().get(mutation_id, {}).get("description", "")))
 			MenuArt.button(button)
 			button.pressed.connect(_request_vat_mutation.bind(mutation_id))
@@ -882,11 +885,12 @@ func _catalog(homunculi: bool) -> void:
 	else:
 		actions.add_child(inventory)
 	if not homunculi:
+		var controls_parent: Container = actions if _android_ui() else details
 		var trait_actions := HFlowContainer.new()
 		trait_actions.alignment = FlowContainer.ALIGNMENT_CENTER
 		trait_actions.add_theme_constant_override("h_separation", 8)
 		trait_actions.add_theme_constant_override("v_separation", 4)
-		details.add_child(trait_actions)
+		controls_parent.add_child(trait_actions)
 		_forge_reroll_slot = OptionButton.new()
 		_forge_reroll_slot.set_meta("localization_body_font", true)
 		_forge_reroll_slot.add_theme_font_size_override("font_size", 10)
@@ -904,10 +908,10 @@ func _catalog(homunculi: bool) -> void:
 			trait_actions.add_child(trait_button)
 			_forge_trait_buttons.append(trait_button)
 			trait_button.pressed.connect(_request_trait_action.bind(i))
-		var fusion_row = HFlowContainer.new() if OS.has_feature("android") else HBoxContainer.new()
+		var fusion_row = HFlowContainer.new() if _android_ui() else HBoxContainer.new()
 		fusion_row.alignment = BoxContainer.ALIGNMENT_CENTER
 		fusion_row.add_theme_constant_override("separation", 8)
-		details.add_child(fusion_row)
+		controls_parent.add_child(fusion_row)
 		_fusion_donor = OptionButton.new()
 		_fusion_donor.set_meta("localization_body_font", true)
 		_fusion_donor.add_theme_font_size_override("font_size", 10)
@@ -927,12 +931,12 @@ func _catalog(homunculi: bool) -> void:
 		_fusion_info.add_theme_font_size_override("font_size", 10)
 		_fusion_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_fusion_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		details.add_child(_fusion_info)
+		controls_parent.add_child(_fusion_info)
 		_forge_status = Label.new()
 		_forge_status.add_theme_font_size_override("font_size", 10)
 		_forge_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_forge_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		details.add_child(_forge_status)
+		controls_parent.add_child(_forge_status)
 		_forge_confirm = ConfirmationDialog.new()
 		_forge_confirm.title = "Upgrade talisman"
 		_forge_confirm.confirmed.connect(_send_forge_confirmed)

@@ -190,10 +190,13 @@ func _setup_inventory_layout() -> void:
 		_detail_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_detail_title.add_theme_font_size_override("font_size", 30)
 	header.add_child(_detail_title)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	content.add_child(scroll)
+	var detail_parent: Container = content
+	if not _android_ui():
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		content.add_child(scroll)
+		detail_parent = scroll
 	_detail_text = Label.new()
 	_detail_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -204,8 +207,8 @@ func _setup_inventory_layout() -> void:
 	if _android_ui():
 		_detail_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_detail_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-		_detail_text.add_theme_font_size_override("font_size", 24)
-	scroll.add_child(_detail_text)
+		_detail_text.add_theme_font_size_override("font_size", 28)
+	detail_parent.add_child(_detail_text)
 
 func _setup_spell_progress() -> void:
 	if _registry == null:

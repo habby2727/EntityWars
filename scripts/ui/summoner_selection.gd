@@ -30,7 +30,7 @@ func _ready() -> void:
 	var aspect := AspectRatioContainer.new()
 	aspect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	aspect.ratio = 16.0 / 9.0
-	aspect.stretch_mode = AspectRatioContainer.STRETCH_WIDTH_CONTROLS_HEIGHT
+	aspect.stretch_mode = AspectRatioContainer.STRETCH_FIT
 	add_child(aspect)
 	var canvas := Control.new()
 	aspect.add_child(canvas)
@@ -48,7 +48,7 @@ func _ready() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 46)
-	_set_rect(title, 0.1, 0.055, 0.9, 0.15)
+	_set_rect(title, 0.1, 0.07, 0.9, 0.165)
 	canvas.add_child(title)
 	var row := HBoxContainer.new()
 	row.name = "Cards"
@@ -90,13 +90,13 @@ func _ready() -> void:
 	var back := Button.new()
 	back.text = "SETTINGS_BACK"
 	back.add_theme_font_size_override("font_size", 24)
-	_set_rect(back, 0.16, 0.83, 0.34, 0.91)
+	_set_rect(back, 0.16, 0.80, 0.34, 0.88)
 	back.pressed.connect(_cancel_selection)
 	canvas.add_child(back)
 	_confirm = Button.new()
 	_confirm.text = "UI_CONFIRM" if _change_mode else "FOREST_CONFIRM"
 	_confirm.add_theme_font_size_override("font_size", 24)
-	_set_rect(_confirm, 0.60, 0.83, 0.84, 0.91)
+	_set_rect(_confirm, 0.60, 0.80, 0.84, 0.88)
 	_confirm.pressed.connect(_confirm_selection)
 	canvas.add_child(_confirm)
 	UIThemeFactory.apply_theme_to(self)

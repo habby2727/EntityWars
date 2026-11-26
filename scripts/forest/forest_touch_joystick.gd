@@ -26,13 +26,17 @@ func _input(event: InputEvent) -> void:
 		queue_redraw()
 
 func _set_vector(local_position: Vector2) -> void:
-	vector = ((local_position - size * 0.5) / RADIUS).limit_length(1.0)
+	vector = ((local_position - size * 0.5) / _radius()).limit_length(1.0)
 	if vector.length() < 0.12:
 		vector = Vector2.ZERO
 	queue_redraw()
 
 func _draw() -> void:
 	var center := size * 0.5
-	draw_circle(center, RADIUS + 6.0, Color(0.02, 0.05, 0.05, 0.48))
-	draw_arc(center, RADIUS + 6.0, 0, TAU, 48, Color(0.75, 0.86, 0.74, 0.65), 3.0)
-	draw_circle(center + vector * RADIUS, 32.0, Color(0.72, 0.83, 0.70, 0.65))
+	var radius := _radius()
+	draw_circle(center, radius + 6.0, Color(0.02, 0.05, 0.05, 0.48))
+	draw_arc(center, radius + 6.0, 0, TAU, 48, Color(0.75, 0.86, 0.74, 0.65), 3.0)
+	draw_circle(center + vector * radius, 32.0 * radius / RADIUS, Color(0.72, 0.83, 0.70, 0.65))
+
+func _radius() -> float:
+	return RADIUS * minf(size.x, size.y) / 224.0

@@ -246,7 +246,18 @@ func _start_prefetch() -> void:
 func _valid() -> bool:
 	return is_inside_tree() and _identity == _client.identity() and SceneRouter.woe_context_valid() and str(SceneRouter._woe_context.get("match_id", "")) == _match_id
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _build() -> void:
+	if _android_ui():
+		var edge := TextureRect.new()
+		edge.texture = BG
+		edge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		edge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		edge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(edge)
 	var aspect := AspectRatioContainer.new()
 	aspect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	aspect.ratio = 16.0 / 9.0
@@ -344,7 +355,7 @@ func _build() -> void:
 	_result.add_theme_font_size_override("font_size", 38)
 	_stage.add_child(_result)
 	var hud := HBoxContainer.new()
-	hud.position = Vector2(480,930)
+	hud.position = Vector2(480,905) if _android_ui() else Vector2(480,930)
 	hud.size = Vector2(960,135)
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
 	hud.add_theme_constant_override("separation", 8)
@@ -353,7 +364,7 @@ func _build() -> void:
 	potion_font.font_names = PackedStringArray(["Arial", "Noto Sans", "sans-serif"])
 	for i in range(4):
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(170,120)
+		button.custom_minimum_size = Vector2(195,145) if _android_ui() else Vector2(170,120)
 		button.add_theme_font_size_override("font_size", 24)
 		MENU_ART.button(button)
 		button.pressed.connect(_select.bind(i))
@@ -362,6 +373,9 @@ func _build() -> void:
 		var art := TextureRect.new()
 		art.position = Vector2(38, 4)
 		art.size = Vector2(94, 78)
+		if _android_ui():
+			art.position = Vector2(39, 4)
+			art.size = Vector2(117, 94)
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -372,12 +386,15 @@ func _build() -> void:
 		potion_name.set_meta("minigame_native_typography", true)
 		potion_name.position = Vector2(8, 82)
 		potion_name.size = Vector2(154, 32)
+		if _android_ui():
+			potion_name.position = Vector2(8, 100)
+			potion_name.size = Vector2(179, 38)
 		potion_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		potion_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		potion_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		potion_name.clip_text = true
 		potion_name.add_theme_font_override("font", potion_font)
-		potion_name.add_theme_font_size_override("font_size", 16)
+		potion_name.add_theme_font_size_override("font_size", 19 if _android_ui() else 16)
 		potion_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		potion_name.visible = false
 		button.add_child(potion_name)
@@ -386,6 +403,7 @@ func _build() -> void:
 		potion_cost.set_meta("minigame_native_typography", true)
 		potion_cost.position = Vector2(133, 8)
 		potion_cost.size = Vector2(25, 25)
+		if _android_ui(): potion_cost.position = Vector2(158, 8)
 		potion_cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		potion_cost.add_theme_font_override("font", potion_font)
 		potion_cost.add_theme_font_size_override("font_size", 20)
@@ -395,7 +413,7 @@ func _build() -> void:
 		button.add_child(potion_cost)
 		_potion_costs.append(potion_cost)
 	var zeal_box := VBoxContainer.new()
-	zeal_box.position = Vector2(608, 800 if _is_cd else 827)
+	zeal_box.position = Vector2(608, 780 if _is_cd else 800) if _android_ui() else Vector2(608, 800 if _is_cd else 827)
 	zeal_box.size = Vector2(704, 98)
 	zeal_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage.add_child(zeal_box)
@@ -407,7 +425,7 @@ func _build() -> void:
 	icon.texture = ZEAL
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.custom_minimum_size = Vector2(36,36)
+	icon.custom_minimum_size = Vector2(44,44) if _android_ui() else Vector2(36,36)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	zeal_title.add_child(icon)
 	_zeal_label = Label.new()
@@ -419,7 +437,7 @@ func _build() -> void:
 	zeal_box.add_child(meter_center)
 	_zeal_meter = Meter.new()
 	_zeal_meter.translucent_partial = true
-	_zeal_meter.custom_minimum_size = Vector2(360,18)
+	_zeal_meter.custom_minimum_size = Vector2(450,24) if _android_ui() else Vector2(360,18)
 	_zeal_meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	meter_center.add_child(_zeal_meter)
 	_forfeit = Button.new()
@@ -428,14 +446,30 @@ func _build() -> void:
 	_forfeit.text = tr("WOE_FORFEIT")
 	MENU_ART.button(_forfeit)
 	_forfeit.pressed.connect(_confirm_forfeit)
-	_stage.add_child(_forfeit)
+	var action_box: VBoxContainer
+	if _android_ui():
+		action_box = VBoxContainer.new()
+		action_box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		action_box.offset_left = -250
+		action_box.offset_right = -20
+		action_box.offset_top = 20
+		action_box.add_theme_constant_override("separation", 10)
+		add_child(action_box)
+		_forfeit.custom_minimum_size = Vector2(230, 64)
+		action_box.add_child(_forfeit)
+	else:
+		_stage.add_child(_forfeit)
 	_return_button = Button.new()
 	_return_button.position = Vector2(1640,95)
 	_return_button.size = Vector2(230,55)
 	_return_button.text = tr("WOE_RETURN")
 	MENU_ART.button(_return_button)
 	_return_button.pressed.connect(_confirm_return)
-	_stage.add_child(_return_button)
+	if _android_ui():
+		_return_button.custom_minimum_size = Vector2(230, 64)
+		action_box.add_child(_return_button)
+	else:
+		_stage.add_child(_return_button)
 	_resize()
 
 func _resize() -> void:

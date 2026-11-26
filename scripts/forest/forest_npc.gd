@@ -82,7 +82,7 @@ func setup(data: Dictionary, area: PackedVector2Array, portals: Array, protected
 
 func show_interaction_hint(show_hint: bool) -> void:
 	if is_instance_valid(_interaction_hint):
-		_interaction_hint.visible = show_hint
+		_interaction_hint.visible = show_hint and not OS.has_feature("android")
 
 func _process(delta: float) -> void:
 	_bob += delta

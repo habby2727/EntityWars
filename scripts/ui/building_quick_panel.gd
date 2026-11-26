@@ -54,6 +54,9 @@ var _refresh_id := ""
 var _message := ""
 var _layout_queued := false
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _ready() -> void:
 	var margin := $Margin as MarginContainer
 	var content := $Margin/Scroll as VBoxContainer
@@ -62,13 +65,7 @@ func _ready() -> void:
 	margin.add_child(layout)
 	content.reparent(layout)
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	if OS.has_feature("android"):
-		var scroll := ScrollContainer.new()
-		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		layout.add_child(scroll)
-		content.reparent(scroll)
-		layout.move_child(scroll, 0)
-		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	if _android_ui():
 		for label in [_description, _detail, _level, _requirement, _cost_title, _status]:
 			label.add_theme_font_size_override("font_size", 26)
 		_name_label.add_theme_font_size_override("font_size", 34)
@@ -78,7 +75,7 @@ func _ready() -> void:
 	layout.add_child(actions)
 	for action in [_upgrade, _collect, _manage]:
 		action.reparent(actions)
-		if OS.has_feature("android"):
+		if _android_ui():
 			action.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			action.custom_minimum_size.y = 50
 			action.add_theme_font_size_override("font_size", 20)
@@ -148,13 +145,17 @@ func _queue_panel_layout() -> void:
 
 func _layout_panel() -> void:
 	_layout_queued = false
-	if OS.has_feature("android"):
+	if _android_ui():
 		var available_size: Vector2 = get_parent().size
 		if available_size.x <= 0 or available_size.y <= 0:
 			return
-		scale = Vector2.ONE
-		size = Vector2(available_size.x * 0.55, available_size.y * 0.90)
-		position = Vector2(available_size.x - size.x - 16.0, (available_size.y - size.y) / 2.0)
+		var target := available_size * Vector2(0.76, 0.94)
+		var minimum := get_combined_minimum_size()
+		size = target.max(minimum)
+		var factor := minf(1.0, minf(target.x / size.x, target.y / size.y))
+		scale = Vector2.ONE * factor
+		var displayed := size * factor
+		position = Vector2(available_size.x - displayed.x - 16.0, (available_size.y - displayed.y) / 2.0)
 		return
 	var canvas_transform = get_parent().get_global_transform().affine_inverse() * _lab_canvas.get_global_transform()
 	var content_rect := Rect2(Vector2.ZERO, _lab_canvas.size)

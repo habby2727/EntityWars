@@ -145,6 +145,9 @@ func _enter_tree() -> void:
 			client.auto_dev_login = false
 			client.auto_flush = false
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _ready() -> void:
 	_ui_scale = _compute_panel_scale()
 	UIThemeFactory.apply_theme_scaled(self, _ui_scale)
@@ -201,12 +204,12 @@ func _on_debug_forge_updated(state: Dictionary) -> void:
 func _setup_compact_navigation() -> void:
 	if _left_panel == null or _right_panel == null or _grid == null:
 		return
-	_left_panel.custom_minimum_size.x = (48 + (260 if OS.has_feature("android") else 168) * _ui_scale)
+	_left_panel.custom_minimum_size.x = (48 + (260 if _android_ui() else 168) * _ui_scale)
 	_left_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_grid.columns = 2
 	var scroll := _grid.get_parent() as ScrollContainer
 	if scroll != null:
-		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if OS.has_feature("android") else ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if _android_ui() else ScrollContainer.SCROLL_MODE_DISABLED
 	var overlay := _background_panel.get_node_or_null("ContentMargin/TopOverlay") as Control
 	if overlay == null and _background_panel != null:
 		overlay = Control.new()
@@ -484,7 +487,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 	if card == null:
 		return
 	MenuArt.button(card)
-	card.custom_minimum_size = Vector2(120, 120) * _ui_scale if OS.has_feature("android") else Vector2(80, 80) * _ui_scale
+	card.custom_minimum_size = Vector2(120, 120) * _ui_scale if _android_ui() else Vector2(80, 80) * _ui_scale
 	card.toggle_mode = true
 	var content := card.get_node_or_null("HBox") as HBoxContainer
 	if content:
@@ -498,7 +501,7 @@ func _apply_card_scale(card: BuildingCard) -> void:
 			labels.hide()
 	var icon_frame := card.get_node_or_null("HBox/IconFrame") as TextureRect
 	if icon_frame != null:
-		icon_frame.custom_minimum_size = Vector2(100, 100) * _ui_scale if OS.has_feature("android") else Vector2(68, 68) * _ui_scale
+		icon_frame.custom_minimum_size = Vector2(100, 100) * _ui_scale if _android_ui() else Vector2(68, 68) * _ui_scale
 		icon_frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var name_label := card.get_node_or_null("HBox/Text/Name") as Label
 	if name_label != null:
@@ -517,8 +520,8 @@ func _build_resource_bar() -> void:
 	if _resource_bar_panel != null:
 		_resource_bar_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	if _resource_bar != null:
-		_resource_rows = ResourceBars.build(_resource_bar, _catalog, not OS.has_feature("android"), 5 if OS.has_feature("android") else -10)
-		if OS.has_feature("android") and _resource_bar_panel != null:
+		_resource_rows = ResourceBars.build(_resource_bar, _catalog, not _android_ui(), 5 if _android_ui() else -10)
+		if _android_ui() and _resource_bar_panel != null:
 			var band := HBoxContainer.new()
 			band.add_theme_constant_override("separation", 12)
 			_resource_bar.get_parent().add_child(band)
@@ -683,7 +686,7 @@ func _build_spell_section() -> void:
 	_spell_featured_header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_spell_section.add_child(_spell_featured_header)
 	_spell_entity_selector = OptionButton.new()
-	if OS.has_feature("android"):
+	if _android_ui():
 		_spell_entity_alert = Label.new()
 		_spell_entity_alert.text = "!"
 		_spell_entity_alert.add_theme_color_override("font_color", Color.YELLOW)
@@ -704,7 +707,7 @@ func _build_spell_section() -> void:
 	_spell_entity_selector.item_selected.connect(_on_spell_entity_selected)
 	_spell_section.add_child(_spell_entity_selector)
 	var filters: Container
-	if OS.has_feature("android"):
+	if _android_ui():
 		var filter_grid := GridContainer.new()
 		filter_grid.columns = 2
 		filter_grid.add_theme_constant_override("h_separation", 4)
@@ -717,7 +720,7 @@ func _build_spell_section() -> void:
 		var filter := Button.new()
 		filter.text = "SPELL_FILTER_" + kind.to_upper()
 		filter.custom_minimum_size = Vector2(90, 32)
-		if OS.has_feature("android"):
+		if _android_ui():
 			filter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		filter.toggle_mode = true
 		filter.button_group = group
@@ -741,7 +744,7 @@ func _build_spell_section() -> void:
 	_spell_list.add_theme_constant_override("separation", 8)
 	scroll.add_child(_spell_list)
 	_spell_section.add_child(scroll)
-	if OS.has_feature("android"):
+	if _android_ui():
 		var layout := HBoxContainer.new()
 		layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		var controls := VBoxContainer.new()
@@ -793,7 +796,7 @@ func _build_spell_info() -> void:
 	_spell_info_title.set_meta("localization_body_font", true)
 	_spell_info_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_title.add_theme_font_size_override("font_size", 22)
-	if OS.has_feature("android"):
+	if _android_ui():
 		_spell_info_title.add_theme_font_size_override("font_size", 30)
 		_spell_info_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	header.add_child(_spell_info_title)
@@ -807,7 +810,7 @@ func _build_spell_info() -> void:
 	_spell_info_text = Label.new()
 	_spell_info_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spell_info_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	if OS.has_feature("android"):
+	if _android_ui():
 		_spell_info_text.add_theme_font_size_override("font_size", 50)
 		_spell_info_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_spell_info_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -829,7 +832,7 @@ func _layout_spell_info() -> void:
 	_spell_info_layout_queued = false
 	if not is_instance_valid(_spell_info_panel) or not _spell_info.visible:
 		return
-	if OS.has_feature("android"):
+	if _android_ui():
 		_spell_info_panel.scale = Vector2.ONE
 		_spell_info_panel.size = _spell_info.size * Vector2(0.9, 0.88)
 		_spell_info_panel.position = (_spell_info.size - _spell_info_panel.size) * 0.5
@@ -900,7 +903,7 @@ func _build_spell_rows() -> void:
 		name_label.set_meta("medieval_sharp_font", true)
 		name_label.text = "%s  |  %s" % [GameLocalization.catalog("spell", str(spell.id), "name", str(spell.name)), types]
 		name_label.add_theme_font_size_override("font_size", 18)
-		if OS.has_feature("android"):
+		if _android_ui():
 			name_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 			name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(name_label)
@@ -931,7 +934,7 @@ func _build_spell_rows() -> void:
 
 func _style_spell_info_button(button: Button) -> void:
 	button.set_meta("medieval_sharp_font", true)
-	button.custom_minimum_size = Vector2(38, 36) if OS.has_feature("android") else Vector2(36, 36)
+	button.custom_minimum_size = Vector2(38, 36) if _android_ui() else Vector2(36, 36)
 	button.add_theme_font_size_override("font_size", 20)
 	button.add_theme_color_override("font_color", Color("c3efff"))
 	button.add_theme_color_override("font_hover_color", Color.WHITE)
@@ -988,7 +991,7 @@ func _update_spell_section() -> void:
 	var active: Variant = progress.get("active_research")
 	if not active is Dictionary:
 		active = {}
-	if OS.has_feature("android") and is_instance_valid(_spell_entity_alert):
+	if _android_ui() and is_instance_valid(_spell_entity_alert):
 		var alert_entity := str(active.get("entity_id", ""))
 		_spell_entity_alert.visible = not alert_entity.is_empty()
 		if _spell_alert_icon == null:
@@ -1184,7 +1187,7 @@ func _update_detail() -> void:
 			metrics["vault_details"] = ResourceBars.vault_details(_state, _db.balance, level, HqRules.get_max_level("storage_vault"), route, hq_path)
 		# Give the Vat catalog the top of the detail panel; keep other buildings' layout unchanged.
 		var detail: Node = _specialized_panel.get_parent()
-		var first := _selected_id == "homunculus_vat" or (OS.has_feature("android") and _selected_id == "build_forge")
+		var first := _selected_id == "homunculus_vat" or (_android_ui() and _selected_id == "build_forge")
 		detail.move_child(_specialized_panel, 0 if first else detail.get_child_count() - 1)
 		_specialized_panel.show_building(_selected_id, _state, names, metrics, _spell_state_synced)
 		_update_lab_status()

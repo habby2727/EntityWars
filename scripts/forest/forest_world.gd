@@ -49,7 +49,8 @@ var _dialogue: PanelContainer
 var _dialogue_name: Label
 var _dialogue_text: Label
 var _talking_to: Node2D
-var _action_row: HBoxContainer
+var _action_row: Container
+var _edge_background: TextureRect
 var _mask_button: Button
 var _name_backend: BackendClient
 var _verified_name := ""
@@ -82,6 +83,9 @@ var _quest_server_time := 0
 var _quest_tick := 0
 var _quest_timer: Timer
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _ready() -> void:
 	_zones = Zones.runtime_zones()
 	_catalog_valid = not _zones.is_empty()
@@ -102,6 +106,13 @@ func _ready() -> void:
 	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(backdrop)
+	if _android_ui():
+		_edge_background = TextureRect.new()
+		_edge_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_edge_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		_edge_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_edge_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_edge_background)
 	var aspect := AspectRatioContainer.new()
 	aspect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	aspect.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -159,6 +170,11 @@ func _ready() -> void:
 	resources.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(resources)
 	_resource_rows = ResourceBars.build(resources, _resource_catalog, true, -10)
+	if _android_ui():
+		for entry in _resource_rows.values():
+			entry.icon.custom_minimum_size = Vector2(40, 40)
+			entry.bar.custom_minimum_size = Vector2(180, 30)
+			entry.label.add_theme_font_size_override("font_size", 18)
 	ResourceBars.update(_resource_rows, {})
 	_build_mask_button()
 	_joystick = Joystick.new()
@@ -168,6 +184,9 @@ func _ready() -> void:
 	_joystick.offset_top = -252
 	_joystick.offset_right = 252
 	_joystick.offset_bottom = -28
+	if _android_ui():
+		_joystick.offset_top = -290
+		_joystick.offset_right = 290
 	_canvas.add_child(_joystick)
 	_debug_label = Label.new()
 	_debug_label.position = Vector2(400, 30)
@@ -325,6 +344,8 @@ func _set_zone(index: int, arrival: Vector2 = Vector2.INF) -> bool:
 	_quest_error = ""
 	_deselect_remote()
 	_background.texture = texture
+	if is_instance_valid(_edge_background):
+		_edge_background.texture = texture
 	_polygon_fill.polygon = polygon
 	_polygon_line.points = polygon
 	_player.polygon = polygon
@@ -487,6 +508,11 @@ func _build_dialogue() -> void:
 	_dialogue.anchor_right = 0.73
 	_dialogue.anchor_top = 0.65
 	_dialogue.anchor_bottom = 0.94
+	if _android_ui():
+		_dialogue.anchor_left = 0.08
+		_dialogue.anchor_right = 0.92
+		_dialogue.anchor_top = 0.38
+		_dialogue.anchor_bottom = 0.94
 	var panel := StyleBoxFlat.new()
 	panel.bg_color = Color(0.025, 0.075, 0.075, 0.96)
 	panel.border_color = Color("9cb891")
@@ -510,12 +536,20 @@ func _build_dialogue() -> void:
 	_dialogue_text = Label.new()
 	_dialogue_text.name = "Text"
 	_dialogue_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dialogue_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_dialogue_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_dialogue_text.add_theme_font_size_override("font_size", 22)
-	contents.add_child(_dialogue_text)
-	_action_row = HBoxContainer.new()
+	if _android_ui():
+		var text_scroll := ScrollContainer.new()
+		text_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		text_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		contents.add_child(text_scroll)
+		text_scroll.add_child(_dialogue_text)
+	else:
+		contents.add_child(_dialogue_text)
+	_action_row = HFlowContainer.new() if _android_ui() else HBoxContainer.new()
 	_action_row.name = "Actions"
-	_action_row.add_theme_constant_override("separation", 8)
+	_action_row.add_theme_constant_override("h_separation" if _android_ui() else "separation", 8)
 	contents.add_child(_action_row)
 	var close := Button.new()
 	close.name = "Close"
@@ -645,13 +679,19 @@ func _open_npc_action(action: String) -> void:
 		if _canvas.get_node_or_null("CoreDefenseBrowser") != null: return
 		var browser = preload("res://scripts/ui/core_defense_browser.gd").new()
 		browser.name = "CoreDefenseBrowser"
-		browser.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-		var half_width := minf(360.0, _canvas.size.x * 0.46)
-		var half_height := minf(310.0, _canvas.size.y * 0.46)
-		browser.offset_left = -half_width
-		browser.offset_right = half_width
-		browser.offset_top = -half_height
-		browser.offset_bottom = half_height
+		if _android_ui():
+			browser.anchor_left = 0.04
+			browser.anchor_right = 0.96
+			browser.anchor_top = 0.05
+			browser.anchor_bottom = 0.95
+		else:
+			browser.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+			var half_width := minf(360.0, _canvas.size.x * 0.46)
+			var half_height := minf(310.0, _canvas.size.y * 0.46)
+			browser.offset_left = -half_width
+			browser.offset_right = half_width
+			browser.offset_top = -half_height
+			browser.offset_bottom = half_height
 		_canvas.add_child(browser)
 		browser.admitted.connect(_core_defense_admitted)
 		return
@@ -659,13 +699,19 @@ func _open_npc_action(action: String) -> void:
 		if _canvas.get_node_or_null("WOEBrowser") != null: return
 		var browser = preload("res://scripts/ui/woe_browser.gd").new()
 		browser.name = "WOEBrowser"
-		browser.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-		var half_width := minf(360.0, _canvas.size.x * 0.46)
-		var half_height := minf(310.0, _canvas.size.y * 0.46)
-		browser.offset_left = -half_width
-		browser.offset_right = half_width
-		browser.offset_top = -half_height
-		browser.offset_bottom = half_height
+		if _android_ui():
+			browser.anchor_left = 0.04
+			browser.anchor_right = 0.96
+			browser.anchor_top = 0.05
+			browser.anchor_bottom = 0.95
+		else:
+			browser.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+			var half_width := minf(360.0, _canvas.size.x * 0.46)
+			var half_height := minf(310.0, _canvas.size.y * 0.46)
+			browser.offset_left = -half_width
+			browser.offset_right = half_width
+			browser.offset_top = -half_height
+			browser.offset_bottom = half_height
 		_canvas.add_child(browser)
 		browser.admitted.connect(_woe_admitted)
 		return

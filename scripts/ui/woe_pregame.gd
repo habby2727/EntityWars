@@ -25,6 +25,9 @@ var _changing := false
 var _expired := false
 var _transitioning := false
 
+func _android_ui() -> bool:
+	return OS.has_feature("android") or (OS.is_debug_build() and OS.get_environment("UI_ANDROID_PREVIEW") == "1")
+
 func _ready() -> void:
 	_identity = WoeClient.identity()
 	if not SceneRouter.woe_context_valid():
@@ -72,6 +75,8 @@ func _build() -> void:
 	panel.position = Vector2(650, 260)
 	panel.size = Vector2(620, 560)
 	_canvas.add_child(panel)
+	if _android_ui():
+		panel.minimum_size_changed.connect(func(): _resize.call_deferred())
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	panel.add_child(box)
@@ -99,6 +104,15 @@ func _build() -> void:
 	_fill.add_theme_font_size_override("font_size", 21)
 	_fill.button_pressed = true
 	box.add_child(_fill)
+	if _android_ui():
+		_fill.custom_minimum_size = Vector2(0, 72)
+		for icon_name in ["checked", "unchecked", "checked_disabled", "unchecked_disabled"]:
+			var texture := _fill.get_theme_icon(icon_name)
+			if texture != null:
+				var image := texture.get_image()
+				if image != null and not image.is_empty():
+					image.resize(40, 40, Image.INTERPOLATE_LANCZOS)
+					_fill.add_theme_icon_override(icon_name, ImageTexture.create_from_image(image))
 	_start = Button.new()
 	PANEL_STYLE.button(_start, true)
 	_start.text = tr("WOE_START")
@@ -150,8 +164,8 @@ func _resize() -> void:
 		button.scale = scale_factor
 	for child in _canvas.get_children():
 		if child is PanelContainer:
-			child.position = Vector2(650,260) * scale_factor
-			child.size = Vector2(620,560)
+			child.position = (Vector2(600, 130) if _android_ui() else Vector2(650,260)) * scale_factor
+			child.size = Vector2(720,800) if _android_ui() else Vector2(620,560)
 			child.scale = scale_factor
 
 func _valid() -> bool:
@@ -250,7 +264,8 @@ func _open_invites() -> void:
 	_invite_popup = PopupPanel.new()
 	add_child(_invite_popup)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(420, 340)
+	scroll.custom_minimum_size = Vector2(0, 0) if _android_ui() else Vector2(420, 340)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_invite_popup.add_child(scroll)
 	_invites = preload("res://scripts/ui/minigame_invitations.gd").new()
 	_invites.game_kind = "woe"
@@ -259,7 +274,10 @@ func _open_invites() -> void:
 	_invites.can_invite = _room.get("members", []).size() < (2 if _room.get("mode") == "1v1" else 4)
 	_invites.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_invites)
-	_invite_popup.popup_centered()
+	if _android_ui():
+		_invite_popup.popup_centered(Vector2i(get_viewport_rect().size * Vector2(0.8, 0.8)))
+	else:
+		_invite_popup.popup_centered()
 
 func _error(result: Dictionary) -> void:
 	var error := str(result.get("error", ""))
